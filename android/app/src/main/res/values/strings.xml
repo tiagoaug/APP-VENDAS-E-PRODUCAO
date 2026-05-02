@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">APP VENDAS E PRODUCAO</string>
     <string name="title_activity_main">APP VENDAS E PRODUCAO</string>
-    <string name="package_name">com.musgo.vendas</string>
-    <string name="custom_url_scheme">com.musgo.vendas</string>
+    <string name="package_name">com.musgo.vendaseproducao</string>
+    <string name="custom_url_scheme">com.musgo.vendaseproducao</string>
     <string name="server_client_id">934569927713-c4nkj05jntdgsvsk8fmg2d2v92hiipsa.apps.googleusercontent.com</string>
 </resources>

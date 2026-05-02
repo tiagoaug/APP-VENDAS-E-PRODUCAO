@@ -33,6 +33,43 @@
           ]
         }
       }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:934569927713:android:8a6be5e4db244eeb726f60",
+        "android_client_info": {
+          "package_name": "com.musgo.vendaseproducao"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "934569927713-tpb2pt3jl6h7jd9nb83mm0fjhajk0f5b.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.musgo.vendaseproducao",
+            "certificate_hash": "25fcf1dae29d867dc7f67fa7291354451a2ee78b"
+          }
+        },
+        {
+          "client_id": "934569927713-c4nkj05jntdgsvsk8fmg2d2v92hiipsa.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAY-eCUV4TBKMt8MPVjoNyEINfxsYfg3eQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "934569927713-c4nkj05jntdgsvsk8fmg2d2v92hiipsa.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
     }
   ],
   "configuration_version": "1"
