@@ -1,0 +1,10 @@
+{
+  "projectId": "app-vendas-e-producao",
+  "appId": "1:934569927713:web:e6715f9835852409726f60",
+  "apiKey": "AIzaSyAhfICmzSFpvZAbp6lPNzY0kdzjrRBLpeU",
+  "authDomain": "app-vendas-e-producao.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "app-vendas-e-producao.firebasestorage.app",
+  "messagingSenderId": "934569927713",
+  "measurementId": "G-592WX8W965"
+}

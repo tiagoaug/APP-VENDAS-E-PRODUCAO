@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "934569927713",
+    "project_id": "app-vendas-e-producao",
+    "storage_bucket": "app-vendas-e-producao.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:934569927713:android:74044d335fa1f1a3726f60",
+        "android_client_info": {
+          "package_name": "com.musgo.vendas"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "934569927713-c4nkj05jntdgsvsk8fmg2d2v92hiipsa.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAY-eCUV4TBKMt8MPVjoNyEINfxsYfg3eQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "934569927713-c4nkj05jntdgsvsk8fmg2d2v92hiipsa.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

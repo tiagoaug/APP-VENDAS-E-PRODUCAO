@@ -1,0 +1,108 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isEmailVerified() { return request.auth.token.email_verified == true; }
+    function isValidId(id) { return id is string && id.size() <= 128; }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    // --- Entity Validations ---
+
+    function isValidProductData(data) {
+      return (data.reference is string && data.reference.size() <= 50)
+        && (data.name is string && data.name.size() <= 100)
+        && (data.supplierId is string && data.supplierId.size() <= 128)
+        && (data.defaultGridId is string && data.defaultGridId.size() <= 128)
+        && (data.variations is list && data.variations.size() <= 50)
+        && (data.createdAt is number);
+    }
+
+    function isValidProduct(data) {
+      return data.keys().hasAll(['reference', 'name', 'supplierId', 'defaultGridId', 'variations', 'createdAt'])
+        && isValidProductData(data);
+    }
+
+    function isValidCategory(data) {
+      return data.keys().hasAll(['name', 'color', 'type'])
+        && data.name is string && data.name.size() <= 50
+        && data.color is string && data.color.size() <= 30
+        && data.type in ['PRODUCT', 'EXPENSE', 'REVENUE'];
+    }
+
+    function isValidGrid(data) {
+      return data.keys().hasAll(['name', 'configuration'])
+        && data.name is string && data.name.size() <= 50
+        && data.configuration is map;
+    }
+
+    function isValidPerson(data) {
+      return data.keys().hasAll(['name', 'isCustomer', 'isSupplier'])
+        && data.name is string && data.name.size() <= 100
+        && data.isCustomer is bool
+        && data.isSupplier is bool;
+    }
+
+    function isValidSale(data) {
+      return data.keys().hasAll(['orderNumber', 'date', 'items', 'subtotal', 'discount', 'total', 'status', 'paymentTerm'])
+        && data.orderNumber is string && data.orderNumber.size() <= 20
+        && data.date is number
+        && data.items is list
+        && data.subtotal is number && data.subtotal >= 0
+        && data.discount is number && data.discount >= 0
+        && data.total is number && data.total >= 0
+        && data.status in ['QUOTE', 'SALE', 'CANCELLED']
+        && data.paymentTerm in ['CASH', 'INSTALLMENTS'];
+    }
+
+    function isValidTransaction(data) {
+      return data.type in ['INCOME', 'EXPENSE']
+        && data.amount is number
+        && data.date is number
+        && data.description is string
+        && data.status in ['PENDING', 'COMPLETED'];
+    }
+
+    function isValidAccount(data) {
+      return data.name is string
+        && data.balance is number;
+    }
+
+    function isValidColorValue(data) {
+      return data.keys().hasAll(['name', 'hex'])
+        && data.name is string && data.name.size() <= 30
+        && data.hex is string && data.hex.matches('^#[0-9a-fA-F]{6}$');
+    }
+
+    function isValidPaymentMethod(data) {
+      return data.keys().hasAll(['name', 'icon'])
+        && data.name is string && data.name.size() <= 30
+        && data.icon is string && data.icon.size() <= 30;
+    }
+
+    function isValidPurchase(data) {
+      // Basic validation for now, adjust based on actual data
+      return data.keys().hasAll(['supplierId', 'date', 'type'])
+        && data.supplierId is string && data.supplierId.size() <= 128
+        && data.date is number
+        && data.type is string;
+    }
+
+    // --- Match Rules ---
+
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      match /{allSubcollections=**} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+  }
+}

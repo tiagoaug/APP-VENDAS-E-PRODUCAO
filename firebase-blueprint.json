@@ -1,0 +1,157 @@
+{
+  "entities": {
+    "Product": {
+      "title": "Product",
+      "description": "Product in the inventory",
+      "type": "object",
+      "properties": {
+        "reference": { "type": "string" },
+        "name": { "type": "string" },
+        "supplierId": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "coverImage": { "type": "string" },
+        "defaultGridId": { "type": "string" },
+        "variations": { "type": "array" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["reference", "name", "supplierId", "coverImage", "defaultGridId", "variations", "createdAt"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Category for products or financial transactions",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "color": { "type": "string" },
+        "type": { "type": "string", "enum": ["PRODUCT", "EXPENSE", "REVENUE"] }
+      },
+      "required": ["name", "color", "type"]
+    },
+    "Grid": {
+      "title": "Grid",
+      "description": "Size grid configuration",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "configuration": { "type": "object" }
+      },
+      "required": ["name", "configuration"]
+    },
+    "Person": {
+      "title": "Person",
+      "description": "Customer or Supplier",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "isCustomer": { "type": "boolean" },
+        "isSupplier": { "type": "boolean" },
+        "document": { "type": "string" }
+      },
+      "required": ["name", "isCustomer", "isSupplier"]
+    },
+    "Purchase": {
+      "title": "Purchase",
+      "description": "Purchase from supplier",
+      "type": "object",
+      "properties": {
+        "supplierId": { "type": "string" },
+        "date": { "type": "number" },
+        "dueDate": { "type": "number" },
+        "paymentTerm": { "type": "string", "enum": ["CASH", "INSTALLMENTS"] },
+        "type": { "type": "string", "enum": ["REPLENISHMENT", "GENERAL"] },
+        "items": { "type": "array" },
+        "generalItems": { "type": "array" },
+        "total": { "type": "number" },
+        "notes": { "type": "string" },
+        "batchNumber": { "type": "string" },
+        "checks": { "type": "array" },
+        "categoryId": { "type": "string" },
+        "accountId": { "type": "string" }
+      },
+      "required": ["supplierId", "date", "type", "total"]
+    },
+    "Sale": {
+      "title": "Sale",
+      "description": "Sale to customer",
+      "type": "object",
+      "properties": {
+        "orderNumber": { "type": "string" },
+        "date": { "type": "number" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "discount": { "type": "number" },
+        "total": { "type": "number" },
+        "status": { "type": "string", "enum": ["QUOTE", "SALE", "CANCELLED"] },
+        "paymentTerm": { "type": "string", "enum": ["CASH", "INSTALLMENTS"] },
+        "paymentMethodId": { "type": "string" },
+        "accountId": { "type": "string" }
+      },
+      "required": ["orderNumber", "date", "items", "subtotal", "discount", "total", "status", "paymentTerm"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Financial transaction",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "enum": ["INCOME", "EXPENSE"] },
+        "categoryId": { "type": "string" },
+        "accountId": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "number" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "COMPLETED"] },
+        "contactId": { "type": "string" },
+        "contactName": { "type": "string" },
+        "relatedId": { "type": "string" }
+      },
+      "required": ["type", "categoryId", "accountId", "amount", "date", "description", "status"]
+    },
+    "Account": {
+      "title": "Account",
+      "description": "Financial account",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "balance": { "type": "number" },
+        "color": { "type": "string" }
+      },
+      "required": ["name", "balance", "color"]
+    },
+    "ColorValue": {
+      "title": "ColorValue",
+      "description": "Color definition",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "hex": { "type": "string" }
+      },
+      "required": ["name", "hex"]
+    },
+    "PaymentMethod": {
+      "title": "PaymentMethod",
+      "description": "Payment method definition",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "icon": { "type": "string" }
+      },
+      "required": ["name", "icon"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/products": { "schema": "Product", "description": "User's products" },
+    "/users/{userId}/categories": { "schema": "Category", "description": "User's categories" },
+    "/users/{userId}/grids": { "schema": "Grid", "description": "User's grids" },
+    "/users/{userId}/people": { "schema": "Person", "description": "User's suppliers and customers" },
+    "/users/{userId}/purchases": { "schema": "Purchase", "description": "User's purchase history" },
+    "/users/{userId}/sales": { "schema": "Sale", "description": "User's sales history" },
+    "/users/{userId}/transactions": { "schema": "Transaction", "description": "User's financial transactions" },
+    "/users/{userId}/accounts": { "schema": "Account", "description": "User's financial accounts" },
+    "/users/{userId}/colors": { "schema": "ColorValue", "description": "User's color definitions" },
+    "/users/{userId}/paymentMethods": { "schema": "PaymentMethod", "description": "User's payment methods" }
+  }
+}
