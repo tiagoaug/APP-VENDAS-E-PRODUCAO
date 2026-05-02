@@ -21,6 +21,11 @@ import {
   BarChart3,
   Database,
   Boxes,
+  Factory,
+  GanttChartSquare,
+  Hammer,
+  ClipboardList,
+  PackageOpen,
   User as UserIcon
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -125,22 +130,34 @@ export default function App() {
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [personalContacts, setPersonalContacts] = useState<Person[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
-  const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig | null>(null);
+  const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig | null>(() => {
+    const saved = localStorage.getItem('dashboard_config');
+    const config = saved ? JSON.parse(saved) : defaultDashboardConfig;
+    
+    // Migration: ensure shortcuts card exists
+    if (config.cards && !config.cards.find((c: any) => c.id === 'shortcuts')) {
+      const shortcutsCard = defaultDashboardConfig.cards.find(c => c.id === 'shortcuts')!;
+      config.cards.push(shortcutsCard);
+    }
+    
+    return config;
+  });
 
   const defaultDashboardConfig: DashboardConfig = {
     cards: [
       { id: 'balance', label: 'Saldo Consolidado', visible: true, order: 0 },
       { id: 'cash_flow', label: 'Balanço Mensal', visible: true, order: 1 },
       { id: 'receivables', label: 'A Receber (Vendas)', visible: true, order: 2 },
-      { id: 'stock_alerts', label: 'Alertas de Estoque', visible: true, order: 3 },
-      { id: 'customers', label: 'Relacionamento Clientes', visible: true, order: 4 },
-      { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 5 },
-      { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 6 },
-      { id: 'stock_value', label: 'Patrimônio em Estoque', visible: true, order: 7 },
-      { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 8 },
-      { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 9 },
-      { id: 'activity', label: 'Atividade Recente', visible: true, order: 10 },
-      { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 11 },
+      { id: 'shortcuts', label: 'Menu de Atalhos', visible: true, order: 3 },
+      { id: 'stock_alerts', label: 'Alertas de Estoque', visible: true, order: 4 },
+      { id: 'customers', label: 'Relacionamento Clientes', visible: true, order: 5 },
+      { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 6 },
+      { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 7 },
+      { id: 'stock_value', label: 'Patrimônio em Estoque', visible: true, order: 8 },
+      { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 9 },
+      { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 10 },
+      { id: 'activity', label: 'Atividade Recente', visible: true, order: 11 },
+      { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 12 },
     ]
   };
 
@@ -1828,6 +1845,100 @@ export default function App() {
             onCancel={goBack}
             isDarkMode={isDarkMode}
           />
+        );
+      case ViewType.PRODUCTION_MENU:
+        return (
+          <div className="flex flex-col gap-8 pb-32">
+            <header className="flex flex-col gap-3 px-2">
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="w-16 h-16 rounded-[1.8rem] bg-indigo-600 text-white flex items-center justify-center shadow-xl shadow-indigo-500/20"
+              >
+                <Factory size={32} strokeWidth={2.5} />
+              </motion.div>
+              <div>
+                <motion.h2 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                  className="text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-white"
+                >
+                  Produção
+                </motion.h2>
+                <motion.p 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-1"
+                >
+                  Gestão de Fábrica e PCP
+                </motion.p>
+              </div>
+            </header>
+
+            <div className="grid grid-cols-1 gap-4">
+              {[
+                { id: ViewType.PRODUCTION_PCP, label: 'PCP Central', desc: 'Planejamento e Controle', icon: <GanttChartSquare size={26} />, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                { id: ViewType.PRODUCTION_STOCK, label: 'Estoque de Materiais', desc: 'Insumos e Matéria Prima', icon: <PackageOpen size={26} />, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+                { id: ViewType.PRODUCTION_PURCHASE_NEEDS, label: 'Necessidade de Compras', desc: 'Previsão de Suprimentos', icon: <ClipboardList size={26} />, color: 'text-amber-600', bg: 'bg-amber-50' },
+                { id: ViewType.PRODUCTION_CONFIG, label: 'Configurações de Produção', desc: 'Parâmetros e Máquinas', icon: <Hammer size={26} />, color: 'text-slate-600', bg: 'bg-slate-100' },
+              ].map((item, index) => (
+                <motion.button
+                  key={item.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 * (index + 3) }}
+                  onClick={() => navigateTo(item.id)}
+                  className={`p-6 rounded-[2.5rem] border-2 flex items-center gap-6 transition-all active:scale-[0.98] group ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/30' : 'bg-white border-slate-50 shadow-sm hover:border-indigo-100'}`}
+                >
+                  <div className={`w-16 h-16 rounded-[1.5rem] ${isDarkMode ? 'bg-slate-800' : item.bg} flex items-center justify-center ${item.color} group-hover:scale-110 transition-transform`}>
+                    {item.icon}
+                  </div>
+                  <div className="text-left flex-1">
+                    <p className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.label}</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{item.desc}</p>
+                  </div>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-600' : 'bg-slate-50 text-slate-300'} group-hover:bg-indigo-600 group-hover:text-white transition-colors`}>
+                    <Plus size={20} strokeWidth={3} />
+                  </div>
+                </motion.button>
+              ))}
+            </div>
+
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.8 }}
+              className="mt-4 p-8 rounded-[3rem] border-2 border-dashed border-slate-100 dark:border-slate-800 flex flex-col items-center text-center gap-4"
+            >
+              <div className={`w-16 h-16 rounded-[1.8rem] flex items-center justify-center ${isDarkMode ? 'bg-slate-900 text-indigo-500' : 'bg-indigo-50 text-indigo-600'}`}>
+                <Factory size={32} strokeWidth={1.5} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Módulo de Manufatura</p>
+                <p className="text-[11px] text-slate-400 font-bold mt-2 leading-relaxed italic max-w-[240px]">
+                  Controle total do seu processo produtivo, desde a matéria-prima até o produto acabado.
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        );
+      case ViewType.PRODUCTION_PCP:
+      case ViewType.PRODUCTION_STOCK:
+      case ViewType.PRODUCTION_PURCHASE_NEEDS:
+      case ViewType.PRODUCTION_CONFIG:
+        return (
+          <div className="flex flex-col items-center justify-center py-20 text-center gap-4">
+            <div className="w-20 h-20 rounded-3xl bg-amber-50 text-amber-500 flex items-center justify-center">
+              <Plus size={40} strokeWidth={3} className="rotate-45" />
+            </div>
+            <div>
+              <h2 className="text-xl font-black uppercase tracking-tight">Em Desenvolvimento</h2>
+              <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-2">Esta funcionalidade estará disponível em breve.</p>
+            </div>
+            <button onClick={goBack} className="mt-6 px-8 py-3 rounded-2xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest">Voltar</button>
+          </div>
         );
       default:
         return (
