@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Grid } from '../types';
-import { Plus, TableCellsMerge, Trash2, Edit, Ruler } from 'lucide-react';
+import { Grid, GridType } from '../types';
+import { Plus, TableCellsMerge, Trash2, Edit, Ruler, Target, Footprints } from 'lucide-react';
 import GradeModal from '../components/GradeModal';
 
 interface GradesViewProps {
@@ -44,7 +44,17 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
                   <TableCellsMerge size={24} />
                 </div>
                 <div>
-                  <h3 className={`font-black text-base uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{grid.name}</h3>
+                  <div className="flex items-center gap-2">
+                    <h3 className={`font-black text-base uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{grid.name}</h3>
+                    <div className={`px-2 py-0.5 rounded-md flex items-center gap-1 border ${
+                      grid.type === GridType.SOLADO 
+                        ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' 
+                        : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-500'
+                    }`}>
+                      {grid.type === GridType.SOLADO ? <Footprints size={10} /> : <Target size={10} />}
+                      <span className="text-[8px] font-black uppercase tracking-widest">{grid.type === GridType.SOLADO ? 'Solado' : 'Forma'}</span>
+                    </div>
+                  </div>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
                     {grid.sizes?.length || 0} Numerações
                   </p>

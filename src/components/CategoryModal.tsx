@@ -49,6 +49,7 @@ export default function CategoryModal({ isOpen, onClose, onSave, category, defau
           <option value={CategoryType.REVENUE}>RECEITAS</option>
           <option value={CategoryType.PRODUCTION}>PRODUÇÃO</option>
           <option value={CategoryType.GENERAL}>GERAIS</option>
+          <option value={CategoryType.SUPPLY}>INSUMOS</option>
           <option value={CategoryType.OTHER}>OUTRAS</option>
         </select>
         <div className="flex gap-2">

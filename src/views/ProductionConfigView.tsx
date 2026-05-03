@@ -39,7 +39,7 @@ import {
   ClipboardList,
   FileText
 } from 'lucide-react';
-import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, CategoryType, ProductionScreenType } from '../types';
+import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, ProductionScreenType } from '../types';
 import Modal from '../components/Modal';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 
@@ -81,9 +81,6 @@ const SECTOR_COLORS = [
 
 // ProductionScreenType moved to types.ts
 
-// Master categories for production materials
-const MASTER_CATEGORIES = ['SOLADOS', 'PALMILHAS', 'COURO/SINTÉTICO', 'FORROS', 'ADESIVOS', 'LINHAS', 'EMBALAGENS', 'OUTROS'];
-
 const DEFAULT_UNITS = [
   { name: 'UN', description: 'Unidade' },
   { name: 'PR', description: 'Par' },
@@ -119,6 +116,17 @@ export default function ProductionConfigView({
   onNavigateGrids
 }: ProductionConfigViewProps) {
   const [currentScreen, setCurrentScreen] = useState<ProductionScreenType>(initialScreen);
+
+  const supplyCategoryNames = useMemo(() => {
+    const fromSystem = categories
+      .filter(c => c.type === CategoryType.SUPPLY)
+      .map(c => c.name.toUpperCase());
+    
+    if (fromSystem.length > 0) return fromSystem;
+    // Fallback if no categories defined in system yet
+    return ['SOLADOS', 'PALMILHAS', 'COURO/SINTÉTICO', 'FORROS', 'ADESIVOS', 'LINHAS', 'EMBALAGENS', 'OUTROS'];
+  }, [categories]);
+
   const [editingTag, setEditingTag] = useState<FlowTag | null>(null);
   const [editingSector, setEditingSector] = useState<Sector | null>(null);
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -1205,7 +1213,7 @@ function GenericConfigList({
 
                  {/* Flow Tag Selection */}
                  <div className="flex flex-col gap-2">
-                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Estágio do Fluxo</label>
+                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-500 ml-2">Estágio do Fluxo</label>
                    <div className="flex flex-wrap gap-2">
                      {flowTags.map(tag => (
                        <button
@@ -1243,20 +1251,22 @@ function GenericConfigList({
                              grid.sizes.forEach(s => {
                                weights[s] = editingItem?.metadata?.sizeWeights?.[s] || 0;
                              });
-                             setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, sizeWeights: weights } } : null);
+                             setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, sizeWeights: weights, sizes: grid.sizes } } : null);
                            }
                         }}
                         className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-600'}`}
                       >
                         <option value="">PUXAR GRADE...</option>
-                        {(grids || []).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                        {(grids || []).filter(g => g.type === GridType.SOLADO || !g.type).map(g => (
+                          <option key={g.id} value={g.id}>{g.name}</option>
+                        ))}
                       </select>
                    </div>
 
                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
                       {Object.entries(editingItem?.metadata?.sizeWeights || {}).map(([size, weight]) => (
                         <div key={size} className="flex flex-col gap-1">
-                           <span className="text-[9px] font-black text-slate-400 ml-1">{size}</span>
+                           <span className="text-[9px] font-black text-slate-600 dark:text-slate-400 ml-1">{size}</span>
                            <input 
                              type="number"
                              value={weight as number || ''}
@@ -1276,7 +1286,181 @@ function GenericConfigList({
                    </div>
                  </div>
 
-                 {/* Color Variations and Sub-Ref */}
+                                   {/* Material Composition Card */}
+                  <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <Layers size={18} className="text-indigo-500" />
+                          <span className="text-xs font-black uppercase tracking-widest text-slate-500">Composição de Materiais</span>
+                        </div>
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Defina o consumo de insumos para este solado</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentComposition = editingItem?.metadata?.composition || [];
+                          setEditingItem(prev => prev ? {
+                            ...prev,
+                            metadata: {
+                              ...prev.metadata,
+                              composition: [...currentComposition, { materialId: '', quantity: 0, type: 'weight' }]
+                            }
+                          } : null);
+                        }}
+                        className="p-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
+                      >
+                        <Plus size={16} />
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                      {(editingItem?.metadata?.composition || []).map((item: any, index: number) => {
+                        const selectedMaterial = productionConfigs.find(c => c.id === item.materialId);
+                        
+                        return (
+                          <div key={index} className={`grid grid-cols-12 gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                            <div className="col-span-6 flex flex-col gap-1">
+                              <label className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Insumo / Material</label>
+                              <select
+                                title="Selecionar Material"
+                                value={item.materialId}
+                                onChange={(e) => {
+                                  const newComp = [...(editingItem?.metadata?.composition || [])];
+                                  newComp[index] = { ...newComp[index], materialId: e.target.value };
+                                  setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null);
+                                }}
+                                className={`w-full px-3 py-3 rounded-xl font-bold text-[10px] uppercase outline-none border-2 transition-all ${
+                                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-indigo-100'
+                                }`}
+                              >
+                                <option value="">SELECIONE...</option>
+                                {productionConfigs.filter(c => c.type === 'MATERIAL').map(mat => (
+                                  <option key={mat.id} value={mat.id}>{mat.name}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="col-span-3 flex flex-col gap-1">
+                              <label className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Quant / %</label>
+                              <input
+                                type="number"
+                                step="0.001"
+                                value={item.quantity || ''}
+                                onChange={(e) => {
+                                  const newComp = [...(editingItem?.metadata?.composition || [])];
+                                  newComp[index] = { ...newComp[index], quantity: parseFloat(e.target.value) };
+                                  setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null);
+                                }}
+                                className={`w-full px-3 py-3 rounded-xl font-black text-[10px] text-center outline-none border-2 ${
+                                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-50'
+                                }`}
+                              />
+                            </div>
+
+                            <div className="col-span-2 flex flex-col gap-1">
+                              <label className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Tipo</label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newComp = [...(editingItem?.metadata?.composition || [])];
+                                  newComp[index] = { ...newComp[index], type: item.type === 'weight' ? 'percentage' : 'weight' };
+                                  setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null);
+                                }}
+                                className={`w-full py-3 rounded-xl font-black text-[8px] uppercase tracking-widest border-2 transition-all ${
+                                  item.type === 'percentage' 
+                                    ? 'bg-amber-500 border-amber-600 text-white' 
+                                    : 'bg-indigo-500 border-indigo-600 text-white'
+                                }`}
+                              >
+                                {item.type === 'percentage' ? '%' : 'GR'}
+                              </button>
+                            </div>
+
+                            <div className="col-span-1 flex items-end pb-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const newComp = (editingItem?.metadata?.composition || []).filter((_: any, i: number) => i !== index);
+                                  setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null);
+                                }}
+                                className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition-colors"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {(editingItem?.metadata?.composition || []).length === 0 && (
+                        <div className="text-center py-6 border-2 border-dashed border-slate-200 rounded-2xl">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nenhum material adicionado</p>
+                        </div>
+                      )}
+
+                      {/* Composition Summary Footer */}
+                      {(editingItem?.metadata?.composition || []).length > 0 && (
+                        <div className={`mt-4 p-4 rounded-2xl grid grid-cols-2 gap-4 ${isDarkMode ? 'bg-slate-900' : 'bg-white shadow-sm border border-slate-100'}`}>
+                          <div className="flex flex-col gap-1 border-r border-slate-100 dark:border-slate-800">
+                            <span className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Total Itens</span>
+                            <span className={`text-sm font-black uppercase ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                              {(editingItem?.metadata?.composition || []).length} Insumos
+                            </span>
+                          </div>
+                          <div className="flex flex-col gap-1 pl-2">
+                            <span className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Rendimento Médio</span>
+                            <div className="flex items-baseline gap-1">
+                              <span className={`text-sm font-black uppercase ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                                {(() => {
+                                  const weights = Object.values(editingItem?.metadata?.sizeWeights || {}) as number[];
+                                  if (weights.length === 0) return '---';
+                                  const avgWeight = weights.reduce((a, b) => a + b, 0) / weights.length;
+                                  if (avgWeight === 0) return '---';
+                                  return (1000 / avgWeight).toFixed(2);
+                                })()}
+                              </span>
+                              <span className="text-[8px] font-bold text-slate-400 uppercase">PRS / KG</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Summary / Calculations */}
+                    {(editingItem?.metadata?.composition || []).length > 0 && (
+                      <div className="mt-6 flex flex-wrap gap-4 pt-6 border-t-2 border-slate-100 dark:border-slate-800">
+                        <div className="flex-1 min-w-[120px] p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-100 dark:border-indigo-800/50">
+                          <p className="text-[8px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-1">Total de Materiais</p>
+                          <div className="flex items-baseline gap-1">
+                            <span className="text-lg font-black text-indigo-600">{(editingItem?.metadata?.composition || []).length}</span>
+                            <span className="text-[10px] font-black text-indigo-400">ITENS</span>
+                          </div>
+                        </div>
+
+                        <div className="flex-1 min-w-[120px] p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-100 dark:border-emerald-800/50">
+                          <p className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-1">Rendimento Médio</p>
+                          <div className="flex items-baseline gap-1">
+                            {(() => {
+                              const weights = Object.values(editingItem?.metadata?.sizeWeights || {});
+                              const avgWeight = weights.length > 0 
+                                ? weights.reduce((a, b) => (a as number) + (b as number), 0) / weights.length 
+                                : 0;
+                              const yieldPerKg = avgWeight > 0 ? (1000 / avgWeight).toFixed(1) : '0';
+                              return (
+                                <>
+                                  <span className="text-lg font-black text-emerald-600">{yieldPerKg}</span>
+                                  <span className="text-[10px] font-black text-emerald-400">PRS/KG</span>
+                                </>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Color Variations and Sub-Ref */}
                  <div className="flex flex-col gap-4">
                    <div className="flex items-center gap-2">
                       <Palette size={18} className="text-indigo-500" />
@@ -1343,7 +1527,7 @@ function GenericConfigList({
                  {/* Top Row: Master Category & Reference */}
                  <div className="grid grid-cols-2 gap-4">
                    <div className="flex flex-col gap-2">
-                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Categoria Mestre *</label>
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Categoria Mestre *</label>
                      <select 
                        title="Categoria Mestre"
                        aria-label="Selecionar categoria mestre do insumo"
@@ -1355,11 +1539,11 @@ function GenericConfigList({
                        }`}
                      >
                        <option value="">SELECIONAR...</option>
-                       {MASTER_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                       {supplyCategoryNames.map(cat => <option key={cat} value={cat}>{cat}</option>)}
                      </select>
                    </div>
                    <div className="flex flex-col gap-2">
-                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Referência / Código</label>
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Referência / Código</label>
                      <input 
                        type="text"
                        value={editingItem?.metadata?.reference || ''}
@@ -1373,7 +1557,7 @@ function GenericConfigList({
 
                  {/* Material Name */}
                  <div className="flex flex-col gap-2">
-                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Material / Descrição *</label>
+                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Nome do Material / Descrição *</label>
                    <input 
                      type="text"
                      value={editingItem?.name || ''}
@@ -1388,7 +1572,7 @@ function GenericConfigList({
                  {/* Flow Tag & Supplier */}
                  <div className="grid grid-cols-2 gap-4">
                    <div className="flex flex-col gap-2">
-                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Flow Tag (Estágio)</label>
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Flow Tag (Estágio)</label>
                      <select 
                        title="Flow Tag"
                        aria-label="Selecionar estágio do fluxo"
@@ -1403,7 +1587,7 @@ function GenericConfigList({
                      </select>
                    </div>
                    <div className="flex flex-col gap-2">
-                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Fornecedor Principal</label>
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Fornecedor Principal</label>
                      <select 
                        title="Fornecedor"
                        aria-label="Selecionar fornecedor principal"
@@ -1422,7 +1606,7 @@ function GenericConfigList({
                  {/* Unit & Base Cost */}
                  <div className="grid grid-cols-2 gap-4">
                    <div className="flex flex-col gap-2">
-                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Unidade *</label>
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Unidade *</label>
                      <select 
                        title="Unidade de Medida"
                        aria-label="Selecionar unidade de medida"
@@ -1438,7 +1622,7 @@ function GenericConfigList({
                      </select>
                    </div>
                    <div className="flex flex-col gap-2">
-                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Custo Base (Média)</label>
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Custo Base (Média)</label>
                      <input 
                        type="number"
                        step="0.01"
@@ -2083,6 +2267,47 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, 
                 </div>
               ))}
            </div>
+        </div>
+      )}
+
+      {item.metadata?.composition && (item.metadata.composition as any[]).length > 0 && (
+        <div className={`p-4 rounded-2xl flex flex-col gap-3 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50/50'}`}>
+          <div className="flex items-center justify-between text-slate-400">
+            <div className="flex items-center gap-2">
+              <Layers size={14} />
+              <span className="text-[9px] font-black uppercase tracking-widest">Composição de Materiais</span>
+            </div>
+            <span className="text-[9px] font-black uppercase tracking-widest text-indigo-500">
+              {(item.metadata.composition as any[]).length} ITENS
+            </span>
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="flex flex-wrap gap-2">
+              {(item.metadata.composition as any[]).slice(0, 3).map((comp: any, idx: number) => {
+                const mat = (productionConfigs || []).find(c => c.id === comp.materialId);
+                return (
+                  <span key={idx} className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
+                    {mat?.name || 'MATERIAL'} {idx < 2 && idx < (item.metadata?.composition as any[]).length - 1 ? '•' : ''}
+                  </span>
+                );
+              })}
+              {(item.metadata.composition as any[]).length > 3 && (
+                <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">+{(item.metadata.composition as any[]).length - 3}</span>
+              )}
+            </div>
+            <div className="flex items-baseline gap-1 bg-indigo-500/10 px-2 py-1 rounded-lg">
+              <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">
+                {(() => {
+                  const weights = Object.values(item.metadata?.sizeWeights || {}) as number[];
+                  if (weights.length === 0) return '---';
+                  const avgWeight = weights.reduce((a, b) => a + b, 0) / weights.length;
+                  if (avgWeight === 0) return '---';
+                  return (1000 / avgWeight).toFixed(2);
+                })()}
+              </span>
+              <span className="text-[7px] font-black text-indigo-400 uppercase">PRS/KG</span>
+            </div>
+          </div>
         </div>
       )}
 

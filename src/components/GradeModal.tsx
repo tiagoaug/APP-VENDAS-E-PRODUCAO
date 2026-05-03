@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Grid } from '../types';
-import { TableCellsMerge, X, Plus } from 'lucide-react';
+import { Grid, GridType } from '../types';
+import { TableCellsMerge, X, Plus, Target, Footprints } from 'lucide-react';
 
 interface GradeModalProps {
   isOpen: boolean;
@@ -11,15 +11,18 @@ interface GradeModalProps {
 
 export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModalProps) {
   const [name, setName] = useState(grid?.name || '');
+  const [type, setType] = useState<GridType>(grid?.type || GridType.FORMA);
   const [sizes, setSizes] = useState<string[]>(grid?.sizes || []);
   const [newSize, setNewSize] = useState('');
 
   useEffect(() => {
     if (grid) {
       setName(grid.name);
+      setType(grid.type);
       setSizes(grid.sizes || []);
     } else {
       setName('');
+      setType(GridType.FORMA);
       setSizes([]);
     }
   }, [grid, isOpen]);
@@ -40,7 +43,7 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
     if (!name.trim()) return;
     // configuration is kept for backward compatibility but quantities are managed in Embalagens
     const configuration: { [size: string]: number } = grid?.configuration || {};
-    onSave({ name: name.trim(), sizes, configuration });
+    onSave({ name: name.trim(), type, sizes, configuration });
     setName('');
     setSizes([]);
     onClose();
@@ -68,6 +71,35 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
           <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-600 dark:hover:text-slate-200 transition-colors">
             <X size={18} />
           </button>
+        </div>
+
+        {/* Type Selection */}
+        <div>
+          <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Tipo de Grade</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => setType(GridType.FORMA)}
+              className={`flex items-center justify-center gap-2 py-3 px-2 rounded-xl border-2 transition-all ${
+                type === GridType.FORMA
+                  ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg'
+                  : 'bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-400'
+              }`}
+            >
+              <Target size={14} />
+              <span className="text-[10px] font-black uppercase tracking-widest">Formas</span>
+            </button>
+            <button
+              onClick={() => setType(GridType.SOLADO)}
+              className={`flex items-center justify-center gap-2 py-3 px-2 rounded-xl border-2 transition-all ${
+                type === GridType.SOLADO
+                  ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg'
+                  : 'bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-400'
+              }`}
+            >
+              <Footprints size={14} />
+              <span className="text-[10px] font-black uppercase tracking-widest">Solados</span>
+            </button>
+          </div>
         </div>
 
         {/* Name */}

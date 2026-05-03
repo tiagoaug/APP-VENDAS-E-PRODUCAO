@@ -1,5 +1,5 @@
-﻿import { useState, useMemo, useEffect } from 'react';
-import { Product, Grid, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, TechSheetItem } from '../types';
+import { useState, useMemo, useEffect } from 'react';
+import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, TechSheetItem } from '../types';
 import { Save, Plus, Trash2, Camera, ChevronRight, ChevronLeft, Package, User, ToggleLeft as Toggle, Calendar, DollarSign, Tag, Calculator, Info, FileText, PlusCircle, Layers, Ruler, ExternalLink, ArrowUpDown, Footprints } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import ComboBox from '../components/ComboBox';
@@ -27,8 +27,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [reference, setReference] = useState(existingProduct?.reference || '');
   const [supplierId, setSupplierId] = useState(existingProduct?.supplierId || suppliers[0]?.id || '');
   const [categoryId, setCategoryId] = useState(existingProduct?.categoryId || productCategories[0]?.id || '');
-  const [defaultGridId, setDefaultGridId] = useState(existingProduct?.defaultGridId || grids[0]?.id || '');
-  const [productionGridId, setProductionGridId] = useState(existingProduct?.productionGridId || grids[0]?.id || '');
+  const formaGrids = useMemo(() => grids.filter(g => g.type === GridType.FORMA || !g.type), [grids]);
+
+  const [defaultGridId, setDefaultGridId] = useState(existingProduct?.defaultGridId || formaGrids[0]?.id || grids[0]?.id || '');
+  const [productionGridId, setProductionGridId] = useState(existingProduct?.productionGridId || formaGrids[0]?.id || grids[0]?.id || '');
   const [moldId, setMoldId] = useState(existingProduct?.moldId || '');
   const [soleMapping, setSoleMapping] = useState<{ [size: string]: string }>(existingProduct?.soleMapping || {});
   const [showSoleMapping, setShowSoleMapping] = useState(false);
@@ -45,15 +47,39 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   // Auto-initialize sole mapping and variation stock when grid changes
   useEffect(() => {
     const selectedGrid = grids.find(g => g.id === productionGridId);
+    const selectedMold = molds.find(m => m.id === moldId);
+    const moldSizes = selectedMold?.metadata?.sizes || [];
+
     if (selectedGrid) {
       // Initialize Sole Mapping for new sizes
       setSoleMapping(prev => {
         const newMapping = { ...prev };
         let changed = false;
+        
         selectedGrid.sizes.forEach(size => {
-          if (newMapping[size] === undefined) {
-            newMapping[size] = size; // Default mapping is 1:1
-            changed = true;
+          // If we don't have a mapping for this size yet
+          if (newMapping[size] === undefined || newMapping[size] === '') {
+            // If the mold has the same size, map it 1:1
+            if (moldSizes.includes(size)) {
+              newMapping[size] = size;
+              changed = true;
+            } else if (moldSizes.length > 0) {
+              // If not 1:1, maybe try to find the closest size? 
+              // For now, leave it empty if no exact match, unless it was previously mapped
+              // and the previous value is still in moldSizes
+            } else {
+              // Fallback to 1:1 if no mold sizes are defined (legacy or manual input)
+              newMapping[size] = size;
+              changed = true;
+            }
+          } else {
+            // If we have a mapping, but it's no longer in the new mold's sizes,
+            // we might want to clear it or keep it? 
+            // User said "pulls the grid from registry", so if the mapping is invalid for the new mold, maybe clear it.
+            if (moldSizes.length > 0 && !moldSizes.includes(newMapping[size])) {
+              // Only clear if it was an auto-mapping or if it's clearly invalid
+              // For now, let's keep it to avoid data loss, but the UI select will show it as empty or invalid.
+            }
           }
         });
         return changed ? newMapping : prev;
@@ -80,7 +106,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
         return changed ? next : prev;
       });
     }
-  }, [productionGridId, grids]);
+  }, [productionGridId, moldId, grids, molds]);
 
   const [activeVariationIndex, setActiveVariationIndex] = useState<number | null>(null);
   const [calcModal, setCalcModal] = useState<{ isOpen: boolean; field: string; value: number } | null>(null);
@@ -152,7 +178,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       <div className="flex flex-col gap-6 pb-60 pt-4 min-h-screen animate-in slide-in-from-right duration-300">
         <button 
           onClick={() => setActiveVariationIndex(null)} 
-          className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-400 mb-2"
+          className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-600 dark:text-slate-400 mb-2"
           aria-label="Voltar para a edição do produto"
           title="Voltar para o Produto"
         >
@@ -192,7 +218,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
              </div>
              
              <div className="flex flex-col border-l border-slate-100 dark:border-slate-800 pl-4 w-28">
-               <label className="text-[7px] uppercase font-bold text-slate-400 dark:text-slate-500 px-1 mb-1 block">Est. Min.</label>
+               <label className="text-[7px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block">Est. Min.</label>
                <input 
                  type="number"
                  className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-lg px-2 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500/10 text-slate-800 dark:text-slate-100 text-center"
@@ -221,7 +247,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                        <div key={size} className="grid grid-cols-4 gap-2 items-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
                           <span className="text-[11px] font-black text-slate-900 dark:text-white">{size}</span>
                           <div>
-                            <p className="text-[7px] font-bold text-slate-400 uppercase mb-0.5">Estoque (Pares)</p>
+                            <p className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-0.5">Estoque (Pares)</p>
                             <input 
                               type="number"
                               className="w-full bg-white dark:bg-slate-900 border-none rounded-md p-1.5 text-center text-[10px] font-bold"
@@ -236,7 +262,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                             />
                           </div>
                           <div>
-                            <p className="text-[7px] font-bold text-slate-400 uppercase mb-0.5">Custo (Par)</p>
+                            <p className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-0.5">Custo (Par)</p>
                             <input 
                               type="number"
                               step="0.01"
@@ -255,7 +281,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                             />
                           </div>
                           <div>
-                            <p className="text-[7px] font-bold text-slate-400 uppercase mb-0.5">Venda (Par)</p>
+                            <p className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-0.5">Venda (Par)</p>
                             <input 
                               type="number"
                               step="0.01"
@@ -522,7 +548,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
          <div className="space-y-6">
            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
              <div>
-               <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 mb-1.5 block tracking-wider">Referência Interna</label>
+               <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-1.5 block tracking-wider">Referência Interna</label>
                <input 
                  type="text" 
                  placeholder="Ex: SNK-102"
@@ -533,7 +559,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
              </div>
 
              <div>
-               <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 mb-1.5 block tracking-wider">Nome do Modelo</label>
+               <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-1.5 block tracking-wider">Nome do Modelo</label>
                <input 
                  type="text" 
                  placeholder="Ex: Tênis Runner Air"
@@ -562,26 +588,18 @@ export default function ProductFormView({ productId, products, grids, suppliers,
 
              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                <div>
-                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 mb-2 block tracking-widest leading-none">
+                 <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none">
                    Grade de Produção
                  </label>
                   <div className="relative group">
                     <select
                       title="Grade de Producao"
                       aria-label="Selecionar grade de tamanhos"
-                      className={`w-full border-2 rounded-2xl px-6 py-4 pl-12 appearance-none text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 
-'
-bg-slate-900 border-slate-800 text-white focus:border-indigo-500
-'
- : 
-'
-bg-white border-slate-100 text-slate-900 focus:border-indigo-500
-'
-}`}
+                      className={`w-full border-2 rounded-2xl px-6 py-4 pl-12 appearance-none text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-500'}`}
                       value={productionGridId}
                       onChange={(e) => setProductionGridId(e.target.value)}
                     >
-                      {grids.map(g => (
+                      {formaGrids.map(g => (
                         <option key={g.id} value={g.id} className="dark:bg-slate-900">
                           {g.name} ({g.sizes.join("/")})
                         </option>
@@ -593,7 +611,7 @@ bg-white border-slate-100 text-slate-900 focus:border-indigo-500
                 </div>
 
                <div>
-                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 mb-2 block tracking-widest leading-none">
+                 <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none">
                    Matriz de Solado
                  </label>
                  <div className="relative group">
@@ -638,16 +656,48 @@ bg-white border-slate-100 text-slate-900 focus:border-indigo-500
                 </button>
 
                 {/* Conteúdo expandido */}
-                {showSoleMapping && (
-                  <div className={`px-6 pb-6 pt-4 border-t-2 animate-in fade-in slide-in-from-top-2 duration-200 ${isDarkMode ? 'border-emerald-500/10 bg-slate-900/30' : 'border-emerald-100 bg-white/50'}`}>
-                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-5 leading-relaxed">
-                      Para cada tamanho de cabedal, informe o número equivalente de sola/forma usado na produção.
-                      <span className="text-emerald-600 dark:text-emerald-400 font-black"> Ex: cabedais 33 e 34 usam a sola 33/34.</span>
-                    </p>
 
-                    {grids.find(g => g.id === productionGridId)?.sizes?.length ? (
+                {/* Conteudo expandido */}
+                {showSoleMapping && (() => {
+                  const cabedal = grids.find(g => g.id === productionGridId);
+                  const mold = molds.find(m => m.id === moldId);
+                  const moldSizes = mold?.metadata?.sizes || [];
+
+                  if (!cabedal?.sizes?.length) {
+                    return (
+                      <div className={`px-6 pb-6 pt-4 border-t-2 ${isDarkMode ? 'border-emerald-500/10 bg-slate-900/30' : 'border-emerald-100 bg-white/50'}`}>
+                        <div className="text-center py-6 text-[10px] font-bold text-amber-500 uppercase tracking-widest border-2 border-dashed border-amber-100 dark:border-amber-900/30 rounded-2xl">
+                          Selecione uma Grade de Producao acima para mapear as numeracoes.
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (!moldId) {
+                    return (
+                      <div className={`px-6 pb-6 pt-4 border-t-2 ${isDarkMode ? 'border-emerald-500/10 bg-slate-900/30' : 'border-emerald-100 bg-white/50'}`}>
+                        <div className="text-center py-6 text-[10px] font-bold text-amber-500 uppercase tracking-widest border-2 border-dashed border-amber-100 dark:border-amber-900/30 rounded-2xl">
+                          Selecione uma Matriz de Solado acima para ativar o mapeamento.
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className={`px-6 pb-6 pt-4 border-t-2 animate-in fade-in slide-in-from-top-2 duration-200 ${isDarkMode ? 'border-emerald-500/10 bg-slate-900/30' : 'border-emerald-100 bg-white/50'}`}>
+                      <div className={`flex items-center gap-3 mb-4 p-3 rounded-xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-emerald-50'}`}>
+                        <Footprints size={14} className="text-emerald-500 shrink-0" />
+                        <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider leading-relaxed">
+                          Cruzando: <span className="text-slate-700 dark:text-slate-300 font-black">{cabedal.name}</span>
+                          {' '}x <span className="text-emerald-600 dark:text-emerald-400 font-black">{mold?.name}</span>
+                          {moldSizes.length === 0 && (
+                            <span className="text-amber-500 font-black"> — Matriz sem grade definida, insira manualmente.</span>
+                          )}
+                        </p>
+                      </div>
+
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                        {grids.find(g => g.id === productionGridId)!.sizes.map(cabedalSize => (
+                        {cabedal.sizes.map(cabedalSize => (
                           <div key={cabedalSize} className={`p-4 rounded-2xl border-2 flex flex-col items-center gap-3 transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 focus-within:border-emerald-500' : 'bg-white border-slate-100 shadow-sm focus-within:border-emerald-400'}`}>
                             <div className="text-center">
                               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Cabedal</span>
@@ -656,27 +706,39 @@ bg-white border-slate-100 text-slate-900 focus:border-indigo-500
                             <div className="w-7 h-7 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-300 dark:text-slate-600">
                               <ArrowUpDown size={13} />
                             </div>
-                            <div className={`w-full flex items-center gap-1.5 px-3 py-2.5 rounded-xl border-2 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 focus-within:border-emerald-500' : 'bg-emerald-50 border-emerald-100 focus-within:border-emerald-400'}`}>
-                              <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest shrink-0">Sola</span>
-                              <input
-                                type="text"
-                                value={soleMapping[cabedalSize] || ''}
-                                onChange={(e) => setSoleMapping({ ...soleMapping, [cabedalSize]: e.target.value })}
-                                className="w-full bg-transparent border-none text-right text-xs font-black text-slate-900 dark:text-white outline-none p-0"
-                                placeholder="Num."
-                                title={`Numeração da sola para o cabedal ${cabedalSize}`}
-                              />
+                            <div className={`w-full rounded-xl border-2 transition-all overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700 focus-within:border-emerald-500' : 'bg-emerald-50 border-emerald-100 focus-within:border-emerald-400'}`}>
+                              <div className="flex items-center px-2 py-1.5 gap-1">
+                                <span className="text-[7px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest shrink-0">Sola</span>
+                                {moldSizes.length > 0 ? (
+                                  <select
+                                    value={soleMapping[cabedalSize] || ''}
+                                    onChange={(e) => setSoleMapping({ ...soleMapping, [cabedalSize]: e.target.value })}
+                                    className="w-full bg-transparent border-none text-right text-xs font-black text-slate-900 dark:text-white outline-none p-0 cursor-pointer appearance-none"
+                                    title={`Numeracao da sola para o cabedal ${cabedalSize}`}
+                                  >
+                                    <option value="">--</option>
+                                    {moldSizes.map(s => (
+                                      <option key={s} value={s} className="dark:bg-slate-900">{s}</option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  <input
+                                    type="text"
+                                    value={soleMapping[cabedalSize] || ''}
+                                    onChange={(e) => setSoleMapping({ ...soleMapping, [cabedalSize]: e.target.value })}
+                                    className="w-full bg-transparent border-none text-right text-xs font-black text-slate-900 dark:text-white outline-none p-0"
+                                    placeholder="Num."
+                                    title={`Numeracao da sola para o cabedal ${cabedalSize}`}
+                                  />
+                                )}
+                              </div>
                             </div>
                           </div>
                         ))}
                       </div>
-                    ) : (
-                      <div className="text-center py-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl">
-                        Selecione uma Grade de Produção acima para mapear as numerações.
-                      </div>
-                    )}
-                  </div>
-                )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -697,7 +759,7 @@ bg-white border-slate-100 text-slate-900 focus:border-indigo-500
              
              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                <div className="group">
-                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 mb-2 block tracking-widest leading-none group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors">
+                 <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
                    {type === SaleType.WHOLESALE ? 'Custo por Caixa (R$)' : 'Custo Unitário (R$)'}
                  </label>
                  <div className="relative">
@@ -724,7 +786,7 @@ bg-white border-slate-100 text-slate-900 focus:border-indigo-500
                </div>
 
                <div className="group">
-                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 mb-2 block tracking-widest leading-none group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors">
+                 <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
                    {type === SaleType.WHOLESALE ? 'Venda por Caixa (R$)' : 'Venda Unitária (R$)'}
                  </label>
                  <div className="relative">
@@ -757,7 +819,7 @@ bg-white border-slate-100 text-slate-900 focus:border-indigo-500
                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Configuração de Volume (Varejo)</p>
                     </div>
                     <div>
-                      <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 mb-2 block tracking-widest">Grade de Tamanhos Padrão</label>
+                      <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest">Grade de Tamanhos Padrão</label>
                       <div className="relative">
                         <select 
                           className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-4 text-xs font-black appearance-none cursor-pointer text-slate-700 dark:text-slate-300 pr-10"
@@ -774,7 +836,7 @@ bg-white border-slate-100 text-slate-900 focus:border-indigo-500
                )}
 
                <div className={type === SaleType.WHOLESALE ? "col-span-1 sm:col-span-2" : "col-span-1"}>
-                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 mb-2 block tracking-widest leading-none">
+                 <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none">
                    {type === SaleType.WHOLESALE ? 'Estoque Mínimo (Caixas)' : 'Estoque Mín. Global'}
                  </label>
                  <div className="relative">
@@ -795,7 +857,7 @@ bg-white border-slate-100 text-slate-900 focus:border-indigo-500
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-[9px] uppercase font-bold text-slate-400 dark:text-slate-500 px-1 mb-1 block tracking-wider">Fornecedor</label>
+            <label className="text-[9px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Fornecedor</label>
             <ComboBox
               options={suppliers.map(s => ({ id: s.id, name: s.name }))}
               value={supplierId}
@@ -806,7 +868,7 @@ bg-white border-slate-100 text-slate-900 focus:border-indigo-500
             />
           </div>
           <div>
-            <label className="text-[9px] uppercase font-bold text-slate-400 dark:text-slate-500 px-1 mb-1 block tracking-wider">Categoria</label>
+            <label className="text-[9px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Categoria</label>
             <ComboBox
               options={[{ id: '', name: 'Nenhum' }, ...productCategories.map(c => ({ id: c.id, name: c.name }))]}
               value={categoryId}
@@ -824,7 +886,7 @@ bg-white border-slate-100 text-slate-900 focus:border-indigo-500
            </label>
            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="sm:col-span-1">
-                 <label className="text-[8px] uppercase font-bold text-slate-400 dark:text-slate-500 px-1 mb-1 block">A partir de</label>
+                 <label className="text-[8px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block">A partir de</label>
                  <input 
                    type="date"
                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-3 py-3 text-[10px] font-bold text-slate-900 dark:text-slate-100"
@@ -835,7 +897,7 @@ bg-white border-slate-100 text-slate-900 focus:border-indigo-500
               </div>
               <div className="sm:col-span-2 grid grid-cols-2 gap-2">
                 <div>
-                    <label className="text-[8px] uppercase font-bold text-slate-400 dark:text-slate-500 px-1 mb-1 block">Reajuste Custo (R$)</label>
+                    <label className="text-[8px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block">Reajuste Custo (R$)</label>
                     <div className="relative">
                         <input 
                         type="number"
@@ -858,7 +920,7 @@ bg-white border-slate-100 text-slate-900 focus:border-indigo-500
                     </div>
                 </div>
                 <div>
-                    <label className="text-[8px] uppercase font-bold text-slate-400 dark:text-slate-500 px-1 mb-1 block">Reajuste Venda (R$)</label>
+                    <label className="text-[8px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block">Reajuste Venda (R$)</label>
                     <div className="relative">
                         <input 
                         type="number"

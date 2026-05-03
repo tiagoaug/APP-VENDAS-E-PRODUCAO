@@ -13,9 +13,15 @@ export enum ProductStatus {
   INACTIVE = 'INACTIVE',
 }
 
+export enum GridType {
+  FORMA = 'FORMA',
+  SOLADO = 'SOLADO',
+}
+
 export type Grid = {
   id: string;
   name: string;
+  type: GridType;
   sizes: string[]; // List of sizes in this grid, e.g. ["37", "38", "39", "40"]
   configuration: { [size: string]: number }; // e.g., { "37": 2, "38": 4, "39": 4, "40": 2 }
 };
@@ -210,6 +216,7 @@ export enum CategoryType {
   REVENUE = 'REVENUE',
   PRODUCTION = 'PRODUCTION',
   GENERAL = 'GENERAL',
+  SUPPLY = 'SUPPLY',
   OTHER = 'OTHER',
 }
 
@@ -355,7 +362,11 @@ export type ProductionConfigItem = {
     hasTransfer?: boolean;
     colorVariations?: { colorId: string, subRef: string }[];
     sizeWeights?: Record<string, number>;
-    price?: number;
+    composition?: { 
+      materialId: string; 
+      quantity: number; 
+      type: 'weight' | 'percentage';
+    }[];
     
     [key: string]: any;
   };

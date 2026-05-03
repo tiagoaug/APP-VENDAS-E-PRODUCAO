@@ -976,9 +976,14 @@ export default function App() {
             categories={categories}
             colors={colors}
             productionConfigs={productionConfigs}
-            onSave={(product) => {
-              firebaseService.saveDocument("products", product);
-              goBack();
+            onSave={async (product) => {
+              try {
+                await firebaseService.saveDocument("products", product);
+                goBack();
+              } catch (err: any) {
+                console.error("Erro ao salvar produto:", err);
+                alert("Erro ao salvar produto: " + (err.message || err));
+              }
             }}
             onCancel={goBack}
             isDarkMode={isDarkMode}
@@ -2044,7 +2049,15 @@ export default function App() {
             onDeleteFlowTag={(id) => firebaseService.deleteDocument("flowTags", id)}
             onSaveSector={(sector) => firebaseService.saveDocument("sectors", sector)}
             onDeleteSector={(id) => firebaseService.deleteDocument("sectors", id)}
-            onSaveConfigItem={(item) => firebaseService.saveDocument("productionConfigs", item)}
+            onSaveConfigItem={async (item) => {
+              try {
+                await firebaseService.saveDocument("productionConfigs", item);
+                // The modal usually closes itself or is closed via state change in the view
+              } catch (err: any) {
+                console.error("Erro ao salvar item de configuração:", err);
+                alert("Erro ao salvar item: " + (err.message || err));
+              }
+            }}
             onDeleteConfigItem={(id) => firebaseService.deleteDocument("productionConfigs", id)}
             onUpdateSectorsOrder={(updatedSectors) => Promise.all(updatedSectors.map(s => firebaseService.saveDocument('sectors', s))).then(() => {})}
             onBack={goBack}
