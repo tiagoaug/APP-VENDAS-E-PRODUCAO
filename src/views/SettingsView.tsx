@@ -13,7 +13,10 @@ import {
   Moon,
   Sun,
   ChevronRight,
-  Layout
+  Layout,
+  Box,
+  Grid3X3,
+  Factory
 } from 'lucide-react';
 import { ViewType } from '../types';
 
@@ -26,19 +29,14 @@ interface SettingsViewProps {
 export default function SettingsView({ onNavigate, isDarkMode, toggleDarkMode }: SettingsViewProps) {
   const menuGroups = [
     {
-      title: "Cadastros Principal",
-      items: [
-        { id: ViewType.PRODUCTS, label: "Produtos (Produção)", icon: <Package size={24} />, color: "text-indigo-600 dark:text-indigo-400" },
-        { id: ViewType.STOCK, label: "Estoque Central", icon: <Boxes size={24} />, color: "text-amber-700 dark:text-amber-500" },
-        { id: ViewType.PEOPLE, label: "Clientes e Fornecedores", icon: <Users size={24} />, color: "text-emerald-600 dark:text-emerald-400" },
-      ]
-    },
-    {
       title: "Configurações de Produto",
       items: [
-        { id: ViewType.CATEGORIES, label: "Categorias", icon: <Tags size={24} />, color: "text-rose-600 dark:text-rose-400" },
-        { id: ViewType.GRIDS, label: "Grades de Tamanhos", icon: <TableCellsMerge size={24} />, color: "text-cyan-600 dark:text-cyan-400" },
-        { id: ViewType.COLORS, label: "Cores", icon: <Palette size={24} />, color: "text-purple-600 dark:text-purple-400" },
+        { id: ViewType.PRODUCT_SHEET, label: "Ficha Técnica (Produtos)", icon: <Box size={24} />, color: "text-indigo-600 dark:text-indigo-400" },
+        { id: ViewType.CATEGORIES, label: "Categorias", icon: <Tags size={24} />, color: "text-emerald-600 dark:text-emerald-400" },
+        { id: ViewType.GRADES, label: "Grades", icon: <Grid3X3 size={24} />, color: "text-violet-600 dark:text-violet-400" },
+        { id: ViewType.COLORS, label: "Cores", icon: <Palette size={24} />, color: "text-pink-600 dark:text-pink-400" },
+        { id: ViewType.PRODUCTION_CONFIG, label: "Configuração de Produção", icon: <Factory size={24} />, color: "text-orange-600 dark:text-orange-400" },
+        { id: ViewType.STOCK, label: "Estoque Central", icon: <Boxes size={24} />, color: "text-amber-700 dark:text-amber-500" },
       ]
     },
     {
@@ -46,14 +44,15 @@ export default function SettingsView({ onNavigate, isDarkMode, toggleDarkMode }:
       items: [
         { id: ViewType.ACCOUNTS, label: "Gerenciar Contas", icon: <Wallet size={24} />, color: "text-emerald-600 dark:text-emerald-400" },
         { id: ViewType.PAYMENT_METHODS, label: "Métodos de Pagamento", icon: <CreditCard size={24} />, color: "text-blue-600 dark:text-blue-400" },
+        { id: ViewType.PEOPLE, label: "Clientes e Fornecedores", icon: <Users size={24} />, color: "text-emerald-600 dark:text-emerald-400" },
         { id: ViewType.REPORTS, label: "Relatórios Avançados", icon: <BarChart3 size={24} />, color: "text-slate-600 dark:text-slate-400" },
-        { id: ViewType.BACKUP, label: "Backup & Formatação", icon: <Database size={24} />, color: "text-gray-600 dark:text-gray-400" },
       ]
     },
     {
-      title: "Personalização",
+      title: "Sistema & Backup",
       items: [
         { id: ViewType.DASHBOARD_CONFIG, label: "Organizar Dashboard", icon: <Layout size={24} />, color: "text-indigo-600 dark:text-indigo-400" },
+        { id: ViewType.BACKUP, label: "Backup & Formatação", icon: <Database size={24} />, color: "text-gray-600 dark:text-gray-400" },
       ]
     }
   ];
@@ -91,13 +90,13 @@ export default function SettingsView({ onNavigate, isDarkMode, toggleDarkMode }:
                 <button
                   key={item.id}
                   onClick={() => onNavigate(item.id)}
-                  className={`w-full flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${itemIdx !== group.items.length - 1 ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
+                  className={`w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${itemIdx !== group.items.length - 1 ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
                 >
                   <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 flex items-center justify-center ${item.color}`}>
+                    <div className={`w-10 h-10 flex items-center justify-center shrink-0 ${item.color}`}>
                       {item.icon}
                     </div>
-                    <span className={`text-sm font-bold tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{item.label}</span>
+                    <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.label}</p>
                   </div>
                   <ChevronRight size={20} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
                 </button>

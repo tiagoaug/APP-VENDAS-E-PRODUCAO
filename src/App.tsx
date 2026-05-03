@@ -26,6 +26,8 @@ import {
   Hammer,
   ClipboardList,
   PackageOpen,
+  ChevronRight,
+  FileText,
   User as UserIcon
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -61,6 +63,7 @@ import {
   DashboardCardConfig,
   FlowTag,
   Sector,
+  ProductionConfigItem,
 } from "./types";
 import {
   MOCK_PRODUCTS,
@@ -98,20 +101,54 @@ import StockView from "./views/StockView";
 import PersonDetailView from "./views/PersonDetailView";
 import LoginView from "./views/LoginView";
 import DashboardConfigView from "./views/DashboardConfigView";
-import PersonalFinancialView from "./views/PersonalFinancialView";
 import ProductionConfigView from "./views/ProductionConfigView";
+import ProductSheetMenuView from "./views/ProductSheetMenuView";
+import PersonalFinancialView from "./views/PersonalFinancialView";
 
 
 // Modals
 import AccountModal from "./components/AccountModal";
 import PaymentMethodModal from "./components/PaymentMethodModal";
+import Modal from "./components/Modal";
+
+const MODAL_VIEWS = [
+  ViewType.PRODUCTS,
+  ViewType.PRODUCT_FORM,
+  ViewType.PEOPLE,
+  ViewType.PERSON_DETAIL,
+  ViewType.CATEGORIES,
+  ViewType.GRIDS,
+  ViewType.COLORS,
+  ViewType.ACCOUNTS,
+  ViewType.PAYMENT_METHODS,
+  ViewType.BACKUP,
+  ViewType.REPORTS,
+  ViewType.DASHBOARD_CONFIG,
+  ViewType.PRODUCTION_CONFIG,
+  ViewType.PRODUCTION_PCP,
+  ViewType.PRODUCTION_STOCK,
+  ViewType.PRODUCTION_PURCHASE_NEEDS,
+  ViewType.PRODUCT_SHEET,
+  ViewType.STOCK,
+  ViewType.SALE_FORM,
+  ViewType.PURCHASE_FORM,
+  ViewType.PRODUCT_DETAIL,
+  ViewType.REPORT_DETAILED
+];
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState<ViewType>(ViewType.DASHBOARD);
+  const [lastNonModalView, setLastNonModalView] = useState<ViewType>(ViewType.DASHBOARD);
   const [history, setHistory] = useState<ViewType[]>([ViewType.DASHBOARD]);
   const [isDarkMode, setIsDarkMode] = useState(false);
+
+  useEffect(() => {
+    if (!MODAL_VIEWS.includes(currentView)) {
+      setLastNonModalView(currentView);
+    }
+  }, [currentView]);
 
   // Modals state
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
@@ -582,8 +619,8 @@ export default function App() {
     }
   };
 
-  const renderView = () => {
-    switch (currentView) {
+  const renderView = (view: ViewType) => {
+    switch (view) {
       case ViewType.DASHBOARD:
         return (
           <DashboardView
@@ -1898,38 +1935,38 @@ export default function App() {
                   transition={{ delay: 0.2 }}
                   className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-1"
                 >
-                  Gestão de Fábrica e PCP
+                  Módulo de Produção
                 </motion.p>
               </div>
             </header>
 
-            <div className="grid grid-cols-1 gap-4">
-              {[
-                { id: ViewType.PRODUCTION_PCP, label: 'PCP Central', desc: 'Planejamento e Controle', icon: <GanttChartSquare size={26} />, color: 'text-indigo-600', bg: 'bg-indigo-50' },
-                { id: ViewType.PRODUCTION_STOCK, label: 'Estoque de Materiais', desc: 'Insumos e Matéria Prima', icon: <PackageOpen size={26} />, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-                { id: ViewType.PRODUCTION_PURCHASE_NEEDS, label: 'Necessidade de Compras', desc: 'Previsão de Suprimentos', icon: <ClipboardList size={26} />, color: 'text-amber-600', bg: 'bg-amber-50' },
-                { id: ViewType.PRODUCTION_CONFIG, label: 'Configurações de Produção', desc: 'Parâmetros e Máquinas', icon: <Hammer size={26} />, color: 'text-slate-600', bg: 'bg-slate-100' },
-              ].map((item, index) => (
-                <motion.button
-                  key={item.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.1 * (index + 3) }}
-                  onClick={() => navigateTo(item.id)}
-                  className={`p-6 rounded-[2.5rem] border-2 flex items-center gap-6 transition-all active:scale-[0.98] group ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/30' : 'bg-white border-slate-50 shadow-sm hover:border-indigo-100'}`}
-                >
-                  <div className={`w-16 h-16 rounded-[1.5rem] ${isDarkMode ? 'bg-slate-800' : item.bg} flex items-center justify-center ${item.color} group-hover:scale-110 transition-transform`}>
-                    {item.icon}
-                  </div>
-                  <div className="text-left flex-1">
-                    <p className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.label}</p>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{item.desc}</p>
-                  </div>
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-600' : 'bg-slate-50 text-slate-300'} group-hover:bg-indigo-600 group-hover:text-white transition-colors`}>
-                    <Plus size={20} strokeWidth={3} />
-                  </div>
-                </motion.button>
-              ))}
+            <div className="flex flex-col gap-6">
+              <div className="flex flex-col gap-3">
+                <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Gestão de Fábrica e PCP</h3>
+                <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                  {[
+                    { id: ViewType.PRODUCTION_PCP, label: 'PCP Central', icon: <GanttChartSquare size={22} />, color: 'text-indigo-600' },
+                    { id: ViewType.PRODUCTION_STOCK, label: 'Estoque de Materiais', icon: <PackageOpen size={22} />, color: 'text-emerald-600' },
+                    { id: ViewType.PRODUCTION_PURCHASE_NEEDS, label: 'Necessidade de Compras', icon: <ClipboardList size={22} />, color: 'text-amber-600' },
+                  ].map((item, index, array) => (
+                    <button
+                      key={item.id}
+                      onClick={() => navigateTo(item.id)}
+                      className={`w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${index !== array.length - 1 ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={`w-10 h-10 flex items-center justify-center shrink-0 ${item.color}`}>
+                          {item.icon}
+                        </div>
+                        <div className="text-left">
+                          <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.label}</p>
+                        </div>
+                      </div>
+                      <ChevronRight size={20} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <motion.div 
@@ -1972,6 +2009,16 @@ export default function App() {
             isDarkMode={isDarkMode}
             people={people}
             colors={colors}
+            grids={grids}
+            categories={categories}
+          />
+        );
+      case ViewType.PRODUCT_SHEET:
+        return (
+          <ProductSheetMenuView 
+            onNavigate={navigateTo}
+            onBack={goBack}
+            isDarkMode={isDarkMode}
           />
         );
       case ViewType.PRODUCTION_PCP:
@@ -2024,6 +2071,7 @@ export default function App() {
         ViewType.PAYMENT_METHODS,
         ViewType.REPORTS,
         ViewType.BACKUP,
+        ViewType.PRODUCT_SHEET,
       ].includes(currentView)
     )
       return "settings";
@@ -2076,13 +2124,24 @@ export default function App() {
         return "Necessidade de Compras";
       case ViewType.PRODUCTION_CONFIG:
         return "Configurações de Produção";
+      case ViewType.PRODUCT_SHEET:
+        return "Ficha Técnica";
+      case ViewType.PRODUCT_FORM:
+        return "Cadastro de Produto";
+      case ViewType.SALE_FORM:
+        return "Lançamento de Venda";
+      case ViewType.PURCHASE_FORM:
+        return "Lançamento de Compra";
+      case ViewType.PERSON_DETAIL:
+        return "Detalhes do Cadastro";
       default:
         return "Detalhes";
     }
   }, [currentView]);
 
   const viewIcon = useMemo(() => {
-    switch(currentView) {
+    const viewToUse = MODAL_VIEWS.includes(currentView) ? lastNonModalView : currentView;
+    switch(viewToUse) {
       case ViewType.DASHBOARD: return <LayoutDashboard size={24} className="text-indigo-600 dark:text-indigo-400" />;
       case ViewType.PURCHASES:
       case ViewType.PURCHASE_FORM: return <ShoppingCart size={24} className="text-cyan-500 dark:text-cyan-400" />;
@@ -2110,10 +2169,27 @@ export default function App() {
       case ViewType.PRODUCTION_STOCK: return <PackageOpen size={24} className="text-emerald-600 dark:text-emerald-400" />;
       case ViewType.PRODUCTION_PURCHASE_NEEDS: return <ClipboardList size={24} className="text-amber-600 dark:text-amber-400" />;
       case ViewType.PRODUCTION_CONFIG: return <Hammer size={24} className="text-slate-500 dark:text-slate-400" />;
+      case ViewType.PRODUCT_SHEET: return <FileText size={24} className="text-slate-500 dark:text-slate-400" />;
       
       default: return <Shield size={24} className="text-blue-600 dark:text-blue-400" />;
     }
-  }, [currentView]);
+  }, [currentView, lastNonModalView]);
+
+  const headerTitle = useMemo(() => {
+    if (MODAL_VIEWS.includes(currentView)) {
+      switch (lastNonModalView) {
+        case ViewType.DASHBOARD: return "GESTAO PRO";
+        case ViewType.PURCHASES: return "Compras";
+        case ViewType.SALES: return "Vendas";
+        case ViewType.PRODUCTION_MENU: return "Módulo de Produção";
+        case ViewType.FINANCIAL: return "Financeiro";
+        case ViewType.PERSONAL_FINANCIAL: return "Financeiro Pessoal";
+        case ViewType.SETTINGS: return "Mais Opções";
+        default: return "GESTAO PRO";
+      }
+    }
+    return viewTitle;
+  }, [currentView, lastNonModalView, viewTitle]);
 
   if (loading) {
     return (
@@ -2149,7 +2225,7 @@ export default function App() {
             {viewIcon}
           </div>
           <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
-            {viewTitle}
+            {headerTitle}
           </h1>
         </div>
         <div className="flex items-center gap-3 text-slate-500">
@@ -2174,17 +2250,27 @@ export default function App() {
       <main className="flex-1 overflow-y-auto pb-28">
         <AnimatePresence mode="wait">
           <motion.div
-            key={currentView}
+            key={lastNonModalView}
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 1.02 }}
             transition={{ duration: 0.15 }}
             className="p-6 min-h-full"
           >
-            {renderView()}
+            {renderView(lastNonModalView)}
           </motion.div>
         </AnimatePresence>
       </main>
+
+      {/* Global Modal View */}
+      <Modal 
+        isOpen={MODAL_VIEWS.includes(currentView)} 
+        onClose={goBack}
+        title={viewTitle}
+        maxWidth={currentView === ViewType.PRODUCT_FORM ? "max-w-4xl" : "max-w-2xl"}
+      >
+        {renderView(currentView)}
+      </Modal>
 
       {/* Bottom Tab Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 flex items-center justify-around py-3 px-2 pb-6 z-40">

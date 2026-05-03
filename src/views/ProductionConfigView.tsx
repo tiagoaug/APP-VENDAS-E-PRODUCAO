@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, FormEvent, ChangeEvent, ReactNode } from 'react';
 import { motion, AnimatePresence, Reorder, useDragControls } from 'motion/react';
 import { 
   Tags, 
@@ -19,14 +19,29 @@ import {
   Footprints,
   Box,
   Package,
+  PackageOpen,
   Grid3X3,
   Search,
   ChevronDown,
   Camera,
   Target,
-  Loader2
+  Loader2,
+  Users,
+  Scale,
+  Palette,
+  Circle,
+  CheckCircle2,
+  ChevronRight,
+  ArrowLeft,
+  TableCellsMerge,
+  GanttChartSquare,
+  Hammer,
+  ClipboardList,
+  FileText
 } from 'lucide-react';
-import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue } from '../types';
+import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, CategoryType } from '../types';
+import Modal from '../components/Modal';
+import ConfigMenuItem from '../components/ConfigMenuItem';
 
 interface ProductionConfigViewProps {
   flowTags: FlowTag[];
@@ -43,6 +58,8 @@ interface ProductionConfigViewProps {
   isDarkMode: boolean;
   people?: Person[];
   colors?: ColorValue[];
+  grids?: Grid[];
+  categories?: any[];
 }
 
 const SECTOR_COLORS = [
@@ -62,16 +79,8 @@ const SECTOR_COLORS = [
 
 type ScreenType = 'MENU' | 'SECTORS' | 'FLOW_TAGS' | 'UNIDADES' | 'FACAS' | 'INFESTO' | 'PRAZOS' | 'FICHAS' | 'EMBALAGENS' | 'INSUMOS' | 'MATRIZES';
 
-const MASTER_CATEGORIES = [
-  'CABEDAL',
-  'FORRO',
-  'SOLADO',
-  'ADESIVOS',
-  'QUÍMICOS',
-  'EMBALAGEM',
-  'COMPONENTES',
-  'OUTROS'
-];
+// Master categories for production materials
+const MASTER_CATEGORIES = ['SOLADOS', 'PALMILHAS', 'COURO/SINTÉTICO', 'FORROS', 'ADESIVOS', 'LINHAS', 'EMBALAGENS', 'OUTROS'];
 
 const DEFAULT_UNITS = [
   { name: 'UN', description: 'Unidade' },
@@ -97,7 +106,11 @@ export default function ProductionConfigView({
   onDeleteConfigItem,
   onUpdateSectorsOrder,
   onBack,
-  isDarkMode
+  isDarkMode,
+  people = [],
+  colors = [],
+  grids = [],
+  categories = []
 }: ProductionConfigViewProps) {
   const [currentScreen, setCurrentScreen] = useState<ScreenType>('MENU');
   const [editingTag, setEditingTag] = useState<FlowTag | null>(null);
@@ -161,44 +174,9 @@ export default function ProductionConfigView({
     setEditingSector({ ...editingSector, flowTagIds: newIds });
   };
 
-  const getScreenTitle = () => {
-    switch(currentScreen) {
-      case 'MENU': return 'Configurações';
-      case 'SECTORS': return 'Setores';
-      case 'FLOW_TAGS': return 'Flow Tags';
-      case 'UNIDADES': return 'Unidades';
-      case 'FACAS': return 'Facas Corte';
-      case 'INFESTO': return 'Infesto';
-      case 'PRAZOS': return 'Prazos';
-      case 'FICHAS': return 'Fichas Técnicas';
-      case 'EMBALAGENS': return 'Padrão Embalagens';
-      case 'INSUMOS': return 'Insumos';
-      case 'MATRIZES': return 'Matrizes Sola';
-      default: return 'Configurações';
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#fafafa] dark:bg-slate-950 overflow-hidden">
-      {/* Header */}
-      <div className={`px-4 pt-12 pb-4 border-b shrink-0 flex items-center justify-between ${isDarkMode ? 'bg-slate-950 border-slate-800/60' : 'bg-white border-slate-100 shadow-sm'}`}>
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={currentScreen === 'MENU' ? onBack : () => setCurrentScreen('MENU')}
-            className={`p-2 rounded-xl transition-all ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-slate-50 text-slate-500 border border-slate-100'}`}
-          >
-            <ChevronLeft size={20} />
-          </button>
-          <div>
-            <h2 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-              {getScreenTitle()}
-            </h2>
-            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-none mt-0.5">Produção</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-4 py-6 pb-32">
+    <div className="flex flex-col gap-6">
+      <div className="flex-1 overflow-y-auto pb-32 custom-scrollbar">
         <AnimatePresence mode="wait">
           {currentScreen === 'MENU' && (
             <motion.div
@@ -206,283 +184,322 @@ export default function ProductionConfigView({
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="flex flex-col gap-3"
-            >
-              <ConfigMenuItem 
-                icon={<Factory size={24} />}
-                label="Setores"
-                desc="Ordem de Produção"
-                color="text-indigo-600"
-                bg="bg-indigo-50"
-                isDarkMode={isDarkMode}
-                onClick={() => setCurrentScreen('SECTORS')}
-              />
-              <ConfigMenuItem 
-                icon={<Tags size={24} />}
-                label="Flow Tags"
-                desc="Categorias de Serviços"
-                color="text-emerald-600"
-                bg="bg-emerald-50"
-                isDarkMode={isDarkMode}
-                onClick={() => setCurrentScreen('FLOW_TAGS')}
-              />
-              <ConfigMenuItem 
-                icon={<Ruler size={24} />}
-                label="Unidades"
-                desc="Medidas"
-                color="text-slate-600"
-                bg="bg-slate-100"
-                isDarkMode={isDarkMode}
-                onClick={() => setCurrentScreen('UNIDADES')}
-              />
-              <ConfigMenuItem 
-                icon={<Scissors size={24} />}
-                label="Facas Corte"
-                desc="Matrizes"
-                color="text-orange-600"
-                bg="bg-orange-50"
-                isDarkMode={isDarkMode}
-                onClick={() => setCurrentScreen('FACAS')}
-              />
-              <ConfigMenuItem 
-                icon={<Layers size={24} />}
-                label="Infesto"
-                desc="Camadas"
-                color="text-blue-600"
-                bg="bg-blue-50"
-                isDarkMode={isDarkMode}
-                onClick={() => setCurrentScreen('INFESTO')}
-              />
-              <ConfigMenuItem 
-                icon={<CalendarClock size={24} />}
-                label="Prazos"
-                desc="SLA Entrega"
-                color="text-teal-600"
-                bg="bg-teal-50"
-                isDarkMode={isDarkMode}
-                onClick={() => setCurrentScreen('PRAZOS')}
-              />
-              <ConfigMenuItem 
-                icon={<Footprints size={24} />}
-                label="Fichas Técnicas"
-                desc="Modelagem"
-                color="text-slate-700"
-                bg="bg-slate-100"
-                isDarkMode={isDarkMode}
-                onClick={() => setCurrentScreen('FICHAS')}
-              />
-              <ConfigMenuItem 
-                icon={<Grid3X3 size={24} />}
-                label="Padrão Embalagens"
-                desc="Tamanhos & Grades"
-                color="text-violet-600"
-                bg="bg-violet-50"
-                isDarkMode={isDarkMode}
-                onClick={() => setCurrentScreen('EMBALAGENS')}
-              />
-              <ConfigMenuItem 
-                icon={<Package size={24} />}
-                label="Insumos"
-                desc="Catálogo"
-                color="text-amber-600"
-                bg="bg-amber-50"
-                isDarkMode={isDarkMode}
-                onClick={() => setCurrentScreen('INSUMOS')}
-              />
-              <ConfigMenuItem 
-                icon={<Grid3X3 size={24} />}
-                label="Matrizes Sola"
-                desc="Solados"
-                color="text-slate-800"
-                bg="bg-slate-100"
-                isDarkMode={isDarkMode}
-                onClick={() => setCurrentScreen('MATRIZES')}
-              />
-            </motion.div>
-          )}
-
-          {currentScreen === 'SECTORS' && (
-            <motion.div
-              key="sectors"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
               className="flex flex-col gap-6"
             >
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Setores de Fábrica</h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Defina a ordem da produção</p>
-                </div>
-                <button 
-                  onClick={() => {
-                    setEditingSector({ id: '', name: '', color: '', order: sectors.length, flowTagIds: [] });
-                    setIsAddingSector(true);
-                  }}
-                  className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
-                >
-                  <Plus size={24} strokeWidth={3} />
-                </button>
-              </div>
-
-              <Reorder.Group 
-                axis="y" 
-                values={sectors} 
-                onReorder={onUpdateSectorsOrder}
-                className="flex flex-col gap-4"
-              >
-                {sectors.map((sector) => (
-                  <SectorCard 
-                    key={sector.id}
-                    sector={sector}
-                    flowTags={flowTags}
-                    isDarkMode={isDarkMode}
-                    onEdit={() => {
-                      setEditingSector({ ...sector });
-                      setIsAddingSector(false);
-                    }}
-                    onDelete={() => onDeleteSector(sector.id)}
+              <div className="flex flex-col gap-3">
+                <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Ajustes de Produção</h3>
+                <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                  <ConfigMenuItem
+                    icon={<TableCellsMerge size={22} />}
+                    label="Setores de Produção"
+                    onClick={() => setCurrentScreen('SECTORS')}
+                    color="text-indigo-600"
                   />
-                ))}
-              </Reorder.Group>
-
-              {sectors.length === 0 && (
-                <div className={`p-12 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center text-center gap-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                  <div className="w-16 h-16 rounded-3xl bg-slate-100 dark:bg-slate-900 flex items-center justify-center text-slate-300">
-                    <Factory size={32} />
-                  </div>
-                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Nenhum setor cadastrado</p>
+                  <ConfigMenuItem
+                    icon={<Tags size={22} />}
+                    label="Etapas e Processos"
+                    onClick={() => setCurrentScreen('FLOW_TAGS')}
+                    color="text-emerald-600"
+                  />
+                  <ConfigMenuItem
+                    icon={<GanttChartSquare size={22} />}
+                    label="Unidades de Medida"
+                    onClick={() => setCurrentScreen('UNIDADES')}
+                  />
+                  <ConfigMenuItem 
+                    icon={<Scissors size={24} />}
+                    label="Facas Corte"
+                    desc="Matrizes"
+                    color="text-orange-600"
+                    bg="bg-orange-50"
+                    isDarkMode={isDarkMode}
+                    onClick={() => setCurrentScreen('FACAS')}
+                  />
+                  <ConfigMenuItem 
+                    icon={<Layers size={24} />}
+                    label="Infesto"
+                    desc="Camadas"
+                    color="text-blue-600"
+                    bg="bg-blue-50"
+                    isDarkMode={isDarkMode}
+                    onClick={() => setCurrentScreen('INFESTO')}
+                  />
+                  <ConfigMenuItem 
+                    icon={<CalendarClock size={24} />}
+                    label="Prazos"
+                    desc="SLA Entrega"
+                    color="text-teal-600"
+                    bg="bg-teal-50"
+                    isDarkMode={isDarkMode}
+                    onClick={() => setCurrentScreen('PRAZOS')}
+                  />
+                  <ConfigMenuItem 
+                    icon={<Footprints size={24} />}
+                    label="Fichas Técnicas"
+                    desc="Modelagem"
+                    color="text-slate-700"
+                    bg="bg-slate-100"
+                    isDarkMode={isDarkMode}
+                    onClick={() => setCurrentScreen('FICHAS')}
+                  />
+                  <ConfigMenuItem 
+                    icon={<Grid3X3 size={24} />}
+                    label="Padrão Embalagens"
+                    desc="Tamanhos & Grades"
+                    color="text-violet-600"
+                    bg="bg-violet-50"
+                    isDarkMode={isDarkMode}
+                    onClick={() => setCurrentScreen('EMBALAGENS')}
+                  />
+                  <ConfigMenuItem 
+                    icon={<Package size={24} />}
+                    label="Insumos"
+                    desc="Catálogo"
+                    color="text-amber-600"
+                    bg="bg-amber-50"
+                    isDarkMode={isDarkMode}
+                    onClick={() => setCurrentScreen('INSUMOS')}
+                  />
+                  <ConfigMenuItem 
+                    icon={<Grid3X3 size={24} />}
+                    label="Matrizes Sola"
+                    desc="Solados"
+                    color="text-slate-800"
+                    bg="bg-slate-100"
+                    isDarkMode={isDarkMode}
+                    onClick={() => setCurrentScreen('MATRIZES')}
+                    isLast
+                  />
                 </div>
-              )}
-            </motion.div>
-          )}
-
-          {currentScreen === 'FLOW_TAGS' && (
-            <motion.div
-              key="flowtags"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="flex flex-col gap-6"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Flow Tags</h3>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Categorias de Serviços</p>
-                </div>
-                <button 
-                  onClick={() => {
-                    setEditingTag({ id: '', name: '', subcategories: [] });
-                    setIsAddingTag(true);
-                  }}
-                  className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
-                >
-                  <Plus size={24} strokeWidth={3} />
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4">
-                {flowTags.map((tag) => (
-                  <motion.div
-                    key={tag.id}
-                    layout
-                    className={`p-6 rounded-[2.5rem] border flex items-center justify-between group ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}
-                  >
-                    <div className="flex items-center gap-5">
-                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
-                        <Tags size={24} />
-                      </div>
-                      <div>
-                        <p className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{tag.name}</p>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
-                          {tag.subcategories.length} {tag.subcategories.length === 1 ? 'Subcategoria' : 'Subcategorias'}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button 
-                        onClick={() => {
-                          setEditingTag({ ...tag });
-                          setIsAddingTag(false);
-                        }}
-                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-indigo-600'}`}
-                      >
-                        <Edit3 size={18} />
-                      </button>
-                      <button 
-                        onClick={() => {
-                          if (confirm('Deseja excluir esta Flow Tag?')) onDeleteFlowTag(tag.id);
-                        }}
-                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-red-400' : 'bg-slate-50 text-slate-400 hover:text-red-500'}`}
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
-
-                {flowTags.length === 0 && (
-                  <div className={`p-12 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center text-center gap-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                    <div className="w-16 h-16 rounded-3xl bg-slate-100 dark:bg-slate-900 flex items-center justify-center text-slate-300">
-                      <Tags size={32} />
-                    </div>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Nenhuma Flow Tag cadastrada</p>
-                  </div>
-                )}
               </div>
             </motion.div>
           )}
 
-          {currentScreen === 'FACAS' && (
-            <motion.div key="facas" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <GenericConfigList title="Facas de Corte" label="FACAS" items={productionConfigs} type="TOOL" icon={<Scissors size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} placeholderLabel="Nenhuma faca cadastrada" />
-            </motion.div>
-          )}
 
-          {currentScreen === 'UNIDADES' && (
-            <motion.div key="unidades" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <GenericConfigList title="Unidades" label="UNIDADES" items={productionConfigs} type="UNIT" icon={<Ruler size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} placeholderLabel="Nenhuma unidade cadastrada" seedDefaults={DEFAULT_UNITS} />
-            </motion.div>
-          )}
 
-          {currentScreen === 'INFESTO' && (
-            <motion.div key="infesto" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <GenericConfigList title="Infesto" label="INFESTO" items={productionConfigs} type="INFESTO" icon={<Layers size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} placeholderLabel="Nenhum registro de infesto" />
-            </motion.div>
-          )}
-
-          {currentScreen === 'PRAZOS' && (
-            <motion.div key="prazos" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <GenericConfigList title="Prazos" label="PRAZOS" items={productionConfigs} type="DEADLINE" icon={<CalendarClock size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} placeholderLabel="Nenhum prazo cadastrado" />
-            </motion.div>
-          )}
-
-          {currentScreen === 'FICHAS' && (
-            <motion.div key="fichas" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <GenericConfigList title="Fichas Técnicas" label="FICHAS TÉCNICAS" items={productionConfigs} type="TECH_SHEET" icon={<Footprints size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} placeholderLabel="Nenhuma ficha técnica" />
-            </motion.div>
-          )}
-
-          {currentScreen === 'EMBALAGENS' && (
-            <motion.div key="embalagens" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <GenericConfigList title="Padrão de Embalagens" label="PADRÃO EMBALAGENS" items={productionConfigs} type="PACKAGING" icon={<Grid3X3 size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} placeholderLabel="Nenhum padrão de embalagem" />
-            </motion.div>
-          )}
-
-          {currentScreen === 'INSUMOS' && (
-            <motion.div key="insumos" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <GenericConfigList title="Insumos" label="INSUMOS" items={productionConfigs} type="MATERIAL" icon={<Package size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} placeholderLabel="Nenhum insumo cadastrado" />
-            </motion.div>
-          )}
-
-          {currentScreen === 'MATRIZES' && (
-            <motion.div key="matrizes" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <GenericConfigList title="Matrizes Sola" label="MATRIZES SOLA" items={productionConfigs} type="MOLD" icon={<Grid3X3 size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} placeholderLabel="Nenhuma matriz cadastrada" />
-            </motion.div>
-          )}
         </AnimatePresence>
       </div>
 
+      {/* Modals for RAMIFICAÇÕES (Sub-screens) */}
+      <Modal 
+        isOpen={currentScreen === 'SECTORS'} 
+        onClose={() => setCurrentScreen('MENU')}
+        title="Setores de Produção"
+      >
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Setores de Fábrica</h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Defina a ordem da produção</p>
+            </div>
+            <button 
+              onClick={() => {
+                setEditingSector({ id: '', name: '', color: '', order: sectors.length, flowTagIds: [] });
+                setIsAddingSector(true);
+              }}
+              className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+            >
+              <Plus size={24} strokeWidth={3} />
+            </button>
+          </div>
+
+          <Reorder.Group 
+            axis="y" 
+            values={sectors} 
+            onReorder={onUpdateSectorsOrder}
+            className="flex flex-col gap-4"
+          >
+            {sectors.map((sector) => (
+              <SectorCard 
+                key={sector.id}
+                sector={sector}
+                flowTags={flowTags}
+                isDarkMode={isDarkMode}
+                onEdit={() => {
+                  setEditingSector({ ...sector });
+                  setIsAddingSector(false);
+                }}
+                onDelete={() => onDeleteSector(sector.id)}
+              />
+            ))}
+          </Reorder.Group>
+
+          {sectors.length === 0 && (
+            <div className={`p-12 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center text-center gap-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="w-16 h-16 rounded-3xl bg-slate-100 dark:bg-slate-900 flex items-center justify-center text-slate-300">
+                <Factory size={32} />
+              </div>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Nenhum setor cadastrado</p>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      <Modal 
+        isOpen={currentScreen === 'FLOW_TAGS'} 
+        onClose={() => setCurrentScreen('MENU')}
+        title="Etapas e Processos"
+      >
+        <div className="flex flex-col gap-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Flow Tags</h3>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Categorias de Serviços</p>
+            </div>
+            <button 
+              onClick={() => {
+                setEditingTag({ id: '', name: '', subcategories: [] });
+                setIsAddingTag(true);
+              }}
+              className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+            >
+              <Plus size={24} strokeWidth={3} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            {flowTags.map((tag) => (
+              <div
+                key={tag.id}
+                className={`p-6 rounded-[2.5rem] border flex items-center justify-between group ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}
+              >
+                <div className="flex items-center gap-5">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+                    <Tags size={24} />
+                  </div>
+                  <div>
+                    <p className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{tag.name}</p>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                      {tag.subcategories.length} {tag.subcategories.length === 1 ? 'Subcategoria' : 'Subcategorias'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => {
+                      setEditingTag({ ...tag });
+                      setIsAddingTag(false);
+                    }}
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-indigo-600'}`}
+                  >
+                    <Edit3 size={18} />
+                  </button>
+                  <button 
+                    onClick={() => {
+                      if (confirm('Deseja excluir esta Flow Tag?')) onDeleteFlowTag(tag.id);
+                    }}
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-red-400' : 'bg-slate-50 text-slate-400 hover:text-red-500'}`}
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            {flowTags.length === 0 && (
+              <div className={`p-12 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center text-center gap-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                <div className="w-16 h-16 rounded-3xl bg-slate-100 dark:bg-slate-900 flex items-center justify-center text-slate-300">
+                  <Tags size={32} />
+                </div>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Nenhuma Flow Tag cadastrada</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      <Modal 
+        isOpen={currentScreen === 'UNIDADES'} 
+        onClose={() => setCurrentScreen('MENU')}
+        title="Unidades de Medida"
+      >
+        <GenericConfigList title="Unidades" label="UNIDADES" items={productionConfigs} type="UNIT" icon={<Ruler size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} onBack={() => setCurrentScreen('MENU')} placeholderLabel="Nenhuma unidade cadastrada" seedDefaults={DEFAULT_UNITS} />
+      </Modal>
+
+      <Modal 
+        isOpen={currentScreen === 'FACAS'} 
+        onClose={() => setCurrentScreen('MENU')}
+        title="Facas de Corte"
+      >
+        <GenericConfigList title="Facas de Corte" label="FACAS" items={productionConfigs} type="TOOL" icon={<Scissors size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} onBack={() => setCurrentScreen('MENU')} placeholderLabel="Nenhuma faca cadastrada" />
+      </Modal>
+
+      <Modal 
+        isOpen={currentScreen === 'INFESTO'} 
+        onClose={() => setCurrentScreen('MENU')}
+        title="Configuração de Infestos"
+      >
+        <GenericConfigList title="Infesto" label="INFESTO" items={productionConfigs} type="INFESTO" icon={<Layers size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} onBack={() => setCurrentScreen('MENU')} placeholderLabel="Nenhum registro de infesto" />
+      </Modal>
+
+      <Modal 
+        isOpen={currentScreen === 'PRAZOS'} 
+        onClose={() => setCurrentScreen('MENU')}
+        title="Prazos Padrão"
+      >
+        <GenericConfigList title="Prazos" label="PRAZOS" items={productionConfigs} type="DEADLINE" icon={<CalendarClock size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} onBack={() => setCurrentScreen('MENU')} placeholderLabel="Nenhum prazo cadastrado" />
+      </Modal>
+
+      <Modal 
+        isOpen={currentScreen === 'FICHAS'} 
+        onClose={() => setCurrentScreen('MENU')}
+        title="Fichas Técnicas"
+      >
+        <GenericConfigList title="Fichas Técnicas" label="FICHAS TÉCNICAS" items={productionConfigs} type="TECH_SHEET" icon={<Footprints size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} onBack={() => setCurrentScreen('MENU')} placeholderLabel="Nenhuma ficha técnica" />
+      </Modal>
+
+      <Modal 
+        isOpen={currentScreen === 'EMBALAGENS'} 
+        onClose={() => setCurrentScreen('MENU')}
+        title="Padrão de Embalagens"
+      >
+        <GenericConfigList title="Padrão de Embalagens" label="PADRÃO EMBALAGENS" items={productionConfigs} type="PACKAGING" icon={<Grid3X3 size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} onBack={() => setCurrentScreen('MENU')} placeholderLabel="Nenhum padrão de embalagem" />
+      </Modal>
+
+      <Modal 
+        isOpen={currentScreen === 'INSUMOS'} 
+        onClose={() => setCurrentScreen('MENU')}
+        title="Catálogo de Insumos"
+      >
+        <GenericConfigList title="Insumos" label="INSUMOS" items={productionConfigs} type="MATERIAL" icon={<Package size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} onBack={() => setCurrentScreen('MENU')} placeholderLabel="Nenhum insumo cadastrado" />
+      </Modal>
+
+      <Modal 
+        isOpen={currentScreen === 'MATRIZES'} 
+        onClose={() => setCurrentScreen('MENU')}
+        title="Matrizes Sola"
+      >
+        <GenericConfigList 
+          title="Matrizes Sola" 
+          label="MATRIZES SOLA" 
+          items={productionConfigs} 
+          type="MOLD" 
+          icon={<Grid3X3 size={22} />} 
+          isDarkMode={isDarkMode} 
+          onSave={onSaveConfigItem} 
+          onDelete={onDeleteConfigItem} 
+          onBack={() => setCurrentScreen('MENU')}
+          placeholderLabel="Nenhuma matriz cadastrada"
+          people={people}
+          colors={colors}
+          grids={grids}
+          flowTags={flowTags}
+          productionConfigs={productionConfigs}
+        />
+      </Modal>
+
+      {currentScreen === 'MENU' && (
+        <div className="mt-8 flex justify-center px-4">
+          <button 
+            onClick={onBack}
+            className={`flex items-center justify-center gap-3 px-8 py-5 rounded-[2rem] w-full transition-all shadow-lg active:scale-[0.98] ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-white text-slate-500 hover:text-slate-900 border border-slate-100'}`}
+          >
+            <ArrowLeft size={18} strokeWidth={3} />
+            <span className="text-xs font-black uppercase tracking-[0.2em]">Voltar ao Início</span>
+          </button>
+        </div>
+      )}
+      
       {/* Modals for Tags and Sectors */}
       <Modal 
         isOpen={!!editingTag} 
@@ -628,19 +645,31 @@ function GenericConfigList({
   isDarkMode, 
   onSave, 
   onDelete, 
+  onBack,
   placeholderLabel,
-  seedDefaults 
+  seedDefaults,
+  people = [],
+  colors = [],
+  flowTags = [],
+  productionConfigs = [],
+  grids = []
 }: {
   title: string;
   label: string;
   items: ProductionConfigItem[];
   type: ProductionConfigItem['type'];
-  icon: React.ReactNode;
+  icon: ReactNode;
   isDarkMode: boolean;
   onSave: (item: ProductionConfigItem) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onBack?: () => void;
   placeholderLabel: string;
   seedDefaults?: { name: string; description: string }[];
+  people?: Person[];
+  colors?: ColorValue[];
+  flowTags?: FlowTag[];
+  productionConfigs?: ProductionConfigItem[];
+  grids?: Grid[];
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ProductionConfigItem | null>(null);
@@ -649,16 +678,31 @@ function GenericConfigList({
   const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const units = useMemo(() => productionConfigs.filter(c => c.type === 'UNIT'), [productionConfigs]);
+  const suppliers = useMemo(() => people.filter(p => p.isSupplier), [people]);
+
   const filteredItems = useMemo(() => {
     return items
       .filter(item => item.type === type)
       .filter(item => 
         item.name.toLowerCase().includes(search.toLowerCase()) || 
+        (item.metadata?.reference || '').toLowerCase().includes(search.toLowerCase()) ||
         (item.description && item.description.toLowerCase().includes(search.toLowerCase()))
       );
   }, [items, type, search]);
 
-  const handleSave = async (e: React.FormEvent) => {
+  const groupedItems = useMemo<Record<string, ProductionConfigItem[]> | null>(() => {
+    if (type !== 'MATERIAL') return null;
+    const groups: Record<string, ProductionConfigItem[]> = {};
+    filteredItems.forEach(item => {
+      const cat = (item as any).metadata?.masterCategory || 'OUTROS';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(item);
+    });
+    return groups;
+  }, [filteredItems, type]);
+
+  const handleSave = async (e: FormEvent) => {
     e.preventDefault();
     if (!editingItem || isLoading) return;
     
@@ -672,9 +716,10 @@ function GenericConfigList({
     }
 
     // Validation for Packaging Grade
-    if (type === 'PACKAGING' && editingItem.metadata?.mode !== 'FREE') {
-      const totalDist = Object.values(editingItem.metadata?.sizeQuantities || {}).reduce((a, b) => a + (Number(b) || 0), 0);
-      const capacity = Number(editingItem.metadata?.capacity || 0);
+    if (type === 'PACKAGING' && (editingItem as any).metadata?.mode !== 'FREE') {
+      const sizeQuantities = (editingItem as any).metadata?.sizeQuantities || {};
+      const totalDist = Object.values(sizeQuantities).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+      const capacity = Number((editingItem as any).metadata?.capacity || 0);
       
       if (totalDist !== capacity) {
         alert(`A soma das quantidades (${totalDist}) deve ser exatamente igual à capacidade da embalagem (${capacity}).`);
@@ -711,7 +756,7 @@ function GenericConfigList({
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       // Compress and resize image
@@ -795,24 +840,29 @@ function GenericConfigList({
   return (
     <div className="flex flex-col gap-6">
        {/* Main Header Card */}
-       <div className={`p-8 rounded-[3rem] shadow-xl flex flex-col gap-6 relative overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
-          <div className="relative z-10 flex items-center gap-4">
-             {title !== 'Configurações' && (
+       <div className={`p-6 rounded-[3rem] shadow-xl flex flex-col gap-5 relative overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+          
+          {/* Top row: back button + icon block */}
+          <div className="flex items-center gap-4">
+             {onBack && (
                 <button 
-                  onClick={() => window.history.back()}
-                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400 border border-slate-100'}`}
+                  onClick={onBack}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 border border-slate-100 hover:text-slate-700'}`}
                 >
                   <ChevronLeft size={18} />
                 </button>
              )}
-             <div>
-                <h3 className={`text-2xl font-black uppercase tracking-tighter leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                  Banco de Dados<br/>Técnico
-                </h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em] mt-2">Configurações base do sistema</p>
+
+             {/* Icon + label inline */}
+             <div className="flex items-center gap-3">
+               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+                 {icon}
+               </div>
+               <span className={`text-sm font-black uppercase tracking-[0.15em] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{label}</span>
              </div>
           </div>
-          
+
+          {/* Add New Record Button */}
           <button 
             onClick={() => {
               setEditingItem({ 
@@ -825,25 +875,22 @@ function GenericConfigList({
               });
               setIsModalOpen(true);
             }}
-            className={`w-full py-5 rounded-[2rem] flex items-center justify-center gap-3 font-black uppercase tracking-[0.1em] text-xs transition-all shadow-lg active:scale-[0.98] ${
+            className={`w-full py-4 px-6 rounded-[2rem] flex items-center gap-4 transition-all shadow-lg active:scale-[0.98] ${
               isDarkMode 
-                ? 'bg-slate-800 text-white shadow-slate-950/20' 
-                : 'bg-[#4a4a55] text-white shadow-slate-200'
+                ? 'bg-indigo-600 text-white shadow-indigo-900/40' 
+                : 'bg-indigo-600 text-white shadow-indigo-200/80'
             }`}
           >
-            <Plus size={20} strokeWidth={3} />
-            Novo Registro
+            <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
+              <Plus size={20} strokeWidth={3} />
+            </div>
+            <div className="flex flex-col items-start">
+              <span className="text-xs font-black uppercase tracking-[0.15em] leading-none">Adicionar Novo Registro</span>
+              <span className="text-[9px] font-bold uppercase tracking-widest opacity-70 mt-1">Cadastrar em {label}</span>
+            </div>
           </button>
        </div>
 
-       {/* Category Pill */}
-       <div className="flex justify-center -mt-3">
-          <div className={`px-8 py-3 rounded-2xl border-2 flex items-center gap-3 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-50'}`}>
-            <div className={`text-indigo-600 dark:text-indigo-400`}>{icon}</div>
-            <span className={`text-xs font-black uppercase tracking-[0.15em] ${isDarkMode ? 'text-slate-200' : 'text-slate-600'}`}>{label}</span>
-            <ChevronDown size={16} className="text-slate-300" />
-          </div>
-       </div>
 
        {/* Search Bar */}
        <div className="relative group">
@@ -864,11 +911,52 @@ function GenericConfigList({
        </div>
 
        {/* List Items */}
-       <div className="flex flex-col gap-3">
-          {filteredItems.map((item) => (
-            <motion.div
-              key={item.id}
-              layout
+       <div className="flex flex-col gap-8">
+          {type === 'MATERIAL' ? (
+            Object.entries(groupedItems || {}).map(([category, catItems]) => (
+              <div key={category} className="flex flex-col gap-4">
+                 <div className="flex items-center gap-3 px-2">
+                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white border border-slate-100 shadow-sm text-slate-500'}`}>
+                      <Tags size={18} />
+                   </div>
+                   <div>
+                     <h4 className={`text-[10px] font-black uppercase tracking-[0.2em] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{category}</h4>
+                     <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-none mt-1">{catItems.length} ITENS CADASTRADOS</p>
+                   </div>
+                 </div>
+
+                 <div className="flex flex-col gap-3">
+                   {catItems.map(item => (
+                     <MaterialCard 
+                       key={item.id}
+                       item={item}
+                       isDarkMode={isDarkMode}
+                       onEdit={() => { setEditingItem({...item}); setIsModalOpen(true); }}
+                       onDelete={() => { if (confirm(`Deseja excluir ${item.name}?`)) onDelete(item.id); }}
+                       flowTags={flowTags}
+                       people={people}
+                     />
+                   ))}
+                 </div>
+              </div>
+            ))
+          ) : (
+            filteredItems.map((item) => (
+              type === 'MOLD' ? (
+                <SoleMatrixCard 
+                  key={item.id}
+                  item={item}
+                  isDarkMode={isDarkMode}
+                  onEdit={() => { setEditingItem({...item}); setIsModalOpen(true); }}
+                  onDelete={() => { if (confirm(`Deseja excluir ${item.name}?`)) onDelete(item.id); }}
+                  flowTags={flowTags}
+                  people={people}
+                  colors={colors}
+                />
+              ) : (
+                <motion.div
+                  key={item.id}
+                  layout
               className={`p-4 rounded-[1.5rem] border flex items-center justify-between group transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-50 shadow-sm'}`}
             >
               <div className="flex items-center gap-5 flex-1">
@@ -894,9 +982,21 @@ function GenericConfigList({
                       {item.metadata?.days || 0} DIAS
                     </p>
                   ) : type === 'PACKAGING' ? (
-                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
-                      {item.metadata?.capacity || 0} PARES {item.metadata?.mode !== 'FREE' && `• ${(item.metadata?.sizes || []).length} TAMANHOS`}
-                    </p>
+                    <div className="flex flex-col gap-3 mt-1">
+                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
+                        {item.metadata?.capacity || 0} PARES {item.metadata?.mode !== 'FREE' && `• ${(item.metadata?.sizes || []).length} TAMANHOS`}
+                      </p>
+                      {item.metadata?.mode !== 'FREE' && (item.metadata?.sizes || []).length > 0 && (
+                        <div className={`p-3 rounded-2xl flex flex-wrap gap-x-4 gap-y-2 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50/50'}`}>
+                          {item.metadata?.sizes.map((size: string) => (
+                            <div key={size} className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-black text-slate-400">{size}</span>
+                              <span className={`text-[10px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.metadata?.sizeQuantities?.[size] || 0}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ) : item.description ? (
                     <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{item.description}</p>
                   ) : null}
@@ -921,8 +1021,10 @@ function GenericConfigList({
                   <Trash2 size={18} />
                 </button>
               </div>
-            </motion.div>
-          ))}
+                </motion.div>
+              )
+            ))
+          )}
 
           {filteredItems.length === 0 && search === '' && seedDefaults && (
             <div className="flex flex-col items-center gap-4 py-8">
@@ -955,7 +1057,348 @@ function GenericConfigList({
           title={editingItem?.id ? `Editar Registro` : `Novo Registro`}
        >
           <form onSubmit={handleSave} className="flex flex-col gap-6">
-            {type === 'TOOL' ? (
+            {type === 'MOLD' ? (
+               // Specialized Form for Matrizes de Solado
+               <div className="flex flex-col gap-6">
+                 {/* Reference and Name */}
+                 <div className="grid grid-cols-3 gap-4">
+                   <div className="flex flex-col gap-2">
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Referência *</label>
+                     <input 
+                       type="text"
+                       value={editingItem?.metadata?.moldReference || ''}
+                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, moldReference: e.target.value.toUpperCase() } } : null)}
+                       required
+                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
+                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
+                       }`}
+                     />
+                   </div>
+                   <div className="col-span-2 flex flex-col gap-2">
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome da Matriz *</label>
+                     <input 
+                       type="text"
+                       value={editingItem?.name || ''}
+                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value.toUpperCase() } : null)}
+                       required
+                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
+                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
+                       }`}
+                     />
+                   </div>
+                 </div>
+
+                 {/* Category, Price, Transfer */}
+                 <div className="grid grid-cols-3 gap-4">
+                   <div className="flex flex-col gap-2">
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Categoria</label>
+                     <select 
+                       value={editingItem?.metadata?.category || ''}
+                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, category: e.target.value } } : null)}
+                       className={`w-full px-4 py-4 rounded-2xl font-bold text-[10px] uppercase tracking-widest outline-none transition-all border-2 ${
+                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
+                       }`}
+                     >
+                       <option value="">GERAL</option>
+                       <option value="SOLADO">SOLADO</option>
+                       <option value="SALTO">SALTO</option>
+                       <option value="PALMILHA">PALMILHA</option>
+                     </select>
+                   </div>
+                   <div className="flex flex-col gap-2">
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Preço (R$)</label>
+                     <input 
+                       type="number"
+                       step="0.01"
+                       value={editingItem?.metadata?.price || ''}
+                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, price: parseFloat(e.target.value) } } : null)}
+                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
+                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
+                       }`}
+                     />
+                   </div>
+                   <div className="flex flex-col gap-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Transfer?</label>
+                      <button 
+                        type="button"
+                        onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, hasTransfer: !prev.metadata?.hasTransfer } } : null)}
+                        className={`w-full py-4 rounded-2xl font-black text-[9px] uppercase tracking-widest border-2 transition-all ${
+                          editingItem?.metadata?.hasTransfer 
+                           ? 'bg-amber-500 border-amber-600 text-white' 
+                           : isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-300'
+                        }`}
+                      >
+                        {editingItem?.metadata?.hasTransfer ? 'COM TRANSFER' : 'SEM TRANSFER'}
+                      </button>
+                   </div>
+                 </div>
+
+                 {/* Flow Tag Selection */}
+                 <div className="flex flex-col gap-2">
+                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Estágio do Fluxo</label>
+                   <div className="flex flex-wrap gap-2">
+                     {flowTags.map(tag => (
+                       <button
+                         key={tag.id}
+                         type="button"
+                         onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: tag.id } } : null)}
+                         className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all ${
+                           editingItem?.metadata?.flowTagId === tag.id
+                             ? 'bg-indigo-600 border-indigo-700 text-white'
+                             : isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-500' : 'bg-white border-slate-100 text-slate-400'
+                         }`}
+                       >
+                         {tag.name}
+                       </button>
+                     ))}
+                   </div>
+                 </div>
+
+                 {/* Size Weight Grid */}
+                 <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
+                   <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Scale size={18} className="text-indigo-500" />
+                        <span className="text-xs font-black uppercase tracking-widest text-slate-500">Pesos por Tamanho (GR)</span>
+                      </div>
+                      <select 
+                        onChange={(e) => {
+                           const gridId = e.target.value;
+                           const grid = (grids || []).find(g => g.id === gridId);
+                           if (grid) {
+                             const weights: Record<string, number> = {};
+                             grid.sizes.forEach(s => {
+                               weights[s] = editingItem?.metadata?.sizeWeights?.[s] || 0;
+                             });
+                             setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, sizeWeights: weights } } : null);
+                           }
+                        }}
+                        className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-600'}`}
+                      >
+                        <option value="">PUXAR GRADE...</option>
+                        {(grids || []).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                      </select>
+                   </div>
+
+                   <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
+                      {Object.entries(editingItem?.metadata?.sizeWeights || {}).map(([size, weight]) => (
+                        <div key={size} className="flex flex-col gap-1">
+                           <span className="text-[9px] font-black text-slate-400 ml-1">{size}</span>
+                           <input 
+                             type="number"
+                             value={weight as number || ''}
+                             onChange={(e) => {
+                               const val = parseFloat(e.target.value);
+                               setEditingItem(prev => {
+                                 if (!prev) return null;
+                                 const newWeights = { ...(prev.metadata?.sizeWeights || {}) };
+                                 newWeights[size] = val;
+                                 return { ...prev, metadata: { ...prev.metadata, sizeWeights: newWeights } };
+                               });
+                             }}
+                             className={`w-full px-2 py-3 rounded-xl font-black text-[10px] text-center outline-none border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-50'}`}
+                           />
+                        </div>
+                      ))}
+                   </div>
+                 </div>
+
+                 {/* Color Variations and Sub-Ref */}
+                 <div className="flex flex-col gap-4">
+                   <div className="flex items-center gap-2">
+                      <Palette size={18} className="text-indigo-500" />
+                      <span className="text-xs font-black uppercase tracking-widest text-slate-500">Cores Disponíveis e Sub-Ref</span>
+                   </div>
+                   <div className="flex flex-col gap-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                      {(colors || []).map(color => {
+                         const variation = (editingItem?.metadata?.colorVariations || []).find((cv: any) => cv.colorId === color.id);
+                         const isSelected = !!variation;
+
+                         return (
+                           <div key={color.id} className={`p-3 rounded-2xl border-2 flex items-center justify-between transition-all ${isSelected ? 'border-indigo-500/30 bg-indigo-500/5' : isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-50 bg-slate-50/50'}`}>
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-xl shadow-sm border border-black/10" style={{ backgroundColor: color.hex }} />
+                                <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{color.name}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                 {isSelected && (
+                                   <input 
+                                     type="text"
+                                     placeholder="SUB-REF"
+                                     value={variation.subRef || ''}
+                                     onChange={(e) => {
+                                       const subRef = e.target.value.toUpperCase();
+                                       setEditingItem(prev => {
+                                         if (!prev) return null;
+                                         const variations = [...(prev.metadata?.colorVariations || [])];
+                                         const idx = variations.findIndex((cv: any) => cv.colorId === color.id);
+                                         variations[idx] = { ...variations[idx], subRef };
+                                         return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } };
+                                       });
+                                     }}
+                                     className={`w-24 px-3 py-2 rounded-xl font-black text-[9px] uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100'}`}
+                                   />
+                                 )}
+                                 <button 
+                                   type="button"
+                                   onClick={() => {
+                                     setEditingItem(prev => {
+                                       if (!prev) return null;
+                                       const variations = [...(prev.metadata?.colorVariations || [])];
+                                       const idx = variations.findIndex((cv: any) => cv.colorId === color.id);
+                                       if (idx >= 0) variations.splice(idx, 1);
+                                       else variations.push({ colorId: color.id, subRef: '' });
+                                       return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } };
+                                     });
+                                   }}
+                                   className={`p-2 rounded-xl transition-all ${isSelected ? 'text-indigo-500' : 'text-slate-300'}`}
+                                 >
+                                   {isSelected ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+                                 </button>
+                              </div>
+                           </div>
+                         );
+                      })}
+                   </div>
+                 </div>
+               </div>
+            ) : type === 'MATERIAL' ? (
+               // Specialized Form for Insumos
+               <div className="flex flex-col gap-6">
+                 {/* Top Row: Master Category & Reference */}
+                 <div className="grid grid-cols-2 gap-4">
+                   <div className="flex flex-col gap-2">
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Categoria Mestre *</label>
+                     <select 
+                       value={editingItem?.metadata?.masterCategory || ''}
+                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, masterCategory: e.target.value as any } } : null)}
+                       required
+                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
+                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
+                       }`}
+                     >
+                       <option value="">SELECIONAR...</option>
+                       {MASTER_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                     </select>
+                   </div>
+                   <div className="flex flex-col gap-2">
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Referência / Código</label>
+                     <input 
+                       type="text"
+                       value={editingItem?.metadata?.reference || ''}
+                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, reference: e.target.value.toUpperCase() } } : null)}
+                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
+                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
+                       }`}
+                     />
+                   </div>
+                 </div>
+
+                 {/* Material Name */}
+                 <div className="flex flex-col gap-2">
+                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Material / Descrição *</label>
+                   <input 
+                     type="text"
+                     value={editingItem?.name || ''}
+                     onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value.toUpperCase() } : null)}
+                     required
+                     className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
+                       isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
+                     }`}
+                   />
+                 </div>
+
+                 {/* Flow Tag & Supplier */}
+                 <div className="grid grid-cols-2 gap-4">
+                   <div className="flex flex-col gap-2">
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Flow Tag (Estágio)</label>
+                     <select 
+                       value={editingItem?.metadata?.flowTagId || ''}
+                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: e.target.value } } : null)}
+                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
+                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
+                       }`}
+                     >
+                       <option value="">NENHUMA...</option>
+                       {flowTags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
+                     </select>
+                   </div>
+                   <div className="flex flex-col gap-2">
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Fornecedor Principal</label>
+                     <select 
+                       value={editingItem?.metadata?.supplierId || ''}
+                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, supplierId: e.target.value } } : null)}
+                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
+                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
+                       }`}
+                     >
+                       <option value="">NENHUM...</option>
+                       {suppliers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                     </select>
+                   </div>
+                 </div>
+
+                 {/* Unit & Base Cost */}
+                 <div className="grid grid-cols-2 gap-4">
+                   <div className="flex flex-col gap-2">
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Unidade *</label>
+                     <select 
+                       value={editingItem?.metadata?.unitId || ''}
+                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitId: e.target.value } } : null)}
+                       required
+                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
+                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
+                       }`}
+                     >
+                       <option value="">SELECIONAR...</option>
+                       {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                     </select>
+                   </div>
+                   <div className="flex flex-col gap-2">
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Custo Base (Média)</label>
+                     <input 
+                       type="number"
+                       step="0.01"
+                       value={editingItem?.metadata?.baseCost || ''}
+                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: Number(e.target.value) } } : null)}
+                       placeholder="0,00"
+                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
+                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
+                       }`}
+                     />
+                   </div>
+                 </div>
+
+                 {/* Colors Integration */}
+                 <div className="flex flex-col gap-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Cores Disponíveis</label>
+                    <div className={`p-4 rounded-2xl border-2 flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                       {colors.map(color => {
+                         const isSelected = (editingItem?.metadata?.colorIds || []).includes(color.id);
+                         return (
+                           <button
+                             key={color.id}
+                             type="button"
+                             onClick={() => {
+                               const currentIds = editingItem?.metadata?.colorIds || [];
+                               const newIds = isSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id];
+                               setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, colorIds: newIds } } : null);
+                             }}
+                             className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
+                               isSelected 
+                                 ? 'bg-indigo-600 text-white' 
+                                 : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'
+                             }`}
+                           >
+                             {color.name}
+                           </button>
+                         );
+                       })}
+                       {colors.length === 0 && <p className="text-[8px] text-slate-400 font-bold uppercase py-2">Nenhuma cor cadastrada no catálogo</p>}
+                    </div>
+                 </div>
+               </div>
+            ) : type === 'TOOL' ? (
               // Specialized Form for Facas
               <div className="flex flex-col gap-6">
                 {/* Image Upload Area */}
@@ -1482,41 +1925,12 @@ function GenericConfigList({
               )}
             </button>
           </form>
-       </Modal>
-    </div>
+        </Modal>
+      </div>
   );
 }
 
-function ConfigMenuItem({ icon, label, desc, color, bg, isDarkMode, onClick }: {
-  icon: React.ReactNode;
-  label: string;
-  desc: string;
-  color: string;
-  bg: string;
-  isDarkMode: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <motion.button
-      whileHover={{ scale: 1.01 }}
-      whileTap={{ scale: 0.99 }}
-      onClick={onClick}
-      className={`w-full p-4 rounded-[2rem] border-2 flex items-center gap-5 transition-all group ${
-        isDarkMode 
-          ? 'bg-slate-900 border-slate-800/60 hover:border-indigo-500/30' 
-          : 'bg-white border-slate-100/50 shadow-sm hover:border-indigo-100'
-      }`}
-    >
-      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 ${isDarkMode ? 'bg-slate-800' : bg} ${color}`}>
-        {icon}
-      </div>
-      <div className="text-left flex-1">
-        <p className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{label}</p>
-        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{desc}</p>
-      </div>
-    </motion.button>
-  );
-}
+
 
 function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: { 
   sector: Sector; 
@@ -1590,63 +2004,36 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: {
   );
 }
 
-function Modal({ isOpen, onClose, title, children, isDarkMode }: { 
-  isOpen: boolean; 
-  onClose: () => void; 
-  title: string;
-  children: React.ReactNode;
-  isDarkMode: boolean;
+
+function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, key }: { 
+  item: ProductionConfigItem, 
+  isDarkMode: boolean, 
+  onEdit: () => void, 
+  onDelete: () => void,
+  flowTags: FlowTag[],
+  people: any[],
+  key?: any
 }) {
-  return (
-    <AnimatePresence>
-      {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="absolute inset-0 bg-slate-950/40 backdrop-blur-md"
-          />
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
-            transition={{ type: 'spring', damping: 30, stiffness: 400 }}
-            className={`relative w-full max-w-[400px] rounded-[3.5rem] p-10 shadow-[0_30px_60px_-12px_rgba(0,0,0,0.25)] flex flex-col gap-8 max-h-[85vh] overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
-          >
-            <div className="flex flex-col items-center text-center gap-2 shrink-0">
-              <h3 className={`text-xl font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{title}</h3>
-              <div className="w-12 h-1 bg-indigo-600 rounded-full opacity-20" />
-            </div>
+  const flowTag = flowTags.find(t => t.id === item.metadata?.flowTagId);
+  const supplier = people.find(p => p.id === item.metadata?.supplierId);
 
-            <div className="overflow-y-auto custom-scrollbar px-2 pb-4">
-              {children}
-            </div>
-
-            <button 
-              onClick={onClose}
-              className={`absolute top-6 right-6 p-2 rounded-full transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-400 hover:text-slate-600'}`}
-            >
-              <X size={18} />
-            </button>
-          </motion.div>
-        </div>
-      )}
-    </AnimatePresence>
-  );
-}
-
-function MaterialCard({ item, isDarkMode, onEdit, onDelete }: { item: ProductionConfigItem, isDarkMode: boolean, onEdit: () => void, onDelete: () => void }) {
   return (
     <div className={`p-6 rounded-[2rem] border flex flex-col gap-6 relative transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
       <div className="flex items-start justify-between">
         <div className="flex flex-col gap-1">
           <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{item.metadata?.reference || 'S/ REF'}</span>
           <h5 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.name}</h5>
-          <div className="flex items-center gap-2 mt-1">
-            <PackageOpen size={12} className="text-slate-400" />
-            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{item.metadata?.flowTagName || 'Fluxo não definido'}</span>
+          <div className="flex flex-col gap-1 mt-1">
+            <div className="flex items-center gap-2">
+              <PackageOpen size={12} className="text-slate-400" />
+              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{flowTag?.name || 'ESTÁGIO NÃO DEF.'}</span>
+            </div>
+            {supplier && (
+              <div className="flex items-center gap-2">
+                <Users size={12} className="text-slate-400" />
+                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{supplier.name}</span>
+              </div>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-1">
@@ -1673,6 +2060,83 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete }: { item: Production
            </div>
         </div>
         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Cores: {item.metadata?.colorIds?.length || 0}</span>
+      </div>
+    </div>
+  );
+}
+
+function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, colors, key }: { 
+  item: ProductionConfigItem, 
+  isDarkMode: boolean, 
+  onEdit: () => void, 
+  onDelete: () => void,
+  flowTags: FlowTag[],
+  people: any[],
+  colors: ColorValue[],
+  key?: any
+}) {
+  const flowTag = flowTags.find(t => t.id === item.metadata?.flowTagId);
+  const selectedColors = item.metadata?.colorVariations || [];
+
+  return (
+    <div className={`p-6 rounded-[2.5rem] border flex flex-col gap-6 relative transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+      <div className="flex items-start justify-between">
+        <div className="flex-1 flex gap-4">
+           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-slate-50 text-slate-400'}`}>
+             <Grid3X3 size={24} />
+           </div>
+           <div className="flex flex-col">
+              <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-[0.2em] font-mono">{item.metadata?.moldReference || 'S/ REF'}</span>
+              <h5 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.name}</h5>
+              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{item.metadata?.category || 'GERAL'} • {flowTag?.name || 'S/ FLUXO'}</p>
+           </div>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={onEdit} className="p-2 text-slate-300 hover:text-indigo-500 transition-colors"><Edit3 size={18} /></button>
+          <button onClick={onDelete} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+        </div>
+      </div>
+
+      {selectedColors.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {selectedColors.map((cv: any) => {
+            if (!cv) return null;
+            const color = colors.find(c => c.id === cv.colorId);
+            return (
+              <div key={cv.colorId} className={`px-3 py-1.5 rounded-xl flex items-center gap-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                <div className="w-2 h-2 rounded-full shadow-sm" style={{ backgroundColor: color?.hex || '#ccc' }} />
+                <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">{color?.name || 'COR'} ({cv.subRef})</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {item.metadata?.sizeWeights && Object.keys(item.metadata.sizeWeights || {}).length > 0 && (
+        <div className={`p-4 rounded-2xl flex flex-col gap-3 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50/50'}`}>
+           <div className="flex items-center gap-2 text-slate-400">
+              <Package size={14} />
+              <span className="text-[9px] font-black uppercase tracking-widest">Pesos por Tamanho (GR)</span>
+           </div>
+           <div className="flex flex-wrap gap-x-4 gap-y-2">
+              {Object.entries(item.metadata?.sizeWeights || {}).map(([size, weight]) => (
+                <div key={size} className="flex items-center gap-1.5">
+                   <span className="text-[10px] font-black text-slate-400">{size}</span>
+                   <span className={`text-[10px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{weight}g</span>
+                </div>
+              ))}
+           </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800/50">
+        <div className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest ${item.metadata?.hasTransfer ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-400'}`}>
+          {item.metadata?.hasTransfer ? 'COM TRANSFER' : 'SEM TRANSFER'}
+        </div>
+        <div className="flex items-baseline gap-1">
+          <span className="text-[10px] font-black text-emerald-500">R$</span>
+          <span className="text-xl font-black text-emerald-500">{(item.metadata?.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+        </div>
       </div>
     </div>
   );

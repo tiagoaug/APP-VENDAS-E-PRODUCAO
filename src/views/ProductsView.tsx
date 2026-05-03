@@ -76,7 +76,7 @@ export default function ProductsView({
       <div className="flex flex-col gap-3 pt-4">
         <div className="flex items-center justify-between mb-2">
            <div>
-              <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Cadastro de Produtos</h2>
+              <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Ficha Técnica de Produtos</h2>
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Produção e Modelos</p>
            </div>
         </div>

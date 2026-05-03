@@ -546,12 +546,11 @@ export default function PersonalFinancialView({
       ) : (
         /* Configuration Area */
         <div className="flex flex-col gap-6">
-          <div className="grid grid-cols-2 gap-3 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
             {[
               { id: 'MEMBERS', label: 'Família', icon: Users, color: 'bg-indigo-500' },
               { id: 'CONTACTS', label: 'Fornecedores', icon: Phone, color: 'bg-emerald-500' },
-              { id: 'BUDGETS', label: 'Orçamentos', icon: Target, color: 'bg-amber-500' },
-              { id: 'CATEGORIES', label: 'Categorias', icon: LayoutGrid, color: 'bg-rose-500' }
+              { id: 'BUDGETS', label: 'Orçamentos', icon: Target, color: 'bg-amber-500' }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -578,14 +577,13 @@ export default function PersonalFinancialView({
             onClick={() => {
               if (configTab === 'MEMBERS') { setEditingFm(undefined); setIsFmModalOpen(true); }
               else if (configTab === 'CONTACTS') { setEditingPc(undefined); setIsPcModalOpen(true); }
-              else if (configTab === 'BUDGETS') { setEditingBudget(undefined); setIsBudgetModalOpen(true); }
-              else { setEditingCategory(null); setIsCatModalOpen(true); }
+              else { setEditingBudget(undefined); setIsBudgetModalOpen(true); }
             }}
-            title={configTab === 'MEMBERS' ? 'Cadastrar Membro' : configTab === 'CONTACTS' ? 'Novo Fornecedor' : configTab === 'BUDGETS' ? 'Novo Orçamento' : 'Criar Categoria'}
-            aria-label={configTab === 'MEMBERS' ? 'Adicionar novo membro da família' : configTab === 'CONTACTS' ? 'Adicionar novo fornecedor' : configTab === 'BUDGETS' ? 'Adicionar novo orçamento' : 'Criar nova categoria pessoal'}
+            title={configTab === 'MEMBERS' ? 'Cadastrar Membro' : configTab === 'CONTACTS' ? 'Novo Fornecedor' : 'Novo Orçamento'}
+            aria-label={configTab === 'MEMBERS' ? 'Adicionar novo membro da família' : configTab === 'CONTACTS' ? 'Adicionar novo fornecedor' : 'Adicionar novo orçamento'}
             className="bg-indigo-600 text-white w-full py-4 rounded-3xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
           >
-            <Plus size={18} strokeWidth={4} /> {configTab === 'MEMBERS' ? 'Cadastrar Membro' : configTab === 'CONTACTS' ? 'Novo Fornecedor' : configTab === 'BUDGETS' ? 'Novo Orçamento' : 'Criar Categoria'}
+            <Plus size={18} strokeWidth={4} /> {configTab === 'MEMBERS' ? 'Cadastrar Membro' : configTab === 'CONTACTS' ? 'Novo Fornecedor' : 'Novo Orçamento'}
           </button>
 
           <div className="space-y-3">
@@ -619,7 +617,7 @@ export default function PersonalFinancialView({
              {configTab === 'CONTACTS' && personalContacts.map(c => (
                <div key={c.id} className={`p-4 rounded-2xl border flex items-center justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                  <div className="flex items-center gap-3">
-                   <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950 flex items-center justify-center text-emerald-600 dark:text-emerald-400"><Phone size={20} /></div>
+                   <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950 flex items-center justify-center text-emerald-600 dark:text-indigo-400"><Phone size={20} /></div>
                    <div className="flex flex-col">
                       <h4 className={`text-xs font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{c.name}</h4>
                       <p className="text-[9px] text-slate-400 font-bold tracking-widest">{c.phone}</p>
@@ -675,33 +673,6 @@ export default function PersonalFinancialView({
                  </div>
                );
              })}
-
-             {configTab === 'CATEGORIES' && personalCategories.map(c => (
-               <div key={c.id} className={`p-4 rounded-2xl border flex items-center justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                 <div className="flex items-center gap-3">
-                   <div className={`w-10 h-10 rounded-xl ${c.color} flex items-center justify-center text-white`}><LayoutGrid size={20} /></div>
-                   <h4 className={`text-xs font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{c.name}</h4>
-                 </div>
-                 <div className="flex gap-1">
-                    <button 
-                      onClick={() => { setEditingCategory(c); setIsCatModalOpen(true); }} 
-                      className="p-2 text-slate-300 hover:text-indigo-400"
-                      title="Editar Categoria"
-                      aria-label="Editar Categoria"
-                    >
-                      <Edit size={18} />
-                    </button>
-                    <button 
-                      onClick={() => { setIdToDelete(c.id); setDeleteType('CAT'); setIsConfirmOpen(true); }} 
-                      className="p-2 text-slate-300 hover:text-rose-500"
-                      title="Excluir Categoria"
-                      aria-label="Excluir Categoria"
-                    >
-                      <Trash2 size={18} />
-                    </button>
-                 </div>
-               </div>
-             ))}
           </div>
         </div>
       )}

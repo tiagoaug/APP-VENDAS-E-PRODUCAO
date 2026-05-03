@@ -7,18 +7,21 @@ interface CategoryModalProps {
   onClose: () => void;
   onSave: (category: Omit<Category, 'id'>) => void;
   category?: Category;
+  defaultType?: CategoryType;
 }
 
-export default function CategoryModal({ isOpen, onClose, onSave, category }: CategoryModalProps) {
+export default function CategoryModal({ isOpen, onClose, onSave, category, defaultType }: CategoryModalProps) {
   const [name, setName] = useState(category?.name || '');
-  const [type, setType] = useState<CategoryType>(category?.type || CategoryType.PRODUCT);
+  const [type, setType] = useState<CategoryType>(category?.type || defaultType || CategoryType.PRODUCT);
 
   useEffect(() => {
     if (category) {
       setName(category.name);
       setType(category.type);
+    } else if (defaultType) {
+      setType(defaultType);
     }
-  }, [category]);
+  }, [category, defaultType]);
 
   if (!isOpen) return null;
 
@@ -43,6 +46,9 @@ export default function CategoryModal({ isOpen, onClose, onSave, category }: Cat
           <option value={CategoryType.PRODUCT}>PRODUTOS</option>
           <option value={CategoryType.EXPENSE}>DESPESAS</option>
           <option value={CategoryType.REVENUE}>RECEITAS</option>
+          <option value={CategoryType.PRODUCTION}>PRODUÇÃO</option>
+          <option value={CategoryType.GENERAL}>GERAIS</option>
+          <option value={CategoryType.OTHER}>OUTRAS</option>
         </select>
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300">Cancelar</button>

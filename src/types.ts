@@ -198,6 +198,9 @@ export enum CategoryType {
   PRODUCT = 'PRODUCT',
   EXPENSE = 'EXPENSE',
   REVENUE = 'REVENUE',
+  PRODUCTION = 'PRODUCTION',
+  GENERAL = 'GENERAL',
+  OTHER = 'OTHER',
 }
 
 export type Category = {
@@ -265,6 +268,7 @@ export enum ViewType {
   PRODUCTION_STOCK = 'PRODUCTION_STOCK',
   PRODUCTION_PURCHASE_NEEDS = 'PRODUCTION_PURCHASE_NEEDS',
   PRODUCTION_CONFIG = 'PRODUCTION_CONFIG',
+  PRODUCT_SHEET = 'PRODUCT_SHEET',
 }
 
 export type DashboardCardConfig = {
@@ -315,9 +319,28 @@ export type ProductionConfigItem = {
   type: 'UNIT' | 'TOOL' | 'INFESTO' | 'DEADLINE' | 'TECH_SHEET' | 'PACKAGING' | 'MATERIAL' | 'MOLD';
   imageUrl?: string;
   metadata?: {
+    // Shared or existing
     conjugation?: number;
     sizes?: string[];
     sizeAreas?: Record<string, number>;
+    
+    // Material specific
+    masterCategory?: string;
+    reference?: string;
+    flowTagId?: string;
+    supplierId?: string;
+    unitId?: string;
+    baseCost?: number;
+    colorIds?: string[];
+
+    // Mold (Sole Matrix) specific
+    category?: string;
+    moldReference?: string;
+    hasTransfer?: boolean;
+    colorVariations?: { colorId: string, subRef: string }[];
+    sizeWeights?: Record<string, number>;
+    price?: number;
+    
     [key: string]: any;
   };
   createdAt: number;
