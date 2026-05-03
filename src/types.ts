@@ -293,3 +293,33 @@ export type Budget = {
   alertPercentage: number; // e.g., 80 for 80%
   isPersonal?: boolean;
 };
+
+export type FlowTag = {
+  id: string;
+  name: string;
+  subcategories: string[];
+};
+
+export type Sector = {
+  id: string;
+  name: string;
+  color: string;
+  order: number;
+  flowTagIds: string[];
+};
+
+export type ProductionConfigItem = {
+  id: string;
+  name: string;
+  description: string;
+  type: 'UNIT' | 'TOOL' | 'INFESTO' | 'DEADLINE' | 'TECH_SHEET' | 'PACKAGING' | 'MATERIAL' | 'MOLD';
+  imageUrl?: string;
+  metadata?: {
+    conjugation?: number;
+    sizes?: string[];
+    sizeAreas?: Record<string, number>;
+    [key: string]: any;
+  };
+  createdAt: number;
+};
+

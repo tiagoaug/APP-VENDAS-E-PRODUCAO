@@ -59,6 +59,8 @@ import {
   Budget,
   DashboardConfig,
   DashboardCardConfig,
+  FlowTag,
+  Sector,
 } from "./types";
 import {
   MOCK_PRODUCTS,
@@ -97,6 +99,8 @@ import PersonDetailView from "./views/PersonDetailView";
 import LoginView from "./views/LoginView";
 import DashboardConfigView from "./views/DashboardConfigView";
 import PersonalFinancialView from "./views/PersonalFinancialView";
+import ProductionConfigView from "./views/ProductionConfigView";
+
 
 // Modals
 import AccountModal from "./components/AccountModal";
@@ -130,36 +134,39 @@ export default function App() {
   const [familyMembers, setFamilyMembers] = useState<FamilyMember[]>([]);
   const [personalContacts, setPersonalContacts] = useState<Person[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
-  const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig | null>(() => {
-    const saved = localStorage.getItem('dashboard_config');
-    const config = saved ? JSON.parse(saved) : defaultDashboardConfig;
-    
-    // Migration: ensure shortcuts card exists
-    if (config.cards && !config.cards.find((c: any) => c.id === 'shortcuts')) {
-      const shortcutsCard = defaultDashboardConfig.cards.find(c => c.id === 'shortcuts')!;
-      config.cards.push(shortcutsCard);
-    }
-    
-    return config;
-  });
+  const [flowTags, setFlowTags] = useState<FlowTag[]>([]);
+  const [sectors, setSectors] = useState<Sector[]>([]);
+  const [productionConfigs, setProductionConfigs] = useState<ProductionConfigItem[]>([]);
 
   const defaultDashboardConfig: DashboardConfig = {
     cards: [
       { id: 'balance', label: 'Saldo Consolidado', visible: true, order: 0 },
       { id: 'cash_flow', label: 'Balanço Mensal', visible: true, order: 1 },
       { id: 'receivables', label: 'A Receber (Vendas)', visible: true, order: 2 },
-      { id: 'shortcuts', label: 'Menu de Atalhos', visible: true, order: 3 },
-      { id: 'stock_alerts', label: 'Alertas de Estoque', visible: true, order: 4 },
-      { id: 'customers', label: 'Relacionamento Clientes', visible: true, order: 5 },
-      { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 6 },
-      { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 7 },
-      { id: 'stock_value', label: 'Patrimônio em Estoque', visible: true, order: 8 },
-      { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 9 },
-      { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 10 },
-      { id: 'activity', label: 'Atividade Recente', visible: true, order: 11 },
-      { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 12 },
+      { id: 'stock_alerts', label: 'Alertas de Estoque', visible: true, order: 3 },
+      { id: 'customers', label: 'Relacionamento Clientes', visible: true, order: 4 },
+      { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 5 },
+      { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 6 },
+      { id: 'stock_value', label: 'Patrimônio em Estoque', visible: true, order: 7 },
+      { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 8 },
+      { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 9 },
+      { id: 'activity', label: 'Atividade Recente', visible: true, order: 10 },
+      { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 11 },
     ]
   };
+
+  const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig | null>(() => {
+    const saved = localStorage.getItem('dashboard_config');
+    let config = saved ? JSON.parse(saved) : defaultDashboardConfig;
+    
+    // Migration: remove legacy shortcuts card if exists
+    if (config.cards && config.cards.find((c: any) => c.id === 'shortcuts')) {
+      config.cards = config.cards.filter((c: any) => c.id !== 'shortcuts');
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+    
+    return config;
+  });
 
   // Firebase Subscriptions
   useEffect(() => {
@@ -245,6 +252,21 @@ export default function App() {
       "budgets",
       setBudgets,
     );
+    const unsubFlowTags = firebaseService.subscribeToCollection<FlowTag>(
+      "flowTags",
+      setFlowTags,
+    );
+    const unsubSectors = firebaseService.subscribeToCollection<Sector>(
+      "sectors",
+      (data) => {
+        setSectors([...data].sort((a, b) => a.order - b.order));
+      },
+    );
+    const unsubProductionConfigs = firebaseService.subscribeToCollection<ProductionConfigItem>(
+      "productionConfigs",
+      setProductionConfigs
+    );
+
     const unsubDashboardConfig = firebaseService.subscribeToCollection<DashboardConfig>(
       "dashboard_config",
       (data) => {
@@ -301,7 +323,11 @@ export default function App() {
       unsubFamilyMembers();
       unsubPersonalContacts();
       unsubBudgets();
+      unsubFlowTags();
+      unsubSectors();
+      unsubProductionConfigs();
       unsubDashboardConfig();
+
     };
   }, [user]);
 
@@ -1924,22 +1950,34 @@ export default function App() {
             </motion.div>
           </div>
         );
+      case ViewType.PRODUCTION_CONFIG:
+        return (
+          <ProductionConfigView 
+            flowTags={flowTags}
+            sectors={sectors}
+            productionConfigs={productionConfigs}
+            onSaveFlowTag={(tag) => firebaseService.saveDocument("flowTags", tag)}
+            onDeleteFlowTag={(id) => firebaseService.deleteDocument("flowTags", id)}
+            onSaveSector={(sector) => firebaseService.saveDocument("sectors", sector)}
+            onDeleteSector={(id) => firebaseService.deleteDocument("sectors", id)}
+            onSaveConfigItem={(item) => firebaseService.saveDocument("productionConfigs", item)}
+            onDeleteConfigItem={(id) => firebaseService.deleteDocument("productionConfigs", id)}
+            onUpdateSectorsOrder={async (newOrder) => {
+              const updated = newOrder.map((s, i) => ({ ...s, order: i }));
+              for (const s of updated) {
+                await firebaseService.saveDocument("sectors", s);
+              }
+            }}
+            onBack={goBack}
+            isDarkMode={isDarkMode}
+            people={people}
+            colors={colors}
+          />
+        );
       case ViewType.PRODUCTION_PCP:
       case ViewType.PRODUCTION_STOCK:
       case ViewType.PRODUCTION_PURCHASE_NEEDS:
-      case ViewType.PRODUCTION_CONFIG:
-        return (
-          <div className="flex flex-col items-center justify-center py-20 text-center gap-4">
-            <div className="w-20 h-20 rounded-3xl bg-amber-50 text-amber-500 flex items-center justify-center">
-              <Plus size={40} strokeWidth={3} className="rotate-45" />
-            </div>
-            <div>
-              <h2 className="text-xl font-black uppercase tracking-tight">Em Desenvolvimento</h2>
-              <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-2">Esta funcionalidade estará disponível em breve.</p>
-            </div>
-            <button onClick={goBack} className="mt-6 px-8 py-3 rounded-2xl bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest">Voltar</button>
-          </div>
-        );
+
       default:
         return (
           <div className="text-center py-20 text-slate-400 font-bold uppercase tracking-widest italic">
@@ -1955,6 +1993,16 @@ export default function App() {
       return "purchases";
     if ([ViewType.SALES, ViewType.SALE_FORM].includes(currentView))
       return "sales";
+    if (
+      [
+        ViewType.PRODUCTION_MENU,
+        ViewType.PRODUCTION_PCP,
+        ViewType.PRODUCTION_STOCK,
+        ViewType.PRODUCTION_PURCHASE_NEEDS,
+        ViewType.PRODUCTION_CONFIG
+      ].includes(currentView)
+    )
+      return "production";
     if (
       [
         ViewType.FINANCIAL, 
@@ -1985,7 +2033,7 @@ export default function App() {
   const viewTitle = useMemo(() => {
     switch (currentView) {
       case ViewType.DASHBOARD:
-        return "Vendas Pro";
+        return "GESTAO PRO";
       case ViewType.PRODUCTS:
         return "Produção de Produtos";
       case ViewType.STOCK:
@@ -2018,6 +2066,16 @@ export default function App() {
         return "Mais Opções";
       case ViewType.DASHBOARD_CONFIG:
         return "Layout do Painel";
+      case ViewType.PRODUCTION_MENU:
+        return "Módulo de Produção";
+      case ViewType.PRODUCTION_PCP:
+        return "PCP Central";
+      case ViewType.PRODUCTION_STOCK:
+        return "Estoque de Materiais";
+      case ViewType.PRODUCTION_PURCHASE_NEEDS:
+        return "Necessidade de Compras";
+      case ViewType.PRODUCTION_CONFIG:
+        return "Configurações de Produção";
       default:
         return "Detalhes";
     }
@@ -2047,6 +2105,11 @@ export default function App() {
       case ViewType.REPORTS: return <BarChart3 size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.BACKUP: return <Database size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.DASHBOARD_CONFIG: return <LayoutDashboard size={24} className="text-indigo-600 dark:text-indigo-400" />;
+      case ViewType.PRODUCTION_MENU: return <Factory size={24} className="text-indigo-600 dark:text-indigo-400" />;
+      case ViewType.PRODUCTION_PCP: return <GanttChartSquare size={24} className="text-indigo-600 dark:text-indigo-400" />;
+      case ViewType.PRODUCTION_STOCK: return <PackageOpen size={24} className="text-emerald-600 dark:text-emerald-400" />;
+      case ViewType.PRODUCTION_PURCHASE_NEEDS: return <ClipboardList size={24} className="text-amber-600 dark:text-amber-400" />;
+      case ViewType.PRODUCTION_CONFIG: return <Hammer size={24} className="text-slate-500 dark:text-slate-400" />;
       
       default: return <Shield size={24} className="text-blue-600 dark:text-blue-400" />;
     }
@@ -2147,6 +2210,13 @@ export default function App() {
           colorClass="text-emerald-500 dark:text-emerald-400"
         />
         <TabItem
+          icon={<Factory size={22} />}
+          label="PROD."
+          active={activeTab === "production"}
+          onClick={() => resetTo(ViewType.PRODUCTION_MENU)}
+          colorClass="text-indigo-600 dark:text-indigo-400"
+        />
+        <TabItem
           icon={<DollarSign size={22} />}
           label="FINAN."
           active={activeTab === "financial"}
@@ -2215,7 +2285,7 @@ function TabItem({
   return (
     <button
       onClick={onClick}
-      className={`flex flex-col items-center justify-center p-2 min-w-[64px] h-[64px] transition-all rounded-[20px] ${active ? "bg-slate-100 dark:bg-slate-900" : "bg-transparent"}`}
+      className={`flex flex-col items-center justify-center p-1 min-w-[50px] h-[60px] transition-all rounded-[15px] ${active ? "bg-slate-100 dark:bg-slate-900" : "bg-transparent"}`}
     >
       <div
         className={`transition-all ${colorClass} ${active ? "scale-110" : ""}`}
@@ -2223,7 +2293,7 @@ function TabItem({
         {icon}
       </div>
       <span
-        className={`text-[8px] font-bold tracking-widest mt-1 uppercase transition-all ${colorClass} ${active ? "opacity-100" : "opacity-90"}`}
+        className={`text-[7px] font-black tracking-tight mt-0.5 uppercase transition-all ${colorClass} ${active ? "opacity-100" : "opacity-70"}`}
       >
         {label}
       </span>

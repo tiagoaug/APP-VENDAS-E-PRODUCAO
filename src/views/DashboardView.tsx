@@ -551,35 +551,6 @@ export default function DashboardView({
               </div>
             );
  
-          case "shortcuts":
-            return (
-              <div key="shortcuts" className="py-2">
-                <div className="flex overflow-x-auto no-scrollbar gap-4 px-1 pb-4">
-                  {[
-                    { id: 'new_sale', label: 'Nova Venda', icon: <ShoppingBag size={22} />, color: 'bg-emerald-500', view: ViewType.SALE_FORM },
-                    { id: 'new_purchase', label: 'Nova Compra', icon: <ShoppingCart size={22} />, color: 'bg-cyan-500', view: ViewType.PURCHASE_FORM },
-                    { id: 'production', label: 'Produção', icon: <Factory size={22} />, color: 'bg-indigo-600', view: ViewType.PRODUCTION_MENU },
-                    { id: 'new_product', label: 'Novo Produto', icon: <Package size={22} />, color: 'bg-slate-500', view: ViewType.PRODUCT_FORM },
-                    { id: 'financial', label: 'Financeiro', icon: <DollarSign size={22} />, color: 'bg-amber-500', view: ViewType.FINANCIAL },
-                    { id: 'people', label: 'Contatos', icon: <User size={22} />, color: 'bg-slate-400', view: ViewType.PEOPLE },
-                  ].map((item) => (
-                    <motion.button
-                      key={item.id}
-                      whileTap={{ scale: 0.92 }}
-                      onClick={() => onNavigate(item.view)}
-                      className="flex flex-col items-center gap-3 min-w-[84px] group"
-                    >
-                      <div className={`w-16 h-16 rounded-[1.8rem] ${item.color} text-white flex items-center justify-center shadow-lg shadow-${item.color.split('-')[1]}-500/20 group-hover:scale-105 transition-transform`}>
-                        {item.icon}
-                      </div>
-                      <span className={`text-[10px] font-black uppercase tracking-tight text-center ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                        {item.label}
-                      </span>
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
-            );
 
           case "stock_alerts":
             return (
