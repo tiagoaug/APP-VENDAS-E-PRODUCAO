@@ -39,7 +39,7 @@ import {
   ClipboardList,
   FileText
 } from 'lucide-react';
-import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, CategoryType } from '../types';
+import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, CategoryType, ProductionScreenType } from '../types';
 import Modal from '../components/Modal';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 
@@ -56,10 +56,12 @@ interface ProductionConfigViewProps {
   onUpdateSectorsOrder: (sectors: Sector[]) => Promise<void>;
   onBack: () => void;
   isDarkMode: boolean;
-  people?: Person[];
-  colors?: ColorValue[];
   grids?: Grid[];
   categories?: any[];
+  initialScreen?: ProductionScreenType;
+  onNavigate?: (view: ViewType) => void;
+  onAddProduct?: () => void;
+  onNavigateGrids?: () => void;
 }
 
 const SECTOR_COLORS = [
@@ -77,7 +79,7 @@ const SECTOR_COLORS = [
   '#64748b', // Slate
 ];
 
-type ScreenType = 'MENU' | 'SECTORS' | 'FLOW_TAGS' | 'UNIDADES' | 'FACAS' | 'INFESTO' | 'PRAZOS' | 'FICHAS' | 'EMBALAGENS' | 'INSUMOS' | 'MATRIZES';
+// ProductionScreenType moved to types.ts
 
 // Master categories for production materials
 const MASTER_CATEGORIES = ['SOLADOS', 'PALMILHAS', 'COURO/SINTÉTICO', 'FORROS', 'ADESIVOS', 'LINHAS', 'EMBALAGENS', 'OUTROS'];
@@ -110,9 +112,13 @@ export default function ProductionConfigView({
   people = [],
   colors = [],
   grids = [],
-  categories = []
+  categories = [],
+  initialScreen = 'MENU',
+  onNavigate,
+  onAddProduct,
+  onNavigateGrids
 }: ProductionConfigViewProps) {
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>('MENU');
+  const [currentScreen, setCurrentScreen] = useState<ProductionScreenType>(initialScreen);
   const [editingTag, setEditingTag] = useState<FlowTag | null>(null);
   const [editingSector, setEditingSector] = useState<Sector | null>(null);
   const [isAddingTag, setIsAddingTag] = useState(false);
@@ -186,90 +192,136 @@ export default function ProductionConfigView({
               exit={{ opacity: 0, y: -10 }}
               className="flex flex-col gap-6"
             >
-              <div className="flex flex-col gap-3">
-                <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Ajustes de Produção</h3>
-                <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                  <ConfigMenuItem
-                    icon={<TableCellsMerge size={22} />}
-                    label="Setores de Produção"
-                    onClick={() => setCurrentScreen('SECTORS')}
-                    color="text-indigo-600"
-                  />
-                  <ConfigMenuItem
-                    icon={<Tags size={22} />}
-                    label="Etapas e Processos"
-                    onClick={() => setCurrentScreen('FLOW_TAGS')}
-                    color="text-emerald-600"
-                  />
-                  <ConfigMenuItem
-                    icon={<GanttChartSquare size={22} />}
-                    label="Unidades de Medida"
-                    onClick={() => setCurrentScreen('UNIDADES')}
-                  />
-                  <ConfigMenuItem 
-                    icon={<Scissors size={24} />}
-                    label="Facas Corte"
-                    desc="Matrizes"
-                    color="text-orange-600"
-                    bg="bg-orange-50"
-                    isDarkMode={isDarkMode}
-                    onClick={() => setCurrentScreen('FACAS')}
-                  />
-                  <ConfigMenuItem 
-                    icon={<Layers size={24} />}
-                    label="Infesto"
-                    desc="Camadas"
-                    color="text-blue-600"
-                    bg="bg-blue-50"
-                    isDarkMode={isDarkMode}
-                    onClick={() => setCurrentScreen('INFESTO')}
-                  />
-                  <ConfigMenuItem 
-                    icon={<CalendarClock size={24} />}
-                    label="Prazos"
-                    desc="SLA Entrega"
-                    color="text-teal-600"
-                    bg="bg-teal-50"
-                    isDarkMode={isDarkMode}
-                    onClick={() => setCurrentScreen('PRAZOS')}
-                  />
-                  <ConfigMenuItem 
-                    icon={<Footprints size={24} />}
-                    label="Fichas Técnicas"
-                    desc="Modelagem"
-                    color="text-slate-700"
-                    bg="bg-slate-100"
-                    isDarkMode={isDarkMode}
-                    onClick={() => setCurrentScreen('FICHAS')}
-                  />
-                  <ConfigMenuItem 
-                    icon={<Grid3X3 size={24} />}
-                    label="Padrão Embalagens"
-                    desc="Tamanhos & Grades"
-                    color="text-violet-600"
-                    bg="bg-violet-50"
-                    isDarkMode={isDarkMode}
-                    onClick={() => setCurrentScreen('EMBALAGENS')}
-                  />
-                  <ConfigMenuItem 
-                    icon={<Package size={24} />}
-                    label="Insumos"
-                    desc="Catálogo"
-                    color="text-amber-600"
-                    bg="bg-amber-50"
-                    isDarkMode={isDarkMode}
-                    onClick={() => setCurrentScreen('INSUMOS')}
-                  />
-                  <ConfigMenuItem 
-                    icon={<Grid3X3 size={24} />}
-                    label="Matrizes Sola"
-                    desc="Solados"
-                    color="text-slate-800"
-                    bg="bg-slate-100"
-                    isDarkMode={isDarkMode}
-                    onClick={() => setCurrentScreen('MATRIZES')}
-                    isLast
-                  />
+              <div className="flex flex-col gap-8 pb-10">
+                {/* CARD: GESTÃO DE PROCESSOS */}
+                <div className="flex flex-col gap-3">
+                  <h3 className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Gestão de Processos</h3>
+                  <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                    <ConfigMenuItem
+                      icon={<TableCellsMerge size={22} />}
+                      label="Setores de Produção"
+                      desc="Fluxo da fábrica"
+                      onClick={() => setCurrentScreen('SECTORS')}
+                      color="text-indigo-600"
+                      bg="bg-indigo-50"
+                      isDarkMode={isDarkMode}
+                    />
+                    <ConfigMenuItem
+                      icon={<Tags size={22} />}
+                      label="Etapas e Processos"
+                      desc="Serviços e Flow Tags"
+                      onClick={() => setCurrentScreen('FLOW_TAGS')}
+                      color="text-emerald-600"
+                      bg="bg-emerald-50"
+                      isDarkMode={isDarkMode}
+                    />
+                    <ConfigMenuItem 
+                      icon={<CalendarClock size={24} />}
+                      label="Prazos de Entrega"
+                      desc="SLA por processo"
+                      color="text-teal-600"
+                      bg="bg-teal-50"
+                      isDarkMode={isDarkMode}
+                      onClick={() => setCurrentScreen('PRAZOS')}
+                      isLast={true}
+                    />
+                  </div>
+                </div>
+
+                {/* CARD: PARÂMETROS DE MODELAGEM (Same as Dashboard) */}
+                <div className="flex flex-col gap-3">
+                  <h3 className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Parâmetros de Modelagem</h3>
+                  <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                    <ConfigMenuItem
+                      icon={<Package size={22} />}
+                      label="Produtos Cadastrados"
+                      desc="Catálogo técnico completo"
+                      onClick={() => onNavigate?.(ViewType.PRODUCTS)}
+                      color="text-indigo-600"
+                      bg="bg-indigo-50"
+                      isDarkMode={isDarkMode}
+                    />
+                    <ConfigMenuItem
+                      icon={<Plus size={22} />}
+                      label="Cadastrar Novo Modelo"
+                      desc="Solados, Cores e Materiais"
+                      onClick={() => onAddProduct?.()}
+                      color="text-emerald-600"
+                      bg="bg-emerald-50"
+                      isDarkMode={isDarkMode}
+                    />
+                    <ConfigMenuItem
+                      icon={<Grid3X3 size={22} />}
+                      label="Grades de Produção"
+                      desc="Tamanhos e configurações"
+                      onClick={() => onNavigateGrids?.()}
+                      color="text-violet-600"
+                      bg="bg-violet-50"
+                      isDarkMode={isDarkMode}
+                    />
+                    <ConfigMenuItem 
+                      icon={<Footprints size={24} />}
+                      label="Matrizes de Solados"
+                      desc="Catálogo e moldes"
+                      color="text-orange-600"
+                      bg="bg-orange-50"
+                      isDarkMode={isDarkMode}
+                      onClick={() => setCurrentScreen('MATRIZES')}
+                    />
+                    <ConfigMenuItem 
+                      icon={<Layers size={24} />}
+                      label="Materiais e Insumos"
+                      desc="Componentes de produção"
+                      color="text-blue-600"
+                      bg="bg-blue-50"
+                      isDarkMode={isDarkMode}
+                      onClick={() => setCurrentScreen('INSUMOS')}
+                      isLast={true}
+                    />
+                  </div>
+                </div>
+
+                {/* CARD: ESTRUTURA E LOGÍSTICA */}
+                <div className="flex flex-col gap-3">
+                  <h3 className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Estrutura e Logística</h3>
+                  <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                    <ConfigMenuItem
+                      icon={<GanttChartSquare size={22} />}
+                      label="Unidades de Medida"
+                      desc="KG, MT, UN, PR..."
+                      onClick={() => setCurrentScreen('UNIDADES')}
+                      color="text-slate-600"
+                      isDarkMode={isDarkMode}
+                    />
+                    <ConfigMenuItem 
+                      icon={<Scissors size={24} />}
+                      label="Facas de Corte"
+                      desc="Matrizes de corte"
+                      color="text-rose-600"
+                      bg="bg-rose-50"
+                      isDarkMode={isDarkMode}
+                      onClick={() => setCurrentScreen('FACAS')}
+                    />
+                    <ConfigMenuItem 
+                      icon={<Box size={24} />}
+                      label="Infesto"
+                      desc="Camadas de tecido"
+                      color="text-sky-600"
+                      bg="bg-sky-50"
+                      isDarkMode={isDarkMode}
+                      onClick={() => setCurrentScreen('INFESTO')}
+                    />
+                    <ConfigMenuItem 
+                      icon={<PackageOpen size={24} />}
+                      label="Padrão Embalagens"
+                      desc="Caixas e grades"
+                      color="text-amber-600"
+                      bg="bg-amber-50"
+                      isDarkMode={isDarkMode}
+                      onClick={() => setCurrentScreen('EMBALAGENS')}
+                      isLast={true}
+                    />
+                  </div>
                 </div>
               </div>
             </motion.div>
@@ -297,6 +349,8 @@ export default function ProductionConfigView({
                 setEditingSector({ id: '', name: '', color: '', order: sectors.length, flowTagIds: [] });
                 setIsAddingSector(true);
               }}
+              title="Adicionar Setor"
+              aria-label="Adicionar novo setor de produção"
               className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
             >
               <Plus size={24} strokeWidth={3} />
@@ -351,6 +405,8 @@ export default function ProductionConfigView({
                 setEditingTag({ id: '', name: '', subcategories: [] });
                 setIsAddingTag(true);
               }}
+              title="Adicionar Flow Tag"
+              aria-label="Adicionar nova flow tag de processo"
               className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
             >
               <Plus size={24} strokeWidth={3} />
@@ -380,6 +436,8 @@ export default function ProductionConfigView({
                       setEditingTag({ ...tag });
                       setIsAddingTag(false);
                     }}
+                    title="Editar Tag"
+                    aria-label={`Editar flow tag ${tag.name}`}
                     className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-indigo-600'}`}
                   >
                     <Edit3 size={18} />
@@ -388,6 +446,8 @@ export default function ProductionConfigView({
                     onClick={() => {
                       if (confirm('Deseja excluir esta Flow Tag?')) onDeleteFlowTag(tag.id);
                     }}
+                    title="Excluir Tag"
+                    aria-label={`Excluir flow tag ${tag.name}`}
                     className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-red-400' : 'bg-slate-50 text-slate-400 hover:text-red-500'}`}
                   >
                     <Trash2 size={18} />
@@ -492,6 +552,8 @@ export default function ProductionConfigView({
         <div className="mt-8 flex justify-center px-4">
           <button 
             onClick={onBack}
+            title="Voltar ao Início"
+            aria-label="Voltar para a tela inicial do dashboard"
             className={`flex items-center justify-center gap-3 px-8 py-5 rounded-[2rem] w-full transition-all shadow-lg active:scale-[0.98] ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-white text-slate-500 hover:text-slate-900 border border-slate-100'}`}
           >
             <ArrowLeft size={18} strokeWidth={3} />
@@ -504,7 +566,6 @@ export default function ProductionConfigView({
       <Modal 
         isOpen={!!editingTag} 
         onClose={() => setEditingTag(null)}
-        isDarkMode={isDarkMode}
         title={isAddingTag ? "Nova Flow Tag" : "Editar Flow Tag"}
       >
         <form onSubmit={handleSaveTag} className="flex flex-col gap-6">
@@ -526,6 +587,8 @@ export default function ProductionConfigView({
               <button 
                 type="button"
                 onClick={handleAddSubcategory}
+                title="Adicionar Subcategoria"
+                aria-label="Adicionar nova subcategoria de serviço"
                 className="text-indigo-600 dark:text-indigo-400 flex items-center gap-1 text-[9px] font-black uppercase tracking-widest"
               >
                 <PlusCircle size={14} /> Adicionar
@@ -549,6 +612,8 @@ export default function ProductionConfigView({
                   <button 
                     type="button"
                     onClick={() => handleRemoveSubcategory(index)}
+                    title="Remover Subcategoria"
+                    aria-label="Remover esta subcategoria de serviço"
                     className="w-10 h-10 rounded-xl bg-red-50 dark:bg-red-900/20 text-red-500 flex items-center justify-center shrink-0"
                   >
                     <X size={18} />
@@ -574,7 +639,6 @@ export default function ProductionConfigView({
       <Modal 
         isOpen={!!editingSector} 
         onClose={() => setEditingSector(null)}
-        isDarkMode={isDarkMode}
         title={isAddingSector ? "Novo Setor" : "Editar Setor"}
       >
         <form onSubmit={handleSaveSector} className="flex flex-col gap-6">
@@ -913,7 +977,7 @@ function GenericConfigList({
        {/* List Items */}
        <div className="flex flex-col gap-8">
           {type === 'MATERIAL' ? (
-            Object.entries(groupedItems || {}).map(([category, catItems]) => (
+            Object.entries(groupedItems || {}).map(([category, catItems]: [string, ProductionConfigItem[]]) => (
               <div key={category} className="flex flex-col gap-4">
                  <div className="flex items-center gap-3 px-2">
                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white border border-slate-100 shadow-sm text-slate-500'}`}>
@@ -1008,6 +1072,8 @@ function GenericConfigList({
                     setEditingItem({ ...item });
                     setIsModalOpen(true);
                   }}
+                  title="Editar Item"
+                  aria-label={`Editar ${item.name}`}
                   className={`p-2 rounded-full transition-all ${isDarkMode ? 'text-slate-600 hover:text-white' : 'text-slate-200 hover:text-slate-400'}`}
                 >
                   <Edit3 size={18} />
@@ -1016,6 +1082,8 @@ function GenericConfigList({
                   onClick={() => {
                     if (confirm(`Deseja excluir ${item.name}?`)) onDelete(item.id);
                   }}
+                  title="Excluir Item"
+                  aria-label={`Excluir ${item.name}`}
                   className={`p-2 rounded-full transition-all ${isDarkMode ? 'text-slate-600 hover:text-red-400' : 'text-slate-200 hover:text-red-400'}`}
                 >
                   <Trash2 size={18} />
@@ -1053,7 +1121,6 @@ function GenericConfigList({
        <Modal 
           isOpen={isModalOpen} 
           onClose={() => setIsModalOpen(false)}
-          isDarkMode={isDarkMode}
           title={editingItem?.id ? `Editar Registro` : `Novo Registro`}
        >
           <form onSubmit={handleSave} className="flex flex-col gap-6">
@@ -1093,6 +1160,8 @@ function GenericConfigList({
                    <div className="flex flex-col gap-2">
                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Categoria</label>
                      <select 
+                       title="Categoria da Matriz"
+                       aria-label="Selecionar categoria da matriz"
                        value={editingItem?.metadata?.category || ''}
                        onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, category: e.target.value } } : null)}
                        className={`w-full px-4 py-4 rounded-2xl font-bold text-[10px] uppercase tracking-widest outline-none transition-all border-2 ${
@@ -1121,6 +1190,7 @@ function GenericConfigList({
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Transfer?</label>
                       <button 
                         type="button"
+                        title="Alternar estado do Transfer"
                         onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, hasTransfer: !prev.metadata?.hasTransfer } } : null)}
                         className={`w-full py-4 rounded-2xl font-black text-[9px] uppercase tracking-widest border-2 transition-all ${
                           editingItem?.metadata?.hasTransfer 
@@ -1141,6 +1211,7 @@ function GenericConfigList({
                        <button
                          key={tag.id}
                          type="button"
+                         title={`Selecionar estágio ${tag.name}`}
                          onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: tag.id } } : null)}
                          className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all ${
                            editingItem?.metadata?.flowTagId === tag.id
@@ -1162,6 +1233,8 @@ function GenericConfigList({
                         <span className="text-xs font-black uppercase tracking-widest text-slate-500">Pesos por Tamanho (GR)</span>
                       </div>
                       <select 
+                        title="Selecionar Grade"
+                        aria-label="Selecionar grade de tamanhos para pesos"
                         onChange={(e) => {
                            const gridId = e.target.value;
                            const grid = (grids || []).find(g => g.id === gridId);
@@ -1241,6 +1314,8 @@ function GenericConfigList({
                                  )}
                                  <button 
                                    type="button"
+                                   title={isSelected ? "Desmarcar Cor" : "Selecionar Cor"}
+                                   aria-label={isSelected ? `Remover cor ${color.name}` : `Adicionar cor ${color.name}`}
                                    onClick={() => {
                                      setEditingItem(prev => {
                                        if (!prev) return null;
@@ -1270,6 +1345,8 @@ function GenericConfigList({
                    <div className="flex flex-col gap-2">
                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Categoria Mestre *</label>
                      <select 
+                       title="Categoria Mestre"
+                       aria-label="Selecionar categoria mestre do insumo"
                        value={editingItem?.metadata?.masterCategory || ''}
                        onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, masterCategory: e.target.value as any } } : null)}
                        required
@@ -1313,6 +1390,8 @@ function GenericConfigList({
                    <div className="flex flex-col gap-2">
                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Flow Tag (Estágio)</label>
                      <select 
+                       title="Flow Tag"
+                       aria-label="Selecionar estágio do fluxo"
                        value={editingItem?.metadata?.flowTagId || ''}
                        onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: e.target.value } } : null)}
                        className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
@@ -1326,6 +1405,8 @@ function GenericConfigList({
                    <div className="flex flex-col gap-2">
                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Fornecedor Principal</label>
                      <select 
+                       title="Fornecedor"
+                       aria-label="Selecionar fornecedor principal"
                        value={editingItem?.metadata?.supplierId || ''}
                        onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, supplierId: e.target.value } } : null)}
                        className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
@@ -1343,6 +1424,8 @@ function GenericConfigList({
                    <div className="flex flex-col gap-2">
                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Unidade *</label>
                      <select 
+                       title="Unidade de Medida"
+                       aria-label="Selecionar unidade de medida"
                        value={editingItem?.metadata?.unitId || ''}
                        onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitId: e.target.value } } : null)}
                        required
@@ -1379,6 +1462,8 @@ function GenericConfigList({
                            <button
                              key={color.id}
                              type="button"
+                             title={isSelected ? "Remover Cor" : "Adicionar Cor"}
+                             aria-label={isSelected ? `Remover cor ${color.name}` : `Adicionar cor ${color.name}`}
                              onClick={() => {
                                const currentIds = editingItem?.metadata?.colorIds || [];
                                const newIds = isSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id];
@@ -1701,11 +1786,11 @@ function GenericConfigList({
                          <div className="flex items-center justify-between px-2">
                             <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Distribuição da Grade</h4>
                             <span className={`text-[10px] font-black uppercase tracking-widest ${
-                              Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a, b) => a + (Number(b) || 0), 0) === (editingItem?.metadata?.capacity || 0)
+                              Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0) === (editingItem?.metadata?.capacity || 0)
                                 ? 'text-emerald-500'
                                 : 'text-red-500'
                             }`}>
-                               Total: {Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a, b) => a + (Number(b) || 0), 0)} / {editingItem?.metadata?.capacity || 0}
+                               Total: {Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0)} / {editingItem?.metadata?.capacity || 0}
                             </span>
                          </div>
                          
@@ -1737,140 +1822,7 @@ function GenericConfigList({
                   </div>
                 )}
               </div>
-            ) : type === 'MATERIAL' ? (
-              // Specialized Form for Insumos
-              <div className="flex flex-col gap-6">
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Material *</label>
-                  <input 
-                    type="text"
-                    value={editingItem?.name || ''}
-                    onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)}
-                    placeholder="Ex: Nobuck Preto"
-                    className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-                    required
-                  />
-                </div>
 
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Ref. do Material</label>
-                  <input 
-                    type="text"
-                    value={editingItem?.metadata?.reference || ''}
-                    onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, reference: e.target.value } } : null)}
-                    placeholder="Ex: REF-100"
-                    className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Categoria Mestre *</label>
-                    <select 
-                      value={editingItem?.metadata?.masterCategory || ''}
-                      onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, masterCategory: e.target.value } } : null)}
-                      className={`w-full px-4 py-4 rounded-2xl font-bold transition-all outline-none appearance-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-                      required
-                    >
-                      <option value="">Selecione...</option>
-                      {MASTER_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Flow Tag (Fluxo) *</label>
-                    <select 
-                      value={editingItem?.metadata?.flowTagId || ''}
-                      onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: e.target.value } } : null)}
-                      className={`w-full px-4 py-4 rounded-2xl font-bold transition-all outline-none appearance-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-                      required
-                    >
-                      <option value="">Selecione...</option>
-                      {flowTags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Fornecedor Padrão</label>
-                  <select 
-                    value={editingItem?.metadata?.supplierId || ''}
-                    onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, supplierId: e.target.value } } : null)}
-                    className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none appearance-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-                  >
-                    <option value="">Vincular Fornecedor...</option>
-                    {suppliers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="flex flex-col gap-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Unidade</label>
-                    <select 
-                      value={editingItem?.metadata?.unit || ''}
-                      onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unit: e.target.value } } : null)}
-                      className={`w-full px-4 py-4 rounded-2xl font-bold transition-all outline-none appearance-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-                    >
-                      <option value="">Unidade...</option>
-                      {units.map(u => <option key={u.id} value={u.name}>{u.name} - {u.description}</option>)}
-                    </select>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Largura (M)</label>
-                    <input 
-                      type="number"
-                      step="0.01"
-                      value={editingItem?.metadata?.width || ''}
-                      onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: Number(e.target.value) } } : null)}
-                      placeholder="1.40"
-                      className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-                    />
-                  </div>
-                </div>
-
-                <div className={`p-6 rounded-[2.5rem] flex flex-col gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'} border-2`}>
-                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Preço Base (R$)</label>
-                   <div className="flex items-center gap-3">
-                      <span className="text-xl font-black text-slate-400">R$</span>
-                      <input 
-                        type="number"
-                        step="0.01"
-                        value={editingItem?.metadata?.baseCost || ''}
-                        onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: Number(e.target.value) } } : null)}
-                        placeholder="0.00"
-                        className={`w-full bg-transparent text-2xl font-black outline-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
-                      />
-                   </div>
-                   <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-2">* Alterações neste campo gerarão um registro automático no histórico.</p>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Cores Ativas no Catálogo</label>
-                  <div className="flex flex-wrap gap-2 p-2">
-                     {colors.map(color => (
-                       <button
-                         key={color.id}
-                         type="button"
-                         onClick={() => {
-                           const current = editingItem?.metadata?.colorIds || [];
-                           const next = current.includes(color.id)
-                             ? current.filter(id => id !== color.id)
-                             : [...current, color.id];
-                           setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, colorIds: next } } : null);
-                         }}
-                         className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border-2 ${
-                           (editingItem?.metadata?.colorIds || []).includes(color.id)
-                             ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-500/20'
-                             : isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-100 text-slate-500'
-                         }`}
-                       >
-                         {color.name}
-                       </button>
-                     ))}
-                  </div>
-                </div>
-              </div>
             ) : (
               // Generic Form for other types
               <div className="flex flex-col gap-6">
@@ -1932,12 +1884,13 @@ function GenericConfigList({
 
 
 
-function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: { 
+function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete, key }: { 
   sector: Sector; 
   flowTags: FlowTag[];
   isDarkMode: boolean; 
   onEdit: () => void;
   onDelete: () => void;
+  key?: any;
 }) {
   const controls = useDragControls();
   const sectorTags = flowTags.filter(t => sector.flowTagIds?.includes(t.id));
@@ -1975,6 +1928,8 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: {
         <div className="flex gap-2">
           <button 
             onClick={onEdit}
+            title="Editar Setor"
+            aria-label={`Editar setor ${sector.name}`}
             className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-indigo-600'}`}
           >
             <Edit3 size={18} />
@@ -1983,6 +1938,8 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: {
             onClick={() => {
               if (confirm(`Deseja excluir o setor ${sector.name}?`)) onDelete();
             }}
+            title="Excluir Setor"
+            aria-label={`Excluir setor ${sector.name}`}
             className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-red-400' : 'bg-slate-50 text-slate-400 hover:text-red-500'}`}
           >
             <Trash2 size={18} />

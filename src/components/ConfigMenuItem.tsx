@@ -2,6 +2,7 @@ import React from 'react';
 import { ChevronRight } from 'lucide-react';
 
 interface ConfigMenuItemProps {
+  key?: string | number;
   icon: React.ReactNode;
   label: string;
   desc?: string;

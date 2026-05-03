@@ -8,7 +8,6 @@ import {
   CreditCard, 
   Wallet,
   BarChart3, 
-  Database,
   Boxes,
   Moon,
   Sun,
@@ -16,26 +15,30 @@ import {
   Layout,
   Box,
   Grid3X3,
-  Factory
+  Factory,
+  Database,
+  Footprints
 } from 'lucide-react';
-import { ViewType } from '../types';
+import { ViewType, ProductionScreenType } from '../types';
 
 interface SettingsViewProps {
   onNavigate: (view: ViewType) => void;
+  onNavigateProduction: (screen: ProductionScreenType) => void;
   isDarkMode: boolean;
   toggleDarkMode: () => void;
 }
 
-export default function SettingsView({ onNavigate, isDarkMode, toggleDarkMode }: SettingsViewProps) {
+export default function SettingsView({ onNavigate, onNavigateProduction, isDarkMode, toggleDarkMode }: SettingsViewProps) {
   const menuGroups = [
     {
       title: "Configurações de Produto",
       items: [
-        { id: ViewType.PRODUCT_SHEET, label: "Ficha Técnica (Produtos)", icon: <Box size={24} />, color: "text-indigo-600 dark:text-indigo-400" },
+        { id: ViewType.PRODUCT_SHEET, label: "Engenharia / Ficha Técnica", icon: <Database size={24} />, color: "text-indigo-600 dark:text-indigo-400" },
+        { id: 'SOLE_MATRIX_DIRECT', label: "Matrizes de Solados", icon: <Footprints size={24} />, color: "text-orange-600 dark:text-orange-400" },
         { id: ViewType.CATEGORIES, label: "Categorias", icon: <Tags size={24} />, color: "text-emerald-600 dark:text-emerald-400" },
-        { id: ViewType.GRADES, label: "Grades", icon: <Grid3X3 size={24} />, color: "text-violet-600 dark:text-violet-400" },
+        { id: ViewType.GRIDS, label: "Grades", icon: <Grid3X3 size={24} />, color: "text-violet-600 dark:text-violet-400" },
         { id: ViewType.COLORS, label: "Cores", icon: <Palette size={24} />, color: "text-pink-600 dark:text-pink-400" },
-        { id: ViewType.PRODUCTION_CONFIG, label: "Configuração de Produção", icon: <Factory size={24} />, color: "text-orange-600 dark:text-orange-400" },
+        { id: ViewType.PRODUCTION_CONFIG, label: "Configuração de Produção", icon: <Factory size={24} />, color: "text-slate-600 dark:text-slate-400" },
         { id: ViewType.STOCK, label: "Estoque Central", icon: <Boxes size={24} />, color: "text-amber-700 dark:text-amber-500" },
       ]
     },
@@ -89,7 +92,13 @@ export default function SettingsView({ onNavigate, isDarkMode, toggleDarkMode }:
               {group.items.map((item, itemIdx) => (
                 <button
                   key={item.id}
-                  onClick={() => onNavigate(item.id)}
+                  onClick={() => {
+                    if (item.id === 'SOLE_MATRIX_DIRECT') {
+                      onNavigateProduction('MATRIZES');
+                    } else {
+                      onNavigate(item.id as ViewType);
+                    }
+                  }}
                   className={`w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${itemIdx !== group.items.length - 1 ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
                 >
                   <div className="flex items-center gap-4">

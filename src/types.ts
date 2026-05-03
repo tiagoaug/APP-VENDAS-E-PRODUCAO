@@ -20,6 +20,12 @@ export type Grid = {
   configuration: { [size: string]: number }; // e.g., { "37": 2, "38": 4, "39": 4, "40": 2 }
 };
 
+export type TechSheetItem = {
+  id: string;
+  configItemId: string; // Reference to ProductionConfigItem of type 'MATERIAL'
+  quantity: number;
+};
+
 export type Variation = {
   id: string;
   color: string;
@@ -29,6 +35,7 @@ export type Variation = {
   stock: { [size: string]: number };
   // Optional prices per size for Retail
   sizePrices?: { [size: string]: { cost: number; sale: number } };
+  techSheet?: TechSheetItem[];
 };
 
 
@@ -47,6 +54,9 @@ export type Product = {
   priceAdjustmentDate?: number;
   costPriceAdjustmentAmount?: number;
   salePriceAdjustmentAmount?: number;
+  productionGridId?: string;
+  moldId?: string;
+  soleMapping?: { [size: string]: string };
   variations: Variation[];
   createdAt: number;
 };
@@ -268,6 +278,7 @@ export enum ViewType {
   PRODUCTION_STOCK = 'PRODUCTION_STOCK',
   PRODUCTION_PURCHASE_NEEDS = 'PRODUCTION_PURCHASE_NEEDS',
   PRODUCTION_CONFIG = 'PRODUCTION_CONFIG',
+  PRODUCTION_TECH_SHEET = 'PRODUCTION_TECH_SHEET',
   PRODUCT_SHEET = 'PRODUCT_SHEET',
 }
 
@@ -276,6 +287,7 @@ export type DashboardCardConfig = {
   label: string;
   visible: boolean;
   order: number;
+  initialScreen?: ProductionScreenType;
 };
 
 export type DashboardConfig = {
@@ -311,6 +323,10 @@ export type Sector = {
   order: number;
   flowTagIds: string[];
 };
+
+export type ProductionScreenType = 'MENU' | 'SECTORS' | 'FLOW_TAGS' | 'UNIDADES' | 'FACAS' | 'INFESTO' | 'PRAZOS' | 'FICHAS' | 'EMBALAGENS' | 'INSUMOS' | 'MATRIZES';
+
+// Production sub-screens moved to types.ts
 
 export type ProductionConfigItem = {
   id: string;

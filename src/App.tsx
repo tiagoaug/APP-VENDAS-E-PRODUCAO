@@ -64,6 +64,7 @@ import {
   FlowTag,
   Sector,
   ProductionConfigItem,
+  ProductionScreenType,
 } from "./types";
 import {
   MOCK_PRODUCTS,
@@ -189,6 +190,7 @@ export default function App() {
       { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 9 },
       { id: 'activity', label: 'Atividade Recente', visible: true, order: 10 },
       { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 11 },
+      { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 12 },
     ]
   };
 
@@ -199,6 +201,12 @@ export default function App() {
     // Migration: remove legacy shortcuts card if exists
     if (config.cards && config.cards.find((c: any) => c.id === 'shortcuts')) {
       config.cards = config.cards.filter((c: any) => c.id !== 'shortcuts');
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+
+    // Migration: ensure engineering_config is present
+    if (config.cards && !config.cards.find((c: any) => c.id === 'engineering_config')) {
+      config.cards.push({ id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: config.cards.length });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
     
@@ -380,6 +388,7 @@ export default function App() {
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [searchContext, setSearchContext] = useState<string>('');
+  const [productionSubScreen, setProductionSubScreen] = useState<ProductionScreenType>('MENU');
 
   const navigateTo = (view: ViewType, id: string | null = null, search: string = '') => {
     if (view === ViewType.PRODUCT_FORM) setSelectedProductId(id);
@@ -390,6 +399,17 @@ export default function App() {
 
     setCurrentView(view);
     setHistory((prev) => [...prev, view]);
+    
+    // Reset sub-screen when navigating to a new root view, 
+    // unless we specifically set it later
+    if (view !== ViewType.PRODUCTION_CONFIG) {
+      setProductionSubScreen('MENU');
+    }
+  };
+
+  const navigateToProduction = (subScreen: ProductionScreenType) => {
+    setProductionSubScreen(subScreen);
+    navigateTo(ViewType.PRODUCTION_CONFIG);
   };
 
   const goBack = () => {
@@ -636,6 +656,9 @@ export default function App() {
             categories={categories}
             dashboardConfig={dashboardConfig || defaultDashboardConfig}
             onNavigate={navigateTo}
+            onNavigateProduction={navigateToProduction}
+            onNavigateGrids={() => navigateTo(ViewType.GRIDS)}
+            onAddProduct={() => navigateTo(ViewType.PRODUCT_FORM)}
           />
         );
       case ViewType.DASHBOARD_CONFIG:
@@ -661,6 +684,7 @@ export default function App() {
         return (
           <SettingsView
             onNavigate={navigateTo}
+            onNavigateProduction={navigateToProduction}
             isDarkMode={isDarkMode}
             toggleDarkMode={toggleDarkMode}
           />
@@ -951,6 +975,7 @@ export default function App() {
             suppliers={suppliers}
             categories={categories}
             colors={colors}
+            productionConfigs={productionConfigs}
             onSave={(product) => {
               firebaseService.saveDocument("products", product);
               goBack();
@@ -1967,6 +1992,28 @@ export default function App() {
                   ))}
                 </div>
               </div>
+
+              {/* Novo Grupo de Engenharia */}
+              <div className="flex flex-col gap-3">
+                <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Engenharia e Desenvolvimento</h3>
+                <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                  <button
+                    onClick={() => navigateTo(ViewType.PRODUCT_SHEET)}
+                    className="w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 flex items-center justify-center shrink-0 text-indigo-600">
+                        <Database size={22} />
+                      </div>
+                      <div className="text-left">
+                        <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Ficha Técnica</p>
+                        <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Produtos, Grades e Solados</p>
+                      </div>
+                    </div>
+                    <ChevronRight size={20} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+                  </button>
+                </div>
+              </div>
             </div>
 
             <motion.div 
@@ -1999,36 +2046,90 @@ export default function App() {
             onDeleteSector={(id) => firebaseService.deleteDocument("sectors", id)}
             onSaveConfigItem={(item) => firebaseService.saveDocument("productionConfigs", item)}
             onDeleteConfigItem={(id) => firebaseService.deleteDocument("productionConfigs", id)}
-            onUpdateSectorsOrder={async (newOrder) => {
-              const updated = newOrder.map((s, i) => ({ ...s, order: i }));
-              for (const s of updated) {
-                await firebaseService.saveDocument("sectors", s);
-              }
-            }}
+            onUpdateSectorsOrder={(updatedSectors) => Promise.all(updatedSectors.map(s => firebaseService.saveDocument('sectors', s))).then(() => {})}
             onBack={goBack}
             isDarkMode={isDarkMode}
             people={people}
             colors={colors}
             grids={grids}
             categories={categories}
+            initialScreen={productionSubScreen}
+            onNavigate={navigateTo}
+            onAddProduct={() => navigateTo(ViewType.PRODUCT_FORM)}
+            onNavigateGrids={() => navigateTo(ViewType.GRIDS)}
           />
         );
       case ViewType.PRODUCT_SHEET:
         return (
           <ProductSheetMenuView 
             onNavigate={navigateTo}
+            onAddProduct={() => navigateTo(ViewType.PRODUCT_FORM)}
+            onNavigateGrids={() => navigateTo(ViewType.GRIDS)}
+            onNavigateProductionConfig={navigateToProduction}
             onBack={goBack}
             isDarkMode={isDarkMode}
+            products={products}
+            grids={grids}
           />
         );
       case ViewType.PRODUCTION_PCP:
+        return (
+          <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center gap-6">
+            <div className="w-20 h-20 rounded-3xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+              <GanttChartSquare size={40} />
+            </div>
+            <div>
+              <h2 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white mb-2">PCP Central</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs mx-auto font-bold uppercase tracking-widest leading-relaxed">
+                O Planejamento e Controle de Produção está sendo sincronizado com suas vendas.
+              </p>
+            </div>
+            <button onClick={goBack} className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest">Voltar</button>
+          </div>
+        );
       case ViewType.PRODUCTION_STOCK:
+        return (
+          <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center gap-6">
+            <div className="w-20 h-20 rounded-3xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+              <PackageOpen size={40} />
+            </div>
+            <div>
+              <h2 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white mb-2">Estoque de Materiais</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs mx-auto font-bold uppercase tracking-widest leading-relaxed">
+                Gestão integrada de insumos e matérias-primas.
+              </p>
+            </div>
+            <button onClick={goBack} className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest">Voltar</button>
+          </div>
+        );
       case ViewType.PRODUCTION_PURCHASE_NEEDS:
-
+        return (
+          <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center gap-6">
+            <div className="w-20 h-20 rounded-3xl bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
+              <ClipboardList size={40} />
+            </div>
+            <div>
+              <h2 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white mb-2">Necessidade de Compras</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs mx-auto font-bold uppercase tracking-widest leading-relaxed">
+                Cálculo automático de compra baseado na produção pendente.
+              </p>
+            </div>
+            <button onClick={goBack} className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest">Voltar</button>
+          </div>
+        );
       default:
         return (
-          <div className="text-center py-20 text-slate-400 font-bold uppercase tracking-widest italic">
-            Em desenvolvimento
+          <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center gap-6">
+            <div className="w-20 h-20 rounded-3xl bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-400">
+              <AlertCircle size={40} />
+            </div>
+            <div>
+              <h2 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white mb-2">Em Desenvolvimento</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs mx-auto font-bold uppercase tracking-widest leading-relaxed">
+                Esta funcionalidade ainda não está pronta para uso.
+              </p>
+            </div>
+            <button onClick={goBack} className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest">Voltar</button>
           </div>
         );
     }

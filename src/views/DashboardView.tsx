@@ -29,12 +29,19 @@ import {
   User,
   Factory,
   ShoppingCart,
-  Plus
+  Plus,
+  Database,
+  Grid3X3,
+  Footprints,
+  Layers,
+  ChevronRight
 } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import ConfigMenuItem from '../components/ConfigMenuItem';
+import { ProductionScreenType } from "../types";
 
 interface DashboardViewProps {
   sales: Sale[];
@@ -51,6 +58,9 @@ interface DashboardViewProps {
     newStatus: "PENDING" | "CLEARED" | "OVERDUE",
   ) => void;
   onNavigate: (view: ViewType, id?: string | null, search?: string) => void;
+  onNavigateProduction: (subScreen: ProductionScreenType) => void;
+  onNavigateGrids: () => void;
+  onAddProduct: () => void;
   isDarkMode: boolean;
   dashboardConfig: DashboardConfig;
 }
@@ -66,6 +76,9 @@ export default function DashboardView({
   onAddSale,
   onUpdateCheckStatus,
   onNavigate,
+  onNavigateProduction,
+  onNavigateGrids,
+  onAddProduct,
   isDarkMode,
   dashboardConfig,
 }: DashboardViewProps) {
@@ -484,6 +497,7 @@ export default function DashboardView({
 
   return (
     <div className="flex-1 overflow-y-auto force-scrollbar flex flex-col gap-4 pb-40 px-4 bg-[#fafafa] dark:bg-slate-950 min-h-screen pt-4">
+
       {sortedCards.map((card) => {
         if (!card.visible) return null;
 
@@ -622,7 +636,7 @@ export default function DashboardView({
                 <div className="h-[200px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                   {customerDashboardTab === 'DEBITS' ? (
                     <>
-                      {customersWithDebts.map((item, idx) => (
+                      {customersWithDebts.filter(item => item.person.name.toLowerCase().includes(customerDebtsSearch.toLowerCase())).map((item, idx) => (
                         <div key={`cust-debt-${item.person.id}-${idx}`} onClick={() => onNavigate(ViewType.SALES, null, item.person.name)} className={`p-3 rounded-xl border cursor-pointer transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
                           <div className="flex justify-between items-center">
                             <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tight">{item.person.name}</p>
@@ -631,11 +645,11 @@ export default function DashboardView({
                           <p className="text-[9px] text-slate-500 mt-0.5 uppercase tracking-widest">{item.pendingCount} {item.pendingCount === 1 ? 'venda pendente' : 'vendas pendentes'}</p>
                         </div>
                       ))}
-                      {customersWithDebts.length === 0 && <p className="text-[10px] text-center text-slate-400 py-4">Nenhum cliente com débito.</p>}
+                      {customersWithDebts.filter(item => item.person.name.toLowerCase().includes(customerDebtsSearch.toLowerCase())).length === 0 && <p className="text-[10px] text-center text-slate-400 py-4">Nenhum cliente com débito.</p>}
                     </>
                   ) : (
                     <>
-                      {customersWithCredits.map((person, idx) => (
+                      {customersWithCredits.filter(p => p.name.toLowerCase().includes(customerDebtsSearch.toLowerCase())).map((person, idx) => (
                         <div key={`cust-cred-${person.id}-${idx}`} className={`p-3 rounded-xl border transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
                           <div className="flex justify-between items-center">
                             <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tight">{person.name}</p>
@@ -643,7 +657,7 @@ export default function DashboardView({
                           </div>
                         </div>
                       ))}
-                      {customersWithCredits.length === 0 && <p className="text-[10px] text-center text-slate-400 py-4">Nenhum cliente com crédito.</p>}
+                      {customersWithCredits.filter(p => p.name.toLowerCase().includes(customerDebtsSearch.toLowerCase())).length === 0 && <p className="text-[10px] text-center text-slate-400 py-4">Nenhum cliente com crédito.</p>}
                     </>
                   )}
                 </div>
@@ -653,10 +667,69 @@ export default function DashboardView({
                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total do Período</p>
                   <p className={`text-[13px] font-black ${customerDashboardTab === 'DEBITS' ? 'text-rose-500' : 'text-emerald-500'}`}>
                     R$ {(customerDashboardTab === 'DEBITS' 
-                      ? customersWithDebts.reduce((acc, item) => acc + item.totalDebt, 0)
-                      : customersWithCredits.reduce((acc, person) => acc + (person.credit || 0), 0)
+                      ? customersWithDebts.filter(item => item.person.name.toLowerCase().includes(customerDebtsSearch.toLowerCase())).reduce((acc, item) => acc + item.totalDebt, 0)
+                      : customersWithCredits.filter(p => p.name.toLowerCase().includes(customerDebtsSearch.toLowerCase())).reduce((acc, person) => acc + (person.credit || 0), 0)
                     ).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
+                </div>
+              </div>
+            );
+
+          case "engineering_config":
+            return (
+              <div key="engineering_config" className={`p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+                <div className="flex justify-between items-center px-1">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest leading-none">Configurações de Ficha Técnica</p>
+                  <Database size={16} className="text-indigo-400" />
+                </div>
+                
+                <div className={`rounded-3xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+                  <ConfigMenuItem
+                    icon={<Package size={20} />}
+                    label="Produtos Cadastrados"
+                    desc="Catálogo técnico completo"
+                    color="text-indigo-600"
+                    bg="bg-indigo-50"
+                    isDarkMode={isDarkMode}
+                    onClick={() => onNavigate(ViewType.PRODUCTS)}
+                  />
+                  <ConfigMenuItem
+                    icon={<Plus size={20} />}
+                    label="Cadastrar Novo Modelo"
+                    desc="Solados, Cores e Materiais"
+                    color="text-emerald-600"
+                    bg="bg-emerald-50"
+                    isDarkMode={isDarkMode}
+                    onClick={onAddProduct}
+                  />
+                  <ConfigMenuItem
+                    icon={<Grid3X3 size={20} />}
+                    label="Grades de Produção"
+                    desc="Tamanhos e configurações"
+                    color="text-violet-600"
+                    bg="bg-violet-50"
+                    isDarkMode={isDarkMode}
+                    onClick={onNavigateGrids}
+                  />
+                  <ConfigMenuItem
+                    icon={<Footprints size={20} />}
+                    label="Matrizes de Solados"
+                    desc="Moldes e mapeamentos"
+                    color="text-orange-600"
+                    bg="bg-orange-50"
+                    isDarkMode={isDarkMode}
+                    onClick={() => onNavigateProduction('MATRIZES')}
+                  />
+                  <ConfigMenuItem
+                    icon={<Layers size={20} />}
+                    label="Materiais e Insumos"
+                    desc="Componentes de produção"
+                    color="text-blue-600"
+                    bg="bg-blue-50"
+                    isDarkMode={isDarkMode}
+                    onClick={() => onNavigateProduction('INSUMOS')}
+                    isLast={true}
+                  />
                 </div>
               </div>
             );

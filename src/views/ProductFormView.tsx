@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
-import { Product, Grid, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue } from '../types';
-import { Save, Plus, Trash2, Camera, ChevronRight, ChevronLeft, Package, User, ToggleLeft as Toggle, Calendar, DollarSign, Tag, Calculator, Info } from 'lucide-react';
+﻿import { useState, useMemo, useEffect } from 'react';
+import { Product, Grid, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, TechSheetItem } from '../types';
+import { Save, Plus, Trash2, Camera, ChevronRight, ChevronLeft, Package, User, ToggleLeft as Toggle, Calendar, DollarSign, Tag, Calculator, Info, FileText, PlusCircle, Layers, Ruler, ExternalLink, ArrowUpDown, Footprints } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import ComboBox from '../components/ComboBox';
 import { SIZES } from '../constants';
@@ -12,20 +12,26 @@ interface ProductFormViewProps {
   suppliers: Person[];
   categories: Category[];
   colors: ColorValue[];
+  productionConfigs: ProductionConfigItem[];
   onSave: (product: Product) => void;
   onCancel: () => void;
   isDarkMode: boolean;
 }
 
-export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, onSave, onCancel, isDarkMode }: ProductFormViewProps) {
+export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, productionConfigs, onSave, onCancel, isDarkMode }: ProductFormViewProps) {
   const existingProduct = useMemo(() => products.find(p => p.id === productId), [productId, products]);
   const productCategories = useMemo(() => categories.filter(c => c.type === CategoryType.PRODUCT), [categories]);
+  const molds = useMemo(() => productionConfigs.filter(c => c.type === 'MOLD'), [productionConfigs]);
 
   const [name, setName] = useState(existingProduct?.name || '');
   const [reference, setReference] = useState(existingProduct?.reference || '');
   const [supplierId, setSupplierId] = useState(existingProduct?.supplierId || suppliers[0]?.id || '');
   const [categoryId, setCategoryId] = useState(existingProduct?.categoryId || productCategories[0]?.id || '');
   const [defaultGridId, setDefaultGridId] = useState(existingProduct?.defaultGridId || grids[0]?.id || '');
+  const [productionGridId, setProductionGridId] = useState(existingProduct?.productionGridId || grids[0]?.id || '');
+  const [moldId, setMoldId] = useState(existingProduct?.moldId || '');
+  const [soleMapping, setSoleMapping] = useState<{ [size: string]: string }>(existingProduct?.soleMapping || {});
+  const [showSoleMapping, setShowSoleMapping] = useState(false);
   const [type, setType] = useState<SaleType>(existingProduct?.type || SaleType.WHOLESALE);
   const [status, setStatus] = useState<ProductStatus>(existingProduct?.status || ProductStatus.ACTIVE);
   const [costPrice, setCostPrice] = useState<number | string>(existingProduct?.costPrice ?? 0);
@@ -35,6 +41,46 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [costPriceAdjustmentAmount, setCostPriceAdjustmentAmount] = useState<number | string>(existingProduct?.costPriceAdjustmentAmount ?? 0);
   const [salePriceAdjustmentAmount, setSalePriceAdjustmentAmount] = useState<number | string>(existingProduct?.salePriceAdjustmentAmount ?? 0);
   const [variations, setVariations] = useState<Variation[]>(existingProduct?.variations || []);
+
+  // Auto-initialize sole mapping and variation stock when grid changes
+  useEffect(() => {
+    const selectedGrid = grids.find(g => g.id === productionGridId);
+    if (selectedGrid) {
+      // Initialize Sole Mapping for new sizes
+      setSoleMapping(prev => {
+        const newMapping = { ...prev };
+        let changed = false;
+        selectedGrid.sizes.forEach(size => {
+          if (newMapping[size] === undefined) {
+            newMapping[size] = size; // Default mapping is 1:1
+            changed = true;
+          }
+        });
+        return changed ? newMapping : prev;
+      });
+
+      // Ensure all variations have the grid sizes in their stock object
+      setVariations(prev => {
+        let changed = false;
+        const next = prev.map(v => {
+          const newStock = { ...v.stock };
+          let varChanged = false;
+          selectedGrid.sizes.forEach(size => {
+            if (newStock[size] === undefined) {
+              newStock[size] = 0;
+              varChanged = true;
+            }
+          });
+          if (varChanged) {
+            changed = true;
+            return { ...v, stock: newStock };
+          }
+          return v;
+        });
+        return changed ? next : prev;
+      });
+    }
+  }, [productionGridId, grids]);
 
   const [activeVariationIndex, setActiveVariationIndex] = useState<number | null>(null);
   const [calcModal, setCalcModal] = useState<{ isOpen: boolean; field: string; value: number } | null>(null);
@@ -87,6 +133,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       priceAdjustmentDate: adjustmentDate ? new Date(adjustmentDate).getTime() : undefined,
       costPriceAdjustmentAmount: parseFloat(costPriceAdjustmentAmount as string) || 0,
       salePriceAdjustmentAmount: parseFloat(salePriceAdjustmentAmount as string) || 0,
+      productionGridId,
+      moldId,
+      soleMapping,
       variations,
       createdAt: existingProduct?.createdAt || Date.now()
     };
@@ -96,7 +145,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
 
   if (activeVariationIndex !== null) {
     const v = variations[activeVariationIndex];
-    const selectedGrid = grids.find(g => g.id === defaultGridId);
+    const selectedGrid = grids.find(g => g.id === (productionGridId || defaultGridId));
     const availableSizes = selectedGrid?.sizes || [];
 
     return (
@@ -273,6 +322,143 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                </div>
              )}
           </div>
+
+          <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
+             <div className="flex items-center justify-between mb-4">
+                <label className="text-[11px] uppercase font-black text-slate-900 dark:text-slate-100 px-1 flex items-center gap-2">
+                  <Layers size={16} className="text-indigo-500" />
+                  Composição / Ficha Técnica
+                </label>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    const newItem: TechSheetItem = {
+                      id: Math.random().toString(36).substr(2, 9),
+                      configItemId: productionConfigs.find(c => c.type === 'MATERIAL')?.id || '',
+                      quantity: 0
+                    };
+                    const currentTechSheet = v.techSheet || [];
+                    updateVariation(activeVariationIndex, { techSheet: [...currentTechSheet, newItem] });
+                  }}
+                  className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors"
+                >
+                  <PlusCircle size={14} /> Adicionar Insumo
+                </button>
+             </div>
+
+             <div className="flex flex-col gap-3">
+                {(v.techSheet || []).map((item, itemIdx) => {
+                  const material = productionConfigs.find(c => c.id === item.configItemId);
+                  const materials = productionConfigs.filter(c => c.type === 'MATERIAL');
+                  
+                  return (
+                    <div key={item.id} className={`flex flex-col gap-3 p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-white border-slate-100'} shadow-sm`}>
+                      <div className="flex items-center gap-3">
+                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-50'}`}>
+                            <Package size={18} className="text-slate-400" />
+                         </div>
+                         <div className="flex-1">
+                            <select 
+                              title="Selecionar Material"
+                              aria-label="Selecionar material para a ficha técnica"
+                              className="w-full bg-transparent border-none text-[11px] font-black uppercase tracking-tight text-slate-900 dark:text-white outline-none cursor-pointer p-0"
+                              value={item.configItemId}
+                              onChange={(e) => {
+                                const newTechSheet = [...(v.techSheet || [])];
+                                newTechSheet[itemIdx] = { ...newTechSheet[itemIdx], configItemId: e.target.value };
+                                updateVariation(activeVariationIndex, { techSheet: newTechSheet });
+                              }}
+                            >
+                              <option value="" disabled>Selecionar Insumo</option>
+                              {materials.map(m => (
+                                <option key={m.id} value={m.id} className="dark:bg-slate-900">
+                                  {m.name} {m.metadata?.reference ? `(${m.metadata.reference})` : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                              {material?.metadata?.masterCategory || 'Insumo Geral'}
+                            </p>
+                         </div>
+                         <button 
+                           type="button"
+                           title="Remover Item"
+                           aria-label="Remover item da ficha técnica"
+                           onClick={() => {
+                             const newTechSheet = (v.techSheet || []).filter((_, idx) => idx !== itemIdx);
+                             updateVariation(activeVariationIndex, { techSheet: newTechSheet });
+                           }}
+                           className="p-2 text-rose-300 hover:text-rose-500 transition-colors"
+                         >
+                           <Trash2 size={16} />
+                         </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-100 dark:border-slate-800/50">
+                         <div className="flex flex-col gap-1.5">
+                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Quantidade</label>
+                            <div className="relative">
+                               <input 
+                                 type="number"
+                                 step="0.001"
+                                 className="w-full bg-slate-50 dark:bg-slate-900/50 border-none rounded-xl px-4 py-2.5 text-[11px] font-black text-slate-900 dark:text-white"
+                                 value={item.quantity || ''}
+                                 placeholder="0.000"
+                                 onChange={(e) => {
+                                   const newTechSheet = [...(v.techSheet || [])];
+                                   newTechSheet[itemIdx] = { ...newTechSheet[itemIdx], quantity: parseFloat(e.target.value) || 0 };
+                                   updateVariation(activeVariationIndex, { techSheet: newTechSheet });
+                                 }}
+                               />
+                               <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-black text-slate-400 uppercase">
+                                 {material?.metadata?.unitId || 'UN'}
+                               </div>
+                            </div>
+                         </div>
+                         <div className="flex flex-col gap-1.5">
+                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Custo Estimado</label>
+                            <div className="h-[38px] flex items-center px-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl">
+                               <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400">
+                                 {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                                   (item.quantity || 0) * (material?.metadata?.baseCost || 0)
+                                 )}
+                               </span>
+                            </div>
+                         </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {(v.techSheet || []).length === 0 && (
+                  <div className="flex flex-col items-center justify-center py-10 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[2rem] gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-50 dark:bg-slate-800/50 flex items-center justify-center text-slate-300">
+                      <Layers size={24} />
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center max-w-[200px]">
+                      Nenhum item na ficha técnica. Adicione materiais para compor o produto.
+                    </p>
+                  </div>
+                )}
+
+                {(v.techSheet || []).length > 0 && (
+                  <div className="mt-2 p-4 bg-indigo-600 rounded-2xl shadow-lg shadow-indigo-500/20 flex items-center justify-between">
+                     <div>
+                        <p className="text-[8px] font-black text-indigo-200 uppercase tracking-[0.2em]">Custo Total de Materiais</p>
+                        <p className="text-lg font-black text-white leading-none mt-1">
+                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                            (v.techSheet || []).reduce((acc, item) => {
+                              const material = productionConfigs.find(c => c.id === item.configItemId);
+                              return acc + (item.quantity * (material?.metadata?.baseCost || 0));
+                            }, 0)
+                          )}
+                        </p>
+                     </div>
+                     <FileText className="text-indigo-400" size={24} />
+                  </div>
+                )}
+             </div>
+          </div>
         </div>
 
         <button 
@@ -357,6 +543,142 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                />
              </div>
            </div>
+
+           {/* Configurações de Produção */}
+           <div className={`p-8 rounded-[2.5rem] border shadow-sm transition-all duration-500 ${isDarkMode ? 'bg-slate-800/20 border-slate-700/50' : 'bg-slate-50 border-slate-100 shadow-indigo-100/10'}`}>
+             <div className="flex items-center gap-4 mb-8">
+               <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-indigo-500 text-white shadow-lg shadow-indigo-500/20">
+                 <Calculator size={24} strokeWidth={2.5} />
+               </div>
+               <div>
+                 <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400">
+                   Configurações de Produção
+                 </h4>
+                 <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-1">
+                   Grade e Matriz de Solado
+                 </p>
+               </div>
+             </div>
+
+             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+               <div>
+                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 mb-2 block tracking-widest leading-none">
+                   Grade de Produção
+                 </label>
+                  <div className="relative group">
+                    <select
+                      title="Grade de Producao"
+                      aria-label="Selecionar grade de tamanhos"
+                      className={`w-full border-2 rounded-2xl px-6 py-4 pl-12 appearance-none text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 
+'
+bg-slate-900 border-slate-800 text-white focus:border-indigo-500
+'
+ : 
+'
+bg-white border-slate-100 text-slate-900 focus:border-indigo-500
+'
+}`}
+                      value={productionGridId}
+                      onChange={(e) => setProductionGridId(e.target.value)}
+                    >
+                      {grids.map(g => (
+                        <option key={g.id} value={g.id} className="dark:bg-slate-900">
+                          {g.name} ({g.sizes.join("/")})
+                        </option>
+                      ))}
+                    </select>
+                    <Ruler size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                    <ChevronRight className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300 rotate-90" size={18} />
+                  </div>
+                </div>
+
+               <div>
+                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 mb-2 block tracking-widest leading-none">
+                   Matriz de Solado
+                 </label>
+                 <div className="relative group">
+                    <ComboBox
+                      options={[{ id: '', name: 'Nenhuma' }, ...molds.map(m => ({ id: m.id, name: m.name }))]}
+                      value={moldId}
+                      onChange={setMoldId}
+                      placeholder="Selecionar solado..."
+                      isDarkMode={isDarkMode}
+                      icon={<Layers size={18} />}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Mapeamento de Grade de Solados — Card dedicado */}
+              <div className={`mt-6 rounded-[2rem] border-2 overflow-hidden ${isDarkMode ? 'border-emerald-500/20' : 'border-emerald-100'}`}>
+                {/* Header clicável */}
+                <button
+                  type="button"
+                  onClick={() => setShowSoleMapping(!showSoleMapping)}
+                  className={`w-full flex items-center justify-between px-6 py-4 text-left transition-colors ${showSoleMapping ? (isDarkMode ? 'bg-emerald-900/20' : 'bg-emerald-50') : (isDarkMode ? 'bg-slate-800/20' : 'bg-emerald-50/30')}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${showSoleMapping ? 'bg-emerald-500 text-white shadow-lg' : isDarkMode ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-100 text-emerald-600'}`}>
+                      <Footprints size={18} />
+                    </div>
+                    <div>
+                      <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                        Mapeamento de Solados por Numeração
+                      </p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                        {Object.values(soleMapping).some(v => v)
+                          ? `${Object.keys(soleMapping).filter(k => soleMapping[k]).length} numerações mapeadas · toque para editar`
+                          : 'Vincule cada tamanho cabedal ao número da sola'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${showSoleMapping ? 'bg-emerald-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-400'}`}>
+                    <ChevronRight size={14} className={`transition-transform ${showSoleMapping ? 'rotate-[270deg]' : 'rotate-90'}`} />
+                  </div>
+                </button>
+
+                {/* Conteúdo expandido */}
+                {showSoleMapping && (
+                  <div className={`px-6 pb-6 pt-4 border-t-2 animate-in fade-in slide-in-from-top-2 duration-200 ${isDarkMode ? 'border-emerald-500/10 bg-slate-900/30' : 'border-emerald-100 bg-white/50'}`}>
+                    <p className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-5 leading-relaxed">
+                      Para cada tamanho de cabedal, informe o número equivalente de sola/forma usado na produção.
+                      <span className="text-emerald-600 dark:text-emerald-400 font-black"> Ex: cabedais 33 e 34 usam a sola 33/34.</span>
+                    </p>
+
+                    {grids.find(g => g.id === productionGridId)?.sizes?.length ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                        {grids.find(g => g.id === productionGridId)!.sizes.map(cabedalSize => (
+                          <div key={cabedalSize} className={`p-4 rounded-2xl border-2 flex flex-col items-center gap-3 transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 focus-within:border-emerald-500' : 'bg-white border-slate-100 shadow-sm focus-within:border-emerald-400'}`}>
+                            <div className="text-center">
+                              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Cabedal</span>
+                              <span className={`text-base font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{cabedalSize}</span>
+                            </div>
+                            <div className="w-7 h-7 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-300 dark:text-slate-600">
+                              <ArrowUpDown size={13} />
+                            </div>
+                            <div className={`w-full flex items-center gap-1.5 px-3 py-2.5 rounded-xl border-2 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 focus-within:border-emerald-500' : 'bg-emerald-50 border-emerald-100 focus-within:border-emerald-400'}`}>
+                              <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest shrink-0">Sola</span>
+                              <input
+                                type="text"
+                                value={soleMapping[cabedalSize] || ''}
+                                onChange={(e) => setSoleMapping({ ...soleMapping, [cabedalSize]: e.target.value })}
+                                className="w-full bg-transparent border-none text-right text-xs font-black text-slate-900 dark:text-white outline-none p-0"
+                                placeholder="Num."
+                                title={`Numeração da sola para o cabedal ${cabedalSize}`}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl">
+                        Selecione uma Grade de Produção acima para mapear as numerações.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
 
            <div className={`p-8 rounded-[2.5rem] border shadow-sm transition-all duration-500 ${type === SaleType.WHOLESALE ? 'bg-amber-50/40 border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/20 shadow-amber-100/20' : 'bg-indigo-50/40 border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-900/20 shadow-indigo-100/20'}`}>
              <div className="flex items-center gap-4 mb-8">
@@ -480,6 +802,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               onChange={setSupplierId}
               placeholder="Selecionar fornecedor..."
               isDarkMode={isDarkMode}
+              icon={<User size={18} />}
             />
           </div>
           <div>
@@ -490,33 +813,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               onChange={setCategoryId}
               placeholder="Selecionar categoria..."
               isDarkMode={isDarkMode}
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          {type === SaleType.RETAIL && (
-            <div>
-              <label className="text-[9px] uppercase font-bold text-slate-400 dark:text-slate-500 px-1 mb-1 block tracking-wider">Grade Padrão</label>
-              <select 
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-3 py-3.5 text-[10px] font-bold appearance-none cursor-pointer text-slate-700 dark:text-slate-300"
-                value={defaultGridId}
-                title="Selecionar grade padrão"
-                onChange={(e) => setDefaultGridId(e.target.value)}
-              >
-                {grids.map(g => <option key={g.id} value={g.id} className="dark:bg-slate-900">{g.name}</option>)}
-              </select>
-            </div>
-          )}
-          <div className={type === SaleType.WHOLESALE ? "col-span-2" : ""}>
-            <label className="text-[9px] uppercase font-bold text-slate-400 dark:text-slate-500 px-1 mb-1 block tracking-wider">Est. Mín (Caixas)</label>
-            <input 
-              type="number" 
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-4 py-3.5 text-xs font-bold text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-indigo-500/10"
-              value={minStockInBoxes}
-              title="Estoque mínimo em caixas"
-              placeholder="0"
-              onChange={(e) => setMinStockInBoxes(e.target.value)}
+              icon={<Tag size={18} />}
             />
           </div>
         </div>
@@ -610,16 +907,32 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   </div>
                   <div>
                     <p className="text-[14px] font-bold text-slate-900 dark:text-white tracking-tight">{v.colorName}</p>
+                    <div className="flex flex-wrap gap-2 mt-1.5">
+                      <div className="flex items-center gap-1 px-2 py-0.5 bg-slate-50 dark:bg-slate-800 rounded-md border border-slate-100 dark:border-slate-700">
+                        <Layers size={10} className="text-indigo-400" />
+                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-tighter">
+                          {(v.techSheet || []).length} Materiais
+                        </span>
+                      </div>
+                      {Object.keys(soleMapping).length > 0 && (
+                        <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-md border border-emerald-100 dark:border-emerald-900/30">
+                          <Footprints size={10} className="text-emerald-500" />
+                          <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-tighter">
+                            Mapeado
+                          </span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
                   <button 
                     onClick={() => setActiveVariationIndex(i)} 
-                    className="p-2 text-slate-400 dark:text-slate-600 hover:text-indigo-600 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all"
                     aria-label={`Editar variação ${v.colorName}`}
                     title="Editar Variação"
                   >
-                    <ChevronRight size={18} />
+                    Editar Ficha <ChevronRight size={14} />
                   </button>
                   <button 
                     onClick={() => deleteVariation(i)} 

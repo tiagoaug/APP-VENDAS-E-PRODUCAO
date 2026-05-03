@@ -39,6 +39,7 @@ export default function CategoryModal({ isOpen, onClose, onSave, category, defau
           onChange={(e) => setName(e.target.value)}
         />
         <select
+          title="Tipo de Categoria"
           className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold appearance-none dark:text-white"
           value={type}
           onChange={(e) => setType(e.target.value as CategoryType)}
