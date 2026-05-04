@@ -24,7 +24,7 @@ export default function AccountModal({ isOpen, onClose, onSave, account }: Accou
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-slate-900/50 z-[999] flex items-center justify-center p-4">
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-sm flex flex-col gap-4">
         <h2 className="text-xl font-black text-slate-800 dark:text-white">
           {account ? 'Editar Conta' : 'Nova Conta'}

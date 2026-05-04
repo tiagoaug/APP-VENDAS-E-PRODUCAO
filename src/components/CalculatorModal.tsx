@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Delete, Check, Plus, Minus, X as Multi, Disc as Divide, Percent, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -114,8 +115,8 @@ export default function CalculatorModal({ isOpen, onClose, onResult, isDarkMode,
     { label: '=', onClick: calculate, color: 'bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-600/20' },
   ];
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
+  return createPortal(
+    <div className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
       <motion.div 
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -160,6 +161,7 @@ export default function CalculatorModal({ isOpen, onClose, onResult, isDarkMode,
           </button>
         </div>
       </motion.div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -1,7 +1,16 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, TechSheetItem } from '../types';
-import { Save, Plus, Trash2, Camera, ChevronRight, ChevronLeft, Package, User, ToggleLeft as Toggle, Calendar, DollarSign, Tag, Calculator, Info, FileText, PlusCircle, Layers, Ruler, ExternalLink, ArrowUpDown, Footprints } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { createPortal } from 'react-dom';
+import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, TechSheetItem, ComponentConsumption, ComponentCategory, FlowTag } from '../types';
+import { 
+  Save, Plus, Trash2, Camera, ChevronRight, ChevronLeft, Package, User, 
+  ToggleLeft as Toggle, Calendar, DollarSign, Tag, Calculator, Info, 
+  FileText, PlusCircle, Layers, Ruler, ExternalLink, ArrowUpDown, 
+  Footprints, Scissors, Box, Droplets, Sparkles, Settings, CheckCircle2,
+  AlertCircle, ChevronDown, ListFilter, Search, X
+} from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
+import EngineeringEditor from '../components/EngineeringEditor';
 import ComboBox from '../components/ComboBox';
 import { SIZES } from '../constants';
 
@@ -13,15 +22,19 @@ interface ProductFormViewProps {
   categories: Category[];
   colors: ColorValue[];
   productionConfigs: ProductionConfigItem[];
+  flowTags: FlowTag[];
   onSave: (product: Product) => void;
   onCancel: () => void;
   isDarkMode: boolean;
+  sectors: Sector[];
 }
 
-export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, productionConfigs, onSave, onCancel, isDarkMode }: ProductFormViewProps) {
+export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, productionConfigs, flowTags, onSave, onCancel, isDarkMode, sectors }: ProductFormViewProps) {
   const existingProduct = useMemo(() => products.find(p => p.id === productId), [productId, products]);
   const productCategories = useMemo(() => categories.filter(c => c.type === CategoryType.PRODUCT), [categories]);
   const molds = useMemo(() => productionConfigs.filter(c => c.type === 'MOLD'), [productionConfigs]);
+  const materials = useMemo(() => productionConfigs.filter(c => c.type === 'MATERIAL'), [productionConfigs]);
+  const tools = useMemo(() => productionConfigs.filter(c => c.type === 'TOOL'), [productionConfigs]);
 
   const [name, setName] = useState(existingProduct?.name || '');
   const [reference, setReference] = useState(existingProduct?.reference || '');
@@ -33,7 +46,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [productionGridId, setProductionGridId] = useState(existingProduct?.productionGridId || formaGrids[0]?.id || grids[0]?.id || '');
   const [moldId, setMoldId] = useState(existingProduct?.moldId || '');
   const [soleMapping, setSoleMapping] = useState<{ [size: string]: string }>(existingProduct?.soleMapping || {});
+  const [toolMapping, setToolMapping] = useState<{ [size: string]: string }>(existingProduct?.toolMapping || {});
   const [showSoleMapping, setShowSoleMapping] = useState(false);
+  const [showToolMapping, setShowToolMapping] = useState(false);
   const [type, setType] = useState<SaleType>(existingProduct?.type || SaleType.WHOLESALE);
   const [status, setStatus] = useState<ProductStatus>(existingProduct?.status || ProductStatus.ACTIVE);
   const [costPrice, setCostPrice] = useState<number | string>(existingProduct?.costPrice ?? 0);
@@ -43,6 +58,39 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [costPriceAdjustmentAmount, setCostPriceAdjustmentAmount] = useState<number | string>(existingProduct?.costPriceAdjustmentAmount ?? 0);
   const [salePriceAdjustmentAmount, setSalePriceAdjustmentAmount] = useState<number | string>(existingProduct?.salePriceAdjustmentAmount ?? 0);
   const [variations, setVariations] = useState<Variation[]>(existingProduct?.variations || []);
+  
+  // Consumption UI state
+  const [activeVariationIndex, setActiveVariationIndex] = useState<number | null>(null);
+  const [varView, setVarView] = useState<'info' | 'consumo'>('info');
+  const [isConsumptionModalOpen, setIsConsumptionModalOpen] = useState(false);
+  const [editingConsumption, setEditingConsumption] = useState<ComponentConsumption | null>(null);
+  const [newServiceId, setNewServiceId] = useState('');
+  const [newServiceCost, setNewServiceCost] = useState<number | string>(0);
+  const [consumptionCategory, setConsumptionCategory] = useState<ComponentCategory>('CUTTING_PIECE');
+  const [saleTypes, setSaleTypes] = useState<SaleType[]>(existingProduct?.saleTypes || (existingProduct?.type ? [existingProduct.type] : [SaleType.WHOLESALE]));
+
+  // Scroll to top when variation is opened or modal toggled
+  useEffect(() => {
+    const resetScroll = () => {
+      // Tenta resetar o scroll em todos os containers possíveis do sistema
+      const selectors = ['.overflow-y-auto', '.custom-scrollbar', 'main', '.fixed'];
+      selectors.forEach(selector => {
+        const containers = document.querySelectorAll(selector);
+        containers.forEach(c => {
+          c.scrollTo({ top: 0, behavior: 'auto' });
+        });
+      });
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    };
+
+    if (activeVariationIndex !== null || isConsumptionModalOpen) {
+      // Executa imediatamente e também após um pequeno delay para garantir o render
+      resetScroll();
+      const timer = setTimeout(resetScroll, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [activeVariationIndex, isConsumptionModalOpen]);
+
 
   // Auto-initialize sole mapping and variation stock when grid changes
   useEffect(() => {
@@ -108,7 +156,6 @@ export default function ProductFormView({ productId, products, grids, suppliers,
     }
   }, [productionGridId, moldId, grids, molds]);
 
-  const [activeVariationIndex, setActiveVariationIndex] = useState<number | null>(null);
   const [calcModal, setCalcModal] = useState<{ isOpen: boolean; field: string; value: number } | null>(null);
 
   const addVariation = () => {
@@ -151,7 +198,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       supplierId,
       categoryId,
       defaultGridId,
-      type,
+      type: saleTypes[0] || SaleType.WHOLESALE,
+      saleTypes,
       status,
       costPrice: parseFloat(costPrice as string) || 0,
       salePrice: parseFloat(salePrice as string) || 0,
@@ -162,11 +210,99 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       productionGridId,
       moldId,
       soleMapping,
+      toolMapping,
       variations,
       createdAt: existingProduct?.createdAt || Date.now()
     };
 
     onSave(productData);
+  };
+  
+  // Migration logic: move techSheet to consumptions if empty
+  useEffect(() => {
+    if (activeVariationIndex !== null) {
+      const v = variations[activeVariationIndex];
+      if ((!v.consumptions || v.consumptions.length === 0) && (v.techSheet && v.techSheet.length > 0)) {
+        const migrated: ComponentConsumption[] = v.techSheet.map(ts => {
+          const material = productionConfigs.find(c => c.id === ts.configItemId);
+          return {
+            id: ts.id || Math.random().toString(36).substr(2, 9),
+            category: 'TRIMMING', // Default to trimming for legacy
+            name: material?.name || 'Item Migrado',
+            materialId: ts.configItemId,
+            quantity: ts.quantity,
+          };
+        });
+        updateVariation(activeVariationIndex, { consumptions: migrated });
+      }
+    }
+  }, [activeVariationIndex]);
+
+  const calculateConsumption = (tool: ProductionConfigItem, material: ProductionConfigItem, piecesPerPair: number = 2) => {
+    if (!tool || !tool.metadata) return 0;
+
+    const sizeAreas = tool.metadata.sizeAreas || {};
+    const conjugation = tool.metadata.conjugation || 1;
+    const productGrid = grids.find(g => g.id === (productionGridId || defaultGridId));
+    
+    // Check material unit
+    const unitId = material.metadata?.unitId;
+    const isLinear = unitId?.toUpperCase().includes('MT') || unitId?.toUpperCase().includes('LINEAR');
+    const width = material.metadata?.width || 1400; // Default 1.4m width if not specified
+
+    const calculateSingleSize = (area: number) => {
+      if (isLinear) {
+        // Area is in mm2, width is in mm. Result in linear mm.
+        // Convert to linear meters per piece.
+        return (area / width) / 1000;
+      }
+      // Area is in mm2. Convert to M2.
+      return area / 1000000;
+    };
+
+    let baseConsumption = 0;
+    if (productGrid && Object.keys(sizeAreas).length > 0) {
+      let totalCons = 0;
+      let count = 0;
+      productGrid.sizes.forEach(size => {
+        const mappedSize = toolMapping?.[size] || size;
+        const area = sizeAreas[mappedSize] || sizeAreas[String(mappedSize).trim()] || sizeAreas[size] || 0;
+        if (area > 0) {
+          totalCons += calculateSingleSize(area);
+          count++;
+        }
+      });
+      if (count > 0) baseConsumption = totalCons / count;
+      else baseConsumption = calculateSingleSize(Number(Object.values(sizeAreas)[0]) || 0);
+    } else {
+      baseConsumption = calculateSingleSize(Number(Object.values(sizeAreas)[0]) || 0);
+    }
+
+    return (baseConsumption / conjugation) * piecesPerPair;
+  };
+
+  const updateConsumption = (variationIdx: number, consumptionIdx: number, updates: Partial<ComponentConsumption>) => {
+    const v = variations[variationIdx];
+    const newConsumptions = [...(v.consumptions || [])];
+    const current = newConsumptions[consumptionIdx];
+    newConsumptions[consumptionIdx] = { ...current, ...updates };
+    
+    // Auto-calculate if toolId or piecesPerPair or materialId changed
+    if (updates.toolId || updates.piecesPerPair !== undefined || updates.materialId) {
+      const toolId = updates.toolId || newConsumptions[consumptionIdx].toolId;
+      const matId = updates.materialId || newConsumptions[consumptionIdx].materialId;
+      const pieces = updates.piecesPerPair !== undefined ? updates.piecesPerPair : newConsumptions[consumptionIdx].piecesPerPair;
+      
+      if (toolId && matId) {
+        const tool = productionConfigs.find(t => t.id === toolId);
+        const material = productionConfigs.find(m => m.id === matId);
+        if (tool && material) {
+           newConsumptions[consumptionIdx].quantity = calculateConsumption(tool, material, pieces);
+        }
+      }
+    }
+
+    updateVariation(variationIdx, { consumptions: newConsumptions });
   };
 
   if (activeVariationIndex !== null) {
@@ -175,350 +311,482 @@ export default function ProductFormView({ productId, products, grids, suppliers,
     const availableSizes = selectedGrid?.sizes || [];
 
     return (
-      <div className="flex flex-col gap-6 pb-60 pt-4 min-h-screen animate-in slide-in-from-right duration-300">
-        <button 
-          onClick={() => setActiveVariationIndex(null)} 
-          className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-600 dark:text-slate-400 mb-2"
-          aria-label="Voltar para a edição do produto"
-          title="Voltar para o Produto"
-        >
-          <ChevronLeft size={16} /> Voltar para o Produto
-        </button>
-
-        <h2 className="text-lg font-bold uppercase tracking-tight">Editar Variação</h2>
-
-        <div className={`p-5 rounded-2xl border flex flex-col gap-6 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-          <div className="flex gap-4 items-center">
-             <div className="w-16 h-16 rounded-xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-800 shadow-sm">
-                <Package size={24} className="text-indigo-500" />
-             </div>
-             <div className="flex-1 flex flex-col gap-2">
-                <select 
-                  className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-lg px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500/10 text-slate-800 dark:text-slate-100"
-                  value={v.colorName}
-                  aria-label="Selecionar cor da variação"
-                  title="Selecionar Cor"
-                  onChange={(e) => {
-                    const selectedColor = colors.find(c => c.name === e.target.value);
-                    if (selectedColor) {
-                      updateVariation(activeVariationIndex, { colorName: selectedColor.name, color: selectedColor.hex });
-                    }
-                  }}
-                >
-                  {colors.map(c => {
-                    const isUsed = variations.some((variation, idx) => idx !== activeVariationIndex && variation.colorName === c.name);
-                    return (
-                      <option key={c.id} value={c.name} disabled={isUsed}>
-                        {c.name} {isUsed ? '✓ (Já adicionada)' : ''}
-                      </option>
-                    );
-                  })}
-                </select>
-                
-             </div>
-             
-             <div className="flex flex-col border-l border-slate-100 dark:border-slate-800 pl-4 w-28">
-               <label className="text-[7px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block">Est. Min.</label>
-               <input 
-                 type="number"
-                 className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-lg px-2 py-2 text-xs font-bold focus:ring-2 focus:ring-indigo-500/10 text-slate-800 dark:text-slate-100 text-center"
-                 value={v.minStock || 0}
-                 aria-label="Estoque mínimo da variação"
-                 title="Estoque Mínimo"
-                 onChange={(e) => {
-                   updateVariation(activeVariationIndex, { minStock: parseInt(e.target.value) || 0 });
-                 }}
-               />
-             </div>
+      <div className={`w-full ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+      <AnimatePresence mode="wait">
+        {!isConsumptionModalOpen ? (
+          <motion.div 
+            key="var-list"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="flex flex-col gap-6"
+          >
+        <div className="flex items-center justify-between mb-2 px-2">
+          <button 
+            onClick={() => setActiveVariationIndex(null)} 
+            className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-600 dark:text-slate-400"
+          >
+            <ChevronLeft size={16} /> Voltar
+          </button>
+          <div className="flex gap-2">
+            <button 
+               onClick={() => setVarView('info')}
+               className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${varView === 'info' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}
+             >
+               Cores & Info
+             </button>
+             <button 
+               onClick={() => setVarView('consumo')}
+               className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${varView === 'consumo' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}
+             >
+               Engenharia / Consumos
+             </button>
           </div>
+        </div>
 
-          <div>
-             <div className="flex items-center justify-between mb-6 pt-4 border-t border-slate-100 dark:border-slate-800">
-                <label className="text-[11px] uppercase font-black text-slate-900 dark:text-slate-100 px-1 flex items-center gap-2">
-                  <span className="w-1.5 h-4 bg-indigo-500 rounded-full"></span>
-                  {type === SaleType.RETAIL ? 'ESTOQUE E PREÇOS POR TAMANHO' : 'ESTOQUE TOTAL'}
-                </label>
-             </div>
+        {varView === 'info' ? (
+          <div className="flex flex-col gap-6">
+            <div className={`p-6 rounded-[2rem] border flex flex-col gap-8 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+              <div className="flex flex-col gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Cor da Variante */}
+                  <div className="flex flex-col gap-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Cor do Cabedal / Variante</label>
+                    <div className="relative group">
+                      <select 
+                        className={`w-full appearance-none border-2 rounded-2xl px-6 py-4 pl-12 text-sm font-black transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
+                        value={v.colorName}
+                        onChange={(e) => {
+                          const selectedColor = colors.find(c => c.name === e.target.value);
+                          if (selectedColor) {
+                            // Check if color is already used
+                            const isUsed = variations.some((v, idx) => idx !== activeVariationIndex && v.colorName === selectedColor.name);
+                            if (!isUsed) {
+                              updateVariation(activeVariationIndex, { colorName: selectedColor.name, color: selectedColor.hex });
+                            }
+                          }
+                        }}
+                      >
+                        <option value="">Selecione uma cor...</option>
+                        {colors.map(c => {
+                          const isUsed = variations.some((variation, idx) => idx !== activeVariationIndex && variation.colorName === c.name);
+                          return (
+                            <option key={c.id} value={c.name} disabled={isUsed}>
+                              {c.name} {isUsed ? '(Já utilizada)' : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <div className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border border-black/10" style={{ backgroundColor: v.color }} />
+                      <ChevronDown size={18} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    </div>
+                  </div>
 
-             {type === SaleType.RETAIL ? (
-               availableSizes.length > 0 ? (
-                 <div className="flex flex-col gap-3">
-                    {availableSizes.map(size => (
-                       <div key={size} className="grid grid-cols-4 gap-2 items-center p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50">
-                          <span className="text-[11px] font-black text-slate-900 dark:text-white">{size}</span>
-                          <div>
-                            <p className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-0.5">Estoque (Pares)</p>
+                  {/* Cor Sincronizada (Sola) */}
+                  <div className="flex flex-col gap-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Cor do Solado (Matriz)</label>
+                    <div className="relative group">
+                      <select 
+                        className={`w-full appearance-none border-2 rounded-2xl px-6 py-4 pl-12 text-sm font-black transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
+                        value={v.soleColorId || ''}
+                        onChange={(e) => updateVariation(activeVariationIndex, { soleColorId: e.target.value })}
+                      >
+                        <option value="">MESMA COR DO CABEDAL</option>
+                        {(() => {
+                           const selectedMold = molds.find(m => m.id === moldId);
+                           const moldColorIds = selectedMold?.metadata?.colorIds || [];
+                           
+                           // If mold has specific colors, filter them. Otherwise show all.
+                           const availableColors = moldColorIds.length > 0 
+                              ? colors.filter(c => moldColorIds.includes(c.id))
+                              : colors;
+                              
+                           return availableColors.map(c => (
+                             <option key={c.id} value={c.id}>{c.name}</option>
+                           ));
+                        })()}
+                      </select>
+                      <div className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border border-black/10 flex items-center justify-center bg-slate-100 dark:bg-slate-800">
+                        {v.soleColorId ? (
+                          <div className="w-full h-full rounded-full" style={{ backgroundColor: colors.find(c => c.id === v.soleColorId)?.hex }} />
+                        ) : (
+                          <div className="w-full h-full rounded-full" style={{ backgroundColor: v.color }} />
+                        )}
+                      </div>
+                      <ChevronDown size={18} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    </div>
+                    {moldId && molds.find(m => m.id === moldId)?.metadata?.colorIds?.length === 0 && (
+                       <p className="text-[8px] text-amber-500 font-bold uppercase px-2">Nota: Esta matriz não possui cores vinculadas. Exibindo todas.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                  {/* Sub-Ref */}
+                  <div className="flex flex-col gap-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Sub-Ref</label>
+                    <input 
+                      type="text"
+                      placeholder="EX: A"
+                      className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
+                      value={v.subRef || ''}
+                      onChange={(e) => updateVariation(activeVariationIndex, { subRef: e.target.value.toUpperCase() })}
+                    />
+                  </div>
+
+                  {/* SKU / EAN */}
+                  <div className="flex flex-col gap-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">SKU / Código EAN</label>
+                    <input 
+                      type="text"
+                      placeholder="SKU-VAR-001"
+                      className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
+                      value={v.sku || ''}
+                      onChange={(e) => updateVariation(activeVariationIndex, { sku: e.target.value.toUpperCase() })}
+                    />
+                  </div>
+
+                  {/* Est. Minimo */}
+                  <div className="flex flex-col gap-3">
+                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Estoque Mínimo</label>
+                    <input 
+                      type="number"
+                      placeholder="0"
+                      className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
+                      value={v.minStock || 0}
+                      onChange={(e) => updateVariation(activeVariationIndex, { minStock: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Configuração de Preços / Stock (Se for Varejo) */}
+            {saleTypes.includes(SaleType.RETAIL) && (
+              <div className={`p-8 rounded-[2.5rem] border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                <div className="flex items-center gap-4 mb-8">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                    <DollarSign size={24} />
+                  </div>
+                  <div>
+                    <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-400">Tabela de Preços e Grade (Varejo)</h3>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Valores por Tamanho</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                  {availableSizes.map(size => (
+                    <div key={size} className={`p-4 rounded-3xl border flex flex-col gap-4 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                      <div className="flex items-center justify-between">
+                         <span className="text-xs font-black text-slate-400">{size}</span>
+                         <Footprints size={14} className="text-slate-300" />
+                      </div>
+                      <div className="flex flex-col gap-3">
+                         <div className="flex flex-col gap-1">
+                            <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Venda</span>
                             <input 
                               type="number"
-                              className="w-full bg-white dark:bg-slate-900 border-none rounded-md p-1.5 text-center text-[10px] font-bold"
-                              value={v.stock[size] !== undefined ? v.stock[size] : ''}
-                              title={`Estoque para tamanho ${size}`}
-                              placeholder="0"
+                              className="w-full bg-transparent border-none p-0 text-sm font-black text-emerald-600 dark:text-emerald-400 outline-none"
+                              value={v.sizePrices?.[size]?.sale || salePrice}
                               onChange={(e) => {
-                                const val = e.target.value;
-                                const newStock = { ...v.stock, [size]: val === '' ? '' as any : parseInt(val, 10) };
-                                updateVariation(activeVariationIndex, { stock: newStock });
-                              }}
-                            />
-                          </div>
-                          <div>
-                            <p className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-0.5">Custo (Par)</p>
-                            <input 
-                              type="number"
-                              step="0.01"
-                              className="w-full bg-white dark:bg-slate-900 border-none rounded-md p-1.5 text-center text-[10px] font-bold"
-                              value={v.sizePrices?.[size]?.cost ?? costPrice}
-                              title={`Preço de custo para tamanho ${size}`}
-                              placeholder="0.00"
-                              onChange={(e) => {
-                                const newPrices = { ...v.sizePrices };
+                                const newPrices = { ...(v.sizePrices || {}) };
                                 newPrices[size] = { 
-                                  cost: parseFloat(e.target.value) || 0, 
-                                  sale: v.sizePrices?.[size]?.sale ?? salePrice 
-                                };
-                                updateVariation(activeVariationIndex, { sizePrices: newPrices });
-                              }}
-                            />
-                          </div>
-                          <div>
-                            <p className="text-[7px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-0.5">Venda (Par)</p>
-                            <input 
-                              type="number"
-                              step="0.01"
-                              className="w-full bg-white dark:bg-slate-900 border-none rounded-md p-1.5 text-center text-[10px] font-bold text-indigo-600"
-                              value={v.sizePrices?.[size]?.sale ?? salePrice}
-                              title={`Preço de venda para tamanho ${size}`}
-                              placeholder="0.00"
-                              onChange={(e) => {
-                                const newPrices = { ...v.sizePrices };
-                                newPrices[size] = { 
-                                  cost: v.sizePrices?.[size]?.cost ?? costPrice, 
+                                  cost: v.sizePrices?.[size]?.cost || (typeof costPrice === 'string' ? parseFloat(costPrice) : costPrice), 
                                   sale: parseFloat(e.target.value) || 0 
                                 };
                                 updateVariation(activeVariationIndex, { sizePrices: newPrices });
                               }}
                             />
-                          </div>
-                       </div>
-                    ))}
-                 </div>
-               ) : (
-                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-4 bg-slate-50 dark:bg-slate-800 rounded-xl">
-                   Selecione uma grade padrão primeiro
-                 </p>
-               )
-             ) : (
-               <div className="flex flex-col gap-4 p-5 bg-amber-50 dark:bg-amber-900/10 rounded-3xl border border-amber-100 dark:border-amber-900/20">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <label className="text-[10px] uppercase font-black text-amber-600 dark:text-amber-400 block mb-1">Estoque Físico</label>
-                      <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest leading-none">Controle em Grades / Caixas</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[8px] font-black text-slate-400 uppercase mb-1">Valor em Estoque</p>
-                      <span className="text-[11px] font-black text-slate-900 dark:text-white">
-                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-                          (typeof v.stock['WHOLESALE'] === 'number' ? v.stock['WHOLESALE'] : 0) * (parseFloat(costPrice.toString()) || 0)
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                  
-                  <div className="relative">
-                    <input 
-                      type="number"
-                      placeholder="Estoque Total"
-                      title="Estoque Total"
-                      className="w-full bg-white dark:bg-slate-900 border-2 border-amber-100 dark:border-amber-900/30 rounded-2xl px-5 py-4 text-sm font-black text-slate-900 dark:text-white shadow-inner focus:border-amber-500 focus:ring-0 transition-all"
-                      value={v.stock['WHOLESALE'] !== undefined ? v.stock['WHOLESALE'] : ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        updateVariation(activeVariationIndex, { stock: { 'WHOLESALE': val === '' ? '' as any : parseInt(val, 10) } });
-                      }}
-                    />
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2 px-3 py-1 bg-amber-100 dark:bg-amber-900/50 rounded-lg text-[9px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest">
-                      GRADES
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-2 text-amber-600/60 dark:text-amber-400/40 p-2 border border-dashed border-amber-200 dark:border-amber-900/30 rounded-xl">
-                    <Info size={14} />
-                    <p className="text-[8px] font-bold uppercase tracking-widest leading-tight">No atacado o estoque é gerenciado de forma simplificada por grade completa.</p>
-                  </div>
-               </div>
-             )}
-          </div>
-
-          <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
-             <div className="flex items-center justify-between mb-4">
-                <label className="text-[11px] uppercase font-black text-slate-900 dark:text-slate-100 px-1 flex items-center gap-2">
-                  <Layers size={16} className="text-indigo-500" />
-                  Composição / Ficha Técnica
-                </label>
-                <button 
-                  type="button"
-                  onClick={() => {
-                    const newItem: TechSheetItem = {
-                      id: Math.random().toString(36).substr(2, 9),
-                      configItemId: productionConfigs.find(c => c.type === 'MATERIAL')?.id || '',
-                      quantity: 0
-                    };
-                    const currentTechSheet = v.techSheet || [];
-                    updateVariation(activeVariationIndex, { techSheet: [...currentTechSheet, newItem] });
-                  }}
-                  className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors"
-                >
-                  <PlusCircle size={14} /> Adicionar Insumo
-                </button>
-             </div>
-
-             <div className="flex flex-col gap-3">
-                {(v.techSheet || []).map((item, itemIdx) => {
-                  const material = productionConfigs.find(c => c.id === item.configItemId);
-                  const materials = productionConfigs.filter(c => c.type === 'MATERIAL');
-                  
-                  return (
-                    <div key={item.id} className={`flex flex-col gap-3 p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-white border-slate-100'} shadow-sm`}>
-                      <div className="flex items-center gap-3">
-                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-50'}`}>
-                            <Package size={18} className="text-slate-400" />
                          </div>
-                         <div className="flex-1">
-                            <select 
-                              title="Selecionar Material"
-                              aria-label="Selecionar material para a ficha técnica"
-                              className="w-full bg-transparent border-none text-[11px] font-black uppercase tracking-tight text-slate-900 dark:text-white outline-none cursor-pointer p-0"
-                              value={item.configItemId}
+                         <div className="flex flex-col gap-1">
+                            <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Estoque</span>
+                            <input 
+                              type="number"
+                              className="w-full bg-transparent border-none p-0 text-sm font-black text-slate-900 dark:text-white outline-none"
+                              value={v.stock[size] || 0}
                               onChange={(e) => {
-                                const newTechSheet = [...(v.techSheet || [])];
-                                newTechSheet[itemIdx] = { ...newTechSheet[itemIdx], configItemId: e.target.value };
-                                updateVariation(activeVariationIndex, { techSheet: newTechSheet });
+                                const newStock = { ...v.stock };
+                                newStock[size] = parseInt(e.target.value) || 0;
+                                updateVariation(activeVariationIndex, { stock: newStock });
                               }}
+                            />
+                         </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-6">
+            {/* Seção de Consumos */}
+            <div className="grid grid-cols-1 gap-6">
+              {/* Componentes do Cabedal (Peças de Corte) */}
+              <div className={`p-8 rounded-[2.5rem] border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                      <Scissors size={24} />
+                    </div>
+                    <div>
+                      <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400">Componentes do Cabedal</h3>
+                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-1">Peças de Corte & Frequência</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setConsumptionCategory('CUTTING_PIECE');
+                      setEditingConsumption({
+                        id: Math.random().toString(36).substr(2, 9),
+                        category: 'CUTTING_PIECE',
+                        name: '',
+                        materialId: '',
+                        quantity: 0,
+                        piecesPerPair: 2
+                      });
+                      setIsConsumptionModalOpen(true);
+                    }}
+                    className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 hover:scale-105 active:scale-95 transition-all"
+                  >
+                    <Plus size={14} strokeWidth={3} /> Nova Peça
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(v.consumptions || []).filter(c => c.category === 'CUTTING_PIECE').map((item, idx) => {
+                    const material = productionConfigs.find(m => m.id === item.materialId);
+                    const tool = productionConfigs.find(t => t.id === item.toolId);
+                    return (
+                      <div key={item.id} className={`p-5 rounded-3xl border flex flex-col gap-4 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                             <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-600">
+                               <Scissors size={20} />
+                             </div>
+                             <div>
+                               <p className="text-xs font-black uppercase text-slate-900 dark:text-white">{item.name}</p>
+                               <p className="text-[9px] font-bold text-slate-400 uppercase">{material?.name || '---'}</p>
+                             </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button 
+                              onClick={() => {
+                                setEditingConsumption(item);
+                                setConsumptionCategory('CUTTING_PIECE');
+                                setIsConsumptionModalOpen(true);
+                              }}
+                              className="p-2 text-slate-400 hover:text-indigo-500"
                             >
-                              <option value="" disabled>Selecionar Insumo</option>
-                              {materials.map(m => (
-                                <option key={m.id} value={m.id} className="dark:bg-slate-900">
-                                  {m.name} {m.metadata?.reference ? `(${m.metadata.reference})` : ''}
-                                </option>
-                              ))}
-                            </select>
-                            <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
-                              {material?.metadata?.masterCategory || 'Insumo Geral'}
-                            </p>
-                         </div>
-                         <button 
-                           type="button"
-                           title="Remover Item"
-                           aria-label="Remover item da ficha técnica"
-                           onClick={() => {
-                             const newTechSheet = (v.techSheet || []).filter((_, idx) => idx !== itemIdx);
-                             updateVariation(activeVariationIndex, { techSheet: newTechSheet });
-                           }}
-                           className="p-2 text-rose-300 hover:text-rose-500 transition-colors"
-                         >
-                           <Trash2 size={16} />
-                         </button>
-                      </div>
+                              <Settings size={16} />
+                            </button>
+                            <button 
+                              onClick={() => {
+                                const newC = (v.consumptions || []).filter(c => c.id !== item.id);
+                                updateVariation(activeVariationIndex, { consumptions: newC });
+                              }}
+                              className="p-2 text-slate-400 hover:text-rose-500"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
 
-                      <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-100 dark:border-slate-800/50">
-                         <div className="flex flex-col gap-1.5">
-                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Quantidade</label>
-                            <div className="relative">
-                               <input 
-                                 type="number"
-                                 step="0.001"
-                                 className="w-full bg-slate-50 dark:bg-slate-900/50 border-none rounded-xl px-4 py-2.5 text-[11px] font-black text-slate-900 dark:text-white"
-                                 value={item.quantity || ''}
-                                 placeholder="0.000"
-                                 onChange={(e) => {
-                                   const newTechSheet = [...(v.techSheet || [])];
-                                   newTechSheet[itemIdx] = { ...newTechSheet[itemIdx], quantity: parseFloat(e.target.value) || 0 };
-                                   updateVariation(activeVariationIndex, { techSheet: newTechSheet });
-                                 }}
-                               />
-                               <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-black text-slate-400 uppercase">
-                                 {material?.metadata?.unitId || 'UN'}
+                        <div className="grid grid-cols-3 gap-2 py-3 border-t border-slate-200/50 dark:border-slate-800/50">
+                           <div className="flex flex-col gap-1">
+                              <span className="text-[8px] font-black text-slate-400 uppercase">Peças/Pr</span>
+                              <span className="text-[11px] font-black">{item.piecesPerPair || 2}</span>
+                           </div>
+                           <div className="flex flex-col gap-1">
+                              <span className="text-[8px] font-black text-slate-400 uppercase">Consumo</span>
+                              <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400">{item.quantity.toFixed(4)} <span className="text-[9px]">{material?.metadata?.unitId || 'M2'}</span></span>
+                           </div>
+                           <div className="flex flex-col gap-1">
+                              <span className="text-[8px] font-black text-slate-400 uppercase">Faca</span>
+                              <span className="text-[10px] font-bold truncate max-w-[80px]">{tool?.name || '---'}</span>
+                           </div>
+                        </div>
+                        
+                        {item.services && item.services.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
+                             {item.services.map(s => (
+                               <div key={s.serviceId} className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[8px] font-black uppercase tracking-widest border border-emerald-100 dark:border-emerald-800">
+                                  {flowTags.find(f => f.id === s.serviceId)?.name || 'Serviço'}
                                </div>
-                            </div>
-                         </div>
-                         <div className="flex flex-col gap-1.5">
-                            <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Custo Estimado</label>
-                            <div className="h-[38px] flex items-center px-4 bg-slate-50 dark:bg-slate-900/30 rounded-xl">
-                               <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400">
-                                 {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-                                   (item.quantity || 0) * (material?.metadata?.baseCost || 0)
-                                 )}
-                               </span>
-                            </div>
-                         </div>
+                             ))}
+                          </div>
+                        )}
                       </div>
+                    );
+                  })}
+                  {(v.consumptions || []).filter(c => c.category === 'CUTTING_PIECE').length === 0 && (
+                    <div className="col-span-full py-8 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-3xl flex flex-col items-center justify-center gap-3">
+                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Nenhuma peça de corte adicionada</p>
                     </div>
-                  );
-                })}
+                  )}
+                </div>
+              </div>
 
-                {(v.techSheet || []).length === 0 && (
-                  <div className="flex flex-col items-center justify-center py-10 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[2rem] gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-slate-50 dark:bg-slate-800/50 flex items-center justify-center text-slate-300">
-                      <Layers size={24} />
+              {/* Outros Consumos (Embalagem, Químicos, Aviamentos) */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {[
+                  { cat: 'PACKAGING' as ComponentCategory, label: 'Embalagens', icon: <Box size={22} />, color: 'bg-emerald-600', textColor: 'text-emerald-600' },
+                  { cat: 'CHEMICAL' as ComponentCategory, label: 'Químicos', icon: <Droplets size={22} />, color: 'bg-blue-600', textColor: 'text-blue-600' },
+                  { cat: 'TRIMMING' as ComponentCategory, label: 'Aviamentos', icon: <Sparkles size={22} />, color: 'bg-amber-600', textColor: 'text-amber-600' },
+                ].map(group => (
+                  <div key={group.cat} className={`p-6 rounded-[2rem] border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl ${group.color} text-white flex items-center justify-center shadow-lg opacity-80`}>
+                          {group.icon}
+                        </div>
+                        <h3 className={`text-[10px] font-black uppercase tracking-widest ${group.textColor} dark:opacity-80`}>{group.label}</h3>
+                      </div>
+                      <button 
+                         onClick={() => {
+                           setConsumptionCategory(group.cat);
+                           setEditingConsumption({
+                             id: Math.random().toString(36).substr(2, 9),
+                             category: group.cat,
+                             name: '',
+                             materialId: '',
+                             quantity: 0
+                           });
+                           setIsConsumptionModalOpen(true);
+                         }}
+                         className="p-2 bg-slate-50 dark:bg-slate-800 rounded-xl text-slate-400 hover:text-indigo-600"
+                      >
+                         <Plus size={16} />
+                      </button>
                     </div>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center max-w-[200px]">
-                      Nenhum item na ficha técnica. Adicione materiais para compor o produto.
+
+                    <div className="flex flex-col gap-3">
+                      {(v.consumptions || []).filter(c => c.category === group.cat).map(item => {
+                        const mat = productionConfigs.find(m => m.id === item.materialId);
+                        return (
+                          <div key={item.id} className={`p-4 rounded-2xl border flex flex-col gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                             <div className="flex items-center justify-between">
+                                <p className="text-[10px] font-black uppercase tracking-tight text-slate-900 dark:text-white truncate max-w-[120px]">{item.name || mat?.name}</p>
+                                <div className="flex items-center gap-1">
+                                  <button onClick={() => { setEditingConsumption(item); setConsumptionCategory(group.cat); setIsConsumptionModalOpen(true); }} className="p-1 text-slate-300 hover:text-indigo-500"><Settings size={14} /></button>
+                                  <button onClick={() => { const newC = (v.consumptions || []).filter(c => c.id !== item.id); updateVariation(activeVariationIndex, { consumptions: newC }); }} className="p-1 text-slate-300 hover:text-rose-500"><Trash2 size={14} /></button>
+                                </div>
+                             </div>
+                             <div className="flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
+                                <span className="text-[8px] font-black text-slate-400 uppercase">Qtd: <span className="text-slate-900 dark:text-slate-200">{item.quantity}</span></span>
+                                <span className="text-[8px] font-black text-slate-400 uppercase">{mat?.metadata?.unitId || 'UN'}</span>
+                             </div>
+                          </div>
+                        );
+                      })}
+                      {(v.consumptions || []).filter(c => c.category === group.cat).length === 0 && (
+                        <p className="text-[8px] text-slate-300 font-bold uppercase text-center py-4 italic">Nenhum item</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            {/* Resumo de Custos da Engenharia */}
+            <div className="mt-4 p-6 bg-slate-900 dark:bg-indigo-600 rounded-[2.5rem] shadow-xl flex items-center justify-between">
+               <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center text-white">
+                     <Calculator size={28} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black text-indigo-200 uppercase tracking-[0.2em]">Engenharia do Modelo</p>
+                    <p className="text-2xl font-black text-white leading-none mt-1">
+                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                        (v.consumptions || []).reduce((acc, item) => {
+                          const material = productionConfigs.find(c => c.id === item.materialId);
+                          const matCost = (item.quantity * (material?.metadata?.baseCost || 0));
+                          const serviceCost = (item.services || []).reduce((sAcc, s) => sAcc + s.cost, 0);
+                          return acc + matCost + serviceCost;
+                        }, 0)
+                      )}
                     </p>
                   </div>
-                )}
-
-                {(v.techSheet || []).length > 0 && (
-                  <div className="mt-2 p-4 bg-indigo-600 rounded-2xl shadow-lg shadow-indigo-500/20 flex items-center justify-between">
-                     <div>
-                        <p className="text-[8px] font-black text-indigo-200 uppercase tracking-[0.2em]">Custo Total de Materiais</p>
-                        <p className="text-lg font-black text-white leading-none mt-1">
-                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-                            (v.techSheet || []).reduce((acc, item) => {
-                              const material = productionConfigs.find(c => c.id === item.configItemId);
-                              return acc + (item.quantity * (material?.metadata?.baseCost || 0));
-                            }, 0)
-                          )}
-                        </p>
-                     </div>
-                     <FileText className="text-indigo-400" size={24} />
-                  </div>
-                )}
-             </div>
+               </div>
+               <CheckCircle2 className="text-white/20" size={40} />
+            </div>
           </div>
-        </div>
+        )}
 
-        <button 
+            <button 
           onClick={() => {
             const nextIndex = activeVariationIndex + 1;
             if (nextIndex < variations.length) {
                 setActiveVariationIndex(nextIndex);
+                setVarView('info');
             } else {
                 setActiveVariationIndex(null);
             }
           }}
-          className={`bg-indigo-600 text-white py-4 rounded-xl font-black uppercase tracking-widest text-xs shadow-lg flex items-center justify-center gap-2 ${isDarkMode ? 'shadow-none' : 'shadow-indigo-200'}`}
-          aria-label="Confirmar esta variação e passar para a próxima"
-          title="Próxima Variação"
+          className={`bg-indigo-600 text-white py-4 rounded-xl font-black uppercase tracking-widest text-xs shadow-lg flex items-center justify-center gap-2 mt-8 ${isDarkMode ? 'shadow-none' : 'shadow-indigo-200'}`}
         >
-          Confirmar e Próxima Variação <ChevronRight size={16}/>
+          {activeVariationIndex === variations.length - 1 ? 'Concluir Engenharia' : 'Próxima Variação'} <ChevronRight size={16}/>
         </button>
-      </div>
-    );
-  }
+      </motion.div>
+        ) : (
+          <EngineeringEditor 
+            key="editor"
+            isDarkMode={isDarkMode}
+            consumption={editingConsumption!}
+            onCancel={() => setIsConsumptionModalOpen(false)}
+            onSave={(updated) => {
+              if (activeVariationIndex !== null) {
+                const currentConsumptions = variations[activeVariationIndex].consumptions || [];
+                const exists = currentConsumptions.findIndex(c => c.id === updated.id);
+                let newC = [...currentConsumptions];
+                if (exists >= 0) {
+                  newC[exists] = updated;
+                } else {
+                  newC.push(updated);
+                }
+                updateVariation(activeVariationIndex, { consumptions: newC });
+                setIsConsumptionModalOpen(false);
+              }
+            }}
+            productionConfigs={productionConfigs}
+            colors={colors}
+            sectors={sectors}
+            grids={grids}
+            productionGridId={productionGridId}
+            defaultGridId={defaultGridId}
+            toolMapping={toolMapping}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
   return (
     <div className="flex flex-col gap-6 pb-60 px-4 pt-4 min-h-screen">
       <div className={`p-6 rounded-[2rem] border flex flex-col gap-6 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
         <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl">
            <button 
-             onClick={() => setType(SaleType.WHOLESALE)}
-             className={`flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${type === SaleType.WHOLESALE ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-400 dark:text-slate-500'}`}
+             onClick={() => {
+                if (saleTypes.includes(SaleType.WHOLESALE)) {
+                   if (saleTypes.length > 1) setSaleTypes(saleTypes.filter(t => t !== SaleType.WHOLESALE));
+                } else {
+                   setSaleTypes([...saleTypes, SaleType.WHOLESALE]);
+                }
+             }}
+             className={`flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-400 dark:text-slate-500'}`}
            >
              <Package size={14} /> Atacado
            </button>
            <button 
-             onClick={() => setType(SaleType.RETAIL)}
-             className={`flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${type === SaleType.RETAIL ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-400 dark:text-slate-500'}`}
+             onClick={() => {
+                if (saleTypes.includes(SaleType.RETAIL)) {
+                   if (saleTypes.length > 1) setSaleTypes(saleTypes.filter(t => t !== SaleType.RETAIL));
+                } else {
+                   setSaleTypes([...saleTypes, SaleType.RETAIL]);
+                }
+             }}
+             className={`flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${saleTypes.includes(SaleType.RETAIL) ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-400 dark:text-slate-500'}`}
            >
              <Tag size={14} /> Varejo
            </button>
@@ -581,7 +849,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                    Configurações de Produção
                  </h4>
                  <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-1">
-                   Grade e Matriz de Solado
+                    Grade, Solados e Facas
                  </p>
                </div>
              </div>
@@ -740,19 +1008,98 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   );
                 })()}
               </div>
+
+              {/* Mapeamento de Facas por Numeração (Igual ao solado, mas global) */}
+              <div className={`mt-4 rounded-3xl border shadow-sm overflow-hidden transition-all duration-300 ${isDarkMode ? 'bg-slate-900/40 border-slate-800' : 'bg-indigo-50/30 border-indigo-100/50'}`}>
+                <button
+                  type="button"
+                  onClick={() => setShowToolMapping(!showToolMapping)}
+                  className={`w-full flex items-center justify-between px-6 py-4 text-left transition-colors ${showToolMapping ? (isDarkMode ? 'bg-indigo-900/20' : 'bg-indigo-50') : (isDarkMode ? 'bg-slate-800/20' : 'bg-indigo-50/30')}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${showToolMapping ? 'bg-indigo-500 text-white shadow-lg' : isDarkMode ? 'bg-indigo-900/30 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}>
+                      <Scissors size={18} />
+                    </div>
+                    <div>
+                      <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-indigo-400' : 'text-indigo-700'}`}>
+                        Mapeamento de Facas por Numeração
+                      </p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                        {Object.values(toolMapping).some(v => v)
+                          ? `${Object.keys(toolMapping).filter(k => toolMapping[k]).length} numerações mapeadas · toque para editar`
+                          : 'Vincule cada tamanho cabedal ao número da faca'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${showToolMapping ? 'bg-indigo-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-400'}`}>
+                    <ChevronRight size={14} className={`transition-transform ${showToolMapping ? 'rotate-[270deg]' : 'rotate-90'}`} />
+                  </div>
+                </button>
+
+                {showToolMapping && (() => {
+                  const cabedal = grids.find(g => g.id === productionGridId);
+                  
+                  if (!cabedal?.sizes?.length) {
+                    return (
+                      <div className={`px-6 pb-6 pt-4 border-t-2 ${isDarkMode ? 'border-indigo-50/10 bg-slate-900/30' : 'border-indigo-100 bg-white/50'}`}>
+                        <div className="text-center py-6 text-[10px] font-bold text-amber-500 uppercase tracking-widest border-2 border-dashed border-amber-100 dark:border-amber-900/30 rounded-2xl">
+                          Selecione uma Grade de Producao acima para mapear as numeracoes.
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className={`px-6 pb-6 pt-4 border-t-2 animate-in fade-in slide-in-from-top-2 duration-200 ${isDarkMode ? 'border-indigo-50/10 bg-slate-900/30' : 'border-indigo-100 bg-white/50'}`}>
+                      <div className={`flex items-center gap-3 mb-4 p-3 rounded-xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-indigo-50'}`}>
+                        <Scissors size={14} className="text-indigo-500 shrink-0" />
+                        <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider leading-relaxed">
+                          Mapeamento Global de Facas para a Grade: <span className="text-indigo-600 dark:text-indigo-400 font-black">{cabedal.name}</span>
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                        {cabedal.sizes.map(cabedalSize => (
+                          <div key={cabedalSize} className={`p-4 rounded-2xl border-2 flex flex-col items-center gap-3 transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 focus-within:border-indigo-500' : 'bg-white border-slate-100 shadow-sm focus-within:border-indigo-400'}`}>
+                            <div className="text-center">
+                              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest block leading-none mb-1">Cabedal</span>
+                              <span className={`text-base font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{cabedalSize}</span>
+                            </div>
+                            <div className="w-7 h-7 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-300 dark:text-slate-600">
+                              <ArrowUpDown size={13} />
+                            </div>
+                            <div className={`w-full rounded-xl border-2 transition-all overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700 focus-within:border-indigo-500' : 'bg-indigo-50 border-indigo-100 focus-within:border-indigo-400'}`}>
+                              <div className="flex items-center px-2 py-1.5 gap-1">
+                                <span className="text-[7px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest shrink-0">Faca</span>
+                                <input
+                                  type="text"
+                                  value={toolMapping[cabedalSize] || ''}
+                                  onChange={(e) => setToolMapping({ ...toolMapping, [cabedalSize]: e.target.value })}
+                                  className="w-full bg-transparent border-none text-right text-xs font-black text-slate-900 dark:text-white outline-none p-0"
+                                  placeholder="Num."
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
 
-           <div className={`p-8 rounded-[2.5rem] border shadow-sm transition-all duration-500 ${type === SaleType.WHOLESALE ? 'bg-amber-50/40 border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/20 shadow-amber-100/20' : 'bg-indigo-50/40 border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-900/20 shadow-indigo-100/20'}`}>
+           <div className={`p-8 rounded-[2.5rem] border shadow-sm transition-all duration-500 ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-amber-50/40 border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/20 shadow-amber-100/20' : 'bg-indigo-50/40 border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-900/20 shadow-indigo-100/20'}`}>
              <div className="flex items-center gap-4 mb-8">
-                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transform transition-transform duration-500 ${type === SaleType.WHOLESALE ? 'bg-amber-500 rotate-3 text-white' : 'bg-indigo-500 -rotate-3 text-white'}`}>
-                  {type === SaleType.WHOLESALE ? <Package size={24} strokeWidth={2.5} /> : <Tag size={24} strokeWidth={2.5} />}
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transform transition-transform duration-500 ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-amber-500 rotate-3 text-white' : 'bg-indigo-500 -rotate-3 text-white'}`}>
+                  {saleTypes.includes(SaleType.WHOLESALE) ? <Package size={24} strokeWidth={2.5} /> : <Tag size={24} strokeWidth={2.5} />}
                 </div>
                 <div>
-                   <h4 className={`text-[11px] font-black uppercase tracking-[0.2em] ${type === SaleType.WHOLESALE ? 'text-amber-600 dark:text-amber-400' : 'text-indigo-600 dark:text-indigo-400'}`}>
-                     Configurações de {type === SaleType.WHOLESALE ? 'Atacado' : 'Varejo'}
+                   <h4 className={`text-[11px] font-black uppercase tracking-[0.2em] ${saleTypes.includes(SaleType.WHOLESALE) ? 'text-amber-600 dark:text-amber-400' : 'text-indigo-600 dark:text-indigo-400'}`}>
+                     Configurações de {saleTypes.length > 1 ? 'Venda Híbrida' : saleTypes.includes(SaleType.WHOLESALE) ? 'Atacado' : 'Varejo'}
                    </h4>
                    <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-1">
-                     {type === SaleType.WHOLESALE ? 'Precificação por grade fechada' : 'Precificação por par individual'}
+                     {saleTypes.includes(SaleType.WHOLESALE) ? 'Precificação por grade fechada' : 'Precificação por par individual'}
                    </p>
                 </div>
              </div>
@@ -812,7 +1159,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                  </div>
                </div>
 
-               {type === SaleType.RETAIL && (
+               {saleTypes.includes(SaleType.RETAIL) && (
                  <div className="col-span-1 sm:col-span-2 p-5 bg-white/50 dark:bg-slate-900/50 rounded-3xl border border-dashed border-indigo-100 dark:border-indigo-900/30">
                     <div className="flex items-center gap-3 mb-4">
                        <Info size={16} className="text-indigo-400" />
@@ -1043,8 +1390,12 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             if (calcModal.field === 'salePrice') setSalePrice(res.toString());
             if (calcModal.field === 'costPriceAdjustmentAmount') setCostPriceAdjustmentAmount(res.toString());
             if (calcModal.field === 'salePriceAdjustmentAmount') setSalePriceAdjustmentAmount(res.toString());
+            if (calcModal.field === 'quantity' && editingConsumption) {
+              setEditingConsumption({ ...editingConsumption, quantity: res });
+            }
         }}
       />
+
     </div>
   );
 }

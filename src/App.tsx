@@ -976,6 +976,7 @@ export default function App() {
             categories={categories}
             colors={colors}
             productionConfigs={productionConfigs}
+            flowTags={flowTags}
             onSave={async (product) => {
               try {
                 await firebaseService.saveDocument("products", product);
@@ -987,6 +988,7 @@ export default function App() {
             }}
             onCancel={goBack}
             isDarkMode={isDarkMode}
+            sectors={sectors}
           />
         );
       case ViewType.PURCHASES:

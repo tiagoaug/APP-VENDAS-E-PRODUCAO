@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, FormEvent, ChangeEvent, ReactNode } from 'react';
-import { motion, AnimatePresence, Reorder, useDragControls } from 'motion/react';
+import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
 import { 
   Tags, 
   Factory, 
@@ -39,9 +39,58 @@ import {
   ClipboardList,
   FileText
 } from 'lucide-react';
-import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, ProductionScreenType } from '../types';
+import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, ProductionScreenType, ViewType } from '../types';
 import Modal from '../components/Modal';
 import ConfigMenuItem from '../components/ConfigMenuItem';
+
+const AreaInput = ({ size, value, onChange, isDarkMode }: any) => {
+  const [localValue, setLocalValue] = React.useState(
+    value !== undefined && value !== null 
+      ? Number(value).toFixed(4).replace('.', ',') 
+      : ''
+  );
+
+  React.useEffect(() => {
+    if (value !== undefined && value !== null) {
+      const formatted = Number(value).toFixed(4).replace('.', ',');
+      if (parseFloat(localValue.replace(',', '.')) !== Number(value)) {
+        setLocalValue(formatted);
+      }
+    } else {
+      setLocalValue('');
+    }
+  }, [value]);
+
+  return (
+    <div className="flex flex-col gap-2 items-center">
+      <span className="text-[9px] font-black text-slate-400 uppercase">{size}</span>
+      <input 
+        type="text"
+        value={localValue}
+        onChange={(e) => {
+          const val = e.target.value.replace('.', ',');
+          setLocalValue(val);
+          const numericVal = parseFloat(val.replace(',', '.'));
+          if (!isNaN(numericVal)) {
+            onChange(numericVal);
+          } else if (val === '') {
+            onChange(0);
+          }
+        }}
+        onBlur={() => {
+          if (localValue !== '') {
+            const num = parseFloat(localValue.replace(',', '.'));
+            if (!isNaN(num)) {
+              setLocalValue(num.toFixed(4).replace('.', ','));
+            }
+          }
+        }}
+        placeholder="0,0000"
+        className={`w-full px-2 py-3 rounded-xl font-bold text-[10px] text-center outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
+      />
+    </div>
+  );
+};
 
 interface ProductionConfigViewProps {
   flowTags: FlowTag[];
@@ -708,6 +757,7 @@ export default function ProductionConfigView({
   );
 }
 
+
 function GenericConfigList({ 
   title, 
   label, 
@@ -749,6 +799,15 @@ function GenericConfigList({
   const [newSize, setNewSize] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { totalWeightLive, yieldLive } = useMemo(() => {
+    if (!editingItem?.metadata?.sizeWeights) return { totalWeightLive: 0, yieldLive: 0 };
+    const weights = Object.values(editingItem?.metadata?.sizeWeights || {}) as number[];
+    const activeWeights = weights.filter(w => w > 0);
+    const total = activeWeights.reduce((a, b) => a + b, 0);
+    const yld = total > 0 ? 1000 / total : 0;
+    return { totalWeightLive: total, yieldLive: yld };
+  }, [editingItem?.metadata?.sizeWeights]);
 
   const units = useMemo(() => productionConfigs.filter(c => c.type === 'UNIT'), [productionConfigs]);
   const suppliers = useMemo(() => people.filter(p => p.isSupplier), [people]);
@@ -801,14 +860,10 @@ function GenericConfigList({
 
     setIsLoading(true);
     try {
-      console.log('[GenericConfigList] Saving item:', editingItem);
       await onSave(editingItem);
-      console.log('[GenericConfigList] Save success');
-      alert('Registro salvo com sucesso!');
       setIsModalOpen(false);
       setEditingItem(null);
     } catch (err: any) {
-      console.error('[GenericConfigList] Error saving item:', err);
       alert('Erro ao salvar: ' + (err.message || err));
     } finally {
       setIsLoading(false);
@@ -831,7 +886,6 @@ function GenericConfigList({
   const handleImageUpload = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Compress and resize image
       const reader = new FileReader();
       reader.onload = (event) => {
         const img = new Image();
@@ -839,8 +893,6 @@ function GenericConfigList({
           const canvas = document.createElement('canvas');
           let width = img.width;
           let height = img.height;
-          
-          // Max dimension 800px
           const MAX_SIZE = 800;
           if (width > height) {
             if (width > MAX_SIZE) {
@@ -853,13 +905,10 @@ function GenericConfigList({
               height = MAX_SIZE;
             }
           }
-          
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, width, height);
-          
-          // Quality 0.7 for good balance between size and quality
           const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
           setEditingItem(prev => prev ? { ...prev, imageUrl: compressedBase64 } : null);
         };
@@ -879,7 +928,9 @@ function GenericConfigList({
         metadata: {
           ...currentMetadata,
           sizes: [...currentSizes, newSize],
-          sizeAreas: { ...(currentMetadata.sizeAreas || {}), [newSize]: 0 }
+          sizeAreas: { ...(currentMetadata.sizeAreas || {}), [newSize]: 0 },
+          sizeWeights: { ...(currentMetadata.sizeWeights || {}), [newSize]: 0 },
+          sizeQuantities: { ...(currentMetadata.sizeQuantities || {}), [newSize]: 0 }
         }
       });
     }
@@ -891,30 +942,34 @@ function GenericConfigList({
     const currentMetadata = editingItem.metadata || {};
     const newSizes = (currentMetadata.sizes || []).filter(s => s !== size);
     const newAreas = { ...(currentMetadata.sizeAreas || {}) };
+    const newWeights = { ...(currentMetadata.sizeWeights || {}) };
+    const newQtys = { ...(currentMetadata.sizeQuantities || {}) };
     delete newAreas[size];
+    delete newWeights[size];
+    delete newQtys[size];
     setEditingItem({
       ...editingItem,
-      metadata: { ...currentMetadata, sizes: newSizes, sizeAreas: newAreas }
+      metadata: { ...currentMetadata, sizes: newSizes, sizeAreas: newAreas, sizeWeights: newWeights, sizeQuantities: newQtys }
     });
   };
 
-  const updateArea = (size: string, area: number) => {
+  const updateArea = (size: string, area: number | string) => {
     if (!editingItem) return;
+    const currentMetadata = editingItem.metadata || { conjugation: 1, sizes: [], sizeAreas: {} };
+    const numArea = typeof area === 'string' ? parseFloat(area.replace(',', '.')) || 0 : area;
+    
     setEditingItem({
       ...editingItem,
       metadata: {
-        ...(editingItem.metadata || {}),
-        sizeAreas: { ...(editingItem.metadata?.sizeAreas || {}), [size]: area }
+        ...currentMetadata,
+        sizeAreas: { ...(editingItem.metadata?.sizeAreas || {}), [size]: numArea }
       }
     });
   };
 
   return (
     <div className="flex flex-col gap-6">
-       {/* Main Header Card */}
        <div className={`p-6 rounded-[3rem] shadow-xl flex flex-col gap-5 relative overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
-          
-          {/* Top row: back button + icon block */}
           <div className="flex items-center gap-4">
              {onBack && (
                 <button 
@@ -924,8 +979,6 @@ function GenericConfigList({
                   <ChevronLeft size={18} />
                 </button>
              )}
-
-             {/* Icon + label inline */}
              <div className="flex items-center gap-3">
                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
                  {icon}
@@ -934,7 +987,6 @@ function GenericConfigList({
              </div>
           </div>
 
-          {/* Add New Record Button */}
           <button 
             onClick={() => {
               setEditingItem({ 
@@ -943,14 +995,14 @@ function GenericConfigList({
                 description: '', 
                 type, 
                 createdAt: Date.now(),
-                metadata: type === 'TOOL' ? { conjugation: 1, sizes: [], sizeAreas: {} } : undefined
+                metadata: type === 'TOOL' ? { conjugation: 1, sizes: [], sizeAreas: {} } : 
+                          type === 'MOLD' ? { moldReference: '', sizes: [], sizeWeights: {}, composition: [], colorVariations: [], extraServices: [] } :
+                          undefined
               });
               setIsModalOpen(true);
             }}
             className={`w-full py-4 px-6 rounded-[2rem] flex items-center gap-4 transition-all shadow-lg active:scale-[0.98] ${
-              isDarkMode 
-                ? 'bg-indigo-600 text-white shadow-indigo-900/40' 
-                : 'bg-indigo-600 text-white shadow-indigo-200/80'
+              isDarkMode ? 'bg-indigo-600 text-white shadow-indigo-900/40' : 'bg-indigo-600 text-white shadow-indigo-200/80'
             }`}
           >
             <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
@@ -963,8 +1015,6 @@ function GenericConfigList({
           </button>
        </div>
 
-
-       {/* Search Bar */}
        <div className="relative group">
           <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-300 transition-colors group-focus-within:text-indigo-500">
             <Search size={20} />
@@ -975,14 +1025,11 @@ function GenericConfigList({
             onChange={(e) => setSearch(e.target.value)}
             placeholder={`BUSCAR EM ${label}...`}
             className={`w-full pl-14 pr-6 py-5 rounded-3xl font-black text-xs uppercase tracking-widest outline-none transition-all border-2 ${
-              isDarkMode 
-                ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' 
-                : 'bg-white border-slate-50 text-slate-900 focus:border-indigo-100 placeholder:text-slate-300'
+              isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-50 text-slate-900 focus:border-indigo-100 placeholder:text-slate-300'
             }`}
           />
        </div>
 
-       {/* List Items */}
        <div className="flex flex-col gap-8">
           {type === 'MATERIAL' ? (
             Object.entries(groupedItems || {}).map(([category, catItems]: [string, ProductionConfigItem[]]) => (
@@ -996,7 +1043,6 @@ function GenericConfigList({
                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-none mt-1">{catItems.length} ITENS CADASTRADOS</p>
                    </div>
                  </div>
-
                  <div className="flex flex-col gap-3">
                    {catItems.map(item => (
                      <MaterialCard 
@@ -1022,81 +1068,50 @@ function GenericConfigList({
                   onEdit={() => { setEditingItem({...item}); setIsModalOpen(true); }}
                   onDelete={() => { if (confirm(`Deseja excluir ${item.name}?`)) onDelete(item.id); }}
                   flowTags={flowTags}
-                  people={people}
                   colors={colors}
+                  productionConfigs={productionConfigs}
                 />
               ) : (
                 <motion.div
                   key={item.id}
                   layout
-              className={`p-4 rounded-[1.5rem] border flex items-center justify-between group transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-50 shadow-sm'}`}
-            >
-              <div className="flex items-center gap-5 flex-1">
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-slate-50 text-slate-400'}`}>
-                  {item.imageUrl ? (
-                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                  ) : (
-                    icon
-                  )}
-                </div>
-                <div className="flex-1">
-                  <p className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.name}</p>
-                  {type === 'TOOL' ? (
-                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
-                      CONSUMO P/ ÁREA • {item.metadata?.conjugation || 1} PR/BAT
-                    </p>
-                  ) : type === 'INFESTO' ? (
-                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
-                      {item.metadata?.layers || 0} CAMADAS
-                    </p>
-                  ) : type === 'DEADLINE' ? (
-                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
-                      {item.metadata?.days || 0} DIAS
-                    </p>
-                  ) : type === 'PACKAGING' ? (
-                    <div className="flex flex-col gap-3 mt-1">
-                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
-                        {item.metadata?.capacity || 0} PARES {item.metadata?.mode !== 'FREE' && `• ${(item.metadata?.sizes || []).length} TAMANHOS`}
-                      </p>
-                      {item.metadata?.mode !== 'FREE' && (item.metadata?.sizes || []).length > 0 && (
-                        <div className={`p-3 rounded-2xl flex flex-wrap gap-x-4 gap-y-2 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50/50'}`}>
-                          {item.metadata?.sizes.map((size: string) => (
-                            <div key={size} className="flex items-center gap-1.5">
-                              <span className="text-[10px] font-black text-slate-400">{size}</span>
-                              <span className={`text-[10px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.metadata?.sizeQuantities?.[size] || 0}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                  className={`p-4 rounded-[1.5rem] border flex items-center justify-between group transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-50 shadow-sm'}`}
+                >
+                  <div className="flex items-center gap-5 flex-1">
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-slate-50 text-slate-400'}`}>
+                      {item.imageUrl ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" /> : icon}
                     </div>
-                  ) : item.description ? (
-                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{item.description}</p>
-                  ) : null}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 pr-4">
-                <button 
-                  onClick={() => {
-                    setEditingItem({ ...item });
-                    setIsModalOpen(true);
-                  }}
-                  title="Editar Item"
-                  aria-label={`Editar ${item.name}`}
-                  className={`p-2 rounded-full transition-all ${isDarkMode ? 'text-slate-600 hover:text-white' : 'text-slate-200 hover:text-slate-400'}`}
-                >
-                  <Edit3 size={18} />
-                </button>
-                <button 
-                  onClick={() => {
-                    if (confirm(`Deseja excluir ${item.name}?`)) onDelete(item.id);
-                  }}
-                  title="Excluir Item"
-                  aria-label={`Excluir ${item.name}`}
-                  className={`p-2 rounded-full transition-all ${isDarkMode ? 'text-slate-600 hover:text-red-400' : 'text-slate-200 hover:text-red-400'}`}
-                >
-                  <Trash2 size={18} />
-                </button>
-              </div>
+                    <div className="flex-1">
+                      <p className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.name}</p>
+                      {type === 'TOOL' ? (
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">CONSUMO P/ ÁREA • {item.metadata?.conjugation || 1} PR/BAT</p>
+                      ) : type === 'INFESTO' ? (
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{item.metadata?.layers || 0} CAMADAS</p>
+                      ) : type === 'DEADLINE' ? (
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{item.metadata?.days || 0} DIAS</p>
+                      ) : type === 'PACKAGING' ? (
+                        <div className="flex flex-col gap-3 mt-1">
+                          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{item.metadata?.capacity || 0} PARES {item.metadata?.mode !== 'FREE' && `• ${(item.metadata?.sizes || []).length} TAMANHOS`}</p>
+                          {item.metadata?.mode !== 'FREE' && (item.metadata?.sizes || []).length > 0 && (
+                            <div className={`p-3 rounded-2xl flex flex-wrap gap-x-4 gap-y-2 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50/50'}`}>
+                              {item.metadata?.sizes.map((size: string) => (
+                                <div key={size} className="flex items-center gap-1.5">
+                                  <span className="text-[10px] font-black text-slate-400">{size}</span>
+                                  <span className={`text-[10px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.metadata?.sizeQuantities?.[size] || 0}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : item.description ? (
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{item.description}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 pr-4">
+                    <button onClick={() => { setEditingItem({ ...item }); setIsModalOpen(true); }} className={`p-2 rounded-full transition-all ${isDarkMode ? 'text-slate-600 hover:text-white' : 'text-slate-200 hover:text-slate-400'}`}><Edit3 size={18} /></button>
+                    <button onClick={() => { if (confirm(`Deseja excluir ${item.name}?`)) onDelete(item.id); }} className={`p-2 rounded-full transition-all ${isDarkMode ? 'text-slate-600 hover:text-red-400' : 'text-slate-200 hover:text-red-400'}`}><Trash2 size={18} /></button>
+                  </div>
                 </motion.div>
               )
             ))
@@ -1105,976 +1120,229 @@ function GenericConfigList({
           {filteredItems.length === 0 && search === '' && seedDefaults && (
             <div className="flex flex-col items-center gap-4 py-8">
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Lista vazia</p>
-              <button 
-                onClick={handleSeed}
-                className="px-6 py-3 rounded-2xl bg-indigo-50 text-indigo-600 text-[10px] font-black uppercase tracking-widest border border-indigo-100"
-              >
-                Carregar Unidades Padrão
-              </button>
+              <button onClick={handleSeed} className="px-6 py-3 rounded-2xl bg-indigo-50 text-indigo-600 text-[10px] font-black uppercase tracking-widest border border-indigo-100">Carregar Unidades Padrão</button>
             </div>
           )}
 
           {filteredItems.length === 0 && (
             <div className={`p-12 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center text-center gap-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-              <div className="w-16 h-16 rounded-3xl bg-slate-100 dark:bg-slate-900 flex items-center justify-center text-slate-300">
-                {icon}
-              </div>
-              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">
-                {search ? 'Nenhum resultado encontrado' : placeholderLabel}
-              </p>
+              <div className="w-16 h-16 rounded-3xl bg-slate-100 dark:bg-slate-900 flex items-center justify-center text-slate-300">{icon}</div>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">{search ? 'Nenhum resultado encontrado' : placeholderLabel}</p>
             </div>
           )}
        </div>
 
-       <Modal 
-          isOpen={isModalOpen} 
-          onClose={() => setIsModalOpen(false)}
-          title={editingItem?.id ? `Editar Registro` : `Novo Registro`}
-       >
+       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingItem?.id ? `Editar Registro` : `Novo Registro`}>
           <form onSubmit={handleSave} className="flex flex-col gap-6">
             {type === 'MOLD' ? (
-               // Specialized Form for Matrizes de Solado
                <div className="flex flex-col gap-6">
-                 {/* Reference and Name */}
                  <div className="grid grid-cols-3 gap-4">
                    <div className="flex flex-col gap-2">
                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Referência *</label>
-                     <input 
-                       type="text"
-                       value={editingItem?.metadata?.moldReference || ''}
-                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, moldReference: e.target.value.toUpperCase() } } : null)}
-                       required
-                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
-                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
-                       }`}
-                     />
+                     <input type="text" value={editingItem?.metadata?.moldReference || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, moldReference: e.target.value.toUpperCase() } } : null)} required className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
                    </div>
                    <div className="col-span-2 flex flex-col gap-2">
                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome da Matriz *</label>
-                     <input 
-                       type="text"
-                       value={editingItem?.name || ''}
-                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value.toUpperCase() } : null)}
-                       required
-                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
-                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
-                       }`}
-                     />
+                     <input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value.toUpperCase() } : null)} required className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
                    </div>
                  </div>
-
-                 {/* Category, Price, Transfer */}
-                 <div className="grid grid-cols-3 gap-4">
+                 <div className="grid grid-cols-2 gap-4">
                    <div className="flex flex-col gap-2">
                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Categoria</label>
-                     <select 
-                       title="Categoria da Matriz"
-                       aria-label="Selecionar categoria da matriz"
-                       value={editingItem?.metadata?.category || ''}
-                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, category: e.target.value } } : null)}
-                       className={`w-full px-4 py-4 rounded-2xl font-bold text-[10px] uppercase tracking-widest outline-none transition-all border-2 ${
-                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
-                       }`}
-                     >
-                       <option value="">GERAL</option>
-                       <option value="SOLADO">SOLADO</option>
-                       <option value="SALTO">SALTO</option>
-                       <option value="PALMILHA">PALMILHA</option>
-                     </select>
+                     <select value={editingItem?.metadata?.category || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, category: e.target.value } } : null)} className={`w-full px-4 py-4 rounded-2xl font-bold text-[10px] uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">GERAL</option><option value="SOLADO">SOLADO</option><option value="SALTO">SALTO</option><option value="PALMILHA">PALMILHA</option></select>
                    </div>
                    <div className="flex flex-col gap-2">
                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Preço (R$)</label>
-                     <input 
-                       type="number"
-                       step="0.01"
-                       value={editingItem?.metadata?.price || ''}
-                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, price: parseFloat(e.target.value) } } : null)}
-                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
-                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
-                       }`}
-                     />
-                   </div>
-                   <div className="flex flex-col gap-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Transfer?</label>
-                      <button 
-                        type="button"
-                        title="Alternar estado do Transfer"
-                        onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, hasTransfer: !prev.metadata?.hasTransfer } } : null)}
-                        className={`w-full py-4 rounded-2xl font-black text-[9px] uppercase tracking-widest border-2 transition-all ${
-                          editingItem?.metadata?.hasTransfer 
-                           ? 'bg-amber-500 border-amber-600 text-white' 
-                           : isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-300'
-                        }`}
-                      >
-                        {editingItem?.metadata?.hasTransfer ? 'COM TRANSFER' : 'SEM TRANSFER'}
-                      </button>
+                     <input type="number" step="0.01" value={editingItem?.metadata?.price || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, price: parseFloat(e.target.value) } } : null)} className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
                    </div>
                  </div>
-
-                 {/* Flow Tag Selection */}
                  <div className="flex flex-col gap-2">
-                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-500 ml-2">Estágio do Fluxo</label>
-                   <div className="flex flex-wrap gap-2">
-                     {flowTags.map(tag => (
-                       <button
-                         key={tag.id}
-                         type="button"
-                         title={`Selecionar estágio ${tag.name}`}
-                         onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: tag.id } } : null)}
-                         className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all ${
-                           editingItem?.metadata?.flowTagId === tag.id
-                             ? 'bg-indigo-600 border-indigo-700 text-white'
-                             : isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-500' : 'bg-white border-slate-100 text-slate-400'
-                         }`}
-                       >
-                         {tag.name}
-                       </button>
-                     ))}
-                   </div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-500 ml-2">Estágio do Fluxo / Setor</label>
+                    <div className="relative">
+                      <select value={editingItem?.metadata?.flowTagId || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: e.target.value } } : null)} className={`w-full px-5 py-4 rounded-2xl font-black text-[10px] uppercase tracking-[0.2em] outline-none border-2 transition-all appearance-none cursor-pointer ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}><option value="">SELECIONE O ESTÁGIO...</option>{flowTags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select>
+                      <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
+                    </div>
                  </div>
-
-                 {/* Size Weight Grid */}
                  <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
-                   <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-2">
-                        <Scale size={18} className="text-indigo-500" />
-                        <span className="text-xs font-black uppercase tracking-widest text-slate-500">Pesos por Tamanho (GR)</span>
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2"><Scale size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Pesos por Tamanho (GR)</span></div>
+                      <select onChange={(e) => { const gridId = e.target.value; const grid = grids.find(g => g.id === gridId); if (grid) { const weights: Record<string, number> = {}; grid.sizes.forEach(s => { weights[s] = editingItem?.metadata?.sizeWeights?.[s] || 0; }); setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, sizeWeights: weights, sizes: grid.sizes } } : null); } }} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-600'}`}><option value="">PUXAR GRADE...</option>{grids.filter(g => g.type === GridType.SOLADO || !g.type).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+                    </div>
+                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">{Object.entries(editingItem?.metadata?.sizeWeights || {}).map(([size, weight]) => (<div key={size} className="flex flex-col gap-1"><span className="text-[9px] font-black text-slate-600 dark:text-slate-400 ml-1">{size}</span><input type="number" value={weight as number || ''} onChange={(e) => { const val = parseFloat(e.target.value); setEditingItem(prev => { if (!prev) return null; const newWeights = { ...(prev.metadata?.sizeWeights || {}) }; newWeights[size] = val; return { ...prev, metadata: { ...prev.metadata, sizeWeights: newWeights } }; }); }} className={`w-full px-2 py-3 rounded-xl font-black text-[10px] text-center outline-none border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-50'}`} /></div>))}</div>
+                    <div className="flex items-center justify-between mt-6 pt-6 border-t-2 border-dashed border-slate-100 dark:border-slate-800">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Peso da Grade (Soma GR)</label>
+                        <div className="relative">
+                          <input 
+                            type="number" 
+                            step="0.01" 
+                            value={editingItem?.metadata?.totalWeight || (totalWeightLive > 0 ? totalWeightLive.toFixed(2) : '')} 
+                            onChange={(e) => { 
+                              const val = parseFloat(e.target.value); 
+                              setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, totalWeight: val } } : null); 
+                            }} 
+                            placeholder={totalWeightLive > 0 ? totalWeightLive.toFixed(2) : "0.00"}
+                            className={`w-40 px-4 py-3 rounded-xl font-black text-xs outline-none border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-600'}`} 
+                          />
+                          <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                            <Hash size={14} />
+                          </div>
+                        </div>
+                        {totalWeightLive > 0 && (
+                          <span className="text-[8px] font-bold text-indigo-500 uppercase tracking-widest mt-1 ml-1">
+                            Soma Calculada: {totalWeightLive.toFixed(2)}g
+                          </span>
+                        )}
                       </div>
-                      <select 
-                        title="Selecionar Grade"
-                        aria-label="Selecionar grade de tamanhos para pesos"
-                        onChange={(e) => {
-                           const gridId = e.target.value;
-                           const grid = (grids || []).find(g => g.id === gridId);
-                           if (grid) {
-                             const weights: Record<string, number> = {};
-                             grid.sizes.forEach(s => {
-                               weights[s] = editingItem?.metadata?.sizeWeights?.[s] || 0;
-                             });
-                             setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, sizeWeights: weights, sizes: grid.sizes } } : null);
-                           }
-                        }}
-                        className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-600'}`}
-                      >
-                        <option value="">PUXAR GRADE...</option>
-                        {(grids || []).filter(g => g.type === GridType.SOLADO || !g.type).map(g => (
-                          <option key={g.id} value={g.id}>{g.name}</option>
-                        ))}
-                      </select>
-                   </div>
-
-                   <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">
-                      {Object.entries(editingItem?.metadata?.sizeWeights || {}).map(([size, weight]) => (
-                        <div key={size} className="flex flex-col gap-1">
-                           <span className="text-[9px] font-black text-slate-600 dark:text-slate-400 ml-1">{size}</span>
-                           <input 
-                             type="number"
-                             value={weight as number || ''}
-                             onChange={(e) => {
-                               const val = parseFloat(e.target.value);
-                               setEditingItem(prev => {
-                                 if (!prev) return null;
-                                 const newWeights = { ...(prev.metadata?.sizeWeights || {}) };
-                                 newWeights[size] = val;
-                                 return { ...prev, metadata: { ...prev.metadata, sizeWeights: newWeights } };
-                               });
-                             }}
-                             className={`w-full px-2 py-3 rounded-xl font-black text-[10px] text-center outline-none border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-50'}`}
-                           />
+                      <div className="text-right">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Rendimento por KG</p>
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
+                            {yieldLive > 0 ? yieldLive.toFixed(2) : '0.00'}
+                          </span>
+                          <span className="text-[10px] font-black text-slate-400 uppercase">PRS / KG</span>
+                        </div>
+                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                          1.000g ÷ Soma ({totalWeightLive.toFixed(0)}g)
+                        </p>
+                      </div>
+                    </div>
+                 </div>
+                 <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex flex-col gap-1"><div className="flex items-center gap-2"><Layers size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Composição de Materiais</span></div><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Defina o consumo de insumos</span></div>
+                      <button type="button" onClick={() => { const currentComposition = editingItem?.metadata?.composition || []; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: [...currentComposition, { materialId: '', quantity: 0, type: 'weight' }] } } : null); }} className="p-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"><Plus size={16} /></button>
+                    </div>
+                    <div className="flex flex-col gap-3">
+                      {(editingItem?.metadata?.composition || []).map((item: any, index: number) => (
+                        <div key={index} className={`grid grid-cols-12 gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                          <div className="col-span-6 flex flex-col gap-1"><label className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Insumo / Material</label><select value={item.materialId} onChange={(e) => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], materialId: e.target.value }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className={`w-full px-3 py-3 rounded-xl font-bold text-[10px] uppercase outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-indigo-100'}`}><option value="">SELECIONE...</option>{productionConfigs.filter(c => c.type === 'MATERIAL').map(mat => <option key={mat.id} value={mat.id}>{mat.name}</option>)}</select></div>
+                          <div className="col-span-3 flex flex-col gap-1"><label className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Quant / %</label><input type="number" step="0.001" value={item.quantity || ''} onChange={(e) => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], quantity: parseFloat(e.target.value) }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className={`w-full px-3 py-3 rounded-xl font-black text-[10px] text-center outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-50'}`} /></div>
+                          <div className="col-span-2 flex flex-col gap-1"><label className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Tipo</label><button type="button" onClick={() => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], type: item.type === 'weight' ? 'percentage' : 'weight' }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className={`w-full py-3 rounded-xl font-black text-[8px] uppercase tracking-widest border-2 transition-all ${item.type === 'percentage' ? 'bg-amber-500 border-amber-600 text-white' : 'bg-indigo-500 border-indigo-600 text-white'}`}>{item.type === 'percentage' ? '%' : 'GR'}</button></div>
+                          <div className="col-span-1 flex items-end pb-1"><button type="button" onClick={() => { const newComp = (editingItem?.metadata?.composition || []).filter((_: any, i: number) => i !== index); setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition-colors"><Trash2 size={16} /></button></div>
                         </div>
                       ))}
-                   </div>
+                    </div>
                  </div>
-
-                                   {/* Material Composition Card */}
-                  <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
+                 <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                     <div className="flex items-center justify-between mb-6">
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2">
-                          <Layers size={18} className="text-indigo-500" />
-                          <span className="text-xs font-black uppercase tracking-widest text-slate-500">Composição de Materiais</span>
-                        </div>
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Defina o consumo de insumos para este solado</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const currentComposition = editingItem?.metadata?.composition || [];
-                          setEditingItem(prev => prev ? {
-                            ...prev,
-                            metadata: {
-                              ...prev.metadata,
-                              composition: [...currentComposition, { materialId: '', quantity: 0, type: 'weight' }]
-                            }
-                          } : null);
-                        }}
-                        className="p-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
-                      >
-                        <Plus size={16} />
-                      </button>
+                      <div className="flex flex-col gap-1"><div className="flex items-center gap-2"><Hammer size={18} className="text-emerald-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Serviços Agregados</span></div><span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Mão de obra ou processos terceirizados</span></div>
+                      <button type="button" onClick={() => { const currentServices = editingItem?.metadata?.extraServices || []; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: [...currentServices, { name: '', cost: 0 }] } } : null); }} className="p-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"><Plus size={16} /></button>
                     </div>
-
                     <div className="flex flex-col gap-3">
-                      {(editingItem?.metadata?.composition || []).map((item: any, index: number) => {
-                        const selectedMaterial = productionConfigs.find(c => c.id === item.materialId);
-                        
-                        return (
-                          <div key={index} className={`grid grid-cols-12 gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                            <div className="col-span-6 flex flex-col gap-1">
-                              <label className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Insumo / Material</label>
-                              <select
-                                title="Selecionar Material"
-                                value={item.materialId}
-                                onChange={(e) => {
-                                  const newComp = [...(editingItem?.metadata?.composition || [])];
-                                  newComp[index] = { ...newComp[index], materialId: e.target.value };
-                                  setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null);
-                                }}
-                                className={`w-full px-3 py-3 rounded-xl font-bold text-[10px] uppercase outline-none border-2 transition-all ${
-                                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-indigo-100'
-                                }`}
-                              >
-                                <option value="">SELECIONE...</option>
-                                {productionConfigs.filter(c => c.type === 'MATERIAL').map(mat => (
-                                  <option key={mat.id} value={mat.id}>{mat.name}</option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div className="col-span-3 flex flex-col gap-1">
-                              <label className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Quant / %</label>
-                              <input
-                                type="number"
-                                step="0.001"
-                                value={item.quantity || ''}
-                                onChange={(e) => {
-                                  const newComp = [...(editingItem?.metadata?.composition || [])];
-                                  newComp[index] = { ...newComp[index], quantity: parseFloat(e.target.value) };
-                                  setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null);
-                                }}
-                                className={`w-full px-3 py-3 rounded-xl font-black text-[10px] text-center outline-none border-2 ${
-                                  isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-50'
-                                }`}
-                              />
-                            </div>
-
-                            <div className="col-span-2 flex flex-col gap-1">
-                              <label className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Tipo</label>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const newComp = [...(editingItem?.metadata?.composition || [])];
-                                  newComp[index] = { ...newComp[index], type: item.type === 'weight' ? 'percentage' : 'weight' };
-                                  setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null);
-                                }}
-                                className={`w-full py-3 rounded-xl font-black text-[8px] uppercase tracking-widest border-2 transition-all ${
-                                  item.type === 'percentage' 
-                                    ? 'bg-amber-500 border-amber-600 text-white' 
-                                    : 'bg-indigo-500 border-indigo-600 text-white'
-                                }`}
-                              >
-                                {item.type === 'percentage' ? '%' : 'GR'}
-                              </button>
-                            </div>
-
-                            <div className="col-span-1 flex items-end pb-1">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const newComp = (editingItem?.metadata?.composition || []).filter((_: any, i: number) => i !== index);
-                                  setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null);
-                                }}
-                                className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition-colors"
-                              >
-                                <Trash2 size={16} />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })}
-
-                      {(editingItem?.metadata?.composition || []).length === 0 && (
-                        <div className="text-center py-6 border-2 border-dashed border-slate-200 rounded-2xl">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Nenhum material adicionado</p>
+                      {(editingItem?.metadata?.extraServices || []).map((service: any, index: number) => (
+                        <div key={index} className={`grid grid-cols-12 gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                          <div className="col-span-7 flex flex-col gap-1"><label className="text-[8px] font-black uppercase tracking-widest text-slate-400 ml-1">Nome do Serviço</label><input type="text" value={service.name} onChange={(e) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], name: e.target.value.toUpperCase() }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); }} placeholder="EX: PINTURA" className={`w-full px-4 py-3 rounded-xl font-bold text-[10px] uppercase outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-emerald-600'}`} /></div>
+                          <div className="col-span-4 flex flex-col gap-1"><label className="text-[8px] font-black uppercase tracking-widest text-slate-400 ml-1">Valor (R$)</label><input type="number" step="0.01" value={service.cost || ''} onChange={(e) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], cost: parseFloat(e.target.value) }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); }} placeholder="0,00" className={`w-full px-4 py-3 rounded-xl font-black text-[10px] text-center outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-50'}`} /></div>
+                          <div className="col-span-1 flex items-end pb-1"><button type="button" onClick={() => { const newServices = (editingItem?.metadata?.extraServices || []).filter((_: any, i: number) => i !== index); setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); }} className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition-colors"><Trash2 size={16} /></button></div>
                         </div>
-                      )}
-
-                      {/* Composition Summary Footer */}
-                      {(editingItem?.metadata?.composition || []).length > 0 && (
-                        <div className={`mt-4 p-4 rounded-2xl grid grid-cols-2 gap-4 ${isDarkMode ? 'bg-slate-900' : 'bg-white shadow-sm border border-slate-100'}`}>
-                          <div className="flex flex-col gap-1 border-r border-slate-100 dark:border-slate-800">
-                            <span className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Total Itens</span>
-                            <span className={`text-sm font-black uppercase ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                              {(editingItem?.metadata?.composition || []).length} Insumos
-                            </span>
-                          </div>
-                          <div className="flex flex-col gap-1 pl-2">
-                            <span className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Rendimento Médio</span>
-                            <div className="flex items-baseline gap-1">
-                              <span className={`text-sm font-black uppercase ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                                {(() => {
-                                  const weights = Object.values(editingItem?.metadata?.sizeWeights || {}) as number[];
-                                  if (weights.length === 0) return '---';
-                                  const avgWeight = weights.reduce((a, b) => a + b, 0) / weights.length;
-                                  if (avgWeight === 0) return '---';
-                                  return (1000 / avgWeight).toFixed(2);
-                                })()}
-                              </span>
-                              <span className="text-[8px] font-bold text-slate-400 uppercase">PRS / KG</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
+                      ))}
                     </div>
-
-                    {/* Summary / Calculations */}
-                    {(editingItem?.metadata?.composition || []).length > 0 && (
-                      <div className="mt-6 flex flex-wrap gap-4 pt-6 border-t-2 border-slate-100 dark:border-slate-800">
-                        <div className="flex-1 min-w-[120px] p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-100 dark:border-indigo-800/50">
-                          <p className="text-[8px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-1">Total de Materiais</p>
-                          <div className="flex items-baseline gap-1">
-                            <span className="text-lg font-black text-indigo-600">{(editingItem?.metadata?.composition || []).length}</span>
-                            <span className="text-[10px] font-black text-indigo-400">ITENS</span>
-                          </div>
-                        </div>
-
-                        <div className="flex-1 min-w-[120px] p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border-2 border-emerald-100 dark:border-emerald-800/50">
-                          <p className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mb-1">Rendimento Médio</p>
-                          <div className="flex items-baseline gap-1">
-                            {(() => {
-                              const weights = Object.values(editingItem?.metadata?.sizeWeights || {});
-                              const avgWeight = weights.length > 0 
-                                ? weights.reduce((a, b) => (a as number) + (b as number), 0) / weights.length 
-                                : 0;
-                              const yieldPerKg = avgWeight > 0 ? (1000 / avgWeight).toFixed(1) : '0';
-                              return (
-                                <>
-                                  <span className="text-lg font-black text-emerald-600">{yieldPerKg}</span>
-                                  <span className="text-[10px] font-black text-emerald-400">PRS/KG</span>
-                                </>
-                              );
-                            })()}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Color Variations and Sub-Ref */}
+                 </div>
                  <div className="flex flex-col gap-4">
-                   <div className="flex items-center gap-2">
-                      <Palette size={18} className="text-indigo-500" />
-                      <span className="text-xs font-black uppercase tracking-widest text-slate-500">Cores Disponíveis e Sub-Ref</span>
-                   </div>
-                   <div className="flex flex-col gap-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
-                      {(colors || []).map(color => {
-                         const variation = (editingItem?.metadata?.colorVariations || []).find((cv: any) => cv.colorId === color.id);
-                         const isSelected = !!variation;
-
-                         return (
-                           <div key={color.id} className={`p-3 rounded-2xl border-2 flex items-center justify-between transition-all ${isSelected ? 'border-indigo-500/30 bg-indigo-500/5' : isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-50 bg-slate-50/50'}`}>
-                              <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-xl shadow-sm border border-black/10" style={{ backgroundColor: color.hex }} />
-                                <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{color.name}</span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                 {isSelected && (
-                                   <input 
-                                     type="text"
-                                     placeholder="SUB-REF"
-                                     value={variation.subRef || ''}
-                                     onChange={(e) => {
-                                       const subRef = e.target.value.toUpperCase();
-                                       setEditingItem(prev => {
-                                         if (!prev) return null;
-                                         const variations = [...(prev.metadata?.colorVariations || [])];
-                                         const idx = variations.findIndex((cv: any) => cv.colorId === color.id);
-                                         variations[idx] = { ...variations[idx], subRef };
-                                         return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } };
-                                       });
-                                     }}
-                                     className={`w-24 px-3 py-2 rounded-xl font-black text-[9px] uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100'}`}
-                                   />
-                                 )}
-                                 <button 
-                                   type="button"
-                                   title={isSelected ? "Desmarcar Cor" : "Selecionar Cor"}
-                                   aria-label={isSelected ? `Remover cor ${color.name}` : `Adicionar cor ${color.name}`}
-                                   onClick={() => {
-                                     setEditingItem(prev => {
-                                       if (!prev) return null;
-                                       const variations = [...(prev.metadata?.colorVariations || [])];
-                                       const idx = variations.findIndex((cv: any) => cv.colorId === color.id);
-                                       if (idx >= 0) variations.splice(idx, 1);
-                                       else variations.push({ colorId: color.id, subRef: '' });
-                                       return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } };
-                                     });
-                                   }}
-                                   className={`p-2 rounded-xl transition-all ${isSelected ? 'text-indigo-500' : 'text-slate-300'}`}
-                                 >
-                                   {isSelected ? <CheckCircle2 size={20} /> : <Circle size={20} />}
-                                 </button>
-                              </div>
-                           </div>
-                         );
-                      })}
-                   </div>
+                    <div className="flex items-center gap-2"><Palette size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Cores Disponíveis e Sub-Ref</span></div>
+                    <div className="flex flex-col gap-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                       {(colors || []).map(color => {
+                          const variation = (editingItem?.metadata?.colorVariations || []).find((cv: any) => cv.colorId === color.id);
+                          const isSelected = !!variation;
+                          return (
+                            <div key={color.id} className={`p-3 rounded-2xl border-2 flex items-center justify-between transition-all ${isSelected ? 'border-indigo-500/30 bg-indigo-500/5' : isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-50 bg-slate-50/50'}`}>
+                               <div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl shadow-sm border border-black/10" style={{ backgroundColor: color.hex }} /><span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{color.name}</span></div>
+                               <div className="flex items-center gap-2">{isSelected && (<input type="text" placeholder="SUB-REF" value={variation.subRef || ''} onChange={(e) => { const subRef = e.target.value.toUpperCase(); setEditingItem(prev => { if (!prev) return null; const variations = [...(prev.metadata?.colorVariations || [])]; const idx = variations.findIndex((cv: any) => cv.colorId === color.id); variations[idx] = { ...variations[idx], subRef }; return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } }; }); }} className={`w-24 px-3 py-2 rounded-xl font-black text-[9px] uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100'}`} />)}<button type="button" onClick={() => { setEditingItem(prev => { if (!prev) return null; const variations = [...(prev.metadata?.colorVariations || [])]; const idx = variations.findIndex((cv: any) => cv.colorId === color.id); if (idx >= 0) variations.splice(idx, 1); else variations.push({ colorId: color.id, subRef: '' }); return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } }; }); }} className={`p-2 rounded-xl transition-all ${isSelected ? 'text-indigo-500' : 'text-slate-300'}`}>{isSelected ? <CheckCircle2 size={20} /> : <Circle size={20} />}</button></div>
+                            </div>
+                          );
+                       })}
+                    </div>
                  </div>
                </div>
             ) : type === 'MATERIAL' ? (
-               // Specialized Form for Insumos
                <div className="flex flex-col gap-6">
-                 {/* Top Row: Master Category & Reference */}
                  <div className="grid grid-cols-2 gap-4">
-                   <div className="flex flex-col gap-2">
-                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Categoria Mestre *</label>
-                     <select 
-                       title="Categoria Mestre"
-                       aria-label="Selecionar categoria mestre do insumo"
-                       value={editingItem?.metadata?.masterCategory || ''}
-                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, masterCategory: e.target.value as any } } : null)}
-                       required
-                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
-                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
-                       }`}
-                     >
-                       <option value="">SELECIONAR...</option>
-                       {supplyCategoryNames.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                     </select>
-                   </div>
-                   <div className="flex flex-col gap-2">
-                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Referência / Código</label>
-                     <input 
-                       type="text"
-                       value={editingItem?.metadata?.reference || ''}
-                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, reference: e.target.value.toUpperCase() } } : null)}
-                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
-                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
-                       }`}
-                     />
-                   </div>
+                   <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Categoria Mestre *</label><select value={editingItem?.metadata?.masterCategory || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, masterCategory: e.target.value as any } } : null)} required className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">SELECIONAR...</option>{supplyCategoryNames.map(cat => <option key={cat} value={cat}>{cat}</option>)}</select></div>
+                   <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Referência / Código</label><input type="text" value={editingItem?.metadata?.reference || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, reference: e.target.value.toUpperCase() } } : null)} className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /></div>
                  </div>
-
-                 {/* Material Name */}
-                 <div className="flex flex-col gap-2">
-                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Nome do Material / Descrição *</label>
-                   <input 
-                     type="text"
-                     value={editingItem?.name || ''}
-                     onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value.toUpperCase() } : null)}
-                     required
-                     className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
-                       isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
-                     }`}
-                   />
-                 </div>
-
-                 {/* Flow Tag & Supplier */}
+                 <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Nome do Material *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value.toUpperCase() } : null)} required className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /></div>
                  <div className="grid grid-cols-2 gap-4">
-                   <div className="flex flex-col gap-2">
-                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Flow Tag (Estágio)</label>
-                     <select 
-                       title="Flow Tag"
-                       aria-label="Selecionar estágio do fluxo"
-                       value={editingItem?.metadata?.flowTagId || ''}
-                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: e.target.value } } : null)}
-                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
-                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
-                       }`}
-                     >
-                       <option value="">NENHUMA...</option>
-                       {flowTags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
-                     </select>
-                   </div>
-                   <div className="flex flex-col gap-2">
-                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Fornecedor Principal</label>
-                     <select 
-                       title="Fornecedor"
-                       aria-label="Selecionar fornecedor principal"
-                       value={editingItem?.metadata?.supplierId || ''}
-                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, supplierId: e.target.value } } : null)}
-                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
-                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
-                       }`}
-                     >
-                       <option value="">NENHUM...</option>
-                       {suppliers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                     </select>
-                   </div>
+                   <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Flow Tag (Estágio)</label><select value={editingItem?.metadata?.flowTagId || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: e.target.value } } : null)} className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">NENHUMA...</option>{flowTags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></div>
+                   <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Fornecedor Principal</label><select value={editingItem?.metadata?.supplierId || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, supplierId: e.target.value } } : null)} className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">NENHUM...</option>{suppliers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
                  </div>
-
-                 {/* Unit & Base Cost */}
                  <div className="grid grid-cols-2 gap-4">
-                   <div className="flex flex-col gap-2">
-                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Unidade *</label>
-                     <select 
-                       title="Unidade de Medida"
-                       aria-label="Selecionar unidade de medida"
-                       value={editingItem?.metadata?.unitId || ''}
-                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitId: e.target.value } } : null)}
-                       required
-                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
-                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
-                       }`}
-                     >
-                       <option value="">SELECIONAR...</option>
-                       {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                     </select>
-                   </div>
-                   <div className="flex flex-col gap-2">
-                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Custo Base (Média)</label>
-                     <input 
-                       type="number"
-                       step="0.01"
-                       value={editingItem?.metadata?.baseCost || ''}
-                       onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: Number(e.target.value) } } : null)}
-                       placeholder="0,00"
-                       className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${
-                         isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'
-                       }`}
-                     />
-                   </div>
+                   <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Unidade *</label><select value={editingItem?.metadata?.unitId || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitId: e.target.value } } : null)} required className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">SELECIONAR...</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
+                   <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Custo Base</label><input type="number" step="0.01" value={editingItem?.metadata?.baseCost || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /></div>
                  </div>
-
-                 {/* Colors Integration */}
-                 <div className="flex flex-col gap-2">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Cores Disponíveis</label>
-                    <div className={`p-4 rounded-2xl border-2 flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
-                       {colors.map(color => {
-                         const isSelected = (editingItem?.metadata?.colorIds || []).includes(color.id);
-                         return (
-                           <button
-                             key={color.id}
-                             type="button"
-                             title={isSelected ? "Remover Cor" : "Adicionar Cor"}
-                             aria-label={isSelected ? `Remover cor ${color.name}` : `Adicionar cor ${color.name}`}
-                             onClick={() => {
-                               const currentIds = editingItem?.metadata?.colorIds || [];
-                               const newIds = isSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id];
-                               setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, colorIds: newIds } } : null);
-                             }}
-                             className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
-                               isSelected 
-                                 ? 'bg-indigo-600 text-white' 
-                                 : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'
-                             }`}
-                           >
-                             {color.name}
-                           </button>
-                         );
-                       })}
-                       {colors.length === 0 && <p className="text-[8px] text-slate-400 font-bold uppercase py-2">Nenhuma cor cadastrada no catálogo</p>}
-                    </div>
-                 </div>
+                 <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Cores Disponíveis</label><div className={`p-4 rounded-2xl border-2 flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>{colors.map(color => { const isSelected = (editingItem?.metadata?.colorIds || []).includes(color.id); return (<button key={color.id} type="button" onClick={() => { const currentIds = editingItem?.metadata?.colorIds || []; const newIds = isSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id]; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, colorIds: newIds } } : null); }} className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${isSelected ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'}`}>{color.name}</button>); })}</div></div>
                </div>
             ) : type === 'TOOL' ? (
-              // Specialized Form for Facas
-              <div className="flex flex-col gap-6">
-                {/* Image Upload Area */}
-                <div className="flex flex-col items-center gap-4">
-                  <div className={`relative w-32 h-32 rounded-[2.5rem] border-2 border-dashed overflow-hidden flex items-center justify-center ${isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-100 bg-slate-50'}`}>
-                    {editingItem?.imageUrl ? (
-                      <>
-                        <img src={editingItem.imageUrl} alt="Preview" className="w-full h-full object-cover" />
-                        <button 
-                          type="button"
-                          onClick={() => setEditingItem(prev => prev ? { ...prev, imageUrl: '' } : null)}
-                          className="absolute top-2 right-2 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg"
-                        >
-                          <X size={12} />
-                        </button>
-                      </>
-                    ) : (
-                      <button 
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="flex flex-col items-center gap-2 text-slate-400"
-                      >
-                        <Camera size={24} />
-                        <span className="text-[9px] font-bold uppercase tracking-widest">Adicionar Foto</span>
-                      </button>
-                    )}
-                  </div>
-                  <input 
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleImageUpload}
-                    accept="image/*"
-                    className="hidden"
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Referência da Faca *</label>
-                  <input 
-                    type="text"
-                    value={editingItem?.name || ''}
-                    onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)}
-                    placeholder="Ex: F-TENIS-CYBER"
-                    className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'} border-2`}
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Conjugação (Pares/Batida) *</label>
-                  <input 
-                    type="number"
-                    value={editingItem?.metadata?.conjugation || ''}
-                    onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, conjugation: Number(e.target.value) } } : null)}
-                    placeholder="1"
-                    className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'} border-2`}
-                    required
-                  />
-                </div>
-
-                {/* Numerations Config */}
-                <div className="flex flex-col gap-4">
-                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">Configurar Numerações da Faca</label>
-                   <div className="flex gap-2">
-                      <input 
-                        type="text"
-                        value={newSize}
-                        onChange={(e) => setNewSize(e.target.value)}
-                        placeholder="Ex: 37"
-                        className={`flex-1 px-6 py-4 rounded-2xl font-bold outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
-                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addSize())}
-                      />
-                      <button 
-                        type="button"
-                        onClick={addSize}
-                        className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-200 flex items-center justify-center border border-slate-200 dark:border-slate-700"
-                      >
-                        <Plus size={24} />
-                      </button>
-                   </div>
-
-                   <div className="p-6 rounded-[2.5rem] border-2 border-dashed border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">
-                      {(editingItem?.metadata?.sizes || []).map(size => (
-                        <div key={size} className={`px-4 py-2 rounded-xl flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}>
-                          <span className="text-xs font-black">{size}</span>
-                          <button 
-                            type="button"
-                            onClick={() => removeSize(size)}
-                            className="text-slate-300 hover:text-red-500 transition-colors"
-                          >
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ))}
-                      {(editingItem?.metadata?.sizes || []).length === 0 && (
-                        <p className="text-[10px] text-slate-300 font-bold uppercase tracking-widest mx-auto py-2">Nenhuma numeração</p>
-                      )}
-                   </div>
-                </div>
-
-                {/* Area Matrix */}
-                {(editingItem?.metadata?.sizes || []).length > 0 && (
-                  <div className={`p-6 rounded-[2.5rem] flex flex-col gap-6 ${isDarkMode ? 'bg-slate-800/40' : 'bg-slate-50/50'}`}>
-                    <div className="flex items-center gap-3 px-2">
-                      <Target size={18} className="text-slate-400" />
-                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Matriz de Área (M²)</h4>
-                    </div>
-                    
-                    <div className="grid grid-cols-4 gap-4">
-                       {editingItem?.metadata?.sizes.map(size => (
-                         <div key={size} className="flex flex-col gap-2 items-center">
-                            <span className="text-[9px] font-black text-slate-400 uppercase">{size}</span>
-                            <input 
-                              type="number"
-                              step="0.01"
-                              value={editingItem.metadata.sizeAreas?.[size] || ''}
-                              onChange={(e) => updateArea(size, Number(e.target.value))}
-                              placeholder="0,00"
-                              className={`w-full px-2 py-3 rounded-xl font-bold text-xs text-center outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
-                            />
-                         </div>
-                       ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : type === 'INFESTO' ? (
-              // Specialized Form for Infesto
-              <div className="flex flex-col gap-6">
-                <div className="flex flex-col gap-2 text-center">
-                  <div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
-                    <Layers size={32} />
-                  </div>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
-                    Configuração de Camadas para<br/>Corte e Produção
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Infesto *</label>
-                  <input 
-                    type="text"
-                    value={editingItem?.name || ''}
-                    onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)}
-                    placeholder="Ex: COURO PADRÃO"
-                    className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Quantidade de Camadas *</label>
-                  <input 
-                    type="number"
-                    value={editingItem?.metadata?.layers || ''}
-                    onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, layers: Number(e.target.value) } } : null)}
-                    placeholder="Ex: 4"
-                    className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-                    required
-                  />
-                </div>
-              </div>
-            ) : type === 'DEADLINE' ? (
-              // Specialized Form for Deadline
-              <div className="flex flex-col gap-6">
-                <div className="flex flex-col gap-2 text-center">
-                  <div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
-                    <CalendarClock size={32} />
-                  </div>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
-                    Definição de Prazos e SLA<br/>para Ordens de Produção
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Prazo *</label>
-                  <input 
-                    type="text"
-                    value={editingItem?.name || ''}
-                    onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)}
-                    placeholder="Ex: URGENTE, PADRÃO..."
-                    className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Prazo em Dias *</label>
-                  <input 
-                    type="number"
-                    value={editingItem?.metadata?.days || ''}
-                    onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, days: Number(e.target.value) } } : null)}
-                    placeholder="Ex: 7"
-                    className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-                    required
-                  />
-                </div>
-              </div>
-            ) : type === 'PACKAGING' ? (
-              // Specialized Form for Packaging/Grades
-              <div className="flex flex-col gap-6">
-                <div className="flex flex-col gap-2 text-center">
-                  <div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
-                    <Grid3X3 size={32} />
-                  </div>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
-                    Configuração de Grades e<br/>Tamanhos para Embalagens
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Padrão *</label>
-                  <input 
-                    type="text"
-                    value={editingItem?.name || ''}
-                    onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)}
-                    placeholder="Ex: FEMININO 33-40"
-                    className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Grade</label>
-                  <div className={`flex gap-2 p-1.5 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
-                    <button 
-                      type="button"
-                      onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FIXED' } } : null)}
-                      className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(!editingItem?.metadata?.mode || editingItem?.metadata?.mode === 'FIXED') ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}
-                    >
-                      Grade Fixa
-                    </button>
-                    <button 
-                      type="button"
-                      onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FREE' } } : null)}
-                      className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingItem?.metadata?.mode === 'FREE' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}
-                    >
-                      Grade Livre
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Capacidade Total (Pares) *</label>
-                  <input 
-                    type="number"
-                    value={editingItem?.metadata?.capacity || ''}
-                    onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)}
-                    placeholder="Ex: 12"
-                    className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-                    required
-                  />
-                </div>
-
-                {editingItem?.metadata?.mode === 'FREE' ? null : (
-                  /* Grade Fixa mode */
-                  <div className="flex flex-col gap-6">
-                    <div className="flex flex-col gap-4">
-                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">Adicionar Numerações</label>
-                       <div className="flex gap-2">
-                          <input 
-                            type="text"
-                            value={newSize}
-                            onChange={(e) => setNewSize(e.target.value)}
-                            placeholder="Ex: 37"
-                            className={`flex-1 px-6 py-4 rounded-2xl font-bold outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
-                            onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSize())}
-                          />
-                          <button 
-                            type="button"
-                            onClick={addSize}
-                            className="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
-                          >
-                            <Plus size={24} strokeWidth={3} />
-                          </button>
-                       </div>
-
-                       <div className="flex flex-wrap gap-2">
-                          {(editingItem?.metadata?.sizes || []).map(size => (
-                            <div key={size} className={`px-4 py-2 rounded-xl flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}>
-                              <span className="text-xs font-black">{size}</span>
-                              <button 
-                                type="button"
-                                onClick={() => removeSize(size)}
-                                className="text-slate-300 hover:text-red-500 transition-colors"
-                              >
-                                <X size={14} />
-                              </button>
-                            </div>
-                          ))}
-                          {(editingItem?.metadata?.sizes || []).length === 0 && (
-                            <p className="text-[10px] text-slate-300 font-bold uppercase tracking-widest mx-auto py-2">Nenhuma numeração</p>
-                          )}
-                       </div>
-                    </div>
-
-                    {/* Quantity Matrix */}
-                    {(editingItem?.metadata?.sizes || []).length > 0 && (
-                      <div className={`p-6 rounded-[2.5rem] flex flex-col gap-6 ${isDarkMode ? 'bg-slate-800/40' : 'bg-slate-50/50'}`}>
-                         <div className="flex items-center justify-between px-2">
-                            <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Distribuição da Grade</h4>
-                            <span className={`text-[10px] font-black uppercase tracking-widest ${
-                              Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0) === (editingItem?.metadata?.capacity || 0)
-                                ? 'text-emerald-500'
-                                : 'text-red-500'
-                            }`}>
-                               Total: {Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0)} / {editingItem?.metadata?.capacity || 0}
-                            </span>
-                         </div>
-                         
-                         <div className="grid grid-cols-4 gap-4">
-                            {editingItem?.metadata?.sizes.map(size => (
-                              <div key={size} className="flex flex-col gap-2 items-center">
-                                <span className="text-[9px] font-black text-slate-400 uppercase">{size}</span>
-                                <input 
-                                  type="number"
-                                  value={editingItem?.metadata?.sizeQuantities?.[size] || ''}
-                                  onChange={(e) => {
-                                    const qty = Number(e.target.value);
-                                    setEditingItem(prev => ({
-                                      ...prev!,
-                                      metadata: {
-                                        ...prev!.metadata,
-                                        sizeQuantities: { ...prev!.metadata!.sizeQuantities, [size]: qty }
-                                      }
-                                    }));
-                                  }}
-                                  placeholder="0"
-                                  className={`w-full px-2 py-3 rounded-xl font-bold text-xs text-center outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
-                                />
-                              </div>
-                            ))}
-                         </div>
+               <div className="flex flex-col gap-6">
+                 <div className="flex flex-col items-center gap-4"><div className={`relative w-32 h-32 rounded-[2.5rem] border-2 border-dashed overflow-hidden flex items-center justify-center ${isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-100 bg-slate-50'}`}>{editingItem?.imageUrl ? (<><img src={editingItem.imageUrl} alt="Preview" className="w-full h-full object-cover" /><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, imageUrl: '' } : null)} className="absolute top-2 right-2 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center shadow-lg"><X size={12} /></button></>) : (<button type="button" onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center gap-2 text-slate-400"><Camera size={24} /><span className="text-[9px] font-bold uppercase tracking-widest">Adicionar Foto</span></button>)}</div><input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" /></div>
+                 <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Referência da Faca *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: F-TENIS-CYBER" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
+                 <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Conjugação (Pares/Batida) *</label><input type="number" value={editingItem?.metadata?.conjugation || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, conjugation: Number(e.target.value) } } : null)} placeholder="1" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
+                 <div className="flex flex-col gap-4">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">Configurar Numerações</label>
+                    <div className="flex gap-2"><input type="text" value={newSize} onChange={(e) => setNewSize(e.target.value)} placeholder="Ex: 37" className={`flex-1 px-6 py-4 rounded-2xl font-bold outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addSize())} /><button type="button" onClick={addSize} className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-200 flex items-center justify-center border border-slate-200 dark:border-slate-700"><Plus size={24} /></button></div>
+                    <div className="p-6 rounded-[2.5rem] border-2 border-dashed border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">{(editingItem?.metadata?.sizes || []).map(size => (<div key={size} className={`px-4 py-2 rounded-xl flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}><span className="text-xs font-black">{size}</span><button type="button" onClick={() => removeSize(size)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={14} /></button></div>))}</div>
+                 </div>
+                 {(editingItem?.metadata?.sizes || []).length > 0 && (
+                    <div className={`p-6 rounded-[2.5rem] flex flex-col gap-6 ${isDarkMode ? 'bg-slate-800/40' : 'bg-slate-50/50'}`}>
+                      <div className="flex items-center gap-3 px-2">
+                        <Target size={18} className="text-slate-400" />
+                        <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Matriz de Área (M²)</h4>
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
+                      <div className="grid grid-cols-4 gap-4">
+                        {editingItem?.metadata?.sizes.map(size => (
+                          <AreaInput 
+                            key={size}
+                            size={size}
+                            value={editingItem?.metadata?.sizeAreas?.[size]}
+                            onChange={(val: any) => updateArea(size, val)}
+                            isDarkMode={isDarkMode}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+               </div>
+            ) : type === 'INFESTO' ? (
+               <div className="flex flex-col gap-6">
+                 <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><Layers size={32} /></div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Configuração de Camadas para<br/>Corte e Produção</p></div>
+                 <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Infesto *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: COURO PADRÃO" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
+                 <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Quantidade de Camadas *</label><input type="number" value={editingItem?.metadata?.layers || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, layers: Number(e.target.value) } } : null)} placeholder="Ex: 4" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
+               </div>
+            ) : type === 'DEADLINE' ? (
+               <div className="flex flex-col gap-6">
+                 <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><CalendarClock size={32} /></div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Definição de Prazos e SLA<br/>para Ordens de Produção</p></div>
+                 <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Prazo *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: URGENTE, PADRÃO..." className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
+                 <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Prazo em Dias *</label><input type="number" value={editingItem?.metadata?.days || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, days: Number(e.target.value) } } : null)} placeholder="Ex: 7" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
+               </div>
+            ) : type === 'PACKAGING' ? (
+               <div className="flex flex-col gap-6">
+                 <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><Grid3X3 size={32} /></div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Configuração de Grades e<br/>Tamanhos para Embalagens</p></div>
+                 <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Padrão *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: FEMININO 33-40" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
+                 <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Grade</label><div className={`flex gap-2 p-1.5 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FIXED' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(!editingItem?.metadata?.mode || editingItem?.metadata?.mode === 'FIXED') ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Fixa</button><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FREE' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingItem?.metadata?.mode === 'FREE' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Livre</button></div></div>
+                 <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Capacidade Total (Pares) *</label><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
+                 {editingItem?.metadata?.mode !== 'FREE' && (<div className="flex flex-col gap-6"><div className="flex flex-col gap-4"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">Adicionar Numerações</label><div className="flex gap-2"><input type="text" value={newSize} onChange={(e) => setNewSize(e.target.value)} placeholder="Ex: 37" className={`flex-1 px-6 py-4 rounded-2xl font-bold outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSize())} /><button type="button" onClick={addSize} className="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"><Plus size={24} strokeWidth={3} /></button></div><div className="flex flex-wrap gap-2">{(editingItem?.metadata?.sizes || []).map(size => (<div key={size} className={`px-4 py-2 rounded-xl flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}><span className="text-xs font-black">{size}</span><button type="button" onClick={() => removeSize(size)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={14} /></button></div>))}</div></div>{(editingItem?.metadata?.sizes || []).length > 0 && (<div className={`p-6 rounded-[2.5rem] flex flex-col gap-6 ${isDarkMode ? 'bg-slate-800/40' : 'bg-slate-50/50'}`}><div className="flex items-center justify-between px-2"><h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Distribuição da Grade</h4><span className={`text-[10px] font-black uppercase tracking-widest ${Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0) === (editingItem?.metadata?.capacity || 0) ? 'text-emerald-500' : 'text-red-500'}`}>Total: {Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0)} / {editingItem?.metadata?.capacity || 0}</span></div><div className="grid grid-cols-4 gap-4">{editingItem?.metadata?.sizes.map(size => (<div key={size} className="flex flex-col gap-2 items-center"><span className="text-[9px] font-black text-slate-400 uppercase">{size}</span><input type="number" value={editingItem?.metadata?.sizeQuantities?.[size] || ''} onChange={(e) => { const qty = Number(e.target.value); setEditingItem(prev => ({ ...prev!, metadata: { ...prev!.metadata, sizeQuantities: { ...prev!.metadata!.sizeQuantities, [size]: qty } } })); }} placeholder="0" className={`w-full px-2 py-3 rounded-xl font-black text-xs text-center outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} /></div>))}</div></div>)}</div>)}
+               </div>
             ) : (
-              // Generic Form for other types
-              <div className="flex flex-col gap-6">
-                <div className="flex flex-col gap-2 text-center">
-                  <div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
-                    {icon}
-                  </div>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
-                    Preencha os dados abaixo para<br/>registrar em {label}
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome / Sigla</label>
-                  <input 
-                    type="text"
-                    value={editingItem?.name || ''}
-                    onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)}
-                    placeholder="Ex: UN, KG, MT..."
-                    className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-                    required
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Descrição Completa</label>
-                  <input 
-                    type="text"
-                    value={editingItem?.description || ''}
-                    onChange={(e) => setEditingItem(prev => prev ? { ...prev, description: e.target.value } : null)}
-                    placeholder="Ex: Unidade, Quilograma, Metro..."
-                    className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-                  />
-                </div>
-              </div>
+               <div className="flex flex-col gap-6">
+                 <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>{icon}</div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Preencha os dados abaixo para<br/>registrar em {label}</p></div>
+                 <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome / Sigla</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: UN, KG, MT..." className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
+                 <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Descrição Completa</label><input type="text" value={editingItem?.description || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, description: e.target.value } : null)} placeholder="Ex: Unidade, Quilograma, Metro..." className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} /></div>
+               </div>
             )}
-            
-            <button 
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-5 rounded-[2rem] bg-indigo-600 text-white font-black uppercase tracking-[0.2em] text-xs shadow-xl shadow-indigo-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-3 mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 size={18} className="animate-spin" />
-                  SALVANDO...
-                </>
-              ) : (
-                <>
-                  <Check size={18} strokeWidth={3} />
-                  {editingItem?.id ? 'Salvar Alterações' : 'Confirmar Cadastro'}
-                </>
-              )}
-            </button>
+            <button type="submit" disabled={isLoading} className="w-full py-5 rounded-[2rem] bg-indigo-600 text-white font-black uppercase tracking-[0.2em] text-xs shadow-xl shadow-indigo-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-3 mt-4 disabled:opacity-50 disabled:cursor-not-allowed">{isLoading ? (<><Loader2 size={18} className="animate-spin" />SALVANDO...</>) : (<><Check size={18} strokeWidth={3} />{editingItem?.id ? 'Salvar Alterações' : 'Confirmar Cadastro'}</>)}</button>
           </form>
-        </Modal>
-      </div>
+       </Modal>
+    </div>
   );
 }
 
 
-
-function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete, key }: { 
+function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: { 
   sector: Sector; 
   flowTags: FlowTag[];
   isDarkMode: boolean; 
   onEdit: () => void;
   onDelete: () => void;
-  key?: any;
 }) {
   const controls = useDragControls();
   const sectorTags = flowTags.filter(t => sector.flowTagIds?.includes(t.id));
@@ -2113,7 +1381,6 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete, key }: {
           <button 
             onClick={onEdit}
             title="Editar Setor"
-            aria-label={`Editar setor ${sector.name}`}
             className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-indigo-600'}`}
           >
             <Edit3 size={18} />
@@ -2123,7 +1390,6 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete, key }: {
               if (confirm(`Deseja excluir o setor ${sector.name}?`)) onDelete();
             }}
             title="Excluir Setor"
-            aria-label={`Excluir setor ${sector.name}`}
             className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-red-400' : 'bg-slate-50 text-slate-400 hover:text-red-500'}`}
           >
             <Trash2 size={18} />
@@ -2145,18 +1411,23 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete, key }: {
   );
 }
 
-
-function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, key }: { 
+function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people }: { 
   item: ProductionConfigItem, 
   isDarkMode: boolean, 
   onEdit: () => void, 
   onDelete: () => void,
   flowTags: FlowTag[],
-  people: any[],
-  key?: any
+  people: any[]
 }) {
   const flowTag = flowTags.find(t => t.id === item.metadata?.flowTagId);
   const supplier = people.find(p => p.id === item.metadata?.supplierId);
+
+  const { totalWeight, yieldVal } = useMemo(() => {
+    const weights = Object.values(item.metadata?.sizeWeights || {}) as number[];
+    const activeWeights = weights.filter(w => w > 0);
+    const total = activeWeights.reduce((a, b) => a + b, 0);
+    return { totalWeight: total, yieldVal: total > 0 ? 1000 / total : 0 };
+  }, [item.metadata]);
 
   return (
     <div className={`p-6 rounded-[2rem] border flex flex-col gap-6 relative transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
@@ -2192,13 +1463,23 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ke
       </div>
 
       <div className="flex items-center justify-between mt-2">
-        <div className="flex gap-2">
-           <div className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[8px] font-black uppercase tracking-widest">
-             {item.metadata?.masterCategory || 'GERAL'}
-           </div>
-           <div className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-500 text-[8px] font-black uppercase tracking-widest">
-             {item.metadata?.unit || 'UN'}
-           </div>
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+             <div className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[8px] font-black uppercase tracking-widest">
+               {item.metadata?.masterCategory || 'GERAL'}
+             </div>
+             <div className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-500 text-[8px] font-black uppercase tracking-widest">
+               {item.metadata?.unit || 'UN'}
+             </div>
+          </div>
+          {yieldVal > 0 && (
+            <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+               <Hash size={10} className="text-emerald-500" />
+               <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase">
+                 {yieldVal.toFixed(2)} PRS / KG
+               </span>
+            </div>
+          )}
         </div>
         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Cores: {item.metadata?.colorIds?.length || 0}</span>
       </div>
@@ -2206,15 +1487,14 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ke
   );
 }
 
-function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, colors, key }: { 
+function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, productionConfigs }: { 
   item: ProductionConfigItem, 
   isDarkMode: boolean, 
   onEdit: () => void, 
   onDelete: () => void,
   flowTags: FlowTag[],
-  people: any[],
   colors: ColorValue[],
-  key?: any
+  productionConfigs: ProductionConfigItem[]
 }) {
   const flowTag = flowTags.find(t => t.id === item.metadata?.flowTagId);
   const selectedColors = item.metadata?.colorVariations || [];
@@ -2298,11 +1578,14 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, 
             <div className="flex items-baseline gap-1 bg-indigo-500/10 px-2 py-1 rounded-lg">
               <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">
                 {(() => {
+                  const avgWeight = item.metadata?.averageWeight;
+                  if (avgWeight && avgWeight > 0) return (1000 / avgWeight).toFixed(2);
+
                   const weights = Object.values(item.metadata?.sizeWeights || {}) as number[];
-                  if (weights.length === 0) return '---';
-                  const avgWeight = weights.reduce((a, b) => a + b, 0) / weights.length;
-                  if (avgWeight === 0) return '---';
-                  return (1000 / avgWeight).toFixed(2);
+                  const activeWeights = weights.filter(w => w > 0);
+                  if (activeWeights.length === 0) return '---';
+                  const calcAvg = activeWeights.reduce((a, b) => a + b, 0) / activeWeights.length;
+                  return (1000 / calcAvg).toFixed(2);
                 })()}
               </span>
               <span className="text-[7px] font-black text-indigo-400 uppercase">PRS/KG</span>
@@ -2311,13 +1594,61 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, 
         </div>
       )}
 
-      <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800/50">
-        <div className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest ${item.metadata?.hasTransfer ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-400'}`}>
-          {item.metadata?.hasTransfer ? 'COM TRANSFER' : 'SEM TRANSFER'}
+      {item.metadata?.extraServices && (item.metadata.extraServices as any[]).length > 0 && (
+        <div className={`p-4 rounded-2xl flex flex-col gap-3 ${isDarkMode ? 'bg-emerald-950/20' : 'bg-emerald-50/50'}`}>
+          <div className="flex items-center justify-between text-slate-400">
+            <div className="flex items-center gap-2">
+              <Hammer size={14} className="text-emerald-500" />
+              <span className="text-[9px] font-black uppercase tracking-widest">Serviços Agregados</span>
+            </div>
+            <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400">
+               R$ {(item.metadata.extraServices as any[]).reduce((acc, s) => acc + (s.cost || 0), 0).toFixed(2)}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(item.metadata.extraServices as any[]).map((s: any, idx: number) => (
+              <span key={idx} className="text-[8px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest bg-emerald-500/10 px-2 py-1 rounded-lg">
+                {s.name} (R$ {s.cost?.toFixed(2)})
+              </span>
+            ))}
+          </div>
         </div>
-        <div className="flex items-baseline gap-1">
-          <span className="text-[10px] font-black text-emerald-500">R$</span>
-          <span className="text-xl font-black text-emerald-500">{(item.metadata?.price || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+      )}
+
+      <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800/50">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-900/20 px-3 py-2 rounded-xl border border-emerald-100 dark:border-emerald-900/30">
+            <Hash size={12} className="text-emerald-500" />
+            <div className="flex flex-col">
+              <span className="text-[7px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest leading-none mb-0.5">Rendimento:</span>
+              <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">
+                 {(() => {
+                    const weights = Object.values(item.metadata?.sizeWeights || {}) as number[];
+                    const activeWeights = weights.filter(w => w > 0);
+                    const total = activeWeights.reduce((a, b) => a + b, 0);
+                    return total > 0 ? (1000 / total).toFixed(2) : '0.00';
+                 })()} PRS/KG
+              </span>
+            </div>
+          </div>
+          {item.metadata?.sizeWeights && (
+            <span className="text-[7px] font-bold text-slate-400 uppercase tracking-widest ml-1">
+              Soma: {Object.values(item.metadata.sizeWeights).reduce((a, b) => (a as number) + (b as number), 0).toFixed(1)}g
+            </span>
+          )}
+        </div>
+        <div className="flex flex-col items-end">
+          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Custo Total</p>
+          <div className="flex items-baseline gap-1">
+            <span className="text-[10px] font-black text-emerald-500">R$</span>
+            <span className="text-xl font-black text-emerald-500">
+              {(() => {
+                const basePrice = item.metadata?.price || 0;
+                const servicesCost = (item.metadata?.extraServices as any[] || []).reduce((acc, s) => acc + (s.cost || 0), 0);
+                return (basePrice + servicesCost).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+              })()}
+            </span>
+          </div>
         </div>
       </div>
     </div>

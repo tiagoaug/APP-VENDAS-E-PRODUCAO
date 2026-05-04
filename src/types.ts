@@ -32,6 +32,28 @@ export type TechSheetItem = {
   quantity: number;
 };
 
+export type ComponentCategory = 'CUTTING_PIECE' | 'PACKAGING' | 'CHEMICAL' | 'TRIMMING';
+
+export type ComponentConsumption = {
+  id: string;
+  category: ComponentCategory;
+  name: string; // Piece name, e.g., "Gáspea", "Lateral"
+  materialId: string;
+  colorId?: string; // Optional specific color for the component
+  quantity: number; // Consumo per unit/pair
+  unitId?: string;
+  
+  // Cutting Piece specific
+  toolId?: string; // Link to Faca (ProductionConfigItem type TOOL)
+  piecesPerPair?: number; // Usually 2
+  
+  // Outsourced services
+  services?: {
+    serviceId: string; // Link to FlowTag subcategory
+    cost: number;
+  }[];
+};
+
 export type Variation = {
   id: string;
   color: string;
@@ -41,7 +63,11 @@ export type Variation = {
   stock: { [size: string]: number };
   // Optional prices per size for Retail
   sizePrices?: { [size: string]: { cost: number; sale: number } };
-  techSheet?: TechSheetItem[];
+  techSheet?: TechSheetItem[]; // Keep for legacy
+  consumptions?: ComponentConsumption[];
+  soleColorId?: string;
+  subRef?: string;
+  sku?: string;
 };
 
 
@@ -63,7 +89,9 @@ export type Product = {
   productionGridId?: string;
   moldId?: string;
   soleMapping?: { [size: string]: string };
+  toolMapping?: { [size: string]: string };
   variations: Variation[];
+  saleTypes?: SaleType[];
   createdAt: number;
 };
 
@@ -362,11 +390,13 @@ export type ProductionConfigItem = {
     hasTransfer?: boolean;
     colorVariations?: { colorId: string, subRef: string }[];
     sizeWeights?: Record<string, number>;
+    averageWeight?: number;
     composition?: { 
       materialId: string; 
       quantity: number; 
       type: 'weight' | 'percentage';
     }[];
+    extraServices?: { name: string, cost: number }[];
     
     [key: string]: any;
   };
