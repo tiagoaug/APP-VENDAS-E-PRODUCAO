@@ -42,7 +42,7 @@ export default function EngineeringModal({
 
   if (!isOpen) return null;
 
-  const calculateConsumption = (tool: ProductionConfigItem, material: ProductionConfigItem, piecesPerPair: number = 2) => {
+  const calculateConsumption = (tool: ProductionConfigItem, material: ProductionConfigItem, piecesPerPair: number = 2, localMapping?: { [size: string]: string }) => {
     if (!tool || !tool.metadata) return 0;
 
     const sizeAreas = tool.metadata.sizeAreas || {};
@@ -63,8 +63,9 @@ export default function EngineeringModal({
       let totalCons = 0;
       let count = 0;
       productGrid.sizes.forEach(size => {
-        if (sizeAreas[size]) {
-          totalCons += calculateSingleSize(sizeAreas[size]);
+        const mappedSize = localMapping?.[size] || size;
+        if (sizeAreas[mappedSize]) {
+          totalCons += calculateSingleSize(sizeAreas[mappedSize]);
           count++;
         }
       });
@@ -82,7 +83,7 @@ export default function EngineeringModal({
     const tool = productionConfigs.find(t => t.id === editing.toolId);
     
     if (material && tool) {
-      const qty = calculateConsumption(tool, material, editing.piecesPerPair || 2);
+      const qty = calculateConsumption(tool, material, editing.piecesPerPair || 2, editing.toolMapping);
       setEditing({ ...editing, materialId, quantity: qty });
     } else {
       setEditing({ ...editing, materialId });
@@ -94,7 +95,7 @@ export default function EngineeringModal({
     const material = productionConfigs.find(m => m.id === editing.materialId);
     
     if (tool && material) {
-      const qty = calculateConsumption(tool, material, editing.piecesPerPair || 2);
+      const qty = calculateConsumption(tool, material, editing.piecesPerPair || 2, editing.toolMapping);
       setEditing({ ...editing, toolId, quantity: qty });
     } else {
       setEditing({ ...editing, toolId });
@@ -106,7 +107,7 @@ export default function EngineeringModal({
     const material = productionConfigs.find(m => m.id === editing.materialId);
     
     if (tool && material) {
-      const qty = calculateConsumption(tool, material, ppp);
+      const qty = calculateConsumption(tool, material, ppp, editing.toolMapping);
       setEditing({ ...editing, piecesPerPair: ppp, quantity: qty });
     } else {
       setEditing({ ...editing, piecesPerPair: ppp });

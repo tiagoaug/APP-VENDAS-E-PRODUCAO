@@ -165,6 +165,13 @@ export default function ProductionConfigView({
   onNavigateGrids
 }: ProductionConfigViewProps) {
   const [currentScreen, setCurrentScreen] = useState<ProductionScreenType>(initialScreen);
+  
+  // Sincronizar tela inicial quando alterada via prop
+  React.useEffect(() => {
+    if (initialScreen && initialScreen !== currentScreen) {
+      setCurrentScreen(initialScreen);
+    }
+  }, [initialScreen]);
 
   const supplyCategoryNames = useMemo(() => {
     const fromSystem = categories
@@ -530,7 +537,21 @@ export default function ProductionConfigView({
         onClose={() => setCurrentScreen('MENU')}
         title="Unidades de Medida"
       >
-        <GenericConfigList title="Unidades" label="UNIDADES" items={productionConfigs} type="UNIT" icon={<Ruler size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} onBack={() => setCurrentScreen('MENU')} placeholderLabel="Nenhuma unidade cadastrada" seedDefaults={DEFAULT_UNITS} />
+        <GenericConfigList 
+          title="Unidades" 
+          label="UNIDADES" 
+          items={productionConfigs} 
+          type="UNIT" 
+          icon={<Ruler size={22} />} 
+          isDarkMode={isDarkMode} 
+          onSave={onSaveConfigItem} 
+          onDelete={onDeleteConfigItem} 
+          onBack={() => setCurrentScreen('MENU')} 
+          placeholderLabel="Nenhuma unidade cadastrada" 
+          seedDefaults={DEFAULT_UNITS} 
+          productionConfigs={productionConfigs}
+          people={people}
+        />
       </Modal>
 
       <Modal 
@@ -538,7 +559,21 @@ export default function ProductionConfigView({
         onClose={() => setCurrentScreen('MENU')}
         title="Facas de Corte"
       >
-        <GenericConfigList title="Facas de Corte" label="FACAS" items={productionConfigs} type="TOOL" icon={<Scissors size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} onBack={() => setCurrentScreen('MENU')} placeholderLabel="Nenhuma faca cadastrada" />
+        <GenericConfigList 
+          title="Facas de Corte" 
+          label="FACAS" 
+          items={productionConfigs} 
+          type="TOOL" 
+          icon={<Scissors size={22} />} 
+          isDarkMode={isDarkMode} 
+          onSave={onSaveConfigItem} 
+          onDelete={onDeleteConfigItem} 
+          onBack={() => setCurrentScreen('MENU')} 
+          placeholderLabel="Nenhuma faca cadastrada" 
+          productionConfigs={productionConfigs}
+          people={people}
+          grids={grids}
+        />
       </Modal>
 
       <Modal 
@@ -570,7 +605,21 @@ export default function ProductionConfigView({
         onClose={() => setCurrentScreen('MENU')}
         title="Padrão de Embalagens"
       >
-        <GenericConfigList title="Padrão de Embalagens" label="PADRÃO EMBALAGENS" items={productionConfigs} type="PACKAGING" icon={<Grid3X3 size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} onBack={() => setCurrentScreen('MENU')} placeholderLabel="Nenhum padrão de embalagem" />
+        <GenericConfigList 
+          title="Padrão de Embalagens" 
+          label="PADRÃO EMBALAGENS" 
+          items={productionConfigs} 
+          type="PACKAGING" 
+          icon={<Grid3X3 size={22} />} 
+          isDarkMode={isDarkMode} 
+          onSave={onSaveConfigItem} 
+          onDelete={onDeleteConfigItem} 
+          onBack={() => setCurrentScreen('MENU')} 
+          placeholderLabel="Nenhum padrão de embalagem" 
+          productionConfigs={productionConfigs}
+          people={people}
+          grids={grids}
+        />
       </Modal>
 
       <Modal 
@@ -578,7 +627,23 @@ export default function ProductionConfigView({
         onClose={() => setCurrentScreen('MENU')}
         title="Catálogo de Insumos"
       >
-        <GenericConfigList title="Insumos" label="INSUMOS" items={productionConfigs} type="MATERIAL" icon={<Package size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} onBack={() => setCurrentScreen('MENU')} placeholderLabel="Nenhum insumo cadastrado" />
+        <GenericConfigList 
+          title="Insumos" 
+          label="INSUMOS" 
+          items={productionConfigs} 
+          type="MATERIAL" 
+          icon={<Package size={22} />} 
+          isDarkMode={isDarkMode} 
+          onSave={onSaveConfigItem} 
+          onDelete={onDeleteConfigItem} 
+          onBack={() => setCurrentScreen('MENU')} 
+          placeholderLabel="Nenhum insumo cadastrado" 
+          productionConfigs={productionConfigs}
+          people={people}
+          supplyCategoryNames={supplyCategoryNames}
+          colors={colors}
+          flowTags={flowTags}
+        />
       </Modal>
 
       <Modal 
@@ -774,7 +839,8 @@ function GenericConfigList({
   colors = [],
   flowTags = [],
   productionConfigs = [],
-  grids = []
+  grids = [],
+  supplyCategoryNames = []
 }: {
   title: string;
   label: string;
@@ -792,6 +858,7 @@ function GenericConfigList({
   flowTags?: FlowTag[];
   productionConfigs?: ProductionConfigItem[];
   grids?: Grid[];
+  supplyCategoryNames?: string[];
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ProductionConfigItem | null>(null);
@@ -997,6 +1064,8 @@ function GenericConfigList({
                 createdAt: Date.now(),
                 metadata: type === 'TOOL' ? { conjugation: 1, sizes: [], sizeAreas: {} } : 
                           type === 'MOLD' ? { moldReference: '', sizes: [], sizeWeights: {}, composition: [], colorVariations: [], extraServices: [] } :
+                          type === 'MATERIAL' ? { masterCategory: '', reference: '', unitId: '', baseCost: 0, width: 0, colorIds: [], flowTagId: '', supplierId: '' } :
+                          type === 'PACKAGING' ? { mode: 'FIXED', capacity: 0, sizes: [], sizeQuantities: {} } :
                           undefined
               });
               setIsModalOpen(true);
@@ -1152,7 +1221,7 @@ function GenericConfigList({
                      <select value={editingItem?.metadata?.category || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, category: e.target.value } } : null)} className={`w-full px-4 py-4 rounded-2xl font-bold text-[10px] uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">GERAL</option><option value="SOLADO">SOLADO</option><option value="SALTO">SALTO</option><option value="PALMILHA">PALMILHA</option></select>
                    </div>
                    <div className="flex flex-col gap-2">
-                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Preço (R$)</label>
+                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Preço do Material / KG (R$)</label>
                      <input type="number" step="0.01" value={editingItem?.metadata?.price || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, price: parseFloat(e.target.value) } } : null)} className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
                    </div>
                  </div>
@@ -1168,7 +1237,30 @@ function GenericConfigList({
                       <div className="flex items-center gap-2"><Scale size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Pesos por Tamanho (GR)</span></div>
                       <select onChange={(e) => { const gridId = e.target.value; const grid = grids.find(g => g.id === gridId); if (grid) { const weights: Record<string, number> = {}; grid.sizes.forEach(s => { weights[s] = editingItem?.metadata?.sizeWeights?.[s] || 0; }); setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, sizeWeights: weights, sizes: grid.sizes } } : null); } }} className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-600'}`}><option value="">PUXAR GRADE...</option>{grids.filter(g => g.type === GridType.SOLADO || !g.type).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
                     </div>
-                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-3">{Object.entries(editingItem?.metadata?.sizeWeights || {}).map(([size, weight]) => (<div key={size} className="flex flex-col gap-1"><span className="text-[9px] font-black text-slate-600 dark:text-slate-400 ml-1">{size}</span><input type="number" value={weight as number || ''} onChange={(e) => { const val = parseFloat(e.target.value); setEditingItem(prev => { if (!prev) return null; const newWeights = { ...(prev.metadata?.sizeWeights || {}) }; newWeights[size] = val; return { ...prev, metadata: { ...prev.metadata, sizeWeights: newWeights } }; }); }} className={`w-full px-2 py-3 rounded-xl font-black text-[10px] text-center outline-none border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-50'}`} /></div>))}</div>
+                    <div className="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar pr-2">
+                      {Object.entries(editingItem?.metadata?.sizeWeights || {}).map(([size, weight]) => (
+                        <div key={size} className={`flex items-center justify-between p-3 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-50'}`}>
+                          <span className="text-xs font-black text-slate-600 dark:text-slate-300 w-24 ml-2">TAM {size}</span>
+                          <div className="relative flex-1 max-w-[150px]">
+                            <input 
+                              type="number" 
+                              value={weight as number || ''} 
+                              onChange={(e) => { 
+                                const val = parseFloat(e.target.value); 
+                                setEditingItem(prev => { 
+                                  if (!prev) return null; 
+                                  const newWeights = { ...(prev.metadata?.sizeWeights || {}) }; 
+                                  newWeights[size] = val; 
+                                  return { ...prev, metadata: { ...prev.metadata, sizeWeights: newWeights } }; 
+                                }); 
+                              }} 
+                              className={`w-full px-4 py-3 rounded-xl font-black text-xs text-right pr-12 outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-indigo-500'}`} 
+                            />
+                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">GR</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                     <div className="flex items-center justify-between mt-6 pt-6 border-t-2 border-dashed border-slate-100 dark:border-slate-800">
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Peso da Grade (Soma GR)</label>
@@ -1254,6 +1346,46 @@ function GenericConfigList({
                        })}
                     </div>
                  </div>
+                 {/* CALCULATION CARD */}
+                 {(() => {
+                   const activeSizesCount = Object.values(editingItem?.metadata?.sizeWeights || {}).filter(w => (w as number) > 0).length;
+                   const avgWeight = activeSizesCount > 0 ? totalWeightLive / activeSizesCount : 0;
+                   const materialPrice = editingItem?.metadata?.price || 0;
+                   const materialCostPerPair = (avgWeight / 1000) * materialPrice;
+                   const extraServicesCost = (editingItem?.metadata?.extraServices || []).reduce((sum: number, s: any) => sum + (s.cost || 0), 0);
+                   const suggestedPrice = materialCostPerPair + extraServicesCost;
+
+                   return (
+                     <div className={`mt-4 p-6 rounded-[2rem] border-2 flex flex-col gap-4 ${isDarkMode ? 'bg-indigo-950/20 border-indigo-900/40' : 'bg-indigo-50 border-indigo-100'}`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Target size={18} className="text-indigo-500" />
+                          <span className="text-xs font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Análise de Custo Sugerido</span>
+                        </div>
+                        
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Peso Médio (Par)</span>
+                          <span className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{avgWeight.toFixed(2)} GR</span>
+                        </div>
+                        
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Custo Material (Média x Preço/KG)</span>
+                          <span className="text-xs font-black text-amber-600">R$ {materialCostPerPair.toFixed(2)}</span>
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Serviços Agregados</span>
+                          <span className="text-xs font-black text-emerald-600">R$ {extraServicesCost.toFixed(2)}</span>
+                        </div>
+
+                        <div className="h-px w-full bg-indigo-200 dark:bg-indigo-800/50 my-2" />
+
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black uppercase tracking-widest text-indigo-700 dark:text-indigo-300">Sugestão de Preço</span>
+                          <span className="text-xl font-black text-indigo-600 dark:text-indigo-400">R$ {suggestedPrice.toFixed(2)}</span>
+                        </div>
+                     </div>
+                   );
+                 })()}
                </div>
             ) : type === 'MATERIAL' ? (
                <div className="flex flex-col gap-6">
@@ -1266,9 +1398,10 @@ function GenericConfigList({
                    <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Flow Tag (Estágio)</label><select value={editingItem?.metadata?.flowTagId || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: e.target.value } } : null)} className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">NENHUMA...</option>{flowTags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select></div>
                    <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Fornecedor Principal</label><select value={editingItem?.metadata?.supplierId || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, supplierId: e.target.value } } : null)} className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">NENHUM...</option>{suppliers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
                  </div>
-                 <div className="grid grid-cols-2 gap-4">
+                 <div className="grid grid-cols-3 gap-4">
                    <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Unidade *</label><select value={editingItem?.metadata?.unitId || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitId: e.target.value } } : null)} required className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">SELECIONAR...</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></div>
                    <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Custo Base</label><input type="number" step="0.01" value={editingItem?.metadata?.baseCost || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /></div>
+                    <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Largura (m)</label><input type="number" step="0.01" value={editingItem?.metadata?.width || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /></div>
                  </div>
                  <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Cores Disponíveis</label><div className={`p-4 rounded-2xl border-2 flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>{colors.map(color => { const isSelected = (editingItem?.metadata?.colorIds || []).includes(color.id); return (<button key={color.id} type="button" onClick={() => { const currentIds = editingItem?.metadata?.colorIds || []; const newIds = isSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id]; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, colorIds: newIds } } : null); }} className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${isSelected ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'}`}>{color.name}</button>); })}</div></div>
                </div>

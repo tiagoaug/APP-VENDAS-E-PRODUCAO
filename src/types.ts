@@ -382,6 +382,7 @@ export type ProductionConfigItem = {
     supplierId?: string;
     unitId?: string;
     baseCost?: number;
+    width?: number;
     colorIds?: string[];
 
     // Mold (Sole Matrix) specific

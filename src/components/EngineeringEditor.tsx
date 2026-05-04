@@ -40,25 +40,26 @@ export default function EngineeringEditor({
   const [editing, setEditing] = useState<ComponentConsumption>({ ...consumption });
   const [newServiceId, setNewServiceId] = useState('');
   const [newServiceCost, setNewServiceCost] = useState<number | string>(0);
+  const [showToolMapping, setShowToolMapping] = useState(true);
 
   // Scroll to top when opening
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
 
-  // Recalcular quantidade quando o mapeamento global mudar
+  // Recalcular quantidade quando o mapeamento mudar (global ou local)
   useEffect(() => {
     const tool = productionConfigs.find(t => t.id === editing.toolId);
     const material = productionConfigs.find(m => m.id === editing.materialId);
     if (tool && material) {
-      const newQty = calculateConsumption(tool, material, editing.piecesPerPair || 2);
+      const newQty = calculateConsumption(tool, material, editing.piecesPerPair || 2, editing.toolMapping);
       if (Math.abs(newQty - editing.quantity) > 0.0001) {
         setEditing(prev => ({ ...prev, quantity: newQty }));
       }
     }
-  }, [toolMapping, productionConfigs, editing.toolId, editing.materialId, editing.piecesPerPair]);
+  }, [toolMapping, productionConfigs, editing.toolId, editing.materialId, editing.piecesPerPair, editing.toolMapping]);
 
-  const calculateConsumption = (tool: ProductionConfigItem, material: ProductionConfigItem, piecesPerPair: number = 2) => {
+  const calculateConsumption = (tool: ProductionConfigItem, material: ProductionConfigItem, piecesPerPair: number = 2, localMapping?: { [size: string]: string }) => {
     if (!tool || !tool.metadata) return 0;
 
     const sizeAreas = tool.metadata.sizeAreas || {};
@@ -80,7 +81,7 @@ export default function EngineeringEditor({
       let totalCons = 0;
       let count = 0;
       productGrid.sizes.forEach(size => {
-        const mappedSize = toolMapping?.[size] || size;
+        const mappedSize = localMapping?.[size] || toolMapping?.[size] || size;
         const areaVal = sizeAreas[mappedSize] || sizeAreas[String(mappedSize).trim()] || sizeAreas[size] || 0;
         const area = Number(areaVal);
         if (area > 0) {
@@ -103,7 +104,7 @@ export default function EngineeringEditor({
     const tool = productionConfigs.find(t => t.id === editing.toolId);
     
     if (material && tool) {
-      const qty = calculateConsumption(tool, material, editing.piecesPerPair || 2);
+      const qty = calculateConsumption(tool, material, editing.piecesPerPair || 2, editing.toolMapping);
       setEditing({ ...editing, materialId, quantity: qty });
     } else {
       setEditing({ ...editing, materialId });
@@ -115,7 +116,7 @@ export default function EngineeringEditor({
     const material = productionConfigs.find(m => m.id === editing.materialId);
     
     if (tool && material) {
-      const qty = calculateConsumption(tool, material, editing.piecesPerPair || 2);
+      const qty = calculateConsumption(tool, material, editing.piecesPerPair || 2, editing.toolMapping);
       setEditing({ ...editing, toolId, quantity: qty });
     } else {
       setEditing({ ...editing, toolId });
@@ -172,37 +173,120 @@ export default function EngineeringEditor({
             </div>
           </div>
 
+
           {editing.toolId && (
-            <div className={`pt-6 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'} space-y-4`}>
-              <div className="flex items-center gap-2">
-                <ArrowUpDown size={16} className="text-slate-400" />
-                <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Matriz de Área Base (mm²)</span>
-              </div>
-              
-              <div className="grid grid-cols-4 gap-2">
-                {(() => {
-                  const tool = productionConfigs.find(t => t.id === editing.toolId);
-                  if (!tool) return null;
+              <div className={`rounded-[2.5rem] border-2 overflow-hidden transition-all duration-300 ${showToolMapping ? (isDarkMode ? 'border-indigo-500/30 bg-indigo-500/5' : 'border-indigo-200 bg-indigo-50/30') : (isDarkMode ? 'border-slate-800 bg-slate-800/20' : 'border-slate-100 bg-slate-50/50')}`}>
+                <button 
+                  onClick={() => setShowToolMapping(!showToolMapping)}
+                  className={`w-full flex items-center justify-between p-5 transition-all ${showToolMapping ? (isDarkMode ? 'bg-indigo-500/10' : 'bg-indigo-100/50') : ''}`}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${showToolMapping ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/30' : isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-white text-indigo-600 shadow-sm'}`}>
+                      <ArrowUpDown size={20} />
+                    </div>
+                    <div className="text-left">
+                      <h4 className={`text-[11px] font-black uppercase tracking-widest ${showToolMapping ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500'}`}>Mapeamento e Matriz de Áreas</h4>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Ajuste fino de facas por numeração</p>
+                    </div>
+                  </div>
+                  <ChevronDown size={20} className={`text-slate-400 transition-transform duration-500 ${showToolMapping ? 'rotate-180' : ''}`} />
+                </button>
 
-                  return (tool.metadata?.sizes || []).map(size => {
-                    const s = String(size).trim();
-                    const areaVal = tool.metadata?.sizeAreas?.[s] ?? tool.metadata?.sizeAreas?.[size];
-                    const hasValue = areaVal !== undefined && areaVal !== null;
-                    
-                    return (
-                      <div key={size} className={`flex flex-col items-center p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
-                        <span className="text-[8px] font-black text-slate-400">{size}</span>
-                        <span className={`text-[11px] font-black leading-none mt-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                          {hasValue ? Number(areaVal).toFixed(4).replace('.', ',') : '---'}
-                        </span>
+                <AnimatePresence>
+                  {showToolMapping && (
+                    <motion.div 
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="p-5 pt-0 space-y-6">
+                        <div className="grid grid-cols-1 gap-2">
+                          {(() => {
+                            const productGrid = grids.find(g => g.id === (productionGridId || defaultGridId));
+                            const tool = productionConfigs.find(t => t.id === editing.toolId);
+                            if (!productGrid || !tool) return null;
+
+                            const toolSizes = tool.metadata?.sizes || [];
+
+                            return productGrid.sizes.map(size => {
+                              const currentMap = editing.toolMapping?.[size] || toolMapping?.[size] || size;
+                              
+                              return (
+                                <div key={size} className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-900/50 border border-slate-800' : 'bg-white border border-slate-100 shadow-sm'}`}>
+                                  <div className="flex flex-col">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Grade</span>
+                                    <span className="text-4xl font-black text-indigo-600 dark:text-indigo-400 drop-shadow-sm">{size}</span>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Faca:</span>
+                                    <div className="relative">
+                                      <select 
+                                        className={`pl-4 pr-10 py-2.5 rounded-xl text-xs font-black outline-none appearance-none cursor-pointer border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
+                                        value={currentMap}
+                                        onChange={(e) => {
+                                          const newMapping = { ...(editing.toolMapping || {}) };
+                                          newMapping[size] = e.target.value;
+                                          setEditing({ ...editing, toolMapping: newMapping });
+                                        }}
+                                      >
+                                        {toolSizes.map(ts => (
+                                          <option key={ts} value={ts}>{ts}</option>
+                                        ))}
+                                        {!toolSizes.includes(size) && <option value={size}>{size}</option>}
+                                      </select>
+                                      <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+
+                        <div className={`pt-6 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'} space-y-4`}>
+                          <div className="flex items-center gap-2 px-1">
+                            <Calculator size={16} className="text-slate-400" />
+                            <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Matriz de Área Resultante (mm²)</span>
+                          </div>
+                          
+                          <div className="grid grid-cols-4 gap-2">
+                            {(() => {
+                              const tool = productionConfigs.find(t => t.id === editing.toolId);
+                              const productGrid = grids.find(g => g.id === (productionGridId || defaultGridId));
+                              if (!tool || !productGrid) return null;
+
+                              return productGrid.sizes.map(size => {
+                                const mappedSize = editing.toolMapping?.[size] || toolMapping?.[size] || size;
+                                const s = String(mappedSize).trim();
+                                const areaVal = tool.metadata?.sizeAreas?.[s] ?? tool.metadata?.sizeAreas?.[mappedSize] ?? tool.metadata?.sizeAreas?.[size];
+                                const hasValue = areaVal !== undefined && areaVal !== null;
+                                
+                                return (
+                                  <div key={size} className={`flex flex-col items-center p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-white border-slate-200 shadow-md'}`}>
+                                    <div className="flex flex-col items-center gap-1 mb-2">
+                                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Grade</span>
+                                      <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">{size}</span>
+                                      <div className="flex items-center gap-2 mt-1 px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 rounded-lg">
+                                        <ChevronDown size={10} className="text-indigo-400" />
+                                        <span className="text-[11px] font-black text-emerald-500">{mappedSize}</span>
+                                      </div>
+                                    </div>
+                                    <span className={`text-[16px] font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                                      {hasValue ? Number(areaVal).toFixed(4).replace('.', ',') : '---'}
+                                    </span>
+                                  </div>
+                                );
+                              });
+                            })()}
+                          </div>
+                        </div>
                       </div>
-                    );
-                  });
-                })()}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-            </div>
           )}
-
         </div>
 
         {/* Consumo Corrigido (Somente após escolher o material) */}
@@ -238,7 +322,7 @@ export default function EngineeringEditor({
                 const isLinear = material.metadata?.unitId?.toUpperCase().includes('MT');
 
                 return productGrid.sizes.map(size => {
-                  const mappedSize = toolMapping?.[size] || size;
+                  const mappedSize = editing.toolMapping?.[size] || toolMapping?.[size] || size;
                   const areaVal = tool.metadata?.sizeAreas?.[mappedSize] ?? tool.metadata?.sizeAreas?.[String(mappedSize).trim()] ?? tool.metadata?.sizeAreas?.[size];
                   const hasArea = areaVal !== undefined && areaVal !== null;
                   const area = hasArea ? Number(areaVal) : 0;
@@ -246,12 +330,15 @@ export default function EngineeringEditor({
                   
                   return (
                     <div key={size} className="flex flex-col items-center p-3 rounded-2xl bg-white dark:bg-slate-900 border-2 border-indigo-100 dark:border-indigo-500/20 shadow-sm">
-                      <span className="text-[8px] font-black text-indigo-400">{size}</span>
+                      <div className="flex items-center gap-1 mb-1">
+                        <span className="text-[9px] font-black text-slate-400 uppercase">Grade</span>
+                        <span className="text-[11px] font-black text-indigo-500">{size}</span>
+                      </div>
                       <div className="flex flex-col items-center">
-                        <span className="text-[12px] font-black text-slate-900 dark:text-white leading-none mt-1">
+                        <span className="text-[13px] font-black text-slate-900 dark:text-white leading-none">
                           {hasArea ? cons.toFixed(4).replace('.', ',') : '---'}
                         </span>
-                        <span className="text-[7px] font-bold text-indigo-500 uppercase mt-0.5">{isLinear ? 'MT' : 'M²'}</span>
+                        <span className="text-[8px] font-black text-indigo-400 uppercase mt-1">{isLinear ? 'MT' : 'M²'}</span>
                       </div>
                     </div>
                   );
@@ -300,7 +387,7 @@ export default function EngineeringEditor({
                     const tool = productionConfigs.find(t => t.id === editing.toolId);
                     const material = productionConfigs.find(m => m.id === editing.materialId);
                     if (tool && material) {
-                      setEditing({ ...editing, piecesPerPair: ppp, quantity: calculateConsumption(tool, material, ppp) });
+                      setEditing({ ...editing, piecesPerPair: ppp, quantity: calculateConsumption(tool, material, ppp, editing.toolMapping) });
                     } else {
                       setEditing({ ...editing, piecesPerPair: ppp });
                     }

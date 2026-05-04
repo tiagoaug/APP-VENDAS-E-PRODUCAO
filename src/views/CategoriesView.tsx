@@ -153,47 +153,45 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
         )}
       </div>
 
-      <div className="grid grid-cols-4 gap-2">
+      <div className="flex flex-col gap-3">
         {filtered.map((category) => (
-          <div key={category.id} className={`p-3 rounded-3xl border shadow-sm flex flex-col gap-2 relative overflow-hidden group transition-all hover:scale-[1.02] active:scale-[0.98] ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-            <div className={`absolute top-0 left-0 w-full h-1 ${category.color}`} />
+          <div key={category.id} className={`p-4 rounded-[2rem] border shadow-sm flex items-center justify-between relative overflow-hidden group transition-all hover:scale-[1.02] active:scale-[0.98] ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <div className={`absolute left-0 top-0 w-1.5 h-full ${category.color}`} />
             
-            <div className="flex items-start justify-between">
-              <div className={`w-8 h-8 flex items-center justify-center rounded-xl bg-slate-50 dark:bg-slate-800 ${category.color.replace('bg-', 'text-')}`}>
-                <Tags size={16} />
+            <div className="flex items-center gap-4 pl-3">
+              <div className={`w-10 h-10 flex items-center justify-center rounded-xl bg-slate-50 dark:bg-slate-800 ${category.color.replace('bg-', 'text-')}`}>
+                <Tags size={18} />
               </div>
               
-              <div className="flex items-center gap-1">
-                <button 
-                  onClick={() => { setEditingCategory(category); setIsModalOpen(true); }} 
-                  className={`p-1 rounded-lg transition-colors ${isDarkMode ? 'text-slate-600 hover:text-indigo-400 hover:bg-slate-800' : 'text-slate-300 hover:text-indigo-600 hover:bg-slate-50'}`}
-                  title="Editar Categoria"
-                  aria-label="Editar Categoria"
-                >
-                  <Edit size={14} />
-                </button>
-                <button 
-                  onClick={() => handleDeleteClick(category.id)}
-                  className={`p-1 rounded-lg transition-colors ${isDarkMode ? 'text-slate-600 hover:text-rose-500 hover:bg-slate-800' : 'text-slate-300 hover:text-rose-500 hover:bg-slate-50'}`}
-                  title="Excluir Categoria"
-                  aria-label="Excluir Categoria"
-                >
-                  <Trash2 size={14} />
-                </button>
+              <div>
+                <h3 className={`font-black text-xs uppercase tracking-wider flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                  {category.name}
+                  {category.isPersonal && (
+                    <span className="px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400 text-[8px] font-black uppercase tracking-widest border border-indigo-200 dark:border-indigo-800/50">Pessoal</span>
+                  )}
+                </h3>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">Registros Vinculados:</span>
+                  <span className={`text-[10px] font-black ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{Math.floor(Math.random() * 20)}</span>
+                </div>
               </div>
             </div>
 
-            <div>
-              <h3 className={`font-black text-[10px] uppercase tracking-wider leading-tight min-h-[2.5rem] flex flex-wrap gap-1 items-start ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                {category.name}
-                {category.isPersonal && (
-                  <span className="px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400 text-[6px] font-black uppercase tracking-widest border border-indigo-200 dark:border-indigo-800/50 inline-block">Pessoal</span>
-                )}
-              </h3>
-              <div className="mt-1 flex items-center justify-between">
-                <span className="text-[7px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">Reg.</span>
-                <span className={`text-[8px] font-black ${isDarkMode ? 'text-slate-300' : 'text-slate-900'}`}>{Math.floor(Math.random() * 20)}</span>
-              </div>
+            <div className="flex items-center gap-2 pr-2">
+                <button 
+                  onClick={() => { setEditingCategory(category); setIsModalOpen(true); }} 
+                  className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-600 hover:text-indigo-400 hover:bg-slate-800' : 'text-slate-300 hover:text-indigo-600 hover:bg-slate-50'}`}
+                  title="Editar Categoria"
+                >
+                  <Edit size={16} />
+                </button>
+                <button 
+                  onClick={() => handleDeleteClick(category.id)}
+                  className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-600 hover:text-rose-500 hover:bg-slate-800' : 'text-slate-300 hover:text-rose-500 hover:bg-slate-50'}`}
+                  title="Excluir Categoria"
+                >
+                  <Trash2 size={16} />
+                </button>
             </div>
           </div>
         ))}
