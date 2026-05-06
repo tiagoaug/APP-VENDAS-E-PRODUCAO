@@ -10,6 +10,7 @@ import {
   Package,
   Filter,
   ChevronDown,
+  Copy
 } from "lucide-react";
 
 interface ProductsViewProps {
@@ -18,6 +19,7 @@ interface ProductsViewProps {
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
   onToggleStatus: (id: string, status: ProductStatus) => void;
+  onDuplicate: (product: Product) => void;
   isDarkMode: boolean;
 }
 
@@ -27,6 +29,7 @@ export default function ProductsView({
   onEdit,
   onDelete,
   onToggleStatus,
+  onDuplicate,
   isDarkMode,
 }: ProductsViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
@@ -129,6 +132,7 @@ export default function ProductsView({
               onEdit={() => onEdit(product.id)}
               onDelete={() => setItemToDelete(product.id)}
               onToggleStatus={() => onToggleStatus(product.id, product.status === ProductStatus.ACTIVE ? ProductStatus.INACTIVE : ProductStatus.ACTIVE)}
+              onDuplicate={() => onDuplicate(product)}
               isDarkMode={isDarkMode}
             />
           ))}
@@ -143,6 +147,7 @@ interface ProductCardProps {
   onEdit: () => void;
   onDelete: () => void;
   onToggleStatus: () => void;
+  onDuplicate: () => void;
   isDarkMode: boolean;
   key?: string;
 }
@@ -152,6 +157,7 @@ function ProductCard({
   onEdit,
   onDelete,
   onToggleStatus,
+  onDuplicate,
   isDarkMode,
 }: ProductCardProps) {
   return (
@@ -195,6 +201,13 @@ function ProductCard({
           </div>
 
           <div className="flex items-center gap-1">
+            <button
+              onClick={onDuplicate}
+              className="p-2 text-slate-300 dark:text-slate-600 hover:text-emerald-500 transition-colors transform active:scale-90"
+              title="Duplicar Modelo"
+            >
+              <Copy size={16} />
+            </button>
             <button
               onClick={onEdit}
               className="p-2 text-slate-300 dark:text-slate-600 hover:text-indigo-500 transition-colors transform active:scale-90"

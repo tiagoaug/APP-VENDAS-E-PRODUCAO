@@ -16,6 +16,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person }: PersonM
   const [document, setDocument] = useState('');
   const [isCustomer, setIsCustomer] = useState(false);
   const [isSupplier, setIsSupplier] = useState(false);
+  const [isSeller, setIsSeller] = useState(false);
 
   useEffect(() => {
     if (person) {
@@ -25,6 +26,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person }: PersonM
       setDocument(person.document || '');
       setIsCustomer(person.isCustomer || false);
       setIsSupplier(person.isSupplier || false);
+      setIsSeller(person.isSeller || false);
     } else {
       setName('');
       setPhone('');
@@ -32,6 +34,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person }: PersonM
       setDocument('');
       setIsCustomer(false);
       setIsSupplier(false);
+      setIsSeller(false);
     }
   }, [person, isOpen]);
 
@@ -42,7 +45,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person }: PersonM
       alert('Nome e Telefone são obrigatórios');
       return;
     }
-    onSave({ name, phone, email, document, isCustomer, isSupplier });
+    onSave({ name, phone, email, document, isCustomer, isSupplier, isSeller });
     
     // Se for um novo cadastro, limpa para o próximo
     if (!person) {
@@ -52,6 +55,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person }: PersonM
       setDocument('');
       setIsCustomer(false);
       setIsSupplier(false);
+      setIsSeller(false);
       alert('Cadastro realizado com sucesso!');
     } else {
       onClose();
@@ -120,24 +124,33 @@ export default function PersonModal({ isOpen, onClose, onSave, person }: PersonM
             />
           </div>
 
-          <div className="flex gap-4 pt-2">
-            <label className="flex-1 flex items-center gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
+          <div className="flex flex-wrap gap-2 pt-2">
+            <label className="flex-1 min-w-[100px] flex items-center gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
               <input 
                 type="checkbox" 
-                className="w-5 h-5 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600"
+                className="w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600"
                 checked={isCustomer} 
                 onChange={(e) => setIsCustomer(e.target.checked)} 
               />
-              <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Cliente</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Cliente</span>
             </label>
-            <label className="flex-1 flex items-center gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
+            <label className="flex-1 min-w-[100px] flex items-center gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
               <input 
                 type="checkbox" 
-                className="w-5 h-5 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600"
+                className="w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600"
                 checked={isSupplier} 
                 onChange={(e) => setIsSupplier(e.target.checked)} 
               />
-              <span className="text-[11px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Fornecedor</span>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Forn.</span>
+            </label>
+            <label className="flex-1 min-w-[100px] flex items-center gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
+              <input 
+                type="checkbox" 
+                className="w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600"
+                checked={isSeller} 
+                onChange={(e) => setIsSeller(e.target.checked)} 
+              />
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Vend.</span>
             </label>
           </div>
 

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm } from '../types';
-import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, DollarSign, History, FileText } from 'lucide-react';
+import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, DollarSign, History, FileText, Lightbulb } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import SalePaymentModal from '../components/SalePaymentModal';
@@ -269,259 +269,247 @@ export default function SalesView({
           const hasPartialPayment = totalPaid > 0 && remaining > 0;
 
           return (
-            <div key={sale.id} className={`p-4 rounded-3xl border shadow-sm dark:shadow-none flex flex-col gap-4 relative overflow-hidden group ${
+            <div key={sale.id} className={`p-6 rounded-[2.5rem] border shadow-xl dark:shadow-none flex flex-col gap-6 relative overflow-hidden group transition-all duration-300 hover:shadow-2xl ${
               sale.status === SaleStatus.CANCELLED
-                ? 'bg-slate-900 border-slate-800 opacity-60 pointer-events-none'
+                ? 'bg-slate-900 border-slate-800 opacity-60 grayscale-[0.5]'
                 : isDarkMode
                   ? 'bg-slate-900 border-slate-800'
                   : 'bg-white border-slate-100'
             }`}>
-              {/* Row 1: Customer & Status */}
+              {/* Row 1: Customer & Basic Info */}
               <div className="flex justify-between items-start z-10 gap-4">
                 <div className="flex items-center gap-3 min-w-0">
-                   <div 
+                  <div 
                     onClick={() => setSelectedSale(sale)}
-                    className={`flex items-center justify-center cursor-pointer transition-transform hover:scale-110 shrink-0 ${sale.status === SaleStatus.QUOTE ? 'text-amber-500' : 'text-indigo-600 dark:text-indigo-400'}`}
-                   >
-                      <ShoppingBag size={28} strokeWidth={2.5} />
-                   </div>
-                   <div className="min-w-0">
-                      <h3 className={`font-extrabold text-[13px] tracking-tight leading-none uppercase truncate ${sale.status === SaleStatus.CANCELLED ? 'text-slate-500' : isDarkMode ? 'text-white' : 'text-slate-800'}`}>{sale.customerName || 'Cliente'}</h3>
-                      <div className="flex gap-1 flex-wrap mt-1.5">
-                         {sale.status === SaleStatus.CANCELLED ? (
-                           <span className="text-[7px] font-black uppercase px-2 py-0.5 rounded-lg tracking-widest bg-slate-900 text-slate-400 border border-slate-800">
-                              Cancelado
-                           </span>
-                         ) : (
-                           <>
-                             <span className={`text-[7px] font-black uppercase px-2 py-0.5 rounded-lg tracking-widest ${sale.status === 'QUOTE' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
-                                {sale.status === 'QUOTE' ? 'Orçamento' : 'Venda'}
-                             </span>
-                             {sale.status === 'SALE' && (
-                               <span className={`text-[7px] font-black uppercase px-2 py-0.5 rounded-lg tracking-widest ${sale.paymentStatus === PaymentStatus.PAID ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                                  {sale.paymentStatus === PaymentStatus.PAID ? 'Quitado' : 'Pendente'}
-                               </span>
-                             )}
-                             {sale.paymentStatus === PaymentStatus.PENDING && sale.dueDate && (
-                               <span className={`text-[7px] font-black uppercase px-2 py-0.5 rounded-lg tracking-widest flex items-center gap-1 ${new Date(sale.dueDate) < new Date() ? 'bg-rose-500 text-white shadow-sm shadow-rose-200' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}>
-                                  <Clock size={8} />
-                                  Venc: {format(sale.dueDate, "dd/MM", { locale: ptBR })}
-                               </span>
-                             )}
-                           </>
-                         )}
+                    className={`w-14 h-14 rounded-2xl flex items-center justify-center cursor-pointer transition-all hover:scale-110 shrink-0 shadow-lg ${
+                      sale.status === SaleStatus.QUOTE 
+                        ? 'bg-amber-500 text-white shadow-amber-200' 
+                        : 'bg-indigo-600 text-white shadow-indigo-200'
+                    }`}
+                  >
+                    <ShoppingBag size={28} strokeWidth={2.5} />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className={`font-black text-base tracking-tight leading-none uppercase truncate mb-2 ${sale.status === SaleStatus.CANCELLED ? 'text-slate-500' : isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                      {sale.customerName || 'Cliente'}
+                    </h3>
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-1.5 text-[9px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">
+                        <Calendar size={12} strokeWidth={3} />
+                        {format(sale.date, "dd/MM/yyyy", { locale: ptBR })}
                       </div>
-                   </div>
-                </div>
-
-                <div className="flex flex-col items-end gap-1.5 text-right shrink-0">
-                  <div className="flex items-center gap-1.5 text-[8px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-[0.2em]">
-                    <Hash size={9} strokeWidth={3} />
-                    #{sale.orderNumber}
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[7px] text-slate-300 dark:text-slate-600 font-black uppercase tracking-widest">
-                    <Calendar size={10} />
-                    {format(sale.date, "dd/MM/yyyy", { locale: ptBR })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 2 (Added Line): Financial Summary & Type */}
-              <div className={`p-4 rounded-3xl flex items-center justify-between z-10 border ${isDarkMode ? 'bg-slate-800/40 border-slate-800/50' : 'bg-slate-50/50 border-slate-100/50'}`}>
-                <div className={`grid ${remaining > 0 && sale.status === SaleStatus.SALE ? 'grid-cols-3' : 'grid-cols-2'} gap-6 flex-1`}>
-                  <div className="flex flex-col">
-                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Total</p>
-                    <p className={`text-[12px] font-black tracking-tight ${sale.status === SaleStatus.CANCELLED ? 'text-slate-500' : 'text-indigo-600 dark:text-indigo-400'}`}>
-                      R$ {sale.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div className="flex flex-col">
-                    <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Pago</p>
-                    <p className={`text-[12px] font-black tracking-tight ${totalPaid > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-300 dark:text-slate-700'}`}>
-                      R$ {totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  {remaining > 0 && sale.status === SaleStatus.SALE && (
-                    <div className="flex flex-col">
-                      <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Falta</p>
-                      <p className="text-[12px] font-black text-rose-500 tracking-tight">
-                        R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
+                      <div className="flex items-center gap-1.5 text-[9px] text-indigo-500 dark:text-indigo-400 font-black uppercase tracking-widest">
+                        <Hash size={12} strokeWidth={3} />
+                        #{sale.orderNumber}
+                      </div>
                     </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  {sale.sellerName && (
+                    <span className="text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest bg-indigo-600 text-white shadow-lg shadow-indigo-500/20">
+                      {sale.sellerName}
+                    </span>
+                  )}
+                  {sale.status === SaleStatus.SALE && sale.paymentStatus === PaymentStatus.PENDING && sale.dueDate && (
+                    <span className={`text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest flex items-center gap-1.5 shadow-lg ${
+                      new Date(sale.dueDate) < new Date() 
+                        ? 'bg-rose-600 text-white shadow-rose-500/20 animate-pulse-vencimento' 
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shadow-slate-500/10'
+                    }`}>
+                      VENC. DATA {format(sale.dueDate, "dd/MM", { locale: ptBR })}
+                    </span>
+                  )}
+                  {sale.status === SaleStatus.CANCELLED ? (
+                    <span className="text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest bg-slate-900 text-rose-500 border border-rose-500/20 shadow-lg shadow-rose-500/10">
+                       CANCELADA
+                    </span>
+                  ) : sale.status === 'QUOTE' ? (
+                    <span className="text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest shadow-lg bg-orange-500 text-white shadow-orange-500/20">
+                      ORÇAMENTO
+                    </span>
+                  ) : (
+                    <>
+                      <span className="text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest shadow-lg bg-[#7c3aed] text-white shadow-violet-500/20">
+                        VENDA
+                      </span>
+                      <span className={`text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest shadow-lg ${
+                        sale.paymentStatus === PaymentStatus.PAID 
+                          ? 'bg-emerald-600 text-white shadow-emerald-500/20' 
+                          : 'bg-amber-500 text-white shadow-amber-500/20'
+                      }`}>
+                        {sale.paymentStatus === PaymentStatus.PAID ? 'QUITADA' : 'PENDENTE'}
+                      </span>
+                    </>
                   )}
                 </div>
-
-                <div className="flex flex-col items-end gap-1 shrink-0 ml-4">
-                  {Array.from(new Set(sale.items.map(i => i.saleType))).map((type, idx) => (
-                    <span key={idx} className={`text-[7px] font-black uppercase px-2 py-0.5 rounded-md leading-none tracking-widest ${type === SaleType.WHOLESALE ? 'bg-amber-500 text-white shadow-sm shadow-amber-500/20' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'}`}>
-                      {type === SaleType.WHOLESALE ? 'Atacado' : 'Varejo'}
-                    </span>
-                  ))}
-                </div>
               </div>
 
-              {/* Row 3: Items Preview */}
-              <div 
-                onClick={() => setSelectedSale(sale)}
-                className={`p-3 rounded-2xl flex flex-col gap-2 border z-10 cursor-pointer transition-colors ${
-                  sale.status === SaleStatus.CANCELLED
-                    ? 'bg-slate-950/50 border-slate-800/50 hover:bg-slate-800/80'
-                    : 'bg-white dark:bg-slate-950/20 border-slate-100/50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/20'
-                }`}
-              >
-                {sale.items.slice(0, 2).map((item, idx) => {
-                  const product = getProductInfo(item.productId);
-                  const variation = getVariationInfo(item.productId, item.variationId);
-                  return (
-                    <div key={idx} className="flex justify-between items-center">
-                      <div className="flex items-center gap-2">
-                        <Tag size={10} className={sale.status === SaleStatus.CANCELLED ? 'text-slate-600' : 'text-slate-400'} strokeWidth={2.5} />
-                        <div>
-                          <p className={`text-[10px] font-black uppercase leading-none tracking-tight ${sale.status === SaleStatus.CANCELLED ? 'text-slate-500' : isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{product?.reference || 'SR'} {product?.name}</p>
-                          <p className="text-[8px] text-slate-400 dark:text-slate-500 font-bold mt-1 uppercase tracking-widest">
-                            {variation?.colorName} • {item.quantity} {item.saleType === SaleType.WHOLESALE ? 'Gr' : 'Pa'}
+              {/* Content Row: Items Preview & Large Price */}
+              <div className="flex justify-between items-start z-10 gap-3">
+                {/* Items List (Left) */}
+                <div 
+                  onClick={() => setSelectedSale(sale)}
+                  className="flex-1 flex flex-col gap-3 cursor-pointer"
+                >
+                  {sale.items.slice(0, 3).map((item, idx) => {
+                    const product = getProductInfo(item.productId);
+                    const variation = getVariationInfo(item.productId, item.variationId);
+                    return (
+                      <div key={idx} className="flex items-center gap-3">
+                        <div className={`p-2 rounded-xl shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                           <Tag size={12} className={sale.status === SaleStatus.CANCELLED ? 'text-slate-600' : 'text-indigo-500'} strokeWidth={3} />
+                        </div>
+                        <div className="min-w-0">
+                          <p className={`text-[10px] font-black uppercase leading-none tracking-tight truncate ${sale.status === SaleStatus.CANCELLED ? 'text-slate-500' : isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                            {product?.reference || '---'} {product?.name}
+                          </p>
+                          <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold mt-1.5 uppercase tracking-widest">
+                            {variation?.colorName} • <span className="text-indigo-500 dark:text-indigo-400">{item.quantity} {item.saleType === SaleType.WHOLESALE ? 'Grades' : 'Pares'}</span>
                           </p>
                         </div>
                       </div>
-                      <span className={`text-[10px] font-black ${sale.status === SaleStatus.CANCELLED ? 'text-slate-600' : isDarkMode ? 'text-slate-400' : 'text-slate-400'}`}>R$ {(item.price * item.quantity).toFixed(0)}</span>
-                    </div>
-                  );
-                })}
-                {sale.items.length > 2 && (
-                  <p className="text-[8px] text-slate-300 dark:text-slate-700 font-bold text-center border-t border-slate-50 dark:border-slate-800/50 pt-1.5 uppercase tracking-widest italic">+{sale.items.length - 2} outros itens</p>
-                )}
+                    );
+                  })}
+                  {sale.items.length > 3 && (
+                    <span className="text-[9px] text-slate-400 dark:text-slate-600 font-black uppercase tracking-[0.2em] italic ml-11">+{sale.items.length - 3} outros</span>
+                  )}
+                </div>
+
+                {/* Price Display (Right) */}
+                <div className="flex flex-col items-end shrink-0 justify-end min-w-[120px]">
+                   {remaining > 0 && sale.status === SaleStatus.SALE && (
+                      <p className="text-[8px] font-black text-rose-500 uppercase tracking-tight mb-1">Saldo R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                   )}
+                   <p className={`text-xl font-black tracking-tighter leading-tight ${sale.status === SaleStatus.CANCELLED ? 'text-slate-400' : 'text-slate-900 dark:text-white'}`}>
+                      R$ {sale.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                   </p>
+                   <div className="flex gap-1 mt-2">
+                      {Array.from(new Set(sale.items.map(i => i.saleType))).map((type, idx) => (
+                        <span key={idx} className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md leading-none tracking-widest ${type === SaleType.WHOLESALE ? 'bg-amber-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}>
+                          {type === SaleType.WHOLESALE ? 'AT' : 'VR'}
+                        </span>
+                      ))}
+                   </div>
+                </div>
               </div>
 
-              <div className={`flex justify-end border-t pt-3 mt-1 ${sale.status === SaleStatus.CANCELLED ? 'border-slate-800/50' : 'border-slate-50 dark:border-slate-800/50'}`}>
-                <div className="flex items-center gap-1.5 relative">
-                <div className={`flex items-center gap-1 p-0.5 rounded-lg border shadow-sm ${
-                  sale.status === SaleStatus.CANCELLED
-                    ? 'bg-slate-800 border-slate-700'
-                    : 'bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700'
-                }`}>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCopyMessage(sale);
-                    }}
-                    className="w-9 h-9 flex items-center justify-center text-indigo-500 hover:text-indigo-600 dark:text-indigo-400 dark:hover:text-indigo-300 rounded-md transition-all active:scale-90"
-                    title="Copiar Pedido"
-                  >
-                    <Copy size={18} strokeWidth={2.5} />
-                  </button>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleShareWhatsApp(sale);
-                    }}
-                    className="w-9 h-9 flex items-center justify-center text-emerald-500 hover:text-emerald-600 dark:text-emerald-400 dark:hover:text-emerald-300 rounded-md transition-all active:scale-90"
-                    title="Enviar WhatsApp"
-                  >
-                    <MessageSquare size={18} strokeWidth={2.5} />
-                  </button>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPaymentModalMode('HISTORY');
-                      setPaymentModalSale(sale);
-                    }}
-                    className="w-9 h-9 flex items-center justify-center text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300 rounded-md transition-all active:scale-90"
-                    title="Histórico de Recebimentos"
-                  >
-                    <History size={18} strokeWidth={2.5} />
-                  </button>
+              {/* Action Bar (Footer) */}
+              <div className="flex justify-between items-center pt-4 border-t border-slate-100 dark:border-slate-800/50 z-10">
+                <div className="flex items-center">
+                  {/* Note Modal Toggle */}
                   {sale.notes && (
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
                         setNoteModal({ isOpen: true, note: sale.notes || "" });
                       }}
-                      className="w-9 h-9 flex items-center justify-center text-slate-500 hover:text-slate-600 dark:text-slate-400 dark:hover:text-slate-300 rounded-md transition-all active:scale-90"
-                      title="Ver Observação"
+                      className="w-12 h-12 flex items-center justify-center rounded-full transition-all active:scale-90 relative bg-[#fffbeb] text-rose-500 shadow-xl shadow-rose-100 dark:bg-rose-950/20 dark:text-rose-400 dark:shadow-none"
                     >
-                      <FileText size={18} strokeWidth={2.5} />
+                      <Lightbulb size={24} strokeWidth={2.5} className="animate-pulse-lamp" />
+                      <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-rose-500 border-2 border-white dark:border-slate-900 rounded-full" />
                     </button>
                   )}
-                  <div className="w-[1px] h-5 bg-slate-100 dark:bg-slate-700 mx-0.5" />
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEdit(sale);
-                    }}
-                    className="w-9 h-9 flex items-center justify-center text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 hover:bg-white dark:hover:bg-slate-700 rounded-md transition-all active:scale-90"
-                    title="Editar Venda"
-                    aria-label="Editar detalhes da venda"
-                  >
-                    <Edit2 size={18} strokeWidth={2.5} />
-                  </button>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      setShowOptionsId(showOptionsId === sale.id ? null : sale.id);
-                    }}
-                    title="Mais Opções"
-                    aria-label="Ver mais opções da venda"
-                    className={`w-9 h-9 flex items-center justify-center rounded-md transition-all active:scale-90 ${showOptionsId === sale.id ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-indigo-600 hover:bg-white dark:hover:bg-slate-700'}`}
-                  >
-                    <MoreVertical size={18} strokeWidth={2.5} />
-                  </button>
                 </div>
 
-                {showOptionsId === sale.id && (
-                  <div className="absolute right-0 bottom-full mb-2 z-50 min-w-[180px] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <div className="p-3 border-b border-slate-50 dark:border-slate-700/50">
-                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Ações do Pedido</p>
-                    </div>
-                    <div className="p-1.5 space-y-1">
-                      {sale.status === SaleStatus.QUOTE && (
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onConvert(sale.id);
-                            setShowOptionsId(null);
-                          }}
-                          className="w-full flex items-center gap-2.5 p-3 text-left text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-xl transition-all"
-                        >
-                          <CheckCircle2 size={14} /> Confirmar Venda
-                        </button>
-                      )}
-                      
-                      {sale.status === SaleStatus.SALE && (
-                        sale.paymentStatus === PaymentStatus.PAID ? (
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPaymentModalMode('HISTORY');
-                              setPaymentModalSale(sale);
-                              setShowOptionsId(null);
-                            }}
-                            className="w-full flex items-center gap-2.5 p-3 text-left text-[10px] font-black uppercase text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-xl transition-all"
-                          >
-                            <RotateCcw size={14} /> Reverter Valor / Ajustar
-                          </button>
-                        ) : (
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPaymentModalMode('PAYMENT');
-                              setPaymentModalSale(sale);
-                              setShowOptionsId(null);
-                            }}
-                            className="w-full flex items-center gap-2.5 p-3 text-left text-[10px] font-black uppercase text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-xl transition-all"
-                          >
-                            <DollarSign size={14} /> Registrar Recebimento
-                          </button>
-                        )
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+                {/* Actions Group (Floating Island) */}
+                <div className="flex items-center gap-1.5 p-1.5 rounded-full bg-slate-50/80 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 shadow-sm backdrop-blur-md relative">
+                  {/* Copy Button */}
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); handleCopyMessage(sale); }}
+                    className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-purple-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
+                    title="Copiar Texto"
+                  >
+                    <Copy size={18} />
+                  </button>
 
-            <div className={`absolute -right-4 -bottom-4 pointer-events-none transition-transform duration-500 ${sale.status === SaleStatus.CANCELLED ? 'opacity-[0.02] text-slate-500' : 'opacity-[0.03] dark:opacity-10 text-indigo-900 dark:text-indigo-400 group-hover:scale-110'}`}>
-              <TrendingUp size={80} strokeWidth={1} />
+                  {/* WhatsApp Button */}
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); handleShareWhatsApp(sale); }}
+                    className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-emerald-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
+                    title="WhatsApp"
+                  >
+                    <MessageSquare size={18} />
+                  </button>
+
+                  {/* Dynamic Action: Payment/History or Convert */}
+                  {sale.status === SaleStatus.QUOTE ? (
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onConvert(sale.id); }}
+                      className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-indigo-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
+                      title="Confirmar Venda"
+                    >
+                      <CheckCircle2 size={18} />
+                    </button>
+                  ) : (
+                    totalPaid >= sale.total ? (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPaymentModalMode('HISTORY');
+                          setPaymentModalSale(sale);
+                        }}
+                        className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-amber-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
+                        title="Histórico"
+                      >
+                        <RotateCcw size={18} />
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPaymentModalMode('PAYMENT');
+                          setPaymentModalSale(sale);
+                        }}
+                        className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-emerald-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
+                        title="Pagamento"
+                      >
+                        <DollarSign size={18} />
+                      </button>
+                    )
+                  )}
+
+                  {/* Edit Button */}
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); onEdit(sale); }}
+                    className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-blue-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
+                    title="Editar"
+                  >
+                    <Edit2 size={18} />
+                  </button>
+
+                  {/* More Options Button */}
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setShowOptionsId(showOptionsId === sale.id ? null : sale.id); }}
+                    className={`w-10 h-10 flex items-center justify-center rounded-full shadow-sm transition-all active:scale-90 ${showOptionsId === sale.id ? 'bg-slate-900 text-white' : 'bg-white dark:bg-slate-700 text-slate-400'}`}
+                    title="Mais"
+                  >
+                    <MoreVertical size={18} />
+                  </button>
+
+                  {/* Context Menu for More Options */}
+                  {showOptionsId === sale.id && (
+                    <div className="absolute right-0 bottom-full mb-3 z-50 min-w-[180px] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
+                      <div className="p-3 border-b border-slate-50 dark:border-slate-700/50">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Ações Extra</p>
+                      </div>
+                      <div className="p-1.5">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setSaleToDelete(sale.id); setShowOptionsId(null); }}
+                          className="w-full flex items-center gap-2.5 p-3 text-left text-[10px] font-black uppercase text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all"
+                        >
+                          <Trash2 size={14} /> Excluir Registro
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Subtle background decoration */}
+              <div className="absolute -right-8 -bottom-8 opacity-[0.03] dark:opacity-10 text-slate-900 dark:text-white pointer-events-none group-hover:scale-125 transition-transform duration-700">
+                <ShoppingBag size={180} strokeWidth={1} />
               </div>
             </div>
           );

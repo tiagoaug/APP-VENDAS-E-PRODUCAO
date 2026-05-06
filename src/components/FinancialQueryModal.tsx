@@ -365,6 +365,16 @@ export default function FinancialQueryModal({
                               return ` • ID: ${tx.relatedId.slice(-6).toUpperCase()}`;
                             })()}
                           </p>
+                          {tx.items && tx.items.length > 0 && (
+                            <div className="mt-2 space-y-0.5 pl-2 border-l border-slate-100 dark:border-slate-800">
+                              {tx.items.map((item, idx) => (
+                                <div key={item.id || idx} className="flex justify-between items-center text-[7px] font-bold text-slate-500 uppercase tracking-widest">
+                                  <span className="truncate max-w-[120px]">{item.description}</span>
+                                  <span className="shrink-0 ml-2">R$ {item.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
 

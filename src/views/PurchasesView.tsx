@@ -222,25 +222,25 @@ export default function PurchasesView({
               onClick={() => onEdit(purchase.id)}
               className={`p-5 rounded-[1.5rem] border flex flex-col gap-4 relative overflow-hidden group cursor-pointer ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}
             >
-              <div className="flex justify-between items-start z-10">
-                <div className="flex items-center gap-3">
+              <div className="flex justify-between items-start z-10 gap-4">
+                <div className="flex items-center gap-3 min-w-0">
                   <div
-                    className={`flex items-center justify-center transition-colors ${purchase.type === PurchaseType.REPLENISHMENT ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400 dark:text-slate-500"}`}
+                    className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${purchase.type === PurchaseType.REPLENISHMENT ? "bg-indigo-600 text-white shadow-indigo-200" : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"}`}
                   >
                     {purchase.type === PurchaseType.REPLENISHMENT ? (
-                      <Package size={32} strokeWidth={2.5} />
+                      <Package size={28} strokeWidth={2.5} />
                     ) : (
-                      <ShoppingCart size={32} strokeWidth={2.5} />
+                      <ShoppingCart size={28} strokeWidth={2.5} />
                     )}
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <h3
-                      className={`font-extrabold text-[13px] tracking-tight leading-none uppercase ${isDarkMode ? "text-white" : "text-slate-800"}`}
+                      className={`font-black text-base tracking-tight leading-none uppercase truncate mb-2 ${isDarkMode ? "text-white" : "text-slate-900"}`}
                     >
                       {supplier?.name || "Fornecedor"}
                     </h3>
-                    <div className="flex flex-col gap-1.5 mt-1.5">
-                      <div className="flex items-center gap-1.5 text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-1.5 text-[9px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">
                         <Calendar size={12} strokeWidth={3} />
                         {format(purchase.date, "dd MMM yyyy", { locale: ptBR })}
                       </div>
@@ -251,117 +251,122 @@ export default function PurchasesView({
                     </div>
                   </div>
                 </div>
-                <div className="text-right flex flex-col items-end gap-1.5">
-                  <p
-                    className="text-[15px] font-black tracking-tight leading-none text-rose-600 dark:text-rose-400"
-                  >
-                    R$ {purchase.total.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                  <div className="flex flex-wrap justify-end gap-1">
+
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  {purchase.sellerName && (
+                    <span className="text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest bg-indigo-600 text-white shadow-lg shadow-indigo-500/20">
+                      {purchase.sellerName}
+                    </span>
+                  )}
+                  <div className="flex flex-col gap-1.5 items-end">
                     <span
-                      className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-lg leading-none inline-block tracking-widest ${purchase.type === PurchaseType.REPLENISHMENT ? "bg-indigo-600 dark:bg-indigo-500 text-white shadow-lg" : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"}`}
+                      className={`text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest shadow-lg ${purchase.type === PurchaseType.REPLENISHMENT ? "bg-indigo-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"}`}
                     >
                       {purchase.type === PurchaseType.REPLENISHMENT
-                        ? "Estoque"
-                        : "Geral"}
+                        ? "ESTOQUE"
+                        : "GERAL"}
                     </span>
-                    <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-lg leading-none inline-block tracking-widest ${
+                    {purchase.dueDate && purchase.paymentStatus === PaymentStatus.PENDING && (
+                      <span className={`text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest shadow-lg ${
+                        new Date(purchase.dueDate) < new Date()
+                          ? 'bg-rose-600 text-white animate-pulse-vencimento'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                      }`}>
+                        VENC. DATA {format(purchase.dueDate, "dd/MM", { locale: ptBR })}
+                      </span>
+                    )}
+                    <span className={`text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest shadow-lg ${
                       purchase.generateTransaction === false 
-                        ? "bg-slate-400 text-white shadow-lg shadow-slate-400/20" 
+                        ? "bg-slate-400 text-white" 
                         : (purchase.paymentStatus === PaymentStatus.PAID 
-                            ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' 
-                            : 'bg-amber-500 text-white shadow-lg shadow-amber-500/20')
+                            ? 'bg-emerald-600 text-white shadow-emerald-500/20' 
+                            : 'bg-amber-500 text-white shadow-amber-500/20')
                     }`}>
                       {purchase.generateTransaction === false 
-                        ? 'Não Contábil' 
-                        : (purchase.paymentStatus === PaymentStatus.PAID ? 'Quitada' : 'Pendente')}
+                        ? 'NÃO CONTÁBIL' 
+                        : (purchase.paymentStatus === PaymentStatus.PAID ? 'COMPRA • QUITADA' : 'COMPRA • PENDENTE')}
                     </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Content Row: Summary & Large Price */}
+              <div className="flex justify-between items-end z-10 gap-6 mt-1">
+                <div className="flex-1 flex flex-col gap-2">
+                   {/* Checks Button (More visible highlight) */}
                     {purchase.checks && purchase.checks.length > 0 && (
-                      <span 
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedPurchaseForChecks(purchase);
                           setIsChecksModalOpen(true);
                         }}
-                        className="text-[8px] font-black uppercase px-2 py-0.5 rounded-lg leading-none inline-block tracking-widest bg-blue-500 text-white shadow-lg shadow-blue-500/20 cursor-pointer hover:scale-105 transition-all"
+                        className={`py-2 px-3 rounded-xl border flex items-center gap-2 text-[8px] font-black uppercase tracking-widest transition-all active:scale-[0.98] w-fit ${
+                          isDarkMode 
+                            ? 'bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/20' 
+                            : 'bg-blue-50 border-blue-100 text-blue-600 hover:bg-blue-100 shadow-sm'
+                        }`}
                       >
-                        Com Cheques
-                      </span>
+                        <Clipboard size={14} strokeWidth={3} />
+                        Histórico de Cheques
+                      </button>
                     )}
-                  </div>
+                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                       {itemCount} {itemCount === 1 ? 'Lançamento' : 'Lançamentos'}
+                    </span>
+                </div>
+
+                {/* Price Display (Right) */}
+                <div className="flex flex-col items-end shrink-0 justify-end min-w-[120px]">
+                   <p className={`text-xl font-black tracking-tighter leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                      R$ {purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                   </p>
                 </div>
               </div>
 
-              {/* Checks Button (More visible highlight) */}
-              {purchase.checks && purchase.checks.length > 0 && (
-                <div className="px-4 pb-2">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedPurchaseForChecks(purchase);
-                      setIsChecksModalOpen(true);
-                    }}
-                    className={`w-full py-3 rounded-xl border flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] transition-all active:scale-[0.98] ${
-                      isDarkMode 
-                        ? 'bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/20' 
-                        : 'bg-blue-50 border-blue-100 text-blue-600 hover:bg-blue-100'
-                    }`}
-                  >
-                    <Clipboard size={14} className={isDarkMode ? "text-blue-400" : "text-blue-500"} strokeWidth={3} />
-                    Ver Histórico de Cheques
-                  </button>
-                </div>
-              )}
-
-              <div className="pt-4 border-t border-slate-50 dark:border-slate-800 flex items-center justify-between z-10">
-                <div className="flex items-center gap-3">
-                  <div className="flex -space-x-2">
-                    {/* Items are no longer displayed as dots */}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEdit(purchase.id);
-                    }}
-                    title="Editar Compra"
-                    aria-label="Editar esta compra"
-                    className="p-2 text-slate-300 dark:text-slate-600 hover:text-indigo-500 transition-colors transform active:scale-90"
-                  >
-                    <Edit2 size={20} strokeWidth={2.5} />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setItemToDelete(purchase.id);
-                    }}
-                    title="Excluir Compra"
-                    aria-label="Excluir esta compra"
-                    className="p-2 text-slate-300 dark:text-slate-600 hover:text-rose-500 transition-colors transform active:scale-90"
-                  >
-                    <Trash2 size={20} strokeWidth={2.5} />
-                  </button>
+              {/* Action Bar (Footer) */}
+              <div className="flex justify-between items-center pt-4 border-t border-slate-100 dark:border-slate-800/50 z-10">
+                <div className="flex items-center">
+                  {/* Note Modal Toggle */}
                   {purchase.notes && (
-                    <button
+                    <button 
                       onClick={(e) => {
                         e.stopPropagation();
-                        setSelectedNote(purchase.notes || null);
+                        setSelectedNote(purchase.notes || "");
                       }}
-                      className="p-2 text-amber-500 dark:text-amber-400 active:scale-90"
-                      title="Ver Observações"
-                      aria-label="Ver observações desta compra"
+                      className="w-12 h-12 flex items-center justify-center rounded-full transition-all active:scale-90 relative bg-[#fffbeb] text-rose-500 shadow-xl shadow-rose-100 dark:bg-rose-950/20 dark:text-rose-400 dark:shadow-none"
                     >
-                      <MessageSquare size={18} strokeWidth={2.5} />
+                      <Lightbulb size={24} strokeWidth={2.5} className="animate-pulse-lamp" />
+                      <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-rose-500 border-2 border-white dark:border-slate-900 rounded-full" />
                     </button>
                   )}
                 </div>
-              </div>
 
+                {/* Actions Group (Floating Island) */}
+                <div className="flex items-center gap-1.5 p-1.5 rounded-full bg-slate-50/80 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 shadow-sm backdrop-blur-md relative">
+                  {/* Edit Button */}
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); onEdit(purchase.id); }}
+                    className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-blue-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
+                    title="Editar"
+                  >
+                    <Edit2 size={18} />
+                  </button>
+
+                  {/* Delete Button */}
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setItemToDelete(purchase.id); }}
+                    className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-rose-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
+                    title="Excluir"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              </div>
 
               {/* Subtle background decoration */}
               <div className="absolute -right-4 -bottom-4 opacity-[0.03] dark:opacity-10 text-slate-900 dark:text-white pointer-events-none group-hover:scale-110 transition-transform duration-500">
-                <History size={80} strokeWidth={1} />
+                <History size={120} strokeWidth={1} />
               </div>
             </div>
           );

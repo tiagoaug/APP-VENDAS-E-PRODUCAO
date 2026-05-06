@@ -53,6 +53,7 @@ import {
   Transaction,
   TransactionType,
   Account,
+  AccountType,
   PaymentTerm,
   ProductStatus,
   PaymentStatus,
@@ -111,6 +112,7 @@ import PersonalFinancialView from "./views/PersonalFinancialView";
 import AccountModal from "./components/AccountModal";
 import PaymentMethodModal from "./components/PaymentMethodModal";
 import Modal from "./components/Modal";
+import TransactionModal from "./components/TransactionModal";
 
 const MODAL_VIEWS = [
   ViewType.PRODUCTS,
@@ -157,6 +159,8 @@ export default function App() {
   const [isPaymentMethodModalOpen, setIsPaymentMethodModalOpen] = useState(false);
   const [editingPaymentMethod, setEditingPaymentMethod] = useState<PaymentMethod | undefined>();
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
+  const [transactionModalType, setTransactionModalType] = useState<TransactionType>(TransactionType.INCOME);
 
   // App State
   const [products, setProducts] = useState<Product[]>([]);
@@ -179,18 +183,20 @@ export default function App() {
   const defaultDashboardConfig: DashboardConfig = {
     cards: [
       { id: 'balance', label: 'Saldo Consolidado', visible: true, order: 0 },
-      { id: 'cash_flow', label: 'Balanço Mensal', visible: true, order: 1 },
-      { id: 'receivables', label: 'A Receber (Vendas)', visible: true, order: 2 },
-      { id: 'stock_alerts', label: 'Alertas de Estoque', visible: true, order: 3 },
-      { id: 'customers', label: 'Relacionamento Clientes', visible: true, order: 4 },
-      { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 5 },
-      { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 6 },
-      { id: 'stock_value', label: 'Patrimônio em Estoque', visible: true, order: 7 },
-      { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 8 },
-      { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 9 },
-      { id: 'activity', label: 'Atividade Recente', visible: true, order: 10 },
-      { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 11 },
-      { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 12 },
+      { id: 'manual_entries', label: 'Lançamentos Manuais', visible: true, order: 1 },
+      { id: 'report_center', label: 'Central de Relatórios', visible: true, order: 2 },
+      { id: 'cash_flow', label: 'Balanço Mensal', visible: true, order: 3 },
+      { id: 'receivables', label: 'A Receber (Vendas)', visible: true, order: 4 },
+      { id: 'stock_alerts', label: 'Alertas de Estoque', visible: true, order: 5 },
+      { id: 'customers', label: 'Relacionamento Clientes', visible: true, order: 6 },
+      { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 7 },
+      { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 8 },
+      { id: 'stock_value', label: 'Patrimônio em Estoque', visible: true, order: 9 },
+      { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 10 },
+      { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 11 },
+      { id: 'activity', label: 'Atividade Recente', visible: true, order: 12 },
+      { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 13 },
+      { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 14 },
     ]
   };
 
@@ -395,6 +401,7 @@ export default function App() {
     if (view === ViewType.PURCHASE_FORM) setSelectedPurchaseId(id);
     if (view === ViewType.SALE_FORM) setSelectedSaleId(id);
     if (view === ViewType.PERSON_DETAIL) setSelectedPersonId(id);
+    if (view === ViewType.REPORT_DETAILED) setSelectedReportId(id);
     setSearchContext(search);
 
     setCurrentView(view);
@@ -498,6 +505,29 @@ export default function App() {
     } catch (e) {
       console.error("Error resetting database:", e);
       throw e;
+    }
+  };
+
+  const handleDuplicateProduct = async (product: Product) => {
+    try {
+      const newProduct: Product = JSON.parse(JSON.stringify(product));
+      newProduct.id = Math.random().toString(36).substr(2, 9);
+      newProduct.name = `${newProduct.name} (Cópia)`;
+      newProduct.reference = `${newProduct.reference}-COPY`;
+      newProduct.createdAt = Date.now();
+      
+      // Reset stock in variations to 0 for the copy and give new variation IDs
+      newProduct.variations = newProduct.variations.map(v => ({
+        ...v,
+        id: Math.random().toString(36).substr(2, 9),
+        stock: Object.keys(v.stock).reduce((acc, key) => ({ ...acc, [key]: 0 }), {})
+      }));
+
+      await firebaseService.saveDocument("products", newProduct);
+      alert("Modelo duplicado com sucesso!");
+    } catch (e: any) {
+      console.error(e);
+      alert("Erro ao duplicar produto: " + (e.message || e));
     }
   };
 
@@ -659,6 +689,10 @@ export default function App() {
             onNavigateProduction={navigateToProduction}
             onNavigateGrids={() => navigateTo(ViewType.GRIDS)}
             onAddProduct={() => navigateTo(ViewType.PRODUCT_FORM)}
+            onAddTransaction={(type) => {
+              setTransactionModalType(type);
+              setIsTransactionModalOpen(true);
+            }}
           />
         );
       case ViewType.DASHBOARD_CONFIG:
@@ -702,6 +736,7 @@ export default function App() {
                  firebaseService.saveDocument("products", { ...product, status });
               }
             }}
+            onDuplicate={handleDuplicateProduct}
             isDarkMode={isDarkMode}
           />
         );
@@ -2443,13 +2478,33 @@ export default function App() {
       <AccountModal
         isOpen={isAccountModalOpen}
         onClose={() => setIsAccountModalOpen(false)}
-        onSave={(account) => {
-          if (editingAccount) {
-            firebaseService.updateDocument("accounts", editingAccount.id, account);
-          } else {
-            firebaseService.saveDocument("accounts", account);
+        onSave={async (accountData) => {
+          try {
+            const updates: Promise<void>[] = [];
+            
+            // If this account is being set as default, unset default from others
+            if (accountData.isDefault) {
+              const otherDefaultAccounts = accounts.filter(a => a.isDefault && (!editingAccount || a.id !== editingAccount.id));
+              otherDefaultAccounts.forEach(a => {
+                updates.push(firebaseService.updateDocument("accounts", a.id, { isDefault: false }));
+              });
+            }
+
+            if (editingAccount) {
+              updates.push(firebaseService.updateDocument("accounts", editingAccount.id, accountData));
+            } else {
+              await firebaseService.saveDocument("accounts", accountData);
+            }
+            
+            if (updates.length > 0) {
+              await Promise.all(updates);
+            }
+            
+            setIsAccountModalOpen(false);
+          } catch (error) {
+            console.error("Error saving account:", error);
+            alert("Erro ao salvar conta.");
           }
-          setIsAccountModalOpen(false);
         }}
         account={editingAccount}
       />
@@ -2466,6 +2521,23 @@ export default function App() {
           setIsPaymentMethodModalOpen(false);
         }}
         method={editingPaymentMethod}
+      />
+      <TransactionModal
+        isOpen={isTransactionModalOpen}
+        onClose={() => setIsTransactionModalOpen(false)}
+        onSave={async (data) => {
+          try {
+            await financeService.createTransaction(data);
+            setIsTransactionModalOpen(false);
+          } catch (error: any) {
+            console.error('Error saving transaction:', error);
+            alert('Erro ao salvar: ' + (error.message || error));
+          }
+        }}
+        categories={categories.filter(c => !c.isPersonal)}
+        accounts={accounts.filter(a => a.type !== AccountType.PERSONAL)}
+        people={people}
+        initialType={transactionModalType}
       />
     </div>
   );

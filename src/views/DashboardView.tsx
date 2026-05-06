@@ -34,7 +34,8 @@ import {
   Grid3X3,
   Footprints,
   Layers,
-  ChevronRight
+  ChevronRight,
+  BarChart3
 } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -61,6 +62,7 @@ interface DashboardViewProps {
   onNavigateProduction: (subScreen: ProductionScreenType) => void;
   onNavigateGrids: () => void;
   onAddProduct: () => void;
+  onAddTransaction: (type: TransactionType) => void;
   isDarkMode: boolean;
   dashboardConfig: DashboardConfig;
 }
@@ -79,6 +81,7 @@ export default function DashboardView({
   onNavigateProduction,
   onNavigateGrids,
   onAddProduct,
+  onAddTransaction,
   isDarkMode,
   dashboardConfig,
 }: DashboardViewProps) {
@@ -510,7 +513,7 @@ export default function DashboardView({
                 className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex justify-between items-center ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
               >
                 <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 leading-none">
                     Saldo Consolidado
                   </p>
                   <p className={`text-3xl font-black tracking-tight leading-none ${isDarkMode ? "text-white" : "text-slate-900"}`}>
@@ -520,6 +523,83 @@ export default function DashboardView({
                 <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-500">
                   <Wallet size={28} strokeWidth={2.5} />
                 </div>
+              </div>
+            );
+
+          case "manual_entries":
+            return (
+              <div key="manual_entries" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-6 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+                <div>
+                  <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Lançamentos Manuais</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">Atalho Financeiro</p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <button 
+                    onClick={() => onAddTransaction(TransactionType.INCOME)}
+                    className={`p-6 rounded-[1.8rem] flex flex-col items-center justify-center gap-3 transition-all active:scale-95 ${isDarkMode ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-emerald-50'}`}
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-emerald-500 shadow-sm">
+                      <TrendingUp size={24} strokeWidth={3} />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Entrada</span>
+                  </button>
+
+                  <button 
+                    onClick={() => onAddTransaction(TransactionType.EXPENSE)}
+                    className={`p-6 rounded-[1.8rem] flex flex-col items-center justify-center gap-3 transition-all active:scale-95 ${isDarkMode ? 'bg-rose-500/10 border border-rose-500/20' : 'bg-rose-50'}`}
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-rose-500 shadow-sm">
+                      <TrendingDown size={24} strokeWidth={3} />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400">Saída</span>
+                  </button>
+                </div>
+              </div>
+            );
+
+          case "report_center":
+            return (
+              <div key="report_center" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-6 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Central de Relatórios</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">Analíticos & Gráficos</p>
+                  </div>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
+                    <BarChart3 size={20} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <button 
+                    onClick={() => onNavigate(ViewType.REPORT_DETAILED, "ventas-periodo")}
+                    className={`p-6 rounded-[1.8rem] flex flex-col items-center justify-center gap-3 transition-all active:scale-95 ${isDarkMode ? 'bg-indigo-500/10 border border-indigo-500/20' : 'bg-slate-50'}`}
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-indigo-500 shadow-sm">
+                      <TrendingUp size={24} strokeWidth={3} />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Vendas</span>
+                  </button>
+
+                  <button 
+                    onClick={() => onNavigate(ViewType.REPORT_DETAILED, "desempenho-financeiro")}
+                    className={`p-6 rounded-[1.8rem] flex flex-col items-center justify-center gap-3 transition-all active:scale-95 ${isDarkMode ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-slate-50'}`}
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-amber-500 shadow-sm">
+                      <DollarSign size={24} strokeWidth={3} />
+                    </div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-500">Financeiro</span>
+                  </button>
+                </div>
+
+                <button 
+                  onClick={() => onNavigate(ViewType.REPORTS)}
+                  className={`w-full py-4 rounded-2xl border border-dashed flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${isDarkMode ? 'border-slate-800 text-slate-400 hover:bg-slate-800/50' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em]">Ver todos os relatórios</span>
+                  <ChevronRight size={14} strokeWidth={3} />
+                </button>
               </div>
             );
 

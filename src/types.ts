@@ -147,6 +147,8 @@ export type Purchase = {
   paymentStatus?: PaymentStatus;
   paymentHistory?: PaymentHistory[];
   isAccounting?: boolean;
+  sellerId?: string;
+  sellerName?: string;
 };
 
 export enum SaleStatus {
@@ -202,6 +204,8 @@ export type Sale = {
   paymentStatus?: PaymentStatus;
   paymentHistory?: SalePayment[];
   notes?: string;
+  sellerId?: string;
+  sellerName?: string;
 };
 
 export type Person = {
@@ -215,12 +219,19 @@ export type Person = {
   avatar?: string;
   document?: string;
   credit?: number; // Haver/Crédito do cliente
+  isSeller?: boolean;
 };
 
 export enum TransactionType {
   INCOME = 'INCOME',
   EXPENSE = 'EXPENSE'
 }
+
+export type TransactionItem = {
+  id: string;
+  description: string;
+  amount: number;
+};
 
 export type Transaction = {
   id: string;
@@ -236,6 +247,7 @@ export type Transaction = {
   relatedId?: string;
   memberId?: string; // For Family Members in personal finance
   isPersonal?: boolean;
+  items?: TransactionItem[];
 };
 
 export enum CategoryType {
@@ -282,6 +294,7 @@ export type Account = {
   balance: number;
   color: string;
   type: AccountType;
+  isDefault?: boolean;
 };
 
 export enum ViewType {

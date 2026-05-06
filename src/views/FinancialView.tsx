@@ -571,6 +571,17 @@ export default function FinancialView({
                         }
                         return null;
                       })()}
+
+                      {transaction.items && transaction.items.length > 0 && (
+                        <div className="mt-3 space-y-1 pl-3 border-l-2 border-slate-100 dark:border-slate-800/50">
+                          {transaction.items.map((item, idx) => (
+                            <div key={item.id || idx} className="flex justify-between items-center text-[8px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                              <span className="truncate max-w-[150px]">{item.description || 'Item sem descrição'}</span>
+                              <span className="shrink-0 ml-2">R$ {item.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="text-right">

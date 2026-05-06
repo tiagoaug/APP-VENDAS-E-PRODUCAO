@@ -7,7 +7,7 @@ import {
   ToggleLeft as Toggle, Calendar, DollarSign, Tag, Calculator, Info,
   FileText, PlusCircle, Layers, Ruler, ExternalLink, ArrowUpDown,
   Footprints, Scissors, Box, Droplets, Sparkles, Settings, CheckCircle2,
-  AlertCircle, ChevronDown, ListFilter, Search, X
+  AlertCircle, ChevronDown, ListFilter, Search, X, Copy
 } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import EngineeringEditor from '../components/EngineeringEditor';
@@ -49,6 +49,12 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [soleMapping, setSoleMapping] = useState<{ [size: string]: string }>(existingProduct?.soleMapping || {});
   const [toolMapping, setToolMapping] = useState<{ [size: string]: string }>(existingProduct?.toolMapping || {});
   const [showSoleMapping, setShowSoleMapping] = useState(false);
+  const [copySuccess, setCopySuccess] = useState<string | null>(null);
+  const [engineeringClipboard, setEngineeringClipboard] = useState<{
+    consumptions: ComponentConsumption[];
+    soleMapping: { [size: string]: string };
+    sourceName: string;
+  } | null>(null);
   const [showToolMapping, setShowToolMapping] = useState(false);
   const [type, setType] = useState<SaleType>(existingProduct?.type || SaleType.WHOLESALE);
   const [status, setStatus] = useState<ProductStatus>(existingProduct?.status || ProductStatus.ACTIVE);
@@ -526,7 +532,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   {/* Seção de Consumos */}
                   <div className="grid grid-cols-1 gap-6">
                     {/* Componentes do Cabedal (Peças de Corte) */}
-                    <div className={`p-8 rounded-[2.5rem] border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                    <div className={`p-5 sm:p-6 rounded-3xl border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                       <div className="flex items-center justify-between mb-8">
                         <div className="flex items-center gap-4">
                           <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20">
@@ -602,7 +608,12 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                 </div>
                                 <div className="flex flex-col gap-1">
                                   <span className="text-[8px] font-black text-slate-400 uppercase">Consumo</span>
-                                  <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400">{item.quantity.toFixed(4)} <span className="text-[9px]">{material?.metadata?.unitId || 'M2'}</span></span>
+                                  <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400">
+                                    {item.quantity.toFixed(4).replace('.', ',')} 
+                                    <span className="text-[9px] ml-1">
+                                      {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
+                                    </span>
+                                  </span>
                                 </div>
                                 <div className="flex flex-col gap-1">
                                   <span className="text-[8px] font-black text-slate-400 uppercase">Faca</span>
@@ -675,10 +686,20 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                       <button onClick={() => { const newC = (v.consumptions || []).filter(c => c.id !== item.id); updateVariation(activeVariationIndex, { consumptions: newC }); }} className="p-1 text-slate-300 hover:text-rose-500"><Trash2 size={14} /></button>
                                     </div>
                                   </div>
-                                  <div className="flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
-                                    <span className="text-[8px] font-black text-slate-400 uppercase">Qtd: <span className="text-slate-900 dark:text-slate-200">{item.quantity}</span></span>
-                                    <span className="text-[8px] font-black text-slate-400 uppercase">{mat?.metadata?.unitId || 'UN'}</span>
-                                  </div>
+                                   <div className="flex flex-col pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
+                                     <div className="flex items-center justify-between mb-0.5">
+                                       <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Consumo:</span>
+                                       <span className="text-[8px] font-black text-slate-900 dark:text-slate-200 uppercase">
+                                         {item.quantity.toFixed(4).replace('.', ',')} {productionConfigs.find(u => u.id === mat?.metadata?.unitId)?.name || 'UN'}
+                                       </span>
+                                     </div>
+                                     <div className="flex items-center justify-between">
+                                       <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Custo:</span>
+                                       <span className="text-[8px] font-black text-indigo-600 dark:text-indigo-400 uppercase">
+                                         R$ {(item.quantity * (mat?.metadata?.baseCost || 0)).toFixed(2).replace('.', ',')}
+                                       </span>
+                                     </div>
+                                   </div>
                                 </div>
                               );
                             })}
@@ -843,7 +864,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
           </div>
 
           {/* Configurações de Produção */}
-          <div className={`p-5 sm:p-8 rounded-3xl sm:rounded-[2.5rem] border shadow-sm transition-all duration-500 ${isDarkMode ? 'bg-slate-800/20 border-slate-700/50' : 'bg-slate-50 border-slate-100 shadow-indigo-100/10'}`}>
+          <div className={`p-5 sm:p-6 rounded-3xl border shadow-sm transition-all duration-500 ${isDarkMode ? 'bg-slate-800/20 border-slate-700/50' : 'bg-slate-50 border-slate-100 shadow-indigo-100/10'}`}>
             <div className="flex items-center gap-4 mb-8">
               <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-indigo-500 text-white shadow-lg shadow-indigo-500/20">
                 <Calculator size={24} strokeWidth={2.5} />
@@ -929,7 +950,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
 
           </div>
 
-          <div className={`p-5 sm:p-8 rounded-3xl sm:rounded-[2.5rem] border shadow-sm transition-all duration-500 ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-amber-50/40 border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/20 shadow-amber-100/20' : 'bg-indigo-50/40 border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-900/20 shadow-indigo-100/20'}`}>
+          <div className={`p-5 sm:p-6 rounded-3xl border shadow-sm transition-all duration-500 ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-amber-50/40 border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/20 shadow-amber-100/20' : 'bg-indigo-50/40 border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-900/20 shadow-indigo-100/20'}`}>
             <div className="flex items-center gap-4 mb-8">
               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transform transition-transform duration-500 ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-amber-500 rotate-3 text-white' : 'bg-indigo-500 -rotate-3 text-white'}`}>
                 {saleTypes.includes(SaleType.WHOLESALE) ? <Package size={24} strokeWidth={2.5} /> : <Tag size={24} strokeWidth={2.5} />}
@@ -1133,70 +1154,122 @@ export default function ProductFormView({ productId, products, grids, suppliers,
         </div>
       </div>
 
-      <section>
-        <div className="flex items-center justify-between mb-4 px-1">
-          <h3 className="text-[11px] font-extrabold uppercase tracking-widest text-slate-900 dark:text-slate-100">Cores e Variações</h3>
+      {/* CARD DEDICADO PARA CORES E VARIAÇÕES */}
+      <section className={`mt-6 p-4 sm:p-6 rounded-3xl border-2 shadow-xl ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+          <div className="flex flex-col">
+            <h3 className="text-sm font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400">Cores e Variações</h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Gerencie as combinações deste modelo</p>
+          </div>
           <button
             onClick={addVariation}
-            className="flex items-center gap-2 text-[10px] bg-indigo-600 text-white px-4 py-2 rounded-xl font-black uppercase tracking-widest hover:bg-indigo-700 shadow-sm transition-all"
+            className="flex items-center justify-center gap-2 text-[10px] bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
             aria-label="Adicionar nova variação de cor"
             title="Adicionar Cor"
           >
-            <Plus size={14} strokeWidth={3} /> Adicionar Cor
+            <Plus size={16} strokeWidth={3} /> Adicionar Cor
           </button>
         </div>
 
-        <div className="space-y-2">
+        <div className="grid grid-cols-1 gap-4">
           {variations.map((v, i) => (
-            <div key={v.id} className={`p-3 rounded-xl border flex items-center justify-between shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-slate-100 dark:bg-slate-800 shadow-sm ring-2 ring-slate-50 dark:ring-slate-800">
-                  <Package size={20} className="text-indigo-500" />
-                </div>
-                <div>
-                  <p className="text-[14px] font-bold text-slate-900 dark:text-white tracking-tight">{v.colorName}</p>
-                  <div className="flex flex-wrap gap-2 mt-1.5">
-                    <div className="flex items-center gap-1 px-2 py-0.5 bg-slate-50 dark:bg-slate-800 rounded-md border border-slate-100 dark:border-slate-700">
-                      <Layers size={10} className="text-indigo-400" />
-                      <span className="text-[8px] font-black text-slate-500 uppercase tracking-tighter">
-                        {(v.techSheet || []).length} Materiais
-                      </span>
-                    </div>
-                    {Object.keys(soleMapping).length > 0 && (
-                      <div className="flex items-center gap-1 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-md border border-emerald-100 dark:border-emerald-900/30">
-                        <Footprints size={10} className="text-emerald-500" />
-                        <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-tighter">
-                          Mapeado
+            <div key={v.id} className={`group relative p-4 rounded-2xl border-2 flex flex-col gap-6 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 hover:border-indigo-500/50' : 'bg-slate-50/50 border-slate-100 hover:border-indigo-200'}`}>
+              {/* Header: Info + Delete Button */}
+              <div className="flex items-start justify-between w-full">
+                <div className="flex items-center gap-5">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-inner ${isDarkMode ? 'bg-slate-900 text-indigo-400' : 'bg-white text-indigo-600'}`}>
+                    <Package size={28} />
+                  </div>
+                  <div className="flex flex-col">
+                    <p className="text-base font-black text-slate-900 dark:text-white tracking-tight uppercase leading-none mb-2">{v.colorName || 'Nova Variação'}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <div className="flex items-center gap-1.5 px-3 py-1 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                        <Layers size={12} className="text-indigo-500" />
+                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                          {(v.consumptions || []).length} Itens na Ficha
                         </span>
                       </div>
-                    )}
+                      {Object.keys(v.soleMapping || {}).length > 0 && (
+                        <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-900/30">
+                          <Footprints size={12} className="text-emerald-500" />
+                          <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Mapeado</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setActiveVariationIndex(i)}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all"
-                  aria-label={`Editar variação ${v.colorName}`}
-                  title="Editar Variação"
-                >
-                  Editar Ficha <ChevronRight size={14} />
-                </button>
+                
                 <button
                   onClick={() => deleteVariation(i)}
-                  className="p-2 text-rose-300 dark:text-rose-700 hover:text-rose-500 transition-colors"
+                  className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all shadow-sm ${isDarkMode ? 'bg-slate-900 text-rose-500 hover:bg-rose-900/20' : 'bg-white text-rose-500 hover:bg-rose-50 border border-slate-100'}`}
                   aria-label={`Excluir variação ${v.colorName}`}
                   title="Excluir Variação"
                 >
                   <Trash2 size={16} />
                 </button>
               </div>
+
+              {/* Actions: Buttons */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <div className="flex flex-1 gap-3">
+                  {/* Botão de Copiar (Aparece se houver conteúdo) */}
+                  {(v.consumptions || []).length > 0 && (
+                    <button
+                      onClick={() => {
+                        setEngineeringClipboard({
+                          consumptions: JSON.parse(JSON.stringify(v.consumptions || [])),
+                          soleMapping: JSON.parse(JSON.stringify(v.soleMapping || {})),
+                          sourceName: v.colorName
+                        });
+                        setCopySuccess(`Engenharia de "${v.colorName}" COPIADA!`);
+                        setTimeout(() => setCopySuccess(null), 2000);
+                      }}
+                      className={`flex-1 flex items-center justify-center gap-2 px-4 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-indigo-900/20 text-indigo-400 hover:bg-indigo-900/40' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
+                      title="Copiar toda a engenharia desta cor"
+                    >
+                      <Copy size={14} /> Copiar
+                    </button>
+                  )}
+
+                  {/* Botão de Colar (Aparece se houver algo no clipboard e a variação estiver vazia) */}
+                  {engineeringClipboard && (v.consumptions || []).length === 0 && (
+                    <button
+                      onClick={() => {
+                        const newVariations = [...variations];
+                        newVariations[i] = {
+                          ...newVariations[i],
+                          consumptions: JSON.parse(JSON.stringify(engineeringClipboard.consumptions)),
+                          soleMapping: JSON.parse(JSON.stringify(engineeringClipboard.soleMapping))
+                        };
+                        setVariations(newVariations);
+                        setCopySuccess(`Ficha de "${engineeringClipboard.sourceName}" COLADA em "${v.colorName}"!`);
+                        setTimeout(() => setCopySuccess(null), 3000);
+                      }}
+                      className={`flex-1 flex items-center justify-center gap-2 px-4 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all animate-pulse ${isDarkMode ? 'bg-emerald-900/20 text-emerald-400 hover:bg-emerald-900/40' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
+                      title={`Colar engenharia de ${engineeringClipboard.sourceName}`}
+                    >
+                      <Sparkles size={14} /> Colar
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => setActiveVariationIndex(i)}
+                  className="sm:flex-[1.5] flex items-center justify-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+                  aria-label={`Editar ficha técnica ${v.colorName}`}
+                >
+                  Editar Ficha <ChevronRight size={16} />
+                </button>
+              </div>
             </div>
           ))}
 
           {variations.length === 0 && (
-            <div className="text-center py-8 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-slate-300 dark:text-slate-600 text-[10px] font-bold uppercase tracking-widest italic">
-              Nenhuma variação adicionada.
+            <div className={`text-center py-12 border-4 border-dashed rounded-[2.5rem] flex flex-col items-center justify-center gap-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                <Plus size={32} className="text-slate-300" />
+              </div>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Nenhuma cor adicionada</p>
             </div>
           )}
         </div>
@@ -1318,8 +1391,25 @@ export default function ProductFormView({ productId, products, grids, suppliers,
           );
         })()}
       </Modal>
-      </div>
+
+      <AnimatePresence>
+        {copySuccess && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[30000] px-8 py-4 bg-emerald-600 text-white rounded-[2rem] shadow-2xl flex items-center gap-3 border-2 border-emerald-400/30 backdrop-blur-md"
+          >
+            <CheckCircle2 size={24} className="text-emerald-200" />
+            <div className="flex flex-col">
+              <span className="text-xs font-black uppercase tracking-widest leading-none">Sucesso!</span>
+              <span className="text-[10px] font-bold text-emerald-100 mt-1 uppercase tracking-wider">{copySuccess}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
-  </>
+  </div>
+</>
   );
 }

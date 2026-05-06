@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BarChart3, TrendingUp, Users, Package, ArrowUpRight, ArrowDownRight, Search } from 'lucide-react';
+import { BarChart3, TrendingUp, Users, Package, ArrowUpRight, ArrowDownRight, Search, MessageCircle } from 'lucide-react';
 import { Sale, Transaction, SaleStatus, TransactionType } from '../types';
 
 interface ReportsViewProps {
@@ -57,6 +57,7 @@ export default function ReportsView({ isDarkMode, onSelectReport, sales, transac
           {[
             { id: "ventas-periodo", label: "Vendas por Período", icon: <TrendingUp size={18} />, color: "text-indigo-500" },
             { id: "clientes-mais-compram", label: "Clientes que mais compram", icon: <Users size={18} />, color: "text-emerald-500" },
+            { id: "relacionamento-cliente", label: "Relacionamento com Cliente", icon: <MessageCircle size={18} />, color: "text-purple-500" },
             { id: "produtos-curva-a", label: "Produtos Curva A", icon: <Package size={18} />, color: "text-amber-500" },
             { id: "desempenho-financeiro", label: "Desempenho Financeiro", icon: <BarChart3 size={18} />, color: "text-blue-500" },
             { id: "dividas-fornecedor", label: "Dívidas por Fornecedor", icon: <ArrowDownRight size={18} />, color: "text-rose-500" },

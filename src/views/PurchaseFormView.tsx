@@ -71,6 +71,7 @@ export default function PurchaseFormView({
   const [supplierId, setSupplierId] = useState(
     existing?.supplierId || suppliers[0]?.id || "",
   );
+  const [sellerId, setSellerId] = useState(existing?.sellerId || '');
   interface PurchaseBlock {
     id: string;
     productId: string;
@@ -125,9 +126,11 @@ export default function PurchaseFormView({
   const [categoryId, setCategoryId] = useState(
     existing?.categoryId || categories[0]?.id || "",
   );
-  const [accountId, setAccountId] = useState(
-    existing?.accountId || accounts[0]?.id || "",
-  );
+  const [accountId, setAccountId] = useState(() => {
+    if (existing?.accountId) return existing.accountId;
+    const defaultAcc = accounts.find(a => a.isDefault);
+    return defaultAcc?.id || accounts[0]?.id || "";
+  });
   const [generateTransaction, setGenerateTransaction] = useState(
     existing?.generateTransaction !== undefined ? existing?.generateTransaction : true
   );
@@ -306,6 +309,8 @@ export default function PurchaseFormView({
       batchNumber,
       checks,
       generateTransaction,
+      sellerId,
+      sellerName: suppliers.find(s => s.id === sellerId)?.name || '',
       paymentStatus: paymentTerm === PaymentTerm.INSTALLMENTS ? PaymentStatus.PENDING : PaymentStatus.PAID,
     });
   };
@@ -371,6 +376,19 @@ export default function PurchaseFormView({
               value={supplierId}
               onChange={setSupplierId}
               placeholder="SELECIONE O FORNECEDOR"
+              isDarkMode={isDarkMode}
+            />
+          </div>
+
+          <div className="relative col-span-2">
+            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">
+              Vendedor / Representante
+            </label>
+            <ComboBox 
+              options={suppliers.filter(p => p.isSeller).map(p => ({ id: p.id, name: p.name }))}
+              value={sellerId}
+              onChange={setSellerId}
+              placeholder="SELECIONE O VENDEDOR"
               isDarkMode={isDarkMode}
             />
           </div>

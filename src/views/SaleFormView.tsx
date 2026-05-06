@@ -33,6 +33,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
   const [orderNumber, setOrderNumber] = useState(Math.floor(Math.random() * 10000).toString().padStart(5, '0'));
   const [isAutoOrderNumber, setIsAutoOrderNumber] = useState(true);
   const [customerId, setCustomerId] = useState('');
+  const [sellerId, setSellerId] = useState('');
   const [blocks, setBlocks] = useState<SaleBlock[]>([]);
   const [status, setStatus] = useState<SaleStatus>(SaleStatus.SALE);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -40,14 +41,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showCancelOnlyConfirm, setShowCancelOnlyConfirm] = useState(false);
 
-  useEffect(() => {
-    if (saleId) {
-      const sale = sales.find(s => s.id === saleId);
-      if (sale && sale.status !== status) {
-        setStatus(sale.status);
-      }
-    }
-  }, [sales, saleId, status]);
+  // Remove redundant effect that was resetting status during editing
 
   useEffect(() => {
     if (saleId && !isInitialized) {
@@ -56,6 +50,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         setOrderNumber(sale.orderNumber);
         setIsAutoOrderNumber(false);
         setCustomerId(sale.customerId || '');
+        setSellerId(sale.sellerId || '');
         setStatus(sale.status);
         setPaymentTerm(sale.paymentTerm);
         setPaymentMethodId(sale.paymentMethodId || '');
@@ -102,7 +97,12 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
 
   const [paymentTerm, setPaymentTerm] = useState<PaymentTerm>(PaymentTerm.CASH);
   const [paymentMethodId, setPaymentMethodId] = useState(paymentMethods[0]?.id || '');
-  const [accountId, setAccountId] = useState(accounts[0]?.id || '');
+  const [accountId, setAccountId] = useState(() => {
+    const existing = saleId ? sales.find(s => s.id === saleId) : null;
+    if (existing?.accountId) return existing.accountId;
+    const defaultAcc = accounts.find(a => a.isDefault);
+    return defaultAcc?.id || accounts[0]?.id || '';
+  });
   const [discount, setDiscount] = useState(0);
   const [dueDate, setDueDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>(PaymentStatus.PAID);
@@ -277,6 +277,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     }
     
     const customer = people.find(p => p.id === customerId);
+    const seller = people.find(p => p.id === sellerId);
     const existingSale = saleId ? sales.find(s => s.id === saleId) : null;
 
     const saleToSave: Sale = {
@@ -284,6 +285,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       orderNumber,
       date: existingSale ? existingSale.date : Date.now(),
       customerName: customer?.name || 'Venda Avulsa',
+      sellerName: seller?.name || '',
+      sellerId: sellerId || '',
       items,
       subtotal,
       discount,
@@ -528,11 +531,23 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     <div className={`flex flex-col gap-6 pb-40 px-1 ${status === SaleStatus.CANCELLED ? 'grayscale-[0.8] opacity-80 pointer-events-none' : ''}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-xl ${status === SaleStatus.CANCELLED ? 'bg-slate-700 shadow-none' : isDarkMode ? 'bg-indigo-600 shadow-none' : 'bg-slate-900 shadow-slate-200'}`}>
+          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-xl ${
+            status === SaleStatus.CANCELLED 
+              ? 'bg-slate-700 shadow-none' 
+              : status === SaleStatus.QUOTE
+                ? 'bg-orange-500 shadow-orange-200'
+                : 'bg-[#7c3aed] shadow-violet-200'
+          }`}>
             <Receipt size={22} className="text-white" strokeWidth={2.5} />
           </div>
           <div>
-            <h2 className={`text-lg font-black uppercase tracking-tight leading-none ${status === SaleStatus.CANCELLED ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>{status === SaleStatus.CANCELLED ? 'Venda Cancelada' : status === SaleStatus.QUOTE ? 'Novo Orçamento' : 'Nova Venda'}</h2>
+            <h2 className={`text-lg font-black uppercase tracking-tight leading-none ${status === SaleStatus.CANCELLED ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>
+              {status === SaleStatus.CANCELLED 
+                ? 'Venda Cancelada' 
+                : saleId 
+                  ? `Editando ${status === SaleStatus.QUOTE ? 'Orçamento' : 'Venda'}`
+                  : `Novo ${status === SaleStatus.QUOTE ? 'Orçamento' : 'Venda'}`}
+            </h2>
             <div className="flex items-center gap-3 mt-2">
               <label className="flex items-center gap-2 cursor-pointer group">
                 <div className="relative">
@@ -581,7 +596,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         <div className={`p-1 rounded-2xl border flex gap-1 shrink-0 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
            <button 
              onClick={() => setStatus(SaleStatus.SALE)}
-             className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${status === SaleStatus.SALE ? 'bg-slate-900 dark:bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}
+             className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${status === SaleStatus.SALE ? 'bg-[#7c3aed] text-white shadow-lg' : 'text-slate-400'}`}
              aria-label="Definir como venda"
              title="Venda"
            >
@@ -589,7 +604,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
            </button>
            <button 
              onClick={() => setStatus(SaleStatus.QUOTE)}
-             className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${status === SaleStatus.QUOTE ? 'bg-amber-500 text-white shadow-lg' : 'text-slate-400'}`}
+             className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${status === SaleStatus.QUOTE ? 'bg-orange-500 text-white shadow-lg' : 'text-slate-400'}`}
              aria-label="Definir como orçamento"
              title="Orçamento"
            >
@@ -608,6 +623,17 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               value={customerId}
               onChange={setCustomerId}
               placeholder="SELECIONE O CLIENTE"
+              isDarkMode={isDarkMode}
+            />
+          </div>
+
+          <div className="relative">
+            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Vendedor</label>
+            <ComboBox 
+              options={people.filter(p => p.isSeller).map(p => ({ id: p.id, name: p.name }))}
+              value={sellerId}
+              onChange={setSellerId}
+              placeholder="SELECIONE O VENDEDOR"
               isDarkMode={isDarkMode}
             />
           </div>

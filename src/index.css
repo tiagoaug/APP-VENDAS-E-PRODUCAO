@@ -84,4 +84,26 @@
   .animate-spin-slow {
     animation: spin-slow 3s linear infinite;
   }
+  @keyframes pulse-lamp {
+    0%, 100% { 
+      color: #eab308; 
+      filter: drop-shadow(0 0 2px rgba(234, 179, 8, 0.2)); 
+    }
+    50% { 
+      color: #dc2626; 
+      filter: drop-shadow(0 0 8px rgba(220, 38, 38, 0.6)); 
+    }
+  }
+  .animate-pulse-lamp {
+    animation: pulse-lamp 2.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse-vencimento {
+    0% { background-color: #fecaca; }
+    50% { background-color: #dc2626; }
+    100% { background-color: #fecaca; }
+  }
+  .animate-pulse-vencimento {
+    animation: pulse-vencimento 2s infinite;
+  }
 }

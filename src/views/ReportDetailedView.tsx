@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { Download, ArrowLeft, Calendar, Filter } from 'lucide-react';
+import { Download, ArrowLeft, Calendar, Filter, MessageCircle, Copy, Share2, Search } from 'lucide-react';
 import { Sale, Transaction, Product, Person, SaleStatus, TransactionType, Category } from '../types';
 import { format, startOfMonth, endOfMonth, parseISO, isWithinInterval } from 'date-fns';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ComboBox from '../components/ComboBox';
+import ConsolidatedMessageModal from '../components/ConsolidatedMessageModal';
+
 
 interface ReportDetailedViewProps {
   isDarkMode: boolean;
@@ -35,8 +37,14 @@ export default function ReportDetailedView({
   const [supplierId, setSupplierId] = useState('');
   const [accountingFilter, setAccountingFilter] = useState<'ALL' | 'ACCOUNTING' | 'NON_ACCOUNTING'>('ALL');
   const [modelSearch, setModelSearch] = useState('');
+  const [selectedPersonId, setSelectedPersonId] = useState('');
+  const [messageFormat, setMessageFormat] = useState<'SUMMARY' | 'COMPLETE'>('COMPLETE');
+  const [isConsolidatedModalOpen, setIsConsolidatedModalOpen] = useState(false);
+
   
   const suppliers = useMemo(() => people.filter(p => p.isSupplier), [people]);
+  const customers = useMemo(() => people.filter(p => p.isCustomer), [people]);
+
 
   const filterByDateRange = (dateNum: number) => {
     if (!startDate && !endDate) return true;
@@ -55,6 +63,7 @@ export default function ReportDetailedView({
       case 'desempenho-financeiro': return 'Desempenho Financeiro';
       case 'dividas-fornecedor': return 'Dívidas por Fornecedor';
       case 'informacao-estoque': return 'Informação de Estoques';
+      case 'relacionamento-cliente': return 'Relacionamento com Cliente';
       default: return 'Relatório';
     }
   }, [reportId]);
@@ -232,6 +241,77 @@ export default function ReportDetailedView({
     }, { cost: 0, sale: 0 });
   }, [stockInfoData, reportId]);
 
+  const relationshipData = useMemo(() => {
+    if (reportId !== 'relacionamento-cliente') return [];
+    return sales
+      .filter(s => 
+        s.status === SaleStatus.SALE && 
+        filterByDateRange(s.date) &&
+        (selectedPersonId === '' || s.customerId === selectedPersonId)
+      )
+      .map(s => {
+        const totalPaid = (s.paymentHistory || []).reduce((acc, p) => acc + p.amount, 0);
+        return {
+          ...s,
+          totalPaid,
+          balance: s.total - totalPaid
+        };
+      })
+      .sort((a, b) => b.date - a.date);
+  }, [sales, reportId, startDate, endDate, selectedPersonId]);
+
+  const getSaleMessage = (sale: any, formatType: 'SUMMARY' | 'COMPLETE') => {
+    let msg = `*Venda #${sale.orderNumber || sale.id.substring(0, 4)}*\n`;
+    msg += `Data: ${format(sale.date, 'dd/MM/yyyy')}\n`;
+    msg += `Total: R$ ${sale.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n`;
+    msg += `Pago: R$ ${sale.totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n`;
+    msg += `Pendente: R$ ${sale.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n`;
+    
+    if (formatType === 'COMPLETE' && sale.items && sale.items.length > 0) {
+      msg += `\n*Itens:*\n`;
+      sale.items.forEach((item: any) => {
+        const prod = products.find(p => p.id === item.productId);
+        const variation = prod?.variations.find(v => v.id === item.variationId);
+        msg += `- ${prod?.name || 'Produto'} (${variation?.colorName || ''}) x${item.quantity}: R$ ${(item.quantity * item.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n`;
+      });
+    }
+    return msg;
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+  };
+
+  const sendWhatsApp = (phone: string | undefined, text: string) => {
+    const cleanPhone = (phone || '').replace(/\D/g, '');
+    const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
+
+  const generateConsolidatedMessage = () => {
+    if (relationshipData.length === 0) return;
+    const customer = people.find(p => p.id === selectedPersonId);
+    let msg = `*Relatório Consolidado - ${customer?.name || 'Cliente'}*\n`;
+    msg += `Período: ${startDate ? format(new Date(startDate), 'dd/MM/yyyy') : 'Início'} até ${endDate ? format(new Date(endDate), 'dd/MM/yyyy') : 'Hoje'}\n\n`;
+    
+    let totalBalance = 0;
+    relationshipData.forEach(s => {
+      msg += getSaleMessage(s, messageFormat);
+      msg += `--------------------------\n`;
+      totalBalance += s.balance;
+    });
+    
+    msg += `\n*SALDO TOTAL PENDENTE: R$ ${totalBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}*`;
+    
+    copyToClipboard(msg);
+    if (customer?.phone) {
+        sendWhatsApp(customer.phone, msg);
+    } else {
+        alert("Mensagem copiada para a área de transferência!");
+    }
+  };
+
+
   const exportPDF = () => {
     const doc = new jsPDF();
     doc.setFontSize(16);
@@ -385,6 +465,57 @@ export default function ReportDetailedView({
                         onChange={(e) => setModelSearch(e.target.value)}
                         className={`flex-1 min-w-[200px] p-3 rounded-xl border text-xs font-bold ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-700'}`}
                     />
+                )}
+                {reportId === 'relacionamento-cliente' && (
+                    <div className="flex flex-col gap-4 w-full mt-2">
+                        <div className="flex-[2] min-w-[200px]">
+                            <ComboBox 
+                                options={customers}
+                                value={selectedPersonId}
+                                onChange={(id) => setSelectedPersonId(id)}
+                                placeholder="Selecione o Cliente..."
+                                isDarkMode={isDarkMode}
+                            />
+                        </div>
+                        
+                        <div className={`p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Formato da Mensagem</p>
+                            <div className="flex gap-4">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="msgFormat" 
+                                        checked={messageFormat === 'SUMMARY'}
+                                        onChange={() => setMessageFormat('SUMMARY')}
+                                        className="w-4 h-4 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Resumo (Totais)</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input 
+                                        type="radio" 
+                                        name="msgFormat" 
+                                        checked={messageFormat === 'COMPLETE'}
+                                        onChange={() => setMessageFormat('COMPLETE')}
+                                        className="w-4 h-4 text-indigo-600 focus:ring-indigo-500"
+                                    />
+                                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Histórico Completo (Itens)</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <button
+                            onClick={() => setIsConsolidatedModalOpen(true)}
+                            disabled={!selectedPersonId || relationshipData.length === 0}
+                            className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all ${
+                                !selectedPersonId || relationshipData.length === 0
+                                ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                : 'bg-indigo-600 text-white shadow-indigo-600/30 active:scale-[0.98]'
+                            }`}
+                        >
+                            Gerar Mens. Consolidada
+                        </button>
+                    </div>
                 )}
                 {reportId === 'dividas-fornecedor' && (
                     <>
@@ -590,6 +721,72 @@ export default function ReportDetailedView({
                 </div>
             )}
 
+            {reportId === 'relacionamento-cliente' && (
+                 <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr>
+                                <th className="p-4 text-[10px] font-black uppercase text-slate-400 border-b dark:border-slate-800">Cliente</th>
+                                <th className="p-4 text-[10px] font-black uppercase text-slate-400 border-b dark:border-slate-800">Pedido</th>
+                                <th className="p-4 text-[10px] font-black uppercase text-slate-400 border-b dark:border-slate-800 text-right">Pendente</th>
+                                <th className="p-4 text-[10px] font-black uppercase text-slate-400 border-b dark:border-slate-800 text-center">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {relationshipData.map((r) => {
+                                const customer = people.find(p => p.id === r.customerId);
+                                return (
+                                    <tr key={r.id} className={`border-b last:border-0 dark:border-slate-800 ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`}>
+                                        <td className="p-4">
+                                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200 leading-tight">{r.customerName}</p>
+                                            <p className="text-[10px] font-medium text-slate-400">{format(r.date, 'dd/MM/yyyy')}</p>
+                                        </td>
+                                        <td className="p-4">
+                                            <p className="text-xs font-bold text-slate-600 dark:text-slate-400">
+                                                {r.orderNumber ? `# (${r.orderNumber})` : 'Manual'}
+                                            </p>
+                                        </td>
+                                        <td className="p-4 text-right">
+                                            <p className={`text-xs font-black ${r.balance > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                                R$ {r.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </p>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex items-center justify-center gap-2">
+                                                <button
+                                                    onClick={() => copyToClipboard(getSaleMessage(r, messageFormat))}
+                                                    className={`p-2 rounded-xl border ${isDarkMode ? 'border-slate-700 hover:bg-slate-700 text-slate-400' : 'border-slate-100 hover:bg-slate-50 text-slate-500'} transition-all active:scale-90`}
+                                                    title="Copiar"
+                                                >
+                                                    <Copy size={14} />
+                                                </button>
+                                                <button
+                                                    onClick={() => sendWhatsApp(customer?.phone, getSaleMessage(r, messageFormat))}
+                                                    className={`p-2 rounded-xl border ${isDarkMode ? 'border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/10' : 'border-emerald-100 text-emerald-600 hover:bg-emerald-50'} transition-all active:scale-90`}
+                                                    title="Enviar WhatsApp"
+                                                >
+                                                    <MessageCircle size={14} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                            {relationshipData.length === 0 && (
+                                <tr>
+                                    <td colSpan={4} className="p-12 text-center">
+                                        <div className="flex flex-col items-center gap-2 text-slate-400">
+                                            <Search size={32} strokeWidth={1.5} />
+                                            <p className="text-xs font-bold">Nenhuma venda encontrada para os filtros selecionados.</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
             {reportId === 'desempenho-financeiro' && (
                  <div className="overflow-x-auto custom-scrollbar">
                     <table className="w-full text-left border-collapse">
@@ -619,6 +816,15 @@ export default function ReportDetailedView({
                     </table>
                 </div>
             )}
+
+            <ConsolidatedMessageModal 
+                isOpen={isConsolidatedModalOpen}
+                onClose={() => setIsConsolidatedModalOpen(false)}
+                customer={people.find(p => p.id === selectedPersonId)}
+                sales={relationshipData}
+                isDarkMode={isDarkMode}
+                formatType={messageFormat}
+            />
 
         </div>
       </div>

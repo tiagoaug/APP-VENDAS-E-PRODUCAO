@@ -19,7 +19,7 @@ interface PeopleViewProps {
 
 export default function PeopleView({ people, sales, purchases, transactions, onAdd, onEdit, onDelete, onShowDetail, isDarkMode }: PeopleViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filter, setFilter] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER'>('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER' | 'SELLER'>('ALL');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
@@ -36,6 +36,7 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
     
     if (filter === 'CUSTOMER') return matchesSearch && p.isCustomer;
     if (filter === 'SUPPLIER') return matchesSearch && p.isSupplier;
+    if (filter === 'SELLER') return matchesSearch && p.isSeller;
     return matchesSearch;
   });
 
@@ -117,6 +118,12 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
           >
             Fornecedores
           </button>
+          <button 
+            onClick={() => setFilter('SELLER')}
+            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'SELLER' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
+          >
+            Vendedores
+          </button>
         </div>
       </div>
 
@@ -136,6 +143,7 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
                   <div className="flex gap-1">
                     {person.isCustomer && <ShieldCheck size={14} className="text-emerald-500" />}
                     {person.isSupplier && <Truck size={14} className="text-amber-500" />}
+                    {person.isSeller && <Tag size={14} className="text-indigo-500" />}
                   </div>
                 </div>
                 <div className="flex items-center gap-3 mt-1.5 overflow-x-auto no-scrollbar">

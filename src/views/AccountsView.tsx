@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Account, AccountType } from '../types';
-import { Plus, Wallet, Edit, Trash2, ArrowRightLeft, Search, RefreshCcw, DollarSign, Building2, Landmark, Banknote, User } from 'lucide-react';
+import { Plus, Wallet, Edit, Trash2, ArrowRightLeft, Search, RefreshCcw, DollarSign, Building2, Landmark, Banknote, User, Star } from 'lucide-react';
 import ConfirmDialog from '../components/ConfirmDialog';
 
 interface AccountsViewProps {
@@ -151,7 +151,14 @@ export default function AccountsView({ accounts, onAdd, onEdit, onDelete, onAdju
                     <Icon size={24} strokeWidth={2.5} />
                   </div>
                   <div>
-                    <h3 className={`font-black text-sm uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{account.name}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className={`font-black text-sm uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{account.name}</h3>
+                      {account.isDefault && (
+                        <span className="px-1.5 py-0.5 rounded-md bg-amber-500 text-[8px] font-black text-white uppercase tracking-widest flex items-center gap-1 shadow-sm shadow-amber-500/20">
+                          <Star size={8} fill="currentColor" /> Padrão
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2 mt-1">
                        <p className={`text-lg font-black tracking-tighter italic ${isPersonal ? 'text-indigo-500' : 'text-indigo-600 dark:text-indigo-400'}`}>
                          R$ {account.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
