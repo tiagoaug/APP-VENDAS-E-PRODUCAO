@@ -104,7 +104,13 @@ export default function PersonDetailView({
                       <p className={`font-bold text-xs ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{t.description}</p>
                       <div className="flex items-center gap-3 mt-1">
                         <span className="text-[8px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1">
-                          <Calendar size={10} /> {format(t.date, "dd/MM/yyyy")}
+                          <Calendar size={10} /> {(() => {
+                            try {
+                              return format(t.date, "dd/MM/yyyy");
+                            } catch (e) {
+                              return "Data inválida";
+                            }
+                          })()}
                         </span>
                         <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${category?.color || 'bg-slate-100 text-slate-500'} text-white`}>
                           {category?.name}
@@ -140,7 +146,13 @@ export default function PersonDetailView({
                     <div>
                       <p className={`font-bold text-xs ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Venda #{s.orderNumber}</p>
                       <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest mt-1 flex items-center gap-1">
-                        <Calendar size={10} /> {format(s.date, "dd/MM/yyyy")}
+                        <Calendar size={10} /> {(() => {
+                          try {
+                            return format(s.date, "dd/MM/yyyy");
+                          } catch (e) {
+                            return "Data inválida";
+                          }
+                        })()}
                       </p>
                     </div>
                   </div>
@@ -169,7 +181,13 @@ export default function PersonDetailView({
                     <div>
                       <p className={`font-bold text-xs ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Compra {p.batchNumber ? `Lote ${p.batchNumber}` : 'Estoque'}</p>
                       <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest mt-1 flex items-center gap-1">
-                        <Calendar size={10} /> {format(p.date, "dd/MM/yyyy")}
+                        <Calendar size={10} /> {(() => {
+                          try {
+                            return format(p.date, "dd/MM/yyyy");
+                          } catch (e) {
+                            return "Data inválida";
+                          }
+                        })()}
                       </p>
                     </div>
                   </div>
@@ -181,6 +199,66 @@ export default function PersonDetailView({
               {personPurchases.length === 0 && (
                 <p className="text-[10px] text-slate-300 italic text-center py-4 uppercase font-bold tracking-widest">Nenhuma compra encontrada</p>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Representatives Section (Unified) */}
+        {(person.isCustomer || person.isSupplier) && (
+          (person.associatedSellerIds?.length ?? 0) > 0 || 
+          (person.associatedContactIds?.length ?? 0) > 0 ||
+          (person.internalContacts?.length ?? 0) > 0
+        ) && (
+          <div className="pt-6 border-t border-slate-100 dark:border-slate-800 space-y-3">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Representantes e Contatos</h3>
+            <div className="flex flex-wrap gap-2">
+              {/* Linked Sellers */}
+              {person.associatedSellerIds?.map(sId => {
+                const s = people.find(p => p.id === sId);
+                return (
+                  <div key={sId} className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 ${isDarkMode ? 'bg-indigo-900/20 border-indigo-900/30' : 'bg-indigo-50 border-indigo-100'}`}>
+                    <span className="text-[9px] font-black text-indigo-500 uppercase tracking-tighter">Vendedor:</span>
+                    <span className={`text-[10px] font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                      {s?.name || 'Vendedor'}
+                    </span>
+                  </div>
+                );
+              })}
+              
+              {/* Linked Buyers */}
+              {person.associatedContactIds?.map(cId => {
+                const c = people.find(p => p.id === cId);
+                return (
+                  <div key={cId} className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 ${isDarkMode ? 'bg-emerald-900/20 border-emerald-900/30' : 'bg-emerald-50 border-emerald-100'}`}>
+                    <span className="text-[9px] font-black text-emerald-500 uppercase tracking-tighter">Comprador:</span>
+                    <span className={`text-[10px] font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                      {c?.name || 'Comprador'}
+                    </span>
+                  </div>
+                );
+              })}
+
+              {/* Simple Internal Contacts */}
+              {person.internalContacts?.map((c, idx) => (
+                <div key={idx} className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 ${c.role === 'Vendedor' ? (isDarkMode ? 'bg-indigo-900/20 border-indigo-900/30' : 'bg-indigo-50 border-indigo-100') : (isDarkMode ? 'bg-emerald-900/20 border-emerald-900/30' : 'bg-emerald-50 border-emerald-100')}`}>
+                  <span className={`text-[9px] font-black uppercase tracking-tighter ${c.role === 'Vendedor' ? 'text-indigo-500' : 'text-emerald-500'}`}>{c.role}:</span>
+                  <span className={`text-[10px] font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                    {c.name}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Observations Section */}
+        {person.observations && (
+          <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1 mb-2">Informações Adicionais</h3>
+            <div className={`p-5 rounded-2xl ${isDarkMode ? 'bg-slate-900/50' : 'bg-slate-50'} border border-transparent`}>
+              <p className={`text-xs leading-relaxed font-bold whitespace-pre-wrap ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                {person.observations}
+              </p>
             </div>
           </div>
         )}

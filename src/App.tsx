@@ -28,7 +28,8 @@ import {
   PackageOpen,
   ChevronRight,
   FileText,
-  User as UserIcon
+  User as UserIcon,
+  AlertCircle
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { auth, db, signInWithGoogle, logout } from "./lib/firebase";
@@ -185,18 +186,20 @@ export default function App() {
       { id: 'balance', label: 'Saldo Consolidado', visible: true, order: 0 },
       { id: 'manual_entries', label: 'Lançamentos Manuais', visible: true, order: 1 },
       { id: 'report_center', label: 'Central de Relatórios', visible: true, order: 2 },
-      { id: 'cash_flow', label: 'Balanço Mensal', visible: true, order: 3 },
-      { id: 'receivables', label: 'A Receber (Vendas)', visible: true, order: 4 },
-      { id: 'stock_alerts', label: 'Alertas de Estoque', visible: true, order: 5 },
-      { id: 'customers', label: 'Relacionamento Clientes', visible: true, order: 6 },
-      { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 7 },
-      { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 8 },
-      { id: 'stock_value', label: 'Patrimônio em Estoque', visible: true, order: 9 },
-      { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 10 },
-      { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 11 },
-      { id: 'activity', label: 'Atividade Recente', visible: true, order: 12 },
-      { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 13 },
-      { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 14 },
+      { id: 'quick_reports', label: 'Relatórios Rápidos', visible: true, order: 3 },
+      { id: 'dashboard_rankings', label: 'Rankings de Performance', visible: true, order: 4 },
+      { id: 'cash_flow', label: 'Balanço Mensal', visible: true, order: 5 },
+      { id: 'receivables', label: 'A Receber (Vendas)', visible: true, order: 6 },
+      { id: 'stock_alerts', label: 'Alertas de Estoque', visible: true, order: 7 },
+      { id: 'customers', label: 'Relacionamento Clientes', visible: true, order: 8 },
+      { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 9 },
+      { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 10 },
+      { id: 'stock_value', label: 'Patrimônio em Estoque', visible: true, order: 11 },
+      { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 12 },
+      { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 13 },
+      { id: 'activity', label: 'Atividade Recente', visible: true, order: 14 },
+      { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 15 },
+      { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 16 },
     ]
   };
 
@@ -207,6 +210,18 @@ export default function App() {
     // Migration: remove legacy shortcuts card if exists
     if (config.cards && config.cards.find((c: any) => c.id === 'shortcuts')) {
       config.cards = config.cards.filter((c: any) => c.id !== 'shortcuts');
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+
+    // Migration: ensure quick_reports is present
+    if (config.cards && !config.cards.find((c: any) => c.id === 'quick_reports')) {
+      config.cards.push({ id: 'quick_reports', label: 'Relatórios Rápidos', visible: true, order: config.cards.length });
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+
+    // Migration: ensure dashboard_rankings is present
+    if (config.cards && !config.cards.find((c: any) => c.id === 'dashboard_rankings')) {
+      config.cards.push({ id: 'dashboard_rankings', label: 'Rankings de Performance', visible: true, order: config.cards.length });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
 
@@ -550,8 +565,8 @@ export default function App() {
     }
   };
 
-  const handleCancelSale = async (id: string) => {
-    console.log("handleCancelSale chamado para ID:", id);
+  const handleDeleteSale = async (id: string) => {
+    console.log("handleDeleteSale chamado para ID:", id);
     const sale = sales.find(s => s.id === id);
     if (!sale) {
       console.error("Venda não encontrada no estado local:", id);
@@ -560,8 +575,19 @@ export default function App() {
     }
 
     if (sale.status === SaleStatus.CANCELLED) {
-      alert("Esta venda já está cancelada.");
-      return;
+      // Se j est cancelada, estoque/financeiro j foram estornados.
+      // Podemos apenas excluir o registro.
+      try {
+        const uid = auth.currentUser?.uid;
+        if (!uid) return;
+        await firebaseService.deleteDocument("sales", id);
+        alert("Registro (já cancelado) excluído com sucesso.");
+        return;
+      } catch (e) {
+        console.error(e);
+        alert("Erro ao excluir registro cancelado.");
+        return;
+      }
     }
 
     try {
@@ -658,14 +684,14 @@ export default function App() {
           }
         }
 
-        // D. Atualizar Status para CANCELADO
-        transaction.update(salesRef, { status: SaleStatus.CANCELLED });
+        // D. Excluir o Registro
+        transaction.delete(salesRef);
       });
 
-      alert('Venda cancelada com sucesso! Estoque e financeiro estornados.');
+      alert('Registro excluído com sucesso! Estoque e financeiro estornados.');
     } catch (err: any) {
-      console.error("Erro ao cancelar venda:", err);
-      alert('Erro ao cancelar: ' + (err.message || err));
+      console.error("Erro ao excluir venda:", err);
+      alert('Erro ao excluir: ' + (err.message || err));
     }
   };
 
@@ -1108,6 +1134,7 @@ export default function App() {
             categories={categories}
             accounts={accounts}
             grids={grids}
+            people={people}
             onSave={async (purchase) => {
               try {
                 const prevPurchase = selectedPurchaseId ? purchases.find(p => p.id === selectedPurchaseId) : null;
@@ -1244,81 +1271,92 @@ export default function App() {
             accounts={accounts}
             onAdd={() => navigateTo(ViewType.SALE_FORM)}
             onEdit={(sale) => navigateTo(ViewType.SALE_FORM, sale.id)}
-            onDelete={handleCancelSale}
+            onDelete={handleDeleteSale}
             onCancelOnly={handleCancelOnlySale}
             onConvert={async (id) => {
               const sale = sales.find((s) => s.id === id);
-              if (sale) {
-                // Diminui estoque (Conversão)
-                for (const item of sale.items) {
-                  const product = products.find((p) => p.id === item.productId);
-                  if (product) {
-                    const variationIndex = product.variations.findIndex(
-                      (v) => v.id === item.variationId,
-                    );
-                    if (variationIndex !== -1) {
-                      const updatedProduct = { ...product };
-                      const variation = updatedProduct.variations[variationIndex];
+              if (!sale) return;
 
-                      const key = (product.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+              try {
+                const uid = auth.currentUser?.uid;
+                if (!uid) throw new Error("Usuário não autenticado");
 
-                      if (variation.stock[key] !== undefined) {
-                        variation.stock[key] -= item.quantity;
-                        if (variation.stock[key] < 0) variation.stock[key] = 0;
-                        await firebaseService.saveDocument("products", updatedProduct);
+                await firebaseService.runAtomic(async (transaction) => {
+                  const saleRef = doc(db, `users/${uid}/sales`, id);
+                  
+                  // 1. Update Sale Status
+                  const updatedSale = { 
+                    ...sale, 
+                    status: SaleStatus.SALE,
+                  };
+                  
+                  // Cleanup undefineds
+                  Object.keys(updatedSale).forEach(key => {
+                    if ((updatedSale as any)[key] === undefined) {
+                      delete (updatedSale as any)[key];
+                    }
+                  });
+
+                  transaction.set(saleRef, updatedSale);
+
+                  // 2. Deduct Inventory
+                  for (const item of sale.items) {
+                    const productRef = doc(db, `users/${uid}/products`, item.productId);
+                    const productDoc = await transaction.get(productRef);
+                    
+                    if (productDoc.exists()) {
+                      const productData = productDoc.data() as Product;
+                      const variations = [...productData.variations];
+                      const variationIndex = variations.findIndex(v => v.id === item.variationId);
+                      
+                      if (variationIndex !== -1) {
+                        const variation = { ...variations[variationIndex] };
+                        const key = (productData.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+                        
+                        if (variation.stock[key] !== undefined) {
+                          variation.stock[key] = Math.max(0, variation.stock[key] - item.quantity);
+                          variations[variationIndex] = variation;
+                          transaction.update(productRef, { variations });
+                        }
                       }
                     }
                   }
-                }
 
-                // If it was already marked as PAID, or if we decide it's PAID now
-                // Usually Conversion means it's finalized.
-                const updatedSale = { 
-                  ...sale, 
-                  status: SaleStatus.SALE,
-                };
-                
-                // Limpeza de campos undefined para evitar erro do Firestore
-                Object.keys(updatedSale).forEach(key => {
-                  if ((updatedSale as any)[key] === undefined) {
-                    delete (updatedSale as any)[key];
+                  // 3. Handle Financials if PAID
+                  if (updatedSale.paymentStatus === PaymentStatus.PAID) {
+                    const defaultAccountId = sale.accountId || accounts[0]?.id || "acc1";
+                    const accountRef = doc(db, `users/${uid}/accounts`, defaultAccountId);
+                    const accountDoc = await transaction.get(accountRef);
+
+                    // Create Transaction
+                    const transactionRef = doc(collection(db, `users/${uid}/transactions`));
+                    const newTransaction: Transaction = {
+                      id: transactionRef.id,
+                      type: TransactionType.INCOME,
+                      categoryId: "rev1", // Default Revenue category
+                      accountId: defaultAccountId,
+                      amount: sale.total,
+                      date: Date.now(),
+                      description: `Venda #${sale.orderNumber} (Conversão)`,
+                      status: "COMPLETED",
+                      relatedId: sale.id,
+                      contactId: sale.customerId,
+                      contactName: sale.customerName || people.find(p => p.id === sale.customerId)?.name,
+                    };
+                    transaction.set(transactionRef, newTransaction);
+
+                    // Update Account Balance
+                    if (accountDoc.exists()) {
+                      const accountData = accountDoc.data() as Account;
+                      transaction.update(accountRef, { balance: accountData.balance + sale.total });
+                    }
                   }
                 });
 
-                await firebaseService.saveDocument("sales", updatedSale);
-
-                if (updatedSale.paymentStatus === PaymentStatus.PAID) {
-                  // Movimenta financeiro
-                  const defaultAccount = sale.accountId || accounts[0]?.id || "acc1";
-                  const newTransaction: Omit<Transaction, "id"> = {
-                    type: TransactionType.INCOME,
-                    categoryId: "rev1",
-                    accountId: defaultAccount,
-                    amount: sale.total,
-                    date: Date.now(),
-                    description: `Venda #${sale.orderNumber} (Conversão)`,
-                    status: "COMPLETED",
-                    relatedId: sale.id,
-                    contactId: sale.customerId,
-                    contactName: sale.customerName || people.find(p => p.id === sale.customerId)?.name,
-                  };
-                  await firebaseService.saveDocument(
-                    "transactions",
-                    newTransaction,
-                  );
-
-                  // Atualiza saldo da conta
-                  const acc = accounts.find((a) => a.id === defaultAccount);
-                  if (acc) {
-                    await firebaseService.updateDocument(
-                      "accounts",
-                      defaultAccount,
-                      { balance: acc.balance + sale.total },
-                    );
-                  }
-                }
-
-                alert("Pedido convertido em venda com sucesso!");
+                alert("Orçamento confirmado como venda com sucesso!");
+              } catch (err: any) {
+                console.error("Conversion Error:", err);
+                alert("Erro ao converter orçamento: " + (err.message || err));
               }
             }}
             onUpdatePaymentStatus={async (id, newStatus) => {
@@ -1779,17 +1817,17 @@ export default function App() {
                     return;
                 }
 
-                firebaseService.updateDocument("accounts", fromId, {
+                firebaseService.updateDocument("accounts", from.id, {
                   balance: from.balance - amount,
                 });
-                firebaseService.updateDocument("accounts", toId, {
+                firebaseService.updateDocument("accounts", to.id, {
                   balance: to.balance + amount,
                 });
-
+ 
                 const txOut: Omit<Transaction, "id"> = {
                   type: TransactionType.EXPENSE,
                   categoryId: "exp1",
-                  accountId: fromId,
+                  accountId: from.id,
                   amount,
                   date: Date.now(),
                   description: `Transferência para ${to.name}`,
@@ -1798,7 +1836,7 @@ export default function App() {
                 const txIn: Omit<Transaction, "id"> = {
                   type: TransactionType.INCOME,
                   categoryId: "rev3",
-                  accountId: toId,
+                  accountId: to.id,
                   amount,
                   date: Date.now(),
                   description: `Transferência de ${from.name}`,
@@ -1970,7 +2008,7 @@ export default function App() {
                 throw err;
               }
             }}
-            onDelete={handleCancelSale}
+            onDelete={handleDeleteSale}
             onCancelOnly={handleCancelOnlySale}
             onCancel={goBack}
             isDarkMode={isDarkMode}
@@ -2470,7 +2508,7 @@ export default function App() {
         <TabItem
           icon={<Settings size={22} />}
           label="MAIS"
-          active={activeTab === "settings" || activeTab === "products"}
+          active={activeTab === "settings"}
           onClick={() => resetTo(ViewType.SETTINGS)}
           colorClass="text-slate-500 dark:text-slate-400"
         />

@@ -64,8 +64,9 @@ const AreaInput = ({ size, value, onChange, isDarkMode }: any) => {
 
   return (
     <div className="flex flex-col gap-2 items-center">
-      <span className="text-xs font-black text-slate-400 uppercase">{size}</span>
+      <label htmlFor={`area-input-${size}`} className="text-xs font-black text-slate-400 uppercase">{size}</label>
       <input 
+        id={`area-input-${size}`}
         type="text"
         value={localValue}
         onChange={(e) => {
@@ -112,6 +113,8 @@ interface ProductionConfigViewProps {
   onNavigate?: (view: ViewType) => void;
   onAddProduct?: () => void;
   onNavigateGrids?: () => void;
+  people?: Person[];
+  colors?: ColorValue[];
 }
 
 const SECTOR_COLORS = [
@@ -1165,7 +1168,7 @@ function GenericConfigList({
                           <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{item.metadata?.capacity || 0} PARES {item.metadata?.mode !== 'FREE' && `• ${(item.metadata?.sizes || []).length} TAMANHOS`}</p>
                           {item.metadata?.mode !== 'FREE' && (item.metadata?.sizes || []).length > 0 && (
                             <div className={`p-3 rounded-2xl flex flex-wrap gap-x-4 gap-y-2 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50/50'}`}>
-                              {item.metadata?.sizes.map((size: string) => (
+                              {(item.metadata?.sizes || []).map((size: string) => (
                                 <div key={size} className="flex items-center gap-1.5">
                                   <span className="text-[10px] font-black text-slate-400">{size}</span>
                                   <span className={`text-[10px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.metadata?.sizeQuantities?.[size] || 0}</span>
@@ -1453,7 +1456,7 @@ function GenericConfigList({
                         <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Matriz de Área (M²)</h4>
                       </div>
                       <div className="grid grid-cols-4 gap-4">
-                        {editingItem?.metadata?.sizes.map(size => (
+                        {(editingItem?.metadata?.sizes || []).map(size => (
                           <AreaInput 
                             key={size}
                             size={size}
@@ -1484,7 +1487,7 @@ function GenericConfigList({
                  <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Padrão *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: FEMININO 33-40" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
                  <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Grade</label><div className={`flex gap-2 p-1.5 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FIXED' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(!editingItem?.metadata?.mode || editingItem?.metadata?.mode === 'FIXED') ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Fixa</button><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FREE' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingItem?.metadata?.mode === 'FREE' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Livre</button></div></div>
                  <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Capacidade Total (Pares) *</label><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
-                 {editingItem?.metadata?.mode !== 'FREE' && (<div className="flex flex-col gap-6"><div className="flex flex-col gap-4"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">Adicionar Numerações</label><div className="flex gap-2"><input type="text" value={newSize} onChange={(e) => setNewSize(e.target.value)} placeholder="Ex: 37" className={`flex-1 px-6 py-4 rounded-2xl font-bold outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSize())} /><button type="button" onClick={addSize} className="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"><Plus size={24} strokeWidth={3} /></button></div><div className="flex flex-wrap gap-2">{(editingItem?.metadata?.sizes || []).map(size => (<div key={size} className={`px-4 py-2 rounded-xl flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}><span className="text-xs font-black">{size}</span><button type="button" onClick={() => removeSize(size)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={14} /></button></div>))}</div></div>{(editingItem?.metadata?.sizes || []).length > 0 && (<div className={`p-6 rounded-[2.5rem] flex flex-col gap-6 ${isDarkMode ? 'bg-slate-800/40' : 'bg-slate-50/50'}`}><div className="flex items-center justify-between px-2"><h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Distribuição da Grade</h4><span className={`text-[10px] font-black uppercase tracking-widest ${Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0) === (editingItem?.metadata?.capacity || 0) ? 'text-emerald-500' : 'text-red-500'}`}>Total: {Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0)} / {editingItem?.metadata?.capacity || 0}</span></div><div className="grid grid-cols-4 gap-4">{editingItem?.metadata?.sizes.map(size => (<div key={size} className="flex flex-col gap-2 items-center"><span className="text-[9px] font-black text-slate-400 uppercase">{size}</span><input type="number" value={editingItem?.metadata?.sizeQuantities?.[size] || ''} onChange={(e) => { const qty = Number(e.target.value); setEditingItem(prev => ({ ...prev!, metadata: { ...prev!.metadata, sizeQuantities: { ...prev!.metadata!.sizeQuantities, [size]: qty } } })); }} placeholder="0" className={`w-full px-2 py-3 rounded-xl font-black text-xs text-center outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} /></div>))}</div></div>)}</div>)}
+                 {editingItem?.metadata?.mode !== 'FREE' && (<div className="flex flex-col gap-6"><div className="flex flex-col gap-4"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">Adicionar Numerações</label><div className="flex gap-2"><input type="text" value={newSize} onChange={(e) => setNewSize(e.target.value)} placeholder="Ex: 37" className={`flex-1 px-6 py-4 rounded-2xl font-bold outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addSize())} /><button type="button" onClick={addSize} className="w-14 h-14 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"><Plus size={24} strokeWidth={3} /></button></div><div className="flex flex-wrap gap-2">{(editingItem?.metadata?.sizes || []).map(size => (<div key={size} className={`px-4 py-2 rounded-xl flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}><span className="text-xs font-black">{size}</span><button type="button" onClick={() => removeSize(size)} className="text-slate-300 hover:text-red-500 transition-colors"><X size={14} /></button></div>))}</div></div>{(editingItem?.metadata?.sizes || []).length > 0 && (<div className={`p-6 rounded-[2.5rem] flex flex-col gap-6 ${isDarkMode ? 'bg-slate-800/40' : 'bg-slate-50/50'}`}><div className="flex items-center justify-between px-2"><h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Distribuição da Grade</h4><span className={`text-[10px] font-black uppercase tracking-widest ${Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0) === (editingItem?.metadata?.capacity || 0) ? 'text-emerald-500' : 'text-red-500'}`}>Total: {Object.values(editingItem?.metadata?.sizeQuantities || {}).reduce((a: number, b) => a + (Number(b) || 0), 0)} / {editingItem?.metadata?.capacity || 0}</span></div><div className="grid grid-cols-4 gap-4">{(editingItem?.metadata?.sizes || []).map(size => (<div key={size} className="flex flex-col gap-2 items-center"><span className="text-[9px] font-black text-slate-400 uppercase">{size}</span><input type="number" value={editingItem?.metadata?.sizeQuantities?.[size] || ''} onChange={(e) => { const qty = Number(e.target.value); setEditingItem(prev => ({ ...prev!, metadata: { ...prev!.metadata, sizeQuantities: { ...prev!.metadata!.sizeQuantities, [size]: qty } } })); }} placeholder="0" className={`w-full px-2 py-3 rounded-xl font-black text-xs text-center outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} /></div>))}</div></div>)}</div>)}
                </div>
             ) : (
                <div className="flex flex-col gap-6">
@@ -1506,7 +1509,8 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: {
   flowTags: FlowTag[];
   isDarkMode: boolean; 
   onEdit: () => void;
-  onDelete: () => void;
+  onDelete: () => void | Promise<void>;
+  key?: React.Key;
 }) {
   const controls = useDragControls();
   const sectorTags = flowTags.filter(t => sector.flowTagIds?.includes(t.id));
@@ -1579,9 +1583,10 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people }: 
   item: ProductionConfigItem, 
   isDarkMode: boolean, 
   onEdit: () => void, 
-  onDelete: () => void,
+  onDelete: () => void | Promise<void>,
   flowTags: FlowTag[],
-  people: any[]
+  people: any[],
+  key?: React.Key
 }) {
   const flowTag = flowTags.find(t => t.id === item.metadata?.flowTagId);
   const supplier = people.find(p => p.id === item.metadata?.supplierId);
@@ -1655,10 +1660,11 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
   item: ProductionConfigItem, 
   isDarkMode: boolean, 
   onEdit: () => void, 
-  onDelete: () => void,
+  onDelete: () => void | Promise<void>,
   flowTags: FlowTag[],
   colors: ColorValue[],
-  productionConfigs: ProductionConfigItem[]
+  productionConfigs: ProductionConfigItem[],
+  key?: React.Key
 }) {
   const flowTag = flowTags.find(t => t.id === item.metadata?.flowTagId);
   const selectedColors = item.metadata?.colorVariations || [];

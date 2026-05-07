@@ -3,6 +3,7 @@ import { X, Copy, MessageCircle, Share2, FileText, CheckCircle2 } from 'lucide-r
 import { format } from 'date-fns';
 import { Person, Sale } from '../types';
 import { jsPDF } from 'jspdf';
+import { sharePDF } from '../utils/pdfExport';
 
 interface ConsolidatedMessageModalProps {
   isOpen: boolean;
@@ -69,6 +70,10 @@ export default function ConsolidatedMessageModal({
 
   const handleWhatsApp = () => {
     const cleanPhone = (customer?.phone || '').replace(/\D/g, '');
+    if (!cleanPhone) {
+      alert('Não é possível abrir o WhatsApp: Cliente não possui telefone cadastrado.');
+      return;
+    }
     const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(messagePreview)}`;
     window.open(url, '_blank');
   };
@@ -102,7 +107,7 @@ export default function ConsolidatedMessageModal({
     doc.setFontSize(14);
     doc.text(`Saldo Total Pendente: R$ ${totalBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 14, finalY + 15);
 
-    doc.save(`extrato_${customer?.name || 'cliente'}.pdf`);
+    sharePDF(doc, `extrato_${customer?.name || 'cliente'}.pdf`);
   };
 
   return (
@@ -122,6 +127,7 @@ export default function ConsolidatedMessageModal({
             </div>
             <button 
               onClick={onClose}
+              title="Fechar"
               className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 transition-colors"
             >
               <X size={20} />
@@ -183,7 +189,7 @@ export default function ConsolidatedMessageModal({
               className="flex-1 py-4 px-6 rounded-2xl bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400 font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-rose-100 transition-all active:scale-95"
             >
               <Share2 size={16} />
-              Exportar PDF
+              Compartilhar PDF
             </button>
             <button
               onClick={handleCopy}

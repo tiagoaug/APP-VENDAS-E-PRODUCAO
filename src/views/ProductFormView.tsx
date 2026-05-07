@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
-import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, TechSheetItem, ComponentConsumption, ComponentCategory, FlowTag } from '../types';
+import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, TechSheetItem, ComponentConsumption, ComponentCategory, FlowTag, Sector } from '../types';
 import {
   Save, Plus, Trash2, Camera, ChevronRight, ChevronLeft, Package, User,
   ToggleLeft as Toggle, Calendar, DollarSign, Tag, Calculator, Info,
@@ -39,12 +39,12 @@ export default function ProductFormView({ productId, products, grids, suppliers,
 
   const [name, setName] = useState(existingProduct?.name || '');
   const [reference, setReference] = useState(existingProduct?.reference || '');
-  const [supplierId, setSupplierId] = useState(existingProduct?.supplierId || suppliers[0]?.id || '');
-  const [categoryId, setCategoryId] = useState(existingProduct?.categoryId || productCategories[0]?.id || '');
+  const [supplierId, setSupplierId] = useState(existingProduct?.supplierId || suppliers?.[0]?.id || '');
+  const [categoryId, setCategoryId] = useState(existingProduct?.categoryId || productCategories?.[0]?.id || '');
   const formaGrids = useMemo(() => grids.filter(g => g.type === GridType.FORMA || !g.type), [grids]);
 
-  const [defaultGridId, setDefaultGridId] = useState(existingProduct?.defaultGridId || formaGrids[0]?.id || grids[0]?.id || '');
-  const [productionGridId, setProductionGridId] = useState(existingProduct?.productionGridId || formaGrids[0]?.id || grids[0]?.id || '');
+  const [defaultGridId, setDefaultGridId] = useState(existingProduct?.defaultGridId || formaGrids?.[0]?.id || grids?.[0]?.id || '');
+  const [productionGridId, setProductionGridId] = useState(existingProduct?.productionGridId || formaGrids?.[0]?.id || grids?.[0]?.id || '');
   const [moldId, setMoldId] = useState(existingProduct?.moldId || '');
   const [soleMapping, setSoleMapping] = useState<{ [size: string]: string }>(existingProduct?.soleMapping || {});
   const [toolMapping, setToolMapping] = useState<{ [size: string]: string }>(existingProduct?.toolMapping || {});
@@ -359,9 +359,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* Cor da Variante */}
                         <div className="flex flex-col gap-3">
-                          <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Cor do Cabedal / Variante</label>
+                          <label htmlFor="variant-color-select" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Cor do Cabedal / Variante</label>
                           <div className="relative group">
                             <select
+                              id="variant-color-select"
                               className={`w-full appearance-none border-2 rounded-2xl px-6 py-4 pl-12 text-sm font-black transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
                               value={v.colorName}
                               onChange={(e) => {
@@ -392,9 +393,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
 
                         {/* Cor Sincronizada (Sola) */}
                         <div className="flex flex-col gap-3">
-                          <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Cor do Solado (Matriz)</label>
+                          <label htmlFor="sole-color-select" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Cor do Solado (Matriz)</label>
                           <div className="relative group">
                             <select
+                              id="sole-color-select"
                               className={`w-full appearance-none border-2 rounded-2xl px-6 py-4 pl-12 text-sm font-black transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
                               value={v.soleColorId || ''}
                               onChange={(e) => updateVariation(activeVariationIndex, { soleColorId: e.target.value })}
@@ -491,8 +493,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                             </div>
                             <div className="flex flex-col gap-3">
                               <div className="flex flex-col gap-1">
-                                <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Venda</span>
+                                <label htmlFor={`sale-price-${size}`} className="text-[8px] font-black uppercase tracking-widest text-slate-400">Venda</label>
                                 <input
+                                  id={`sale-price-${size}`}
                                   type="number"
                                   className="w-full bg-transparent border-none p-0 text-sm font-black text-emerald-600 dark:text-emerald-400 outline-none"
                                   value={v.sizePrices?.[size]?.sale || salePrice}
@@ -507,8 +510,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                 />
                               </div>
                               <div className="flex flex-col gap-1">
-                                <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Estoque</span>
+                                <label htmlFor={`stock-${size}`} className="text-[8px] font-black uppercase tracking-widest text-slate-400">Estoque</label>
                                 <input
+                                  id={`stock-${size}`}
                                   type="number"
                                   className="w-full bg-transparent border-none p-0 text-sm font-black text-slate-900 dark:text-white outline-none"
                                   value={v.stock[size] || 0}
@@ -585,6 +589,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                       setConsumptionCategory('CUTTING_PIECE');
                                       setIsConsumptionModalOpen(true);
                                     }}
+                                    title="Configurações"
                                     className="p-2 text-slate-400 hover:text-indigo-500"
                                   >
                                     <Settings size={16} />
@@ -594,6 +599,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                       const newC = (v.consumptions || []).filter(c => c.id !== item.id);
                                       updateVariation(activeVariationIndex, { consumptions: newC });
                                     }}
+                                    title="Excluir"
                                     className="p-2 text-slate-400 hover:text-rose-500"
                                   >
                                     <Trash2 size={16} />
@@ -668,6 +674,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                 });
                                 setIsConsumptionModalOpen(true);
                               }}
+                              title={`Adicionar ${group.label}`}
                               className="p-2 bg-slate-50 dark:bg-slate-800 rounded-xl text-slate-400 hover:text-indigo-600"
                             >
                               <Plus size={16} />
@@ -682,8 +689,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                   <div className="flex items-center justify-between">
                                     <p className="text-[10px] font-black uppercase tracking-tight text-slate-900 dark:text-white truncate max-w-[120px]">{item.name || mat?.name}</p>
                                     <div className="flex items-center gap-1">
-                                      <button onClick={() => { setEditingConsumption(item); setConsumptionCategory(group.cat); setIsConsumptionModalOpen(true); }} className="p-1 text-slate-300 hover:text-indigo-500"><Settings size={14} /></button>
-                                      <button onClick={() => { const newC = (v.consumptions || []).filter(c => c.id !== item.id); updateVariation(activeVariationIndex, { consumptions: newC }); }} className="p-1 text-slate-300 hover:text-rose-500"><Trash2 size={14} /></button>
+                                      <button onClick={() => { setEditingConsumption(item); setConsumptionCategory(group.cat); setIsConsumptionModalOpen(true); }} title="Configurações" className="p-1 text-slate-300 hover:text-indigo-500"><Settings size={14} /></button>
+                                      <button onClick={() => { const newC = (v.consumptions || []).filter(c => c.id !== item.id); updateVariation(activeVariationIndex, { consumptions: newC }); }} title="Excluir" className="p-1 text-slate-300 hover:text-rose-500"><Trash2 size={14} /></button>
                                     </div>
                                   </div>
                                    <div className="flex flex-col pt-2 border-t border-slate-200/50 dark:border-slate-800/50">

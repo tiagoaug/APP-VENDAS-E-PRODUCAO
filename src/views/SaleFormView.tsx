@@ -2,9 +2,10 @@ import { useState, useMemo, useEffect } from 'react';
 import { Sale, Product, SaleType, SaleItem, SalePayment, Grid, Person, PaymentMethod, SaleStatus, PaymentTerm, Account, ProductStatus, PaymentStatus } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import ComboBox from '../components/ComboBox';
-import { Save, Plus, Trash2, Tag, User, CreditCard, Info, Box, MessageSquare, AlertCircle, Hash, Percent, Receipt, TrendingUp, Wallet, Package, ChevronDown, ChevronUp, Search, X, CheckCircle2, Minus, FileText, Copy, Share, Calendar, Clock, RotateCcw, Ban } from 'lucide-react';
+import { Save, Plus, Trash2, Tag, User, CreditCard, Info, Box, MessageSquare, AlertCircle, Hash, Percent, Receipt, TrendingUp, Wallet, Package, ChevronDown, ChevronUp, Search, X, CheckCircle2, Minus, FileText, Copy, Share, Share2, Calendar, Clock, RotateCcw, Ban, ShoppingCart, Users } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { sharePDF } from '../utils/pdfExport';
 
 interface SaleBlock {
   id: string;
@@ -101,7 +102,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     const existing = saleId ? sales.find(s => s.id === saleId) : null;
     if (existing?.accountId) return existing.accountId;
     const defaultAcc = accounts.find(a => a.isDefault);
-    return defaultAcc?.id || accounts[0]?.id || '';
+    return defaultAcc?.id || accounts?.[0]?.id || '';
   });
   const [discount, setDiscount] = useState(0);
   const [dueDate, setDueDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -149,7 +150,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       amount: partialPaymentAmount,
       date: Date.now(),
       paymentMethodId: partialPaymentMethodId || paymentMethodId || paymentMethods[0]?.id || '',
-      accountId: partialPaymentAccountId || accountId || accounts[0]?.id || '',
+      accountId: partialPaymentAccountId || accountId || accounts?.[0]?.id || '',
       note: partialPaymentNote
     };
 
@@ -185,6 +186,20 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       setWhatsappMessage(generateDefaultMessage());
     }
   }, [blocks, discount, total, customerId, paymentMethodId, isMessageManual, showWhatsAppModal]);
+
+  // Auto-populate seller when customer changes
+  useEffect(() => {
+    if (customerId && !sellerId) {
+      const customer = people.find(p => p.id === customerId);
+      if (customer?.associatedSellerIds && customer.associatedSellerIds.length > 0) {
+        // Find the first valid seller from the associated IDs
+        const firstSeller = people.find(p => p.id === (customer.associatedSellerIds?.[0]) && p.isSeller);
+        if (firstSeller) {
+          setSellerId(firstSeller.id);
+        }
+      }
+    }
+  }, [customerId, people, sellerId]);
 
   const addBlock = (productId: string) => {
     const p = products.find(prod => prod.id === productId);
@@ -285,7 +300,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       orderNumber,
       date: existingSale ? existingSale.date : Date.now(),
       customerName: customer?.name || 'Venda Avulsa',
-      sellerName: seller?.name || '',
+      sellerName: seller?.name || sellerId || '',
       sellerId: sellerId || '',
       items,
       subtotal,
@@ -524,7 +539,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     doc.setFontSize(7);
     doc.text('Documento gerado para fins informativos e conferência.', 105, 285, { align: 'center' });
 
-    doc.save(`${statusText}_#${orderNumber}_${customer?.name || 'Venda'}.pdf`);
+    sharePDF(doc, `${statusText}_#${orderNumber}_${customer?.name || 'Venda'}.pdf`);
   };
 
   return (
@@ -628,14 +643,59 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
           </div>
 
           <div className="relative">
-            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Vendedor</label>
+            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Vendedor / Responsável</label>
             <ComboBox 
-              options={people.filter(p => p.isSeller).map(p => ({ id: p.id, name: p.name }))}
+              options={[
+                ...people.filter(p => p.isSeller).map(p => ({ id: p.id, name: p.name })),
+                ...(people.find(p => p.id === customerId)?.internalContacts?.map(c => ({ id: c.name, name: c.name })) || [])
+              ]}
               value={sellerId}
               onChange={setSellerId}
               placeholder="SELECIONE O VENDEDOR"
               isDarkMode={isDarkMode}
+              icon={<Users size={18} />}
             />
+
+            {/* Badges de Sugestão do Cliente */}
+            {customerId && (
+              <div className="mt-3 flex flex-wrap gap-2 px-1">
+                {(() => {
+                  const c = people.find(p => p.id === customerId);
+                  if (!c) return null;
+                  
+                  const linkedSellers = people.filter(p => 
+                    (c.associatedSellerIds?.includes(p.id))
+                  );
+
+                  return (
+                    <>
+                      {linkedSellers.map(s => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          onClick={() => setSellerId(s.id)}
+                          className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 transition-all active:scale-95 ${sellerId === s.id ? 'bg-[#7c3aed] border-[#7c3aed] text-white shadow-lg' : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600')}`}
+                        >
+                          <Users size={12} />
+                          <span className="text-[10px] font-black uppercase tracking-tight">{s.name}</span>
+                        </button>
+                      ))}
+                      {c.internalContacts?.map((ic, idx) => (
+                        <button
+                          key={`int-${idx}`}
+                          type="button"
+                          onClick={() => setSellerId(ic.name)}
+                          className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 transition-all active:scale-95 ${sellerId === ic.name ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg' : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600')}`}
+                        >
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          <span className="text-[10px] font-black uppercase tracking-tight">{ic.name}</span>
+                        </button>
+                      ))}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -1176,7 +1236,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                  onClick={handleExportPDF}
                  className="flex-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 py-5 rounded-[1.5rem] flex items-center justify-center gap-3 font-black uppercase tracking-widest text-[11px] transition-all active:scale-95 border border-slate-200 dark:border-slate-700"
                >
-                 <FileText size={20} strokeWidth={2.5} /> Baixar PDF
+                 <Share2 size={20} strokeWidth={2.5} /> Compartilhar PDF
                </button>
                <button 
                  onClick={sendWhatsApp}

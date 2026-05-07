@@ -52,6 +52,7 @@ export type ComponentConsumption = {
     serviceId: string; // Link to FlowTag subcategory
     cost: number;
   }[];
+  toolMapping?: { [size: string]: string };
 };
 
 export type Variation = {
@@ -66,6 +67,7 @@ export type Variation = {
   techSheet?: TechSheetItem[]; // Keep for legacy
   consumptions?: ComponentConsumption[];
   soleColorId?: string;
+  soleMapping?: { [size: string]: string };
   subRef?: string;
   sku?: string;
 };
@@ -211,15 +213,20 @@ export type Sale = {
 export type Person = {
   id: string;
   name: string;
+  document?: string;
   email?: string;
   phone?: string;
   isCustomer: boolean;
   isSupplier: boolean;
   isPersonal?: boolean;
   avatar?: string;
-  document?: string;
-  credit?: number; // Haver/Crédito do cliente
   isSeller?: boolean;
+  isBuyer?: boolean;
+  associatedSellerIds?: string[];
+  associatedContactIds?: string[]; // Para compradores internos e outros contatos
+  observations?: string;
+  internalContacts?: { name: string; role: 'Vendedor' | 'Comprador' }[];
+  credit?: number;
 };
 
 export enum TransactionType {

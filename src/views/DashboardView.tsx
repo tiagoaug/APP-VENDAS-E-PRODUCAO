@@ -1,48 +1,14 @@
 import { useState, useMemo, ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Sale, Purchase, Product, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig } from "../types";
-import {
-  TrendingUp,
-  TrendingDown,
-  Package,
-  ShoppingBag,
-  History,
-  CreditCard,
-  CheckCircle2,
-  Clock,
-  DollarSign,
-  Wallet,
-  Boxes,
-  ChevronDown,
-  ChevronUp,
-  Search,
-  Filter,
-  X,
-  RefreshCcw,
-  AlertCircle,
-  Hash,
-  Calendar,
-  Copy,
-  FileDown,
-  Clipboard,
-  Landmark,
-  User,
-  Factory,
-  ShoppingCart,
-  Plus,
-  Database,
-  Grid3X3,
-  Footprints,
-  Layers,
-  ChevronRight,
-  BarChart3
-} from "lucide-react";
+import { Share2, TrendingUp, TrendingDown, Package, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import { ProductionScreenType } from "../types";
+import { sharePDF } from "../utils/pdfExport";
 
 interface DashboardViewProps {
   sales: Sale[];
@@ -133,7 +99,7 @@ export default function DashboardView({
     'OVERDUE': { label: 'VENCIDO', color: 'text-rose-500' }
   };
 
-  const downloadChecksPDF = () => {
+  const shareChecksPDF = async () => {
     const doc = new jsPDF();
     
     doc.setFontSize(22);
@@ -161,7 +127,8 @@ export default function DashboardView({
       styles: { fontSize: 8, cellPadding: 3 }
     });
 
-    doc.save(`relatorio_cheques_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`);
+    const fileName = `relatorio_cheques_${format(new Date(), 'yyyyMMdd_HHmm')}.pdf`;
+    await sharePDF(doc, fileName);
   };
 
   const suppliersWithDebts = useMemo(() => {
@@ -200,8 +167,9 @@ export default function DashboardView({
 
         const totalPaid = (p.paymentHistory || []).reduce((acc, ph) => acc + ph.amount, 0);
         const debt = p.total - totalPaid;
-        const matchesSearch = people.find(person => person.id === p.supplierId)?.name.toLowerCase().includes(supplierDebtsSearch.toLowerCase()) || 
-                             p.batchNumber?.toLowerCase().includes(supplierDebtsSearch.toLowerCase());
+        const supplier = people.find(person => person.id === p.supplierId);
+        const matchesSearch = (supplier?.name?.toLowerCase().includes(supplierDebtsSearch.toLowerCase()) || false) || 
+                             (p.batchNumber?.toLowerCase().includes(supplierDebtsSearch.toLowerCase()) || false);
         return debt > 0.01 && matchesSearch;
       })
       .map(p => ({
@@ -259,9 +227,9 @@ export default function DashboardView({
       .reduce((acc, t) => acc + t.amount, 0);
 
     const lowStockProducts = products.filter(p => {
-      return p.variations.some(
+      return (p.variations || []).some(
         (v) =>
-          Object.values(v.stock).reduce((sum, s) => sum + s, 0) < (v.minStock || 0),
+          Object.values(v.stock || {}).reduce((sum, s) => sum + (Number(s) || 0), 0) < (v.minStock || 0),
       );
     });
 
@@ -269,7 +237,7 @@ export default function DashboardView({
 
     const stockSummary = products.reduce((acc, p) => {
       let totalQty = 0;
-      p.variations.forEach(v => {
+      (p.variations || []).forEach(v => {
         const qty = Object.values(v.stock || {}).reduce((sum, s) => sum + Number(s || 0), 0);
         totalQty += qty;
         
@@ -494,6 +462,35 @@ export default function DashboardView({
     };
   }, [purchases, people, categories, debtSupplierFilter, debtCategoryFilter, debtStatusFilter, debtStartDate, debtEndDate]);
 
+  const topRankings = useMemo(() => {
+    // Top Customers
+    const customerTotals: Record<string, { name: string, total: number }> = {};
+    sales.filter(s => s.status === SaleStatus.SALE).forEach(s => {
+      const key = s.customerId || 'anon';
+      if (!customerTotals[key]) customerTotals[key] = { name: s.customerName || 'Consumidor', total: 0 };
+      customerTotals[key].total += s.total;
+    });
+    const topCustomers = Object.values(customerTotals)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 3);
+
+    // Top Products
+    const productQty: Record<string, { name: string, qty: number }> = {};
+    sales.filter(s => s.status === SaleStatus.SALE).forEach(s => {
+      (s.items || []).forEach(item => {
+        const product = products.find(p => p.id === item.productId);
+        const name = product ? product.name : 'Produto';
+        if (!productQty[item.productId]) productQty[item.productId] = { name, qty: 0 };
+        productQty[item.productId].qty += item.quantity;
+      });
+    });
+    const topProducts = Object.values(productQty)
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 3);
+
+    return { topCustomers, topProducts };
+  }, [sales, products]);
+
   const sortedCards = useMemo(() => {
     return [...dashboardConfig.cards].sort((a, b) => a.order - b.order);
   }, [dashboardConfig]);
@@ -558,6 +555,75 @@ export default function DashboardView({
               </div>
             );
 
+          case "quick_reports":
+            return (
+              <div key="quick_reports" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-6 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Relatórios Rápidos</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">Indicadores Principais</p>
+                  </div>
+                  <div className={`p-2.5 rounded-xl ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
+                    <Grid3X3 size={20} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    onClick={() => onNavigate(ViewType.REPORT_DETAILED, "ventas-periodo")}
+                    className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all active:scale-[0.97] text-left ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50 hover:bg-indigo-900/10' : 'bg-slate-50/50 border-slate-100 hover:bg-indigo-50'}`}
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                      <TrendingUp size={16} strokeWidth={3} />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Vendas (Mês)</p>
+                      <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>R$ {stats.monthlyIncome.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                    </div>
+                  </button>
+
+                  <button 
+                    onClick={() => onNavigate(ViewType.REPORT_DETAILED, "desempenho-financeiro")}
+                    className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all active:scale-[0.97] text-left ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50 hover:bg-emerald-900/10' : 'bg-slate-50/50 border-slate-100 hover:bg-emerald-50'}`}
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                      <DollarSign size={16} strokeWidth={3} />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Lucro (Mês)</p>
+                      <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>R$ {(stats.monthlyIncome - stats.monthlyExpenses).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                    </div>
+                  </button>
+
+                  <button 
+                    onClick={() => onNavigate(ViewType.REPORT_DETAILED, "informacao-estoque")}
+                    className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all active:scale-[0.97] text-left ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50 hover:bg-amber-900/10' : 'bg-slate-50/50 border-slate-100 hover:bg-amber-50'}`}
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/20">
+                      <Package size={16} strokeWidth={3} />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Baixo Estoque</p>
+                      <p className={`text-xs font-black truncate ${stats.lowStockAlerts > 0 ? 'text-amber-500' : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>{stats.lowStockAlerts} itens</p>
+                    </div>
+                  </button>
+
+                  <button 
+                    onClick={() => onNavigate(ViewType.REPORT_DETAILED, "clientes-mais-compram")}
+                    className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all active:scale-[0.97] text-left ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50 hover:bg-purple-900/10' : 'bg-slate-50/50 border-slate-100 hover:bg-purple-50'}`}
+                  >
+                    <div className="w-8 h-8 rounded-xl bg-purple-500 text-white flex items-center justify-center shadow-lg shadow-purple-500/20">
+                      <Users size={16} strokeWidth={3} />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Ranking</p>
+                      <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Top Clientes</p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            );
+
           case "report_center":
             return (
               <div key="report_center" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-6 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
@@ -600,6 +666,63 @@ export default function DashboardView({
                   <span className="text-[10px] font-black uppercase tracking-[0.2em]">Ver todos os relatórios</span>
                   <ChevronRight size={14} strokeWidth={3} />
                 </button>
+              </div>
+            );
+
+          case "dashboard_rankings":
+            return (
+              <div key="dashboard_rankings" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-6 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Rankings de Performance</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">Destaques do Negócio</p>
+                  </div>
+                  <div className={`p-2.5 rounded-xl ${isDarkMode ? 'bg-slate-800 text-amber-400' : 'bg-amber-50 text-amber-500'}`}>
+                    <TrendingUp size={20} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  {/* Top Customers */}
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Top Clientes (Venda)</p>
+                      <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800 ml-4" />
+                    </div>
+                    <div className="flex flex-col gap-3">
+                      {topRankings.topCustomers.map((c, i) => (
+                        <div key={`rank-cust-${i}`} className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black ${i === 0 ? 'bg-amber-500 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-slate-100 text-slate-400')}`}>{i + 1}</span>
+                            <span className={`text-[11px] font-bold uppercase truncate max-w-[120px] ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{c.name}</span>
+                          </div>
+                          <span className="text-[10px] font-black text-indigo-500">R$ {c.total.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                        </div>
+                      ))}
+                      {topRankings.topCustomers.length === 0 && <p className="text-[10px] text-slate-400 italic">Sem dados de vendas.</p>}
+                    </div>
+                  </div>
+
+                  {/* Top Products */}
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Top Produtos (Qtd)</p>
+                      <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800 ml-4" />
+                    </div>
+                    <div className="flex flex-col gap-3">
+                      {topRankings.topProducts.map((p, i) => (
+                        <div key={`rank-prod-${i}`} className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black ${i === 0 ? 'bg-indigo-500 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-slate-100 text-slate-400')}`}>{i + 1}</span>
+                            <span className={`text-[11px] font-bold uppercase truncate max-w-[120px] ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{p.name}</span>
+                          </div>
+                          <span className="text-[10px] font-black text-emerald-500">{p.qty} un.</span>
+                        </div>
+                      ))}
+                      {topRankings.topProducts.length === 0 && <p className="text-[10px] text-slate-400 italic">Sem dados de estoque.</p>}
+                    </div>
+                  </div>
+                </div>
               </div>
             );
 
@@ -675,19 +798,19 @@ export default function DashboardView({
                   />
                 </div>
                 <div className="h-[200px] overflow-y-auto space-y-2 pr-1 no-scrollbar">
-                  {stats.lowStockProducts.filter(p => p.name.toLowerCase().includes(lowStockSearch.toLowerCase())).map((product) => (
-                    product.variations
-                      .filter(v => Object.values(v.stock).reduce((sum: number, s: any) => sum + Number(s || 0), 0) < (v.minStock || 0))
+                  {(stats.lowStockProducts || []).filter(p => p.name?.toLowerCase().includes(lowStockSearch.toLowerCase())).map((product) => (
+                    (product.variations || [])
+                      .filter(v => Object.values(v.stock || {}).reduce((sum: number, s: any) => sum + Number(s || 0), 0) < (v.minStock || 0))
                       .map((variation, vIdx) => (
                         <div key={`${product.id}-${vIdx}`} className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
                           <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{product.name}</p>
                           <p className="text-[9px] text-slate-500 mt-0.5">
-                            Cor: {variation.colorName || 'Padrão'} | Qtd: <span className="text-rose-500 font-bold">{Object.values(variation.stock).reduce((sum: number, s: any) => sum + Number(s || 0), 0)}</span>
+                            Cor: {variation.colorName || 'Padrão'} | Qtd: <span className="text-rose-500 font-bold">{Object.values(variation.stock || {}).reduce((sum: number, s: any) => sum + Number(s || 0), 0)}</span>
                           </p>
                         </div>
                       ))
                   ))}
-                  {stats.lowStockProducts.filter(p => p.name.toLowerCase().includes(lowStockSearch.toLowerCase())).flatMap(p => p.variations.filter(v => Object.values(v.stock).reduce((sum: number, s: any) => sum + Number(s || 0), 0) < (v.minStock || 0))).length === 0 && (
+                  {(stats.lowStockProducts || []).filter(p => (p.name || '').toLowerCase().includes(lowStockSearch.toLowerCase())).flatMap(p => (p.variations || []).filter(v => Object.values(v.stock || {}).reduce((sum: number, s: any) => sum + Number(s || 0), 0) < (v.minStock || 0))).length === 0 && (
                     <p className="text-[10px] text-center text-slate-400 py-4">Nenhum produto baixo encontrado.</p>
                   )}
                 </div>
@@ -1027,7 +1150,7 @@ export default function DashboardView({
                   <div className="p-6 pb-2">
                     <div className="flex items-center justify-between mb-6"><div><h2 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-800"}`}>Relatório de Cheques</h2><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Gestão Unificada de Documentos</p></div><div className="flex items-center gap-2"><div className={`p-2.5 rounded-xl ${isDarkMode ? 'bg-amber-900/20 text-amber-500' : 'bg-amber-50 text-amber-600'}`}><CreditCard size={20} strokeWidth={2.5} /></div></div></div>
                     <div className="flex flex-col gap-4">
-                      <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2"><Clipboard size={14} className="text-indigo-500" /><span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total: {filteredChecks.length} cheques</span></div><div className="flex items-center gap-2"><button className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[8px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-all border border-slate-100 dark:border-slate-700 active:scale-95" onClick={() => { const summary = filteredChecks.map(c => `${c.number} - R$ ${c.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} - ${format(c.dueDate, 'dd/MM/yyyy')}`).join('\n'); navigator.clipboard.writeText(summary); alert('Lista de cheques copiada!'); }}><Copy size={12} />Copiar</button><button onClick={downloadChecksPDF} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[8px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all border border-indigo-100 dark:border-indigo-900/50 active:scale-95"><FileDown size={14} />PDF</button></div></div>
+                      <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2"><Clipboard size={14} className="text-indigo-500" /><span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total: {filteredChecks.length} cheques</span></div><div className="flex items-center gap-2"><button className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[8px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-all border border-slate-100 dark:border-slate-700 active:scale-95" onClick={() => { const summary = filteredChecks.map(c => `${c.number} - R$ ${c.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} - ${format(c.dueDate, 'dd/MM/yyyy')}`).join('\n'); navigator.clipboard.writeText(summary); alert('Lista de cheques copiada!'); }}><Copy size={12} />Copiar</button><button onClick={shareChecksPDF} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[8px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all border border-indigo-100 dark:border-indigo-900/50 active:scale-95"><Share2 size={14} />Compartilhar</button></div></div>
                       <div className="relative"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-600" size={16} /><input type="text" placeholder="BUSCAR POR NÚMERO OU FORNECEDOR..." className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-2xl pl-12 pr-4 py-3.5 text-[11px] font-black uppercase tracking-widest placeholder:text-slate-300 dark:placeholder:text-slate-800 focus:ring-4 focus:ring-indigo-500/5 transition-all text-slate-800 dark:text-white" value={checksSearch} onChange={(e) => setChecksSearch(e.target.value)} />{checksSearch && (<button onClick={() => setChecksSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" title="Limpar busca"><X size={14} /></button>)}</div>
                       <div className="flex gap-2 p-1 bg-slate-50 dark:bg-slate-950 rounded-2xl overflow-x-auto no-scrollbar">{(['PENDING', 'OVERDUE', 'CLEARED', 'ALL'] as const).map((status) => (<button key={status} onClick={() => setChecksStatusFilter(status)} className={`flex-1 py-2 px-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${checksStatusFilter === status ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-700'}`}>{status === 'PENDING' ? 'A Vencer' : status === 'CLEARED' ? 'Compensados' : status === 'OVERDUE' ? 'Vencidos' : 'Todos'}</button>))}</div>
                     </div>

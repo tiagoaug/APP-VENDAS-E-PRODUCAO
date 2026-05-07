@@ -6,6 +6,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ComboBox from '../components/ComboBox';
 import ConsolidatedMessageModal from '../components/ConsolidatedMessageModal';
+import { sharePDF } from '../utils/pdfExport';
 
 
 interface ReportDetailedViewProps {
@@ -284,6 +285,10 @@ export default function ReportDetailedView({
 
   const sendWhatsApp = (phone: string | undefined, text: string) => {
     const cleanPhone = (phone || '').replace(/\D/g, '');
+    if (!cleanPhone) {
+      alert('Não é possível abrir o WhatsApp: Cliente não possui telefone cadastrado.');
+      return;
+    }
     const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   };
@@ -390,7 +395,7 @@ export default function ReportDetailedView({
       autoTable(doc, { startY: 40, head, body, theme: 'grid' });
     }
 
-    doc.save(`${reportId}_${format(new Date(), 'yyyyMMdd_HHmmss')}.pdf`);
+    sharePDF(doc, `${reportId}_${format(new Date(), 'yyyyMMdd_HHmmss')}.pdf`);
   };
 
   return (
@@ -407,11 +412,11 @@ export default function ReportDetailedView({
          <h1 className="text-xl font-black">{reportTitle}</h1>
          <button
            onClick={exportPDF}
-           title="Exportar PDF"
-           aria-label="Exportar relatório para PDF"
-           className="p-2 rounded-full bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
+           title="Compartilhar PDF"
+           aria-label="Compartilhar relatório em PDF"
+           className="p-2 rounded-full bg-indigo-600 text-white shadow-md shadow-indigo-600/30 active:scale-90 transition-transform"
          >
-            <Download size={18} />
+            <Share2 size={18} />
          </button>
       </div>
       
@@ -760,10 +765,17 @@ export default function ReportDetailedView({
                                                 >
                                                     <Copy size={14} />
                                                 </button>
-                                                <button
+                                                 <button
                                                     onClick={() => sendWhatsApp(customer?.phone, getSaleMessage(r, messageFormat))}
-                                                    className={`p-2 rounded-xl border ${isDarkMode ? 'border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/10' : 'border-emerald-100 text-emerald-600 hover:bg-emerald-50'} transition-all active:scale-90`}
-                                                    title="Enviar WhatsApp"
+                                                    disabled={!customer?.phone}
+                                                    className={`p-2 rounded-xl border transition-all active:scale-90 ${
+                                                      !customer?.phone 
+                                                        ? 'border-slate-100 dark:border-slate-800 text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                                                        : isDarkMode 
+                                                          ? 'border-emerald-500/20 text-emerald-500 hover:bg-emerald-500/10' 
+                                                          : 'border-emerald-100 text-emerald-600 hover:bg-emerald-50'
+                                                    }`}
+                                                    title={customer?.phone ? "Enviar WhatsApp" : "Telefone não cadastrado"}
                                                 >
                                                     <MessageCircle size={14} />
                                                 </button>

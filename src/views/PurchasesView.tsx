@@ -14,11 +14,13 @@ import {
   Filter,
   Clipboard,
   Hash,
+  Lightbulb,
 } from "lucide-react";
 import { format, isSameMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ChecksModal from "../components/ChecksModal";
+
 
 interface PurchasesViewProps {
   purchases: Purchase[];
@@ -56,10 +58,14 @@ export default function PurchasesView({
       if (typeFilter !== 'ALL' && purchase.type !== typeFilter) return false;
       
       // Filter by period
-      if (periodFilter) {
+      if (periodFilter && purchase.date) {
         const pDate = new Date(purchase.date);
-        const filterStr = format(pDate, 'yyyy-MM');
-        if (filterStr !== periodFilter) return false;
+        if (!isNaN(pDate.getTime())) {
+          const filterStr = format(pDate, 'yyyy-MM');
+          if (filterStr !== periodFilter) return false;
+        } else {
+          return false;
+        }
       }
       
       // Filter by supplier / search
@@ -81,7 +87,12 @@ export default function PurchasesView({
   const availableMonths = useMemo(() => {
     const months = new Set<string>();
     purchases.forEach(p => {
-      months.add(format(p.date, 'yyyy-MM'));
+      if (p.date) {
+        const d = new Date(p.date);
+        if (!isNaN(d.getTime())) {
+          months.add(format(d, 'yyyy-MM'));
+        }
+      }
     });
     return Array.from(months).sort().reverse(); // newest first
   }, [purchases]);
@@ -235,14 +246,26 @@ export default function PurchasesView({
                   </div>
                   <div className="min-w-0">
                     <h3
-                      className={`font-black text-base tracking-tight leading-none uppercase truncate mb-2 ${isDarkMode ? "text-white" : "text-slate-900"}`}
+                      className={`font-black text-base tracking-tight leading-none uppercase truncate mb-1 ${isDarkMode ? "text-white" : "text-slate-900"}`}
                     >
                       {supplier?.name || "Fornecedor"}
                     </h3>
                     <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center gap-1.5 text-[9px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">
-                        <Calendar size={12} strokeWidth={3} />
-                        {format(purchase.date, "dd MMM yyyy", { locale: ptBR })}
+                      <div className="flex items-center gap-2">
+                        {purchase.sellerName && (
+                          <span className="text-[7px] font-black uppercase px-2 py-0.5 rounded-md leading-none tracking-widest bg-indigo-600 text-white shadow-sm">
+                            {purchase.sellerName}
+                          </span>
+                        )}
+                        <div className="flex items-center gap-1.5 text-[9px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">
+                          <Calendar size={12} strokeWidth={3} />
+                          {purchase.date ? (
+                          (() => {
+                            const d = new Date(purchase.date);
+                            return isNaN(d.getTime()) ? "Data Inválida" : format(d, "dd MMM yyyy", { locale: ptBR });
+                          })()
+                        ) : "Sem Data"}
+                        </div>
                       </div>
                       <div className="flex items-center gap-1.5 text-[9px] text-indigo-500 dark:text-indigo-400 font-black uppercase tracking-widest">
                         <Hash size={12} strokeWidth={3} />
@@ -253,11 +276,6 @@ export default function PurchasesView({
                 </div>
 
                 <div className="flex flex-col items-end gap-2 shrink-0">
-                  {purchase.sellerName && (
-                    <span className="text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest bg-indigo-600 text-white shadow-lg shadow-indigo-500/20">
-                      {purchase.sellerName}
-                    </span>
-                  )}
                   <div className="flex flex-col gap-1.5 items-end">
                     <span
                       className={`text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest shadow-lg ${purchase.type === PurchaseType.REPLENISHMENT ? "bg-indigo-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"}`}
@@ -272,7 +290,10 @@ export default function PurchasesView({
                           ? 'bg-rose-600 text-white animate-pulse-vencimento'
                           : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                       }`}>
-                        VENC. DATA {format(purchase.dueDate, "dd/MM", { locale: ptBR })}
+                        VENC. DATA {(() => {
+                          const d = new Date(purchase.dueDate);
+                          return isNaN(d.getTime()) ? "INVÁLIDA" : format(d, "dd/MM", { locale: ptBR });
+                        })()}
                       </span>
                     )}
                     <span className={`text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest shadow-lg ${
@@ -295,21 +316,23 @@ export default function PurchasesView({
                 <div className="flex-1 flex flex-col gap-2">
                    {/* Checks Button (More visible highlight) */}
                     {purchase.checks && purchase.checks.length > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedPurchaseForChecks(purchase);
-                          setIsChecksModalOpen(true);
-                        }}
-                        className={`py-2 px-3 rounded-xl border flex items-center gap-2 text-[8px] font-black uppercase tracking-widest transition-all active:scale-[0.98] w-fit ${
-                          isDarkMode 
-                            ? 'bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/20' 
-                            : 'bg-blue-50 border-blue-100 text-blue-600 hover:bg-blue-100 shadow-sm'
-                        }`}
-                      >
-                        <Clipboard size={14} strokeWidth={3} />
-                        Histórico de Cheques
-                      </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedPurchaseForChecks(purchase);
+                            setIsChecksModalOpen(true);
+                          }}
+                          title="Ver Histórico de Cheques"
+                          aria-label="Ver Histórico de Cheques"
+                          className={`py-2 px-3 rounded-xl border flex items-center gap-2 text-[8px] font-black uppercase tracking-widest transition-all active:scale-[0.98] w-fit ${
+                            isDarkMode 
+                              ? 'bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/20' 
+                              : 'bg-blue-50 border-blue-100 text-blue-600 hover:bg-blue-100 shadow-sm'
+                          }`}
+                        >
+                          <Clipboard size={14} strokeWidth={3} />
+                          Histórico de Cheques
+                        </button>
                     )}
                     <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
                        {itemCount} {itemCount === 1 ? 'Lançamento' : 'Lançamentos'}
@@ -317,8 +340,8 @@ export default function PurchasesView({
                 </div>
 
                 {/* Price Display (Right) */}
-                <div className="flex flex-col items-end shrink-0 justify-end min-w-[120px]">
-                   <p className={`text-xl font-black tracking-tighter leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                <div className="flex flex-col items-end shrink-0 justify-end min-w-fit">
+                   <p className={`text-lg font-black leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                       R$ {purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                    </p>
                 </div>
@@ -334,6 +357,8 @@ export default function PurchasesView({
                         e.stopPropagation();
                         setSelectedNote(purchase.notes || "");
                       }}
+                      title="Ver Observações"
+                      aria-label="Ver Observações"
                       className="w-12 h-12 flex items-center justify-center rounded-full transition-all active:scale-90 relative bg-[#fffbeb] text-rose-500 shadow-xl shadow-rose-100 dark:bg-rose-950/20 dark:text-rose-400 dark:shadow-none"
                     >
                       <Lightbulb size={24} strokeWidth={2.5} className="animate-pulse-lamp" />
@@ -358,6 +383,7 @@ export default function PurchasesView({
                     onClick={(e) => { e.stopPropagation(); setItemToDelete(purchase.id); }}
                     className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-rose-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
                     title="Excluir"
+                    aria-label="Excluir compra"
                   >
                     <Trash2 size={18} />
                   </button>

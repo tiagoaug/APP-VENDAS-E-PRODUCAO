@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Purchase,
   Product,
@@ -30,7 +30,8 @@ import {
   Minus,
   Search,
   X,
-  CheckCircle2
+  CheckCircle2,
+  Users
 } from "lucide-react";
 import { format } from "date-fns";
 import CalculatorModal from '../components/CalculatorModal';
@@ -44,6 +45,7 @@ interface PurchaseFormViewProps {
   categories: Category[];
   accounts: Account[];
   grids: Grid[];
+  people: Person[];
   onSave: (purchase: Purchase) => void;
   onCancel: () => void;
   isDarkMode: boolean;
@@ -57,6 +59,7 @@ export default function PurchaseFormView({
   categories,
   accounts,
   grids,
+  people,
   onSave,
   onCancel,
   isDarkMode,
@@ -69,7 +72,7 @@ export default function PurchaseFormView({
     existing?.type || PurchaseType.GENERAL,
   );
   const [supplierId, setSupplierId] = useState(
-    existing?.supplierId || suppliers[0]?.id || "",
+    existing?.supplierId || ""
   );
   const [sellerId, setSellerId] = useState(existing?.sellerId || '');
   interface PurchaseBlock {
@@ -124,12 +127,12 @@ export default function PurchaseFormView({
   );
   const [checks, setChecks] = useState<CompanyCheck[]>(existing?.checks || []);
   const [categoryId, setCategoryId] = useState(
-    existing?.categoryId || categories[0]?.id || "",
+    existing?.categoryId || categories?.[0]?.id || "",
   );
   const [accountId, setAccountId] = useState(() => {
     if (existing?.accountId) return existing.accountId;
     const defaultAcc = accounts.find(a => a.isDefault);
-    return defaultAcc?.id || accounts[0]?.id || "";
+    return defaultAcc?.id || accounts?.[0]?.id || "";
   });
   const [generateTransaction, setGenerateTransaction] = useState(
     existing?.generateTransaction !== undefined ? existing?.generateTransaction : true
@@ -144,6 +147,31 @@ export default function PurchaseFormView({
       }),
     [products, supplierId],
   );
+
+  // Auto-populate seller when supplier changes
+  useEffect(() => {
+    if (supplierId && !sellerId) {
+      const supplier = people.find(p => p.id === supplierId);
+      if (supplier) {
+        const associatedIds = [
+          ...(supplier.associatedContactIds || []),
+          ...(supplier.associatedSellerIds || [])
+        ];
+
+        if (associatedIds.length > 0) {
+          const firstRep = people.find(p => associatedIds.includes(p.id) && (p.isBuyer || p.isSeller));
+          if (firstRep) {
+            setSellerId(firstRep.id);
+          } else {
+            const internalRep = supplier.internalContacts?.[0];
+            if (internalRep) {
+              setSellerId(internalRep.name);
+            }
+          }
+        }
+      }
+    }
+  }, [supplierId, people, sellerId]);
 
   // Calculator Modal State
   const [calcModal, setCalcModal] = useState<{ isOpen: boolean; field: 'blocks' | 'generalItems'; index: number; value: number } | null>(null);
@@ -310,7 +338,7 @@ export default function PurchaseFormView({
       checks,
       generateTransaction,
       sellerId,
-      sellerName: suppliers.find(s => s.id === sellerId)?.name || '',
+      sellerName: people.find(p => p.id === sellerId)?.name || sellerId || '',
       paymentStatus: paymentTerm === PaymentTerm.INSTALLMENTS ? PaymentStatus.PENDING : PaymentStatus.PAID,
     });
   };
@@ -381,16 +409,59 @@ export default function PurchaseFormView({
           </div>
 
           <div className="relative col-span-2">
-            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">
-              Vendedor / Representante
-            </label>
+            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Comprador / Representante</label>
             <ComboBox 
-              options={suppliers.filter(p => p.isSeller).map(p => ({ id: p.id, name: p.name }))}
+              options={[
+                ...people.filter(p => p.isSeller || p.isBuyer).map(p => ({ id: p.id, name: p.name })),
+                ...(suppliers.find(s => s.id === supplierId)?.internalContacts?.map(c => ({ id: c.name, name: c.name })) || [])
+              ]}
               value={sellerId}
               onChange={setSellerId}
-              placeholder="SELECIONE O VENDEDOR"
+              placeholder="SELECIONE O RESPONSÁVEL"
               isDarkMode={isDarkMode}
+              icon={<Users size={18} />}
             />
+
+            {/* Badges de Sugestão do Fornecedor */}
+            {supplierId && (
+              <div className="mt-3 flex flex-wrap gap-2 px-1">
+                {(() => {
+                  const s = suppliers.find(sup => sup.id === supplierId);
+                  if (!s) return null;
+                  
+                  const linkedReps = people.filter(p => 
+                    (s.associatedContactIds?.includes(p.id) || s.associatedSellerIds?.includes(p.id))
+                  );
+
+                  return (
+                    <>
+                      {linkedReps.map(rep => (
+                        <button
+                          key={rep.id}
+                          type="button"
+                          onClick={() => setSellerId(rep.id)}
+                          className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 transition-all active:scale-95 ${sellerId === rep.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg' : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600')}`}
+                        >
+                          <Users size={12} />
+                          <span className="text-[10px] font-black uppercase tracking-tight">{rep.name}</span>
+                        </button>
+                      ))}
+                      {s.internalContacts?.map((c, idx) => (
+                        <button
+                          key={`int-${idx}`}
+                          type="button"
+                          onClick={() => setSellerId(c.name)}
+                          className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 transition-all active:scale-95 ${sellerId === c.name ? 'bg-emerald-600 border-emerald-600 text-white shadow-lg' : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600')}`}
+                        >
+                          <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          <span className="text-[10px] font-black uppercase tracking-tight">{c.name}</span>
+                        </button>
+                      ))}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
           </div>
 
           <div className="relative col-span-2">
@@ -482,7 +553,13 @@ export default function PurchaseFormView({
               <input
                 type="date"
                 className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-5 py-4 text-[12px] font-black uppercase tracking-widest focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-indigo-500/10 transition-all text-slate-900 dark:text-slate-100"
-                value={format(dueDate, "yyyy-MM-dd")}
+                value={(() => {
+                  try {
+                    return format(dueDate, "yyyy-MM-dd");
+                  } catch (e) {
+                    return format(new Date(), "yyyy-MM-dd");
+                  }
+                })()}
                 onChange={(e) =>
                   setDueDate(new Date(e.target.value).getTime() || Date.now())
                 }
@@ -1014,7 +1091,13 @@ export default function PurchaseFormView({
                       <input
                         type="date"
                         className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl py-3 px-4 text-[12px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-100 focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-indigo-500/10 transition-all"
-                        value={format(check.dueDate, "yyyy-MM-dd")}
+                        value={(() => {
+                          try {
+                            return format(check.dueDate, "yyyy-MM-dd");
+                          } catch (e) {
+                            return format(new Date(), "yyyy-MM-dd");
+                          }
+                        })()}
                         onChange={(e) =>
                           updateCheck(index, {
                             dueDate:

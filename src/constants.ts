@@ -1,4 +1,4 @@
-import { Product, Grid, Sale, Purchase, PurchaseType, SaleType, Category, CategoryType, ColorValue, PaymentMethod, Person, SaleStatus, PaymentTerm, Transaction, TransactionType, Account, ProductStatus, AccountType } from './types';
+import { Product, Grid, GridType, Sale, Purchase, PurchaseType, SaleType, Category, CategoryType, ColorValue, PaymentMethod, Person, SaleStatus, PaymentTerm, Transaction, TransactionType, Account, ProductStatus, AccountType } from './types';
 
 export const SIZES = ['34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45'];
 
@@ -43,12 +43,14 @@ export const MOCK_GRIDS: Grid[] = [
   {
     id: 'g1',
     name: 'Grade Padrão (12 pares)',
+    type: GridType.FORMA,
     sizes: ['35', '36', '37', '38', '39', '40'],
     configuration: { '35': 1, '36': 2, '37': 3, '38': 3, '39': 2, '40': 1 }
   },
   {
     id: 'g2',
     name: 'Grade Masculina (10 pares)',
+    type: GridType.FORMA,
     sizes: ['39', '40', '41', '42'],
     configuration: { '39': 2, '40': 3, '41': 3, '42': 2 }
   }

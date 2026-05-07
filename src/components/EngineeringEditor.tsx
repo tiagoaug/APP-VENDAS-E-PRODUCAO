@@ -13,6 +13,7 @@ import Modal from './Modal';
 import CalculatorModal from './CalculatorModal';
 
 interface EngineeringEditorProps {
+  key?: any;
   isDarkMode: boolean;
   consumption: ComponentConsumption;
   onSave: (consumption: ComponentConsumption) => void;
@@ -197,7 +198,11 @@ export default function EngineeringEditor({
       {/* Header - Not sticky anymore to avoid overlapping parent modal header */}
       <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
         <div className="flex items-center gap-4">
-          <button onClick={onCancel} className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+          <button 
+            onClick={onCancel} 
+            title="Voltar"
+            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+          >
             <ChevronLeft size={24} />
           </button>
           <div>
@@ -242,11 +247,13 @@ export default function EngineeringEditor({
                 <Scissors size={28} />
               </div>
               <div className="flex flex-col gap-3">
-                <label className="text-xs font-black uppercase tracking-widest text-slate-400">Faca / Molde Técnica</label>
+                <label htmlFor="tool-select" className="text-xs font-black uppercase tracking-widest text-slate-400">Faca / Molde Técnica</label>
                 <select 
+                  id="tool-select"
                   className={`w-full bg-transparent border-none text-sm font-black outline-none appearance-none cursor-pointer ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
                   value={editing.toolId || ''}
                   onChange={(e) => handleToolChange(e.target.value)}
+                  title="Selecionar Faca"
                 >
                   <option value="">Selecionar Faca...</option>
                   {productionConfigs.filter(c => c.type === 'TOOL').map(t => (
@@ -327,6 +334,7 @@ export default function EngineeringEditor({
                                   <select 
                                     className={`pl-5 pr-12 py-3.5 rounded-xl text-sm font-black outline-none appearance-none cursor-pointer border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
                                     value={currentMap}
+                                    title={`Faca para o tamanho ${size}`}
                                     onChange={(e) => {
                                       const newMapping = { ...(editing.toolMapping || {}) };
                                       newMapping[size] = e.target.value;
@@ -405,16 +413,21 @@ export default function EngineeringEditor({
             {/* QTY & UNIT VAL FIELDS */}
             <div className="grid grid-cols-2 gap-6">
               <div className="flex flex-col gap-3">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-2">Quantidade</label>
+                <label htmlFor="quantity-input" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-2">Quantidade</label>
                 <div className="relative">
                   <input 
+                    id="quantity-input"
                     type="text" 
                     value={calcQty} 
                     onChange={(e) => { setCalcQty(e.target.value); updateQuantity(e.target.value, calcUnitVal); }}
                     className={`w-full px-6 py-5 rounded-2xl font-black text-sm outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600 shadow-sm'}`}
                   />
                   <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                    <button onClick={() => setActiveCalcField('qty')} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+                    <button 
+                      onClick={() => setActiveCalcField('qty')} 
+                      title="Abrir Calculadora de Quantidade"
+                      className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                    >
                       <Calculator size={16} />
                     </button>
                   </div>
@@ -422,15 +435,20 @@ export default function EngineeringEditor({
               </div>
 
               <div className="flex flex-col gap-3">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-2">Valor Unitário</label>
+                <label htmlFor="unit-val-input" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-2">Valor Unitário</label>
                 <div className="relative">
                   <input 
+                    id="unit-val-input"
                     type="text" 
                     value={calcUnitVal} 
                     onChange={(e) => { setCalcUnitVal(e.target.value); updateQuantity(calcQty, e.target.value); }}
                     className={`w-full px-6 py-5 rounded-2xl font-black text-sm outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600 shadow-sm'}`}
                   />
-                  <button onClick={() => setActiveCalcField('unit')} className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+                  <button 
+                    onClick={() => setActiveCalcField('unit')} 
+                    title="Abrir Calculadora de Valor Unitário"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                  >
                     <Calculator size={16} />
                   </button>
                 </div>
@@ -588,11 +606,13 @@ export default function EngineeringEditor({
         {/* Seleção de Material e Cor */}
         <div className={`p-5 sm:p-8 rounded-[2.5rem] border-2 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} space-y-8`}>
           <div className="flex flex-col gap-3">
-            <label className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">Material de Insumo</label>
+            <label htmlFor="material-select" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">Material de Insumo</label>
             <select 
+              id="material-select"
               className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
               value={editing.materialId || ''}
               onChange={(e) => handleMaterialChange(e.target.value)}
+              title="Selecionar Material"
             >
               <option value="">Escolher Material...</option>
               {productionConfigs.filter(c => c.type === 'MATERIAL').map(m => (
@@ -603,22 +623,26 @@ export default function EngineeringEditor({
 
           <div className="grid grid-cols-2 gap-4">
              <div className="flex flex-col gap-3">
-                <label className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">Cor</label>
+                <label htmlFor="color-select" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">Cor</label>
                 <select 
+                  id="color-select"
                   className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
                   value={editing.colorId || ''}
                   onChange={(e) => setEditing({ ...editing, colorId: e.target.value })}
+                  title="Selecionar Cor"
                 >
                   <option value="">Cor...</option>
                   {colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
              </div>
              <div className="flex flex-col gap-3">
-                <label className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">Peças / Par</label>
+                <label htmlFor="pieces-per-pair-input" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">Peças / Par</label>
                 <input 
+                  id="pieces-per-pair-input"
                   type="number" 
                   className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
                   value={editing.piecesPerPair || 2}
+                  title="Número de Peças por Par"
                   onChange={(e) => {
                     const ppp = Number(e.target.value);
                     const tool = productionConfigs.find(t => t.id === editing.toolId);
@@ -643,18 +667,22 @@ export default function EngineeringEditor({
            
            <div className="flex gap-3">
               <select 
+                id="sector-select"
                 className={`flex-1 border-2 rounded-2xl px-5 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
                 value={newServiceId}
+                title="Selecionar Setor"
                 onChange={(e) => setNewServiceId(e.target.value)}
               >
                 <option value="">Setor...</option>
                 {sectors.sort((a,b) => a.order - b.order).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
               <input 
+                id="service-cost-input"
                 type="number" 
                 placeholder="R$ 0.00" 
                 className={`w-28 border-2 rounded-2xl px-4 py-3 text-xs font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}
                 value={newServiceCost}
+                title="Custo do Serviço"
                 onChange={(e) => setNewServiceCost(e.target.value)}
               />
               <button 
@@ -666,6 +694,7 @@ export default function EngineeringEditor({
                   setNewServiceId('');
                   setNewServiceCost(0);
                 }}
+                title="Adicionar Setor ao Fluxo"
                 className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/20"
               >
                 <Plus size={24} />
@@ -681,7 +710,11 @@ export default function EngineeringEditor({
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-xs font-black text-amber-600">R$ {s.cost.toFixed(2)}</span>
-                    <button onClick={() => setEditing({ ...editing, services: editing.services?.filter((_, i) => i !== idx) })} className="text-slate-300 hover:text-rose-500 transition-colors">
+                    <button 
+                      onClick={() => setEditing({ ...editing, services: editing.services?.filter((_, i) => i !== idx) })} 
+                      title="Remover Setor"
+                      className="text-slate-300 hover:text-rose-500 transition-colors"
+                    >
                       <Trash2 size={16} />
                     </button>
                   </div>

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Person, Sale, Purchase, Transaction } from '../types';
-import { Search, Plus, User, Mail, Phone, Trash2, Edit, Truck, ShieldCheck, ChevronRight, History } from 'lucide-react';
+import { Search, Plus, User, Mail, Phone, Trash2, Edit, Truck, ShieldCheck, ChevronRight, History, Tag, ShoppingBag } from 'lucide-react';
 import PersonModal from '../components/PersonModal';
 import FinancialHistoryModal from '../components/FinancialHistoryModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -19,7 +19,7 @@ interface PeopleViewProps {
 
 export default function PeopleView({ people, sales, purchases, transactions, onAdd, onEdit, onDelete, onShowDetail, isDarkMode }: PeopleViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filter, setFilter] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER' | 'SELLER'>('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER' | 'SELLER' | 'BUYER'>('ALL');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
@@ -37,6 +37,7 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
     if (filter === 'CUSTOMER') return matchesSearch && p.isCustomer;
     if (filter === 'SUPPLIER') return matchesSearch && p.isSupplier;
     if (filter === 'SELLER') return matchesSearch && p.isSeller;
+    if (filter === 'BUYER') return matchesSearch && p.isBuyer;
     return matchesSearch;
   });
 
@@ -76,6 +77,8 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
           else onAdd(p);
         }}
         person={editingPerson || undefined}
+        sellers={people.filter(p => p.isSeller)}
+        allPeople={people}
       />
       {isHistoryModalOpen && historyPerson && (
         <FinancialHistoryModal
@@ -124,6 +127,12 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
           >
             Vendedores
           </button>
+          <button 
+            onClick={() => setFilter('BUYER')}
+            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${filter === 'BUYER' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
+          >
+            Compradores
+          </button>
         </div>
       </div>
 
@@ -144,6 +153,7 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
                     {person.isCustomer && <ShieldCheck size={14} className="text-emerald-500" />}
                     {person.isSupplier && <Truck size={14} className="text-amber-500" />}
                     {person.isSeller && <Tag size={14} className="text-indigo-500" />}
+                    {person.isBuyer && <ShoppingBag size={14} className="text-emerald-500" />}
                   </div>
                 </div>
                 <div className="flex items-center gap-3 mt-1.5 overflow-x-auto no-scrollbar">

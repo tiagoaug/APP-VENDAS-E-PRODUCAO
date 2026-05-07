@@ -4,6 +4,7 @@ import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Hash, Clock
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import SalePaymentModal from '../components/SalePaymentModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 interface SalesViewProps {
   sales: Sale[];
@@ -56,6 +57,7 @@ export default function SalesView({
   const [whatsappMode, setWhatsappMode] = useState<'AUTO' | 'MANUAL'>('AUTO');
   const [editingMessage, setEditingMessage] = useState<{ sale: Sale, text: string } | null>(null);
   const [noteModal, setNoteModal] = useState<{ isOpen: boolean, note: string } | null>(null);
+  const [saleToDelete, setSaleToDelete] = useState<string | null>(null);
 
   // Mapas para busca rápida O(1)
   const productMap = useMemo(() => {
@@ -68,7 +70,7 @@ export default function SalesView({
     return sales.filter(s => {
       // Filter by Type (Retail/Wholesale)
       if (filter !== 'ALL') {
-        const hasType = s.items.some(item => item.saleType === filter);
+        const hasType = (s.items || []).some(item => item.saleType === filter);
         if (!hasType) return false;
       }
 
@@ -144,12 +146,33 @@ export default function SalesView({
     const message = customMessage || generateMessage(sale);
     const encodedMessage = encodeURIComponent(message);
     const phone = customer?.phone?.replace(/\D/g, '') || '';
+    
+    if (!phone) {
+      alert('Não é possível abrir o WhatsApp: Cliente não possui telefone cadastrado.');
+      return;
+    }
+
     window.open(`https://wa.me/${phone}?text=${encodedMessage}`, '_blank');
     if (customMessage) setEditingMessage(null);
   };
 
   return (
     <div className="flex flex-col gap-6 h-full pb-44 px-1 overflow-y-auto force-scrollbar">
+      <ConfirmDialog
+        isOpen={!!saleToDelete}
+        title="Excluir Registro?"
+        message="Deseja realmente excluir esta venda e reverter os lançamentos financeiros/estoque? Esta ação não pode ser desfeita."
+        confirmLabel="Sim, Excluir"
+        cancelLabel="Agora não"
+        onConfirm={() => {
+          if (saleToDelete) {
+            onDelete(saleToDelete);
+            setSaleToDelete(null);
+          }
+        }}
+        onCancel={() => setSaleToDelete(null)}
+        isDanger={true}
+      />
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
           <div>
@@ -290,13 +313,20 @@ export default function SalesView({
                     <ShoppingBag size={28} strokeWidth={2.5} />
                   </div>
                   <div className="min-w-0">
-                    <h3 className={`font-black text-base tracking-tight leading-none uppercase truncate mb-2 ${sale.status === SaleStatus.CANCELLED ? 'text-slate-500' : isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    <h3 className={`font-black text-base tracking-tight leading-none uppercase truncate mb-1 ${sale.status === SaleStatus.CANCELLED ? 'text-slate-500' : isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                       {sale.customerName || 'Cliente'}
                     </h3>
                     <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center gap-1.5 text-[9px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">
-                        <Calendar size={12} strokeWidth={3} />
-                        {format(sale.date, "dd/MM/yyyy", { locale: ptBR })}
+                      <div className="flex items-center gap-2">
+                        {sale.sellerName && (
+                          <span className="text-[7px] font-black uppercase px-2 py-0.5 rounded-md leading-none tracking-widest bg-indigo-600 text-white shadow-sm">
+                            {sale.sellerName}
+                          </span>
+                        )}
+                        <div className="flex items-center gap-1.5 text-[9px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">
+                          <Calendar size={12} strokeWidth={3} />
+                          {format(sale.date, "dd/MM/yyyy", { locale: ptBR })}
+                        </div>
                       </div>
                       <div className="flex items-center gap-1.5 text-[9px] text-indigo-500 dark:text-indigo-400 font-black uppercase tracking-widest">
                         <Hash size={12} strokeWidth={3} />
@@ -307,11 +337,6 @@ export default function SalesView({
                 </div>
 
                 <div className="flex flex-col items-end gap-2 shrink-0">
-                  {sale.sellerName && (
-                    <span className="text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest bg-indigo-600 text-white shadow-lg shadow-indigo-500/20">
-                      {sale.sellerName}
-                    </span>
-                  )}
                   {sale.status === SaleStatus.SALE && sale.paymentStatus === PaymentStatus.PENDING && sale.dueDate && (
                     <span className={`text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest flex items-center gap-1.5 shadow-lg ${
                       new Date(sale.dueDate) < new Date() 
@@ -378,11 +403,11 @@ export default function SalesView({
                 </div>
 
                 {/* Price Display (Right) */}
-                <div className="flex flex-col items-end shrink-0 justify-end min-w-[120px]">
+                <div className="flex flex-col items-end shrink-0 justify-end min-w-fit">
                    {remaining > 0 && sale.status === SaleStatus.SALE && (
-                      <p className="text-[8px] font-black text-rose-500 uppercase tracking-tight mb-1">Saldo R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                      <p className="text-[10px] font-black text-rose-500 uppercase mb-1">Saldo R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                    )}
-                   <p className={`text-xl font-black tracking-tighter leading-tight ${sale.status === SaleStatus.CANCELLED ? 'text-slate-400' : 'text-slate-900 dark:text-white'}`}>
+                   <p className={`text-lg font-black leading-tight ${sale.status === SaleStatus.CANCELLED ? 'text-slate-400' : 'text-slate-900 dark:text-white'}`}>
                       R$ {sale.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                    </p>
                    <div className="flex gap-1 mt-2">
@@ -427,8 +452,13 @@ export default function SalesView({
                   {/* WhatsApp Button */}
                   <button 
                     onClick={(e) => { e.stopPropagation(); handleShareWhatsApp(sale); }}
-                    className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-emerald-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
-                    title="WhatsApp"
+                    disabled={!people.find(p => p.id === sale.customerId)?.phone}
+                    className={`w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90 ${
+                      !people.find(p => p.id === sale.customerId)?.phone 
+                        ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' 
+                        : 'text-emerald-500'
+                    }`}
+                    title={people.find(p => p.id === sale.customerId)?.phone ? "WhatsApp" : "Telefone não cadastrado"}
                   >
                     <MessageSquare size={18} />
                   </button>
@@ -468,6 +498,17 @@ export default function SalesView({
                         <DollarSign size={18} />
                       </button>
                     )
+                  )}
+
+                  {/* Confirm Quote Button */}
+                  {sale.status === SaleStatus.QUOTE && (
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); if(confirm('Deseja confirmar este orçamento como venda? (Isso abaterá o estoque)')) onConvert(sale.id); }}
+                      className="px-4 h-10 flex items-center justify-center bg-emerald-600 text-white rounded-full shadow-lg shadow-emerald-500/20 hover:shadow-xl transition-all active:scale-90 font-black uppercase text-[8px] tracking-widest gap-2"
+                      title="Confirmar como Venda"
+                    >
+                      <CheckCircle2 size={14} strokeWidth={3} /> CONFIRMAR COMO VENDA
+                    </button>
                   )}
 
                   {/* Edit Button */}
