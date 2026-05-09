@@ -8,6 +8,7 @@ interface DashboardConfigViewProps {
   onSave: (config: DashboardConfig) => void;
   onBack: () => void;
   isDarkMode: boolean;
+  modulesConfig: import("../types").AppModulesConfig;
 }
 
 interface CardItemProps {
@@ -73,26 +74,48 @@ function CardItem({ card, isDarkMode, onToggleVisibility }: CardItemProps) {
   );
 }
 
-export default function DashboardConfigView({ config, onSave, onBack, isDarkMode }: DashboardConfigViewProps) {
-  const [localCards, setLocalCards] = useState<DashboardCardConfig[]>(
-    [...config.cards].sort((a, b) => a.order - b.order)
+export default function DashboardConfigView({ config, onSave, onBack, isDarkMode, modulesConfig }: DashboardConfigViewProps) {
+  const [localCards, setLocalCards] = useState<DashboardCardConfig[]>(() => 
+    [...(config?.cards || [])]
+      .filter(card => {
+        if (!card.module || card.module === 'any') return true;
+        if (!modulesConfig) return true; // Fallback if modulesConfig is missing
+        return modulesConfig[card.module as any];
+      })
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
   );
   const [isSaved, setIsSaved] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [showReloadPrompt, setShowReloadPrompt] = useState(false);
 
   useEffect(() => {
-    // Só reseta do config externo se:
-    // 1. Não estivermos salvando
-    // 2. Não houver alterações locais pendentes (isSaved === true)
-    // 3. O conteúdo realmente for diferente
-    const localContent = localCards.map(c => `${c.id}:${c.visible}`).sort().join('|');
-    const incomingContent = config.cards.map(c => `${c.id}:${c.visible}`).sort().join('|');
+    // Helper function to get standardized content string for comparison
+    const getContentString = (cards: DashboardCardConfig[]) => {
+      return cards
+        .filter(card => {
+          if (!card.module || card.module === 'any') return true;
+          if (!modulesConfig) return true;
+          return modulesConfig[card.module as any];
+        })
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .map(c => `${c.id}:${c.visible}:${c.order}`)
+        .join('|');
+    };
+
+    const localContent = getContentString(localCards);
+    const incomingContent = getContentString(config?.cards || []);
     
     if (!isSaving && isSaved && localContent !== incomingContent) {
-      setLocalCards([...config.cards].sort((a, b) => a.order - b.order));
+      setLocalCards([...(config?.cards || [])]
+        .filter(card => {
+          if (!card.module || card.module === 'any') return true;
+          if (!modulesConfig) return true;
+          return modulesConfig[card.module as any];
+        })
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      );
     }
-  }, [config, isSaving, isSaved, localCards]);
+  }, [config, isSaving, isSaved, modulesConfig]); // Removed localCards from deps to prevent loop, we use localContent internally
 
   const handleToggleVisibility = (id: string) => {
     setLocalCards(prev => prev.map(card => 

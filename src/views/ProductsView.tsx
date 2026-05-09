@@ -21,6 +21,7 @@ interface ProductsViewProps {
   onToggleStatus: (id: string, status: ProductStatus) => void;
   onDuplicate: (product: Product) => void;
   isDarkMode: boolean;
+  modulesConfig: AppModulesConfig;
 }
 
 export default function ProductsView({
@@ -31,6 +32,7 @@ export default function ProductsView({
   onToggleStatus,
   onDuplicate,
   isDarkMode,
+  modulesConfig,
 }: ProductsViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
@@ -78,10 +80,14 @@ export default function ProductsView({
 
       <div className="flex flex-col gap-3 pt-4">
         <div className="flex items-center justify-between mb-2">
-           <div>
-              <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Ficha Técnica de Produtos</h2>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Produção e Modelos</p>
-           </div>
+          <div>
+            <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
+              {modulesConfig.production ? "Ficha Técnica de Produtos" : "Gestão de Produtos"}
+            </h2>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+              {modulesConfig.production ? "Produção e Modelos" : "Catálogo de Vendas"}
+            </p>
+          </div>
         </div>
         <div className="relative">
           <Search

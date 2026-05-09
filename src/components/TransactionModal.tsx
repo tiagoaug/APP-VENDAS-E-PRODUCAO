@@ -147,7 +147,8 @@ export default function TransactionModal({
   };
 
   const filteredCategories = categories.filter(c => 
-    type === TransactionType.INCOME ? c.type === CategoryType.REVENUE : c.type === CategoryType.EXPENSE
+    (type === TransactionType.INCOME ? c.type === CategoryType.REVENUE : c.type === CategoryType.EXPENSE) &&
+    !c.isPersonal
   );
 
   return (

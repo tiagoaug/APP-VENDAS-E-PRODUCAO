@@ -32,7 +32,8 @@ export default function CalculatorModal({ isOpen, onClose, onResult, isDarkMode,
 
   const handleNumber = (num: string) => {
     setDisplay(prev => {
-      if (prev === '0') return num;
+      if (num === '.' && prev.includes('.')) return prev;
+      if (prev === '0' && num !== '.') return num;
       return prev + num;
     });
   };
@@ -97,7 +98,7 @@ export default function CalculatorModal({ isOpen, onClose, onResult, isDarkMode,
     { label: 'C', onClick: clear, color: 'text-rose-500' },
     { label: 'DEL', onClick: backspace, icon: Delete, color: 'text-rose-500' },
     { label: '%', onClick: () => setDisplay((parseFloat(display)/100).toString()), color: 'text-indigo-500' },
-    { label: '/', onClick: () => handleOperator('*'), icon: Divide, color: 'text-indigo-500' },
+    { label: '/', onClick: () => handleOperator('/'), icon: Divide, color: 'text-indigo-500' },
     { label: '7', onClick: () => handleNumber('7') },
     { label: '8', onClick: () => handleNumber('8') },
     { label: '9', onClick: () => handleNumber('9') },
@@ -116,7 +117,7 @@ export default function CalculatorModal({ isOpen, onClose, onResult, isDarkMode,
   ];
 
   return createPortal(
-    <div className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
+    <div className="fixed inset-0 z-[60000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
       <motion.div 
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}

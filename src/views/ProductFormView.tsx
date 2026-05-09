@@ -1,13 +1,13 @@
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { createPortal } from 'react-dom';
-import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, TechSheetItem, ComponentConsumption, ComponentCategory, FlowTag, Sector } from '../types';
+import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, TechSheetItem, ComponentConsumption, ComponentCategory, FlowTag, Sector, AppModulesConfig } from '../types';
 import {
   Save, Plus, Trash2, Camera, ChevronRight, ChevronLeft, Package, User,
   ToggleLeft as Toggle, Calendar, DollarSign, Tag, Calculator, Info,
   FileText, PlusCircle, Layers, Ruler, ExternalLink, ArrowUpDown,
   Footprints, Scissors, Box, Droplets, Sparkles, Settings, CheckCircle2,
-  AlertCircle, ChevronDown, ListFilter, Search, X, Copy
+  AlertCircle, ChevronDown, ListFilter, Search, X, Copy, Factory
 } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import EngineeringEditor from '../components/EngineeringEditor';
@@ -28,9 +28,10 @@ interface ProductFormViewProps {
   onCancel: () => void;
   isDarkMode: boolean;
   sectors: Sector[];
+  modulesConfig: AppModulesConfig;
 }
 
-export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, productionConfigs, flowTags, onSave, onCancel, isDarkMode, sectors }: ProductFormViewProps) {
+export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, productionConfigs, flowTags, onSave, onCancel, isDarkMode, sectors, modulesConfig }: ProductFormViewProps) {
   const existingProduct = useMemo(() => products.find(p => p.id === productId), [productId, products]);
   const productCategories = useMemo(() => categories.filter(c => c.type === CategoryType.PRODUCT), [categories]);
   const molds = useMemo(() => productionConfigs.filter(c => c.type === 'MOLD'), [productionConfigs]);
@@ -214,10 +215,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       priceAdjustmentDate: adjustmentDate ? new Date(adjustmentDate).getTime() : undefined,
       costPriceAdjustmentAmount: parseFloat(costPriceAdjustmentAmount as string) || 0,
       salePriceAdjustmentAmount: parseFloat(salePriceAdjustmentAmount as string) || 0,
-      productionGridId,
-      moldId,
-      soleMapping,
-      toolMapping,
+      productionGridId: modulesConfig.production ? productionGridId : undefined,
+      moldId: modulesConfig.production ? moldId : undefined,
+      soleMapping: modulesConfig.production ? soleMapping : {},
+      toolMapping: modulesConfig.production ? toolMapping : {},
       variations,
       createdAt: existingProduct?.createdAt || Date.now()
     };
@@ -342,12 +343,14 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   >
                     Cores & Info
                   </button>
-                  <button
-                    onClick={() => setVarView('consumo')}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${varView === 'consumo' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}
-                  >
-                    Engenharia / Consumos
-                  </button>
+                  {modulesConfig.production && (
+                    <button
+                      onClick={() => setVarView('consumo')}
+                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${varView === 'consumo' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}
+                    >
+                      Engenharia / Consumos
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -392,43 +395,45 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         </div>
 
                         {/* Cor Sincronizada (Sola) */}
-                        <div className="flex flex-col gap-3">
-                          <label htmlFor="sole-color-select" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Cor do Solado (Matriz)</label>
-                          <div className="relative group">
-                            <select
-                              id="sole-color-select"
-                              className={`w-full appearance-none border-2 rounded-2xl px-6 py-4 pl-12 text-sm font-black transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
-                              value={v.soleColorId || ''}
-                              onChange={(e) => updateVariation(activeVariationIndex, { soleColorId: e.target.value })}
-                            >
-                              <option value="">MESMA COR DO CABEDAL</option>
-                              {(() => {
-                                const selectedMold = molds.find(m => m.id === moldId);
-                                const moldColorIds = selectedMold?.metadata?.colorIds || [];
+                        {modulesConfig.production && (
+                          <div className="flex flex-col gap-3">
+                            <label htmlFor="sole-color-select" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Cor do Solado (Matriz)</label>
+                            <div className="relative group">
+                              <select
+                                id="sole-color-select"
+                                className={`w-full appearance-none border-2 rounded-2xl px-6 py-4 pl-12 text-sm font-black transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
+                                value={v.soleColorId || ''}
+                                onChange={(e) => updateVariation(activeVariationIndex, { soleColorId: e.target.value })}
+                              >
+                                <option value="">MESMA COR DO CABEDAL</option>
+                                {(() => {
+                                  const selectedMold = molds.find(m => m.id === moldId);
+                                  const moldColorIds = selectedMold?.metadata?.colorIds || [];
 
-                                // If mold has specific colors, filter them. Otherwise show all.
-                                const availableColors = moldColorIds.length > 0
-                                  ? colors.filter(c => moldColorIds.includes(c.id))
-                                  : colors;
+                                  // If mold has specific colors, filter them. Otherwise show all.
+                                  const availableColors = moldColorIds.length > 0
+                                    ? colors.filter(c => moldColorIds.includes(c.id))
+                                    : colors;
 
-                                return availableColors.map(c => (
-                                  <option key={c.id} value={c.id}>{c.name}</option>
-                                ));
-                              })()}
-                            </select>
-                            <div className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border border-black/10 flex items-center justify-center bg-slate-100 dark:bg-slate-800">
-                              {v.soleColorId ? (
-                                <div className="w-full h-full rounded-full" style={{ backgroundColor: colors.find(c => c.id === v.soleColorId)?.hex }} />
-                              ) : (
-                                <div className="w-full h-full rounded-full" style={{ backgroundColor: v.color }} />
-                              )}
+                                  return availableColors.map(c => (
+                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                  ));
+                                })()}
+                              </select>
+                              <div className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border border-black/10 flex items-center justify-center bg-slate-100 dark:bg-slate-800">
+                                {v.soleColorId ? (
+                                  <div className="w-full h-full rounded-full" style={{ backgroundColor: colors.find(c => c.id === v.soleColorId)?.hex }} />
+                                ) : (
+                                  <div className="w-full h-full rounded-full" style={{ backgroundColor: v.color }} />
+                                )}
+                              </div>
+                              <ChevronDown size={18} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                             </div>
-                            <ChevronDown size={18} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            {moldId && molds.find(m => m.id === moldId)?.metadata?.colorIds?.length === 0 && (
+                              <p className="text-[8px] text-amber-500 font-bold uppercase px-2">Nota: Esta matriz não possui cores vinculadas. Exibindo todas.</p>
+                            )}
                           </div>
-                          {moldId && molds.find(m => m.id === moldId)?.metadata?.colorIds?.length === 0 && (
-                            <p className="text-[8px] text-amber-500 font-bold uppercase px-2">Nota: Esta matriz não possui cores vinculadas. Exibindo todas.</p>
-                          )}
-                        </div>
+                        )}
                       </div>
 
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
@@ -756,7 +761,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 }}
                 className={`bg-indigo-600 text-white py-4 rounded-xl font-black uppercase tracking-widest text-xs shadow-lg flex items-center justify-center gap-2 mt-8 ${isDarkMode ? 'shadow-none' : 'shadow-indigo-200'}`}
               >
-                {activeVariationIndex === variations.length - 1 ? 'Concluir Engenharia' : 'Próxima Variação'} <ChevronRight size={16} />
+                {modulesConfig.production && activeVariationIndex === variations.length - 1 ? 'Concluir Engenharia' : activeVariationIndex === variations.length - 1 ? 'Concluir' : 'Próxima Variação'} <ChevronRight size={16} />
               </button>
             </motion.div>
           ) : (
@@ -870,92 +875,75 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             </div>
           </div>
 
-          {/* Configurações de Produção */}
-          <div className={`p-5 sm:p-6 rounded-3xl border shadow-sm transition-all duration-500 ${isDarkMode ? 'bg-slate-800/20 border-slate-700/50' : 'bg-slate-50 border-slate-100 shadow-indigo-100/10'}`}>
-            <div className="flex items-center gap-4 mb-8">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-indigo-500 text-white shadow-lg shadow-indigo-500/20">
-                <Calculator size={24} strokeWidth={2.5} />
-              </div>
-              <div>
-                <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400">
-                  Configurações de Produção
-                </h4>
-                <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-1">
-                  Grade, Solados e Facas
-                </p>
-              </div>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div>
-                <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none">
-                  Grade de Produção
-                </label>
-                <div className="relative group">
-                  <select
-                    title="Grade de Producao"
-                    aria-label="Selecionar grade de tamanhos"
-                    className={`w-full border-2 rounded-2xl px-6 py-4 pl-12 appearance-none text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-500'}`}
-                    value={productionGridId}
-                    onChange={(e) => setProductionGridId(e.target.value)}
-                  >
-                    {formaGrids.map(g => (
-                      <option key={g.id} value={g.id} className="dark:bg-slate-900">
-                        {g.name} ({g.sizes.join("/")})
-                      </option>
-                    ))}
-                  </select>
-                  <Ruler size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
-                  <ChevronRight className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300 rotate-90" size={18} />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none">
-                  Matriz de Solado
-                </label>
-                <div className="relative group">
-                  <ComboBox
-                    options={[{ id: '', name: 'Nenhuma' }, ...molds.map(m => ({ id: m.id, name: m.name }))]}
-                    value={moldId}
-                    onChange={setMoldId}
-                    placeholder="Selecionar solado..."
-                    isDarkMode={isDarkMode}
-                    icon={<Layers size={18} />}
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Mapeamento de Grade de Solados — Card dedicado */}
-            <div className={`mt-6 rounded-[2rem] border-2 overflow-hidden ${isDarkMode ? 'border-emerald-500/20' : 'border-emerald-100'}`}>
-              <button
-                type="button"
-                onClick={() => setShowSoleMapping(true)}
-                className={`w-full flex items-center justify-between px-5 sm:px-6 py-4 text-left transition-colors ${isDarkMode ? 'bg-slate-800/20 hover:bg-emerald-900/20' : 'bg-emerald-50/30 hover:bg-emerald-50'}`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${isDarkMode ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-100 text-emerald-600'}`}>
-                    <Footprints size={18} />
-                  </div>
-                  <div>
-                    <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>
-                      Mapeamento de Solados por Numeração
-                    </p>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                      {Object.values(soleMapping).some(v => v)
-                        ? `${Object.keys(soleMapping).filter(k => soleMapping[k]).length} numerações mapeadas · toque para editar`
-                        : 'Vincule cada tamanho cabedal ao número da sola'}
-                    </p>
+          {modulesConfig.production && (
+            <div className="pt-4 border-t border-slate-50 dark:border-slate-800">
+              <label className="text-[10px] uppercase font-black text-slate-900 dark:text-white mb-4 block tracking-widest flex items-center gap-2">
+                <Factory size={14} className="text-indigo-500" /> Configurações de Produção
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[8px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block">Grade de Produção (Escalonamento)</label>
+                  <div className="relative group">
+                    <select
+                      className={`w-full appearance-none bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-3 py-3 text-[10px] font-bold text-slate-900 dark:text-slate-100 pr-10 transition-all outline-none group-hover:border-indigo-500/30`}
+                      value={productionGridId}
+                      title="Grade de Produção"
+                      onChange={(e) => setProductionGridId(e.target.value)}
+                    >
+                      <option value="">Selecione uma grade...</option>
+                      {grids.map(g => (
+                        <option key={g.id} value={g.id}>{g.name} ({g.sizes.join('-')})</option>
+                      ))}
+                    </select>
+                    <ChevronRight className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-300 rotate-90" size={18} />
                   </div>
                 </div>
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-400'}`}>
-                  <ChevronRight size={14} className="rotate-0" />
-                </div>
-              </button>
-            </div>
 
-          </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[8px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block">Matriz de Solado (Base)</label>
+                  <div className="relative group">
+                    <ComboBox
+                      options={[{ id: '', name: 'Nenhuma' }, ...molds.map(m => ({ id: m.id, name: m.name }))]}
+                      value={moldId}
+                      onChange={setMoldId}
+                      placeholder="Selecionar solado..."
+                      isDarkMode={isDarkMode}
+                      icon={<Layers size={14} />}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Mapeamento de Grade de Solados — Card dedicado */}
+              <div className={`mt-6 rounded-[2rem] border-2 overflow-hidden ${isDarkMode ? 'border-emerald-500/20' : 'border-emerald-100'}`}>
+                <button
+                  type="button"
+                  onClick={() => setShowSoleMapping(true)}
+                  className={`w-full flex items-center justify-between px-5 sm:px-6 py-4 text-left transition-colors ${isDarkMode ? 'bg-slate-800/20 hover:bg-emerald-900/20' : 'bg-emerald-50/30 hover:bg-emerald-50'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${isDarkMode ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-100 text-emerald-600'}`}>
+                      <Footprints size={18} />
+                    </div>
+                    <div>
+                      <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                        Mapeamento de Solados por Numeração
+                      </p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                        {Object.values(soleMapping).some(v => v)
+                          ? `${Object.keys(soleMapping).filter(k => soleMapping[k]).length} numerações mapeadas · clique para editar`
+                          : 'Vincule cada tamanho cabedal ao número da sola'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-400'}`}>
+                    <ChevronRight size={14} className="rotate-0" />
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className={`p-5 sm:p-6 rounded-3xl border shadow-sm transition-all duration-500 ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-amber-50/40 border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/20 shadow-amber-100/20' : 'bg-indigo-50/40 border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-900/20 shadow-indigo-100/20'}`}>
             <div className="flex items-center gap-4 mb-8">
@@ -1069,9 +1057,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             </div>
           </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="text-[9px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Fornecedor</label>
+            <label className="text-[9px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Fornecedor Principal</label>
             <ComboBox
               options={suppliers.map(s => ({ id: s.id, name: s.name }))}
               value={supplierId}
@@ -1082,9 +1070,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             />
           </div>
           <div>
-            <label className="text-[9px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Categoria</label>
+            <label className="text-[9px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Categoria do Produto</label>
             <ComboBox
-              options={[{ id: '', name: 'Nenhum' }, ...productCategories.map(c => ({ id: c.id, name: c.name }))]}
+              options={[{ id: '', name: 'Nenhum' }, ...categories.filter(c => !c.isPersonal).map(c => ({ id: c.id, name: c.name }))]}
               value={categoryId}
               onChange={setCategoryId}
               placeholder="Selecionar categoria..."
@@ -1190,13 +1178,15 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   <div className="flex flex-col">
                     <p className="text-base font-black text-slate-900 dark:text-white tracking-tight uppercase leading-none mb-2">{v.colorName || 'Nova Variação'}</p>
                     <div className="flex flex-wrap gap-2">
-                      <div className="flex items-center gap-1.5 px-3 py-1 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
-                        <Layers size={12} className="text-indigo-500" />
-                        <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                          {(v.consumptions || []).length} Itens na Ficha
-                        </span>
-                      </div>
-                      {Object.keys(v.soleMapping || {}).length > 0 && (
+                      {modulesConfig.production && (
+                        <div className="flex items-center gap-1.5 px-3 py-1 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
+                          <Layers size={12} className="text-indigo-500" />
+                          <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                            {(v.consumptions || []).length} Itens na Ficha
+                          </span>
+                        </div>
+                      )}
+                      {modulesConfig.production && Object.keys(v.soleMapping || {}).length > 0 && (
                         <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-900/30">
                           <Footprints size={12} className="text-emerald-500" />
                           <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Mapeado</span>
@@ -1219,8 +1209,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               {/* Actions: Buttons */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
                 <div className="flex flex-1 gap-3">
-                  {/* Botão de Copiar (Aparece se houver conteúdo) */}
-                  {(v.consumptions || []).length > 0 && (
+                  {/* Botão de Copiar (Aparece se houver conteúdo e produção ativa) */}
+                  {modulesConfig.production && (v.consumptions || []).length > 0 && (
                     <button
                       onClick={() => {
                         setEngineeringClipboard({
@@ -1234,12 +1224,12 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       className={`flex-1 flex items-center justify-center gap-2 px-4 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-indigo-900/20 text-indigo-400 hover:bg-indigo-900/40' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'}`}
                       title="Copiar toda a engenharia desta cor"
                     >
-                      <Copy size={14} /> Copiar
+                      <button className="flex items-center gap-2"><Copy size={14} /> Copiar</button>
                     </button>
                   )}
 
-                  {/* Botão de Colar (Aparece se houver algo no clipboard e a variação estiver vazia) */}
-                  {engineeringClipboard && (v.consumptions || []).length === 0 && (
+                  {/* Botão de Colar (Aparece se houver algo no clipboard e a variação estiver vazia e produção ativa) */}
+                  {modulesConfig.production && engineeringClipboard && (v.consumptions || []).length === 0 && (
                     <button
                       onClick={() => {
                         const newVariations = [...variations];
@@ -1260,13 +1250,24 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   )}
                 </div>
 
-                <button
-                  onClick={() => setActiveVariationIndex(i)}
-                  className="sm:flex-[1.5] flex items-center justify-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
-                  aria-label={`Editar ficha técnica ${v.colorName}`}
-                >
-                  Editar Ficha <ChevronRight size={16} />
-                </button>
+                {modulesConfig.production && (
+                  <button
+                    onClick={() => setActiveVariationIndex(i)}
+                    className="sm:flex-[1.5] flex items-center justify-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+                    aria-label={`Editar ficha técnica ${v.colorName}`}
+                  >
+                    Editar Ficha <ChevronRight size={16} />
+                  </button>
+                )}
+                {!modulesConfig.production && (
+                  <button
+                    onClick={() => setActiveVariationIndex(i)}
+                    className="sm:flex-[1.5] flex items-center justify-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+                    aria-label={`Editar variação ${v.colorName}`}
+                  >
+                    Editar Variação <ChevronRight size={16} />
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -1415,8 +1416,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
           </motion.div>
         )}
       </AnimatePresence>
+      </div>
     </div>
-  </div>
-</>
+  </>
   );
 }

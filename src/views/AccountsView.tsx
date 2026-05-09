@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Account, AccountType } from '../types';
+import { Account, AccountType, AppModulesConfig } from '../types';
 import { Plus, Wallet, Edit, Trash2, ArrowRightLeft, Search, RefreshCcw, DollarSign, Building2, Landmark, Banknote, User, Star } from 'lucide-react';
 import ConfirmDialog from '../components/ConfirmDialog';
 
@@ -11,10 +11,15 @@ interface AccountsViewProps {
   onAdjust: (id: string) => void;
   onTransfer: () => void;
   isDarkMode: boolean;
+  modulesConfig: AppModulesConfig;
 }
 
-export default function AccountsView({ accounts, onAdd, onEdit, onDelete, onAdjust, onTransfer, isDarkMode }: AccountsViewProps) {
-  const businessAccounts = accounts.filter(a => a.type !== AccountType.PERSONAL);
+export default function AccountsView({ accounts, onAdd, onEdit, onDelete, onAdjust, onTransfer, isDarkMode, modulesConfig }: AccountsViewProps) {
+  const visibleAccounts = accounts.filter(a => {
+    if (a.type === AccountType.PERSONAL && !modulesConfig?.personal) return false;
+    return true;
+  });
+  const businessAccounts = visibleAccounts.filter(a => a.type !== AccountType.PERSONAL);
   const totalBalance = businessAccounts.reduce((acc, account) => acc + account.balance, 0);
   const [filter, setFilter] = useState('TODAS');
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -116,7 +121,7 @@ export default function AccountsView({ accounts, onAdd, onEdit, onDelete, onAdju
 
       {/* Filters */}
       <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-        {['TODAS', 'BANCOS', 'DINHEIRO', 'POUPANÇA', 'PESSOAL'].map((f) => (
+        {['TODAS', 'BANCOS', 'DINHEIRO', 'POUPANÇA', ...(modulesConfig?.personal ? ['PESSOAL'] : [])].map((f) => (
           <button 
             key={f}
             onClick={() => setFilter(f)}
@@ -129,7 +134,7 @@ export default function AccountsView({ accounts, onAdd, onEdit, onDelete, onAdju
       
       {/* List */}
       <div className="flex flex-col gap-3">
-          {accounts.filter(a => {
+          {visibleAccounts.filter(a => {
             if (filter === 'TODAS') return true;
             if (filter === 'BANCOS') return a.type === AccountType.BANK;
             if (filter === 'DINHEIRO') return a.type === AccountType.CASH;

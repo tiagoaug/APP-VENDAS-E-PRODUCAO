@@ -16,6 +16,8 @@ export enum ProductStatus {
 export enum GridType {
   FORMA = 'FORMA',
   SOLADO = 'SOLADO',
+  FACA = 'FACA',
+  EMBALAGEM = 'EMBALAGEM',
 }
 
 export type Grid = {
@@ -335,6 +337,7 @@ export enum ViewType {
   PRODUCTION_CONFIG = 'PRODUCTION_CONFIG',
   PRODUCTION_TECH_SHEET = 'PRODUCTION_TECH_SHEET',
   PRODUCT_SHEET = 'PRODUCT_SHEET',
+  MODULES_CONFIG = 'MODULES_CONFIG',
 }
 
 export type DashboardCardConfig = {
@@ -343,6 +346,7 @@ export type DashboardCardConfig = {
   visible: boolean;
   order: number;
   initialScreen?: ProductionScreenType;
+  module?: keyof AppModulesConfig | 'any';
 };
 
 export type DashboardConfig = {
@@ -382,6 +386,12 @@ export type Sector = {
 export type ProductionScreenType = 'MENU' | 'SECTORS' | 'FLOW_TAGS' | 'UNIDADES' | 'FACAS' | 'INFESTO' | 'PRAZOS' | 'FICHAS' | 'EMBALAGENS' | 'INSUMOS' | 'MATRIZES';
 
 // Production sub-screens moved to types.ts
+
+export type AppModulesConfig = {
+  personal: boolean;
+  sales: boolean;
+  production: boolean;
+};
 
 export type ProductionConfigItem = {
   id: string;

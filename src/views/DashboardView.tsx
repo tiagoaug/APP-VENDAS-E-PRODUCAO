@@ -31,6 +31,7 @@ interface DashboardViewProps {
   onAddTransaction: (type: TransactionType) => void;
   isDarkMode: boolean;
   dashboardConfig: DashboardConfig;
+  modulesConfig: import("../types").AppModulesConfig;
 }
 
 export default function DashboardView({
@@ -50,6 +51,7 @@ export default function DashboardView({
   onAddTransaction,
   isDarkMode,
   dashboardConfig,
+  modulesConfig,
 }: DashboardViewProps) {
   const [checksSearch, setChecksSearch] = useState("");
   const [lowStockSearch, setLowStockSearch] = useState("");
@@ -210,10 +212,13 @@ export default function DashboardView({
 
   const stats = useMemo(() => {
     const businessAccounts = accounts.filter(a => a.type !== AccountType.PERSONAL);
+    const personalAccounts = accounts.filter(a => a.type === AccountType.PERSONAL);
     const businessTransactions = transactions.filter(t => !t.isPersonal && accounts.find(a => a.id === t.accountId)?.type !== AccountType.PERSONAL);
+    const personalTransactions = transactions.filter(t => t.isPersonal || accounts.find(a => a.id === t.accountId)?.type === AccountType.PERSONAL);
 
     // Balanço unificado pelas contas comerciais
     const consolidatedBalance = businessAccounts.reduce((acc, a) => acc + (a.balance || 0), 0);
+    const personalBalance = personalAccounts.reduce((acc, a) => acc + (a.balance || 0), 0);
     
     // Movimentação mensal pelas transações confirmadas (comerciais)
     const now = new Date();
@@ -275,21 +280,28 @@ export default function DashboardView({
       totalStockSaleValue: stockSummary.totalSaleValue,
       estimatedStockProfit: stockSummary.estimatedProfit,
       topColors,
-      pendingReceivables
+      pendingReceivables,
+      personalBalance
     };
   }, [transactions, accounts, products, sales]);
 
   const recentActivity = useMemo(() => {
     const businessTransactions = transactions.filter(t => !t.isPersonal && accounts.find(a => a.id === t.accountId)?.type !== AccountType.PERSONAL);
-    const combined = [
-      ...sales
-        .filter(s => s.status !== SaleStatus.CANCELLED) // Ocultando canceladas do resumo de atividade do dashboard (opcional, ou podemos mostrar como canceladas)
-        .map((s) => ({ ...s, activityType: "sale" as const })),
-      ...purchases.map((p) => ({ ...p, activityType: "purchase" as const })),
-      ...businessTransactions.map((t) => ({ ...t, activityType: "transaction" as const, total: t.amount, activityStatus: t.status })),
-    ].sort((a, b) => b.date - a.date);
-    return combined.slice(0, 10);
-  }, [sales, purchases, transactions, accounts]);
+    const activityList = [];
+
+    if (modulesConfig.sales) {
+      activityList.push(...sales.filter(s => s.status !== SaleStatus.CANCELLED).map((s) => ({ ...s, activityType: "sale" as const })));
+      activityList.push(...purchases.map((p) => ({ ...p, activityType: "purchase" as const })));
+      activityList.push(...businessTransactions.map((t) => ({ ...t, activityType: "transaction" as const, total: t.amount, activityStatus: t.status })));
+    }
+
+    if (modulesConfig.personal) {
+      const personalTransactions = transactions.filter(t => t.isPersonal || accounts.find(a => a.id === t.accountId)?.type === AccountType.PERSONAL);
+      activityList.push(...personalTransactions.map((t) => ({ ...t, activityType: "transaction" as const, total: t.amount, activityStatus: t.status })));
+    }
+
+    return activityList.sort((a, b) => b.date - a.date).slice(0, 10);
+  }, [sales, purchases, transactions, accounts, modulesConfig]);
 
   const filteredChecks = useMemo(() => {
     const checks: (CompanyCheck & {
@@ -492,14 +504,32 @@ export default function DashboardView({
   }, [sales, products]);
 
   const sortedCards = useMemo(() => {
-    return [...dashboardConfig.cards].sort((a, b) => a.order - b.order);
-  }, [dashboardConfig]);
+    return [...dashboardConfig.cards]
+      .filter(card => {
+        if (!card.module || card.module === 'any') return true;
+        return modulesConfig[card.module as any];
+      })
+      .sort((a, b) => a.order - b.order);
+  }, [dashboardConfig, modulesConfig]);
 
   return (
     <div className="flex-1 overflow-y-auto force-scrollbar flex flex-col gap-4 pb-40 px-4 bg-[#fafafa] dark:bg-slate-950 min-h-screen pt-4">
 
       {sortedCards.map((card) => {
         if (!card.visible) return null;
+
+        // Strict Modular Gating
+        if (card.id === 'personal_balance' && !modulesConfig.personal) return null;
+        if (card.id === 'engineering_config' && !modulesConfig.production) return null;
+        
+        // Sales-dependent cards
+        const salesDependent = [
+          'balance', 'manual_entries', 'quick_reports', 'report_center', 
+          'activity', 'cash_flow', 'receivables', 'stock_alerts', 
+          'customers', 'suppliers', 'debt_management', 'stock_value', 
+          'estimated_profit', 'checks', 'monthly_profit_detailed'
+        ];
+        if (salesDependent.includes(card.id) && !modulesConfig.sales) return null;
 
         switch (card.id) {
           case "balance":
@@ -764,6 +794,27 @@ export default function DashboardView({
                 </div>
                 <div className="w-12 h-12 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-500">
                   <DollarSign size={24} strokeWidth={2.5} />
+                </div>
+              </div>
+            );
+
+          case "personal_balance":
+            return (
+              <div
+                key="personal_balance"
+                onClick={() => onNavigate(ViewType.PERSONAL_FINANCIAL)}
+                className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(16,185,129,0.1)] flex justify-between items-center ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
+              >
+                <div>
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 leading-none">
+                    Saldo Pessoal
+                  </p>
+                  <p className={`text-3xl font-black tracking-tight leading-none ${isDarkMode ? "text-white" : "text-emerald-500"}`}>
+                    R$ {(stats as any).personalBalance.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className="w-14 h-14 bg-emerald-50 dark:bg-emerald-900/30 rounded-2xl flex items-center justify-center text-emerald-500">
+                  <Landmark size={28} strokeWidth={2.5} />
                 </div>
               </div>
             );

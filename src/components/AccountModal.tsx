@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Account, AccountType } from '../types';
+import { Account, AccountType, AppModulesConfig } from '../types';
 
 interface AccountModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (account: Omit<Account, 'id'>) => void;
   account?: Account;
+  modulesConfig: AppModulesConfig;
 }
 
-export default function AccountModal({ isOpen, onClose, onSave, account }: AccountModalProps) {
+export default function AccountModal({ isOpen, onClose, onSave, account, modulesConfig }: AccountModalProps) {
   const [name, setName] = useState(account?.name || '');
   const [balance, setBalance] = useState<number>(account?.balance || 0);
   const [type, setType] = useState<AccountType>(account?.type || AccountType.BANK);
@@ -69,7 +70,9 @@ export default function AccountModal({ isOpen, onClose, onSave, account }: Accou
           <div className="space-y-2">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo de Conta</span>
             <div className="grid grid-cols-2 gap-2">
-                {[AccountType.BANK, AccountType.CASH, AccountType.SAVINGS, AccountType.PERSONAL].map((t) => (
+                {[AccountType.BANK, AccountType.CASH, AccountType.SAVINGS, AccountType.PERSONAL]
+                  .filter(t => t !== AccountType.PERSONAL || modulesConfig?.personal)
+                  .map((t) => (
                     <button
                         key={t}
                         type="button"

@@ -1,9 +1,6 @@
 import { 
-  Package, 
   Users, 
-  Truck, 
   Tags, 
-  TableCellsMerge, 
   Palette, 
   CreditCard, 
   Wallet,
@@ -13,50 +10,59 @@ import {
   Sun,
   ChevronRight,
   Layout,
-  Box,
   Grid3X3,
   Factory,
   Database,
-  Footprints
+  Footprints,
+  Shield,
+  Landmark
 } from 'lucide-react';
-import { ViewType, ProductionScreenType } from '../types';
+import { ViewType, ProductionScreenType, AppModulesConfig } from '../types';
 
 interface SettingsViewProps {
   onNavigate: (view: ViewType) => void;
   onNavigateProduction: (screen: ProductionScreenType) => void;
   isDarkMode: boolean;
   toggleDarkMode: () => void;
+  modulesConfig: AppModulesConfig;
 }
 
-export default function SettingsView({ onNavigate, onNavigateProduction, isDarkMode, toggleDarkMode }: SettingsViewProps) {
+export default function SettingsView({ onNavigate, onNavigateProduction, isDarkMode, toggleDarkMode, modulesConfig }: SettingsViewProps) {
   const menuGroups = [
     {
-      title: "Configurações de Produto",
+      title: "Configurações de Negócio",
       items: [
-        { id: ViewType.PRODUCT_SHEET, label: "Engenharia / Ficha Técnica", icon: <Database size={24} />, color: "text-indigo-600 dark:text-indigo-400" },
-        { id: 'SOLE_MATRIX_DIRECT', label: "Matrizes de Solados", icon: <Footprints size={24} />, color: "text-orange-600 dark:text-orange-400" },
-        { id: ViewType.CATEGORIES, label: "Categorias", icon: <Tags size={24} />, color: "text-emerald-600 dark:text-emerald-400" },
-        { id: ViewType.GRIDS, label: "Grades", icon: <Grid3X3 size={24} />, color: "text-violet-600 dark:text-violet-400" },
-        { id: ViewType.COLORS, label: "Cores", icon: <Palette size={24} />, color: "text-pink-600 dark:text-pink-400" },
-        { id: ViewType.PRODUCTION_CONFIG, label: "Configuração de Produção", icon: <Factory size={24} />, color: "text-slate-600 dark:text-slate-400" },
-        { id: ViewType.STOCK, label: "Estoque Central", icon: <Boxes size={24} />, color: "text-amber-700 dark:text-amber-500" },
-      ]
+        { id: ViewType.STOCK, label: "Estoque de Produtos", icon: <Boxes size={24} />, color: "text-amber-700 dark:text-amber-500", module: 'sales' },
+        { id: ViewType.CATEGORIES, label: "Categorias e Grupos", icon: <Tags size={24} />, color: "text-emerald-600 dark:text-emerald-400", module: 'any' },
+        { id: ViewType.PEOPLE, label: "Clientes e Fornecedores", icon: <Users size={24} />, color: "text-indigo-600 dark:text-indigo-400", module: 'sales' },
+      ].filter(item => item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig])
+    },
+    {
+      title: "Módulo de Produção",
+      items: [
+        { id: ViewType.PRODUCT_SHEET, label: "Engenharia / Ficha Técnica", icon: <Database size={24} />, color: "text-indigo-600 dark:text-indigo-400", module: 'production' },
+        { id: 'SOLE_MATRIX_DIRECT', label: "Matrizes de Solados", icon: <Footprints size={24} />, color: "text-orange-600 dark:text-orange-400", module: 'production' },
+        { id: ViewType.GRIDS, label: "Grades de Tamanho", icon: <Grid3X3 size={24} />, color: "text-violet-600 dark:text-violet-400", module: 'production' },
+        { id: ViewType.COLORS, label: "Paleta de Cores", icon: <Palette size={24} />, color: "text-pink-600 dark:text-pink-400", module: 'production' },
+        { id: ViewType.PRODUCTION_CONFIG, label: "Configuração de Fábrica", icon: <Factory size={24} />, color: "text-slate-600 dark:text-slate-400", module: 'production' },
+      ].filter(item => item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig])
     },
     {
       title: "Financeiro & Contas",
       items: [
-        { id: ViewType.ACCOUNTS, label: "Gerenciar Contas", icon: <Wallet size={24} />, color: "text-emerald-600 dark:text-emerald-400" },
-        { id: ViewType.PAYMENT_METHODS, label: "Métodos de Pagamento", icon: <CreditCard size={24} />, color: "text-blue-600 dark:text-blue-400" },
-        { id: ViewType.PEOPLE, label: "Clientes e Fornecedores", icon: <Users size={24} />, color: "text-emerald-600 dark:text-emerald-400" },
-        { id: ViewType.REPORTS, label: "Relatórios Avançados", icon: <BarChart3 size={24} />, color: "text-slate-600 dark:text-slate-400" },
-      ]
+        { id: ViewType.FINANCIAL, label: "Fluxo de Caixa Vendas", icon: <BarChart3 size={24} />, color: "text-emerald-600 dark:text-emerald-400", module: 'sales' },
+        { id: ViewType.PERSONAL_FINANCIAL, label: "Financeiro Pessoal", icon: <Wallet size={24} />, color: "text-pink-500 dark:text-pink-400", module: 'personal' },
+        { id: ViewType.ACCOUNTS, label: "Contas Bancárias", icon: <Landmark size={24} />, color: "text-blue-600 dark:text-blue-400", module: 'any' },
+        { id: ViewType.PAYMENT_METHODS, label: "Meios de Pagamento", icon: <CreditCard size={24} />, color: "text-indigo-600 dark:text-indigo-400", module: 'sales' },
+      ].filter(item => item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig])
     },
     {
       title: "Sistema & Backup",
       items: [
-        { id: ViewType.DASHBOARD_CONFIG, label: "Organizar Dashboard", icon: <Layout size={24} />, color: "text-indigo-600 dark:text-indigo-400" },
-        { id: ViewType.BACKUP, label: "Backup & Formatação", icon: <Database size={24} />, color: "text-gray-600 dark:text-gray-400" },
-      ]
+        { id: ViewType.MODULES_CONFIG, label: "Módulos do Sistema", icon: <Shield size={24} />, color: "text-indigo-600 dark:text-indigo-400", module: 'any' },
+        { id: ViewType.DASHBOARD_CONFIG, label: "Organizar Dashboard", icon: <Layout size={24} />, color: "text-indigo-600 dark:text-indigo-400", module: 'any' },
+        { id: ViewType.BACKUP, label: "Backup & Formatação", icon: <Database size={24} />, color: "text-gray-600 dark:text-gray-400", module: 'any' },
+      ].filter(item => item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig])
     }
   ];
 

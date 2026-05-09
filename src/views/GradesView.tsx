@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Grid, GridType } from '../types';
-import { Plus, TableCellsMerge, Trash2, Edit, Ruler, Target, Footprints } from 'lucide-react';
+import { Plus, TableCellsMerge, Trash2, Edit, Ruler, Target, Footprints, Scissors, Filter, Box, LayoutGrid, Zap } from 'lucide-react';
 import GradeModal from '../components/GradeModal';
 
 interface GradesViewProps {
@@ -14,6 +14,16 @@ interface GradesViewProps {
 export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode }: GradesViewProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGrid, setEditingGrid] = useState<Grid | null>(null);
+  const [activeFilter, setActiveFilter] = useState<GridType | 'ALL'>('ALL');
+
+  const filteredGrids = useMemo(() => {
+    if (activeFilter === 'ALL') return grids;
+    return grids.filter(g => {
+      // Fallback para grids antigos sem tipo definido
+      const gridType = g.type || GridType.FORMA;
+      return gridType === activeFilter;
+    });
+  }, [grids, activeFilter]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -24,7 +34,7 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
           if (editingGrid) onEdit(editingGrid.id, g);
           else onAdd(g);
         }}
-        grid={editingGrid || undefined}
+        grid={editingGrid ? editingGrid : (activeFilter !== 'ALL' ? { type: activeFilter } as any : undefined)}
       />
 
       <div className={`p-5 rounded-2xl border flex items-start gap-4 ${isDarkMode ? 'bg-cyan-900/10 border-cyan-900/30' : 'bg-cyan-50/50 border-cyan-100'}`}>
@@ -36,8 +46,59 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
       </div>
 
       <div className="flex flex-col gap-4">
-        {grids.map((grid) => (
-          <div key={grid.id} className={`p-6 rounded-[2.5rem] border shadow-sm flex flex-col gap-5 group transition-all hover:shadow-md ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+        {/* Filters */}
+        <div className={`p-2 rounded-2xl border flex items-center gap-3 overflow-x-auto no-scrollbar ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+          <div className={`p-2.5 rounded-xl shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-500'}`}>
+            <Filter size={16} />
+          </div>
+          <div className="flex items-center gap-1 pr-4">
+            {[
+              { id: 'ALL', label: 'TODAS', color: 'indigo', icon: LayoutGrid },
+              { id: GridType.FORMA, label: 'FOR.', color: 'indigo', icon: Footprints },
+              { id: GridType.SOLADO, label: 'SOL.', color: 'emerald', icon: Zap },
+              { id: GridType.FACA, label: 'FACA', color: 'rose', icon: Scissors },
+              { id: GridType.EMBALAGEM, label: 'EMB.', color: 'amber', icon: Box }
+            ].map(filter => {
+              const isActive = activeFilter === filter.id;
+              const Icon = filter.icon;
+              let activeClasses = '';
+              let iconClasses = '';
+              
+              // Always set icon color for better identification
+              if (filter.color === 'indigo') iconClasses = 'text-indigo-500';
+              if (filter.color === 'emerald') iconClasses = 'text-emerald-500';
+              if (filter.color === 'rose') iconClasses = 'text-rose-500';
+              if (filter.color === 'amber') iconClasses = 'text-amber-500';
+
+              if (isActive) {
+                if (filter.color === 'indigo') activeClasses = isDarkMode ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' : 'bg-indigo-50 text-indigo-600 border-indigo-200';
+                if (filter.color === 'emerald') activeClasses = isDarkMode ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-emerald-50 text-emerald-600 border-emerald-200';
+                if (filter.color === 'rose') activeClasses = isDarkMode ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' : 'bg-rose-50 text-rose-600 border-rose-200';
+                if (filter.color === 'amber') activeClasses = isDarkMode ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-amber-50 text-amber-600 border-amber-200';
+              }
+
+              return (
+                <button
+                  key={filter.id}
+                  onClick={() => setActiveFilter(filter.id as any)}
+                  className={`px-3 py-2 rounded-xl text-[8px] font-black uppercase tracking-tight transition-all whitespace-nowrap border-2 flex items-center gap-1.5 ${
+                    isActive
+                      ? `${activeClasses} shadow-lg shadow-black/5 scale-105 z-10`
+                      : isDarkMode
+                        ? 'bg-transparent border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'
+                        : 'bg-transparent border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <Icon size={12} className={iconClasses} />
+                  {filter.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {filteredGrids.map((grid) => (
+          <div key={grid.id} className={`p-4 sm:p-6 rounded-[2.5rem] border shadow-sm flex flex-col gap-5 group transition-all hover:shadow-md ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             <div className="flex justify-between items-start">
               <div className="flex items-center gap-4">
                 <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-cyan-400' : 'bg-cyan-50 text-cyan-600'}`}>
@@ -49,10 +110,16 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
                     <div className={`px-2 py-0.5 rounded-md flex items-center gap-1 border ${
                       grid.type === GridType.SOLADO 
                         ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' 
-                        : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-500'
+                        : grid.type === GridType.FACA
+                          ? 'bg-rose-500/10 border-rose-500/20 text-rose-500'
+                          : grid.type === GridType.EMBALAGEM
+                            ? 'bg-amber-500/10 border-amber-500/20 text-amber-500'
+                            : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-500'
                     }`}>
-                      {grid.type === GridType.SOLADO ? <Footprints size={10} /> : <Target size={10} />}
-                      <span className="text-[8px] font-black uppercase tracking-widest">{grid.type === GridType.SOLADO ? 'Solado' : 'Forma'}</span>
+                      {grid.type === GridType.SOLADO ? <Footprints size={10} /> : grid.type === GridType.FACA ? <Scissors size={10} /> : grid.type === GridType.EMBALAGEM ? <Box size={10} /> : <Target size={10} />}
+                      <span className="text-[8px] font-black uppercase tracking-widest">
+                        {grid.type === GridType.SOLADO ? 'Solado' : grid.type === GridType.FACA ? 'Faca' : grid.type === GridType.EMBALAGEM ? 'Emb.' : 'Forma'}
+                      </span>
                     </div>
                   </div>
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
@@ -71,13 +138,13 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
             </div>
 
             {/* Size chips */}
-            <div className={`p-5 rounded-[2rem] flex flex-col gap-3 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50/50'}`}>
+            <div className={`p-3 sm:p-5 rounded-[2rem] flex flex-col gap-3 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50/50'}`}>
               <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Numerações da Grade</span>
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-1.5">
                 {(grid.sizes || []).map((size) => (
                   <div
                     key={size}
-                    className={`px-4 py-2 rounded-xl border-2 flex items-center justify-center ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
+                    className={`px-3 py-1.5 rounded-xl border-2 flex items-center justify-center ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
                   >
                     <span className="text-xs font-black">{size}</span>
                   </div>

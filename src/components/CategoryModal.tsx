@@ -13,13 +13,16 @@ interface CategoryModalProps {
 export default function CategoryModal({ isOpen, onClose, onSave, category, defaultType }: CategoryModalProps) {
   const [name, setName] = useState(category?.name || '');
   const [type, setType] = useState<CategoryType>(category?.type || defaultType || CategoryType.PRODUCT);
+  const [isPersonal, setIsPersonal] = useState(category?.isPersonal || defaultType === CategoryType.OTHER);
 
   useEffect(() => {
     if (category) {
       setName(category.name);
       setType(category.type);
+      setIsPersonal(!!category.isPersonal);
     } else if (defaultType) {
       setType(defaultType);
+      setIsPersonal(defaultType === CategoryType.OTHER);
     }
   }, [category, defaultType]);
 
@@ -50,13 +53,26 @@ export default function CategoryModal({ isOpen, onClose, onSave, category, defau
           <option value={CategoryType.PRODUCTION}>PRODUÇÃO</option>
           <option value={CategoryType.GENERAL}>GERAIS</option>
           <option value={CategoryType.SUPPLY}>INSUMOS</option>
-          <option value={CategoryType.OTHER}>OUTRAS</option>
+          <option value={CategoryType.OTHER}>PESSOAIS (OUTRAS)</option>
         </select>
+
+        <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800 cursor-pointer select-none">
+          <input 
+            type="checkbox" 
+            className="w-5 h-5 rounded-md border-slate-200 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
+            checked={isPersonal}
+            onChange={(e) => setIsPersonal(e.target.checked)}
+          />
+          <div className="flex flex-col">
+            <span className="text-xs font-black uppercase tracking-widest dark:text-white">Uso Pessoal</span>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Exibir na aba Pessoais</span>
+          </div>
+        </label>
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300">Cancelar</button>
           <button 
             onClick={() => {
-              onSave({ name, type, color: 'bg-indigo-500' });
+              onSave({ name, type, color: 'bg-indigo-500', isPersonal });
               setName('');
               onClose();
             }}

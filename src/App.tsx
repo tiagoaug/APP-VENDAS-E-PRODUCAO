@@ -107,6 +107,7 @@ import DashboardConfigView from "./views/DashboardConfigView";
 import ProductionConfigView from "./views/ProductionConfigView";
 import ProductSheetMenuView from "./views/ProductSheetMenuView";
 import PersonalFinancialView from "./views/PersonalFinancialView";
+import ModuleConfigView from "./views/ModuleConfigView";
 
 
 // Modals
@@ -127,7 +128,6 @@ const MODAL_VIEWS = [
   ViewType.PAYMENT_METHODS,
   ViewType.BACKUP,
   ViewType.REPORTS,
-  ViewType.DASHBOARD_CONFIG,
   ViewType.PRODUCTION_CONFIG,
   ViewType.PRODUCTION_PCP,
   ViewType.PRODUCTION_STOCK,
@@ -137,8 +137,33 @@ const MODAL_VIEWS = [
   ViewType.SALE_FORM,
   ViewType.PURCHASE_FORM,
   ViewType.PRODUCT_DETAIL,
-  ViewType.REPORT_DETAILED
+  ViewType.REPORT_DETAILED,
+  ViewType.MODULES_CONFIG
 ];
+
+const MODULE_VIEWS: Record<string, ViewType[]> = {
+  sales: [
+    ViewType.PURCHASES,
+    ViewType.PURCHASE_FORM,
+    ViewType.SALES,
+    ViewType.SALE_FORM,
+    ViewType.FINANCIAL,
+    ViewType.ACCOUNTS,
+    ViewType.REPORTS,
+    ViewType.STOCK
+  ],
+  production: [
+    ViewType.PRODUCTION_MENU,
+    ViewType.PRODUCTION_PCP,
+    ViewType.PRODUCTION_STOCK,
+    ViewType.PRODUCTION_PURCHASE_NEEDS,
+    ViewType.PRODUCTION_CONFIG,
+    ViewType.PRODUCT_SHEET
+  ],
+  personal: [
+    ViewType.PERSONAL_FINANCIAL
+  ]
+};
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -183,23 +208,24 @@ export default function App() {
 
   const defaultDashboardConfig: DashboardConfig = {
     cards: [
-      { id: 'balance', label: 'Saldo Consolidado', visible: true, order: 0 },
-      { id: 'manual_entries', label: 'Lançamentos Manuais', visible: true, order: 1 },
-      { id: 'report_center', label: 'Central de Relatórios', visible: true, order: 2 },
-      { id: 'quick_reports', label: 'Relatórios Rápidos', visible: true, order: 3 },
-      { id: 'dashboard_rankings', label: 'Rankings de Performance', visible: true, order: 4 },
-      { id: 'cash_flow', label: 'Balanço Mensal', visible: true, order: 5 },
-      { id: 'receivables', label: 'A Receber (Vendas)', visible: true, order: 6 },
-      { id: 'stock_alerts', label: 'Alertas de Estoque', visible: true, order: 7 },
-      { id: 'customers', label: 'Relacionamento Clientes', visible: true, order: 8 },
-      { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 9 },
-      { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 10 },
-      { id: 'stock_value', label: 'Patrimônio em Estoque', visible: true, order: 11 },
-      { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 12 },
-      { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 13 },
-      { id: 'activity', label: 'Atividade Recente', visible: true, order: 14 },
-      { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 15 },
-      { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 16 },
+      { id: 'balance', label: 'Saldo Consolidado', visible: true, order: 0, module: 'sales' },
+      { id: 'manual_entries', label: 'Lançamentos Manuais', visible: true, order: 1, module: 'sales' },
+      { id: 'report_center', label: 'Central de Relatórios', visible: true, order: 2, module: 'sales' },
+      { id: 'quick_reports', label: 'Relatórios Rápidos', visible: true, order: 3, module: 'sales' },
+      { id: 'dashboard_rankings', label: 'Rankings de Performance', visible: true, order: 4, module: 'sales' },
+      { id: 'cash_flow', label: 'Balanço Mensal', visible: true, order: 5, module: 'sales' },
+      { id: 'receivables', label: 'A Receber (Vendas)', visible: true, order: 6, module: 'sales' },
+      { id: 'stock_alerts', label: 'Alertas de Estoque', visible: true, order: 7, module: 'sales' },
+      { id: 'customers', label: 'Relacionamento Clientes', visible: true, order: 8, module: 'sales' },
+      { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 9, module: 'sales' },
+      { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 10, module: 'sales' },
+      { id: 'stock_value', label: 'Patrimônio em Estoque', visible: true, order: 11, module: 'sales' },
+      { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 12, module: 'sales' },
+      { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 13, module: 'sales' },
+      { id: 'activity', label: 'Atividade Recente', visible: true, order: 14, module: 'any' },
+      { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 15, module: 'sales' },
+      { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 16, module: 'production' },
+      { id: 'personal_balance', label: 'Saldo Pessoal', visible: true, order: 17, module: 'personal' },
     ]
   };
 
@@ -233,6 +259,45 @@ export default function App() {
     
     return config;
   });
+
+  const defaultModulesConfig: AppModulesConfig = {
+    personal: true,
+    sales: true,
+    production: true,
+  };
+
+  const [modulesConfig, setModulesConfig] = useState<AppModulesConfig>(() => {
+    const saved = localStorage.getItem('modules_config');
+    return saved ? JSON.parse(saved) : defaultModulesConfig;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('modules_config', JSON.stringify(modulesConfig));
+  }, [modulesConfig]);
+
+  // Sync with Firestore
+  useEffect(() => {
+    if (!user) return;
+    const unsubModulesConfig = firebaseService.subscribeToCollection<AppModulesConfig & { id: string }>(
+      "app_modules_config",
+      (data) => {
+        const config = data.find(c => c.id === 'main_modules_config');
+        if (config) {
+          // Remove ID from config before setting state
+          const { id, ...rest } = config;
+          setModulesConfig(rest as AppModulesConfig);
+        }
+      }
+    );
+    return () => unsubModulesConfig();
+  }, [user]);
+
+  const saveModulesConfig = async (newConfig: AppModulesConfig) => {
+    setModulesConfig(newConfig);
+    if (user) {
+      await firebaseService.saveDocument("app_modules_config", { ...newConfig, id: 'main_modules_config' });
+    }
+  };
 
   // Firebase Subscriptions
   useEffect(() => {
@@ -694,8 +759,16 @@ export default function App() {
       alert('Erro ao excluir: ' + (err.message || err));
     }
   };
-
   const renderView = (view: ViewType) => {
+    // Route Guard: Check if the view is allowed by the current module configuration
+    const isSalesView = MODULE_VIEWS.sales.includes(view);
+    const isProductionView = MODULE_VIEWS.production.includes(view);
+    const isPersonalView = MODULE_VIEWS.personal.includes(view);
+
+    if (isSalesView && !modulesConfig.sales) return renderView(ViewType.DASHBOARD);
+    if (isProductionView && (!modulesConfig.sales || !modulesConfig.production)) return renderView(ViewType.DASHBOARD);
+    if (isPersonalView && !modulesConfig.personal) return renderView(ViewType.DASHBOARD);
+
     switch (view) {
       case ViewType.DASHBOARD:
         return (
@@ -711,6 +784,7 @@ export default function App() {
             isDarkMode={isDarkMode}
             categories={categories}
             dashboardConfig={dashboardConfig || defaultDashboardConfig}
+            modulesConfig={modulesConfig}
             onNavigate={navigateTo}
             onNavigateProduction={navigateToProduction}
             onNavigateGrids={() => navigateTo(ViewType.GRIDS)}
@@ -727,17 +801,15 @@ export default function App() {
             config={dashboardConfig || defaultDashboardConfig}
             onSave={async (newConfig) => {
               try {
-                // Use a fixed ID 'main_config' to ensure we only have one configuration document
                 const configToSave = { ...newConfig, id: 'main_config' };
                 await firebaseService.saveDocument("dashboard_config", configToSave);
-                alert("Configuração salva com sucesso!");
               } catch (err) {
                 console.error("Error saving dashboard config:", err);
-                alert("Erro ao salvar configuração.");
               }
             }}
             onBack={goBack}
             isDarkMode={isDarkMode}
+            modulesConfig={modulesConfig}
           />
         );
       case ViewType.SETTINGS:
@@ -747,6 +819,7 @@ export default function App() {
             onNavigateProduction={navigateToProduction}
             isDarkMode={isDarkMode}
             toggleDarkMode={toggleDarkMode}
+            modulesConfig={modulesConfig}
           />
         );
       case ViewType.PRODUCTS:
@@ -764,6 +837,7 @@ export default function App() {
             }}
             onDuplicate={handleDuplicateProduct}
             isDarkMode={isDarkMode}
+            modulesConfig={modulesConfig}
           />
         );
       case ViewType.PEOPLE:
@@ -1050,6 +1124,7 @@ export default function App() {
             onCancel={goBack}
             isDarkMode={isDarkMode}
             sectors={sectors}
+            modulesConfig={modulesConfig}
           />
         );
       case ViewType.PURCHASES:
@@ -1848,6 +1923,7 @@ export default function App() {
               }
             }}
             isDarkMode={isDarkMode}
+            modulesConfig={modulesConfig}
           />
         );
       case ViewType.STOCK:
@@ -2205,6 +2281,15 @@ export default function App() {
             <button onClick={goBack} className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest">Voltar</button>
           </div>
         );
+      case ViewType.MODULES_CONFIG:
+        return (
+          <ModuleConfigView 
+            config={modulesConfig}
+            onSave={saveModulesConfig}
+            onNavigate={navigateTo}
+            isDarkMode={isDarkMode}
+          />
+        );
       default:
         return (
           <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center gap-6">
@@ -2470,41 +2555,51 @@ export default function App() {
           onClick={() => resetTo(ViewType.DASHBOARD)}
           colorClass="text-indigo-600 dark:text-indigo-400"
         />
-        <TabItem
-          icon={<ShoppingCart size={22} />}
-          label="COMPRAS"
-          active={activeTab === "purchases"}
-          onClick={() => resetTo(ViewType.PURCHASES)}
-          colorClass="text-cyan-500 dark:text-cyan-400"
-        />
-        <TabItem
-          icon={<ShoppingBag size={22} />}
-          label="VENDAS"
-          active={activeTab === "sales"}
-          onClick={() => resetTo(ViewType.SALES)}
-          colorClass="text-emerald-500 dark:text-emerald-400"
-        />
-        <TabItem
-          icon={<Factory size={22} />}
-          label="PROD."
-          active={activeTab === "production"}
-          onClick={() => resetTo(ViewType.PRODUCTION_MENU)}
-          colorClass="text-indigo-600 dark:text-indigo-400"
-        />
-        <TabItem
-          icon={<DollarSign size={22} />}
-          label="FINAN."
-          active={activeTab === "financial"}
-          onClick={() => resetTo(ViewType.FINANCIAL)}
-          colorClass="text-amber-500 dark:text-amber-400"
-        />
-        <TabItem
-          icon={<UserIcon size={22} />}
-          label="PESSOAL"
-          active={activeTab === "personal"}
-          onClick={() => resetTo(ViewType.PERSONAL_FINANCIAL)}
-          colorClass="text-amber-600 dark:text-amber-500"
-        />
+        {modulesConfig.sales && (
+          <>
+            <TabItem
+              icon={<ShoppingCart size={22} />}
+              label="COMPRAS"
+              active={activeTab === "purchases"}
+              onClick={() => resetTo(ViewType.PURCHASES)}
+              colorClass="text-cyan-500 dark:text-cyan-400"
+            />
+            <TabItem
+              icon={<ShoppingBag size={22} />}
+              label="VENDAS"
+              active={activeTab === "sales"}
+              onClick={() => resetTo(ViewType.SALES)}
+              colorClass="text-emerald-500 dark:text-emerald-400"
+            />
+          </>
+        )}
+        {modulesConfig.sales && modulesConfig.production && (
+          <TabItem
+            icon={<Factory size={22} />}
+            label="PROD."
+            active={activeTab === "production"}
+            onClick={() => resetTo(ViewType.PRODUCTION_MENU)}
+            colorClass="text-indigo-600 dark:text-indigo-400"
+          />
+        )}
+        {modulesConfig.sales && (
+          <TabItem
+            icon={<DollarSign size={22} />}
+            label="FINAN."
+            active={activeTab === "financial"}
+            onClick={() => resetTo(ViewType.FINANCIAL)}
+            colorClass="text-amber-500 dark:text-amber-400"
+          />
+        )}
+        {modulesConfig.personal && (
+          <TabItem
+            icon={<UserIcon size={22} />}
+            label="PESSOAL"
+            active={activeTab === "personal"}
+            onClick={() => resetTo(ViewType.PERSONAL_FINANCIAL)}
+            colorClass="text-amber-600 dark:text-amber-500"
+          />
+        )}
         <TabItem
           icon={<Settings size={22} />}
           label="MAIS"
@@ -2516,6 +2611,7 @@ export default function App() {
       <AccountModal
         isOpen={isAccountModalOpen}
         onClose={() => setIsAccountModalOpen(false)}
+        modulesConfig={modulesConfig}
         onSave={async (accountData) => {
           try {
             const updates: Promise<void>[] = [];

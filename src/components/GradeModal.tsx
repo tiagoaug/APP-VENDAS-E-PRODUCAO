@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Grid, GridType } from '../types';
-import { TableCellsMerge, X, Plus, Target, Footprints } from 'lucide-react';
+import { TableCellsMerge, X, Plus, Target, Footprints, Scissors, Box } from 'lucide-react';
 
 interface GradeModalProps {
   isOpen: boolean;
@@ -17,8 +17,8 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
 
   useEffect(() => {
     if (grid) {
-      setName(grid.name);
-      setType(grid.type);
+      setName(grid.name || '');
+      setType(grid.type || GridType.FORMA);
       setSizes(grid.sizes || []);
     } else {
       setName('');
@@ -76,7 +76,7 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
         {/* Type Selection */}
         <div>
           <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Tipo de Grade</label>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <button
               onClick={() => setType(GridType.FORMA)}
               className={`flex items-center justify-center gap-2 py-3 px-2 rounded-xl border-2 transition-all ${
@@ -98,6 +98,28 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
             >
               <Footprints size={14} />
               <span className="text-[10px] font-black uppercase tracking-widest">Solados</span>
+            </button>
+            <button
+              onClick={() => setType(GridType.FACA)}
+              className={`flex items-center justify-center gap-2 py-3 px-2 rounded-xl border-2 transition-all ${
+                type === GridType.FACA
+                  ? 'bg-rose-600 border-rose-600 text-white shadow-lg'
+                  : 'bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-400'
+              }`}
+            >
+              <Scissors size={14} />
+              <span className="text-[10px] font-black uppercase tracking-widest">Facas</span>
+            </button>
+            <button
+              onClick={() => setType(GridType.EMBALAGEM)}
+              className={`flex items-center justify-center gap-2 py-3 px-2 rounded-xl border-2 transition-all ${
+                type === GridType.EMBALAGEM
+                  ? 'bg-amber-600 border-amber-600 text-white shadow-lg'
+                  : 'bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-400'
+              }`}
+            >
+              <Box size={14} />
+              <span className="text-[10px] font-black uppercase tracking-widest">Emb.</span>
             </button>
           </div>
         </div>
