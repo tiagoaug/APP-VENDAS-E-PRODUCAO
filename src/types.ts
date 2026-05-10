@@ -338,6 +338,10 @@ export enum ViewType {
   PRODUCTION_TECH_SHEET = 'PRODUCTION_TECH_SHEET',
   PRODUCT_SHEET = 'PRODUCT_SHEET',
   MODULES_CONFIG = 'MODULES_CONFIG',
+  PRODUCTION_WEIGHING = 'PRODUCTION_WEIGHING',
+  PRODUCTION_SOLE_PURCHASE = 'PRODUCTION_SOLE_PURCHASE',
+  PRODUCTION_SOLE_STOCK = 'PRODUCTION_SOLE_STOCK',
+  PRODUCTION_ENGINEERING = 'PRODUCTION_ENGINEERING',
 }
 
 export type DashboardCardConfig = {
@@ -422,6 +426,8 @@ export type ProductionConfigItem = {
     colorVariations?: { colorId: string, subRef: string }[];
     sizeWeights?: Record<string, number>;
     averageWeight?: number;
+    colorWeights?: Record<string, number>;
+    colorSizeWeights?: Record<string, Record<string, number>>;
     composition?: { 
       materialId: string; 
       quantity: number; 
@@ -432,5 +438,56 @@ export type ProductionConfigItem = {
     [key: string]: any;
   };
   createdAt: number;
+};
+
+export type WeighingRecord = {
+  id: string;
+  moldId: string;
+  moldName: string;
+  colorId?: string;
+  colorName?: string;
+  size?: string;
+  weightKg: number;
+  quantity: number;
+  unitWeight: number;
+  date: number;
+  note?: string;
+};
+
+export type SoleStockEntry = {
+  id: string;
+  moldId: string;
+  moldName: string;
+  colorId: string;
+  colorName: string;
+  supplierId: string;
+  supplierName: string;
+  stock: { [size: string]: number };
+  totalPairs: number;
+  unitCost: number;
+  totalCost: number;
+  purchaseDate: number;
+  notes?: string;
+};
+
+export type SolePurchase = {
+  id: string;
+  supplierId: string;
+  supplierName: string;
+  date: number;
+  items: SolePurchaseItem[];
+  total: number;
+  notes?: string;
+  status: 'PENDING' | 'COMPLETED';
+};
+
+export type SolePurchaseItem = {
+  moldId: string;
+  moldName: string;
+  colorId: string;
+  colorName: string;
+  quantities: { [size: string]: number };
+  unitCost: number;
+  totalCost: number;
 };
 

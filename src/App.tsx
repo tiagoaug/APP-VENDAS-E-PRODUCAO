@@ -29,7 +29,8 @@ import {
   ChevronRight,
   FileText,
   User as UserIcon,
-  AlertCircle
+  AlertCircle,
+  Scale
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { auth, db, signInWithGoogle, logout } from "./lib/firebase";
@@ -48,6 +49,7 @@ import {
   Person,
   Category,
   CategoryType,
+  ProductStatus,
   ColorValue,
   PaymentMethod,
   SaleStatus,
@@ -56,7 +58,6 @@ import {
   Account,
   AccountType,
   PaymentTerm,
-  ProductStatus,
   PaymentStatus,
   SalePayment,
   FamilyMember,
@@ -67,6 +68,9 @@ import {
   Sector,
   ProductionConfigItem,
   ProductionScreenType,
+  WeighingRecord,
+  AppModulesConfig,
+  SoleStockEntry,
 } from "./types";
 import {
   MOCK_PRODUCTS,
@@ -108,6 +112,10 @@ import ProductionConfigView from "./views/ProductionConfigView";
 import ProductSheetMenuView from "./views/ProductSheetMenuView";
 import PersonalFinancialView from "./views/PersonalFinancialView";
 import ModuleConfigView from "./views/ModuleConfigView";
+import WeighingView from "./views/WeighingView";
+import SolePurchaseView from "./views/SolePurchaseView";
+import SoleStockView from "./views/SoleStockView";
+import ProductionEngineeringView from "./views/ProductionEngineeringView";
 
 
 // Modals
@@ -132,13 +140,17 @@ const MODAL_VIEWS = [
   ViewType.PRODUCTION_PCP,
   ViewType.PRODUCTION_STOCK,
   ViewType.PRODUCTION_PURCHASE_NEEDS,
+  ViewType.PRODUCTION_WEIGHING,
+  ViewType.PRODUCTION_SOLE_PURCHASE,
+  ViewType.PRODUCTION_SOLE_STOCK,
   ViewType.PRODUCT_SHEET,
   ViewType.STOCK,
   ViewType.SALE_FORM,
   ViewType.PURCHASE_FORM,
   ViewType.PRODUCT_DETAIL,
   ViewType.REPORT_DETAILED,
-  ViewType.MODULES_CONFIG
+  ViewType.MODULES_CONFIG,
+  ViewType.PRODUCTION_ENGINEERING
 ];
 
 const MODULE_VIEWS: Record<string, ViewType[]> = {
@@ -158,7 +170,8 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
     ViewType.PRODUCTION_STOCK,
     ViewType.PRODUCTION_PURCHASE_NEEDS,
     ViewType.PRODUCTION_CONFIG,
-    ViewType.PRODUCT_SHEET
+    ViewType.PRODUCT_SHEET,
+    ViewType.PRODUCTION_ENGINEERING
   ],
   personal: [
     ViewType.PERSONAL_FINANCIAL
@@ -205,27 +218,30 @@ export default function App() {
   const [flowTags, setFlowTags] = useState<FlowTag[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [productionConfigs, setProductionConfigs] = useState<ProductionConfigItem[]>([]);
+  const [weighingRecords, setWeighingRecords] = useState<WeighingRecord[]>([]);
+  const [soleStockEntries, setSoleStockEntries] = useState<SoleStockEntry[]>([]);
 
   const defaultDashboardConfig: DashboardConfig = {
     cards: [
       { id: 'balance', label: 'Saldo Consolidado', visible: true, order: 0, module: 'sales' },
-      { id: 'manual_entries', label: 'Lançamentos Manuais', visible: true, order: 1, module: 'sales' },
-      { id: 'report_center', label: 'Central de Relatórios', visible: true, order: 2, module: 'sales' },
-      { id: 'quick_reports', label: 'Relatórios Rápidos', visible: true, order: 3, module: 'sales' },
-      { id: 'dashboard_rankings', label: 'Rankings de Performance', visible: true, order: 4, module: 'sales' },
-      { id: 'cash_flow', label: 'Balanço Mensal', visible: true, order: 5, module: 'sales' },
-      { id: 'receivables', label: 'A Receber (Vendas)', visible: true, order: 6, module: 'sales' },
-      { id: 'stock_alerts', label: 'Alertas de Estoque', visible: true, order: 7, module: 'sales' },
-      { id: 'customers', label: 'Relacionamento Clientes', visible: true, order: 8, module: 'sales' },
-      { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 9, module: 'sales' },
-      { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 10, module: 'sales' },
-      { id: 'stock_value', label: 'Patrimônio em Estoque', visible: true, order: 11, module: 'sales' },
-      { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 12, module: 'sales' },
-      { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 13, module: 'sales' },
-      { id: 'activity', label: 'Atividade Recente', visible: true, order: 14, module: 'any' },
-      { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 15, module: 'sales' },
-      { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 16, module: 'production' },
-      { id: 'personal_balance', label: 'Saldo Pessoal', visible: true, order: 17, module: 'personal' },
+      { id: 'sales_products', label: 'Produtos e Catálogo', visible: true, order: 1, module: 'sales' },
+      { id: 'manual_entries', label: 'Lançamentos Manuais', visible: true, order: 2, module: 'sales' },
+      { id: 'report_center', label: 'Central de Relatórios', visible: true, order: 3, module: 'sales' },
+      { id: 'quick_reports', label: 'Relatórios Rápidos', visible: true, order: 4, module: 'sales' },
+      { id: 'dashboard_rankings', label: 'Rankings de Performance', visible: true, order: 5, module: 'sales' },
+      { id: 'cash_flow', label: 'Balanço Mensal', visible: true, order: 6, module: 'sales' },
+      { id: 'receivables', label: 'A Receber (Vendas)', visible: true, order: 7, module: 'sales' },
+      { id: 'stock_alerts', label: 'Alertas de Estoque', visible: true, order: 8, module: 'sales' },
+      { id: 'customers', label: 'Relacionamento Clientes', visible: true, order: 9, module: 'sales' },
+      { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 10, module: 'sales' },
+      { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 11, module: 'sales' },
+      { id: 'stock_value', label: 'Patrimônio em Estoque', visible: true, order: 12, module: 'sales' },
+      { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 13, module: 'sales' },
+      { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 14, module: 'sales' },
+      { id: 'activity', label: 'Atividade Recente', visible: true, order: 15, module: 'any' },
+      { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 16, module: 'sales' },
+      { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 17, module: 'production' },
+      { id: 'personal_balance', label: 'Saldo Pessoal', visible: true, order: 18, module: 'personal' },
     ]
   };
 
@@ -398,6 +414,16 @@ export default function App() {
       setProductionConfigs
     );
 
+    const unsubWeighingRecords = firebaseService.subscribeToCollection<WeighingRecord>(
+      "weighingRecords",
+      (data) => setWeighingRecords(data.sort((a, b) => b.date - a.date))
+    );
+
+    const unsubSoleStock = firebaseService.subscribeToCollection<SoleStockEntry>(
+      "soleStock",
+      setSoleStockEntries
+    );
+
     const unsubDashboardConfig = firebaseService.subscribeToCollection<DashboardConfig>(
       "dashboard_config",
       (data) => {
@@ -457,6 +483,8 @@ export default function App() {
       unsubFlowTags();
       unsubSectors();
       unsubProductionConfigs();
+      unsubWeighingRecords();
+      unsubSoleStock();
       unsubDashboardConfig();
 
     };
@@ -1102,8 +1130,11 @@ export default function App() {
           />
         );
       case ViewType.PRODUCT_FORM:
+        const productToEdit = selectedProductId ? products.find((p) => p.id === selectedProductId) : undefined;
+        const module = (lastNonModalView === ViewType.PRODUCTION_MENU || lastNonModalView === ViewType.PRODUCTION_ENGINEERING) ? 'PRODUCTION' : 'SALES';
         return (
           <ProductFormView
+            module={module}
             productId={selectedProductId}
             products={products}
             grids={grids}
@@ -1125,6 +1156,7 @@ export default function App() {
             isDarkMode={isDarkMode}
             sectors={sectors}
             modulesConfig={modulesConfig}
+            restrictedProductMode={!modulesConfig.production}
           />
         );
       case ViewType.PURCHASES:
@@ -2128,6 +2160,9 @@ export default function App() {
                   {[
                     { id: ViewType.PRODUCTION_PCP, label: 'PCP Central', icon: <GanttChartSquare size={22} />, color: 'text-indigo-600' },
                     { id: ViewType.PRODUCTION_STOCK, label: 'Estoque de Materiais', icon: <PackageOpen size={22} />, color: 'text-emerald-600' },
+                    { id: ViewType.PRODUCTION_WEIGHING, label: 'Pesagem e Contagem', icon: <Scale size={22} />, color: 'text-violet-600' },
+                    { id: ViewType.PRODUCTION_SOLE_PURCHASE, label: 'Entrada de Solados', icon: <ShoppingCart size={22} />, color: 'text-cyan-600' },
+                    { id: ViewType.PRODUCTION_SOLE_STOCK, label: 'Estoque de Solados', icon: <Package size={22} />, color: 'text-emerald-600' },
                     { id: ViewType.PRODUCTION_PURCHASE_NEEDS, label: 'Necessidade de Compras', icon: <ClipboardList size={22} />, color: 'text-amber-600' },
                   ].map((item, index, array) => (
                     <button
@@ -2154,7 +2189,7 @@ export default function App() {
                 <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Engenharia e Desenvolvimento</h3>
                 <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                   <button
-                    onClick={() => navigateTo(ViewType.PRODUCT_SHEET)}
+                    onClick={() => navigateTo(ViewType.PRODUCTION_ENGINEERING)}
                     className="w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
                   >
                     <div className="flex items-center gap-4">
@@ -2162,7 +2197,7 @@ export default function App() {
                         <Database size={22} />
                       </div>
                       <div className="text-left">
-                        <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Ficha Técnica</p>
+                        <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Engenharia de Produto</p>
                         <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Produtos, Grades e Solados</p>
                       </div>
                     </div>
@@ -2223,17 +2258,31 @@ export default function App() {
             onNavigateGrids={() => navigateTo(ViewType.GRIDS)}
           />
         );
-      case ViewType.PRODUCT_SHEET:
+      case ViewType.PRODUCTION_ENGINEERING:
         return (
-          <ProductSheetMenuView 
-            onNavigate={navigateTo}
-            onAddProduct={() => navigateTo(ViewType.PRODUCT_FORM)}
-            onNavigateGrids={() => navigateTo(ViewType.GRIDS)}
-            onNavigateProductionConfig={navigateToProduction}
+          <ProductionEngineeringView
+            products={products}
+            categories={categories}
+            onAdd={() => navigateTo(ViewType.PRODUCT_FORM)}
+            onEdit={(id) => navigateTo(ViewType.PRODUCT_FORM, id)}
+            onDelete={async (id) => {
+              try {
+                await firebaseService.deleteDocument("products", id);
+              } catch (e) {
+                console.error(e);
+                alert("Erro ao excluir modelo.");
+              }
+            }}
+            onToggleStatus={async (id, status) => {
+              try {
+                await firebaseService.updateDocument("products", id, { status });
+              } catch (e) {
+                console.error(e);
+                alert("Erro ao alterar status.");
+              }
+            }}
             onBack={goBack}
             isDarkMode={isDarkMode}
-            products={products}
-            grids={grids}
           />
         );
       case ViewType.PRODUCTION_PCP:
@@ -2254,7 +2303,7 @@ export default function App() {
       case ViewType.PRODUCTION_STOCK:
         return (
           <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center gap-6">
-            <div className="w-20 h-20 rounded-3xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+            <div className="w-20 h-20 rounded-3xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:emerald-400">
               <PackageOpen size={40} />
             </div>
             <div>
@@ -2280,6 +2329,39 @@ export default function App() {
             </div>
             <button onClick={goBack} className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest">Voltar</button>
           </div>
+        );
+      case ViewType.PRODUCTION_WEIGHING:
+        return (
+          <WeighingView
+            productionConfigs={productionConfigs}
+            colors={colors}
+            onBack={goBack}
+            onNavigateToStock={() => navigateTo(ViewType.PRODUCTION_SOLE_STOCK)}
+            isDarkMode={isDarkMode}
+            existingRecords={weighingRecords}
+          />
+        );
+      case ViewType.PRODUCTION_SOLE_PURCHASE:
+        return (
+          <SolePurchaseView
+            productionConfigs={productionConfigs}
+            colors={colors}
+            people={people}
+            accounts={accounts}
+            onBack={goBack}
+            onNavigateToStock={() => navigateTo(ViewType.PRODUCTION_SOLE_STOCK)}
+            isDarkMode={isDarkMode}
+          />
+        );
+      case ViewType.PRODUCTION_SOLE_STOCK:
+        return (
+          <SoleStockView
+            stockEntries={soleStockEntries}
+            productionConfigs={productionConfigs}
+            colors={colors}
+            onBack={goBack}
+            isDarkMode={isDarkMode}
+          />
         );
       case ViewType.MODULES_CONFIG:
         return (
@@ -2320,7 +2402,8 @@ export default function App() {
         ViewType.PRODUCTION_PCP,
         ViewType.PRODUCTION_STOCK,
         ViewType.PRODUCTION_PURCHASE_NEEDS,
-        ViewType.PRODUCTION_CONFIG
+        ViewType.PRODUCTION_CONFIG,
+        ViewType.PRODUCTION_ENGINEERING
       ].includes(currentView)
     )
       return "production";
@@ -2394,10 +2477,18 @@ export default function App() {
         return "PCP Central";
       case ViewType.PRODUCTION_STOCK:
         return "Estoque de Materiais";
+      case ViewType.PRODUCTION_WEIGHING:
+        return "Pesagem e Contagem";
+      case ViewType.PRODUCTION_SOLE_PURCHASE:
+        return "Entrada de Solados";
+      case ViewType.PRODUCTION_SOLE_STOCK:
+        return "Estoque de Solados";
       case ViewType.PRODUCTION_PURCHASE_NEEDS:
         return "Necessidade de Compras";
       case ViewType.PRODUCTION_CONFIG:
         return "Configurações de Produção";
+      case ViewType.PRODUCTION_ENGINEERING:
+        return "Engenharia de Produto";
       case ViewType.PRODUCT_SHEET:
         return "Ficha Técnica";
       case ViewType.PRODUCT_FORM:
@@ -2441,8 +2532,12 @@ export default function App() {
       case ViewType.PRODUCTION_MENU: return <Factory size={24} className="text-indigo-600 dark:text-indigo-400" />;
       case ViewType.PRODUCTION_PCP: return <GanttChartSquare size={24} className="text-indigo-600 dark:text-indigo-400" />;
       case ViewType.PRODUCTION_STOCK: return <PackageOpen size={24} className="text-emerald-600 dark:text-emerald-400" />;
+      case ViewType.PRODUCTION_WEIGHING: return <Scale size={24} className="text-violet-600 dark:text-violet-400" />;
+      case ViewType.PRODUCTION_SOLE_PURCHASE: return <ShoppingCart size={24} className="text-cyan-600 dark:text-cyan-400" />;
+      case ViewType.PRODUCTION_SOLE_STOCK: return <Package size={24} className="text-emerald-600 dark:text-emerald-400" />;
       case ViewType.PRODUCTION_PURCHASE_NEEDS: return <ClipboardList size={24} className="text-amber-600 dark:text-amber-400" />;
       case ViewType.PRODUCTION_CONFIG: return <Hammer size={24} className="text-slate-500 dark:text-slate-400" />;
+      case ViewType.PRODUCTION_ENGINEERING: return <Database size={24} className="text-indigo-600 dark:text-indigo-400" />;
       case ViewType.PRODUCT_SHEET: return <FileText size={24} className="text-slate-500 dark:text-slate-400" />;
       
       default: return <Shield size={24} className="text-blue-600 dark:text-blue-400" />;

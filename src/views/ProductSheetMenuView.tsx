@@ -12,7 +12,8 @@ import {
   AlertCircle,
   FileText,
   Search,
-  ExternalLink
+  ExternalLink,
+  Palette
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, Product, Grid } from '../types';
 import { motion } from 'motion/react';
@@ -57,7 +58,7 @@ export default function ProductSheetMenuView({
         { 
           id: 'PRODUCTS',
           label: "Produtos Cadastrados", 
-          desc: "Visualizar e editar catálogo técnico",
+          desc: "Visualizar e gerenciar catálogo de produtos",
           icon: <Package size={24} />, 
           color: "text-indigo-600",
           bg: "bg-indigo-50",
@@ -66,11 +67,20 @@ export default function ProductSheetMenuView({
         { 
           id: 'NEW_PRODUCT',
           label: "Cadastrar Novo Modelo", 
-          desc: "Criar ficha técnica completa (Solados, Cores e Materiais)",
+          desc: "Cadastrar novo modelo de produto",
           icon: <Plus size={24} />, 
           color: "text-emerald-600",
           bg: "bg-emerald-50",
           onClick: onAddProduct
+        },
+        { 
+          id: 'COLORS',
+          label: "Paleta de Cores", 
+          desc: "Gerenciar cores e variações",
+          icon: <Palette size={24} />, 
+          color: "text-pink-600",
+          bg: "bg-pink-50",
+          onClick: () => onNavigate(ViewType.COLORS)
         },
       ]
     },

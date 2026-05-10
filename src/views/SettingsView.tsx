@@ -15,7 +15,9 @@ import {
   Database,
   Footprints,
   Shield,
-  Landmark
+  Landmark,
+  Package,
+  Plus
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, AppModulesConfig } from '../types';
 
@@ -32,7 +34,10 @@ export default function SettingsView({ onNavigate, onNavigateProduction, isDarkM
     {
       title: "Configurações de Negócio",
       items: [
+        { id: ViewType.PRODUCTS, label: "Produtos Cadastrados", icon: <Package size={24} />, color: "text-indigo-600 dark:text-indigo-400", module: 'sales' },
+        { id: ViewType.PRODUCT_FORM, label: "Cadastrar Novo Modelo", icon: <Plus size={24} />, color: "text-emerald-600 dark:text-emerald-400", module: 'sales' },
         { id: ViewType.STOCK, label: "Estoque de Produtos", icon: <Boxes size={24} />, color: "text-amber-700 dark:text-amber-500", module: 'sales' },
+        { id: ViewType.COLORS, label: "Paleta de Cores", icon: <Palette size={24} />, color: "text-pink-600 dark:text-pink-400", module: 'any' },
         { id: ViewType.CATEGORIES, label: "Categorias e Grupos", icon: <Tags size={24} />, color: "text-emerald-600 dark:text-emerald-400", module: 'any' },
         { id: ViewType.PEOPLE, label: "Clientes e Fornecedores", icon: <Users size={24} />, color: "text-indigo-600 dark:text-indigo-400", module: 'sales' },
       ].filter(item => item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig])
@@ -43,7 +48,6 @@ export default function SettingsView({ onNavigate, onNavigateProduction, isDarkM
         { id: ViewType.PRODUCT_SHEET, label: "Engenharia / Ficha Técnica", icon: <Database size={24} />, color: "text-indigo-600 dark:text-indigo-400", module: 'production' },
         { id: 'SOLE_MATRIX_DIRECT', label: "Matrizes de Solados", icon: <Footprints size={24} />, color: "text-orange-600 dark:text-orange-400", module: 'production' },
         { id: ViewType.GRIDS, label: "Grades de Tamanho", icon: <Grid3X3 size={24} />, color: "text-violet-600 dark:text-violet-400", module: 'production' },
-        { id: ViewType.COLORS, label: "Paleta de Cores", icon: <Palette size={24} />, color: "text-pink-600 dark:text-pink-400", module: 'production' },
         { id: ViewType.PRODUCTION_CONFIG, label: "Configuração de Fábrica", icon: <Factory size={24} />, color: "text-slate-600 dark:text-slate-400", module: 'production' },
       ].filter(item => item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig])
     },

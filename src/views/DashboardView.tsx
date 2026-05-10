@@ -1,7 +1,7 @@
 import { useState, useMemo, ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Sale, Purchase, Product, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig } from "../types";
-import { Share2, TrendingUp, TrendingDown, Package, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users } from "lucide-react";
+import { Share2, TrendingUp, TrendingDown, Package, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { jsPDF } from 'jspdf';
@@ -507,7 +507,7 @@ export default function DashboardView({
     return [...dashboardConfig.cards]
       .filter(card => {
         if (!card.module || card.module === 'any') return true;
-        return modulesConfig[card.module as any];
+        return (modulesConfig as any)[card.module];
       })
       .sort((a, b) => a.order - b.order);
   }, [dashboardConfig, modulesConfig]);
@@ -532,6 +532,46 @@ export default function DashboardView({
         if (salesDependent.includes(card.id) && !modulesConfig.sales) return null;
 
         switch (card.id) {
+          case "sales_products":
+            return (
+              <div key="sales_products" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-6 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+                <div>
+                  <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Produtos e Catálogo</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">Gestão de Vendas</p>
+                </div>
+                
+                <div className={`rounded-3xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+                  <ConfigMenuItem
+                    icon={<Package size={20} />}
+                    label="Produtos Cadastrados"
+                    desc="Visualizar e gerenciar catálogo de produtos"
+                    color="text-indigo-600"
+                    bg="bg-indigo-50"
+                    isDarkMode={isDarkMode}
+                    onClick={() => onNavigate(ViewType.PRODUCTS)}
+                  />
+                  <ConfigMenuItem
+                    icon={<Plus size={20} />}
+                    label="Cadastrar Novo Modelo"
+                    desc="Cadastrar novo modelo de produto"
+                    color="text-emerald-600"
+                    bg="bg-emerald-50"
+                    isDarkMode={isDarkMode}
+                    onClick={onAddProduct}
+                  />
+                  <ConfigMenuItem
+                    icon={<Palette size={20} />}
+                    label="Paleta de Cores"
+                    desc="Gerenciar cores e variações"
+                    color="text-pink-600"
+                    bg="bg-pink-50"
+                    isDarkMode={isDarkMode}
+                    onClick={() => onNavigate(ViewType.COLORS)}
+                  />
+                </div>
+              </div>
+            );
+
           case "balance":
             return (
               <div
@@ -950,7 +990,7 @@ export default function DashboardView({
                   <ConfigMenuItem
                     icon={<Plus size={20} />}
                     label="Cadastrar Novo Modelo"
-                    desc="Solados, Cores e Materiais"
+                    desc="Criar ficha técnica e cadastrar novo modelo"
                     color="text-emerald-600"
                     bg="bg-emerald-50"
                     isDarkMode={isDarkMode}

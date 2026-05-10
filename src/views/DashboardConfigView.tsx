@@ -80,7 +80,7 @@ export default function DashboardConfigView({ config, onSave, onBack, isDarkMode
       .filter(card => {
         if (!card.module || card.module === 'any') return true;
         if (!modulesConfig) return true; // Fallback if modulesConfig is missing
-        return modulesConfig[card.module as any];
+        return (modulesConfig as any)[card.module];
       })
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
   );
@@ -95,7 +95,7 @@ export default function DashboardConfigView({ config, onSave, onBack, isDarkMode
         .filter(card => {
           if (!card.module || card.module === 'any') return true;
           if (!modulesConfig) return true;
-          return modulesConfig[card.module as any];
+          return (modulesConfig as any)[card.module];
         })
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         .map(c => `${c.id}:${c.visible}:${c.order}`)
@@ -110,7 +110,7 @@ export default function DashboardConfigView({ config, onSave, onBack, isDarkMode
         .filter(card => {
           if (!card.module || card.module === 'any') return true;
           if (!modulesConfig) return true;
-          return modulesConfig[card.module as any];
+          return (modulesConfig as any)[card.module];
         })
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       );

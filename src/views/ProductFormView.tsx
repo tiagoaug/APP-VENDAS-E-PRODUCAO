@@ -29,9 +29,11 @@ interface ProductFormViewProps {
   isDarkMode: boolean;
   sectors: Sector[];
   modulesConfig: AppModulesConfig;
+  restrictedProductMode?: boolean;
+  module?: 'SALES' | 'PRODUCTION';
 }
 
-export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, productionConfigs, flowTags, onSave, onCancel, isDarkMode, sectors, modulesConfig }: ProductFormViewProps) {
+export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, productionConfigs, flowTags, onSave, onCancel, isDarkMode, sectors, modulesConfig, restrictedProductMode = false, module = 'SALES' }: ProductFormViewProps) {
   const existingProduct = useMemo(() => products.find(p => p.id === productId), [productId, products]);
   const productCategories = useMemo(() => categories.filter(c => c.type === CategoryType.PRODUCT), [categories]);
   const molds = useMemo(() => productionConfigs.filter(c => c.type === 'MOLD'), [productionConfigs]);
@@ -343,7 +345,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   >
                     Cores & Info
                   </button>
-                  {modulesConfig.production && (
+                  {modulesConfig.production && !restrictedProductMode && (
                     <button
                       onClick={() => setVarView('consumo')}
                       className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${varView === 'consumo' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}
@@ -395,7 +397,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         </div>
 
                         {/* Cor Sincronizada (Sola) */}
-                        {modulesConfig.production && (
+                        {modulesConfig.production && !restrictedProductMode && (
                           <div className="flex flex-col gap-3">
                             <label htmlFor="sole-color-select" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Cor do Solado (Matriz)</label>
                             <div className="relative group">
@@ -802,81 +804,94 @@ export default function ProductFormView({ productId, products, grids, suppliers,
     <>
       <div className="flex flex-col gap-4 pb-60 px-2 sm:px-4 pt-4 min-h-screen">
       <div className={`p-4 sm:p-6 rounded-[2rem] border flex flex-col gap-6 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-        <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl">
-          <button
-            onClick={() => {
-              if (saleTypes.includes(SaleType.WHOLESALE)) {
-                if (saleTypes.length > 1) setSaleTypes(saleTypes.filter(t => t !== SaleType.WHOLESALE));
-              } else {
-                setSaleTypes([...saleTypes, SaleType.WHOLESALE]);
-              }
-            }}
-            className={`flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-400 dark:text-slate-500'}`}
-          >
-            <Package size={14} /> Atacado
-          </button>
-          <button
-            onClick={() => {
-              if (saleTypes.includes(SaleType.RETAIL)) {
-                if (saleTypes.length > 1) setSaleTypes(saleTypes.filter(t => t !== SaleType.RETAIL));
-              } else {
-                setSaleTypes([...saleTypes, SaleType.RETAIL]);
-              }
-            }}
-            className={`flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${saleTypes.includes(SaleType.RETAIL) ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-400 dark:text-slate-500'}`}
-          >
-            <Tag size={14} /> Varejo
-          </button>
-        </div>
-
-        <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${status === ProductStatus.ACTIVE ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
-              <Toggle className={status === ProductStatus.ACTIVE ? '' : 'rotate-180'} size={20} />
-            </div>
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white">{status === ProductStatus.ACTIVE ? 'Em Uso' : 'Inativo'}</p>
-              <p className="text-[9px] text-slate-400 dark:text-slate-500">Bloqueia compra/venda se inativo</p>
-            </div>
+        {module === 'SALES' && (
+          <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl">
+            <button
+              onClick={() => {
+                if (saleTypes.includes(SaleType.WHOLESALE)) {
+                  if (saleTypes.length > 1) setSaleTypes(saleTypes.filter(t => t !== SaleType.WHOLESALE));
+                } else {
+                  setSaleTypes([...saleTypes, SaleType.WHOLESALE]);
+                }
+              }}
+              className={`flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-400 dark:text-slate-500'}`}
+            >
+              <Package size={14} /> Atacado
+            </button>
+            <button
+              onClick={() => {
+                if (saleTypes.includes(SaleType.RETAIL)) {
+                  if (saleTypes.length > 1) setSaleTypes(saleTypes.filter(t => t !== SaleType.RETAIL));
+                } else {
+                  setSaleTypes([...saleTypes, SaleType.RETAIL]);
+                }
+              }}
+              className={`flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${saleTypes.includes(SaleType.RETAIL) ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-400 dark:text-slate-500'}`}
+            >
+              <Tag size={14} /> Varejo
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setStatus(status === ProductStatus.ACTIVE ? ProductStatus.INACTIVE : ProductStatus.ACTIVE)}
-            className={`w-12 h-6 rounded-full relative transition-colors ${status === ProductStatus.ACTIVE ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`}
-            aria-label={status === ProductStatus.ACTIVE ? "Inativar produto" : "Ativar produto"}
-            title={status === ProductStatus.ACTIVE ? "Inativar" : "Ativar"}
-          >
-            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${status === ProductStatus.ACTIVE ? 'left-7' : 'left-1'}`} />
-          </button>
-        </div>
+        )}
+
+        {module === 'SALES' && (
+          <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800">
+            <div className="flex items-center gap-3">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${status === ProductStatus.ACTIVE ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
+                <Toggle className={status === ProductStatus.ACTIVE ? '' : 'rotate-180'} size={20} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white">{status === ProductStatus.ACTIVE ? 'Em Uso' : 'Inativo'}</p>
+                <p className="text-[9px] text-slate-400 dark:text-slate-500">Bloqueia compra/venda se inativo</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setStatus(status === ProductStatus.ACTIVE ? ProductStatus.INACTIVE : ProductStatus.ACTIVE)}
+              className={`w-12 h-6 rounded-full relative transition-colors ${status === ProductStatus.ACTIVE ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`}
+              aria-label={status === ProductStatus.ACTIVE ? "Inativar produto" : "Ativar produto"}
+              title={status === ProductStatus.ACTIVE ? "Inativar" : "Ativar"}
+            >
+              <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${status === ProductStatus.ACTIVE ? 'left-7' : 'left-1'}`} />
+            </button>
+          </div>
+        )}
 
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-1.5 block tracking-wider">Referência Interna</label>
-              <input
-                type="text"
-                placeholder="Ex: SNK-102"
-                className={`w-full border rounded-2xl px-5 py-4 text-xs font-bold transition-all outline-none focus:ring-4 ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50 text-white focus:ring-indigo-500/10' : 'bg-slate-50 border-slate-100 text-slate-900 focus:ring-indigo-500/5'}`}
-                value={reference}
-                onChange={(e) => setReference(e.target.value)}
-              />
+          {module === 'PRODUCTION' && (
+            <div className="flex flex-col gap-1 mb-2 px-1">
+              <h2 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">{name || 'Novo Modelo'}</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{reference || 'S/ Ref'}</p>
             </div>
+          )}
 
-            <div>
-              <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-1.5 block tracking-wider">Nome do Modelo</label>
-              <input
-                type="text"
-                placeholder="Ex: Tênis Runner Air"
-                className={`w-full border rounded-2xl px-5 py-4 text-xs font-bold transition-all outline-none focus:ring-4 ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50 text-white focus:ring-indigo-500/10' : 'bg-slate-50 border-slate-100 text-slate-900 focus:ring-indigo-500/5'}`}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
+          {module === 'SALES' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-1.5 block tracking-wider">Referência Interna</label>
+                <input
+                  type="text"
+                  placeholder="Ex: SNK-102"
+                  className={`w-full border rounded-2xl px-5 py-4 text-xs font-bold transition-all outline-none focus:ring-4 ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50 text-white focus:ring-indigo-500/10' : 'bg-slate-50 border-slate-100 text-slate-900 focus:ring-indigo-500/5'}`}
+                  value={reference}
+                  onChange={(e) => setReference(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-1.5 block tracking-wider">Nome do Modelo</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Tênis Runner Air"
+                  className={`w-full border rounded-2xl px-5 py-4 text-xs font-bold transition-all outline-none focus:ring-4 ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50 text-white focus:ring-indigo-500/10' : 'bg-slate-50 border-slate-100 text-slate-900 focus:ring-indigo-500/5'}`}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
 
-          {modulesConfig.production && (
+          {module === 'PRODUCTION' && (
             <div className="pt-4 border-t border-slate-50 dark:border-slate-800">
               <label className="text-[10px] uppercase font-black text-slate-900 dark:text-white mb-4 block tracking-widest flex items-center gap-2">
                 <Factory size={14} className="text-indigo-500" /> Configurações de Produção
@@ -945,209 +960,205 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             </div>
           )}
 
-          <div className={`p-5 sm:p-6 rounded-3xl border shadow-sm transition-all duration-500 ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-amber-50/40 border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/20 shadow-amber-100/20' : 'bg-indigo-50/40 border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-900/20 shadow-indigo-100/20'}`}>
-            <div className="flex items-center gap-4 mb-8">
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transform transition-transform duration-500 ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-amber-500 rotate-3 text-white' : 'bg-indigo-500 -rotate-3 text-white'}`}>
-                {saleTypes.includes(SaleType.WHOLESALE) ? <Package size={24} strokeWidth={2.5} /> : <Tag size={24} strokeWidth={2.5} />}
+          {module === 'SALES' && (
+            <div className={`p-5 sm:p-6 rounded-3xl border shadow-sm transition-all duration-500 ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-amber-50/40 border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/20 shadow-amber-100/20' : 'bg-indigo-50/40 border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-900/20 shadow-indigo-100/20'}`}>
+              <div className="flex items-center gap-4 mb-8">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transform transition-transform duration-500 ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-amber-500 rotate-3 text-white' : 'bg-indigo-500 -rotate-3 text-white'}`}>
+                  {saleTypes.includes(SaleType.WHOLESALE) ? <Package size={24} strokeWidth={2.5} /> : <Tag size={24} strokeWidth={2.5} />}
+                </div>
+                <div>
+                  <h4 className={`text-[11px] font-black uppercase tracking-[0.2em] ${saleTypes.includes(SaleType.WHOLESALE) ? 'text-amber-600 dark:text-amber-400' : 'text-indigo-600 dark:text-indigo-400'}`}>
+                    Configurações de {saleTypes.length > 1 ? 'Venda Híbrida' : saleTypes.includes(SaleType.WHOLESALE) ? 'Atacado' : 'Varejo'}
+                  </h4>
+                  <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-1">
+                    {saleTypes.includes(SaleType.WHOLESALE) ? 'Precificação por grade fechada' : 'Precificação por par individual'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className={`text-[11px] font-black uppercase tracking-[0.2em] ${saleTypes.includes(SaleType.WHOLESALE) ? 'text-amber-600 dark:text-amber-400' : 'text-indigo-600 dark:text-indigo-400'}`}>
-                  Configurações de {saleTypes.length > 1 ? 'Venda Híbrida' : saleTypes.includes(SaleType.WHOLESALE) ? 'Atacado' : 'Varejo'}
-                </h4>
-                <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-1">
-                  {saleTypes.includes(SaleType.WHOLESALE) ? 'Precificação por grade fechada' : 'Precificação por par individual'}
-                </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="group">
+                  <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
+                    {type === SaleType.WHOLESALE ? 'Custo por Caixa (R$)' : 'Custo Unitário (R$)'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      className={`w-full border-2 rounded-2xl px-6 py-4.5 pl-12 text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-500'}`}
+                      value={costPrice}
+                      aria-label="Preço de custo"
+                      title="Preço de Custo"
+                      onChange={(e) => setCostPrice(e.target.value)}
+                    />
+                    <DollarSign size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <button
+                      type="button"
+                      onClick={() => setCalcModal({ isOpen: true, field: 'costPrice', value: parseFloat(costPrice as string) || 0 })}
+                      className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-xl transition-all"
+                      aria-label="Abrir calculadora para o preço de custo"
+                      title="Calculadora"
+                    >
+                      <Calculator size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="group">
+                  <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
+                    {type === SaleType.WHOLESALE ? 'Venda por Caixa (R$)' : 'Venda Unitária (R$)'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      className={`w-full border-2 rounded-2xl px-6 py-4.5 pl-12 text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-indigo-400 focus:border-indigo-500 text-lg' : 'bg-white border-slate-100 text-indigo-600 focus:border-indigo-500 text-lg'}`}
+                      value={salePrice}
+                      aria-label="Preço de venda"
+                      title="Preço de Venda"
+                      onChange={(e) => setSalePrice(e.target.value)}
+                    />
+                    <DollarSign size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-indigo-400" />
+                    <button
+                      type="button"
+                      onClick={() => setCalcModal({ isOpen: true, field: 'salePrice', value: parseFloat(salePrice as string) || 0 })}
+                      className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-xl transition-all"
+                      aria-label="Abrir calculadora para o preço de venda"
+                      title="Calculadora"
+                    >
+                      <Calculator size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                {saleTypes.includes(SaleType.RETAIL) && (
+                  <div className="col-span-1 sm:col-span-2 p-5 bg-white/50 dark:bg-slate-900/50 rounded-3xl border border-dashed border-indigo-100 dark:border-indigo-900/30">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Info size={16} className="text-indigo-400" />
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Configuração de Volume (Varejo)</p>
+                    </div>
+                    <div>
+                      <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest">Grade de Tamanhos Padrão</label>
+                      <div className="relative">
+                        <select
+                          className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-4 text-xs font-black appearance-none cursor-pointer text-slate-700 dark:text-slate-300 pr-10"
+                          value={defaultGridId}
+                          title="Selecionar grade de tamanhos padrão"
+                          onChange={(e) => setDefaultGridId(e.target.value)}
+                        >
+                          {grids.map(g => <option key={g.id} value={g.id} className="dark:bg-slate-900">{g.name} ({g.sizes.join('/')})</option>)}
+                        </select>
+                        <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 rotate-90" size={18} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className={type === SaleType.WHOLESALE ? "col-span-1 sm:col-span-2" : "col-span-1"}>
+                  <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none">
+                    {type === SaleType.WHOLESALE ? 'Estoque Mínimo (Caixas)' : 'Estoque Mín. Global'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      className={`w-full border-2 rounded-2xl px-6 py-4.5 pl-12 text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-500'}`}
+                      value={minStockInBoxes}
+                      aria-label="Estoque mínimo global"
+                      title="Estoque Mínimo"
+                      onChange={(e) => setMinStockInBoxes(e.target.value)}
+                    />
+                    <Package size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  </div>
+                </div>
               </div>
             </div>
+          )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-              <div className="group">
-                <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
-                  {type === SaleType.WHOLESALE ? 'Custo por Caixa (R$)' : 'Custo Unitário (R$)'}
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="0.01"
-                    className={`w-full border-2 rounded-2xl px-6 py-4.5 pl-12 text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-500'}`}
-                    value={costPrice}
-                    aria-label="Preço de custo"
-                    title="Preço de Custo"
-                    onChange={(e) => setCostPrice(e.target.value)}
+          {module === 'SALES' && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[9px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Fornecedor Principal</label>
+                  <ComboBox
+                    options={suppliers.map(s => ({ id: s.id, name: s.name }))}
+                    value={supplierId}
+                    onChange={setSupplierId}
+                    placeholder="Selecionar fornecedor..."
+                    isDarkMode={isDarkMode}
+                    icon={<User size={18} />}
                   />
-                  <DollarSign size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <button
-                    type="button"
-                    onClick={() => setCalcModal({ isOpen: true, field: 'costPrice', value: parseFloat(costPrice as string) || 0 })}
-                    className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-xl transition-all"
-                    aria-label="Abrir calculadora para o preço de custo"
-                    title="Calculadora"
-                  >
-                    <Calculator size={16} />
-                  </button>
+                </div>
+                <div>
+                  <label className="text-[9px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Categoria do Produto</label>
+                  <ComboBox
+                    options={[{ id: '', name: 'Nenhum' }, ...categories.filter(c => !c.isPersonal).map(c => ({ id: c.id, name: c.name }))]}
+                    value={categoryId}
+                    onChange={setCategoryId}
+                    placeholder="Selecionar categoria..."
+                    isDarkMode={isDarkMode}
+                    icon={<Tag size={18} />}
+                  />
                 </div>
               </div>
 
-              <div className="group">
-                <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
-                  {type === SaleType.WHOLESALE ? 'Venda por Caixa (R$)' : 'Venda Unitária (R$)'}
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="0.01"
-                    className={`w-full border-2 rounded-2xl px-6 py-4.5 pl-12 text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-indigo-400 focus:border-indigo-500 text-lg' : 'bg-white border-slate-100 text-indigo-600 focus:border-indigo-500 text-lg'}`}
-                    value={salePrice}
-                    aria-label="Preço de venda"
-                    title="Preço de Venda"
-                    onChange={(e) => setSalePrice(e.target.value)}
-                  />
-                  <DollarSign size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-indigo-400" />
-                  <button
-                    type="button"
-                    onClick={() => setCalcModal({ isOpen: true, field: 'salePrice', value: parseFloat(salePrice as string) || 0 })}
-                    className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-xl transition-all"
-                    aria-label="Abrir calculadora para o preço de venda"
-                    title="Calculadora"
-                  >
-                    <Calculator size={16} />
-                  </button>
-                </div>
-              </div>
-
-              {saleTypes.includes(SaleType.RETAIL) && (
-                <div className="col-span-1 sm:col-span-2 p-5 bg-white/50 dark:bg-slate-900/50 rounded-3xl border border-dashed border-indigo-100 dark:border-indigo-900/30">
-                  <div className="flex items-center gap-3 mb-4">
-                    <Info size={16} className="text-indigo-400" />
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Configuração de Volume (Varejo)</p>
+              {/* Seção de Agendamento de Reajuste */}
+              <div className="p-5 sm:p-6 rounded-[2rem] border-2 border-dashed border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/10">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 flex items-center justify-center">
+                    <Calendar size={18} />
                   </div>
                   <div>
-                    <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest">Grade de Tamanhos Padrão</label>
+                    <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-700 dark:text-slate-300">Agendar Reajuste de Preço</h4>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Programar alteração automática de valores</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                  <div>
+                    <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest">Data da Aplicação</label>
+                    <input
+                      type="date"
+                      className={`w-full border-2 rounded-2xl px-5 py-4 text-xs font-black transition-all outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-500'}`}
+                      value={adjustmentDate}
+                      onChange={(e) => setAdjustmentDate(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest">Ajuste Custo (R$)</label>
                     <div className="relative">
-                      <select
-                        className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-4 text-xs font-black appearance-none cursor-pointer text-slate-700 dark:text-slate-300 pr-10"
-                        value={defaultGridId}
-                        title="Selecionar grade de tamanhos padrão"
-                        onChange={(e) => setDefaultGridId(e.target.value)}
-                      >
-                        {grids.map(g => <option key={g.id} value={g.id} className="dark:bg-slate-900">{g.name} ({g.sizes.join('/')})</option>)}
-                      </select>
-                      <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300 rotate-90" size={18} />
+                      <input
+                        type="number"
+                        step="0.01"
+                        className={`w-full border-2 rounded-2xl px-5 py-4 pl-12 text-xs font-black transition-all outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-amber-500 focus:border-amber-500' : 'bg-white border-slate-100 text-amber-600 focus:border-amber-500'}`}
+                        value={costPriceAdjustmentAmount}
+                        placeholder="0.00"
+                        onChange={(e) => setCostPriceAdjustmentAmount(e.target.value)}
+                      />
+                      <DollarSign size={14} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest">Ajuste Venda (R$)</label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.01"
+                        className={`w-full border-2 rounded-2xl px-5 py-4 pl-12 text-xs font-black transition-all outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-emerald-500 focus:border-emerald-500' : 'bg-white border-slate-100 text-emerald-600 focus:border-emerald-500'}`}
+                        value={salePriceAdjustmentAmount}
+                        placeholder="0.00"
+                        onChange={(e) => setSalePriceAdjustmentAmount(e.target.value)}
+                      />
+                      <DollarSign size={14} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
                     </div>
                   </div>
                 </div>
-              )}
-
-              <div className={type === SaleType.WHOLESALE ? "col-span-1 sm:col-span-2" : "col-span-1"}>
-                <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none">
-                  {type === SaleType.WHOLESALE ? 'Estoque Mínimo (Caixas)' : 'Estoque Mín. Global'}
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    className={`w-full border-2 rounded-2xl px-6 py-4.5 pl-12 text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-500'}`}
-                    value={minStockInBoxes}
-                    aria-label="Estoque mínimo global"
-                    title="Estoque Mínimo"
-                    onChange={(e) => setMinStockInBoxes(e.target.value)}
-                  />
-                  <Package size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
-                </div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="text-[9px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Fornecedor Principal</label>
-            <ComboBox
-              options={suppliers.map(s => ({ id: s.id, name: s.name }))}
-              value={supplierId}
-              onChange={setSupplierId}
-              placeholder="Selecionar fornecedor..."
-              isDarkMode={isDarkMode}
-              icon={<User size={18} />}
-            />
-          </div>
-          <div>
-            <label className="text-[9px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Categoria do Produto</label>
-            <ComboBox
-              options={[{ id: '', name: 'Nenhum' }, ...categories.filter(c => !c.isPersonal).map(c => ({ id: c.id, name: c.name }))]}
-              value={categoryId}
-              onChange={setCategoryId}
-              placeholder="Selecionar categoria..."
-              isDarkMode={isDarkMode}
-              icon={<Tag size={18} />}
-            />
-          </div>
-        </div>
-
-        <div className="pt-4 border-t border-slate-50 dark:border-slate-800">
-          <label className="text-[10px] uppercase font-black text-slate-900 dark:text-white mb-4 block tracking-widest flex items-center gap-2">
-            <Calendar size={14} className="text-indigo-500" /> Agendar Reajuste de Preço
-          </label>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="sm:col-span-1">
-              <label className="text-[8px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block">A partir de</label>
-              <input
-                type="date"
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-3 py-3 text-[10px] font-bold text-slate-900 dark:text-slate-100"
-                value={adjustmentDate}
-                title="Data de reajuste"
-                onChange={(e) => setAdjustmentDate(e.target.value)}
-              />
-            </div>
-            <div className="sm:col-span-2 grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-[8px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block">Reajuste Custo (R$)</label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-3 py-3 text-[10px] font-bold text-slate-900 dark:text-slate-100 pl-8"
-                    value={costPriceAdjustmentAmount}
-                    onChange={(e) => setCostPriceAdjustmentAmount(e.target.value)}
-                    placeholder="0.00"
-                  />
-                  <DollarSign size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <button
-                    type="button"
-                    onClick={() => setCalcModal({ isOpen: true, field: 'costPriceAdjustmentAmount', value: parseFloat(costPriceAdjustmentAmount as string) || 0 })}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600"
-                    title="Calculadora"
-                    aria-label="Abrir calculadora para reajuste de custo"
-                  >
-                    <Calculator size={12} />
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label className="text-[8px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block">Reajuste Venda (R$)</label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl px-3 py-3 text-[10px] font-bold text-slate-900 dark:text-slate-100 pl-8"
-                    value={salePriceAdjustmentAmount}
-                    onChange={(e) => setSalePriceAdjustmentAmount(e.target.value)}
-                    placeholder="0.00"
-                  />
-                  <DollarSign size={12} className="absolute left-3 top-1/2 -translate-y-1/2 text-indigo-400" />
-                  <button
-                    type="button"
-                    onClick={() => setCalcModal({ isOpen: true, field: 'salePriceAdjustmentAmount', value: parseFloat(salePriceAdjustmentAmount as string) || 0 })}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600"
-                    title="Calculadora"
-                    aria-label="Abrir calculadora para reajuste de venda"
-                  >
-                    <Calculator size={12} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
+
 
       {/* CARD DEDICADO PARA CORES E VARIAÇÕES */}
       <section className={`mt-6 p-4 sm:p-6 rounded-3xl border-2 shadow-xl ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
@@ -1250,22 +1261,22 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   )}
                 </div>
 
-                {modulesConfig.production && (
+                {module === 'PRODUCTION' && (
                   <button
                     onClick={() => setActiveVariationIndex(i)}
                     className="sm:flex-[1.5] flex items-center justify-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
                     aria-label={`Editar ficha técnica ${v.colorName}`}
                   >
-                    Editar Ficha <ChevronRight size={16} />
+                    Editar Engenharia <ChevronRight size={16} />
                   </button>
                 )}
-                {!modulesConfig.production && (
+                {module === 'SALES' && (
                   <button
                     onClick={() => setActiveVariationIndex(i)}
                     className="sm:flex-[1.5] flex items-center justify-center gap-3 px-6 py-4 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
                     aria-label={`Editar variação ${v.colorName}`}
                   >
-                    Editar Variação <ChevronRight size={16} />
+                    Editar Cor <ChevronRight size={16} />
                   </button>
                 )}
               </div>
@@ -1417,7 +1428,6 @@ export default function ProductFormView({ productId, products, grids, suppliers,
         )}
       </AnimatePresence>
       </div>
-    </div>
-  </>
+    </>
   );
 }

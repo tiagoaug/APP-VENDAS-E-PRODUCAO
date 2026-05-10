@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Product, ProductStatus, SaleType } from "../types";
+import { Product, ProductStatus, SaleType, AppModulesConfig } from "../types";
 import {
   Search,
   Plus,

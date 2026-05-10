@@ -904,6 +904,7 @@ function GenericConfigList({
   const [newSize, setNewSize] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isWeightsModalOpen, setIsWeightsModalOpen] = useState(false);
+  const [isColorWeightsModalOpen, setIsColorWeightsModalOpen] = useState(false);
   const [activeCalc, setActiveCalc] = useState<{
     initialValue: number;
     onResult: (val: number) => void;
@@ -1358,6 +1359,23 @@ function GenericConfigList({
                   <select id="mold-category" value={editingItem?.metadata?.category || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, category: e.target.value } } : null)} title="Selecionar Categoria" className={`w-full px-4 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">GERAL</option><option value="SOLADO">SOLADO</option><option value="SALTO">SALTO</option><option value="PALMILHA">PALMILHA</option></select>
                 </div>
                 <div className="flex flex-col gap-2">
+                  <label htmlFor="mold-supplier" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Fornecedor</label>
+                  <select 
+                    id="mold-supplier" 
+                    value={editingItem?.metadata?.supplierId || ''} 
+                    onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, supplierId: e.target.value } } : null)} 
+                    title="Selecionar Fornecedor" 
+                    className={`w-full px-4 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                  >
+                    <option value="">Selecione...</option>
+                    {suppliers.map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2">
                   <label htmlFor="mold-price" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Preço do Material / KG (R$)</label>
                   <div className="relative group">
                     <input id="mold-price" type="number" step="0.01" value={editingItem?.metadata?.price || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, price: parseFloat(e.target.value) } } : null)} title="Preço por KG" placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
@@ -1366,6 +1384,22 @@ function GenericConfigList({
                       onClick={() => setActiveCalc({
                         initialValue: editingItem?.metadata?.price || 0,
                         onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, price: val } } : null)
+                      })}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"
+                    >
+                      <Calculator size={16} />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label htmlFor="mold-unit-cost" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Custo por Par (R$)</label>
+                  <div className="relative group">
+                    <input id="mold-unit-cost" type="number" step="0.01" value={editingItem?.metadata?.unitCost || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitCost: parseFloat(e.target.value) } } : null)} title="Custo por par" placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-cyan-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
+                    <button
+                      type="button"
+                      onClick={() => setActiveCalc({
+                        initialValue: editingItem?.metadata?.unitCost || 0,
+                        onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitCost: val } } : null)
                       })}
                       className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"
                     >
@@ -1457,6 +1491,129 @@ function GenericConfigList({
                           </div>
                         </div>
                       ))}
+                    </div>
+                  </div>
+                </Modal>
+
+                <div className="flex items-center gap-3 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setIsWeightsModalOpen(true)}
+                    className="flex-1 py-3 px-4 rounded-2xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors"
+                  >
+                    <Scale size={16} /> Pesos por Tamanho
+                  </button>
+                  {colors.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setIsColorWeightsModalOpen(true)}
+                      className="flex-1 py-3 px-4 rounded-2xl bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-violet-200 dark:hover:bg-violet-900/50 transition-colors"
+                    >
+                      <Palette size={16} /> Pesos por Cor
+                    </button>
+                  )}
+                </div>
+
+                <Modal
+                  isOpen={isColorWeightsModalOpen}
+                  onClose={() => setIsColorWeightsModalOpen(false)}
+                  title="Pesos por Cor e Tamanho (GR)"
+                >
+                  <div className="flex flex-col gap-4">
+                    <p className="text-xs text-slate-500 font-medium">
+                      Cadastre o peso médio para cada cor. Se tiver pesos diferentes por tamanho, cadastre também os tamanhos.
+                    </p>
+                    <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
+                      {colors.slice(0, 15).map((color) => {
+                        const colorWeight = editingItem?.metadata?.colorWeights?.[color.id] || 0;
+                        const colorSizeWeights = editingItem?.metadata?.colorSizeWeights?.[color.id] || {};
+                        const sizes = editingItem?.metadata?.sizes || [];
+                        const hasSizeWeights = sizes.length > 0 && Object.keys(colorSizeWeights).length > 0;
+                        
+                        return (
+                          <div key={color.id} className={`rounded-2xl border-2 overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                            <div className="flex items-center justify-between p-4 bg-violet-50 dark:bg-violet-900/20">
+                              <div className="flex items-center gap-3">
+                                <div className="w-6 h-6 rounded-full border border-black/10" style={{ backgroundColor: color.hex }} />
+                                <span className="text-xs font-black text-slate-700 dark:text-slate-200">{color.name}</span>
+                              </div>
+                              <div className="relative flex-1 max-w-[120px] ml-4">
+                                <input
+                                  type="number"
+                                  value={colorWeight || ''}
+                                  title={`Peso médio para cor ${color.name}`}
+                                  placeholder="Média"
+                                  onChange={(e) => {
+                                    const val = parseFloat(e.target.value);
+                                    setEditingItem(prev => {
+                                      if (!prev) return null;
+                                      const newColorWeights = { ...(prev.metadata?.colorWeights || {}) };
+                                      if (val > 0) {
+                                        newColorWeights[color.id] = val;
+                                      } else {
+                                        delete newColorWeights[color.id];
+                                      }
+                                      return { ...prev, metadata: { ...prev.metadata, colorWeights: newColorWeights } };
+                                    });
+                                  }}
+                                  className={`w-full px-3 py-2 rounded-xl font-black text-xs text-right pr-10 outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-violet-500' : 'bg-white border-slate-200 text-slate-900 focus:border-violet-500'}`}
+                                />
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-black text-slate-400">GR</span>
+                              </div>
+                            </div>
+                            
+                            {sizes.length > 0 && (
+                              <div className="p-3 grid grid-cols-4 gap-2">
+                                {sizes.map(size => {
+                                  const sizeWeight = colorSizeWeights[size] || 0;
+                                  return (
+                                    <div key={size} className="flex flex-col gap-1">
+                                      <label className="text-[8px] font-black text-slate-400 uppercase text-center">{size}</label>
+                                      <input
+                                        type="number"
+                                        value={sizeWeight || ''}
+                                        title={`Peso ${color.name} - ${size}`}
+                                        placeholder="0"
+                                        onChange={(e) => {
+                                          const val = parseFloat(e.target.value);
+                                          setEditingItem(prev => {
+                                            if (!prev) return null;
+                                            const newColorSizeWeights = { ...(prev.metadata?.colorSizeWeights || {}) };
+                                            if (!newColorSizeWeights[color.id]) {
+                                              newColorSizeWeights[color.id] = {};
+                                            }
+                                            if (val > 0) {
+                                              newColorSizeWeights[color.id][size] = val;
+                                            } else {
+                                              delete newColorSizeWeights[color.id][size];
+                                            }
+                                            return { ...prev, metadata: { ...prev.metadata, colorSizeWeights: newColorSizeWeights } };
+                                          });
+                                        }}
+                                        className={`px-2 py-1.5 rounded-lg font-black text-[10px] text-center outline-none border ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
+                                      />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex gap-4 mt-2">
+                      {(Object.keys(editingItem?.metadata?.colorWeights || {}).length > 0 || Object.keys(editingItem?.metadata?.colorSizeWeights || {}).length > 0) && (
+                        <div className="flex-1 p-3 rounded-2xl bg-violet-50 dark:bg-violet-900/20 border border-violet-100 dark:border-violet-500/30">
+                          <p className="text-[10px] font-black text-violet-600 dark:text-violet-400 uppercase tracking-widest">
+                            {Object.keys(editingItem?.metadata?.colorWeights || {}).length} cor(es) com peso médio
+                          </p>
+                          {Object.keys(editingItem?.metadata?.colorSizeWeights || {}).length > 0 && (
+                            <p className="text-[10px] font-black text-violet-600 dark:text-violet-400 uppercase tracking-widest mt-1">
+                              {Object.keys(editingItem?.metadata?.colorSizeWeights || {}).length} cor(es) com peso por tamanho
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </Modal>
