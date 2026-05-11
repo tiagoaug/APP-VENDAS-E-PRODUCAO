@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Delete, Check, Plus, Minus, X as Multi, Disc as Divide, Percent, Trash2 } from 'lucide-react';
+import { X, Delete, Check, Plus, Minus, X as Multi, Divide, Percent, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface CalculatorModalProps {
@@ -95,29 +95,29 @@ export default function CalculatorModal({ isOpen, onClose, onResult, isDarkMode,
   };
 
   const buttons = [
-    { label: 'C', onClick: clear, color: 'text-rose-500' },
-    { label: 'DEL', onClick: backspace, icon: Delete, color: 'text-rose-500' },
-    { label: '%', onClick: () => setDisplay((parseFloat(display)/100).toString()), color: 'text-indigo-500' },
-    { label: '/', onClick: () => handleOperator('/'), icon: Divide, color: 'text-indigo-500' },
-    { label: '7', onClick: () => handleNumber('7') },
-    { label: '8', onClick: () => handleNumber('8') },
-    { label: '9', onClick: () => handleNumber('9') },
-    { label: '*', onClick: () => handleOperator('*'), icon: Multi, color: 'text-indigo-500' },
-    { label: '4', onClick: () => handleNumber('4') },
-    { label: '5', onClick: () => handleNumber('5') },
-    { label: '6', onClick: () => handleNumber('6') },
-    { label: '-', onClick: () => handleOperator('-'), icon: Minus, color: 'text-indigo-500' },
-    { label: '1', onClick: () => handleNumber('1') },
-    { label: '2', onClick: () => handleNumber('2') },
-    { label: '3', onClick: () => handleNumber('3') },
-    { label: '+', onClick: () => handleOperator('+'), icon: Plus, color: 'text-indigo-500' },
-    { label: '0', onClick: () => handleNumber('0'), colSpan: 2 },
-    { label: '.', onClick: () => handleNumber('.') },
-    { label: '=', onClick: calculate, color: 'bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-600/20' },
+    { label: 'C', onClick: clear, color: 'text-rose-500', title: 'Limpar' },
+    { label: 'DEL', onClick: backspace, icon: Delete, color: 'text-rose-500', title: 'Apagar' },
+    { label: '%', onClick: () => setDisplay((parseFloat(display)/100).toString()), color: 'text-indigo-500', title: 'Porcentagem' },
+    { label: '/', onClick: () => handleOperator('/'), icon: Divide, color: 'text-indigo-500', title: 'Dividir' },
+    { label: '7', onClick: () => handleNumber('7'), title: 'Sete' },
+    { label: '8', onClick: () => handleNumber('8'), title: 'Oito' },
+    { label: '9', onClick: () => handleNumber('9'), title: 'Nove' },
+    { label: '*', onClick: () => handleOperator('*'), icon: Multi, color: 'text-indigo-500', title: 'Multiplicar' },
+    { label: '4', onClick: () => handleNumber('4'), title: 'Quatro' },
+    { label: '5', onClick: () => handleNumber('5'), title: 'Cinco' },
+    { label: '6', onClick: () => handleNumber('6'), title: 'Seis' },
+    { label: '-', onClick: () => handleOperator('-'), icon: Minus, color: 'text-indigo-500', title: 'Subtrair' },
+    { label: '1', onClick: () => handleNumber('1'), title: 'Um' },
+    { label: '2', onClick: () => handleNumber('2'), title: 'Dois' },
+    { label: '3', onClick: () => handleNumber('3'), title: 'Três' },
+    { label: '+', onClick: () => handleOperator('+'), icon: Plus, color: 'text-indigo-500', title: 'Somar' },
+    { label: '0', onClick: () => handleNumber('0'), colSpan: 2, title: 'Zero' },
+    { label: '.', onClick: () => handleNumber('.'), title: 'Ponto' },
+    { label: '=', onClick: calculate, color: 'bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-600/20', title: 'Calcular' },
   ];
 
   return createPortal(
-    <div className="fixed inset-0 z-[60000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
+    <div className="fixed inset-0 z-[80000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
       <motion.div 
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -146,6 +146,7 @@ export default function CalculatorModal({ isOpen, onClose, onResult, isDarkMode,
             <button
               key={idx}
               onClick={btn.onClick}
+              title={btn.title}
               className={`h-14 flex items-center justify-center text-sm font-black uppercase transition-all active:scale-95 ${btn.colSpan === 2 ? 'col-span-2' : ''} ${btn.color || (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100')} rounded-2xl`}
             >
               {btn.icon ? <btn.icon size={18} strokeWidth={2.5} /> : btn.label}

@@ -1,19 +1,24 @@
 import { useState, useMemo } from 'react';
-import { ProductionConfigItem, ColorValue, WeighingRecord } from '../types';
-import { Scale, ChevronLeft, Package, Calculator, Weight, ArrowLeft, X, Info, Palette, ChevronDown, Save, Clock, Trash2, Warehouse, CheckCircle2, Plus, Calculator as CalcIcon } from 'lucide-react';
+import { ProductionConfigItem, ColorValue, WeighingRecord, SoleStockEntry } from '../types';
+import { 
+  Scale, ChevronLeft, Package, Calculator, Weight, ArrowLeft, X, Info, Palette, 
+  ChevronDown, Save, Clock, Trash2, Warehouse, CheckCircle2, Plus, 
+  Calculator as CalcIcon, DollarSign, Replace, PlusCircle 
+} from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import { firebaseService } from '../services/firebaseService';
 
 interface WeighingViewProps {
   productionConfigs: ProductionConfigItem[];
   colors: ColorValue[];
+  stockEntries: SoleStockEntry[];
   onBack: () => void;
   onNavigateToStock?: () => void;
   isDarkMode: boolean;
   existingRecords?: WeighingRecord[];
 }
 
-export default function WeighingView({ productionConfigs, colors, onBack, onNavigateToStock, isDarkMode, existingRecords = [] }: WeighingViewProps) {
+export default function WeighingView({ productionConfigs, colors, stockEntries, onBack, onNavigateToStock, isDarkMode, existingRecords = [] }: WeighingViewProps) {
   const molds = useMemo(() => productionConfigs.filter(c => c.type === 'MOLD'), [productionConfigs]);
   const [selectedMoldId, setSelectedMoldId] = useState<string>('');
   const [weight, setWeight] = useState<string>('');
@@ -24,6 +29,8 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
   const [records, setRecords] = useState<WeighingRecord[]>(existingRecords);
   const [isSaving, setIsSaving] = useState(false);
   const [confirmStockRecord, setConfirmStockRecord] = useState<WeighingRecord | null>(null);
+  const [editingStockCost, setEditingStockCost] = useState<number>(0);
+  const [updateMode, setUpdateMode] = useState<'ADD' | 'OVERWRITE'>('ADD');
   const [showStockSuccess, setShowStockSuccess] = useState(false);
   const [pendingRecords, setPendingRecords] = useState<Omit<WeighingRecord, 'id'>[]>([]);
   const [accumulatedWeight, setAccumulatedWeight] = useState<string>('');
@@ -50,12 +57,8 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
     return 0;
   }, [selectedMold]);
 
-  const getUnitWeight = (): number => {
+  const getBaseUnitWeight = (): number => {
     if (!selectedMold) return 0;
-    
-    if (customUnitWeight) {
-      return parseFloat(customUnitWeight) || 0;
-    }
     
     let unitWeight = 0;
 
@@ -69,7 +72,7 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
 
     if (unitWeight <= 0) {
       if (selectedSize && selectedSize !== 'MIXED') {
-        unitWeight = selectedMold.metadata?.sizeWeights?.[selectedSize] || selectedMold.metadata?.averageWeight || 0;
+        unitWeight = selectedMold.metadata?.sizeWeights?.[selectedSize] || gridAverageWeight || 0;
       } else if (selectedSize === 'MIXED') {
         const sizes = selectedMold.metadata?.sizes || [];
         const sizeWeights = selectedMold.metadata?.sizeWeights || {};
@@ -77,30 +80,28 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
         if (weights.length > 0) {
           unitWeight = weights.reduce((a, b) => a + b, 0) / weights.length;
         } else {
-          unitWeight = selectedMold.metadata?.averageWeight || 0;
+          unitWeight = gridAverageWeight || 0;
         }
       } else {
-        unitWeight = selectedMold.metadata?.averageWeight || 0;
+        unitWeight = gridAverageWeight || 0;
       }
     }
 
     return unitWeight;
   };
 
+  const baseUnitWeight = getBaseUnitWeight();
+  const unitWeight = customUnitWeight !== '' ? (parseFloat(customUnitWeight) || 0) : baseUnitWeight;
+
   const calculateQuantity = () => {
     if (!selectedMold || !weight) return 0;
-    
     const weightKg = parseFloat(weight);
     if (isNaN(weightKg) || weightKg <= 0) return 0;
-
-    const unitW = getUnitWeight();
-    if (unitW <= 0) return 0;
-
-    return Math.floor((weightKg * 1000) / unitW);
+    if (unitWeight <= 0) return 0;
+    return Math.floor((weightKg * 1000) / unitWeight);
   };
 
   const quantity = calculateQuantity();
-  const unitWeight = getUnitWeight();
 
   const availableSizes = selectedMold?.metadata?.sizes || [];
   const hasSizeWeights = selectedMold && Object.keys(selectedMold.metadata?.sizeWeights || {}).length > 0;
@@ -189,12 +190,15 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
     
     setIsSaving(true);
     try {
+      const savedRecords: WeighingRecord[] = [];
       for (const record of pendingRecords) {
-        await firebaseService.saveDocument('weighingRecords', record);
+        const id = await firebaseService.saveDocument('weighingRecords', record);
+        savedRecords.push({ ...record, id } as WeighingRecord);
       }
       
+      setRecords(prev => [...savedRecords, ...prev]);
       setPendingRecords([]);
-      alert(`${pendingRecords.length} pesagem(s) salva(s) com sucesso!`);
+      alert(`${savedRecords.length} pesagem(s) salva(s) com sucesso!`);
     } catch (err) {
       console.error('Erro ao salvar pesagens:', err);
       alert('Erro ao salvar pesagens');
@@ -219,8 +223,26 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
   };
 
   const handleUpdateStock = (record: WeighingRecord) => {
+    const mold = productionConfigs.find(m => m.id === record.moldId);
+    setEditingStockCost(mold?.metadata?.unitCost || 0);
+    setUpdateMode('ADD');
     setConfirmStockRecord(record);
   };
+
+  const currentStockValue = useMemo(() => {
+    if (!confirmStockRecord) return 0;
+    const entries = stockEntries.filter(e => 
+      e.moldId === confirmStockRecord.moldId && 
+      e.colorId === (confirmStockRecord.colorId || '')
+    );
+    
+    let total = 0;
+    const sizeKey = confirmStockRecord.size || 'GERAL';
+    entries.forEach(entry => {
+      total += entry.stock[sizeKey] || 0;
+    });
+    return total;
+  }, [stockEntries, confirmStockRecord]);
 
   const confirmUpdateStock = async () => {
     if (!confirmStockRecord) return;
@@ -228,22 +250,32 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
     const record = confirmStockRecord;
     setConfirmStockRecord(null);
     
+    const quantityToSave = updateMode === 'ADD' 
+      ? record.quantity 
+      : record.quantity - currentStockValue;
+
+    if (quantityToSave === 0 && updateMode === 'OVERWRITE') {
+      alert('O estoque já está com este valor.');
+      setConfirmStockRecord(null);
+      return;
+    }
+    
     try {
-      const colorName = record.colorName || 'SEM COR';
-      const stockEntry = {
+      const stockEntry: Omit<SoleStockEntry, 'id'> = {
         moldId: record.moldId,
         moldName: record.moldName,
-        colorId: record.colorId || 'nocor',
-        colorName: colorName,
+        colorId: record.colorId || '',
+        colorName: record.colorName || 'Sem Cor',
         supplierId: '',
         supplierName: '',
-        stock: { ['pesagem']: record.quantity },
-        totalPairs: record.quantity,
-        unitCost: record.unitWeight,
-        totalCost: 0,
+        stock: { [record.size || 'GERAL']: quantityToSave },
+        totalPairs: quantityToSave,
+        unitCost: editingStockCost,
+        totalCost: quantityToSave * editingStockCost,
         purchaseDate: Date.now(),
         sourceRecordId: record.id,
-        source: 'weighing'
+        source: 'weighing',
+        notes: updateMode === 'OVERWRITE' ? 'Ajuste via Balanço de Pesagem' : 'Entrada via Pesagem'
       };
       
       await firebaseService.saveDocument('soleStock', stockEntry);
@@ -267,7 +299,7 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
   };
 
   return (
-    <div className="flex flex-col h-full pb-44 px-1 overflow-y-auto force-scrollbar">
+    <div className="flex flex-col h-full pb-44 px-1 overflow-y-auto overflow-x-hidden force-scrollbar">
       <div className="flex items-center gap-4 mb-4">
         <button 
           onClick={onBack}
@@ -533,7 +565,8 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
                     <div className="flex items-center gap-2">
                       <input
                         type="number"
-                        value={customUnitWeight || unitWeight.toFixed(2)}
+                        value={customUnitWeight}
+                        placeholder={baseUnitWeight.toFixed(2)}
                         onChange={(e) => setCustomUnitWeight(e.target.value)}
                         className={`w-20 text-right font-black bg-transparent border-b ${isDarkMode ? 'border-emerald-500/30 text-emerald-400' : 'border-emerald-200 text-emerald-600'} outline-none focus:border-emerald-500 transition-colors`}
                       />
@@ -564,6 +597,8 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
                 <button
                   onClick={handleAddToPending}
                   disabled={!selectedMold || !weight || quantity <= 0}
+                  title="Adicionar pesagem à lista"
+                  aria-label="Adicionar pesagem atual à lista de registros pendentes"
                   className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
                     selectedMold && weight && quantity > 0
                       ? 'bg-violet-600 text-white hover:bg-violet-700 shadow-lg shadow-violet-500/20' 
@@ -576,6 +611,8 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
                 <button
                   onClick={() => setIsAccumulating(true)}
                   disabled={!selectedMold || !weight || quantity <= 0}
+                  title="Iniciar modo de acúmulo de peso"
+                  aria-label="Iniciar modo de acúmulo de peso para somar várias pesagens"
                   className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
                     selectedMold && weight && quantity > 0
                       ? 'bg-amber-600 text-white hover:bg-amber-700 shadow-lg shadow-amber-500/20' 
@@ -593,7 +630,12 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
                     <p className="text-[10px] font-black text-amber-600 uppercase">
                       Acumulando pesos
                     </p>
-                    <button onClick={handleCancelAccumulate} className="text-slate-400">
+                    <button 
+                      onClick={handleCancelAccumulate} 
+                      title="Cancelar acúmulo"
+                      aria-label="Cancelar modo de acúmulo e limpar pesos"
+                      className="text-slate-400 p-1 hover:text-slate-600 transition-colors"
+                    >
                       <X size={14} />
                     </button>
                   </div>
@@ -620,7 +662,9 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
                   <button
                     onClick={handleAccumulateWeight}
                     disabled={!weight || quantity <= 0}
-                    className="w-full py-2 rounded-xl bg-amber-500 text-white text-[10px] font-black uppercase mb-2"
+                    title="Somar peso atual ao acumulado"
+                    aria-label="Somar peso atual ao total acumulado"
+                    className="w-full py-2 rounded-xl bg-amber-500 text-white text-[10px] font-black uppercase mb-2 shadow-sm active:scale-95 transition-all"
                   >
                     + Adicionar peso atual ({weight || 0} kg)
                   </button>
@@ -677,7 +721,9 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
                         </div>
                         <button
                           onClick={() => handleRemovePending(idx)}
-                          className="p-2 text-red-400 hover:text-red-500"
+                          title="Remover da lista"
+                          aria-label={`Remover pesagem de ${record.moldName} da lista pendente`}
+                          className="p-2 text-red-400 hover:text-red-500 transition-colors"
                         >
                           <X size={16} />
                         </button>
@@ -720,12 +766,14 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
                         </p>
                       </div>
                       <div className="flex gap-1">
-                        <button
-                          onClick={() => handleUpdateStock(record)}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[8px] font-black uppercase tracking-widest flex items-center gap-1 hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors"
-                        >
-                          <Warehouse size={10} /> Atualizar Estoque
-                        </button>
+                        {record.size && record.size !== 'MIXED' && (
+                          <button
+                            onClick={() => handleUpdateStock(record)}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[8px] font-black uppercase tracking-widest flex items-center gap-1 hover:bg-emerald-200 dark:hover:bg-emerald-900/50 transition-colors"
+                          >
+                            <Warehouse size={10} /> Atualizar Estoque
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDeleteRecord(record.id)}
                           className="p-2 rounded-lg text-slate-400 hover:text-red-500 transition-colors"
@@ -786,6 +834,50 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
               {confirmStockRecord.size && <><br/>Tamanho: <span className="text-violet-500">{confirmStockRecord.size}</span></>}
               {confirmStockRecord.colorName && <><br/>Cor: <span className="text-violet-500">{confirmStockRecord.colorName}</span></>}
             </p>
+
+            <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl w-full mt-6">
+              <button
+                onClick={() => setUpdateMode('ADD')}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${updateMode === 'ADD' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}
+              >
+                <PlusCircle size={14} /> Somar
+              </button>
+              <button
+                onClick={() => setUpdateMode('OVERWRITE')}
+                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${updateMode === 'OVERWRITE' ? 'bg-amber-600 text-white shadow-lg' : 'text-slate-400'}`}
+              >
+                <Replace size={14} /> Substituir
+              </button>
+            </div>
+
+            <div className={`mt-4 w-full p-4 rounded-2xl border-2 border-dashed ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Estoque Atual</span>
+                <span className="text-sm font-black text-slate-500">{currentStockValue} pares</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-[10px] font-bold text-slate-400 uppercase">Novo Total</span>
+                <span className={`text-sm font-black ${updateMode === 'OVERWRITE' ? 'text-amber-500' : 'text-indigo-500'}`}>
+                  {updateMode === 'ADD' ? currentStockValue + confirmStockRecord.quantity : confirmStockRecord.quantity} pares
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-6 w-full space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Custo por Par (R$)</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={editingStockCost || ''}
+                  onChange={(e) => setEditingStockCost(parseFloat(e.target.value) || 0)}
+                  className={`w-full border-2 rounded-2xl px-5 py-4 pl-12 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-600'}`}
+                  placeholder="0,00"
+                />
+                <DollarSign size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
+              </div>
+            </div>
             
             <div className="flex gap-3 mt-6 w-full">
               <button
@@ -877,3 +969,4 @@ export default function WeighingView({ productionConfigs, colors, onBack, onNavi
     </div>
   );
 }
+

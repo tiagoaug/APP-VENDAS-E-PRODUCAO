@@ -9,9 +9,10 @@ interface ModalProps {
   title?: string;
   children: ReactNode;
   maxWidth?: string;
+  zIndex?: number;
 }
 
-export default function Modal({ isOpen, onClose, title, children, maxWidth = "max-w-2xl" }: ModalProps) {
+export default function Modal({ isOpen, onClose, title, children, maxWidth = "max-w-2xl", zIndex = 50000 }: ModalProps) {
   // Prevent scrolling of background when modal is open
   useEffect(() => {
     if (isOpen) {
@@ -27,7 +28,7 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
   return createPortal(
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[50000] flex items-center justify-center p-4">
+        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex }}>
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -59,12 +60,12 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-2 sm:p-8 custom-scrollbar">
               {children}
             </div>
 
             {/* Footer */}
-            <div className="px-8 py-6 border-t border-slate-50 dark:border-slate-800/50 shrink-0 bg-slate-50/30 dark:bg-slate-900/50">
+            <div className="px-4 py-6 border-t border-slate-50 dark:border-slate-800/50 shrink-0 bg-slate-50/30 dark:bg-slate-900/50">
               <button
                 onClick={onClose}
                 className="w-full py-4 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-black uppercase tracking-widest text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-[0.98]"

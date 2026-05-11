@@ -45,7 +45,7 @@ export default function ProductionEngineeringView({
   );
 
   return (
-    <div className="flex flex-col gap-4 pb-24 px-4 bg-[#fafafa] dark:bg-slate-950 h-screen overflow-y-auto force-scrollbar">
+    <div className="flex flex-col gap-4 pb-24 px-4 bg-[#fafafa] dark:bg-slate-950 h-screen overflow-y-auto overflow-x-hidden force-scrollbar">
       {/* Delete Confirmation Modal */}
       {itemToDelete && (
         <div className="fixed inset-0 z-[100] flex animate-in fade-in duration-300">
@@ -86,12 +86,12 @@ export default function ProductionEngineeringView({
                 <Database size={24} />
              </div>
              <div>
-               <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
-                 Engenharia de Produção
-               </h2>
-               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
-                 Fichas Técnicas e Configurações
-               </p>
+                <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                  Engenharia de Produto
+                </h2>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                  Fichas Técnicas e Configurações
+                </p>
              </div>
           </div>
         </div>
@@ -168,27 +168,27 @@ function EngineeringCard({
       className={`rounded-[2rem] border shadow-sm dark:shadow-none overflow-hidden transition-all hover:shadow-md ${isDarkMode ? "bg-slate-900 border-slate-800 hover:border-slate-700" : "bg-white border-slate-100 hover:border-slate-200"}`}
     >
       <div className="p-5 flex flex-col gap-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-4">
-            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border-2 transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-indigo-400' : 'bg-slate-50 border-slate-100 text-indigo-600'}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border-2 shrink-0 transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-indigo-400' : 'bg-slate-50 border-slate-100 text-indigo-600'}`}>
                <Hammer size={28} />
             </div>
-            <div className="flex flex-col">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1.5 block">
+            <div className="flex flex-col min-w-0">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1.5 block truncate">
                 REF: {product.reference}
               </span>
-              <h3 className="font-black text-lg text-slate-800 dark:text-white uppercase tracking-tight leading-tight line-clamp-1">
+              <h3 className="font-black text-lg text-slate-800 dark:text-white uppercase tracking-tight leading-tight line-clamp-2">
                 {product.name}
               </h3>
             </div>
           </div>
           
-          <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-col items-end gap-2 shrink-0">
             <button 
               onClick={onToggleStatus}
-              className={`px-3 py-1 rounded-xl transition-all ${product.status === ProductStatus.ACTIVE ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-500/10 text-slate-500'}`}
+              className={`px-2.5 py-1 rounded-lg transition-all whitespace-nowrap ${product.status === ProductStatus.ACTIVE ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-500/10 text-slate-500'}`}
             >
-              <span className="text-[8px] font-black uppercase tracking-[0.2em]">
+              <span className="text-[7.5px] font-black uppercase tracking-wider">
                 {product.status === ProductStatus.ACTIVE ? 'Em Uso' : 'Inativo'}
               </span>
             </button>
@@ -228,3 +228,4 @@ function EngineeringCard({
     </div>
   );
 }
+

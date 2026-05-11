@@ -55,7 +55,7 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
   };
 
   return (
-    <div className="flex flex-col gap-6 pb-32 h-full overflow-y-auto force-scrollbar">
+    <div className="flex flex-col gap-6 pb-32 h-full overflow-y-auto overflow-x-hidden force-scrollbar">
       <ConfirmDialog
         isOpen={isConfirmOpen}
         title="Excluir Cadastro?"
@@ -219,4 +219,5 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
     </div>
   );
 }
+
 

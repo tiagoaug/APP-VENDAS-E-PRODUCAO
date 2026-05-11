@@ -2,6 +2,7 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+@custom-variant industrial (&:where(.industrial, .industrial *));
 
 @theme {
   --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
@@ -23,12 +24,90 @@
   --radius-3xl: 2rem;
 }
 
+.dark {
+  --color-background: #020617; /* slate-950 */
+  --color-surface: #0f172a; /* slate-900 */
+  --color-text-main: #f8fafc; /* slate-50 */
+  --color-text-muted: #94a3b8; /* slate-400 */
+  --color-text-dim: #64748b; /* slate-500 */
+  --color-primary: #6366f1; /* indigo-500 */
+  --color-primary-dark: #4f46e5;
+  --color-primary-light: #818cf8;
+}
+
+/* Bordas sutis para modo noturno */
+.dark .border-slate-800,
+.dark .border-slate-700 {
+  border-color: #1e293b !important; /* slate-800 */
+}
+
+.industrial {
+  --color-background: #e5e7eb; /* gray-200 */
+  --color-surface: #f3f4f6; /* gray-100 */
+  --color-text-main: #111827; /* gray-900 */
+  --color-text-muted: #374151; /* gray-700 */
+  --color-text-dim: #6b7280; /* gray-500 */
+  --color-primary: #4b5563; /* gray-600 */
+  --color-primary-dark: #1f2937; /* gray-800 */
+  --color-primary-light: #d1d5db; /* gray-300 */
+}
+
+/* Forçar visual industrial em componentes que usam classes utilitárias comuns */
+.industrial .bg-white,
+.industrial .bg-slate-50 {
+  background-color: var(--color-surface) !important;
+}
+
+.industrial .bg-slate-100 {
+  background-color: var(--color-background) !important;
+}
+
+.industrial .border-slate-100,
+.industrial .border-slate-50 {
+  border-color: #d1d5db !important; /* gray-300 */
+}
+
+.industrial .text-slate-900,
+.industrial .text-slate-800,
+.industrial .text-indigo-600,
+.industrial .text-cyan-500,
+.industrial .text-emerald-500,
+.industrial .text-amber-500 {
+  color: var(--color-text-main) !important;
+}
+
+.industrial .text-slate-500,
+.industrial .text-slate-400 {
+  color: var(--color-text-muted) !important;
+}
+
 @layer base {
   html {
     font-size: 14px;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
   }
   body {
     @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased;
+    overflow-x: hidden;
+  }
+  /* Modern subtle scrollbars by default */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #cbd5e1 transparent; /* slate-300 */
+  }
+  .dark * {
+    scrollbar-color: #334155 transparent; /* slate-700 */
+  }
+  *::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    @apply bg-slate-300/50 dark:bg-slate-700/50 rounded-full transition-colors hover:bg-slate-400 dark:hover:bg-slate-600;
   }
 }
 

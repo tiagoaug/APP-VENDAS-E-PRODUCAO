@@ -44,10 +44,15 @@ export type ComponentConsumption = {
   colorId?: string; // Optional specific color for the component
   quantity: number; // Consumo per unit/pair
   unitId?: string;
+  unitValue?: number; // Valor unitário manual inserido pelo usuário
   
   // Cutting Piece specific
   toolId?: string; // Link to Faca (ProductionConfigItem type TOOL)
   piecesPerPair?: number; // Usually 2
+  
+  // Ignore flags for conditional requirements
+  ignoreColor?: boolean;
+  ignoreQuantity?: boolean;
   
   // Outsourced services
   services?: {
@@ -96,6 +101,7 @@ export type Product = {
   toolMapping?: { [size: string]: string };
   variations: Variation[];
   saleTypes?: SaleType[];
+  productionRoute?: string[]; // Sector IDs in order
   createdAt: number;
 };
 
@@ -275,6 +281,9 @@ export type Category = {
   color: string;
   type: CategoryType;
   isPersonal?: boolean;
+  module?: keyof AppModulesConfig;
+  parentId?: string;
+  isRoot?: boolean;
 };
 
 export type ColorValue = {
@@ -342,6 +351,7 @@ export enum ViewType {
   PRODUCTION_SOLE_PURCHASE = 'PRODUCTION_SOLE_PURCHASE',
   PRODUCTION_SOLE_STOCK = 'PRODUCTION_SOLE_STOCK',
   PRODUCTION_ENGINEERING = 'PRODUCTION_ENGINEERING',
+  CATEGORY_CONFIG = 'CATEGORY_CONFIG',
 }
 
 export type DashboardCardConfig = {
@@ -387,7 +397,7 @@ export type Sector = {
   flowTagIds: string[];
 };
 
-export type ProductionScreenType = 'MENU' | 'SECTORS' | 'FLOW_TAGS' | 'UNIDADES' | 'FACAS' | 'INFESTO' | 'PRAZOS' | 'FICHAS' | 'EMBALAGENS' | 'INSUMOS' | 'MATRIZES';
+export type ProductionScreenType = 'MENU' | 'SECTORS' | 'FLOW_TAGS' | 'UNIDADES' | 'FACAS' | 'INFESTO' | 'PRAZOS' | 'FICHAS' | 'EMBALAGENS' | 'INSUMOS' | 'MATRIZES' | 'PECAS';
 
 // Production sub-screens moved to types.ts
 
@@ -401,7 +411,7 @@ export type ProductionConfigItem = {
   id: string;
   name: string;
   description: string;
-  type: 'UNIT' | 'TOOL' | 'INFESTO' | 'DEADLINE' | 'TECH_SHEET' | 'PACKAGING' | 'MATERIAL' | 'MOLD';
+  type: 'UNIT' | 'TOOL' | 'INFESTO' | 'DEADLINE' | 'TECH_SHEET' | 'PACKAGING' | 'MATERIAL' | 'MOLD' | 'PIECE';
   imageUrl?: string;
   metadata?: {
     // Shared or existing
@@ -467,7 +477,24 @@ export type SoleStockEntry = {
   unitCost: number;
   totalCost: number;
   purchaseDate: number;
+  source?: string;
+  sourceRecordId?: string;
   notes?: string;
+};
+
+export type ProductionLot = {
+  id: string;
+  batchId: string;
+  productId: string;
+  variationId: string;
+  gridId: string;
+  number: string;
+  pairs: { [size: string]: number };
+  totalPairs: number;
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+  currentSectorId?: string;
+  history?: ProductionLotHistory[];
+  createdAt: number;
 };
 
 export type SolePurchase = {
@@ -489,5 +516,29 @@ export type SolePurchaseItem = {
   quantities: { [size: string]: number };
   unitCost: number;
   totalCost: number;
+};export type ProductionLotHistory = {
+  sectorId: string;
+  statusId: string; // FlowTag ID
+  timestamp: number;
+  userId?: string;
+  userName?: string;
+  notes?: string;
+};
+
+export type ProductionLot = {
+  id: string;
+  orderNumber: string; // "Lote #001"
+  saleId?: string; // Optional link to a sale
+  productId: string;
+  variationId: string;
+  quantity: number;
+  route: string[]; // Sector IDs inherited from product
+  currentSectorIndex: number;
+  currentStatusId?: string; // FlowTag ID (the current status in the sector)
+  history: ProductionLotHistory[];
+  priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+  notes?: string;
+  createdAt: number;
+  finishedAt?: number;
 };
 

@@ -26,7 +26,6 @@ export default function BackupView({
   const [isCleaning, setIsCleaning] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [cleanMessage, setCleanMessage] = useState<string | null>(null);
-  
   const [showFormatConfirm, setShowFormatConfirm] = useState(false);
   const [formatSuccess, setFormatSuccess] = useState(false);
 
@@ -34,8 +33,6 @@ export default function BackupView({
     const txDuplicates: Transaction[] = [];
     const seenTx = new Set<string>();
 
-    // Duplicates for Transactions
-    // Criteria: same description, amount, date (YYYY-MM-DD), and contact
     transactions.forEach(tx => {
       const dateStr = new Date(tx.date).toISOString().split('T')[0];
       const key = `${tx.description}-${tx.amount}-${dateStr}-${tx.contactId || 'none'}-${tx.type}`;
@@ -268,7 +265,6 @@ export default function BackupView({
           </div>
         </div>
       )}
-
     </div>
   );
 }

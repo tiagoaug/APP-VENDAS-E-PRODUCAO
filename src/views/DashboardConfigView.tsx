@@ -169,7 +169,7 @@ export default function DashboardConfigView({ config, onSave, onBack, isDarkMode
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto force-scrollbar px-4 pt-6 pb-32 flex flex-col gap-6">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden force-scrollbar px-4 pt-6 pb-32 flex flex-col gap-6">
 
         <div className="mt-2">
           <div className={`p-5 rounded-[2rem] border ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-indigo-50/30 border-indigo-100/50'} mb-6`}>
@@ -258,3 +258,4 @@ export default function DashboardConfigView({ config, onSave, onBack, isDarkMode
     </div>
   );
 }
+

@@ -513,7 +513,7 @@ export default function DashboardView({
   }, [dashboardConfig, modulesConfig]);
 
   return (
-    <div className="flex-1 overflow-y-auto force-scrollbar flex flex-col gap-4 pb-40 px-4 bg-[#fafafa] dark:bg-slate-950 min-h-screen pt-4">
+    <div className="flex-1 overflow-y-auto overflow-x-hidden force-scrollbar flex flex-col gap-4 pb-40 px-4 bg-[#fafafa] dark:bg-slate-950 min-h-screen pt-4">
 
       {sortedCards.map((card) => {
         if (!card.visible) return null;
@@ -534,40 +534,45 @@ export default function DashboardView({
         switch (card.id) {
           case "sales_products":
             return (
-              <div key="sales_products" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-6 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+              <div key="sales_products" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div>
                   <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Produtos e Catálogo</h3>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">Gestão de Vendas</p>
                 </div>
-                
-                <div className={`rounded-3xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-                  <ConfigMenuItem
-                    icon={<Package size={20} />}
-                    label="Produtos Cadastrados"
-                    desc="Visualizar e gerenciar catálogo de produtos"
-                    color="text-indigo-600"
-                    bg="bg-indigo-50"
-                    isDarkMode={isDarkMode}
+
+                {/* 2-column grid to prevent smashing/horizontal scroll issues */}
+                <div className="grid grid-cols-2 gap-3">
+                  <button
                     onClick={() => onNavigate(ViewType.PRODUCTS)}
-                  />
-                  <ConfigMenuItem
-                    icon={<Plus size={20} />}
-                    label="Cadastrar Novo Modelo"
-                    desc="Cadastrar novo modelo de produto"
-                    color="text-emerald-600"
-                    bg="bg-emerald-50"
-                    isDarkMode={isDarkMode}
+                    title="Ver todos os produtos"
+                    aria-label="Navegar para a lista de produtos cadastrados"
+                    className={`flex flex-col items-center justify-center gap-2 h-32 p-4 rounded-2xl border transition-all active:scale-95 ${
+                      isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-indigo-50 border-transparent hover:bg-indigo-100'
+                    }`}
+                  >
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-indigo-600 ${isDarkMode ? 'bg-indigo-900/30' : 'bg-white shadow-sm'}`}>
+                      <Package size={20} />
+                    </div>
+                    <span className={`text-[10px] font-black uppercase tracking-tight text-center leading-tight px-1 ${isDarkMode ? 'text-slate-200' : 'text-indigo-700'}`}>
+                      Produtos Cadastrados
+                    </span>
+                  </button>
+
+                  <button
                     onClick={onAddProduct}
-                  />
-                  <ConfigMenuItem
-                    icon={<Palette size={20} />}
-                    label="Paleta de Cores"
-                    desc="Gerenciar cores e variações"
-                    color="text-pink-600"
-                    bg="bg-pink-50"
-                    isDarkMode={isDarkMode}
-                    onClick={() => onNavigate(ViewType.COLORS)}
-                  />
+                    title="Cadastrar novo modelo de produto"
+                    aria-label="Abrir formulário de cadastro de novo produto"
+                    className={`flex flex-col items-center justify-center gap-2 h-32 p-4 rounded-2xl border transition-all active:scale-95 ${
+                      isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-emerald-50 border-transparent hover:bg-emerald-100'
+                    }`}
+                  >
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-emerald-600 ${isDarkMode ? 'bg-emerald-900/30' : 'bg-white shadow-sm'}`}>
+                      <Plus size={20} />
+                    </div>
+                    <span className={`text-[10px] font-black uppercase tracking-tight text-center leading-tight px-1 ${isDarkMode ? 'text-slate-200' : 'text-emerald-700'}`}>
+                      Cadastrar Novo Modelo
+                    </span>
+                  </button>
                 </div>
               </div>
             );
@@ -604,6 +609,8 @@ export default function DashboardView({
                 <div className="grid grid-cols-2 gap-4">
                   <button 
                     onClick={() => onAddTransaction(TransactionType.INCOME)}
+                    title="Lançar Entrada Manual"
+                    aria-label="Lançar nova entrada financeira manual"
                     className={`p-6 rounded-[1.8rem] flex flex-col items-center justify-center gap-3 transition-all active:scale-95 ${isDarkMode ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-emerald-50'}`}
                   >
                     <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-emerald-500 shadow-sm">
@@ -614,6 +621,8 @@ export default function DashboardView({
 
                   <button 
                     onClick={() => onAddTransaction(TransactionType.EXPENSE)}
+                    title="Lançar Saída Manual"
+                    aria-label="Lançar nova saída financeira manual"
                     className={`p-6 rounded-[1.8rem] flex flex-col items-center justify-center gap-3 transition-all active:scale-95 ${isDarkMode ? 'bg-rose-500/10 border border-rose-500/20' : 'bg-rose-50'}`}
                   >
                     <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-rose-500 shadow-sm">
@@ -641,6 +650,8 @@ export default function DashboardView({
                 <div className="grid grid-cols-2 gap-3">
                   <button 
                     onClick={() => onNavigate(ViewType.REPORT_DETAILED, "ventas-periodo")}
+                    title="Ver Relatório de Vendas do Período"
+                    aria-label="Relatório de vendas detalhado por período"
                     className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all active:scale-[0.97] text-left ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50 hover:bg-indigo-900/10' : 'bg-slate-50/50 border-slate-100 hover:bg-indigo-50'}`}
                   >
                     <div className="w-8 h-8 rounded-xl bg-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20">
@@ -654,6 +665,8 @@ export default function DashboardView({
 
                   <button 
                     onClick={() => onNavigate(ViewType.REPORT_DETAILED, "desempenho-financeiro")}
+                    title="Ver Desempenho Financeiro Detalhado"
+                    aria-label="Relatório de lucro e desempenho financeiro"
                     className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all active:scale-[0.97] text-left ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50 hover:bg-emerald-900/10' : 'bg-slate-50/50 border-slate-100 hover:bg-emerald-50'}`}
                   >
                     <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20">
@@ -667,6 +680,8 @@ export default function DashboardView({
 
                   <button 
                     onClick={() => onNavigate(ViewType.REPORT_DETAILED, "informacao-estoque")}
+                    title="Ver Itens com Baixo Estoque"
+                    aria-label="Relatório de estoque e alertas de reposição"
                     className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all active:scale-[0.97] text-left ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50 hover:bg-amber-900/10' : 'bg-slate-50/50 border-slate-100 hover:bg-amber-50'}`}
                   >
                     <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/20">
@@ -680,6 +695,8 @@ export default function DashboardView({
 
                   <button 
                     onClick={() => onNavigate(ViewType.REPORT_DETAILED, "clientes-mais-compram")}
+                    title="Ver Ranking de Clientes"
+                    aria-label="Ranking dos clientes com maior volume de compra"
                     className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all active:scale-[0.97] text-left ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50 hover:bg-purple-900/10' : 'bg-slate-50/50 border-slate-100 hover:bg-purple-50'}`}
                   >
                     <div className="w-8 h-8 rounded-xl bg-purple-500 text-white flex items-center justify-center shadow-lg shadow-purple-500/20">
@@ -707,25 +724,26 @@ export default function DashboardView({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                {/* Responsive grid for quick-access buttons */}
+                <div className="grid grid-cols-2 gap-2.5">
                   <button 
                     onClick={() => onNavigate(ViewType.REPORT_DETAILED, "ventas-periodo")}
-                    className={`p-6 rounded-[1.8rem] flex flex-col items-center justify-center gap-3 transition-all active:scale-95 ${isDarkMode ? 'bg-indigo-500/10 border border-indigo-500/20' : 'bg-slate-50'}`}
+                    className={`h-28 p-4 rounded-[1.5rem] flex flex-col items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-indigo-500/10 border border-indigo-500/20 shadow-[0_8px_30px_rgb(0,0,0,0.12)]' : 'bg-slate-50 border border-slate-100 shadow-sm'}`}
                   >
-                    <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-indigo-500 shadow-sm">
-                      <TrendingUp size={24} strokeWidth={3} />
+                    <div className="w-10 h-10 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-indigo-500 shadow-sm shrink-0">
+                      <TrendingUp size={22} strokeWidth={3} />
                     </div>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Vendas</span>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 text-center leading-tight">Vendas</span>
                   </button>
 
                   <button 
                     onClick={() => onNavigate(ViewType.REPORT_DETAILED, "desempenho-financeiro")}
-                    className={`p-6 rounded-[1.8rem] flex flex-col items-center justify-center gap-3 transition-all active:scale-95 ${isDarkMode ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-slate-50'}`}
+                    className={`h-28 p-4 rounded-[1.5rem] flex flex-col items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-amber-500/10 border border-amber-500/20 shadow-[0_8px_30px_rgb(0,0,0,0.12)]' : 'bg-slate-50 border border-slate-100 shadow-sm'}`}
                   >
-                    <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-amber-500 shadow-sm">
-                      <DollarSign size={24} strokeWidth={3} />
+                    <div className="w-10 h-10 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-amber-500 shadow-sm shrink-0">
+                      <DollarSign size={22} strokeWidth={3} />
                     </div>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-500">Financeiro</span>
+                    <span className="text-[9px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-500 text-center leading-tight">Financeiro</span>
                   </button>
                 </div>
 
@@ -1239,9 +1257,46 @@ export default function DashboardView({
               <section key="checks" className="mt-2">
                 <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden flex flex-col ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                   <div className="p-6 pb-2">
-                    <div className="flex items-center justify-between mb-6"><div><h2 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-800"}`}>Relatório de Cheques</h2><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Gestão Unificada de Documentos</p></div><div className="flex items-center gap-2"><div className={`p-2.5 rounded-xl ${isDarkMode ? 'bg-amber-900/20 text-amber-500' : 'bg-amber-50 text-amber-600'}`}><CreditCard size={20} strokeWidth={2.5} /></div></div></div>
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <h2 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-800"}`}>Relatório de Cheques</h2>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Gestão Unificada de Documentos</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className={`p-2.5 rounded-xl ${isDarkMode ? 'bg-amber-900/20 text-amber-500' : 'bg-amber-50 text-amber-600'}`}>
+                          <CreditCard size={20} strokeWidth={2.5} />
+                        </div>
+                      </div>
+                    </div>
                     <div className="flex flex-col gap-4">
-                      <div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2"><Clipboard size={14} className="text-indigo-500" /><span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total: {filteredChecks.length} cheques</span></div><div className="flex items-center gap-2"><button className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[8px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-all border border-slate-100 dark:border-slate-700 active:scale-95" onClick={() => { const summary = filteredChecks.map(c => `${c.number} - R$ ${c.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} - ${format(c.dueDate, 'dd/MM/yyyy')}`).join('\n'); navigator.clipboard.writeText(summary); alert('Lista de cheques copiada!'); }}><Copy size={12} />Copiar</button><button onClick={shareChecksPDF} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[8px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all border border-indigo-100 dark:border-indigo-900/50 active:scale-95"><Share2 size={14} />Compartilhar</button></div></div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Clipboard size={14} className="text-indigo-500" />
+                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total: {filteredChecks.length} cheques</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button 
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[8px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-all border border-slate-100 dark:border-slate-700 active:scale-95" 
+                            title="Copiar lista de cheques para a área de transferência"
+                            aria-label="Copiar resumo de todos os cheques filtrados"
+                            onClick={() => { 
+                              const summary = filteredChecks.map(c => `${c.number} - R$ ${c.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} - ${format(c.dueDate, 'dd/MM/yyyy')}`).join('\n'); 
+                              navigator.clipboard.writeText(summary); 
+                              alert('Lista de cheques copiada!'); 
+                            }}
+                          >
+                            <Copy size={12} />Copiar
+                          </button>
+                          <button 
+                            onClick={shareChecksPDF} 
+                            title="Compartilhar relatório em PDF"
+                            aria-label="Gerar e compartilhar PDF com a lista de cheques"
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[8px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all border border-indigo-100 dark:border-indigo-900/50 active:scale-95"
+                          >
+                            <Share2 size={14} />Compartilhar
+                          </button>
+                        </div>
+                      </div>
                       <div className="relative"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-600" size={16} /><input type="text" placeholder="BUSCAR POR NÚMERO OU FORNECEDOR..." className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-2xl pl-12 pr-4 py-3.5 text-[11px] font-black uppercase tracking-widest placeholder:text-slate-300 dark:placeholder:text-slate-800 focus:ring-4 focus:ring-indigo-500/5 transition-all text-slate-800 dark:text-white" value={checksSearch} onChange={(e) => setChecksSearch(e.target.value)} />{checksSearch && (<button onClick={() => setChecksSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" title="Limpar busca"><X size={14} /></button>)}</div>
                       <div className="flex gap-2 p-1 bg-slate-50 dark:bg-slate-950 rounded-2xl overflow-x-auto no-scrollbar">{(['PENDING', 'OVERDUE', 'CLEARED', 'ALL'] as const).map((status) => (<button key={status} onClick={() => setChecksStatusFilter(status)} className={`flex-1 py-2 px-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${checksStatusFilter === status ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-700'}`}>{status === 'PENDING' ? 'A Vencer' : status === 'CLEARED' ? 'Compensados' : status === 'OVERDUE' ? 'Vencidos' : 'Todos'}</button>))}</div>
                     </div>
@@ -1283,6 +1338,7 @@ export default function DashboardView({
                   </div>
                   <button 
                     title="Filtrar Período"
+                    aria-label="Abrir filtros de período para análise de lucro"
                     onClick={() => setIsProfitFiltersExpanded(!isProfitFiltersExpanded)} 
                     className={`p-2.5 rounded-xl transition-all ${isProfitFiltersExpanded ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'bg-slate-50 text-slate-400 dark:bg-slate-800'}`}
                   >
@@ -1423,7 +1479,20 @@ export default function DashboardView({
           case "activity":
             return (
               <section key="activity">
-                <button onClick={() => setIsRecentActivityExpanded(!isRecentActivityExpanded)} className="flex items-center justify-between w-full mb-4 px-1"><div><h2 className={`text-[13px] font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-800"}`}>Atividade</h2><p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest leading-none">Recentes</p></div><div className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'} text-slate-500`}>{isRecentActivityExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}</div></button>
+                <button 
+                  onClick={() => setIsRecentActivityExpanded(!isRecentActivityExpanded)} 
+                  title={isRecentActivityExpanded ? "Recolher Atividade" : "Expandir Atividade"}
+                  aria-label={isRecentActivityExpanded ? "Recolher seção de atividades recentes" : "Expandir seção de atividades recentes"}
+                  className="flex items-center justify-between w-full mb-4 px-1 group"
+                >
+                  <div>
+                    <h2 className={`text-[13px] font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-800"}`}>Atividade</h2>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest leading-none">Recentes</p>
+                  </div>
+                  <div className={`p-2 rounded-full transition-all group-hover:scale-110 ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                    {isRecentActivityExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </div>
+                </button>
                 {isRecentActivityExpanded && (
                   <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
                     {recentActivity.map((activity: any) => (
@@ -1442,3 +1511,4 @@ export default function DashboardView({
     </div>
   );
 }
+

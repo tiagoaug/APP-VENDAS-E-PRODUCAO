@@ -551,7 +551,7 @@ export default function ReportDetailedView({
         {/* Dynamic Content */}
         <div className={`p-1 rounded-[2rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} mt-2`}>
             {reportId === 'informacao-estoque' && (
-                 <div className="overflow-x-auto custom-scrollbar">
+                 <div className="overflow-x-auto no-scrollbar">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr>
@@ -594,7 +594,7 @@ export default function ReportDetailedView({
                 </div>
             )}
             {reportId === 'dividas-fornecedor' && (
-                 <div className="overflow-x-auto custom-scrollbar">
+                 <div className="overflow-x-auto no-scrollbar">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr>
@@ -623,7 +623,7 @@ export default function ReportDetailedView({
                 </div>
             )}
             {reportId === 'ventas-periodo' && (
-                <div className="overflow-x-auto custom-scrollbar">
+                <div className="overflow-x-auto no-scrollbar">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr>
@@ -655,7 +655,7 @@ export default function ReportDetailedView({
             )}
 
             {reportId === 'clientes-mais-compram' && (
-                 <div className="overflow-x-auto custom-scrollbar">
+                 <div className="overflow-x-auto no-scrollbar">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr>
@@ -685,7 +685,7 @@ export default function ReportDetailedView({
             )}
 
             {reportId === 'produtos-curva-a' && (
-                 <div className="overflow-x-auto custom-scrollbar">
+                 <div className="overflow-x-auto no-scrollbar">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr>
@@ -727,7 +727,7 @@ export default function ReportDetailedView({
             )}
 
             {reportId === 'relacionamento-cliente' && (
-                 <div className="overflow-x-auto custom-scrollbar">
+                 <div className="overflow-x-auto no-scrollbar">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr>
@@ -800,7 +800,7 @@ export default function ReportDetailedView({
             )}
 
             {reportId === 'desempenho-financeiro' && (
-                 <div className="overflow-x-auto custom-scrollbar">
+                 <div className="overflow-x-auto no-scrollbar">
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr>

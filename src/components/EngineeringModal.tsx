@@ -21,6 +21,7 @@ interface EngineeringModalProps {
   grids: Grid[];
   productionGridId: string;
   defaultGridId: string;
+  activeVariationColor?: { name: string, hex: string };
 }
 
 export default function EngineeringModal({
@@ -33,8 +34,9 @@ export default function EngineeringModal({
   colors,
   sectors,
   grids,
-  productionGridId,
-  defaultGridId
+   productionGridId,
+  defaultGridId,
+  activeVariationColor
 }: EngineeringModalProps) {
   const [editing, setEditing] = useState<ComponentConsumption>({ ...consumption });
   const [newServiceId, setNewServiceId] = useState('');
@@ -124,11 +126,24 @@ export default function EngineeringModal({
             <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20">
               {editing.category === 'CUTTING_PIECE' ? <Scissors size={24} /> : <Box size={24} />}
             </div>
-            <div>
+             <div>
               <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-900 dark:text-white">
                 Configuração de Peça
               </h3>
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Engenharia de Componente</p>
+              <div className="flex items-center gap-2 mt-1">
+                {activeVariationColor && (
+                  <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-white dark:bg-slate-700 border border-slate-100 dark:border-slate-600">
+                    <div 
+                      className="w-2 h-2 rounded-full border border-black/10" 
+                      style={{ backgroundColor: activeVariationColor.hex }}
+                    />
+                    <span className="text-[7px] font-black uppercase tracking-tighter text-slate-500 dark:text-slate-400">
+                      {activeVariationColor.name}
+                    </span>
+                  </div>
+                )}
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Engenharia de Componente</p>
+              </div>
             </div>
           </div>
           <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-500 transition-all active:scale-90">
@@ -157,17 +172,22 @@ export default function EngineeringModal({
             </div>
           </div>
 
-          {/* Color Selector */}
-          <div className="flex flex-col gap-3">
+           <div className="flex flex-col gap-3">
             <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-900 dark:text-white px-1">Cor da Peça</label>
-            <select 
-              className={`w-full border-2 rounded-2xl px-6 py-4 text-xs font-black transition-all outline-none appearance-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
-              value={editing.colorId || ''}
-              onChange={(e) => setEditing({ ...editing, colorId: e.target.value })}
-            >
-              <option value="">Cor...</option>
-              {colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <div className="relative">
+              <select 
+                className={`w-full border-2 rounded-2xl px-6 py-4 text-xs font-black transition-all outline-none appearance-none ${!editing.colorId ? 'border-rose-500/30 bg-rose-50/10' : ''} ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
+                value={editing.colorId || ''}
+                onChange={(e) => setEditing({ ...editing, colorId: e.target.value })}
+              >
+                <option value="">Cor Obrigatória...</option>
+                {colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none flex items-center gap-2">
+                 {!editing.colorId && <span className="text-[7px] font-black text-rose-500 uppercase bg-rose-50 px-1.5 py-0.5 rounded-md border border-rose-100">Falta Selecionar</span>}
+                 <Plus size={18} className="text-slate-400" />
+              </div>
+            </div>
           </div>
 
           {/* Grid Consumption Details */}
@@ -310,10 +330,10 @@ export default function EngineeringModal({
 
         {/* Footer */}
         <div className="p-8 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-          <button 
-            disabled={!editing.materialId}
+           <button 
+            disabled={!editing.materialId || !editing.colorId}
             onClick={() => onSave(editing)}
-            className={`w-full py-5 rounded-[1.5rem] text-xs font-black uppercase tracking-[0.3em] shadow-xl transition-all active:scale-[0.98] disabled:opacity-50 ${isDarkMode ? 'bg-indigo-600 text-white shadow-indigo-900/40' : 'bg-slate-900 text-white shadow-slate-900/20'}`}
+            className={`w-full py-5 rounded-[1.5rem] text-xs font-black uppercase tracking-[0.3em] shadow-xl transition-all active:scale-[0.98] disabled:opacity-50 disabled:grayscale ${isDarkMode ? 'bg-indigo-600 text-white shadow-indigo-900/40' : 'bg-slate-900 text-white shadow-slate-900/20'}`}
           >
             Confirmar Engenharia
           </button>

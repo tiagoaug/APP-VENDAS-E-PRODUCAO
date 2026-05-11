@@ -279,3 +279,4 @@ const StockCard: React.FC<{
     </div>
   );
 };
+

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, FormEvent, ChangeEvent, ReactNode } from 'react';
+import React, { useState, useMemo, useRef, useEffect, FormEvent, ChangeEvent, ReactNode } from 'react';
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
 import {
   Tags,
@@ -112,29 +112,146 @@ const AreaInput = ({ size, value, onChange, isDarkMode, onShowCalc }: any) => {
       />
     </div>
   );
-};
+}
 
-interface ProductionConfigViewProps {
-  flowTags: FlowTag[];
-  sectors: Sector[];
-  productionConfigs: ProductionConfigItem[];
-  onSaveFlowTag: (tag: FlowTag) => Promise<void>;
-  onDeleteFlowTag: (id: string) => Promise<void>;
-  onSaveSector: (sector: Sector) => Promise<void>;
-  onDeleteSector: (id: string) => Promise<void>;
-  onSaveConfigItem: (item: ProductionConfigItem) => Promise<void>;
-  onDeleteConfigItem: (id: string) => Promise<void>;
-  onUpdateSectorsOrder: (sectors: Sector[]) => Promise<void>;
-  onBack: () => void;
+function PecasConfig({
+  title,
+  isDarkMode,
+  onBack,
+  zIndex,
+  productionConfigs,
+  onSave,
+  onDelete
+}: {
+  title: string;
   isDarkMode: boolean;
-  grids?: Grid[];
-  categories?: any[];
-  initialScreen?: ProductionScreenType;
-  onNavigate?: (view: ViewType) => void;
-  onAddProduct?: () => void;
-  onNavigateGrids?: () => void;
-  people?: Person[];
-  colors?: ColorValue[];
+  onBack: () => void;
+  zIndex: number;
+  productionConfigs: ProductionConfigItem[];
+  onSave: (item: ProductionConfigItem) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const pecasExistentes = productionConfigs.filter(c => c.type === 'PIECE');
+  const [pecas, setPecas] = useState<ProductionConfigItem[]>(pecasExistentes);
+  const [novoNome, setNovoNome] = useState('');
+  const [tipoSelecionado, setTipoSelecionado] = useState<'ENTRADA' | 'PECA'>('PECA');
+
+  useEffect(() => {
+    setPecas(productionConfigs.filter(c => c.type === 'PIECE'));
+  }, [productionConfigs]);
+
+  const adicionarPeca = async () => {
+    if (!novoNome.trim()) return;
+    const nova: ProductionConfigItem = {
+      id: `p-${Date.now()}`,
+      name: novoNome.trim(),
+      description: tipoSelecionado,
+      type: 'PIECE',
+      createdAt: Date.now(),
+      metadata: { pieceType: tipoSelecionado }
+    };
+    await onSave(nova);
+    setPecas([...pecas, nova]);
+    setNovoNome('');
+  };
+
+  const removerPeca = async (id: string) => {
+    await onDelete(id);
+    setPecas(pecas.filter(p => p.id !== id));
+  };
+
+  const entradas = pecas.filter(p => p.metadata?.pieceType === 'ENTRADA');
+  const pecasLista = pecas.filter(p => p.metadata?.pieceType === 'PECA');
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between">
+        <button
+          onClick={onBack}
+          className={`flex items-center gap-2 text-sm font-bold uppercase tracking-wider ${isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-900'}`}
+        >
+          <ArrowLeft size={18} /> Voltar
+        </button>
+      </div>
+
+      <div className={`rounded-2xl border-2 p-4 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+        <div className="flex gap-3 mb-4">
+          <select
+            value={tipoSelecionado}
+            onChange={(e) => setTipoSelecionado(e.target.value as 'ENTRADA' | 'PECA')}
+            className={`px-4 py-3 rounded-xl border-2 text-sm font-bold outline-none ${isDarkMode ? 'bg-slate-900 border-slate-600 text-white' : 'bg-white border-slate-300 text-slate-900'}`}
+          >
+            <option value="ENTRADA">Entrada</option>
+            <option value="PECA">Peça</option>
+          </select>
+          <input
+            type="text"
+            value={novoNome}
+            onChange={(e) => setNovoNome(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && adicionarPeca()}
+            placeholder="Nome da peça..."
+            className={`flex-1 px-4 py-3 rounded-xl border-2 text-sm font-bold outline-none ${isDarkMode ? 'bg-slate-900 border-slate-600 text-white placeholder-slate-500' : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'}`}
+          />
+          <button
+            onClick={adicionarPeca}
+            className="px-6 py-3 bg-emerald-500 text-white rounded-xl font-bold text-sm hover:bg-emerald-600 transition-colors"
+          >
+            <Plus size={20} />
+          </button>
+        </div>
+      </div>
+
+      {entradas.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <h3 className={`text-xs font-black uppercase tracking-[0.2em] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Entradas</h3>
+          <div className="flex flex-wrap gap-2">
+            {entradas.map(p => (
+              <div
+                key={p.id}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
+              >
+                <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{p.name}</span>
+                <button
+                  onClick={() => removerPeca(p.id)}
+                  className="text-rose-500 hover:text-rose-600"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {pecasLista.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <h3 className={`text-xs font-black uppercase tracking-[0.2em] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Peças</h3>
+          <div className="flex flex-wrap gap-2">
+            {pecasLista.map(p => (
+              <div
+                key={p.id}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
+              >
+                <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{p.name}</span>
+                <button
+                  onClick={() => removerPeca(p.id)}
+                  className="text-rose-500 hover:text-rose-600"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {pecas.length === 0 && (
+        <div className={`text-center py-8 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+          <p className="text-sm font-bold uppercase tracking-wider">Nenhuma peça cadastrada</p>
+        </div>
+      )}
+    </div>
+  );
 }
 
 const SECTOR_COLORS = [
@@ -401,11 +518,20 @@ export default function ProductionConfigView({
                     <ConfigMenuItem
                       icon={<Box size={24} />}
                       label="Infesto"
-                      desc="Camadas de tecido"
+                      desc="Camadas empilhadas"
                       color="text-sky-600"
                       bg="bg-sky-50"
                       isDarkMode={isDarkMode}
                       onClick={() => setCurrentScreen('INFESTO')}
+                    />
+                    <ConfigMenuItem
+                      icon={<Layers size={24} />}
+                      label="Peças"
+                      desc="Entradas e peças"
+                      color="text-emerald-600"
+                      bg="bg-emerald-50"
+                      isDarkMode={isDarkMode}
+                      onClick={() => setCurrentScreen('PECAS')}
                     />
                     <ConfigMenuItem
                       icon={<PackageOpen size={24} />}
@@ -433,6 +559,7 @@ export default function ProductionConfigView({
         isOpen={currentScreen === 'SECTORS'}
         onClose={() => setCurrentScreen('MENU')}
         title="Setores de Produção"
+        zIndex={60000}
       >
         <div className="flex flex-col gap-6">
           <div className="flex items-center justify-between">
@@ -568,6 +695,7 @@ export default function ProductionConfigView({
         isOpen={currentScreen === 'UNIDADES'}
         onClose={() => setCurrentScreen('MENU')}
         title="Unidades de Medida"
+        zIndex={60000}
       >
         <GenericConfigList
           title="Unidades"
@@ -591,6 +719,7 @@ export default function ProductionConfigView({
         isOpen={currentScreen === 'FACAS'}
         onClose={() => setCurrentScreen('MENU')}
         title="Facas de Corte"
+        zIndex={60000}
       >
         <GenericConfigList
           title="Facas de Corte"
@@ -614,6 +743,7 @@ export default function ProductionConfigView({
         isOpen={currentScreen === 'INFESTO'}
         onClose={() => setCurrentScreen('MENU')}
         title="Configuração de Infestos"
+        zIndex={60000}
       >
         <GenericConfigList title="Infesto" label="INFESTO" items={productionConfigs} type="INFESTO" icon={<Layers size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} onBack={() => setCurrentScreen('MENU')} placeholderLabel="Nenhum registro de infesto" onNavigateToScreen={handleNavigateShortcut} />
       </Modal>
@@ -622,6 +752,7 @@ export default function ProductionConfigView({
         isOpen={currentScreen === 'PRAZOS'}
         onClose={() => setCurrentScreen('MENU')}
         title="Prazos Padrão"
+        zIndex={60000}
       >
         <GenericConfigList title="Prazos" label="PRAZOS" items={productionConfigs} type="DEADLINE" icon={<CalendarClock size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} onBack={() => setCurrentScreen('MENU')} placeholderLabel="Nenhum prazo cadastrado" onNavigateToScreen={handleNavigateShortcut} />
       </Modal>
@@ -630,6 +761,7 @@ export default function ProductionConfigView({
         isOpen={currentScreen === 'FICHAS'}
         onClose={() => setCurrentScreen('MENU')}
         title="Fichas Técnicas"
+        zIndex={60000}
       >
         <GenericConfigList title="Fichas Técnicas" label="FICHAS TÉCNICAS" items={productionConfigs} type="TECH_SHEET" icon={<Footprints size={22} />} isDarkMode={isDarkMode} onSave={onSaveConfigItem} onDelete={onDeleteConfigItem} onBack={() => setCurrentScreen('MENU')} placeholderLabel="Nenhuma ficha técnica" onNavigateToScreen={handleNavigateShortcut} />
       </Modal>
@@ -638,6 +770,7 @@ export default function ProductionConfigView({
         isOpen={currentScreen === 'EMBALAGENS'}
         onClose={() => setCurrentScreen('MENU')}
         title="Padrão de Embalagens"
+        zIndex={60000}
       >
         <GenericConfigList
           title="Padrão de Embalagens"
@@ -654,6 +787,24 @@ export default function ProductionConfigView({
           people={people}
           grids={grids}
           onNavigateToScreen={handleNavigateShortcut}
+          zIndex={60000}
+        />
+      </Modal>
+
+      <Modal
+        isOpen={currentScreen === 'PECAS'}
+        onClose={() => setCurrentScreen('MENU')}
+        title="Peças"
+        zIndex={60000}
+      >
+        <PecasConfig
+          title="Peças"
+          isDarkMode={isDarkMode}
+          onBack={() => setCurrentScreen('MENU')}
+          zIndex={60000}
+          productionConfigs={productionConfigs}
+          onSave={onSaveConfigItem}
+          onDelete={onDeleteConfigItem}
         />
       </Modal>
 
@@ -661,6 +812,7 @@ export default function ProductionConfigView({
         isOpen={currentScreen === 'INSUMOS'}
         onClose={() => setCurrentScreen('MENU')}
         title="Catálogo de Insumos"
+        zIndex={60000}
       >
         <GenericConfigList
           title="Insumos"
@@ -679,6 +831,7 @@ export default function ProductionConfigView({
           colors={colors}
           flowTags={flowTags}
           onNavigateToScreen={handleNavigateShortcut}
+          zIndex={60000}
         />
       </Modal>
 
@@ -686,6 +839,7 @@ export default function ProductionConfigView({
         isOpen={currentScreen === 'MATRIZES'}
         onClose={() => setCurrentScreen('MENU')}
         title="Matrizes Sola"
+        zIndex={60000}
       >
         <GenericConfigList
           title="Matrizes Sola"
@@ -877,7 +1031,8 @@ function GenericConfigList({
   productionConfigs = [],
   grids = [],
   supplyCategoryNames = [],
-  onNavigateToScreen
+  onNavigateToScreen,
+  zIndex = 60000
 }: {
   title: string;
   label: string;
@@ -897,6 +1052,7 @@ function GenericConfigList({
   grids?: Grid[];
   supplyCategoryNames?: string[];
   onNavigateToScreen?: (screen: ProductionScreenType | ViewType) => void;
+  zIndex?: number;
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ProductionConfigItem | null>(null);
@@ -1157,6 +1313,8 @@ function GenericConfigList({
           {onBack && (
             <button
               onClick={onBack}
+              title="Voltar"
+              aria-label="Voltar para a tela anterior"
               className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 border border-slate-100 hover:text-slate-700'}`}
             >
               <ChevronLeft size={18} />
@@ -1186,6 +1344,8 @@ function GenericConfigList({
             });
             setIsModalOpen(true);
           }}
+          title={`Adicionar Novo Registro em ${label}`}
+          aria-label={`Adicionar novo registro na categoria ${label}`}
           className={`w-full py-4 px-6 rounded-[2rem] flex items-center gap-4 transition-all shadow-lg active:scale-[0.98] ${isDarkMode ? 'bg-indigo-600 text-white shadow-indigo-900/40' : 'bg-indigo-600 text-white shadow-indigo-200/80'
             }`}
         >
@@ -1329,7 +1489,7 @@ function GenericConfigList({
         )}
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`Editar / Cadastrar`}>
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`Editar / Cadastrar`} zIndex={zIndex + 10000}>
         <form onSubmit={handleSave} className="flex flex-col gap-6">
           {type === 'MOLD' ? (
             <div className="flex flex-col gap-6">
@@ -1381,6 +1541,8 @@ function GenericConfigList({
                     <input id="mold-price" type="number" step="0.01" value={editingItem?.metadata?.price || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, price: parseFloat(e.target.value) } } : null)} title="Preço por KG" placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
                     <button
                       type="button"
+                      title="Abrir Calculadora"
+                      aria-label="Abrir calculadora para definir preço"
                       onClick={() => setActiveCalc({
                         initialValue: editingItem?.metadata?.price || 0,
                         onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, price: val } } : null)
@@ -1397,6 +1559,8 @@ function GenericConfigList({
                     <input id="mold-unit-cost" type="number" step="0.01" value={editingItem?.metadata?.unitCost || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitCost: parseFloat(e.target.value) } } : null)} title="Custo por par" placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-cyan-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
                     <button
                       type="button"
+                      title="Abrir Calculadora"
+                      aria-label="Abrir calculadora para definir custo por par"
                       onClick={() => setActiveCalc({
                         initialValue: editingItem?.metadata?.unitCost || 0,
                         onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitCost: val } } : null)
@@ -1635,6 +1799,8 @@ function GenericConfigList({
                       />
                       <button
                         type="button"
+                        title="Abrir Calculadora"
+                        aria-label="Abrir calculadora para definir peso total"
                         onClick={() => setActiveCalc({
                           initialValue: editingItem?.metadata?.totalWeight || totalWeightLive || 0,
                           onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, totalWeight: val } } : null)
@@ -1681,7 +1847,7 @@ function GenericConfigList({
                   {(editingItem?.metadata?.composition || []).map((item: any, index: number) => (
                     <div key={index} className={`grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                       <div className="col-span-6 flex flex-col gap-1"><label htmlFor={`material-${index}`} className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Insumo / Material</label><select id={`material-${index}`} value={item.materialId} title="Selecionar Insumo" onChange={(e) => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], materialId: e.target.value }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className={`w-full px-3 py-3 rounded-xl font-bold text-xs uppercase outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-indigo-100'}`}><option value="">SELECIONE...</option>{productionConfigs.filter(c => c.type === 'MATERIAL').map(mat => <option key={mat.id} value={mat.id}>{mat.name}</option>)}</select></div>
-                      <div className="col-span-3 flex flex-col gap-1"><label htmlFor={`qty-${index}`} className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Quant / %</label><div className="relative group"><input id={`qty-${index}`} type="number" step="0.001" value={item.quantity || ''} title="Quantidade" placeholder="0,000" onChange={(e) => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], quantity: parseFloat(e.target.value) }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className={`w-full px-3 py-3 rounded-xl font-black text-[10px] text-center outline-none border-2 pr-10 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-indigo-600'}`} /><button type="button" onClick={() => setActiveCalc({ initialValue: item.quantity || 0, onResult: (val) => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], quantity: val }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); } })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-800 text-slate-500 hover:text-white transition-all"><Calculator size={12} /></button></div></div>
+                      <div className="col-span-3 flex flex-col gap-1"><label htmlFor={`qty-${index}`} className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Quant / %</label><div className="relative group"><input id={`qty-${index}`} type="number" step="0.001" value={item.quantity || ''} title="Quantidade" placeholder="0,000" onChange={(e) => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], materialId: e.target.value, quantity: parseFloat(e.target.value) }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className={`w-full px-3 py-3 rounded-xl font-black text-[10px] text-center outline-none border-2 pr-10 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-indigo-600'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir quantidade" onClick={() => setActiveCalc({ initialValue: item.quantity || 0, onResult: (val) => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], quantity: val }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); } })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-800 text-slate-500 hover:text-white transition-all"><Calculator size={12} /></button></div></div>
                       <div className="col-span-2 flex flex-col gap-1"><label className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Tipo</label><button type="button" title="Alternar Tipo" aria-label="Alternar entre peso e porcentagem" onClick={() => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], type: item.type === 'weight' ? 'percentage' : 'weight' }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className={`w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest border-2 transition-all ${item.type === 'percentage' ? 'bg-amber-500 border-amber-600 text-white' : 'bg-indigo-500 border-indigo-600 text-white'}`}>{item.type === 'percentage' ? '%' : 'GR'}</button></div>
                       <div className="col-span-1 flex items-end pb-1"><button type="button" title="Remover Insumo" aria-label="Remover este insumo da composição" onClick={() => { const newComp = (editingItem?.metadata?.composition || []).filter((_: any, i: number) => i !== index); setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition-colors"><Trash2 size={16} /></button></div>
                     </div>
@@ -1705,7 +1871,7 @@ function GenericConfigList({
                   {(editingItem?.metadata?.extraServices || []).map((service: any, index: number) => (
                     <div key={index} className={`grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                       <div className="col-span-7 flex flex-col gap-1"><label htmlFor={`service-name-${index}`} className="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">Nome do Serviço</label><input id={`service-name-${index}`} type="text" value={service.name} title="Nome do Serviço" onChange={(e) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], name: e.target.value.toUpperCase() }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); }} placeholder="EX: PINTURA" className={`w-full px-4 py-3 rounded-xl font-bold text-xs uppercase outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-emerald-600'}`} /></div>
-                      <div className="col-span-4 flex flex-col gap-1"><label htmlFor={`service-cost-${index}`} className="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">Valor (R$)</label><div className="relative group"><input id={`service-cost-${index}`} type="number" step="0.01" value={service.cost || ''} title="Custo do Serviço" onChange={(e) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], cost: parseFloat(e.target.value) }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); }} placeholder="0,00" className={`w-full px-4 py-3 rounded-xl font-bold text-xs text-center outline-none border-2 pr-10 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-emerald-600'}`} /><button type="button" onClick={() => setActiveCalc({ initialValue: service.cost || 0, onResult: (val) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], cost: val }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); } })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-800 text-slate-500 hover:text-white transition-all"><Calculator size={12} /></button></div></div>
+                      <div className="col-span-4 flex flex-col gap-1"><label htmlFor={`service-cost-${index}`} className="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">Valor (R$)</label><div className="relative group"><input id={`service-cost-${index}`} type="number" step="0.01" value={service.cost || ''} title="Custo do Serviço" onChange={(e) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], cost: parseFloat(e.target.value) }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); }} placeholder="0,00" className={`w-full px-4 py-3 rounded-xl font-bold text-xs text-center outline-none border-2 pr-10 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-emerald-600'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir valor do serviço" onClick={() => setActiveCalc({ initialValue: service.cost || 0, onResult: (val) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], cost: val }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); } })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-800 text-slate-500 hover:text-white transition-all"><Calculator size={12} /></button></div></div>
                       <div className="col-span-1 flex items-end pb-1"><button type="button" title="Remover Serviço" aria-label="Remover este serviço" onClick={() => { const newServices = (editingItem?.metadata?.extraServices || []).filter((_: any, i: number) => i !== index); setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); }} className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition-colors"><Trash2 size={16} /></button></div>
                     </div>
                   ))}
@@ -1802,8 +1968,8 @@ function GenericConfigList({
                   {renderLabelWithShortcut('mat-unit', 'Unidade', 'UNIDADES', true)}
                   <select id="mat-unit" value={editingItem?.metadata?.unitId || ''} title="Unidade" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitId: e.target.value } } : null)} required className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">SELECIONAR...</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
                 </div>
-                <div className="flex flex-col gap-2"><label htmlFor="mat-cost" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Custo Base</label><div className="relative group"><input id="mat-cost" type="number" step="0.01" value={editingItem?.metadata?.baseCost || ''} title="Custo Base" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.baseCost || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
-                <div className="flex flex-col gap-2"><label htmlFor="mat-width" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Largura (m)</label><div className="relative group"><input id="mat-width" type="number" step="0.01" value={editingItem?.metadata?.width || ''} title="Largura" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.width || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+                <div className="flex flex-col gap-2"><label htmlFor="mat-cost" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Custo Base</label><div className="relative group"><input id="mat-cost" type="number" step="0.01" value={editingItem?.metadata?.baseCost || ''} title="Custo Base" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir custo base" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.baseCost || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+                <div className="flex flex-col gap-2"><label htmlFor="mat-width" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Largura (m)</label><div className="relative group"><input id="mat-width" type="number" step="0.01" value={editingItem?.metadata?.width || ''} title="Largura" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir largura" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.width || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
               </div>
               <div className="flex flex-col gap-2">
                 {renderLabelWithShortcut('mat-colors', 'Cores Disponíveis', ViewType.COLORS)}
@@ -1931,20 +2097,20 @@ function GenericConfigList({
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><Layers size={32} /></div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Configuração de Camadas para<br />Corte e Produção</p></div>
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Infesto *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: COURO PADRÃO" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Quantidade de Camadas *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.layers || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, layers: Number(e.target.value) } } : null)} placeholder="Ex: 4" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.layers || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, layers: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Quantidade de Camadas *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.layers || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, layers: Number(e.target.value) } } : null)} placeholder="Ex: 4" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir quantidade de camadas" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.layers || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, layers: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
             </div>
           ) : type === 'DEADLINE' ? (
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><CalendarClock size={32} /></div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Definição de Prazos e SLA<br />para Ordens de Produção</p></div>
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Prazo *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: URGENTE, PADRÃO..." className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Prazo em Dias *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.days || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, days: Number(e.target.value) } } : null)} placeholder="Ex: 7" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.days || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, days: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Prazo em Dias *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.days || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, days: Number(e.target.value) } } : null)} placeholder="Ex: 7" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir prazo em dias" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.days || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, days: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
             </div>
           ) : type === 'PACKAGING' ? (
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-2 text-center"><div className={`w-20 h-20 rounded-[2rem] mx-auto flex items-center justify-center mb-2 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}><Grid3X3 size={32} /></div><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">Configuração de Grades e<br />Tamanhos para Embalagens</p></div>
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Padrão *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: FEMININO 33-40" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Grade</label><div className={`flex gap-2 p-1.5 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FIXED' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(!editingItem?.metadata?.mode || editingItem?.metadata?.mode === 'FIXED') ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Fixa</button><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FREE' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingItem?.metadata?.mode === 'FREE' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Livre</button></div></div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Capacidade Total (Pares) *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.capacity || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Capacidade Total (Pares) *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir capacidade total" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.capacity || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
               {editingItem?.metadata?.mode !== 'FREE' && (
                 <div className="flex flex-col gap-6">
                   <div className="flex items-center justify-between mb-2 ml-2">

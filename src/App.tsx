@@ -97,6 +97,7 @@ import FinancialView from "./views/FinancialView";
 import SettingsView from "./views/SettingsView";
 import PeopleView from "./views/PeopleView";
 import CategoriesView from "./views/CategoriesView";
+import CategoryConfigView from "./views/CategoryConfigView";
 import GradesView from "./views/GradesView";
 import ColorsView from "./views/ColorsView";
 import PaymentMethodsView from "./views/PaymentMethodsView";
@@ -115,6 +116,8 @@ import ModuleConfigView from "./views/ModuleConfigView";
 import WeighingView from "./views/WeighingView";
 import SolePurchaseView from "./views/SolePurchaseView";
 import SoleStockView from "./views/SoleStockView";
+import PCPView from "./views/PCPView";
+
 import ProductionEngineeringView from "./views/ProductionEngineeringView";
 
 
@@ -178,19 +181,37 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
   ]
 };
 
+type FontSize = 'xs' | 'sm' | 'md';
+
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentView, setCurrentView] = useState<ViewType>(ViewType.DASHBOARD);
   const [lastNonModalView, setLastNonModalView] = useState<ViewType>(ViewType.DASHBOARD);
   const [history, setHistory] = useState<ViewType[]>([ViewType.DASHBOARD]);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [appTheme, setAppTheme] = useState<'light' | 'dark' | 'industrial'>(() => {
+    return (localStorage.getItem('app_theme_pref') as any) || 'light';
+  });
+  const isDarkMode = appTheme === 'dark';
+  const [fontSize, setFontSize] = useState<FontSize>(() => {
+    return (localStorage.getItem('font_size_pref') as FontSize) || 'xs';
+  });
+  const [isA11yOpen, setIsA11yOpen] = useState(false);
 
   useEffect(() => {
     if (!MODAL_VIEWS.includes(currentView)) {
       setLastNonModalView(currentView);
     }
   }, [currentView]);
+
+  useEffect(() => {
+    localStorage.setItem('font_size_pref', fontSize);
+    const root = document.documentElement;
+    if (fontSize === 'xs') root.style.fontSize = '14px';
+    else if (fontSize === 'sm') root.style.fontSize = '16px';
+    else if (fontSize === 'md') root.style.fontSize = '18px';
+  }, [fontSize]);
+
 
   // Modals state
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
@@ -220,6 +241,7 @@ export default function App() {
   const [productionConfigs, setProductionConfigs] = useState<ProductionConfigItem[]>([]);
   const [weighingRecords, setWeighingRecords] = useState<WeighingRecord[]>([]);
   const [soleStockEntries, setSoleStockEntries] = useState<SoleStockEntry[]>([]);
+  const [productionLots, setProductionLots] = useState<ProductionLot[]>([]);
 
   const defaultDashboardConfig: DashboardConfig = {
     cards: [
@@ -424,6 +446,11 @@ export default function App() {
       setSoleStockEntries
     );
 
+    const unsubProductionLots = firebaseService.subscribeToCollection<ProductionLot>(
+      "productionLots",
+      setProductionLots
+    );
+
     const unsubDashboardConfig = firebaseService.subscribeToCollection<DashboardConfig>(
       "dashboard_config",
       (data) => {
@@ -485,6 +512,7 @@ export default function App() {
       unsubProductionConfigs();
       unsubWeighingRecords();
       unsubSoleStock();
+      unsubProductionLots();
       unsubDashboardConfig();
 
     };
@@ -542,7 +570,7 @@ export default function App() {
     setHistory([view]);
   };
 
-  const toggleDarkMode = () => setIsDarkMode(!isDarkMode);
+  const toggleDarkMode = () => setAppTheme(prev => prev === 'dark' ? 'light' : 'dark');
 
   useEffect(() => {
     const handleChangeView = (e: any) => {
@@ -553,14 +581,38 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (isDarkMode) {
-      document.documentElement.classList.add("dark");
-      document.body.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-      document.body.classList.remove("dark");
+    localStorage.setItem('app_theme_pref', appTheme);
+    const root = document.documentElement;
+    const body = document.body;
+    
+    // Remove all theme classes first
+    root.classList.remove("dark", "industrial");
+    body.classList.remove("dark", "industrial");
+
+    if (appTheme === 'dark') {
+      root.classList.add("dark");
+      body.classList.add("dark");
+    } else if (appTheme === 'industrial') {
+      root.classList.add("industrial");
+      body.classList.add("industrial");
     }
-  }, [isDarkMode]);
+  }, [appTheme]);
+
+  useEffect(() => {
+    const sizeMap: Record<FontSize, string> = { xs: '14px', sm: '16px', md: '18px' };
+    document.documentElement.style.fontSize = sizeMap[fontSize];
+    localStorage.setItem('font_size_pref', fontSize);
+  }, [fontSize]);
+
+  useEffect(() => {
+    if (!isA11yOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('#a11y-panel')) setIsA11yOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [isA11yOpen]);
 
   const handleCheckStatusChange = async (
     purchaseId: string,
@@ -846,8 +898,13 @@ export default function App() {
             onNavigate={navigateTo}
             onNavigateProduction={navigateToProduction}
             isDarkMode={isDarkMode}
+            appTheme={appTheme}
+            setAppTheme={setAppTheme}
             toggleDarkMode={toggleDarkMode}
             modulesConfig={modulesConfig}
+            fontSize={fontSize}
+            setFontSize={setFontSize}
+            onLogout={logout}
           />
         );
       case ViewType.PRODUCTS:
@@ -1007,6 +1064,20 @@ export default function App() {
               }
             }}
             isDarkMode={isDarkMode}
+            modulesConfig={modulesConfig}
+            onNavigate={navigateTo}
+          />
+        );
+      case ViewType.CATEGORY_CONFIG:
+        return (
+          <CategoryConfigView
+            categories={categories}
+            modulesConfig={modulesConfig}
+            onEdit={async (id, updates) => {
+              await firebaseService.updateDocument("categories", id, updates);
+            }}
+            onBack={() => navigateTo(ViewType.CATEGORIES)}
+            isDarkMode={isDarkMode}
           />
         );
       case ViewType.GRIDS:
@@ -1150,6 +1221,14 @@ export default function App() {
               } catch (err: any) {
                 console.error("Erro ao salvar produto:", err);
                 alert("Erro ao salvar produto: " + (err.message || err));
+              }
+            }}
+            onSaveConfigItem={async (item) => {
+              try {
+                await firebaseService.saveDocument("productionConfigs", item);
+              } catch (err: any) {
+                console.error("Erro ao salvar item de configuração:", err);
+                alert("Erro ao salvar item: " + (err.message || err));
               }
             }}
             onCancel={goBack}
@@ -2287,18 +2366,18 @@ export default function App() {
         );
       case ViewType.PRODUCTION_PCP:
         return (
-          <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center gap-6">
-            <div className="w-20 h-20 rounded-3xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-              <GanttChartSquare size={40} />
-            </div>
-            <div>
-              <h2 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white mb-2">PCP Central</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs mx-auto font-bold uppercase tracking-widest leading-relaxed">
-                O Planejamento e Controle de Produção está sendo sincronizado com suas vendas.
-              </p>
-            </div>
-            <button onClick={goBack} className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest">Voltar</button>
-          </div>
+          <PCPView
+            lots={productionLots}
+            products={products}
+            sectors={sectors}
+            flowTags={flowTags}
+            colors={colors}
+            isDarkMode={isDarkMode}
+            onSaveLot={(lot) => firebaseService.saveDocument("productionLots", lot)}
+            onDeleteLot={(id) => firebaseService.deleteDocument("productionLots", id)}
+            onBack={goBack}
+            userName={user?.displayName || user?.email || 'Usuário'}
+          />
         );
       case ViewType.PRODUCTION_STOCK:
         return (
@@ -2335,6 +2414,7 @@ export default function App() {
           <WeighingView
             productionConfigs={productionConfigs}
             colors={colors}
+            stockEntries={soleStockEntries}
             onBack={goBack}
             onNavigateToStock={() => navigateTo(ViewType.PRODUCTION_SOLE_STOCK)}
             isDarkMode={isDarkMode}
@@ -2576,10 +2656,18 @@ export default function App() {
 
   return (
     <div
-      className={`flex flex-col h-screen ${isDarkMode ? "dark bg-slate-950" : "bg-slate-50"} font-sans text-slate-900 dark:text-slate-100 overflow-hidden`}
+      className={`flex flex-col h-screen ${
+        appTheme === 'light' ? 'bg-slate-50' : 
+        appTheme === 'industrial' ? 'industrial bg-[#e5e7eb]' : 
+        'dark bg-slate-950'
+      } font-sans ${appTheme === 'light' || appTheme === 'industrial' ? 'text-slate-900' : 'text-white'} overflow-hidden overflow-x-hidden`}
     >
       {/* Header */}
-      <header className="flex items-center justify-between px-4 pt-10 pb-4 bg-white dark:bg-slate-950 border-b border-slate-100 dark:border-slate-800/60 sticky top-0 z-10 shrink-0">
+      <header className={`flex items-center justify-between px-4 pt-10 pb-4 border-b sticky top-0 z-10 shrink-0 ${
+        appTheme === 'light' ? 'bg-white border-slate-100' : 
+        appTheme === 'industrial' ? 'bg-[#f3f4f6] border-gray-300' : 
+        'bg-slate-950 border-slate-800/60'
+      }`}>
         <div className="flex items-center gap-3">
           {history.length > 1 && (
             <button
@@ -2599,18 +2687,12 @@ export default function App() {
         </div>
         <div className="flex items-center gap-3 text-slate-500">
           <button 
-            onClick={() => setIsDarkMode(!isDarkMode)}
+            onClick={toggleDarkMode}
             title={isDarkMode ? "Mudar para modo claro" : "Mudar para modo escuro"}
             aria-label={isDarkMode ? "Mudar para modo claro" : "Mudar para modo escuro"}
+            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
             <Moon size={20} />
-          </button>
-          <button 
-            onClick={logout}
-            title="Sair do aplicativo"
-            aria-label="Sair do aplicativo"
-          >
-            <LogOut size={20} />
           </button>
         </div>
       </header>
@@ -2642,13 +2724,18 @@ export default function App() {
       </Modal>
 
       {/* Bottom Tab Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-950 border-t border-slate-100 dark:border-slate-800 flex items-center justify-around py-3 px-2 pb-6 z-40">
+      <nav className={`fixed bottom-0 left-0 right-0 border-t flex items-center justify-around py-3 px-2 pb-6 z-40 ${
+        appTheme === 'light' ? 'bg-white border-slate-100' : 
+        appTheme === 'industrial' ? 'bg-[#f3f4f6] border-gray-300' : 
+        'bg-slate-950 border-slate-900'
+      }`}>
         <TabItem
           icon={<LayoutDashboard size={22} />}
           label="HOME"
           active={activeTab === "dashboard"}
           onClick={() => resetTo(ViewType.DASHBOARD)}
           colorClass="text-indigo-600 dark:text-indigo-400"
+          appTheme={appTheme}
         />
         {modulesConfig.sales && (
           <>
@@ -2658,6 +2745,7 @@ export default function App() {
               active={activeTab === "purchases"}
               onClick={() => resetTo(ViewType.PURCHASES)}
               colorClass="text-cyan-500 dark:text-cyan-400"
+              appTheme={appTheme}
             />
             <TabItem
               icon={<ShoppingBag size={22} />}
@@ -2665,6 +2753,7 @@ export default function App() {
               active={activeTab === "sales"}
               onClick={() => resetTo(ViewType.SALES)}
               colorClass="text-emerald-500 dark:text-emerald-400"
+              appTheme={appTheme}
             />
           </>
         )}
@@ -2675,6 +2764,7 @@ export default function App() {
             active={activeTab === "production"}
             onClick={() => resetTo(ViewType.PRODUCTION_MENU)}
             colorClass="text-indigo-600 dark:text-indigo-400"
+            appTheme={appTheme}
           />
         )}
         {modulesConfig.sales && (
@@ -2684,6 +2774,7 @@ export default function App() {
             active={activeTab === "financial"}
             onClick={() => resetTo(ViewType.FINANCIAL)}
             colorClass="text-amber-500 dark:text-amber-400"
+            appTheme={appTheme}
           />
         )}
         {modulesConfig.personal && (
@@ -2693,6 +2784,7 @@ export default function App() {
             active={activeTab === "personal"}
             onClick={() => resetTo(ViewType.PERSONAL_FINANCIAL)}
             colorClass="text-amber-600 dark:text-amber-500"
+            appTheme={appTheme}
           />
         )}
         <TabItem
@@ -2701,6 +2793,7 @@ export default function App() {
           active={activeTab === "settings"}
           onClick={() => resetTo(ViewType.SETTINGS)}
           colorClass="text-slate-500 dark:text-slate-400"
+          appTheme={appTheme}
         />
       </nav>
       <AccountModal
@@ -2777,26 +2870,37 @@ function TabItem({
   label,
   active,
   onClick,
-  colorClass
+  colorClass,
+  appTheme
 }: {
   icon: ReactNode;
   label: string;
   active: boolean;
   onClick: () => void;
   colorClass: string;
+  appTheme: 'light' | 'dark' | 'industrial';
 }) {
+  const iconColor = appTheme === 'industrial' ? 'text-gray-500' : colorClass;
+  const activeBg = appTheme === 'light' ? "bg-slate-100" : 
+                   appTheme === 'industrial' ? "bg-gray-300" : 
+                   "bg-white/10";
+
   return (
     <button
       onClick={onClick}
-      className={`flex flex-col items-center justify-center p-1 min-w-[50px] h-[60px] transition-all rounded-[15px] ${active ? "bg-slate-100 dark:bg-slate-900" : "bg-transparent"}`}
+      className={`flex flex-col items-center justify-center p-1 min-w-[50px] h-[60px] transition-all rounded-[15px] ${
+        active ? activeBg : "bg-transparent"
+      }`}
     >
       <div
-        className={`transition-all ${colorClass} ${active ? "scale-110" : ""}`}
+        className={`transition-all ${active ? iconColor : (appTheme === 'industrial' ? 'text-gray-400' : iconColor + ' opacity-70')} ${active ? "scale-110" : ""}`}
       >
         {icon}
       </div>
       <span
-        className={`text-[7px] font-black tracking-tight mt-0.5 uppercase transition-all ${colorClass} ${active ? "opacity-100" : "opacity-70"}`}
+        className={`text-[7px] font-black tracking-tight mt-0.5 uppercase transition-all ${
+          appTheme === 'industrial' ? 'text-black' : (active ? iconColor : iconColor + ' opacity-70')
+        } ${active ? "opacity-100" : (appTheme === 'industrial' ? "opacity-60" : "opacity-70")}`}
       >
         {label}
       </span>

@@ -42,6 +42,7 @@ export default function SoleStockView({
       }
       
       Object.entries(entry.stock || {}).forEach(([size, qty]) => {
+        if (size === 'pesagem' || size === 'GERAL' || size === 'MIXED') return;
         stock[key].sizes[size] = (stock[key].sizes[size] || 0) + qty;
         stock[key].total += qty;
       });
@@ -99,7 +100,7 @@ export default function SoleStockView({
   }, [editingEntry, molds]);
 
   return (
-    <div className="flex flex-col h-full pb-44 px-1 overflow-y-auto force-scrollbar">
+    <div className="flex flex-col h-full pb-44 px-1 overflow-y-auto overflow-x-hidden force-scrollbar">
       <div className="flex items-center gap-4 mb-6">
         <button 
           onClick={onBack}
@@ -244,7 +245,9 @@ export default function SoleStockView({
                     <div className="grid grid-cols-6 sm:grid-cols-8 gap-1 mb-1">
                       {sizes.map(([size]) => (
                         <div key={`label-${size}`} className="text-center">
-                          <span className="text-[8px] font-black text-slate-400 uppercase">{size}</span>
+                          <span className="text-[8px] font-black text-slate-400 uppercase">
+                            {size}
+                          </span>
                         </div>
                       ))}
                     </div>
@@ -336,3 +339,4 @@ export default function SoleStockView({
     </div>
   );
 }
+

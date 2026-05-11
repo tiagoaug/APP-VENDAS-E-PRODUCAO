@@ -16,7 +16,7 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
   const [editingColor, setEditingColor] = useState<ColorValue | null>(null);
 
   return (
-    <div className="flex flex-col gap-6 h-full pb-32 overflow-y-auto">
+    <div className="flex flex-col gap-6 h-full pb-32 overflow-y-auto overflow-x-hidden">
       <ColorModal
         isOpen={isModalOpen}
         onClose={() => { setIsModalOpen(false); setEditingColor(null); }}
@@ -67,3 +67,4 @@ export default function ColorsView({ colors, onAdd, onEdit, onDelete, isDarkMode
     </div>
   );
 }
+

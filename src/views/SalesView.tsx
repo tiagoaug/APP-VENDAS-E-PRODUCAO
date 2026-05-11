@@ -157,7 +157,7 @@ export default function SalesView({
   };
 
   return (
-    <div className="flex flex-col gap-6 h-full pb-44 px-1 overflow-y-auto force-scrollbar">
+    <div className="flex flex-col gap-6 h-full pb-44 px-1 overflow-y-auto overflow-x-hidden force-scrollbar">
       <ConfirmDialog
         isOpen={!!saleToDelete}
         title="Excluir Registro?"
@@ -180,16 +180,15 @@ export default function SalesView({
             <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest leading-none">Relatórios</p>
           </div>
           
-          <div className="flex flex-col items-end gap-1">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col items-end gap-1.5 shrink-0">
+            <div className="flex items-center gap-1.5">
               <div className={`flex border p-0.5 rounded-xl shadow-sm dark:shadow-none ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                 <button 
                   onClick={() => setShowFilters(!showFilters)}
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-300 ${showFilters ? 'bg-orange-600 dark:bg-orange-600 text-white shadow-lg shadow-orange-600/40 animate-pulse' : 'text-slate-400 hover:text-orange-500 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-500/10 active:scale-95'}`}
+                  className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-300 ${showFilters ? 'bg-orange-600 dark:bg-orange-600 text-white shadow-lg shadow-orange-600/40' : 'text-slate-400 hover:text-orange-500 dark:hover:text-orange-400'}`}
                   title="Filtrar Vendas"
-                  aria-label={showFilters ? "Fechar filtros" : "Abrir filtros"}
                 >
-                  <Filter size={16} strokeWidth={2.5} />
+                  <Filter size={14} strokeWidth={2.5} />
                 </button>
               </div>
               
@@ -198,11 +197,9 @@ export default function SalesView({
                   <button 
                     key={f}
                     onClick={() => setFilter(f)}
-                    className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all flex items-center justify-center ${filter === f ? 'bg-slate-900 dark:bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
-                    title={f === 'ALL' ? "Todas as Vendas" : f === 'RETAIL' ? "Vendas Varejo" : "Vendas Atacado"}
-                    aria-label={f === 'ALL' ? "Mostrar todas as vendas" : f === 'RETAIL' ? "Mostrar apenas varejo" : "Mostrar apenas atacado"}
+                    className={`px-2 py-1 rounded-lg text-[7px] font-black uppercase tracking-wider transition-all flex items-center justify-center ${filter === f ? 'bg-slate-900 dark:bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}
                   >
-                    {f === 'ALL' ? <Box size={14} /> : f === 'RETAIL' ? 'Varejo' : 'Atacado'}
+                    {f === 'ALL' ? <Box size={12} /> : f === 'RETAIL' ? 'Varejo' : 'Atacado'}
                   </button>
                 ))}
               </div>
@@ -213,11 +210,9 @@ export default function SalesView({
                 <button 
                   key={f}
                   onClick={() => setPaymentFilter(f)}
-                  className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all flex items-center justify-center ${paymentFilter === f ? 'bg-slate-900 dark:bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
-                  title={f === 'ALL' ? "Todos os Pagamentos" : f === 'PENDING' ? "Pagamentos Pendentes" : "Pagamentos Concluídos"}
-                  aria-label={f === 'ALL' ? "Mostrar todos os status de pagamento" : f === 'PENDING' ? "Mostrar apenas pendentes" : "Mostrar apenas concluídos"}
+                  className={`px-2 py-1 rounded-lg text-[7px] font-black uppercase tracking-wider transition-all flex items-center justify-center ${paymentFilter === f ? 'bg-slate-900 dark:bg-indigo-600 text-white shadow-lg' : 'text-slate-400'}`}
                 >
-                  {f === 'ALL' ? 'Todos' : f === 'PENDING' ? 'Pendente' : 'Concluído'}
+                  {f === 'ALL' ? 'Todos' : f === 'PENDING' ? 'Pendente' : 'Pago'}
                 </button>
               ))}
             </div>
@@ -249,7 +244,7 @@ export default function SalesView({
             )}
           </div>
 
-          <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar">
             {[
               { id: SaleStatus.SALE, label: 'Vendas', color: 'indigo' },
               { id: SaleStatus.QUOTE, label: 'Orçamentos', color: 'amber' },
@@ -372,11 +367,11 @@ export default function SalesView({
               </div>
 
               {/* Content Row: Items Preview & Large Price */}
-              <div className="flex justify-between items-start z-10 gap-3">
+              <div className="flex justify-between items-start z-10 gap-4">
                 {/* Items List (Left) */}
                 <div 
                   onClick={() => setSelectedSale(sale)}
-                  className="flex-1 flex flex-col gap-3 cursor-pointer"
+                  className="flex-1 flex flex-col gap-3 cursor-pointer min-w-0"
                 >
                   {sale.items.slice(0, 3).map((item, idx) => {
                     const product = getProductInfo(item.productId);
@@ -403,13 +398,13 @@ export default function SalesView({
                 </div>
 
                 {/* Price Display (Right) */}
-                <div className="flex flex-col items-end shrink-0 justify-end min-w-fit">
-                   {remaining > 0 && sale.status === SaleStatus.SALE && (
-                      <p className="text-[10px] font-black text-rose-500 uppercase mb-1">Saldo R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                   )}
-                   <p className={`text-lg font-black leading-tight ${sale.status === SaleStatus.CANCELLED ? 'text-slate-400' : 'text-slate-900 dark:text-white'}`}>
-                      R$ {sale.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                   </p>
+                 <div className="flex flex-col items-end shrink-0 justify-end min-w-[90px]">
+                    {remaining > 0 && sale.status === SaleStatus.SALE && (
+                       <p className="text-[8.5px] font-black text-rose-500 uppercase mb-1 whitespace-nowrap tracking-tight">Saldo R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    )}
+                    <p className={`text-[15px] font-black leading-tight whitespace-nowrap tracking-tight ${sale.status === SaleStatus.CANCELLED ? 'text-slate-400' : 'text-slate-900 dark:text-white'}`}>
+                       R$ {sale.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
                    <div className="flex gap-1 mt-2">
                       {Array.from(new Set(sale.items.map(i => i.saleType))).map((type, idx) => (
                         <span key={idx} className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md leading-none tracking-widest ${type === SaleType.WHOLESALE ? 'bg-amber-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}>

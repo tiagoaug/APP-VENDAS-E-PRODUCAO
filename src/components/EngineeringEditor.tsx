@@ -25,6 +25,8 @@ interface EngineeringEditorProps {
   productionGridId: string;
   defaultGridId: string;
   toolMapping: { [size: string]: string };
+  activeVariationColor?: { name: string, hex: string };
+  onSaveConfigItem?: (item: ProductionConfigItem) => Promise<void>;
 }
 
 export default function EngineeringEditor({
@@ -38,18 +40,46 @@ export default function EngineeringEditor({
   grids,
   productionGridId,
   defaultGridId,
-  toolMapping
+  toolMapping,
+  activeVariationColor,
+  onSaveConfigItem
 }: EngineeringEditorProps) {
   const [editing, setEditing] = useState<ComponentConsumption>({ ...consumption });
   const [newServiceId, setNewServiceId] = useState('');
   const [newServiceCost, setNewServiceCost] = useState<number | string>(0);
   const [showToolMapping, setShowToolMapping] = useState(false);
   const [calcExpression, setCalcExpression] = useState(consumption.quantity ? consumption.quantity.toString().replace('.', ',') : '');
-  const [calcQty, setCalcQty] = useState(consumption.quantity ? consumption.quantity.toString().replace('.', ',') : '1');
-  const [calcUnitVal, setCalcUnitVal] = useState('0');
-  const [activeCalcField, setActiveCalcField] = useState<'qty' | 'unit' | null>(null);
-
   const material = productionConfigs.find(m => m.id === editing.materialId);
+  const [calcQty, setCalcQty] = useState(consumption.quantity ? consumption.quantity.toString().replace('.', ',') : '1');
+  const [calcUnitVal, setCalcUnitVal] = useState(
+    (consumption.unitValue && consumption.unitValue > 0) 
+      ? consumption.unitValue.toString().replace('.', ',') 
+      : (material?.metadata?.baseCost || 0).toString().replace('.', ',')
+  );
+  const [unitValManualEdited, setUnitValManualEdited] = useState(!!(consumption.unitValue && consumption.unitValue > 0));
+  const [activeCalcField, setActiveCalcField] = useState<'qty' | 'unit' | null>(null);
+  const [showPieceSuggestions, setShowPieceSuggestions] = useState(false);
+  const [pieceSearch, setPieceSearch] = useState(consumption.name || '');
+  const [showMaterialSuggestions, setShowMaterialSuggestions] = useState(false);
+  const [materialSearch, setMaterialSearch] = useState(material?.name || '');
+  const [showToolSuggestions, setShowToolSuggestions] = useState(false);
+  const [toolSearch, setToolSearch] = useState(productionConfigs.find(t => t.id === editing.toolId)?.name || '');
+
+  const pieces = productionConfigs.filter(c => c.type === 'PIECE');
+  const filteredPieces = pieces.filter(p => 
+    p.name.toLowerCase().includes(pieceSearch.toLowerCase())
+  );
+
+  const materials = productionConfigs.filter(c => c.type === 'MATERIAL');
+  const filteredMaterials = materials.filter(m => 
+    m.name.toLowerCase().includes(materialSearch.toLowerCase())
+  );
+
+  const tools = productionConfigs.filter(c => c.type === 'TOOL');
+  const filteredTools = tools.filter(t => 
+    t.name.toLowerCase().includes(toolSearch.toLowerCase())
+  );
+
   const masterCategory = material?.metadata?.masterCategory?.toUpperCase() || '';
   const isCuttingPiece = editing.category === 'CUTTING_PIECE';
   const noToolCategories = ['AVIAMENTOS', 'QUIMICOS', 'EMBALAGENS', 'LINHAS', 'MATERIAL DE CONSUMO', 'ADESIVOS', 'COLA', 'METAIS'];
@@ -94,19 +124,33 @@ export default function EngineeringEditor({
     window.scrollTo(0, 0);
   }, []);
 
+  // Inicializar calcUnitVal com o valor do material quando o componente abre (apenas se não houver valor manual salvo)
+  useEffect(() => {
+    if (unitValManualEdited && consumption.unitValue && consumption.unitValue > 0) return;
+    
+    // Inicialização do preço se não houver valor manual
+    if (material && !unitValManualEdited) {
+      const cost = material.metadata?.baseCost || 0;
+      setCalcUnitVal(cost.toString().replace('.', ','));
+    }
+  }, []);
+
   // Recalcular quantidade quando o mapeamento mudar (global ou local)
   useEffect(() => {
+    // Somente recalcula automaticamente se NÃO estiver ignorando a quantidade (modo manual)
+    if (editing.ignoreQuantity) return;
+
     const tool = productionConfigs.find(t => t.id === editing.toolId);
     const material = productionConfigs.find(m => m.id === editing.materialId);
     if (tool && material) {
-      const newQty = calculateConsumption(tool, material, editing.piecesPerPair || 2, editing.toolMapping);
+      const newQty = calculateConsumption(tool, material, editing.piecesPerPair || 2, editing.toolMapping, false);
       if (Math.abs(newQty - editing.quantity) > 0.0001) {
         setEditing(prev => ({ ...prev, quantity: newQty }));
       }
     }
-  }, [toolMapping, productionConfigs, editing.toolId, editing.materialId, editing.piecesPerPair, editing.toolMapping]);
+  }, [toolMapping, productionConfigs, editing.toolId, editing.materialId, editing.piecesPerPair, editing.toolMapping, editing.ignoreQuantity]);
 
-  const calculateConsumption = (tool: ProductionConfigItem, material: ProductionConfigItem, piecesPerPair: number = 2, localMapping?: { [size: string]: string }) => {
+  const calculateConsumption = (tool: ProductionConfigItem, material: ProductionConfigItem, piecesPerPair: number = 2, localMapping?: { [size: string]: string }, ignoreQuantity: boolean = false) => {
     if (!tool || !tool.metadata) return 0;
 
     const sizeAreas = tool.metadata.sizeAreas || {};
@@ -147,33 +191,34 @@ export default function EngineeringEditor({
       baseConsumption = calculateSingleSize(Number(Object.values(sizeAreas)[0]) || 0);
     }
 
+    if (ignoreQuantity) return baseConsumption * piecesPerPair;
     const res = (baseConsumption / conjugation) * piecesPerPair;
     return isNaN(res) ? 0 : res;
   };
 
   const handleMaterialChange = (materialId: string) => {
     const mat = productionConfigs.find(m => m.id === materialId);
-    
-    setEditing(prev => {
-      const tool = productionConfigs.find(t => t.id === prev.toolId);
-      let newQuantity = prev.quantity;
-
-      if (mat) {
-        const mc = mat?.metadata?.masterCategory?.toUpperCase() || '';
-        const noToolCats = ['AVIAMENTOS', 'QUIMICOS', 'EMBALAGENS', 'LINHAS', 'MATERIAL DE CONSUMO', 'ADESIVOS', 'COLA', 'METAIS'];
-        const isNoTool = prev.category !== 'CUTTING_PIECE' || noToolCats.some(cat => mc.includes(cat));
-        
-        if (isNoTool) {
-          const cost = mat.metadata?.baseCost || 0;
-          setCalcUnitVal(cost.toString().replace('.', ','));
-          // A quantidade permanece a mesma, o que muda é o preço de referência no card
-        } else if (tool) {
-          newQuantity = calculateConsumption(tool, mat, prev.piecesPerPair || 2, prev.toolMapping);
-        }
+    if (mat) {
+      if (!unitValManualEdited) {
+        const cost = mat.metadata?.baseCost || 0;
+        setCalcUnitVal(cost.toString().replace('.', ','));
       }
+    }
 
-      return { ...prev, materialId, quantity: newQuantity };
-    });
+    const tool = productionConfigs.find(t => t.id === editing.toolId);
+    let newQuantity = editing.quantity;
+
+    if (mat) {
+      const mc = mat?.metadata?.masterCategory?.toUpperCase() || '';
+      const noToolCats = ['AVIAMENTOS', 'QUIMICOS', 'EMBALAGENS', 'LINHAS', 'MATERIAL DE CONSUMO', 'ADESIVOS', 'COLA', 'METAIS'];
+      const isNoTool = editing.category !== 'CUTTING_PIECE' || noToolCats.some(cat => mc.includes(cat));
+      
+      if (!isNoTool && tool) {
+        newQuantity = calculateConsumption(tool, mat, editing.piecesPerPair || 2, editing.toolMapping, editing.ignoreQuantity || false);
+      }
+    }
+
+    setEditing({ ...editing, materialId, quantity: newQuantity });
   };
 
   const handleToolChange = (toolId: string) => {
@@ -181,10 +226,46 @@ export default function EngineeringEditor({
     const material = productionConfigs.find(m => m.id === editing.materialId);
     
     if (tool && material) {
-      const qty = calculateConsumption(tool, material, editing.piecesPerPair || 2, editing.toolMapping);
+      const qty = calculateConsumption(tool, material, editing.piecesPerPair || 2, editing.toolMapping, editing.ignoreQuantity || false);
       setEditing({ ...editing, toolId, quantity: qty });
     } else {
       setEditing({ ...editing, toolId });
+    }
+
+    // Automatically open mapping modal when a tool is selected
+    if (toolId) {
+      setShowToolMapping(true);
+    }
+  };
+
+  const handleQuickAddPiece = async () => {
+    if (!pieceSearch.trim() || !onSaveConfigItem) return;
+    
+    // Check if it already exists
+    const exists = productionConfigs.find(p => p.type === 'PIECE' && p.name.toLowerCase() === pieceSearch.trim().toLowerCase());
+    if (exists) {
+      setEditing({ ...editing, name: exists.name });
+      setPieceSearch(exists.name);
+      setShowPieceSuggestions(false);
+      return;
+    }
+
+    const newItem: ProductionConfigItem = {
+      id: `p-${Date.now()}`,
+      name: pieceSearch.trim(),
+      description: 'PECA',
+      type: 'PIECE',
+      createdAt: Date.now(),
+      metadata: { pieceType: 'PECA' }
+    };
+
+    try {
+      await onSaveConfigItem(newItem);
+      setEditing({ ...editing, name: newItem.name });
+      setPieceSearch(newItem.name);
+      setShowPieceSuggestions(false);
+    } catch (err) {
+      console.error("Erro ao adicionar peça rápida:", err);
     }
   };
 
@@ -207,59 +288,160 @@ export default function EngineeringEditor({
           </button>
           <div>
             <h3 className="text-base font-black uppercase tracking-[0.1em] text-indigo-600 dark:text-indigo-400">Configurar Engenharia</h3>
-            {editing.name && editing.name.length < 25 && !editing.name.includes('-') && (
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
-                Componente: <span className="text-slate-600 dark:text-slate-300">{editing.name}</span>
-              </p>
-            )}
+            <div className="flex items-center gap-2 mt-1">
+              {activeVariationColor && (
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <div 
+                    className="w-2.5 h-2.5 rounded-full border border-black/10" 
+                    style={{ backgroundColor: activeVariationColor.hex }}
+                  />
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                    VARIANTE: {activeVariationColor.name}
+                  </span>
+                </div>
+              )}
+              {editing.name && editing.name.length < 25 && !editing.name.includes('-') && (
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  COMPONENTE: <span className="text-slate-600 dark:text-slate-300">{editing.name}</span>
+                </p>
+              )}
+            </div>
           </div>
         </div>
         <button 
-          onClick={() => onSave(editing)}
-          disabled={!editing.materialId}
-          className={`px-6 py-3 rounded-2xl flex items-center gap-2 text-xs font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 disabled:opacity-50 ${isDarkMode ? 'bg-indigo-600 shadow-indigo-900/40' : 'bg-slate-900 shadow-slate-900/20 text-white'}`}
+          onClick={() => onSave({ ...editing, unitValue: evaluate(calcUnitVal) })}
+          disabled={!editing.materialId || (!editing.colorId && !editing.ignoreColor)}
+          title={(!editing.colorId && !editing.ignoreColor) ? "Selecione uma cor para confirmar" : "Confirmar engenharia e salvar"}
+          aria-label="Confirmar engenharia e salvar alterações"
+          className={`px-6 py-3 rounded-2xl flex items-center gap-2 text-xs font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 disabled:opacity-50 disabled:grayscale ${isDarkMode ? 'bg-indigo-600 shadow-indigo-900/40' : 'bg-slate-900 shadow-slate-900/20 text-white'}`}
         >
           <Save size={16} /> Confirmar
         </button>
       </div>
 
-      <div className="p-4 sm:p-6 space-y-5 sm:space-y-8 max-w-3xl mx-auto">
+      <div className="px-1 py-4 sm:p-6 space-y-5 sm:space-y-8 max-w-3xl mx-auto">
         
         {/* NOME DA PEÇA */}
-        <div className={`p-5 sm:p-8 rounded-[2.5rem] border-2 shadow-sm ${isDarkMode ? 'bg-indigo-950/20 border-indigo-900/50' : 'bg-indigo-50/50 border-indigo-100'}`}>
-          <div className="flex flex-col gap-3">
+        <div className={`p-4 sm:p-8 rounded-[2.5rem] border-2 shadow-sm ${isDarkMode ? 'bg-indigo-950/20 border-indigo-900/50' : 'bg-indigo-50/50 border-indigo-100'}`}>
+          <div className="flex flex-col gap-3 relative">
             <label className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 px-1">Nome do Componente / Peça</label>
-            <input 
-              type="text" 
-              placeholder="Ex: Lateral, Gáspea, Biqueira..."
-              className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-white focus:border-indigo-400 shadow-sm'}`}
-              value={editing.name || ''}
-              onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-            />
+            <div className="relative">
+              <input 
+                type="text" 
+                placeholder="Ex: Lateral, Gáspea, Biqueira..."
+                className={`w-full border-2 rounded-2xl pl-6 pr-14 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-white focus:border-indigo-400 shadow-sm'}`}
+                value={editing.name || ''}
+                onChange={(e) => {
+                  setEditing({ ...editing, name: e.target.value });
+                  setPieceSearch(e.target.value);
+                  if (pieces.length > 0 || e.target.value.length > 0) setShowPieceSuggestions(true);
+                }}
+                onFocus={() => (pieces.length > 0 || pieceSearch.length > 0) && setShowPieceSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowPieceSuggestions(false), 200)}
+              />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                {pieceSearch.trim().length > 0 && !pieces.some(p => p.name.toLowerCase() === pieceSearch.trim().toLowerCase()) && (
+                  <button
+                    type="button"
+                    onClick={handleQuickAddPiece}
+                    title="Adicionar como nova peça"
+                    className="p-1.5 rounded-lg text-indigo-500 hover:bg-indigo-500/10 transition-colors"
+                  >
+                    <Database size={18} />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowPieceSuggestions(!showPieceSuggestions)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                >
+                  <ChevronDown size={18} className={`transition-transform ${showPieceSuggestions ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
+            </div>
+            {showPieceSuggestions && (filteredPieces.length > 0 || (pieceSearch.trim().length > 0 && !pieces.some(p => p.name.toLowerCase() === pieceSearch.trim().toLowerCase()))) && (
+              <div className={`absolute z-50 mt-1 w-full rounded-2xl border-2 shadow-xl overflow-hidden max-h-60 overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`} style={{ top: '100%' }}>
+                {filteredPieces.slice(0, 10).map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    className={`w-full px-4 py-3 text-left text-sm font-bold transition-colors ${isDarkMode ? 'text-white hover:bg-slate-800' : 'text-slate-900 hover:bg-slate-100'}`}
+                    onMouseDown={() => {
+                      setEditing({ ...editing, name: p.name });
+                      setPieceSearch(p.name);
+                      setShowPieceSuggestions(false);
+                    }}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+                
+                {pieceSearch.trim().length > 0 && !pieces.some(p => p.name.toLowerCase() === pieceSearch.trim().toLowerCase()) && (
+                  <button
+                    type="button"
+                    className={`w-full px-4 py-3 text-left text-sm font-black flex items-center gap-3 transition-colors ${isDarkMode ? 'text-indigo-400 hover:bg-slate-800' : 'text-indigo-600 hover:bg-indigo-50'}`}
+                    onMouseDown={handleQuickAddPiece}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+                      <Database size={16} />
+                    </div>
+                    <span>Criar nova peça: "{pieceSearch.trim()}"</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
         {/* Card de Faca ou Calculadora de Consumo */}
         {needsTool ? (
-          <div className={`p-5 sm:p-8 rounded-[2.5rem] border-2 shadow-xl space-y-6 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+          <div className={`p-4 sm:p-8 rounded-[2.5rem] border-2 shadow-xl space-y-6 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             <div className="flex items-center gap-4">
               <div className={`w-14 h-14 shrink-0 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
                 <Scissors size={28} />
               </div>
               <div className="flex flex-col gap-3">
                 <label htmlFor="tool-select" className="text-xs font-black uppercase tracking-widest text-slate-400">Faca / Molde Técnica</label>
-                <select 
-                  id="tool-select"
-                  className={`w-full bg-transparent border-none text-sm font-black outline-none appearance-none cursor-pointer ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
-                  value={editing.toolId || ''}
-                  onChange={(e) => handleToolChange(e.target.value)}
-                  title="Selecionar Faca"
-                >
-                  <option value="">Selecionar Faca...</option>
-                  {productionConfigs.filter(c => c.type === 'TOOL').map(t => (
-                    <option key={t.id} value={t.id} className="text-slate-900">{t.name}</option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    placeholder="Selecionar Faca..."
+                    className={`w-full bg-transparent border-none text-sm font-black outline-none transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                    value={toolSearch}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setToolSearch(val);
+                      if (val === '') handleToolChange('');
+                      if (tools.length > 0) setShowToolSuggestions(true);
+                    }}
+                    onFocus={() => tools.length > 0 && setShowToolSuggestions(true)}
+                    onBlur={() => {
+                      setTimeout(() => {
+                        setShowToolSuggestions(false);
+                        const currentTool = productionConfigs.find(t => t.id === editing.toolId);
+                        setToolSearch(currentTool?.name || '');
+                      }, 200);
+                    }}
+                  />
+                  {showToolSuggestions && filteredTools.length > 0 && (
+                    <div className={`absolute z-50 mt-2 w-full min-w-[240px] rounded-2xl border-2 shadow-xl overflow-hidden max-h-60 overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`} style={{ top: '100%', left: 0 }}>
+                      {filteredTools.slice(0, 10).map(t => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          className={`w-full px-4 py-3 text-left text-sm font-bold transition-colors ${isDarkMode ? 'text-white hover:bg-slate-800' : 'text-slate-900 hover:bg-slate-100'}`}
+                          onMouseDown={() => {
+                            handleToolChange(t.id);
+                            setToolSearch(t.name);
+                            setShowToolSuggestions(false);
+                          }}
+                        >
+                          {t.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -293,6 +475,8 @@ export default function EngineeringEditor({
               <>
                 <button 
                   onClick={() => setShowToolMapping(true)}
+                  title="Abrir Mapeamento de Tamanhos"
+                  aria-label="Configurar mapeamento de tamanhos para esta faca"
                   className={`w-full py-4 px-6 rounded-[2rem] flex items-center justify-between transition-all active:scale-[0.98] ${isDarkMode ? 'bg-indigo-900/20 text-indigo-400 border-2 border-indigo-500/30' : 'bg-indigo-50 text-indigo-600 border-2 border-indigo-200'}`}
                 >
                   <div className="flex items-center gap-3">
@@ -391,7 +575,7 @@ export default function EngineeringEditor({
             )}
           </div>
         ) : material && (
-          <div className={`p-6 sm:p-8 rounded-[2.5rem] border shadow-2xl space-y-8 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+          <div className={`p-4 sm:p-8 rounded-[2.5rem] border shadow-2xl space-y-8 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             {/* MATERIAL FIELD */}
             <div className="flex flex-col gap-3">
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-2">Material</label>
@@ -422,10 +606,16 @@ export default function EngineeringEditor({
                     onChange={(e) => { setCalcQty(e.target.value); updateQuantity(e.target.value, calcUnitVal); }}
                     className={`w-full px-6 py-5 rounded-2xl font-black text-sm outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600 shadow-sm'}`}
                   />
-                  <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                  {editing.ignoreQuantity && (
+                    <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mt-2 ml-2">
+                      Consumo p/ Lote (12 Pr): {(Number(calcQty.replace(',', '.')) * 12).toFixed(4).replace('.', ',')} {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
+                    </p>
+                  )}
+                  <div className="absolute right-3 top-[22px] flex items-center gap-1.5">
                     <button 
                       onClick={() => setActiveCalcField('qty')} 
                       title="Abrir Calculadora de Quantidade"
+                      aria-label="Abrir calculadora para definir a quantidade"
                       className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
                     >
                       <Calculator size={16} />
@@ -441,12 +631,13 @@ export default function EngineeringEditor({
                     id="unit-val-input"
                     type="text" 
                     value={calcUnitVal} 
-                    onChange={(e) => { setCalcUnitVal(e.target.value); updateQuantity(calcQty, e.target.value); }}
+                    onChange={(e) => { setCalcUnitVal(e.target.value); setUnitValManualEdited(true); updateQuantity(calcQty, e.target.value); }}
                     className={`w-full px-6 py-5 rounded-2xl font-black text-sm outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600 shadow-sm'}`}
                   />
                   <button 
                     onClick={() => setActiveCalcField('unit')} 
                     title="Abrir Calculadora de Valor Unitário"
+                    aria-label="Abrir calculadora para definir o valor unitário"
                     className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
                   >
                     <Calculator size={16} />
@@ -455,20 +646,33 @@ export default function EngineeringEditor({
               </div>
             </div>
 
-            {/* RESUMO TÉCNICO E FINANCEIRO (DIRETO) */}
-            <div className={`p-6 rounded-[2rem] border-2 border-dashed flex items-center justify-between ${isDarkMode ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-emerald-50 border-emerald-100'}`}>
-               <div className="flex flex-col">
-                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Consumo</span>
-                 <div className="flex items-baseline gap-1">
-                   <span className="text-xl font-black text-slate-700 dark:text-slate-200">
-                     {evaluate(calcQty).toFixed(4).replace('.', ',')}
-                   </span>
-                   <span className="text-[10px] font-black text-slate-400 uppercase">
-                     {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
-                   </span>
-                 </div>
-               </div>
-               
+             {/* RESUMO TÉCNICO E FINANCEIRO (DIRETO) */}
+             <div className="flex flex-col gap-2">
+                {editing.ignoreQuantity && (
+                  <button 
+                    onClick={() => {
+                      const val = evaluate(calcQty);
+                      setEditing(prev => ({ ...prev, quantity: val, ignoreQuantity: true }));
+                      setCalcQty(val.toString().replace('.', ','));
+                    }}
+                    className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 shadow-lg shadow-indigo-500/20 transition-all mb-2"
+                  >
+                    <CheckCircle2 size={16} /> Usar este Valor (Consumo Manual)
+                  </button>
+                )}
+               <div className={`p-6 rounded-[2rem] border-2 border-dashed flex items-center justify-between ${isDarkMode ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-emerald-50 border-emerald-100'}`}>
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Consumo</span>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-xl font-black text-slate-700 dark:text-slate-200">
+                        {evaluate(calcQty).toFixed(4).replace('.', ',')}
+                      </span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase">
+                        {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
+                      </span>
+                    </div>
+                  </div>
+
                <div className="flex flex-col text-right">
                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Subtotal</span>
                  <div className="flex items-baseline justify-end gap-1">
@@ -479,6 +683,7 @@ export default function EngineeringEditor({
                  </div>
                </div>
             </div>
+          </div>
 
 
              <CalculatorModal 
@@ -493,6 +698,7 @@ export default function EngineeringEditor({
                   updateQuantity(valStr, calcUnitVal);
                 } else {
                   setCalcUnitVal(valStr);
+                  setUnitValManualEdited(true);
                   updateQuantity(calcQty, valStr);
                 }
                 setActiveCalcField(null);
@@ -604,44 +810,122 @@ export default function EngineeringEditor({
 
 
         {/* Seleção de Material e Cor */}
-        <div className={`p-5 sm:p-8 rounded-[2.5rem] border-2 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} space-y-8`}>
+        <div className={`p-4 sm:p-8 rounded-[2.5rem] border-2 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} space-y-8`}>
           <div className="flex flex-col gap-3">
-            <label htmlFor="material-select" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">Material de Insumo</label>
-            <select 
-              id="material-select"
-              className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
-              value={editing.materialId || ''}
-              onChange={(e) => handleMaterialChange(e.target.value)}
-              title="Selecionar Material"
-            >
-              <option value="">Escolher Material...</option>
-              {productionConfigs.filter(c => c.type === 'MATERIAL').map(m => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-            </select>
+            <div className="flex items-center justify-between px-1">
+              <label htmlFor="material-select" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Material de Insumo</label>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-indigo-500 transition-colors">Ignorar Cor</span>
+                  <div className="relative">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only" 
+                      checked={editing.ignoreColor || false}
+                      onChange={(e) => setEditing({ ...editing, ignoreColor: e.target.checked })}
+                    />
+                    <div className={`w-8 h-4 rounded-full transition-colors ${editing.ignoreColor ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-700'}`} />
+                    <div className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${editing.ignoreColor ? 'translate-x-4' : ''}`} />
+                  </div>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-indigo-500 transition-colors">Ignorar Qtd/Par</span>
+                  <div className="relative">
+                    <input 
+                      type="checkbox" 
+                      className="sr-only" 
+                      checked={editing.ignoreQuantity || false}
+                      onChange={(e) => {
+                        const val = e.target.checked;
+                        const tool = productionConfigs.find(t => t.id === editing.toolId);
+                        const material = productionConfigs.find(m => m.id === editing.materialId);
+                        const newQ = tool && material ? calculateConsumption(tool, material, editing.piecesPerPair || 2, editing.toolMapping, val) : editing.quantity;
+                        setEditing({ ...editing, ignoreQuantity: val, quantity: newQ });
+                        if (val) setCalcQty(newQ.toString());
+                      }}
+                    />
+                    <div className={`w-8 h-4 rounded-full transition-colors ${editing.ignoreQuantity ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-700'}`} />
+                    <div className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${editing.ignoreQuantity ? 'translate-x-4' : ''}`} />
+                  </div>
+                </label>
+              </div>
+            </div>
+            <div className="relative">
+              <input 
+                id="material-select"
+                type="text" 
+                placeholder="Escolher Material..."
+                className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
+                value={materialSearch}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setMaterialSearch(val);
+                  if (val === '') handleMaterialChange('');
+                  if (materials.length > 0) setShowMaterialSuggestions(true);
+                }}
+                onFocus={() => materials.length > 0 && setShowMaterialSuggestions(true)}
+                onBlur={() => {
+                  setTimeout(() => {
+                    setShowMaterialSuggestions(false);
+                    const currentMat = productionConfigs.find(m => m.id === editing.materialId);
+                    setMaterialSearch(currentMat?.name || '');
+                  }, 200);
+                }}
+              />
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                <ChevronDown size={18} className="text-slate-400" />
+              </div>
+              {showMaterialSuggestions && filteredMaterials.length > 0 && (
+                <div className={`absolute z-50 mt-1 w-full rounded-2xl border-2 shadow-xl overflow-hidden max-h-60 overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`} style={{ top: '100%', left: 0 }}>
+                  {filteredMaterials.slice(0, 10).map(m => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      className={`w-full px-4 py-3 text-left text-sm font-bold transition-colors ${isDarkMode ? 'text-white hover:bg-slate-800' : 'text-slate-900 hover:bg-slate-100'}`}
+                      onMouseDown={() => {
+                        handleMaterialChange(m.id);
+                        setMaterialSearch(m.name);
+                        setShowMaterialSuggestions(false);
+                      }}
+                    >
+                      {m.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-             <div className="flex flex-col gap-3">
-                <label htmlFor="color-select" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">Cor</label>
-                <select 
+             <div className={`flex flex-col gap-3 transition-all ${editing.ignoreColor ? 'opacity-50 pointer-events-none' : ''}`}>
+                <label htmlFor="color-select" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">
+                  Cor {editing.ignoreColor && <span className="text-[9px] text-indigo-500">(IGNORADO)</span>}
+                </label>
+                 <select 
                   id="color-select"
-                  className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
-                  value={editing.colorId || ''}
+                  disabled={editing.ignoreColor}
+                  className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${!editing.colorId && !editing.ignoreColor ? 'border-rose-500/50 bg-rose-50/10' : ''} ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+                  value={editing.ignoreColor ? '' : (editing.colorId || '')}
                   onChange={(e) => setEditing({ ...editing, colorId: e.target.value })}
                   title="Selecionar Cor"
                 >
-                  <option value="">Cor...</option>
+                  <option value="">{editing.ignoreColor ? 'N/A' : 'Cor Obrigatória...'}</option>
                   {colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
+                {!editing.colorId && !editing.ignoreColor && (
+                  <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest mt-1 ml-2">Campo Obrigatório</span>
+                )}
              </div>
-             <div className="flex flex-col gap-3">
-                <label htmlFor="pieces-per-pair-input" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">Peças / Par</label>
+             <div className={`flex flex-col gap-3 transition-all ${editing.ignoreQuantity ? 'opacity-50 pointer-events-none' : ''}`}>
+                <label htmlFor="pieces-per-pair-input" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">
+                  Peças / Par {editing.ignoreQuantity && <span className="text-[9px] text-indigo-500">(IGNORADO)</span>}
+                </label>
                 <input 
                   id="pieces-per-pair-input"
                   type="number" 
+                  disabled={editing.ignoreQuantity}
                   className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
-                  value={editing.piecesPerPair || 2}
+                  value={editing.ignoreQuantity ? 1 : (editing.piecesPerPair || 2)}
                   title="Número de Peças por Par"
                   onChange={(e) => {
                     const ppp = Number(e.target.value);
@@ -659,46 +943,52 @@ export default function EngineeringEditor({
         </div>
 
         {/* Serviços Terceirizados */}
-        <div className={`p-5 sm:p-8 rounded-[2.5rem] border-2 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-amber-50/30 border-amber-100'} space-y-6`}>
+        <div className={`p-4 sm:p-8 rounded-[2.5rem] border-2 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-amber-50/30 border-amber-100'} space-y-6 overflow-hidden`}>
            <div className="flex items-center gap-3">
               <Sparkles size={20} className="text-amber-500" />
               <h4 className="text-xs font-black uppercase tracking-widest text-amber-600">Fluxo de Setores / Serviços</h4>
            </div>
            
-           <div className="flex gap-3">
-              <select 
-                id="sector-select"
-                className={`flex-1 border-2 rounded-2xl px-5 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
-                value={newServiceId}
-                title="Selecionar Setor"
-                onChange={(e) => setNewServiceId(e.target.value)}
-              >
-                <option value="">Setor...</option>
-                {sectors.sort((a,b) => a.order - b.order).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-              <input 
-                id="service-cost-input"
-                type="number" 
-                placeholder="R$ 0.00" 
-                className={`w-28 border-2 rounded-2xl px-4 py-3 text-xs font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}
-                value={newServiceCost}
-                title="Custo do Serviço"
-                onChange={(e) => setNewServiceCost(e.target.value)}
-              />
-              <button 
-                onClick={() => {
-                  if (!newServiceId) return;
-                  const services = [...(editing.services || [])];
-                  services.push({ serviceId: newServiceId, cost: Number(newServiceCost) || 0 });
-                  setEditing({ ...editing, services });
-                  setNewServiceId('');
-                  setNewServiceCost(0);
-                }}
-                title="Adicionar Setor ao Fluxo"
-                className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/20"
-              >
-                <Plus size={24} />
-              </button>
+           <div className="grid grid-cols-12 gap-2">
+              <div className="col-span-12 sm:col-span-7">
+                <select 
+                  id="sector-select"
+                  className={`w-full border-2 rounded-2xl px-4 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
+                  value={newServiceId}
+                  title="Selecionar Setor"
+                  onChange={(e) => setNewServiceId(e.target.value)}
+                >
+                  <option value="">Setor...</option>
+                  {sectors.sort((a,b) => a.order - b.order).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+              <div className="col-span-8 sm:col-span-3">
+                <input 
+                  id="service-cost-input"
+                  type="number" 
+                  placeholder="R$ 0.00" 
+                  className={`w-full border-2 rounded-2xl px-4 py-4 text-sm font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}
+                  value={newServiceCost}
+                  title="Custo do Serviço"
+                  onChange={(e) => setNewServiceCost(e.target.value)}
+                />
+              </div>
+              <div className="col-span-4 sm:col-span-2">
+                <button 
+                  onClick={() => {
+                    if (!newServiceId) return;
+                    const services = [...(editing.services || [])];
+                    services.push({ serviceId: newServiceId, cost: Number(newServiceCost) || 0 });
+                    setEditing({ ...editing, services });
+                    setNewServiceId('');
+                    setNewServiceCost(0);
+                  }}
+                  title="Adicionar Setor ao Fluxo"
+                  className="w-full h-full min-h-[56px] rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
+                >
+                  <Plus size={24} strokeWidth={3} />
+                </button>
+              </div>
            </div>
 
            <div className="space-y-2">

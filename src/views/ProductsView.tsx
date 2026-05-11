@@ -44,7 +44,7 @@ export default function ProductsView({
   );
 
   return (
-    <div className="flex flex-col gap-4 pb-24 px-4 bg-[#fafafa] dark:bg-slate-950 h-screen overflow-y-auto force-scrollbar">
+    <div className="flex flex-col gap-4 pb-24 px-4 bg-[#fafafa] dark:bg-slate-950 h-screen overflow-y-auto overflow-x-hidden force-scrollbar">
       {/* Delete Confirmation Modal */}
       {itemToDelete && (
         <div className="fixed inset-0 z-[100] flex animate-in fade-in duration-300">
@@ -234,3 +234,4 @@ function ProductCard({
     </div>
   );
 }
+

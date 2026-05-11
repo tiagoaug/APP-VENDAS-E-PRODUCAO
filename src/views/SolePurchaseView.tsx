@@ -173,7 +173,7 @@ export default function SolePurchaseView({
   };
 
   return (
-    <div className="flex flex-col h-full pb-44 px-1 overflow-y-auto force-scrollbar">
+    <div className="flex flex-col h-full pb-44 px-1 overflow-y-auto overflow-x-hidden force-scrollbar">
       <div className="flex items-center gap-4 mb-6">
         <button 
           onClick={onBack}
@@ -250,7 +250,7 @@ export default function SolePurchaseView({
                           colorId: color.id,
                           colorName: color.name,
                           quantities: {},
-                          unitCost: 0,
+                          unitCost: mold.metadata?.unitCost || 0,
                           totalCost: 0
                         }]);
                         return;
@@ -364,7 +364,7 @@ export default function SolePurchaseView({
                               value={item.unitCost || ''}
                               onChange={(e) => updateItem(index, { unitCost: parseFloat(e.target.value) || 0 })}
                               className={`w-full border-2 rounded-xl px-4 py-3 pl-10 text-sm font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
-                              placeholder="0,00"
+                              placeholder={mold?.metadata?.unitCost ? mold.metadata.unitCost.toFixed(2) : "0,00"}
                             />
                             <DollarSign size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
                           </div>
@@ -470,3 +470,4 @@ export default function SolePurchaseView({
     </div>
   );
 }
+
