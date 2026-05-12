@@ -38,7 +38,7 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
       />
 
       <div className={`p-5 rounded-2xl border flex items-start gap-4 ${isDarkMode ? 'bg-cyan-900/10 border-cyan-900/30' : 'bg-cyan-50/50 border-cyan-100'}`}>
-        <Ruler size={20} className="text-cyan-500 mt-0.5 shrink-0" />
+        <Ruler size={20} className="text-cyan-500 mt-0.5 shrink-0 rotate-90" />
         <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider leading-relaxed">
           Grades de Tamanhos definem <span className="text-cyan-600 dark:text-cyan-400 font-black">quais numerações existem</span> no processo produtivo de cada modelo. 
           Os padrões de embalagem (quantidade de pares por tamanho) são configurados separadamente em <span className="text-cyan-600 dark:text-cyan-400 font-black">Embalagens</span>.

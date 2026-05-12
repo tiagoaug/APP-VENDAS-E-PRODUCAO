@@ -1,4 +1,29 @@
-import React, { useState, useMemo, useRef, useEffect, FormEvent, ChangeEvent, ReactNode } from 'react';
+import React, { useState, useMemo, useRef, useEffect, FormEvent, ChangeEvent, ReactNode, Component } from 'react';
+
+class ErrorBoundary extends Component<{ children: ReactNode; label?: string }, { hasError: boolean; error: Error | null }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: any) {
+    console.error('[ErrorBoundary]', this.props.label, error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 rounded-2xl bg-red-50 border-2 border-red-200 text-red-700 flex flex-col gap-2">
+          <p className="font-black text-sm uppercase tracking-widest">Erro ao Renderizar {this.props.label}</p>
+          <p className="text-xs font-mono break-all">{this.state.error?.message}</p>
+          <button onClick={() => this.setState({ hasError: false, error: null })} className="mt-2 px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-black uppercase tracking-widest">Tentar Novamente</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
 import {
   Tags,
@@ -43,14 +68,17 @@ import {
   Wand2,
   Sparkles,
   RefreshCw,
-  Settings
+  Settings,
+  Percent
 } from 'lucide-react';
 import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, ProductionScreenType, ViewType } from '../types';
 import Modal from '../components/Modal';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import CalculatorModal from '../components/CalculatorModal';
 
-const AreaInput = ({ size, value, onChange, isDarkMode, onShowCalc }: any) => {
+import ConsumptionCalculatorModal from '../components/ConsumptionCalculatorModal';
+
+const AreaInput = ({ size, value, onChange, isDarkMode, onShowCalc, onShowConsumptionCalc }: any) => {
   const [localValue, setLocalValue] = React.useState(
     value !== undefined && value !== null
       ? Number(value).toFixed(4).replace('.', ',')
@@ -69,9 +97,11 @@ const AreaInput = ({ size, value, onChange, isDarkMode, onShowCalc }: any) => {
   }, [value]);
 
   return (
-    <div className="flex flex-col gap-2 items-center">
-      <div className="flex items-center justify-between w-full px-1">
-        <label htmlFor={`area-input-${size}`} className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">{size}</label>
+    <div className={`flex flex-row sm:flex-col items-center sm:items-center justify-between sm:justify-start gap-4 sm:gap-2 p-4 sm:p-0 rounded-[1.5rem] sm:rounded-none border-2 sm:border-0 transition-all ${isDarkMode ? 'bg-slate-950/50 border-slate-800/50' : 'bg-white border-slate-100'} sm:bg-transparent sm:border-transparent w-full`}>
+      <div className="flex items-center justify-between w-auto sm:w-full px-1 gap-3">
+        <label htmlFor={`area-input-${size}`} className="text-[10px] font-black text-slate-400 uppercase tracking-tighter shrink-0">
+          <span className="sm:hidden text-indigo-500 mr-1">TAM</span>{size}
+        </label>
         {onShowCalc && (
           <button
             type="button"
@@ -79,37 +109,55 @@ const AreaInput = ({ size, value, onChange, isDarkMode, onShowCalc }: any) => {
               setLocalValue(val.toFixed(4).replace('.', ','));
               onChange(val);
             })}
-            className={`p-1 rounded-md transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-500' : 'hover:bg-slate-100 text-slate-400'}`}
+            className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-500' : 'hover:bg-slate-100 text-slate-400'}`}
           >
-            <Calculator size={10} />
+            <Calculator size={14} />
           </button>
         )}
       </div>
-      <input
-        id={`area-input-${size}`}
-        type="text"
-        value={localValue}
-        onChange={(e) => {
-          const val = e.target.value.replace('.', ',');
-          setLocalValue(val);
-          const numericVal = parseFloat(val.replace(',', '.'));
-          if (!isNaN(numericVal)) {
-            onChange(numericVal);
-          } else if (val === '') {
-            onChange(0);
-          }
-        }}
-        onBlur={() => {
-          if (localValue !== '') {
-            const num = parseFloat(localValue.replace(',', '.'));
-            if (!isNaN(num)) {
-              setLocalValue(num.toFixed(4).replace('.', ','));
+      <div className="relative w-full max-w-[160px] sm:max-w-none group">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            if (onShowConsumptionCalc) {
+              onShowConsumptionCalc(size, parseFloat(localValue.replace(',', '.')) || 0, (val: number) => {
+                setLocalValue(val.toFixed(4).replace('.', ','));
+                onChange(val);
+              });
             }
-          }
-        }}
-        placeholder="0,0000"
-        className={`w-full px-2 py-3 rounded-xl font-bold text-xs text-center outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
-      />
+          }}
+          className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 hover:text-emerald-600 transition-all active:scale-95 z-10"
+          title="Abrir Calculador de Consumo"
+        >
+          <Ruler size={14} strokeWidth={3} className="rotate-90" />
+        </button>
+        <input
+          id={`area-input-${size}`}
+          type="text"
+          value={localValue}
+          onChange={(e) => {
+            const val = e.target.value.replace('.', ',');
+            setLocalValue(val);
+            const numericVal = parseFloat(val.replace(',', '.'));
+            if (!isNaN(numericVal)) {
+              onChange(numericVal);
+            } else if (val === '') {
+              onChange(0);
+            }
+          }}
+          onBlur={() => {
+            if (localValue !== '') {
+              const num = parseFloat(localValue.replace(',', '.'));
+              if (!isNaN(num)) {
+                setLocalValue(num.toFixed(4).replace('.', ','));
+              }
+            }
+          }}
+          placeholder="0,0000"
+          className={`w-full pl-8 pr-2 py-3 rounded-xl font-black text-xs text-center outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
+        />
+      </div>
     </div>
   );
 }
@@ -284,9 +332,9 @@ const DEFAULT_UNITS = [
 ];
 
 export default function ProductionConfigView({
-  flowTags,
-  sectors,
-  productionConfigs,
+  flowTags = [],
+  sectors = [],
+  productionConfigs = [],
   onSaveFlowTag,
   onDeleteFlowTag,
   onSaveSector,
@@ -295,7 +343,8 @@ export default function ProductionConfigView({
   onDeleteConfigItem,
   onUpdateSectorsOrder,
   onBack,
-  isDarkMode,
+  isDarkMode = false,
+  configItems = [],
   people = [],
   colors = [],
   grids = [],
@@ -336,6 +385,7 @@ export default function ProductionConfigView({
   const [editingSector, setEditingSector] = useState<Sector | null>(null);
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [isAddingSector, setIsAddingSector] = useState(false);
+  const [gridSuccess, setGridSuccess] = useState(false);
 
   // Flow Tag Handlers
   const handleSaveTag = async (e: React.FormEvent) => {
@@ -702,7 +752,7 @@ export default function ProductionConfigView({
           label="UNIDADES"
           items={productionConfigs}
           type="UNIT"
-          icon={<Ruler size={22} />}
+          icon={<Ruler size={22} className="rotate-90" />}
           isDarkMode={isDarkMode}
           onSave={onSaveConfigItem}
           onDelete={onDeleteConfigItem}
@@ -841,24 +891,26 @@ export default function ProductionConfigView({
         title="Matrizes Sola"
         zIndex={60000}
       >
-        <GenericConfigList
-          title="Matrizes Sola"
-          label="MATRIZES SOLA"
-          items={productionConfigs}
-          type="MOLD"
-          icon={<Grid3X3 size={22} />}
-          isDarkMode={isDarkMode}
-          onSave={onSaveConfigItem}
-          onDelete={onDeleteConfigItem}
-          onBack={() => setCurrentScreen('MENU')}
-          placeholderLabel="Nenhuma matriz cadastrada"
-          people={people}
-          colors={colors}
-          grids={grids}
-          flowTags={flowTags}
-          productionConfigs={productionConfigs}
-          onNavigateToScreen={handleNavigateShortcut}
-        />
+        <ErrorBoundary label="Matrizes de Solados">
+          <GenericConfigList
+            title="Matrizes Sola"
+            label="MATRIZES SOLA"
+            items={productionConfigs}
+            type="MOLD"
+            icon={<Grid3X3 size={22} />}
+            isDarkMode={isDarkMode}
+            onSave={onSaveConfigItem}
+            onDelete={onDeleteConfigItem}
+            onBack={() => setCurrentScreen('MENU')}
+            placeholderLabel="Nenhuma matriz cadastrada"
+            people={people}
+            colors={colors}
+            grids={grids}
+            flowTags={flowTags}
+            productionConfigs={productionConfigs}
+            onNavigateToScreen={handleNavigateShortcut}
+          />
+        </ErrorBoundary>
       </Modal>
 
       {currentScreen === 'MENU' && (
@@ -1061,11 +1113,62 @@ function GenericConfigList({
   const [isLoading, setIsLoading] = useState(false);
   const [isWeightsModalOpen, setIsWeightsModalOpen] = useState(false);
   const [isColorWeightsModalOpen, setIsColorWeightsModalOpen] = useState(false);
+  const [gridSuccess, setGridSuccess] = useState(false);
   const [activeCalc, setActiveCalc] = useState<{
     initialValue: number;
     onResult: (val: number) => void;
   } | null>(null);
+  const [activeConsumptionCalc, setActiveConsumptionCalc] = useState<{
+    size: string;
+    initialValue: number;
+    onResult: (val: number) => void;
+  } | null>(null);
+  const [showPercentageModal, setShowPercentageModal] = useState(false);
+  const [percBaseSize, setPercBaseSize] = useState('');
+  const [percValue, setPercValue] = useState(10);
+  const [percField, setPercField] = useState<'sizeAreas' | 'sizeWeights' | 'colorSizeWeights'>('sizeAreas');
+  const [percTargetId, setPercTargetId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const applyPercentageScale = (baseSize: string, percentage: number, field: string = 'sizeAreas', targetId: string | null = null) => {
+    const sizes = editingItem?.metadata?.sizes || [];
+    let baseValue = 0;
+    
+    if (targetId && field === 'colorSizeWeights') {
+      baseValue = editingItem?.metadata?.colorSizeWeights?.[targetId]?.[baseSize] || 0;
+    } else {
+      baseValue = editingItem?.metadata?.[field]?.[baseSize] || 0;
+    }
+    
+    if (baseValue === 0) {
+      alert(`O valor base para o tamanho ${baseSize} é 0. Preencha um valor primeiro para poder escalonar.`);
+      return;
+    }
+
+    const baseIndex = sizes.indexOf(baseSize);
+    const metadata = { ...editingItem?.metadata };
+
+    if (targetId && field === 'colorSizeWeights') {
+      const newColorWeights = { ...(metadata.colorSizeWeights?.[targetId] || {}) };
+      sizes.forEach((size, index) => {
+        const diff = index - baseIndex;
+        const factor = 1 + (diff * (percentage / 100));
+        newColorWeights[size] = Number((baseValue * factor).toFixed(4));
+      });
+      metadata.colorSizeWeights = { ...(metadata.colorSizeWeights || {}), [targetId]: newColorWeights };
+    } else {
+      const newData = { ...(metadata[field] || {}) };
+      sizes.forEach((size, index) => {
+        const diff = index - baseIndex;
+        const factor = 1 + (diff * (percentage / 100));
+        newData[size] = field === 'sizeAreas' ? Number((baseValue * factor).toFixed(4)) : Number((baseValue * factor).toFixed(2));
+      });
+      metadata[field] = newData;
+    }
+
+    setEditingItem(prev => prev ? { ...prev, metadata } : null);
+    setShowPercentageModal(false);
+  };
 
   const generateCode = () => {
     if (!editingItem) return;
@@ -1103,13 +1206,14 @@ function GenericConfigList({
     });
   };
 
-  const { totalWeightLive, yieldLive } = useMemo(() => {
-    if (!editingItem?.metadata?.sizeWeights) return { totalWeightLive: 0, yieldLive: 0 };
+  const { totalWeightLive, averageWeightLive, yieldLive } = useMemo(() => {
+    if (!editingItem?.metadata?.sizeWeights) return { totalWeightLive: 0, averageWeightLive: 0, yieldLive: 0 };
     const weights = Object.values(editingItem?.metadata?.sizeWeights || {}) as number[];
     const activeWeights = weights.filter(w => w > 0);
     const total = activeWeights.reduce((a, b) => a + b, 0);
-    const yld = total > 0 ? 1000 / total : 0;
-    return { totalWeightLive: total, yieldLive: yld };
+    const avg = activeWeights.length > 0 ? total / activeWeights.length : 0;
+    const yld = avg > 0 ? 1000 / avg : 0;
+    return { totalWeightLive: total, averageWeightLive: avg, yieldLive: yld };
   }, [editingItem?.metadata?.sizeWeights]);
 
   const units = useMemo(() => productionConfigs.filter(c => c.type === 'UNIT'), [productionConfigs]);
@@ -1117,12 +1221,13 @@ function GenericConfigList({
 
   const filteredItems = useMemo(() => {
     return items
-      .filter(item => item.type === type)
-      .filter(item =>
-        item.name.toLowerCase().includes(search.toLowerCase()) ||
-        (item.metadata?.reference || '').toLowerCase().includes(search.toLowerCase()) ||
-        (item.description && item.description.toLowerCase().includes(search.toLowerCase()))
-      );
+      .filter(item => item?.type === type)
+      .filter(item => {
+        const nameMatch = (item?.name || '').toLowerCase().includes(search.toLowerCase());
+        const refMatch = (item?.metadata?.reference || item?.metadata?.moldReference || '').toLowerCase().includes(search.toLowerCase());
+        const descMatch = (item?.description || '').toLowerCase().includes(search.toLowerCase());
+        return nameMatch || refMatch || descMatch;
+      });
   }, [items, type, search]);
 
   const groupedItems = useMemo<Record<string, ProductionConfigItem[]> | null>(() => {
@@ -1337,10 +1442,11 @@ function GenericConfigList({
               type,
               createdAt: Date.now(),
               metadata: type === 'TOOL' ? { conjugation: 1, sizes: [], sizeAreas: {} } :
-                type === 'MOLD' ? { moldReference: '', sizes: [], sizeWeights: {}, composition: [], colorVariations: [], extraServices: [] } :
+                type === 'MOLD' ? { moldReference: '', sizes: [], sizeWeights: {}, sizeAreas: {}, composition: [], colorVariations: [], extraServices: [] } :
                   type === 'MATERIAL' ? { masterCategory: '', reference: '', unitId: '', baseCost: 0, width: 0, colorIds: [], flowTagId: '', supplierId: '' } :
                     type === 'PACKAGING' ? { mode: 'FIXED', capacity: 0, sizes: [], sizeQuantities: {} } :
-                      undefined
+                      type === 'PIECE' ? { reference: '', flowTagId: '', supplierId: '', baseCost: 0 } :
+                        {}
             });
             setIsModalOpen(true);
           }}
@@ -1489,7 +1595,7 @@ function GenericConfigList({
         )}
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`Editar / Cadastrar`} zIndex={zIndex + 10000}>
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={`Editar / Cadastrar`} zIndex={70000}>
         <form onSubmit={handleSave} className="flex flex-col gap-6">
           {type === 'MOLD' ? (
             <div className="flex flex-col gap-6">
@@ -1534,11 +1640,49 @@ function GenericConfigList({
                   </select>
                 </div>
               </div>
+              <div className="flex flex-col gap-2">
+                <label htmlFor="mold-base-material" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Material Base (Insumos)</label>
+                <select
+                  id="mold-base-material"
+                  value={editingItem?.metadata?.baseMaterialId || ''}
+                  onChange={(e) => {
+                    const materialId = e.target.value;
+                    const material = productionConfigs.find(m => m.id === materialId);
+                    if (material) {
+                      const pricePerKg = material.metadata?.baseCost || 0;
+                      const avgW = averageWeightLive || 0;
+                      const calcUnitCost = avgW > 0 ? parseFloat(((avgW / 1000) * pricePerKg).toFixed(4)) : 0;
+                      setEditingItem(prev => prev ? { 
+                        ...prev, 
+                        metadata: { 
+                          ...prev.metadata, 
+                          price: pricePerKg,
+                          baseMaterialId: materialId,
+                          unitCost: calcUnitCost
+                        } 
+                      } : null);
+                    } else {
+                      setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseMaterialId: '', unitCost: 0 } } : null);
+                    }
+                  }}
+                  className={`w-full px-4 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                >
+                  <option value="">SELECIONAR INSUMO PARA PUXAR PREÇO...</option>
+                  {productionConfigs.filter(m => m.type === 'MATERIAL').map(m => (
+                    <option key={m.id} value={m.id}>{m.name} ({m.metadata?.reference}) - R$ {m.metadata?.baseCost || 0}</option>
+                  ))}
+                </select>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="flex flex-col gap-2">
                   <label htmlFor="mold-price" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Preço do Material / KG (R$)</label>
                   <div className="relative group">
-                    <input id="mold-price" type="number" step="0.01" value={editingItem?.metadata?.price || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, price: parseFloat(e.target.value) } } : null)} title="Preço por KG" placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
+                    <input id="mold-price" type="number" step="0.01" value={editingItem?.metadata?.price || ''} onChange={(e) => {
+                      const pricePerKg = parseFloat(e.target.value) || 0;
+                      const avgW = averageWeightLive || 0;
+                      const calcUnitCost = avgW > 0 ? parseFloat(((avgW / 1000) * pricePerKg).toFixed(4)) : 0;
+                      setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, price: pricePerKg, unitCost: calcUnitCost } } : null);
+                    }} title="Preço por KG" placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
                     <button
                       type="button"
                       title="Abrir Calculadora"
@@ -1554,22 +1698,43 @@ function GenericConfigList({
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <label htmlFor="mold-unit-cost" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Custo por Par (R$)</label>
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="mold-unit-cost" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Custo por Par (R$)</label>
+                    {averageWeightLive > 0 && editingItem?.metadata?.price && editingItem.metadata.price > 0 && (
+                      <span className="text-[8px] font-bold text-indigo-500 uppercase tracking-widest mr-1">
+                        {averageWeightLive.toFixed(1)}g ÷ 1000 × R${editingItem.metadata.price}
+                      </span>
+                    )}
+                  </div>
                   <div className="relative group">
-                    <input id="mold-unit-cost" type="number" step="0.01" value={editingItem?.metadata?.unitCost || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitCost: parseFloat(e.target.value) } } : null)} title="Custo por par" placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-cyan-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
+                    <input id="mold-unit-cost" type="number" step="0.0001" value={editingItem?.metadata?.unitCost || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitCost: parseFloat(e.target.value) } } : null)} title="Custo por par (calculado automaticamente ou informe manualmente)" placeholder={averageWeightLive > 0 && editingItem?.metadata?.price ? ((averageWeightLive / 1000) * (editingItem.metadata.price)).toFixed(4) : '0,00'} className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-cyan-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
                     <button
                       type="button"
-                      title="Abrir Calculadora"
-                      aria-label="Abrir calculadora para definir custo por par"
-                      onClick={() => setActiveCalc({
-                        initialValue: editingItem?.metadata?.unitCost || 0,
-                        onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitCost: val } } : null)
-                      })}
+                      title="Recalcular com peso médio atual"
+                      aria-label="Recalcular custo por par com base no peso médio"
+                      onClick={() => {
+                        const pricePerKg = editingItem?.metadata?.price || 0;
+                        const avgW = averageWeightLive || 0;
+                        if (avgW > 0 && pricePerKg > 0) {
+                          const calc = parseFloat(((avgW / 1000) * pricePerKg).toFixed(4));
+                          setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitCost: calc } } : null);
+                        } else {
+                          setActiveCalc({
+                            initialValue: editingItem?.metadata?.unitCost || 0,
+                            onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitCost: val } } : null)
+                          });
+                        }
+                      }}
                       className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"
                     >
-                      <Calculator size={16} />
+                      <RefreshCw size={16} />
                     </button>
                   </div>
+                  {editingItem?.metadata?.unitCost && editingItem.metadata.unitCost > 0 && (
+                    <p className="text-[8px] font-bold text-emerald-500 uppercase tracking-widest ml-2">
+                      ≈ R$ {Number(editingItem.metadata.unitCost).toFixed(4)} / par
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex flex-col gap-2">
@@ -1582,6 +1747,81 @@ function GenericConfigList({
               <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2"><Scale size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Pesos por Tamanho (GR)</span></div>
+                </div>
+
+                <div className="flex flex-col gap-4 mb-6">
+                  <div className="flex items-center justify-between px-2">
+                    <label htmlFor="mold-new-size" className="text-[10px] font-black uppercase tracking-widest text-slate-400">Configurar Numerações</label>
+                    <div className="flex items-center gap-3">
+                      <AnimatePresence>
+                        {gridSuccess && (
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.8, x: 10 }}
+                            animate={{ opacity: 1, scale: 1, x: 0 }}
+                            exit={{ opacity: 0, scale: 0.8, x: 10 }}
+                            className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
+                          >
+                            <CheckCircle2 size={10} strokeWidth={3} />
+                            <span className="text-[8px] font-black uppercase tracking-widest">Grade Carregada!</span>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                      <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl border-2 transition-all relative group ${isDarkMode ? 'bg-indigo-950/30 border-indigo-500/20 hover:border-indigo-500/40 text-indigo-400' : 'bg-indigo-50/50 border-indigo-100 hover:border-indigo-200 text-indigo-600'}`}>
+                        <Grid3X3 size={14} strokeWidth={2.5} className="group-hover:scale-110 transition-transform" />
+                        <select
+                          onChange={(e) => {
+                            const gridId = e.target.value;
+                            if (!gridId) return;
+                            const grid = grids.find(g => g.id === gridId);
+                            if (grid) {
+                              const gridSizes = (grid as any).sizes || (grid as any).items?.map((i: any) => i.size) || [];
+                              setEditingItem(prev => {
+                                if (!prev) return null;
+                                const newSizeWeights = { ...(prev.metadata?.sizeWeights || {}) };
+                                gridSizes.forEach((s: string) => {
+                                  if (newSizeWeights[s] === undefined) newSizeWeights[s] = 0;
+                                });
+                                return {
+                                  ...prev,
+                                  metadata: {
+                                    ...prev.metadata,
+                                    sizes: gridSizes,
+                                    sizeWeights: newSizeWeights
+                                  }
+                                };
+                              });
+                              setGridSuccess(true);
+                              setTimeout(() => setGridSuccess(false), 2500);
+                            }
+                            e.target.value = "";
+                          }}
+                          className="bg-transparent border-none outline-none text-[10px] font-black uppercase cursor-pointer pr-4 appearance-none"
+                        >
+                          <option value="">PUXAR GRADE...</option>
+                          {grids.filter(g => g.type === GridType.SOLADO).map(g => (
+                            <option key={g.id} value={g.id}>{g.name}</option>
+                          ))}
+                        </select>
+                        <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-50" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <input id="mold-new-size" type="text" value={newSize} onChange={(e) => setNewSize(e.target.value)} title="Nova Numeração" placeholder="Ex: 37" className={`flex-1 px-6 py-4 rounded-2xl font-bold outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addSize())} />
+                    <button type="button" title="Adicionar Numeração" aria-label="Adicionar este tamanho" onClick={addSize} className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-200 flex items-center justify-center border border-slate-200 dark:border-slate-700">
+                      <Plus size={24} />
+                    </button>
+                  </div>
+                  <div className="p-4 rounded-[1.5rem] border-2 border-dashed border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">
+                    {(editingItem?.metadata?.sizes || []).map(size => (
+                      <div key={size} className={`px-3 py-1.5 rounded-xl flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}>
+                        <span className="text-[10px] font-black">{size}</span>
+                        <button type="button" title={`Remover ${size}`} aria-label={`Remover tamanho ${size}`} onClick={() => removeSize(size)} className="text-slate-300 hover:text-red-500 transition-colors">
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 <button
@@ -1603,15 +1843,9 @@ function GenericConfigList({
                   isOpen={isWeightsModalOpen}
                   onClose={() => setIsWeightsModalOpen(false)}
                   title="Pesos por Tamanho (GR)"
+                  zIndex={75000}
                 >
                   <div className="flex flex-col gap-6">
-                    <div className="flex items-center justify-between bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-500/30">
-                      <div className="flex items-center gap-2">
-                        {renderLabelWithShortcut('mold-pull-grid', 'Puxar Grade', ViewType.GRIDS)}
-                      </div>
-                      <select id="mold-pull-grid" title="Selecionar Grade" onChange={(e) => { const gridId = e.target.value; const grid = grids.find(g => g.id === gridId); if (grid) { const weights: Record<string, number> = {}; grid.sizes.forEach(s => { weights[s] = editingItem?.metadata?.sizeWeights?.[s] || 0; }); setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, sizeWeights: weights, sizes: grid.sizes } } : null); } }} className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-600'}`}><option value="">Selecionar...</option>{grids.filter(g => g.type === GridType.SOLADO || !g.type).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
-                    </div>
-
                     <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2">
                       {Object.entries(editingItem?.metadata?.sizeWeights || {}).map(([size, weight]) => (
                         <div key={size} className={`flex items-center justify-between p-3 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-50'}`}>
@@ -1682,13 +1916,14 @@ function GenericConfigList({
                   isOpen={isColorWeightsModalOpen}
                   onClose={() => setIsColorWeightsModalOpen(false)}
                   title="Pesos por Cor e Tamanho (GR)"
+                  zIndex={75000}
                 >
                   <div className="flex flex-col gap-4">
                     <p className="text-xs text-slate-500 font-medium">
                       Cadastre o peso médio para cada cor. Se tiver pesos diferentes por tamanho, cadastre também os tamanhos.
                     </p>
                     <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
-                      {colors.slice(0, 15).map((color) => {
+                      {(colors || []).map((color) => {
                         const colorWeight = editingItem?.metadata?.colorWeights?.[color.id] || 0;
                         const colorSizeWeights = editingItem?.metadata?.colorSizeWeights?.[color.id] || {};
                         const sizes = editingItem?.metadata?.sizes || [];
@@ -1701,28 +1936,30 @@ function GenericConfigList({
                                 <div className="w-6 h-6 rounded-full border border-black/10" style={{ backgroundColor: color.hex }} />
                                 <span className="text-xs font-black text-slate-700 dark:text-slate-200">{color.name}</span>
                               </div>
-                              <div className="relative flex-1 max-w-[120px] ml-4">
-                                <input
-                                  type="number"
-                                  value={colorWeight || ''}
-                                  title={`Peso médio para cor ${color.name}`}
-                                  placeholder="Média"
-                                  onChange={(e) => {
-                                    const val = parseFloat(e.target.value);
-                                    setEditingItem(prev => {
-                                      if (!prev) return null;
-                                      const newColorWeights = { ...(prev.metadata?.colorWeights || {}) };
-                                      if (val > 0) {
-                                        newColorWeights[color.id] = val;
-                                      } else {
-                                        delete newColorWeights[color.id];
-                                      }
-                                      return { ...prev, metadata: { ...prev.metadata, colorWeights: newColorWeights } };
-                                    });
-                                  }}
-                                  className={`w-full px-3 py-2 rounded-xl font-black text-xs text-right pr-10 outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-violet-500' : 'bg-white border-slate-200 text-slate-900 focus:border-violet-500'}`}
-                                />
-                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-black text-slate-400">GR</span>
+                              <div className="flex items-center gap-2">
+                                <div className="relative flex-1 max-w-[100px]">
+                                  <input
+                                    type="number"
+                                    value={colorWeight || ''}
+                                    title={`Peso médio para cor ${color.name}`}
+                                    placeholder="Média"
+                                    onChange={(e) => {
+                                      const val = parseFloat(e.target.value);
+                                      setEditingItem(prev => {
+                                        if (!prev) return null;
+                                        const newColorWeights = { ...(prev.metadata?.colorWeights || {}) };
+                                        if (val > 0) {
+                                          newColorWeights[color.id] = val;
+                                        } else {
+                                          delete newColorWeights[color.id];
+                                        }
+                                        return { ...prev, metadata: { ...prev.metadata, colorWeights: newColorWeights } };
+                                      });
+                                    }}
+                                    className={`w-full px-3 py-2 rounded-xl font-black text-xs text-right pr-10 outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-violet-500' : 'bg-white border-slate-200 text-slate-900 focus:border-violet-500'}`}
+                                  />
+                                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[8px] font-black text-slate-400">GR</span>
+                                </div>
                               </div>
                             </div>
                             
@@ -1811,21 +2048,26 @@ function GenericConfigList({
                       </button>
                     </div>
                     {totalWeightLive > 0 && (
-                      <span className="text-xs font-bold text-indigo-500 uppercase tracking-widest mt-1 ml-1">
-                        Soma Calculada: {totalWeightLive.toFixed(2)}g
-                      </span>
+                      <div className="flex flex-col gap-0.5 mt-1 ml-1">
+                        <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest">
+                          Soma Calculada: {totalWeightLive.toFixed(2)}g
+                        </span>
+                        <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest">
+                          Média Calculada: {averageWeightLive.toFixed(2)}g
+                        </span>
+                      </div>
                     )}
                   </div>
                   <div className="text-right">
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Rendimento por KG</p>
                     <div className="flex items-baseline gap-2">
                       <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
-                        {(editingItem?.metadata?.totalWeight || totalWeightLive) > 0 ? (1000 / (editingItem?.metadata?.totalWeight || totalWeightLive)).toFixed(2) : '0.00'}
+                        {averageWeightLive > 0 ? (1000 / averageWeightLive).toFixed(2) : '0.00'}
                       </span>
                       <span className="text-xs font-black text-slate-400 uppercase">PRS / KG</span>
                     </div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                      1.000g ÷ Soma ({(editingItem?.metadata?.totalWeight || totalWeightLive).toFixed(0)}g)
+                      1.000g ÷ Média ({averageWeightLive.toFixed(2)}g)
                     </p>
                   </div>
                 </div>
@@ -1892,6 +2134,8 @@ function GenericConfigList({
                   })}
                 </div>
               </div>
+
+
               {/* CALCULATION CARD */}
               {(() => {
                 const activeSizesCount = Object.values(editingItem?.metadata?.sizeWeights || {}).filter(w => (w as number) > 0).length;
@@ -1901,6 +2145,7 @@ function GenericConfigList({
                 const materialCostPerPair = (avgWeight / 1000) * materialPrice;
                 const extraServicesCost = (editingItem?.metadata?.extraServices || []).reduce((sum: number, s: any) => sum + (s.cost || 0), 0);
                 const suggestedPrice = materialCostPerPair + extraServicesCost;
+                const isUnitCostSynced = (editingItem?.metadata?.unitCost || 0) > 0 && Math.abs((editingItem?.metadata?.unitCost || 0) - suggestedPrice) < 0.0001;
 
                 return (
                   <div className={`mt-4 p-6 rounded-[2rem] border-2 flex flex-col gap-4 ${isDarkMode ? 'bg-indigo-950/20 border-indigo-900/40' : 'bg-indigo-50 border-indigo-100'}`}>
@@ -1915,21 +2160,53 @@ function GenericConfigList({
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Custo Material (Média x Preço/KG)</span>
-                      <span className="text-xs font-black text-amber-600">R$ {materialCostPerPair.toFixed(2)}</span>
+                      <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Custo Material (Média × Preço/KG)</span>
+                      <span className="text-xs font-black text-amber-600">R$ {materialCostPerPair.toFixed(4)}</span>
                     </div>
 
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Serviços Agregados</span>
-                      <span className="text-xs font-black text-emerald-600">R$ {extraServicesCost.toFixed(2)}</span>
+                      <span className="text-xs font-black text-emerald-600">R$ {extraServicesCost.toFixed(4)}</span>
                     </div>
 
                     <div className="h-px w-full bg-indigo-200 dark:bg-indigo-800/50 my-2" />
 
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black uppercase tracking-widest text-indigo-700 dark:text-indigo-300">Sugestão de Preço</span>
-                      <span className="text-xl font-black text-indigo-600 dark:text-indigo-400">R$ {suggestedPrice.toFixed(2)}</span>
+                    {/* LINHA SUGESTÃO + BOTÃO COPIAR */}
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-indigo-500 mb-1">Sugestão de Preço Total</span>
+                        <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">R$ {suggestedPrice.toFixed(4)}</span>
+                      </div>
+                      {suggestedPrice > 0 && !isUnitCostSynced && (
+                        <button
+                          type="button"
+                          title="Usar este valor como Custo por Par"
+                          aria-label="Copiar sugestão de preço para o campo Custo por Par"
+                          onClick={() => setEditingItem(prev => prev ? {
+                            ...prev,
+                            metadata: { ...prev.metadata, unitCost: parseFloat(suggestedPrice.toFixed(4)) }
+                          } : null)}
+                          className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-indigo-500/30 whitespace-nowrap"
+                        >
+                          <Check size={13} strokeWidth={3} />
+                          USAR ESTE VALOR
+                        </button>
+                      )}
+                      {isUnitCostSynced && (
+                        <div className="flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/30">
+                          <Check size={12} strokeWidth={3} className="text-emerald-500" />
+                          <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500">Aplicado</span>
+                        </div>
+                      )}
                     </div>
+
+                    {/* STATUS DO CUSTO POR PAR */}
+                    {(editingItem?.metadata?.unitCost || 0) > 0 && (
+                      <div className={`flex items-center justify-between px-4 py-3 rounded-2xl ${isDarkMode ? 'bg-emerald-900/20 border border-emerald-800/40' : 'bg-emerald-50 border border-emerald-200'}`}>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Custo por Par Salvo</span>
+                        <span className="text-sm font-black text-emerald-600">R$ {Number(editingItem?.metadata?.unitCost).toFixed(4)}</span>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -2027,7 +2304,20 @@ function GenericConfigList({
                   required
                 />
               </div>
-              <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Conjugação (Pares/Batida) *</label><input type="number" value={editingItem?.metadata?.conjugation || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, conjugation: Number(e.target.value) } } : null)} placeholder="1" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">QUANTAS SÃO NECESSÁRIOS PARA FAZER 1 PAR</label>
+                <input 
+                  type="number" 
+                  value={editingItem?.metadata?.conjugation || ''} 
+                  onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, conjugation: Number(e.target.value) } } : null)} 
+                  placeholder="1" 
+                  className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'} border-2`} 
+                  required 
+                />
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 ml-2 leading-relaxed italic">
+                  ( AQUI CADASTRAMOS SE A FACA E SIMPLES OU CONJUGADA, SE CONJUGADA ELA TEM QUANTAS REPETICOES, CONJUGACOES )
+                </p>
+              </div>
 
               <div className="flex items-center justify-between mb-2 ml-2">
                 <div className="flex items-center gap-2">
@@ -2074,11 +2364,29 @@ function GenericConfigList({
               </div>
               {(editingItem?.metadata?.sizes || []).length > 0 && (
                 <div className={`p-6 rounded-[2.5rem] flex flex-col gap-6 ${isDarkMode ? 'bg-slate-800/40' : 'bg-slate-50/50'}`}>
-                  <div className="flex items-center gap-3 px-2">
-                    <Target size={18} className="text-slate-400" />
-                    <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Matriz de Área (M²)</h4>
+                  <div className="flex items-center justify-between px-2">
+                    <div className="flex items-center gap-3">
+                      <Target size={18} className="text-slate-400" />
+                      <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">MATRIZ DE ÁREA (M²)</h4>
+                    </div>
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        const sizes = editingItem?.metadata?.sizes || [];
+                        const firstFilled = sizes.find(s => (editingItem?.metadata?.sizeAreas?.[s] || 0) > 0);
+                        setPercBaseSize(firstFilled || sizes[0] || '');
+                        setPercField('sizeAreas');
+                        setPercTargetId(null);
+                        setShowPercentageModal(true);
+                      }}
+                      className="px-4 py-2.5 rounded-2xl bg-indigo-600 text-white shadow-xl shadow-indigo-500/30 active:scale-95 transition-all flex items-center gap-2 group"
+                      title="Escalonar por Porcentagem"
+                    >
+                      <Percent size={14} strokeWidth={3} className="group-hover:rotate-12 transition-transform" />
+                      <span className="text-[10px] font-black uppercase tracking-widest">Escalonar Grade</span>
+                    </button>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  <div className="flex flex-col sm:grid sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-4">
                     {(editingItem?.metadata?.sizes || []).map(size => (
                       <AreaInput
                         key={size}
@@ -2086,6 +2394,7 @@ function GenericConfigList({
                         value={editingItem?.metadata?.sizeAreas?.[size]}
                         onChange={(val: any) => updateArea(size, val)}
                         onShowCalc={(initialValue: number, onResult: (v: number) => void) => setActiveCalc({ initialValue, onResult })}
+                        onShowConsumptionCalc={(size: string, initialValue: number, onResult: (v: number) => void) => setActiveConsumptionCalc({ size, initialValue, onResult })}
                         isDarkMode={isDarkMode}
                       />
                     ))}
@@ -2220,6 +2529,95 @@ function GenericConfigList({
         }}
         isDarkMode={isDarkMode}
       />
+
+      <ConsumptionCalculatorModal
+        isOpen={!!activeConsumptionCalc}
+        onClose={() => setActiveConsumptionCalc(null)}
+        sizeLabel={activeConsumptionCalc?.size || ''}
+        onResult={(val) => {
+          activeConsumptionCalc?.onResult(val);
+          setActiveConsumptionCalc(null);
+        }}
+        isDarkMode={isDarkMode}
+      />
+
+      <Modal 
+        isOpen={showPercentageModal} 
+        onClose={() => setShowPercentageModal(false)} 
+        title="ESCALONAMENTO POR PORCENTAGEM"
+        zIndex={80000}
+      >
+        <div className="flex flex-col gap-6 p-2">
+          <div className={`p-4 rounded-2xl border-2 border-dashed ${isDarkMode ? 'bg-indigo-500/5 border-indigo-500/20' : 'bg-indigo-50 border-indigo-100'}`}>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-relaxed text-center">
+              Deseja preencher a grade automaticamente? <br/>
+              Escolha uma numeração de referência e a porcentagem de variação entre os tamanhos.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tamanho de Referência</label>
+              <select 
+                value={percBaseSize || (editingItem?.metadata?.sizes?.[0] || '')}
+                onChange={(e) => setPercBaseSize(e.target.value)}
+                className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
+              >
+                {(editingItem?.metadata?.sizes || []).map(size => {
+                  let displayVal = 0;
+                  if (percField === 'colorSizeWeights' && percTargetId) {
+                    displayVal = editingItem?.metadata?.colorSizeWeights?.[percTargetId]?.[size] || 0;
+                  } else {
+                    displayVal = (editingItem?.metadata as any)?.[percField]?.[size] || 0;
+                  }
+                  return (
+                    <option key={size} value={size}>
+                      TAM {size} ({displayVal})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Porcentagem por Tamanho (%)</label>
+              <div className="relative">
+                <input 
+                  type="number" 
+                  value={percValue}
+                  onChange={(e) => setPercValue(Number(e.target.value))}
+                  placeholder="Ex: 10" 
+                  className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} 
+                />
+                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"><Percent size={16} /></div>
+              </div>
+              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1 ml-2 italic text-center">
+                * Os tamanhos MAIORES serão acrescidos desta % <br/> e os MENORES serão subtraídos.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <button 
+              type="button"
+              onClick={() => setShowPercentageModal(false)}
+              className={`flex-1 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all border-2 ${isDarkMode ? 'border-slate-800 text-slate-400 hover:bg-slate-800' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
+            >
+              Cancelar
+            </button>
+            <button 
+              type="button"
+              onClick={() => {
+                const base = percBaseSize || editingItem?.metadata?.sizes?.[0] || '';
+                applyPercentageScale(base, percValue, percField, percTargetId);
+              }}
+              className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-black uppercase tracking-widest text-[10px] shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+            >
+              Aplicar Escalonamento
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -2387,8 +2785,14 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
   productionConfigs: ProductionConfigItem[],
   key?: React.Key
 }) {
-  const flowTag = flowTags.find(t => t.id === item.metadata?.flowTagId);
-  const selectedColors = item.metadata?.colorVariations || [];
+  const safeFlowTags = Array.isArray(flowTags) ? flowTags : [];
+  const safeColors = Array.isArray(colors) ? colors : [];
+  const safeProductionConfigs = Array.isArray(productionConfigs) ? productionConfigs : [];
+  const flowTag = safeFlowTags.find(t => t?.id === item.metadata?.flowTagId);
+  const selectedColors = Array.isArray(item.metadata?.colorVariations) ? item.metadata!.colorVariations! : [];
+  const safeExtraServices = Array.isArray(item.metadata?.extraServices) ? item.metadata!.extraServices! : [];
+  const safeComposition = Array.isArray(item.metadata?.composition) ? item.metadata!.composition! : [];
+  const safeSizeWeights = (item.metadata?.sizeWeights && typeof item.metadata.sizeWeights === 'object' && !Array.isArray(item.metadata.sizeWeights)) ? item.metadata.sizeWeights : {};
 
   return (
     <div className={`p-6 rounded-[2.5rem] border flex flex-col gap-6 relative transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
@@ -2413,9 +2817,9 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
         <div className="flex flex-wrap gap-2">
           {selectedColors.map((cv: any) => {
             if (!cv) return null;
-            const color = colors.find(c => c.id === cv.colorId);
+            const color = safeColors.find(c => c.id === cv.colorId);
             return (
-              <div key={cv.colorId} className={`px-3 py-1.5 rounded-xl flex items-center gap-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+              <div key={cv.colorId || String(Math.random())} className={`px-3 py-1.5 rounded-xl flex items-center gap-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
                 <div className="w-2 h-2 rounded-full shadow-sm" style={{ backgroundColor: color?.hex || '#ccc' }} />
                 <span className="text-[8px] font-black uppercase tracking-widest text-slate-500">{color?.name || 'COR'} ({cv.subRef})</span>
               </div>
@@ -2424,24 +2828,24 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
         </div>
       )}
 
-      {item.metadata?.sizeWeights && Object.keys(item.metadata.sizeWeights || {}).length > 0 && (
+      {Object.keys(safeSizeWeights).length > 0 && (
         <div className={`p-4 rounded-2xl flex flex-col gap-3 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50/50'}`}>
           <div className="flex items-center gap-2 text-slate-400">
             <Package size={14} />
             <span className="text-[9px] font-black uppercase tracking-widest">Pesos por Tamanho (GR)</span>
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-2">
-            {Object.entries(item.metadata?.sizeWeights || {}).map(([size, weight]) => (
+            {Object.entries(safeSizeWeights).map(([size, weight]) => (
               <div key={size} className="flex items-center gap-1.5">
                 <span className="text-[10px] font-black text-slate-400">{size}</span>
-                <span className={`text-[10px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{weight}g</span>
+                <span className={`text-[10px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{Number(weight) || 0}g</span>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {item.metadata?.composition && (item.metadata.composition as any[]).length > 0 && (
+      {safeComposition.length > 0 && (
         <div className={`p-4 rounded-2xl flex flex-col gap-3 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50/50'}`}>
           <div className="flex items-center justify-between text-slate-400">
             <div className="flex items-center gap-2">
@@ -2449,21 +2853,21 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
               <span className="text-[9px] font-black uppercase tracking-widest">Composição de Materiais</span>
             </div>
             <span className="text-[9px] font-black uppercase tracking-widest text-indigo-500">
-              {(item.metadata.composition as any[]).length} ITENS
+              {safeComposition.length} ITENS
             </span>
           </div>
           <div className="flex items-center justify-between">
             <div className="flex flex-wrap gap-2">
-              {(item.metadata.composition as any[]).slice(0, 3).map((comp: any, idx: number) => {
-                const mat = (productionConfigs || []).find(c => c.id === comp.materialId);
+              {safeComposition.slice(0, 3).map((comp: any, idx: number) => {
+                const mat = safeProductionConfigs.find(c => c.id === comp?.materialId);
                 return (
                   <span key={idx} className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
-                    {mat?.name || 'MATERIAL'} {idx < 2 && idx < (item.metadata?.composition as any[]).length - 1 ? '•' : ''}
+                    {mat?.name || 'MATERIAL'} {idx < 2 && idx < safeComposition.length - 1 ? '•' : ''}
                   </span>
                 );
               })}
-              {(item.metadata.composition as any[]).length > 3 && (
-                <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">+{(item.metadata.composition as any[]).length - 3}</span>
+              {safeComposition.length > 3 && (
+                <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">+{safeComposition.length - 3}</span>
               )}
             </div>
             <div className="flex items-baseline gap-1 bg-indigo-500/10 px-2 py-1 rounded-lg">
@@ -2471,9 +2875,8 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
                 {(() => {
                   const avgWeight = item.metadata?.averageWeight;
                   if (avgWeight && avgWeight > 0) return (1000 / avgWeight).toFixed(2);
-
-                  const weights = Object.values(item.metadata?.sizeWeights || {}) as number[];
-                  const activeWeights = weights.filter(w => w > 0);
+                  const weights = Object.values(safeSizeWeights) as number[];
+                  const activeWeights = weights.filter(w => Number(w) > 0);
                   if (activeWeights.length === 0) return '---';
                   const calcAvg = activeWeights.reduce((a, b) => a + b, 0) / activeWeights.length;
                   return (1000 / calcAvg).toFixed(2);
@@ -2485,21 +2888,18 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
         </div>
       )}
 
-      {item.metadata?.extraServices && (item.metadata.extraServices as any[]).length > 0 && (
-        <div className={`p-4 rounded-2xl flex flex-col gap-3 ${isDarkMode ? 'bg-emerald-950/20' : 'bg-emerald-50/50'}`}>
-          <div className="flex items-center justify-between text-slate-400">
-            <div className="flex items-center gap-2">
-              <Hammer size={14} className="text-emerald-500" />
-              <span className="text-[9px] font-black uppercase tracking-widest">Serviços Agregados</span>
-            </div>
+      {safeExtraServices.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Serviços Extras</span>
             <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400">
-              R$ {(item.metadata.extraServices as any[]).reduce((acc, s) => acc + (s.cost || 0), 0).toFixed(2)}
+              R$ {safeExtraServices.reduce((acc: number, s: any) => acc + (Number(s?.cost) || 0), 0).toFixed(2)}
             </span>
           </div>
           <div className="flex flex-wrap gap-2">
-            {(item.metadata.extraServices as any[]).map((s: any, idx: number) => (
+            {safeExtraServices.map((s: any, idx: number) => (
               <span key={idx} className="text-[8px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest bg-emerald-500/10 px-2 py-1 rounded-lg">
-                {s.name} (R$ {s.cost?.toFixed(2)})
+                {s?.name} (R$ {Number(s?.cost || 0).toFixed(2)})
               </span>
             ))}
           </div>
@@ -2514,17 +2914,18 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
               <span className="text-[7px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest leading-none mb-0.5">Rendimento:</span>
               <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">
                 {(() => {
-                  const weights = Object.values(item.metadata?.sizeWeights || {}) as number[];
-                  const activeWeights = weights.filter(w => w > 0);
+                  const weights = Object.values(safeSizeWeights) as number[];
+                  const activeWeights = weights.filter(w => Number(w) > 0);
                   const total = activeWeights.reduce((a, b) => a + b, 0);
-                  return total > 0 ? (1000 / total).toFixed(2) : '0.00';
+                  const avg = activeWeights.length > 0 ? total / activeWeights.length : 0;
+                  return avg > 0 ? (1000 / avg).toFixed(2) : '0.00';
                 })()} PRS/KG
               </span>
             </div>
           </div>
-          {item.metadata?.sizeWeights && (
+          {Object.keys(safeSizeWeights).length > 0 && (
             <span className="text-[7px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-              Soma: {Object.values(item.metadata.sizeWeights).reduce((a, b) => (a as number) + (b as number), 0).toFixed(1)}g
+              Soma: {Object.values(safeSizeWeights).reduce((a, b) => Number(a) + Number(b), 0).toFixed(1)}g
             </span>
           )}
         </div>
@@ -2534,8 +2935,8 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
             <span className="text-[10px] font-black text-emerald-500">R$</span>
             <span className="text-xl font-black text-emerald-500">
               {(() => {
-                const basePrice = item.metadata?.price || 0;
-                const servicesCost = (item.metadata?.extraServices as any[] || []).reduce((acc, s) => acc + (s.cost || 0), 0);
+                const basePrice = Number(item.metadata?.price) || 0;
+                const servicesCost = safeExtraServices.reduce((acc: number, s: any) => acc + (Number(s?.cost) || 0), 0);
                 return (basePrice + servicesCost).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
               })()}
             </span>
