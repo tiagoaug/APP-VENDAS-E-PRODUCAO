@@ -1470,7 +1470,30 @@ export default function App() {
                 await firebaseService.runAtomic(async (transaction) => {
                   const saleRef = doc(db, `users/${uid}/sales`, id);
                   
-                  // 1. Update Sale Status
+                  // 1. Prepare References for Reads
+                  const productRefsMap = new Map<string, any>();
+                  const uniqueProductIds = Array.from(new Set(sale.items.map(item => item.productId)));
+                  uniqueProductIds.forEach(pId => {
+                    productRefsMap.set(pId, doc(db, `users/${uid}/products`, pId));
+                  });
+
+                  const defaultAccountId = sale.accountId || accounts[0]?.id || "acc1";
+                  const accountRef = doc(db, `users/${uid}/accounts`, defaultAccountId);
+
+                  // 2. Perform all READS first
+                  const productDocsMap = new Map();
+                  for (const [pId, ref] of productRefsMap.entries()) {
+                    productDocsMap.set(pId, await transaction.get(ref));
+                  }
+
+                  let accountDoc = null;
+                  if (sale.paymentStatus === PaymentStatus.PAID) {
+                    accountDoc = await transaction.get(accountRef);
+                  }
+
+                  // 3. Perform all WRITES after reads
+                  
+                  // A. Update Sale Status
                   const updatedSale = { 
                     ...sale, 
                     status: SaleStatus.SALE,
@@ -1485,12 +1508,11 @@ export default function App() {
 
                   transaction.set(saleRef, updatedSale);
 
-                  // 2. Deduct Inventory
+                  // B. Deduct Inventory
                   for (const item of sale.items) {
-                    const productRef = doc(db, `users/${uid}/products`, item.productId);
-                    const productDoc = await transaction.get(productRef);
+                    const productDoc = productDocsMap.get(item.productId);
                     
-                    if (productDoc.exists()) {
+                    if (productDoc && productDoc.exists()) {
                       const productData = productDoc.data() as Product;
                       const variations = [...productData.variations];
                       const variationIndex = variations.findIndex(v => v.id === item.variationId);
@@ -1502,18 +1524,14 @@ export default function App() {
                         if (variation.stock[key] !== undefined) {
                           variation.stock[key] = Math.max(0, variation.stock[key] - item.quantity);
                           variations[variationIndex] = variation;
-                          transaction.update(productRef, { variations });
+                          transaction.update(productRefsMap.get(item.productId), { variations });
                         }
                       }
                     }
                   }
 
-                  // 3. Handle Financials if PAID
+                  // C. Handle Financials if PAID
                   if (updatedSale.paymentStatus === PaymentStatus.PAID) {
-                    const defaultAccountId = sale.accountId || accounts[0]?.id || "acc1";
-                    const accountRef = doc(db, `users/${uid}/accounts`, defaultAccountId);
-                    const accountDoc = await transaction.get(accountRef);
-
                     // Create Transaction
                     const transactionRef = doc(collection(db, `users/${uid}/transactions`));
                     const newTransaction: Transaction = {
@@ -1532,7 +1550,7 @@ export default function App() {
                     transaction.set(transactionRef, newTransaction);
 
                     // Update Account Balance
-                    if (accountDoc.exists()) {
+                    if (accountDoc && accountDoc.exists()) {
                       const accountData = accountDoc.data() as Account;
                       transaction.update(accountRef, { balance: accountData.balance + sale.total });
                     }

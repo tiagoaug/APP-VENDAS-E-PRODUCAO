@@ -50,7 +50,6 @@ export default function SalesView({
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
   const [selectedStatuses, setSelectedStatuses] = useState<SaleStatus[]>([SaleStatus.SALE, SaleStatus.QUOTE]);
   const [showFilters, setShowFilters] = useState(false);
-  const [showOptionsId, setShowOptionsId] = useState<string | null>(null);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [paymentModalSale, setPaymentModalSale] = useState<Sale | null>(null);
   const [paymentModalMode, setPaymentModalMode] = useState<'PAYMENT' | 'HISTORY'>('PAYMENT');
@@ -506,35 +505,22 @@ export default function SalesView({
                     </button>
 
                     {/* More Options Button */}
+                    {/* Delete Button */}
                     <button 
-                      onClick={(e) => { e.stopPropagation(); setShowOptionsId(showOptionsId === sale.id ? null : sale.id); }}
-                      className={`w-10 h-10 flex items-center justify-center rounded-full shadow-sm transition-all active:scale-90 ${showOptionsId === sale.id ? 'bg-slate-900 text-white' : 'bg-white dark:bg-slate-700 text-slate-400'}`}
-                      title="Mais"
+                      onClick={(e) => { e.stopPropagation(); setSaleToDelete(sale.id); }}
+                      className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-rose-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
+                      title="Excluir Registro"
                     >
-                      <MoreVertical size={18} />
+                      <Trash2 size={18} />
                     </button>
 
-                    {/* Context Menu for More Options */}
-                    {showOptionsId === sale.id && (
-                      <div className="absolute right-0 bottom-full mb-3 z-50 min-w-[180px] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
-                        <div className="p-3 border-b border-slate-50 dark:border-slate-700/50">
-                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Ações Extra</p>
-                        </div>
-                        <div className="p-1.5">
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setSaleToDelete(sale.id); setShowOptionsId(null); }}
-                            className="w-full flex items-center gap-2.5 p-3 text-left text-[10px] font-black uppercase text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all"
-                          >
-                            <Trash2 size={14} /> Excluir Registro
-                          </button>
-                        </div>
-                      </div>
-                    )}
+
                   </div>
                 </div>
 
                 {/* Confirm Quote Button - Prominent New Line */}
                 {sale.status === SaleStatus.QUOTE && (
+
                   <button 
                     onClick={(e) => { e.stopPropagation(); if(confirm('Deseja confirmar este orçamento como venda? (Isso abaterá o estoque)')) onConvert(sale.id); }}
                     className="w-full py-4 flex items-center justify-center bg-emerald-600 text-white rounded-2xl shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:bg-emerald-700 transition-all active:scale-95 font-black uppercase text-[10px] tracking-widest gap-3"
