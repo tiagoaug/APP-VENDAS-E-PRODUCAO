@@ -367,8 +367,8 @@ export default function SalesView({
               </div>
 
               {/* Content Row: Items Preview & Large Price */}
-              <div className="flex justify-between items-start z-10 gap-4">
-                {/* Items List (Left) */}
+              <div className={`flex ${sale.status === SaleStatus.QUOTE ? 'flex-col' : 'justify-between items-start'} z-10 gap-4`}>
+                {/* Items List (Left/Top) */}
                 <div 
                   onClick={() => setSelectedSale(sale)}
                   className="flex-1 flex flex-col gap-3 cursor-pointer min-w-0"
@@ -397,150 +397,153 @@ export default function SalesView({
                   )}
                 </div>
 
-                {/* Price Display (Right) */}
-                 <div className="flex flex-col items-end shrink-0 justify-end min-w-[90px]">
-                    {remaining > 0 && sale.status === SaleStatus.SALE && (
-                       <p className="text-[8.5px] font-black text-rose-500 uppercase mb-1 whitespace-nowrap tracking-tight">Saldo R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                {/* Price Display (Right/Bottom) */}
+                <div className={`flex flex-col ${sale.status === SaleStatus.QUOTE ? 'w-full pt-4 border-t border-slate-50 dark:border-slate-800/40 mt-2' : 'items-end shrink-0 justify-end min-w-[90px]'}`}>
+                  <div className={`flex ${sale.status === SaleStatus.QUOTE ? 'justify-between items-center w-full' : 'flex-col items-end'}`}>
+                    {sale.status === SaleStatus.QUOTE && (
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Total do Orçamento</span>
                     )}
-                    <p className={`text-[15px] font-black leading-tight whitespace-nowrap tracking-tight ${sale.status === SaleStatus.CANCELLED ? 'text-slate-400' : 'text-slate-900 dark:text-white'}`}>
-                       R$ {sale.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                   <div className="flex gap-1 mt-2">
-                      {Array.from(new Set(sale.items.map(i => i.saleType))).map((type, idx) => (
-                        <span key={idx} className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md leading-none tracking-widest ${type === SaleType.WHOLESALE ? 'bg-amber-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}>
-                          {type === SaleType.WHOLESALE ? 'AT' : 'VR'}
-                        </span>
-                      ))}
-                   </div>
+                    <div>
+                      {remaining > 0 && sale.status === SaleStatus.SALE && (
+                        <p className="text-[8.5px] font-black text-rose-500 uppercase mb-1 whitespace-nowrap tracking-tight">Saldo R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                      )}
+                      <p className={`${sale.status === SaleStatus.QUOTE ? 'text-[19px]' : 'text-[15px]'} font-black leading-tight whitespace-nowrap tracking-tight ${sale.status === SaleStatus.CANCELLED ? 'text-slate-400' : 'text-slate-900 dark:text-white'}`}>
+                        R$ {sale.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className={`flex gap-1 mt-2 ${sale.status === SaleStatus.QUOTE ? 'justify-start' : 'justify-end'}`}>
+                    {Array.from(new Set(sale.items.map(i => i.saleType))).map((type, idx) => (
+                      <span key={idx} className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md leading-none tracking-widest ${type === SaleType.WHOLESALE ? 'bg-amber-500 text-white shadow-sm' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'}`}>
+                        {type === SaleType.WHOLESALE ? 'AT' : 'VR'}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               </div>
 
               {/* Action Bar (Footer) */}
-              <div className="flex justify-between items-center pt-4 border-t border-slate-100 dark:border-slate-800/50 z-10">
-                <div className="flex items-center">
-                  {/* Note Modal Toggle */}
-                  {sale.notes && (
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setNoteModal({ isOpen: true, note: sale.notes || "" });
-                      }}
-                      className="w-12 h-12 flex items-center justify-center rounded-full transition-all active:scale-90 relative bg-[#fffbeb] text-rose-500 shadow-xl shadow-rose-100 dark:bg-rose-950/20 dark:text-rose-400 dark:shadow-none"
-                    >
-                      <Lightbulb size={24} strokeWidth={2.5} className="animate-pulse-lamp" />
-                      <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-rose-500 border-2 border-white dark:border-slate-900 rounded-full" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Actions Group (Floating Island) */}
-                <div className="flex items-center gap-1.5 p-1.5 rounded-full bg-slate-50/80 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 shadow-sm backdrop-blur-md relative">
-                  {/* Copy Button */}
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); handleCopyMessage(sale); }}
-                    className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-purple-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
-                    title="Copiar Texto"
-                  >
-                    <Copy size={18} />
-                  </button>
-
-                  {/* WhatsApp Button */}
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); handleShareWhatsApp(sale); }}
-                    disabled={!people.find(p => p.id === sale.customerId)?.phone}
-                    className={`w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90 ${
-                      !people.find(p => p.id === sale.customerId)?.phone 
-                        ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' 
-                        : 'text-emerald-500'
-                    }`}
-                    title={people.find(p => p.id === sale.customerId)?.phone ? "WhatsApp" : "Telefone não cadastrado"}
-                  >
-                    <MessageSquare size={18} />
-                  </button>
-
-                  {/* Dynamic Action: Payment/History or Convert */}
-                  {sale.status === SaleStatus.QUOTE ? (
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); onConvert(sale.id); }}
-                      className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-indigo-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
-                      title="Confirmar Venda"
-                    >
-                      <CheckCircle2 size={18} />
-                    </button>
-                  ) : (
-                    totalPaid >= sale.total ? (
+              <div className="flex flex-col gap-4 pt-4 border-t border-slate-100 dark:border-slate-800/50 z-10">
+                <div className="flex justify-between items-center w-full">
+                  <div className="flex items-center">
+                    {/* Note Modal Toggle */}
+                    {sale.notes && (
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
-                          setPaymentModalMode('HISTORY');
-                          setPaymentModalSale(sale);
+                          setNoteModal({ isOpen: true, note: sale.notes || "" });
                         }}
-                        className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-amber-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
-                        title="Histórico"
+                        className="w-12 h-12 flex items-center justify-center rounded-full transition-all active:scale-90 relative bg-[#fffbeb] text-rose-500 shadow-xl shadow-rose-100 dark:bg-rose-950/20 dark:text-rose-400 dark:shadow-none"
                       >
-                        <RotateCcw size={18} />
+                        <Lightbulb size={24} strokeWidth={2.5} className="animate-pulse-lamp" />
+                        <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-rose-500 border-2 border-white dark:border-slate-900 rounded-full" />
                       </button>
-                    ) : (
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPaymentModalMode('PAYMENT');
-                          setPaymentModalSale(sale);
-                        }}
-                        className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-emerald-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
-                        title="Pagamento"
-                      >
-                        <DollarSign size={18} />
-                      </button>
-                    )
-                  )}
+                    )}
+                  </div>
 
-                  {/* Confirm Quote Button */}
-                  {sale.status === SaleStatus.QUOTE && (
+                  {/* Actions Group (Floating Island) */}
+                  <div className="flex items-center gap-1.5 p-1.5 rounded-full bg-slate-50/80 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 shadow-sm backdrop-blur-md relative">
+                    {/* Copy Button */}
                     <button 
-                      onClick={(e) => { e.stopPropagation(); if(confirm('Deseja confirmar este orçamento como venda? (Isso abaterá o estoque)')) onConvert(sale.id); }}
-                      className="px-4 h-10 flex items-center justify-center bg-emerald-600 text-white rounded-full shadow-lg shadow-emerald-500/20 hover:shadow-xl transition-all active:scale-90 font-black uppercase text-[8px] tracking-widest gap-2"
-                      title="Confirmar como Venda"
+                      onClick={(e) => { e.stopPropagation(); handleCopyMessage(sale); }}
+                      className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-purple-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
+                      title="Copiar Texto"
                     >
-                      <CheckCircle2 size={14} strokeWidth={3} /> CONFIRMAR COMO VENDA
+                      <Copy size={18} />
                     </button>
-                  )}
 
-                  {/* Edit Button */}
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); onEdit(sale); }}
-                    className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-blue-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
-                    title="Editar"
-                  >
-                    <Edit2 size={18} />
-                  </button>
+                    {/* WhatsApp Button */}
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); handleShareWhatsApp(sale); }}
+                      disabled={!people.find(p => p.id === sale.customerId)?.phone}
+                      className={`w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90 ${
+                        !people.find(p => p.id === sale.customerId)?.phone 
+                          ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' 
+                          : 'text-emerald-500'
+                      }`}
+                      title={people.find(p => p.id === sale.customerId)?.phone ? "WhatsApp" : "Telefone não cadastrado"}
+                    >
+                      <MessageSquare size={18} />
+                    </button>
 
-                  {/* More Options Button */}
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); setShowOptionsId(showOptionsId === sale.id ? null : sale.id); }}
-                    className={`w-10 h-10 flex items-center justify-center rounded-full shadow-sm transition-all active:scale-90 ${showOptionsId === sale.id ? 'bg-slate-900 text-white' : 'bg-white dark:bg-slate-700 text-slate-400'}`}
-                    title="Mais"
-                  >
-                    <MoreVertical size={18} />
-                  </button>
-
-                  {/* Context Menu for More Options */}
-                  {showOptionsId === sale.id && (
-                    <div className="absolute right-0 bottom-full mb-3 z-50 min-w-[180px] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
-                      <div className="p-3 border-b border-slate-50 dark:border-slate-700/50">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Ações Extra</p>
-                      </div>
-                      <div className="p-1.5">
+                    {/* Dynamic Action: Payment/History */}
+                    {sale.status !== SaleStatus.QUOTE && (
+                      totalPaid >= sale.total ? (
                         <button 
-                          onClick={(e) => { e.stopPropagation(); setSaleToDelete(sale.id); setShowOptionsId(null); }}
-                          className="w-full flex items-center gap-2.5 p-3 text-left text-[10px] font-black uppercase text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPaymentModalMode('HISTORY');
+                            setPaymentModalSale(sale);
+                          }}
+                          className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-amber-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
+                          title="Histórico"
                         >
-                          <Trash2 size={14} /> Excluir Registro
+                          <RotateCcw size={18} />
                         </button>
+                      ) : (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPaymentModalMode('PAYMENT');
+                            setPaymentModalSale(sale);
+                          }}
+                          className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-emerald-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
+                          title="Pagamento"
+                        >
+                          <DollarSign size={18} />
+                        </button>
+                      )
+                    )}
+
+                    {/* Edit Button */}
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onEdit(sale); }}
+                      className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-blue-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
+                      title="Editar"
+                    >
+                      <Edit2 size={18} />
+                    </button>
+
+                    {/* More Options Button */}
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); setShowOptionsId(showOptionsId === sale.id ? null : sale.id); }}
+                      className={`w-10 h-10 flex items-center justify-center rounded-full shadow-sm transition-all active:scale-90 ${showOptionsId === sale.id ? 'bg-slate-900 text-white' : 'bg-white dark:bg-slate-700 text-slate-400'}`}
+                      title="Mais"
+                    >
+                      <MoreVertical size={18} />
+                    </button>
+
+                    {/* Context Menu for More Options */}
+                    {showOptionsId === sale.id && (
+                      <div className="absolute right-0 bottom-full mb-3 z-50 min-w-[180px] bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700 overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
+                        <div className="p-3 border-b border-slate-50 dark:border-slate-700/50">
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Ações Extra</p>
+                        </div>
+                        <div className="p-1.5">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setSaleToDelete(sale.id); setShowOptionsId(null); }}
+                            className="w-full flex items-center gap-2.5 p-3 text-left text-[10px] font-black uppercase text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-xl transition-all"
+                          >
+                            <Trash2 size={14} /> Excluir Registro
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
+
+                {/* Confirm Quote Button - Prominent New Line */}
+                {sale.status === SaleStatus.QUOTE && (
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); if(confirm('Deseja confirmar este orçamento como venda? (Isso abaterá o estoque)')) onConvert(sale.id); }}
+                    className="w-full py-4 flex items-center justify-center bg-emerald-600 text-white rounded-2xl shadow-lg shadow-emerald-500/20 hover:shadow-xl hover:bg-emerald-700 transition-all active:scale-95 font-black uppercase text-[10px] tracking-widest gap-3"
+                    title="Confirmar como Venda"
+                  >
+                    <CheckCircle2 size={18} strokeWidth={3} /> 
+                    CONFIRMAR COMO VENDA
+                  </button>
+                )}
               </div>
 
               {/* Subtle background decoration */}
