@@ -303,6 +303,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
       <div className="flex items-center gap-4 mb-4">
         <button 
           onClick={onBack}
+          title="Voltar"
           className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
         >
           <ArrowLeft size={20} />
@@ -520,6 +521,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                   <span className="text-sm font-black text-slate-400 uppercase">kg</span>
                   <button
                     onClick={() => setShowCalculator(true)}
+                    title="Abrir Calculadora de Peso"
                     className={`p-2 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
                   >
                     <CalcIcon size={18} />
@@ -776,6 +778,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                         )}
                         <button
                           onClick={() => handleDeleteRecord(record.id)}
+                          title="Excluir Registro de Pesagem"
                           className="p-2 rounded-lg text-slate-400 hover:text-red-500 transition-colors"
                         >
                           <Trash2 size={14} />

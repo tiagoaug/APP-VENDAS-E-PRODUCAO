@@ -41,6 +41,7 @@ export default function ReportDetailedView({
   const [selectedPersonId, setSelectedPersonId] = useState('');
   const [messageFormat, setMessageFormat] = useState<'SUMMARY' | 'COMPLETE'>('COMPLETE');
   const [isConsolidatedModalOpen, setIsConsolidatedModalOpen] = useState(false);
+  const [relationshipStatusFilter, setRelationshipStatusFilter] = useState<'BOTH' | 'PENDING' | 'COMPLETED'>('BOTH');
 
   
   const suppliers = useMemo(() => people.filter(p => p.isSupplier), [people]);
@@ -245,8 +246,8 @@ export default function ReportDetailedView({
   const relationshipData = useMemo(() => {
     if (reportId !== 'relacionamento-cliente') return [];
     return sales
-      .filter(s => 
-        s.status === SaleStatus.SALE && 
+      .filter(s =>
+        s.status === SaleStatus.SALE &&
         filterByDateRange(s.date) &&
         (selectedPersonId === '' || s.customerId === selectedPersonId)
       )
@@ -258,8 +259,13 @@ export default function ReportDetailedView({
           balance: s.total - totalPaid
         };
       })
+      .filter(s => {
+        if (relationshipStatusFilter === 'PENDING') return s.balance > 0;
+        if (relationshipStatusFilter === 'COMPLETED') return s.balance <= 0;
+        return true;
+      })
       .sort((a, b) => b.date - a.date);
-  }, [sales, reportId, startDate, endDate, selectedPersonId]);
+  }, [sales, reportId, startDate, endDate, selectedPersonId, relationshipStatusFilter]);
 
   const getSaleMessage = (sale: any, formatType: 'SUMMARY' | 'COMPLETE') => {
     let msg = `*Venda #${sale.orderNumber || sale.id.substring(0, 4)}*\n`;
@@ -278,6 +284,7 @@ export default function ReportDetailedView({
     }
     return msg;
   };
+
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -473,8 +480,32 @@ export default function ReportDetailedView({
                 )}
                 {reportId === 'relacionamento-cliente' && (
                     <div className="flex flex-col gap-4 w-full mt-2">
+                        {/* Status filter */}
+                        <div className={`flex gap-1 p-1 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+                          {([
+                            { id: 'BOTH' as const, label: 'Ambos' },
+                            { id: 'PENDING' as const, label: 'Pendentes' },
+                            { id: 'COMPLETED' as const, label: 'Concluídos' },
+                          ]).map(opt => (
+                            <button
+                              type="button"
+                              key={opt.id}
+                              onClick={() => setRelationshipStatusFilter(opt.id)}
+                              className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                relationshipStatusFilter === opt.id
+                                  ? opt.id === 'PENDING' ? 'bg-rose-500 text-white shadow-md'
+                                    : opt.id === 'COMPLETED' ? 'bg-emerald-500 text-white shadow-md'
+                                    : 'bg-indigo-600 text-white shadow-md'
+                                  : isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+
                         <div className="flex-[2] min-w-[200px]">
-                            <ComboBox 
+                            <ComboBox
                                 options={customers}
                                 value={selectedPersonId}
                                 onChange={(id) => setSelectedPersonId(id)}
@@ -510,6 +541,7 @@ export default function ReportDetailedView({
                         </div>
 
                         <button
+                            type="button"
                             onClick={() => setIsConsolidatedModalOpen(true)}
                             disabled={!selectedPersonId || relationshipData.length === 0}
                             className={`w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg transition-all ${
@@ -520,6 +552,7 @@ export default function ReportDetailedView({
                         >
                             Gerar Mens. Consolidada
                         </button>
+
                     </div>
                 )}
                 {reportId === 'dividas-fornecedor' && (
@@ -829,17 +862,19 @@ export default function ReportDetailedView({
                 </div>
             )}
 
-            <ConsolidatedMessageModal 
+            <ConsolidatedMessageModal
                 isOpen={isConsolidatedModalOpen}
                 onClose={() => setIsConsolidatedModalOpen(false)}
                 customer={people.find(p => p.id === selectedPersonId)}
                 sales={relationshipData}
                 isDarkMode={isDarkMode}
                 formatType={messageFormat}
+                products={products}
             />
 
         </div>
       </div>
+
     </div>
   );
 }

@@ -49,7 +49,7 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
         {/* Filters */}
         <div className={`p-2 rounded-2xl border flex items-center gap-3 overflow-x-auto no-scrollbar ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
           <div className={`p-2.5 rounded-xl shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-500'}`}>
-            <Filter size={16} />
+            <Filter size={19} />
           </div>
           <div className="flex items-center gap-1 pr-4">
             {[
@@ -89,7 +89,7 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
                         : 'bg-transparent border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50'
                   }`}
                 >
-                  <Icon size={12} className={iconClasses} />
+                  <Icon size={14} className={iconClasses} />
                   {filter.label}
                 </button>
               );
@@ -116,7 +116,7 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
                             ? 'bg-amber-500/10 border-amber-500/20 text-amber-500'
                             : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-500'
                     }`}>
-                      {grid.type === GridType.SOLADO ? <Footprints size={10} /> : grid.type === GridType.FACA ? <Scissors size={10} /> : grid.type === GridType.EMBALAGEM ? <Box size={10} /> : <Target size={10} />}
+                      {grid.type === GridType.SOLADO ? <Footprints size={12} /> : grid.type === GridType.FACA ? <Scissors size={12} /> : grid.type === GridType.EMBALAGEM ? <Box size={12} /> : <Target size={12} />}
                       <span className="text-[8px] font-black uppercase tracking-widest">
                         {grid.type === GridType.SOLADO ? 'Solado' : grid.type === GridType.FACA ? 'Faca' : grid.type === GridType.EMBALAGEM ? 'Emb.' : 'Forma'}
                       </span>
@@ -129,10 +129,10 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
               </div>
               <div className="flex gap-1">
                 <button title="Editar Grade" onClick={() => { setEditingGrid(grid); setIsModalOpen(true); }} className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-500 hover:text-white hover:bg-slate-800' : 'text-slate-300 hover:text-indigo-600 hover:bg-slate-50'}`}>
-                  <Edit size={18} />
+                  <Edit size={20} />
                 </button>
                 <button title="Excluir Grade" onClick={() => onDelete(grid.id)} className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-500 hover:text-rose-400 hover:bg-slate-800' : 'text-slate-300 hover:text-rose-500 hover:bg-slate-50'}`}>
-                  <Trash2 size={18} />
+                  <Trash2 size={20} />
                 </button>
               </div>
             </div>

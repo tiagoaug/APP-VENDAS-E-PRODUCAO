@@ -16,9 +16,9 @@ export const sharePDF = async (doc: jsPDF, filename: string) => {
     doc.save(filename);
   } else {
     try {
-      // Get PDF as base64 string
-      const pdfOutput = doc.output('arraybuffer');
-      const base64 = arrayBufferToBase64(pdfOutput);
+      // Use native datauristring and strip prefix for better compatibility
+      const dataUri = doc.output('datauristring');
+      const base64 = dataUri.split('base64,')[1];
 
       // Save to cache directory
       const result = await Filesystem.writeFile({
@@ -35,25 +35,49 @@ export const sharePDF = async (doc: jsPDF, filename: string) => {
       });
     } catch (error) {
       console.error('Error sharing PDF:', error);
-      // Fallback for some mobile browsers that might fail
+      // Fallback for some mobile browsers
       try {
-          doc.save(filename);
+        doc.save(filename);
       } catch (e) {
-          alert('Erro ao compartilhar PDF. Tente novamente.');
+        alert('Erro ao compartilhar PDF. Tente novamente.');
       }
     }
   }
 };
 
 /**
- * Helper to convert ArrayBuffer to Base64
+ * Shares a base64 image using native share on mobile or downloads it on web.
  */
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  const len = bytes.byteLength;
-  for (let i = 0; i < len; i++) {
-    binary += String.fromCharCode(bytes[i]);
+export const shareImage = async (base64: string, filename: string) => {
+  if (!filename.toLowerCase().endsWith('.jpg') && !filename.toLowerCase().endsWith('.jpeg')) {
+    filename += '.jpg';
   }
-  return window.btoa(binary);
-}
+
+  if (Capacitor.getPlatform() === 'web') {
+    const link = document.createElement('a');
+    link.href = base64;
+    link.download = filename;
+    link.click();
+  } else {
+    try {
+      // Data is usually "data:image/jpeg;base64,..."
+      const base64Data = base64.includes('base64,') ? base64.split('base64,')[1] : base64;
+
+      const result = await Filesystem.writeFile({
+        path: filename,
+        data: base64Data,
+        directory: Directory.Cache,
+      });
+
+      await Share.share({
+        title: filename,
+        text: 'Imagem gerada pelo App Vendas e Produção',
+        url: result.uri,
+      });
+    } catch (error) {
+      console.error('Error sharing image:', error);
+      alert('Erro ao compartilhar imagem. Tente novamente.');
+    }
+  }
+};
+

@@ -277,7 +277,7 @@ export default function FinancialView({
         {accounts.length === 0 && (
           <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 rounded-2xl flex items-center gap-3">
              <AlertCircle className="text-amber-500" size={20} />
-             <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-widest leading-normal">
+             <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 tracking-widest leading-normal">
                Nenhuma conta bancária encontrada. Crie uma conta em "Contas" para gerenciar saldos.
              </p>
           </div>
@@ -285,7 +285,7 @@ export default function FinancialView({
 
         {/* Summary Cards */}
         <div className="grid grid-cols-1 gap-3">
-          <div className={`p-6 rounded-[2.5rem] border shadow-sm relative group ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-indigo-600 border-indigo-500 text-white shadow-indigo-200'}`}>
+          <div className={`p-6 rounded-[2.5rem] border shadow-sm relative group ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-gradient-to-br from-sky-100 via-blue-100 to-sky-200 border-sky-200 text-sky-900 shadow-sky-100'}`}>
              <div className="absolute top-6 right-6 flex flex-col items-end gap-3 text-right">
                 <div className="flex gap-2">
                    <button 
@@ -306,23 +306,23 @@ export default function FinancialView({
                 
                 <button 
                   onClick={() => setIsQueryModalOpen(true)}
-                  className={`flex flex-col items-center justify-center gap-1 p-2 rounded-2xl transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-indigo-400 border border-slate-700' : 'bg-white/20 text-white backdrop-blur-md border border-white/30 shadow-sky-900/10 shadow-sm'}`}
+                  className={`flex flex-col items-center justify-center gap-1 p-2 rounded-2xl transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-indigo-400 border border-slate-700' : 'bg-white/60 text-sky-700 backdrop-blur-md border border-sky-200 shadow-sm'}`}
                 >
                   <ClipboardCheck size={22} strokeWidth={2.5} />
-                  <span className="text-[7px] font-black uppercase tracking-[0.1em]">Consultas</span>
+                  <span className="text-[7px] font-black tracking-[0.1em]">Consultas</span>
                 </button>
              </div>
-             <p className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-indigo-100'}`}>Saldo Confirmado</p>
-             <h2 className={`text-3xl font-black mt-2 tracking-tighter ${isDarkMode ? 'text-white' : 'text-white'}`}>R$ {stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
+             <p className={`text-[10px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Saldo Confirmado</p>
+             <h2 className={`text-3xl font-black mt-2 tracking-tighter ${isDarkMode ? 'text-white' : 'text-sky-900'}`}>R$ {stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
              
              <div className="flex gap-4 mt-6">
                 <div className="flex-1">
-                   <p className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-indigo-200'}`}>Receitas</p>
-                   <p className="text-sm font-bold text-emerald-400">R$ {stats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                   <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Receitas</p>
+                   <p className={`text-sm font-bold ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>R$ {stats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
                 <div className="flex-1">
-                   <p className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-indigo-200'}`}>Despesas</p>
-                   <p className="text-sm font-bold text-rose-400">R$ {stats.expenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                   <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Despesas</p>
+                   <p className={`text-sm font-bold ${isDarkMode ? 'text-rose-400' : 'text-rose-500'}`}>R$ {stats.expenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </div>
              </div>
           </div>
@@ -333,25 +333,25 @@ export default function FinancialView({
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
             <button 
               onClick={() => setFilterType('ALL')}
-              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${filterType === 'ALL' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all whitespace-nowrap ${filterType === 'ALL' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}
             >
               Tudo
             </button>
             <button 
               onClick={() => setFilterType(TransactionType.INCOME)}
-              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${filterType === TransactionType.INCOME ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all whitespace-nowrap ${filterType === TransactionType.INCOME ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}
             >
               Entradas
             </button>
             <button 
               onClick={() => setFilterType(TransactionType.EXPENSE)}
-              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${filterType === TransactionType.EXPENSE ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-500'}`}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all whitespace-nowrap ${filterType === TransactionType.EXPENSE ? 'bg-rose-500 text-white' : 'bg-slate-100 text-slate-500'}`}
             >
               Saídas
             </button>
             <button 
               onClick={() => setFilterType('PAYABLE')}
-              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 whitespace-nowrap ${filterType === 'PAYABLE' ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600'}`}
+              className={`px-4 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all flex items-center gap-2 whitespace-nowrap ${filterType === 'PAYABLE' ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600'}`}
             >
               A Pagar
               {payableCount > 0 && (
@@ -368,7 +368,7 @@ export default function FinancialView({
               <input 
                 type="text" 
                 placeholder="Buscar lançamento..."
-                className={`w-full border rounded-2xl py-3 pl-11 pr-4 text-xs font-bold uppercase tracking-tight focus:outline-none focus:ring-4 focus:ring-indigo-500/5 dark:focus:ring-indigo-500/10 placeholder:text-slate-400 text-slate-800 dark:text-slate-100 shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}`}
+                className={`w-full border rounded-2xl py-3 pl-11 pr-4 text-xs font-bold tracking-tight focus:outline-none focus:ring-4 focus:ring-indigo-500/5 dark:focus:ring-indigo-500/10 placeholder:text-slate-400 text-slate-800 dark:text-slate-100 shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}`}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
@@ -405,12 +405,12 @@ export default function FinancialView({
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                             <h3 className={`font-black text-xs uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                             <h3 className={`font-black text-xs tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                                 {purchase.type === PurchaseType.REPLENISHMENT ? 'Abastecimento de Estoque' : 'Compra Geral'}
                              </h3>
-                             {totalPaid > 0 && <span className="text-[8px] font-black uppercase px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-500">Parcial</span>}
+                             {totalPaid > 0 && <span className="text-[8px] font-black px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-500">Parcial</span>}
                           </div>
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-bold text-slate-400 tracking-widest mt-0.5">
                             <span className="flex items-center gap-1"><User size={10} /> {supplier?.name || 'Fornecedor Desconhecido'}</span>
                             <span className="flex items-center gap-1"><Hash size={10} /> ID: {purchase.batchNumber || purchase.id.slice(-6).toUpperCase()}</span>
                           </div>
@@ -421,11 +421,11 @@ export default function FinancialView({
                           R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
                         {totalPaid > 0 ? (
-                           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 line-through">
+                           <p className="text-[9px] font-bold text-slate-400 tracking-widest mt-1 line-through">
                              Total: R$ {purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                            </p>
                         ) : (
-                          <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest mt-1 ${isLate ? 'bg-rose-50 text-rose-500' : 'bg-amber-50 text-amber-500'}`}>
+                          <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black tracking-widest mt-1 ${isLate ? 'bg-rose-50 text-rose-500' : 'bg-amber-50 text-amber-500'}`}>
                             {isLate ? <AlertCircle size={10} /> : <Clock size={10} />}
                             {isLate ? 'Vencido' : 'Pendente'}
                           </div>
@@ -437,13 +437,13 @@ export default function FinancialView({
                       <div className="flex items-center justify-between">
                         <div className="flex flex-wrap items-center gap-4">
                           {purchase.dueDate && (
-                            <span className={`text-[9px] font-bold uppercase tracking-widest flex items-center gap-1 ${isLate ? 'text-rose-500' : 'text-slate-400'}`}>
+                            <span className={`text-[9px] font-bold tracking-widest flex items-center gap-1 ${isLate ? 'text-rose-500' : 'text-slate-400'}`}>
                               <Calendar size={10} />
                               Vence em: {format(purchase.dueDate, "dd/MM/yyyy")}
                             </span>
                           )}
                           {totalPaid > 0 && (
-                            <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100">
+                            <span className="text-[9px] font-black tracking-widest px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100">
                                PAGO: R$ {totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </span>
                           )}
@@ -451,7 +451,7 @@ export default function FinancialView({
                         
                         <button 
                            onClick={() => handlePartialPayment(purchase, 'PAYMENT')}
-                           className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest shadow-xl shadow-indigo-100 active:scale-95 transition-all translate-y-[-4px]"
+                           className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-indigo-600 text-white text-[10px] font-black tracking-widest shadow-xl shadow-indigo-100 active:scale-95 transition-all translate-y-[-4px]"
                         >
                           <DollarSign size={16} strokeWidth={3} />
                           Fazer Pagamento
@@ -462,14 +462,14 @@ export default function FinancialView({
                       <div className="flex items-center gap-2">
                         <button 
                           onClick={() => handlePartialPayment(purchase, 'HISTORY')}
-                          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-[9px] font-black uppercase tracking-[0.2em] transition-all hover:bg-slate-50 dark:hover:bg-slate-800 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-100 text-slate-500'}`}
+                          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-[9px] font-black tracking-[0.2em] transition-all hover:bg-slate-50 dark:hover:bg-slate-800 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-100 text-slate-500'}`}
                         >
                           <History size={14} />
                           Ver Histórico
                         </button>
                         <button 
                           onClick={() => copyHistory(purchase)}
-                          className={`px-4 py-2.5 rounded-xl border flex items-center justify-center gap-2 text-[9px] font-black uppercase tracking-[0.2em] transition-all ${isDarkMode ? 'bg-emerald-950/20 border-emerald-900/50 text-emerald-400 hover:bg-emerald-900/30' : 'bg-emerald-50 border-emerald-100 text-emerald-600 hover:bg-emerald-100'}`}
+                          className={`px-4 py-2.5 rounded-xl border flex items-center justify-center gap-2 text-[9px] font-black tracking-[0.2em] transition-all ${isDarkMode ? 'bg-emerald-950/20 border-emerald-900/50 text-emerald-400 hover:bg-emerald-900/30' : 'bg-emerald-50 border-emerald-100 text-emerald-600 hover:bg-emerald-100'}`}
                           title="Copiar Histórico de Pagamentos"
                         >
                           <Clipboard size={14} />
@@ -495,14 +495,14 @@ export default function FinancialView({
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <h3 className={`font-black text-xs uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                        <h3 className={`font-black text-xs tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                           {transaction.description}
                         </h3>
                         {transaction.relatedId && sales.find(s => s.id === transaction.relatedId) && (
-                           <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 text-[7px] font-black uppercase tracking-widest">VENDA</span>
+                           <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 text-[7px] font-black tracking-widest">Venda</span>
                         )}
                         {transaction.relatedId && purchases.find(p => p.id === transaction.relatedId) && (
-                           <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 text-[7px] font-black uppercase tracking-widest">COMPRA</span>
+                           <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 text-[7px] font-black tracking-widest">Compra</span>
                         )}
                       </div>
 
@@ -514,11 +514,11 @@ export default function FinancialView({
                             <div className="mt-1.5 space-y-1">
                               <div className="flex items-center gap-1.5">
                                 <User size={10} className="text-indigo-400" />
-                                <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">
+                                <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 tracking-widest">
                                   {sale.customerName || people.find(p => p.id === sale.customerId)?.name || 'Consumidor'}
                                 </span>
                               </div>
-                              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[8px] font-bold text-slate-400 uppercase tracking-widest">
+                              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[8px] font-bold text-slate-400 tracking-widest">
                                 <span className="flex items-center gap-1">
                                   <Clipboard size={10} />
                                   Pedido #{sale.orderNumber}
@@ -549,12 +549,12 @@ export default function FinancialView({
                           return (
                             <div className="mt-1.5 space-y-1">
                               <div className="flex items-center gap-1.5">
-                                <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">
+                                <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 tracking-widest">
                                   {supplier?.name || 'Fornecedor'}
                                 </span>
                               </div>
                               {purchase.notes && (
-                                <p className="text-[8px] font-bold text-slate-400 uppercase truncate max-w-[200px]">
+                                <p className="text-[8px] font-bold text-slate-400 truncate max-w-[200px]">
                                   {purchase.notes}
                                 </p>
                               )}
@@ -564,7 +564,7 @@ export default function FinancialView({
 
                         if (transaction.contactName) {
                           return (
-                            <div className="flex items-center gap-1 text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                            <div className="flex items-center gap-1 text-[9px] font-bold text-slate-400 tracking-widest mt-0.5">
                               <User size={10} /> {transaction.contactName}
                             </div>
                           );
@@ -575,7 +575,7 @@ export default function FinancialView({
                       {transaction.items && transaction.items.length > 0 && (
                         <div className="mt-3 space-y-1 pl-3 border-l-2 border-slate-100 dark:border-slate-800/50">
                           {transaction.items.map((item, idx) => (
-                            <div key={item.id || idx} className="flex justify-between items-center text-[8px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                            <div key={item.id || idx} className="flex justify-between items-center text-[8px] font-bold text-slate-500 dark:text-slate-400 tracking-widest">
                               <span className="truncate max-w-[150px]">{item.description || 'Item sem descrição'}</span>
                               <span className="shrink-0 ml-2">R$ {item.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                             </div>
@@ -588,7 +588,7 @@ export default function FinancialView({
                     <p className={`font-black text-sm tracking-tight ${transaction.type === TransactionType.INCOME ? 'text-emerald-500' : 'text-rose-500'}`}>
                       {transaction.type === TransactionType.INCOME ? '+' : '-'} R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
-                    <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest mt-1 ${isPending ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500'}`}>
+                    <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black tracking-widest mt-1 ${isPending ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500'}`}>
                       {isPending ? <Clock size={10} /> : <CheckCircle2 size={10} />}
                       {isPending ? 'Pendente' : 'Confirmado'}
                     </div>
@@ -597,11 +597,11 @@ export default function FinancialView({
 
                 <div className="flex items-center justify-between pt-4 border-t border-slate-50 dark:border-slate-800">
                   <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-[9px] text-indigo-400 dark:text-indigo-500 font-bold uppercase tracking-widest flex items-center gap-1">
+                    <span className="text-[9px] text-indigo-400 dark:text-indigo-500 font-bold tracking-widest flex items-center gap-1">
                       <Wallet size={10} />
                       {account?.name || 'Conta'}
                     </span>
-                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1">
+                    <span className="text-[9px] text-slate-400 font-bold tracking-widest flex items-center gap-1">
                       <Calendar size={10} />
                       {format(transaction.date, "dd MMM yyyy", { locale: ptBR })}
                     </span>
@@ -615,7 +615,7 @@ export default function FinancialView({
                           handleSettle(transaction);
                         }}
                         disabled={settlingId === transaction.id}
-                        className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 ${
+                        className={`flex items-center gap-2 px-4 py-3 rounded-2xl text-[10px] font-black tracking-widest shadow-xl transition-all active:scale-95 ${
                           settlingId === transaction.id 
                             ? 'bg-slate-200 text-slate-500 animate-pulse' 
                             : 'bg-emerald-500 text-white shadow-emerald-100 hover:bg-emerald-600'
@@ -669,7 +669,7 @@ export default function FinancialView({
           {filtered.length === 0 && filterType !== 'PAYABLE' && (
             <div className="text-center py-12">
               <AlertCircle size={48} className="mx-auto text-slate-100 dark:text-slate-800 mb-4" strokeWidth={1} />
-              <p className="text-xs text-slate-300 dark:text-slate-700 font-bold uppercase tracking-widest italic">Nenhuma transação encontrada</p>
+              <p className="text-xs text-slate-300 dark:text-slate-700 font-bold tracking-widest italic">Nenhuma transação encontrada</p>
             </div>
           )}
         </div>

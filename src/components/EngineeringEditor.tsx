@@ -353,6 +353,7 @@ export default function EngineeringEditor({
                 <button
                   type="button"
                   onClick={() => setShowPieceSuggestions(!showPieceSuggestions)}
+                  title={showPieceSuggestions ? "Fechar sugestões" : "Ver sugestões de peças"}
                   className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
                   <ChevronDown size={18} className={`transition-transform ${showPieceSuggestions ? 'rotate-180' : ''}`} />

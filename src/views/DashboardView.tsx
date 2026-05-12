@@ -96,9 +96,9 @@ export default function DashboardView({
 
 
   const statusMap: Record<string, { label: string, color: string }> = {
-    'PENDING': { label: 'PENDENTE', color: 'text-amber-500' },
-    'CLEARED': { label: 'LIQUIDADO', color: 'text-emerald-500' },
-    'OVERDUE': { label: 'VENCIDO', color: 'text-rose-500' }
+    'PENDING': { label: 'Pendente', color: 'text-amber-500' },
+    'CLEARED': { label: 'Liquidado', color: 'text-emerald-500' },
+    'OVERDUE': { label: 'Vencido', color: 'text-rose-500' }
   };
 
   const shareChecksPDF = async () => {
@@ -536,8 +536,8 @@ export default function DashboardView({
             return (
               <div key="sales_products" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div>
-                  <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Produtos e Catálogo</h3>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">Gestão de Vendas</p>
+                  <h3 className={`text-sm font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Produtos e Catálogo</h3>
+                  <p className="text-[10px] font-bold text-slate-400 tracking-[0.2em] mt-0.5">Gestão de Vendas</p>
                 </div>
 
                 {/* 2-column grid to prevent smashing/horizontal scroll issues */}
@@ -553,7 +553,7 @@ export default function DashboardView({
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-indigo-600 ${isDarkMode ? 'bg-indigo-900/30' : 'bg-white shadow-sm'}`}>
                       <Package size={20} />
                     </div>
-                    <span className={`text-[10px] font-black uppercase tracking-tight text-center leading-tight px-1 ${isDarkMode ? 'text-slate-200' : 'text-indigo-700'}`}>
+                    <span className={`text-[10px] font-black tracking-tight text-center leading-tight px-1 ${isDarkMode ? 'text-slate-200' : 'text-indigo-700'}`}>
                       Produtos Cadastrados
                     </span>
                   </button>
@@ -569,7 +569,7 @@ export default function DashboardView({
                     <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-emerald-600 ${isDarkMode ? 'bg-emerald-900/30' : 'bg-white shadow-sm'}`}>
                       <Plus size={20} />
                     </div>
-                    <span className={`text-[10px] font-black uppercase tracking-tight text-center leading-tight px-1 ${isDarkMode ? 'text-slate-200' : 'text-emerald-700'}`}>
+                    <span className={`text-[10px] font-black tracking-tight text-center leading-tight px-1 ${isDarkMode ? 'text-slate-200' : 'text-emerald-700'}`}>
                       Cadastrar Novo Modelo
                     </span>
                   </button>
@@ -585,7 +585,7 @@ export default function DashboardView({
                 className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex justify-between items-center ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
               >
                 <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 leading-none">
+                  <p className="text-xs font-bold text-slate-500 tracking-widest mb-1 leading-none">
                     Saldo Consolidado
                   </p>
                   <p className={`text-3xl font-black tracking-tight leading-none ${isDarkMode ? "text-white" : "text-slate-900"}`}>
@@ -602,8 +602,8 @@ export default function DashboardView({
             return (
               <div key="manual_entries" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-6 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div>
-                  <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Lançamentos Manuais</h3>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">Atalho Financeiro</p>
+                  <h3 className={`text-sm font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Lançamentos Manuais</h3>
+                  <p className="text-[10px] font-bold text-slate-400 tracking-[0.2em] mt-0.5">Atalho Financeiro</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -616,7 +616,7 @@ export default function DashboardView({
                     <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-emerald-500 shadow-sm">
                       <TrendingUp size={24} strokeWidth={3} />
                     </div>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Entrada</span>
+                    <span className="text-[10px] font-black tracking-widest text-emerald-600 dark:text-emerald-400">Entrada</span>
                   </button>
 
                   <button 
@@ -628,7 +628,7 @@ export default function DashboardView({
                     <div className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-rose-500 shadow-sm">
                       <TrendingDown size={24} strokeWidth={3} />
                     </div>
-                    <span className="text-[10px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400">Saída</span>
+                    <span className="text-[10px] font-black tracking-widest text-rose-600 dark:text-rose-400">Saída</span>
                   </button>
                 </div>
               </div>
@@ -639,8 +639,8 @@ export default function DashboardView({
               <div key="quick_reports" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-6 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div className="flex justify-between items-start">
                   <div>
-                    <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Relatórios Rápidos</h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">Indicadores Principais</p>
+                    <h3 className={`text-sm font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Relatórios Rápidos</h3>
+                    <p className="text-[10px] font-bold text-slate-400 tracking-[0.2em] mt-0.5">Indicadores Principais</p>
                   </div>
                   <div className={`p-2.5 rounded-xl ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
                     <Grid3X3 size={20} />
@@ -658,7 +658,7 @@ export default function DashboardView({
                       <TrendingUp size={16} strokeWidth={3} />
                     </div>
                     <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Vendas (Mês)</p>
+                      <p className="text-[9px] font-black text-slate-400 tracking-widest leading-none mb-1">Vendas (Mês)</p>
                       <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>R$ {stats.monthlyIncome.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                     </div>
                   </button>
@@ -673,7 +673,7 @@ export default function DashboardView({
                       <DollarSign size={16} strokeWidth={3} />
                     </div>
                     <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Lucro (Mês)</p>
+                      <p className="text-[9px] font-black text-slate-400 tracking-widest leading-none mb-1">Lucro (Mês)</p>
                       <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>R$ {(stats.monthlyIncome - stats.monthlyExpenses).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                     </div>
                   </button>
@@ -688,7 +688,7 @@ export default function DashboardView({
                       <Package size={16} strokeWidth={3} />
                     </div>
                     <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Baixo Estoque</p>
+                      <p className="text-[9px] font-black text-slate-400 tracking-widest leading-none mb-1">Baixo Estoque</p>
                       <p className={`text-xs font-black truncate ${stats.lowStockAlerts > 0 ? 'text-amber-500' : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>{stats.lowStockAlerts} itens</p>
                     </div>
                   </button>
@@ -703,7 +703,7 @@ export default function DashboardView({
                       <Users size={16} strokeWidth={3} />
                     </div>
                     <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Ranking</p>
+                      <p className="text-[9px] font-black text-slate-400 tracking-widest leading-none mb-1">Ranking</p>
                       <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Top Clientes</p>
                     </div>
                   </button>
@@ -716,8 +716,8 @@ export default function DashboardView({
               <div key="report_center" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-6 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div className="flex justify-between items-start">
                   <div>
-                    <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Central de Relatórios</h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">Analíticos & Gráficos</p>
+                    <h3 className={`text-sm font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Central de Relatórios</h3>
+                    <p className="text-[10px] font-bold text-slate-400 tracking-[0.2em] mt-0.5">Analíticos & Gráficos</p>
                   </div>
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
                     <BarChart3 size={20} />
@@ -733,7 +733,7 @@ export default function DashboardView({
                     <div className="w-10 h-10 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-indigo-500 shadow-sm shrink-0">
                       <TrendingUp size={22} strokeWidth={3} />
                     </div>
-                    <span className="text-[9px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 text-center leading-tight">Vendas</span>
+                    <span className="text-[9px] font-black tracking-widest text-indigo-600 dark:text-indigo-400 text-center leading-tight">Vendas</span>
                   </button>
 
                   <button 
@@ -743,7 +743,7 @@ export default function DashboardView({
                     <div className="w-10 h-10 rounded-2xl bg-white dark:bg-slate-800 flex items-center justify-center text-amber-500 shadow-sm shrink-0">
                       <DollarSign size={22} strokeWidth={3} />
                     </div>
-                    <span className="text-[9px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-500 text-center leading-tight">Financeiro</span>
+                    <span className="text-[9px] font-black tracking-widest text-amber-600 dark:text-amber-500 text-center leading-tight">Financeiro</span>
                   </button>
                 </div>
 
@@ -751,7 +751,7 @@ export default function DashboardView({
                   onClick={() => onNavigate(ViewType.REPORTS)}
                   className={`w-full py-4 rounded-2xl border border-dashed flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${isDarkMode ? 'border-slate-800 text-slate-400 hover:bg-slate-800/50' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
                 >
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em]">Ver todos os relatórios</span>
+                  <span className="text-[10px] font-black tracking-[0.2em]">Ver todos os relatórios</span>
                   <ChevronRight size={14} strokeWidth={3} />
                 </button>
               </div>
@@ -762,8 +762,8 @@ export default function DashboardView({
               <div key="dashboard_rankings" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-6 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div className="flex justify-between items-start">
                   <div>
-                    <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Rankings de Performance</h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-0.5">Destaques do Negócio</p>
+                    <h3 className={`text-sm font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Rankings de Performance</h3>
+                    <p className="text-[10px] font-bold text-slate-400 tracking-[0.2em] mt-0.5">Destaques do Negócio</p>
                   </div>
                   <div className={`p-2.5 rounded-xl ${isDarkMode ? 'bg-slate-800 text-amber-400' : 'bg-amber-50 text-amber-500'}`}>
                     <TrendingUp size={20} />
@@ -774,7 +774,7 @@ export default function DashboardView({
                   {/* Top Customers */}
                   <div className="flex flex-col gap-4">
                     <div className="flex items-center justify-between">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Top Clientes (Venda)</p>
+                      <p className="text-[9px] font-black text-slate-400 tracking-widest">Top Clientes (Venda)</p>
                       <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800 ml-4" />
                     </div>
                     <div className="flex flex-col gap-3">
@@ -782,7 +782,7 @@ export default function DashboardView({
                         <div key={`rank-cust-${i}`} className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black ${i === 0 ? 'bg-amber-500 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-slate-100 text-slate-400')}`}>{i + 1}</span>
-                            <span className={`text-[11px] font-bold uppercase truncate max-w-[120px] ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{c.name}</span>
+                            <span className={`text-[11px] font-bold truncate max-w-[120px] ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{c.name}</span>
                           </div>
                           <span className="text-[10px] font-black text-indigo-500">R$ {c.total.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
@@ -794,7 +794,7 @@ export default function DashboardView({
                   {/* Top Products */}
                   <div className="flex flex-col gap-4">
                     <div className="flex items-center justify-between">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Top Produtos (Qtd)</p>
+                      <p className="text-[9px] font-black text-slate-400 tracking-widest">Top Produtos (Qtd)</p>
                       <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800 ml-4" />
                     </div>
                     <div className="flex flex-col gap-3">
@@ -802,7 +802,7 @@ export default function DashboardView({
                         <div key={`rank-prod-${i}`} className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black ${i === 0 ? 'bg-indigo-500 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-slate-100 text-slate-400')}`}>{i + 1}</span>
-                            <span className={`text-[11px] font-bold uppercase truncate max-w-[120px] ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{p.name}</span>
+                            <span className={`text-[11px] font-bold truncate max-w-[120px] ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{p.name}</span>
                           </div>
                           <span className="text-[10px] font-black text-emerald-500">{p.qty} un.</span>
                         </div>
@@ -822,7 +822,7 @@ export default function DashboardView({
                 className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex justify-between items-center ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
               >
                 <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">
+                  <p className="text-xs font-bold text-slate-500 tracking-widest mb-1">
                     Balanço Mensal (Liquidados)
                   </p>
                   <p className={`text-2xl font-black tracking-tight leading-none ${stats.monthlyIncome - stats.monthlyExpenses >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
@@ -843,7 +843,7 @@ export default function DashboardView({
                 className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex justify-between items-center ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
               >
                 <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">
+                  <p className="text-xs font-bold text-slate-500 tracking-widest mb-1">
                     A Receber (Pendente)
                   </p>
                   <p className={`text-2xl font-black tracking-tight leading-none ${isDarkMode ? "text-white" : "text-slate-900"}`}>
@@ -864,7 +864,7 @@ export default function DashboardView({
                 className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(16,185,129,0.1)] flex justify-between items-center ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
               >
                 <div>
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 leading-none">
+                  <p className="text-xs font-bold text-slate-500 tracking-widest mb-1 leading-none">
                     Saldo Pessoal
                   </p>
                   <p className={`text-3xl font-black tracking-tight leading-none ${isDarkMode ? "text-white" : "text-emerald-500"}`}>
@@ -883,7 +883,7 @@ export default function DashboardView({
               <div key="stock_alerts" className={`p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div className="flex justify-between items-center">
                   <div>
-                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-2">
+                    <p className="text-xs font-bold text-slate-500 tracking-widest mb-1 flex items-center gap-2">
                       Alertas de Estoque
                       {stats.lowStockAlerts > 0 && (
                         <span className="w-5 h-5 rounded-full bg-rose-500 text-white flex items-center justify-center text-[10px] pb-[1px]">
@@ -892,7 +892,7 @@ export default function DashboardView({
                       )}
                     </p>
                   </div>
-                  <button onClick={() => onNavigate(ViewType.STOCK)} className="text-[10px] font-black uppercase text-indigo-500 hover:text-indigo-600 dark:text-indigo-400">
+                  <button onClick={() => onNavigate(ViewType.STOCK)} className="text-[10px] font-black text-indigo-500 hover:text-indigo-600 dark:text-indigo-400">
                     Ver tudo
                   </button>
                 </div>
@@ -900,8 +900,8 @@ export default function DashboardView({
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-600" size={14} />
                   <input
                     type="text"
-                    placeholder="BUSCAR PRODUTO..."
-                    className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl pl-9 pr-4 py-2.5 text-[10px] font-black uppercase tracking-widest placeholder:text-slate-300 dark:placeholder:text-slate-700"
+                    placeholder="Buscar produto..."
+                    className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl pl-9 pr-4 py-2.5 text-[10px] font-black tracking-widest placeholder:text-slate-300 dark:placeholder:text-slate-700"
                     value={lowStockSearch}
                     onChange={(e) => setLowStockSearch(e.target.value)}
                   />
@@ -929,21 +929,21 @@ export default function DashboardView({
           case "customers":
             return (
               <div key="customers" className={`p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest leading-none">Relacionamento Clientes</p>
+                <p className="text-xs font-bold text-slate-500 tracking-widest leading-none">Relacionamento Clientes</p>
                 <div className="flex justify-between items-center">
                   <div className={`flex border p-0.5 rounded-xl shadow-sm dark:shadow-none ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                    <button onClick={() => setCustomerDashboardTab('DEBITS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 ${customerDashboardTab === 'DEBITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
-                      DÉBITOS {customersWithDebts.length > 0 && <span className="relative flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-white items-center justify-center text-[8px] font-bold">{customersWithDebts.length}</span></span>}
+                    <button onClick={() => setCustomerDashboardTab('DEBITS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black tracking-widest transition-all flex items-center justify-center gap-1.5 ${customerDashboardTab === 'DEBITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+                      Débitos {customersWithDebts.length > 0 && <span className="relative flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-white items-center justify-center text-[8px] font-bold">{customersWithDebts.length}</span></span>}
                     </button>
-                    <button onClick={() => setCustomerDashboardTab('CREDITS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 ${customerDashboardTab === 'CREDITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
-                      CRÉDITOS {customersWithCredits.length > 0 && <span className="relative flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-white items-center justify-center text-[8px] font-bold">{customersWithCredits.length}</span></span>}
+                    <button onClick={() => setCustomerDashboardTab('CREDITS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black tracking-widest transition-all flex items-center justify-center gap-1.5 ${customerDashboardTab === 'CREDITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+                      Créditos {customersWithCredits.length > 0 && <span className="relative flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-white items-center justify-center text-[8px] font-bold">{customersWithCredits.length}</span></span>}
                     </button>
                   </div>
-                  <button onClick={() => onNavigate(ViewType.SALES)} className="text-[10px] font-black uppercase text-indigo-500 hover:text-indigo-600 dark:text-indigo-400">Ver tudo</button>
+                  <button onClick={() => onNavigate(ViewType.SALES)} className="text-[10px] font-black text-indigo-500 hover:text-indigo-600 dark:text-indigo-400">Ver tudo</button>
                 </div>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-600" size={14} />
-                  <input type="text" placeholder="BUSCAR CLIENTE..." className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl pl-9 pr-4 py-2.5 text-[10px] font-black uppercase tracking-widest placeholder:text-slate-300 dark:placeholder:text-slate-700" value={customerDebtsSearch} onChange={(e) => setCustomerDebtsSearch(e.target.value)} />
+                  <input type="text" placeholder="Buscar cliente..." className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl pl-9 pr-4 py-2.5 text-[10px] font-black tracking-widest placeholder:text-slate-300 dark:placeholder:text-slate-700" value={customerDebtsSearch} onChange={(e) => setCustomerDebtsSearch(e.target.value)} />
                 </div>
                 <div className="h-[200px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                   {customerDashboardTab === 'DEBITS' ? (
@@ -951,10 +951,10 @@ export default function DashboardView({
                       {customersWithDebts.filter(item => item.person.name.toLowerCase().includes(customerDebtsSearch.toLowerCase())).map((item, idx) => (
                         <div key={`cust-debt-${item.person.id}-${idx}`} onClick={() => onNavigate(ViewType.SALES, null, item.person.name)} className={`p-3 rounded-xl border cursor-pointer transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
                           <div className="flex justify-between items-center">
-                            <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tight">{item.person.name}</p>
+                            <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 tracking-tight">{item.person.name}</p>
                             <p className="text-[11px] font-black text-rose-500">R$ {item.totalDebt.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                           </div>
-                          <p className="text-[9px] text-slate-500 mt-0.5 uppercase tracking-widest">{item.pendingCount} {item.pendingCount === 1 ? 'venda pendente' : 'vendas pendentes'}</p>
+                          <p className="text-[9px] text-slate-500 mt-0.5 tracking-widest">{item.pendingCount} {item.pendingCount === 1 ? 'venda pendente' : 'vendas pendentes'}</p>
                         </div>
                       ))}
                       {customersWithDebts.filter(item => item.person.name.toLowerCase().includes(customerDebtsSearch.toLowerCase())).length === 0 && <p className="text-[10px] text-center text-slate-400 py-4">Nenhum cliente com débito.</p>}
@@ -964,7 +964,7 @@ export default function DashboardView({
                       {customersWithCredits.filter(p => p.name.toLowerCase().includes(customerDebtsSearch.toLowerCase())).map((person, idx) => (
                         <div key={`cust-cred-${person.id}-${idx}`} className={`p-3 rounded-xl border transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
                           <div className="flex justify-between items-center">
-                            <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tight">{person.name}</p>
+                            <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 tracking-tight">{person.name}</p>
                             <p className="text-[11px] font-black text-emerald-500">R$ {(person.credit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                           </div>
                         </div>
@@ -976,7 +976,7 @@ export default function DashboardView({
 
                 {/* Footer com Somas */}
                 <div className={`mt-2 pt-3 border-t flex justify-between items-center ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total do Período</p>
+                  <p className="text-[9px] font-black text-slate-400 tracking-widest">Total do Período</p>
                   <p className={`text-[13px] font-black ${customerDashboardTab === 'DEBITS' ? 'text-rose-500' : 'text-emerald-500'}`}>
                     R$ {(customerDashboardTab === 'DEBITS' 
                       ? customersWithDebts.filter(item => item.person.name.toLowerCase().includes(customerDebtsSearch.toLowerCase())).reduce((acc, item) => acc + item.totalDebt, 0)
@@ -991,7 +991,7 @@ export default function DashboardView({
             return (
               <div key="engineering_config" className={`p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div className="flex justify-between items-center px-1">
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest leading-none">Configurações de Ficha Técnica</p>
+                  <p className="text-xs font-bold text-slate-500 tracking-widest leading-none">Configurações de Ficha Técnica</p>
                   <Database size={16} className="text-indigo-400" />
                 </div>
                 
@@ -1049,21 +1049,21 @@ export default function DashboardView({
           case "suppliers":
             return (
               <div key="suppliers" className={`p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest leading-none">Relacionamento Fornecedores</p>
+                <p className="text-xs font-bold text-slate-500 tracking-widest leading-none">Relacionamento Fornecedores</p>
                 <div className="flex justify-between items-center">
                   <div className={`flex border p-0.5 rounded-xl shadow-sm dark:shadow-none ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                    <button onClick={() => setSupplierDashboardTab('DEBITS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 ${supplierDashboardTab === 'DEBITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
-                      PENDENTES {pendingPurchases.length > 0 && <span className="relative flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-white items-center justify-center text-[8px] font-bold">{pendingPurchases.length}</span></span>}
+                    <button onClick={() => setSupplierDashboardTab('DEBITS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black tracking-widest transition-all flex items-center justify-center gap-1.5 ${supplierDashboardTab === 'DEBITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+                      Pendentes {pendingPurchases.length > 0 && <span className="relative flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-white items-center justify-center text-[8px] font-bold">{pendingPurchases.length}</span></span>}
                     </button>
-                    <button onClick={() => setSupplierDashboardTab('CREDITS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 ${supplierDashboardTab === 'CREDITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
-                      CRÉDITOS {suppliersWithCredits.length > 0 && <span className="relative flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-white items-center justify-center text-[8px] font-bold">{suppliersWithCredits.length}</span></span>}
+                    <button onClick={() => setSupplierDashboardTab('CREDITS')} className={`px-3 py-1.5 rounded-lg text-[9px] font-black tracking-widest transition-all flex items-center justify-center gap-1.5 ${supplierDashboardTab === 'CREDITS' ? 'bg-slate-500 dark:bg-slate-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
+                      Créditos {suppliersWithCredits.length > 0 && <span className="relative flex h-4 w-4"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span><span className="relative inline-flex rounded-full h-4 w-4 bg-rose-500 text-white items-center justify-center text-[8px] font-bold">{suppliersWithCredits.length}</span></span>}
                     </button>
                   </div>
-                  <button onClick={() => onNavigate(ViewType.PURCHASES)} className="text-[10px] font-black uppercase text-indigo-500 hover:text-indigo-600 dark:text-indigo-400">Ver tudo</button>
+                  <button onClick={() => onNavigate(ViewType.PURCHASES)} className="text-[10px] font-black text-indigo-500 hover:text-indigo-600 dark:text-indigo-400">Ver tudo</button>
                 </div>
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-600" size={14} />
-                  <input type="text" placeholder="BUSCAR FORNECEDOR..." className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl pl-9 pr-4 py-2.5 text-[10px] font-black uppercase tracking-widest placeholder:text-slate-300 dark:placeholder:text-slate-700" value={supplierDebtsSearch} onChange={(e) => setSupplierDebtsSearch(e.target.value)} />
+                  <input type="text" placeholder="Buscar fornecedor..." className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl pl-9 pr-4 py-2.5 text-[10px] font-black tracking-widest placeholder:text-slate-300 dark:placeholder:text-slate-700" value={supplierDebtsSearch} onChange={(e) => setSupplierDebtsSearch(e.target.value)} />
                 </div>
                 <div className="h-[200px] overflow-y-auto space-y-2 pr-1 custom-scrollbar">
                   {supplierDashboardTab === 'DEBITS' ? (
@@ -1071,12 +1071,12 @@ export default function DashboardView({
                       {pendingPurchases.map((purchase, idx) => (
                         <div key={`sup-pending-${purchase.id}-${idx}`} onClick={() => onNavigate(ViewType.PURCHASE_FORM, purchase.id)} className={`p-3 rounded-xl border cursor-pointer transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
                           <div className="flex justify-between items-center">
-                            <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tight">{purchase.supplierName}</p>
+                            <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 tracking-tight">{purchase.supplierName}</p>
                             <p className="text-[11px] font-black text-rose-500">R$ {purchase.debt.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                           </div>
                           <div className="flex items-center justify-between mt-1">
-                            <p className="text-[9px] text-slate-500 uppercase tracking-widest font-bold">{format(purchase.date, 'dd/MM/yyyy')}</p>
-                            {purchase.batchNumber && <p className="text-[8px] text-indigo-500 dark:text-indigo-400 font-black uppercase tracking-widest">#{purchase.batchNumber}</p>}
+                            <p className="text-[9px] text-slate-500 tracking-widest font-bold">{format(purchase.date, 'dd/MM/yyyy')}</p>
+                            {purchase.batchNumber && <p className="text-[8px] text-indigo-500 dark:text-indigo-400 font-black tracking-widest">#{purchase.batchNumber}</p>}
                           </div>
                         </div>
                       ))}
@@ -1087,7 +1087,7 @@ export default function DashboardView({
                       {suppliersWithCredits.map((person, idx) => (
                         <div key={`sup-cred-${person.id}-${idx}`} className={`p-3 rounded-xl border transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
                           <div className="flex justify-between items-center">
-                            <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tight">{person.name}</p>
+                            <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200 tracking-tight">{person.name}</p>
                             <p className="text-[11px] font-black text-emerald-500">R$ {(person.credit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                           </div>
                         </div>
@@ -1099,7 +1099,7 @@ export default function DashboardView({
 
                 {/* Footer com Somas */}
                 <div className={`mt-2 pt-3 border-t flex justify-between items-center ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total do Período</p>
+                  <p className="text-[9px] font-black text-slate-400 tracking-widest">Total do Período</p>
                   <p className={`text-[13px] font-black ${supplierDashboardTab === 'DEBITS' ? 'text-rose-500' : 'text-emerald-500'}`}>
                     R$ {(supplierDashboardTab === 'DEBITS' 
                       ? pendingPurchases.reduce((acc, p) => acc + p.debt, 0)
@@ -1119,7 +1119,7 @@ export default function DashboardView({
                       <AlertCircle size={24} strokeWidth={2.5} />
                     </div>
                     <div>
-                      <p className="text-[10px] font-black text-rose-500 uppercase tracking-[0.2em] mb-0.5">Controle de Dívidas</p>
+                      <p className="text-[10px] font-black text-rose-500 tracking-[0.2em] mb-0.5">Controle de Dívidas</p>
                       <h4 className={`text-2xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"}`}>R$ {filteredDebtData.totalDebt.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
                     </div>
                   </div>
@@ -1137,42 +1137,42 @@ export default function DashboardView({
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden space-y-4">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                         <div className="space-y-1.5">
-                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Fornecedor</p>
-                          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} /><input type="text" placeholder="BUSCAR..." className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl pl-9 pr-4 py-2.5 text-[10px] font-bold uppercase tracking-widest focus:ring-2 focus:ring-rose-500/20 transition-all" value={debtSupplierFilter} onChange={(e) => setDebtSupplierFilter(e.target.value)} /></div>
+                          <p className="text-[8px] font-black text-slate-400 tracking-widest px-1">Fornecedor</p>
+                          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} /><input type="text" placeholder="Buscar..." className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl pl-9 pr-4 py-2.5 text-[10px] font-bold tracking-widest focus:ring-2 focus:ring-rose-500/20 transition-all" value={debtSupplierFilter} onChange={(e) => setDebtSupplierFilter(e.target.value)} /></div>
                         </div>
                         <div className="space-y-1.5">
-                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Categoria</p>
+                          <p className="text-[8px] font-black text-slate-400 tracking-widest px-1">Categoria</p>
                           <select 
                             title="Selecionar Categoria"
                             aria-label="Filtrar por categoria"
-                            className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold uppercase tracking-widest appearance-none focus:ring-2 focus:ring-rose-500/20 transition-all" 
+                            className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold tracking-widest appearance-none focus:ring-2 focus:ring-rose-500/20 transition-all" 
                             value={debtCategoryFilter} 
                             onChange={(e) => setDebtCategoryFilter(e.target.value)}
                           >
-                            <option value="">TODAS</option>
+                            <option value="">Todas</option>
                             {categories.filter(c => !c.isPersonal).map(c => (<option key={c.id} value={c.id}>{c.name}</option>))}
                           </select>
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
-                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Período Início</p>
+                          <p className="text-[8px] font-black text-slate-400 tracking-widest px-1">Período Início</p>
                           <input 
                             title="Data Inicial"
                             aria-label="Data de início do período"
                             type="date" 
-                            className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold uppercase focus:ring-2 focus:ring-rose-500/20 transition-all" 
+                            className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold focus:ring-2 focus:ring-rose-500/20 transition-all" 
                             value={debtStartDate} 
                             onChange={(e) => setDebtStartDate(e.target.value)} 
                           />
                         </div>
                         <div className="space-y-1.5">
-                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Período Fim</p>
+                          <p className="text-[8px] font-black text-slate-400 tracking-widest px-1">Período Fim</p>
                           <input 
                             title="Data Final"
                             aria-label="Data de fim do período"
                             type="date" 
-                            className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold uppercase focus:ring-2 focus:ring-rose-500/20 transition-all" 
+                            className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold focus:ring-2 focus:ring-rose-500/20 transition-all" 
                             value={debtEndDate} 
                             onChange={(e) => setDebtEndDate(e.target.value)} 
                           />
@@ -1180,7 +1180,7 @@ export default function DashboardView({
                       </div>
                       <div className="flex gap-2 p-1 bg-slate-50 dark:bg-slate-950 rounded-xl">
                         {[{ id: 'ALL', label: 'Tudo' }, { id: 'PENDING', label: 'Pendentes' }, { id: 'PAID', label: 'Pagas' }].map(s => (
-                          <button key={s.id} onClick={() => setDebtStatusFilter(s.id as any)} className={`flex-1 py-2 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${debtStatusFilter === s.id ? 'bg-white dark:bg-slate-800 shadow-sm text-rose-500' : 'text-slate-400'}`}>{s.label}</button>
+                          <button key={s.id} onClick={() => setDebtStatusFilter(s.id as any)} className={`flex-1 py-2 rounded-lg text-[8px] font-black tracking-widest transition-all ${debtStatusFilter === s.id ? 'bg-white dark:bg-slate-800 shadow-sm text-rose-500' : 'text-slate-400'}`}>{s.label}</button>
                         ))}
                       </div>
                     </motion.div>
@@ -1188,30 +1188,30 @@ export default function DashboardView({
                 </AnimatePresence>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
                   <div className="space-y-4">
-                    <div className="flex items-center justify-between"><p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Top Devedores</p><div className="h-px flex-1 bg-slate-100 dark:bg-slate-800 ml-4"></div></div>
+                    <div className="flex items-center justify-between"><p className="text-[9px] font-black text-slate-400 tracking-[0.2em]">Top Devedores</p><div className="h-px flex-1 bg-slate-100 dark:bg-slate-800 ml-4"></div></div>
                     <div className="flex flex-col gap-3 max-h-[180px] overflow-y-auto pr-1 custom-scrollbar">
                       {filteredDebtData.bySupplier.map((item, idx) => (
-                        <div key={`debt-sup-${idx}`} className="flex items-center justify-between group"><div className="flex flex-col flex-1 mr-4"><span className="text-[10px] font-bold text-slate-700 dark:text-slate-200 uppercase truncate">{item.name}</span><div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full mt-1.5 overflow-hidden"><motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(100, (item.total / (filteredDebtData.totalDebt || 1)) * 100)}%` }} transition={{ duration: 1, ease: "easeOut" }} className="h-full bg-rose-500" /></div></div><div className="text-right shrink-0"><p className={`text-[11px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>R$ {item.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p><p className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter">{item.count} títulos</p></div></div>
+                        <div key={`debt-sup-${idx}`} className="flex items-center justify-between group"><div className="flex flex-col flex-1 mr-4"><span className="text-[10px] font-bold text-slate-700 dark:text-slate-200 truncate">{item.name}</span><div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full mt-1.5 overflow-hidden"><motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(100, (item.total / (filteredDebtData.totalDebt || 1)) * 100)}%` }} transition={{ duration: 1, ease: "easeOut" }} className="h-full bg-rose-500" /></div></div><div className="text-right shrink-0"><p className={`text-[11px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>R$ {item.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p><p className="text-[8px] font-bold text-slate-400 tracking-tighter">{item.count} títulos</p></div></div>
                       ))}
-                      {filteredDebtData.bySupplier.length === 0 && <div className="flex flex-col items-center justify-center py-6"><CheckCircle2 size={24} className="text-emerald-500 mb-2 opacity-20" /><p className="text-[10px] text-slate-400 uppercase font-black">Nenhuma pendência</p></div>}
+                      {filteredDebtData.bySupplier.length === 0 && <div className="flex flex-col items-center justify-center py-6"><CheckCircle2 size={24} className="text-emerald-500 mb-2 opacity-20" /><p className="text-[10px] text-slate-400 font-black">Nenhuma pendência</p></div>}
                     </div>
                   </div>
                   <div className="space-y-4">
-                    <div className="flex items-center justify-between"><p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em]">Por Categoria</p><div className="h-px flex-1 bg-slate-100 dark:bg-slate-800 ml-4"></div></div>
+                    <div className="flex items-center justify-between"><p className="text-[9px] font-black text-slate-400 tracking-[0.2em]">Por Categoria</p><div className="h-px flex-1 bg-slate-100 dark:bg-slate-800 ml-4"></div></div>
                     <div className="grid grid-cols-2 gap-3">
                       {filteredDebtData.byCategory.slice(0, 4).map((item, idx) => (
-                        <div key={`debt-cat-${idx}`} className={`p-4 rounded-2xl border transition-all hover:scale-[1.02] ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50' : 'bg-slate-50/50 border-slate-100'}`}><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest truncate mb-1.5">{item.name}</p><p className="text-sm font-black text-rose-500">R$ {item.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p><p className="text-[7px] font-bold text-slate-400 uppercase mt-1">{((item.total / (filteredDebtData.totalDebt || 1)) * 100).toFixed(0)}% do total</p></div>
+                        <div key={`debt-cat-${idx}`} className={`p-4 rounded-2xl border transition-all hover:scale-[1.02] ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50' : 'bg-slate-50/50 border-slate-100'}`}><p className="text-[8px] font-black text-slate-400 tracking-widest truncate mb-1.5">{item.name}</p><p className="text-sm font-black text-rose-500">R$ {item.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p><p className="text-[7px] font-bold text-slate-400 mt-1">{((item.total / (filteredDebtData.totalDebt || 1)) * 100).toFixed(0)}% do total</p></div>
                       ))}
-                      {filteredDebtData.byCategory.length === 0 && <div className="col-span-2 py-8 text-center border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl"><p className="text-[9px] font-black text-slate-300 uppercase">Sem dados</p></div>}
+                      {filteredDebtData.byCategory.length === 0 && <div className="col-span-2 py-8 text-center border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl"><p className="text-[9px] font-black text-slate-300">Sem dados</p></div>}
                     </div>
                   </div>
                 </div>
                 {filteredDebtData.list.length > 0 && (
                   <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3">Títulos Recentes</p>
+                    <p className="text-[9px] font-black text-slate-400 tracking-[0.2em] mb-3">Títulos Recentes</p>
                     <div className="space-y-2">
                       {filteredDebtData.list.slice(0, 3).map((p, i) => (
-                        <div key={`recent-debt-${i}`} onClick={() => onNavigate(ViewType.PURCHASE_FORM, p.id)} className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all hover:translate-x-1 ${isDarkMode ? 'bg-slate-950 border-slate-800 hover:border-rose-500/30' : 'bg-white border-slate-50 hover:border-rose-200'}`}><div className="flex items-center gap-3"><div className={`w-8 h-8 rounded-lg flex items-center justify-center ${p.debt > 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>{p.debt > 0 ? <Clock size={14} /> : <CheckCircle2 size={14} />}</div><div><p className="text-[10px] font-black uppercase text-current leading-none">{p.supplierName}</p><p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">{format(p.date, 'dd MMM yyyy', { locale: ptBR })} • {p.categoryName}</p></div></div><p className={`text-[10px] font-black ${p.debt > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>R$ {p.debt.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p></div>
+                        <div key={`recent-debt-${i}`} onClick={() => onNavigate(ViewType.PURCHASE_FORM, p.id)} className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all hover:translate-x-1 ${isDarkMode ? 'bg-slate-950 border-slate-800 hover:border-rose-500/30' : 'bg-white border-slate-50 hover:border-rose-200'}`}><div className="flex items-center gap-3"><div className={`w-8 h-8 rounded-lg flex items-center justify-center ${p.debt > 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>{p.debt > 0 ? <Clock size={14} /> : <CheckCircle2 size={14} />}</div><div><p className="text-[10px] font-black text-current leading-none">{p.supplierName}</p><p className="text-[8px] font-bold text-slate-400 tracking-widest mt-1">{format(p.date, 'dd MMM yyyy', { locale: ptBR })} • {p.categoryName}</p></div></div><p className={`text-[10px] font-black ${p.debt > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>R$ {p.debt.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p></div>
                       ))}
                     </div>
                   </div>
@@ -1228,9 +1228,9 @@ export default function DashboardView({
               >
                 <div className="flex justify-between items-center">
                   <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Patrimônio em Estoque</p>
-                    <div className="flex items-baseline gap-2"><span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">CUSTO:</span><p className={`text-2xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"}`}>R$ {stats.totalStockCostValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
-                    <div className="mt-2 flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><p className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Venda: R$ {stats.totalStockSaleValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
+                    <p className="text-[10px] font-black text-slate-400 tracking-[0.2em] mb-2">Patrimônio em Estoque</p>
+                    <div className="flex items-baseline gap-2"><span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Custo:</span><p className={`text-2xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"}`}>R$ {stats.totalStockCostValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
+                    <div className="mt-2 flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><p className="text-[10px] font-black text-emerald-500 tracking-widest">Venda: R$ {stats.totalStockSaleValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
                   </div>
                   <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg ${isDarkMode ? 'bg-amber-900/20 text-amber-500 shadow-amber-900/10' : 'bg-amber-50 text-amber-600 shadow-amber-100/50'}`}><Boxes size={32} strokeWidth={2.5} /></div>
                 </div>
@@ -1241,13 +1241,13 @@ export default function DashboardView({
             return (
               <div key="estimated_profit" className={`p-6 rounded-[2rem] border shadow-[0_8px_30px_-10px_rgba(79,70,229,0.15)] flex flex-col gap-5 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div className="flex justify-between items-start">
-                  <div><p className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-1">Lucro Total Estimado</p><h4 className={`text-3xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"}`}>R$ {(stats.estimatedStockProfit + stats.pendingReceivables + stats.consolidatedBalance).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 italic">* Estimativa baseada no estoque e pendências</p></div>
+                  <div><p className="text-[10px] font-black text-indigo-500 tracking-[0.2em] mb-1">Lucro Total Estimado</p><h4 className={`text-3xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"}`}>R$ {(stats.estimatedStockProfit + stats.pendingReceivables + stats.consolidatedBalance).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4><p className="text-[9px] font-bold text-slate-400 tracking-widest mt-1 italic">* Estimativa baseada no estoque e pendências</p></div>
                   <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30"><TrendingUp size={24} strokeWidth={3} /></div>
                 </div>
                 <div className="grid grid-cols-1 gap-3">
-                  <div className={`flex items-center justify-between p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center"><Package size={14} /></div><div><span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Lucro em Estoque</span><p className="text-[8px] font-bold text-emerald-500/80 uppercase tracking-widest mt-0.5">Margem: {stats.totalStockCostValue > 0 ? ((stats.estimatedStockProfit / stats.totalStockCostValue) * 100).toFixed(1) : 0}%</p></div></div><span className="text-[11px] font-black text-emerald-500">+ R$ {stats.estimatedStockProfit.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-                  <div className={`flex items-center justify-between p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center"><DollarSign size={14} /></div><span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Vendas a Receber</span></div><span className="text-[11px] font-black text-amber-500">+ R$ {stats.pendingReceivables.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-                  <div className={`flex items-center justify-between p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center"><Wallet size={14} /></div><span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Saldo em Contas</span></div><span className="text-[11px] font-black text-indigo-500">+ R$ {stats.consolidatedBalance.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                  <div className={`flex items-center justify-between p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center"><Package size={14} /></div><div><span className="text-[10px] font-black text-slate-500 tracking-widest block">Lucro em Estoque</span><p className="text-[8px] font-bold text-emerald-500/80 tracking-widest mt-0.5">Margem: {stats.totalStockCostValue > 0 ? ((stats.estimatedStockProfit / stats.totalStockCostValue) * 100).toFixed(1) : 0}%</p></div></div><span className="text-[11px] font-black text-emerald-500">+ R$ {stats.estimatedStockProfit.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                  <div className={`flex items-center justify-between p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center"><DollarSign size={14} /></div><span className="text-[10px] font-black text-slate-500 tracking-widest">Vendas a Receber</span></div><span className="text-[11px] font-black text-amber-500">+ R$ {stats.pendingReceivables.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                  <div className={`flex items-center justify-between p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center"><Wallet size={14} /></div><span className="text-[10px] font-black text-slate-500 tracking-widest">Saldo em Contas</span></div><span className="text-[11px] font-black text-indigo-500">+ R$ {stats.consolidatedBalance.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
                 </div>
               </div>
             );
@@ -1259,8 +1259,8 @@ export default function DashboardView({
                   <div className="p-6 pb-2">
                     <div className="flex items-center justify-between mb-6">
                       <div>
-                        <h2 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-800"}`}>Relatório de Cheques</h2>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Gestão Unificada de Documentos</p>
+                        <h2 className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-800"}`}>Relatório de Cheques</h2>
+                        <p className="text-[10px] text-slate-400 font-bold tracking-widest mt-1">Gestão Unificada de Documentos</p>
                       </div>
                       <div className="flex items-center gap-2">
                         <div className={`p-2.5 rounded-xl ${isDarkMode ? 'bg-amber-900/20 text-amber-500' : 'bg-amber-50 text-amber-600'}`}>
@@ -1272,11 +1272,11 @@ export default function DashboardView({
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <Clipboard size={14} className="text-indigo-500" />
-                          <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total: {filteredChecks.length} cheques</span>
+                          <span className="text-[9px] font-black tracking-widest text-slate-400">Total: {filteredChecks.length} cheques</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <button 
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[8px] font-black uppercase tracking-widest hover:bg-indigo-50 transition-all border border-slate-100 dark:border-slate-700 active:scale-95" 
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[8px] font-black tracking-widest hover:bg-indigo-50 transition-all border border-slate-100 dark:border-slate-700 active:scale-95" 
                             title="Copiar lista de cheques para a área de transferência"
                             aria-label="Copiar resumo de todos os cheques filtrados"
                             onClick={() => { 
@@ -1291,14 +1291,14 @@ export default function DashboardView({
                             onClick={shareChecksPDF} 
                             title="Compartilhar relatório em PDF"
                             aria-label="Gerar e compartilhar PDF com a lista de cheques"
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[8px] font-black uppercase tracking-widest hover:bg-indigo-100 transition-all border border-indigo-100 dark:border-indigo-900/50 active:scale-95"
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[8px] font-black tracking-widest hover:bg-indigo-100 transition-all border border-indigo-100 dark:border-indigo-900/50 active:scale-95"
                           >
                             <Share2 size={14} />Compartilhar
                           </button>
                         </div>
                       </div>
-                      <div className="relative"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-600" size={16} /><input type="text" placeholder="BUSCAR POR NÚMERO OU FORNECEDOR..." className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-2xl pl-12 pr-4 py-3.5 text-[11px] font-black uppercase tracking-widest placeholder:text-slate-300 dark:placeholder:text-slate-800 focus:ring-4 focus:ring-indigo-500/5 transition-all text-slate-800 dark:text-white" value={checksSearch} onChange={(e) => setChecksSearch(e.target.value)} />{checksSearch && (<button onClick={() => setChecksSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" title="Limpar busca"><X size={14} /></button>)}</div>
-                      <div className="flex gap-2 p-1 bg-slate-50 dark:bg-slate-950 rounded-2xl overflow-x-auto no-scrollbar">{(['PENDING', 'OVERDUE', 'CLEARED', 'ALL'] as const).map((status) => (<button key={status} onClick={() => setChecksStatusFilter(status)} className={`flex-1 py-2 px-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${checksStatusFilter === status ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-700'}`}>{status === 'PENDING' ? 'A Vencer' : status === 'CLEARED' ? 'Compensados' : status === 'OVERDUE' ? 'Vencidos' : 'Todos'}</button>))}</div>
+                      <div className="relative"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 dark:text-slate-600" size={16} /><input type="text" placeholder="Buscar por número ou fornecedor..." className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-2xl pl-12 pr-4 py-3.5 text-[11px] font-black tracking-widest placeholder:text-slate-300 dark:placeholder:text-slate-800 focus:ring-4 focus:ring-indigo-500/5 transition-all text-slate-800 dark:text-white" value={checksSearch} onChange={(e) => setChecksSearch(e.target.value)} />{checksSearch && (<button onClick={() => setChecksSearch("")} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-300" title="Limpar busca"><X size={14} /></button>)}</div>
+                      <div className="flex gap-2 p-1 bg-slate-50 dark:bg-slate-950 rounded-2xl overflow-x-auto no-scrollbar">{(['PENDING', 'OVERDUE', 'CLEARED', 'ALL'] as const).map((status) => (<button key={status} onClick={() => setChecksStatusFilter(status)} className={`flex-1 py-2 px-3 rounded-xl text-[9px] font-black tracking-widest transition-all whitespace-nowrap ${checksStatusFilter === status ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-700'}`}>{status === 'PENDING' ? 'A Vencer' : status === 'CLEARED' ? 'Compensados' : status === 'OVERDUE' ? 'Vencidos' : 'Todos'}</button>))}</div>
                     </div>
                   </div>
                   <div className="p-4 flex flex-col gap-3">
@@ -1309,14 +1309,89 @@ export default function DashboardView({
                         const isToday = check.status === "PENDING" && daysUntil === 0;
                         const isExpanded = expandedCheckId === check.id;
                         return (
-                          <div key={check.id} className={`p-5 rounded-3xl border-2 border-dashed transition-all ${isExpanded ? (isDarkMode ? 'bg-slate-800/50 border-indigo-500/50' : 'bg-slate-50/50 border-indigo-200') : (isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50/50 border-slate-100')}`}>
-                            <button onClick={() => setExpandedCheckId(isExpanded ? null : check.id)} className="w-full text-left group"><div className="flex items-center justify-between mb-4 pb-4 border-b border-dashed border-slate-200 dark:border-slate-800"><div className="flex items-center gap-3"><div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-sm transition-all duration-300 group-hover:scale-110 group-active:scale-95 ${isDarkMode ? 'bg-amber-950/40 text-amber-500 border border-amber-800/30' : 'bg-amber-50 text-amber-500 border border-amber-100'} ${!isExpanded && check.status === 'PENDING' ? 'animate-pulse ring-4 ring-amber-500/20' : ''}`}><Hash size={18} strokeWidth={3} /></div><div><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Nº do Cheque</p><div className="flex items-center gap-2"><p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{check.number}</p>{isLate && <div className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />}</div></div></div><div className="text-right"><p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest leading-none mb-1">Valor</p><p className="text-sm font-black tracking-tight text-indigo-600 dark:text-indigo-400">R$ {check.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div></div><div className="grid grid-cols-2 gap-y-4"><div className="flex items-center gap-3"><Calendar size={14} className="text-slate-300 dark:text-slate-600" /><div><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Bom Para</p><p className={`text-[10px] font-bold uppercase ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{format(check.dueDate, 'dd/MM/yyyy')}</p>{check.status === 'PENDING' && (<p className={`text-[8px] font-bold mt-0.5 uppercase ${isLate ? 'text-rose-500' : isToday ? 'text-amber-500' : 'text-slate-400 dark:text-slate-500'}`}>{isLate ? `${Math.abs(daysUntil)} dias vencidos` : isToday ? 'Vence hoje' : `Faltam ${daysUntil} dias`}</p>)}</div></div><div className="flex items-center gap-3"><AlertCircle size={14} className="text-slate-300 dark:text-slate-600" /><div><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Status</p><p className={`text-[10px] font-bold uppercase ${statusMap[check.status]?.color || 'text-slate-600'}`}>{statusMap[check.status]?.label || check.status}</p></div></div></div></button>
-                            {isExpanded && (<div className="mt-6 pt-6 border-t border-dashed border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-top-4 duration-500"><div className="mb-4 bg-white dark:bg-slate-950/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800"><div className="flex items-center justify-between mb-3"><div className="flex items-center gap-2"><User size={12} className="text-slate-400" /><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Fornecedor</p></div><p className="text-[11px] font-black text-slate-700 dark:text-slate-200 uppercase tracking-tight">{check.supplierName}</p></div><div className="flex items-center justify-between"><div className="flex items-center gap-2"><Landmark size={12} className="text-slate-400" /><p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Empresa</p></div><p className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-tight leading-none">Vendas Pro</p></div></div><div className="flex gap-2">{check.status !== 'CLEARED' ? (<><button onClick={(e) => { e.stopPropagation(); onUpdateCheckStatus(check.purchaseId, check.id, "CLEARED"); }} className="flex-1 py-3 rounded-2xl bg-emerald-500 text-white text-[9px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-2"><CheckCircle2 size={16} strokeWidth={3} />Liquidar</button><button onClick={(e) => { e.stopPropagation(); onUpdateCheckStatus(check.purchaseId, check.id, "OVERDUE"); }} className={`flex-1 py-3 rounded-2xl text-[9px] font-black uppercase tracking-widest border transition-all flex items-center justify-center gap-2 active:scale-95 ${check.status === 'OVERDUE' ? 'bg-rose-600 border-rose-600 text-white shadow-lg shadow-rose-500/20' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400'}`}><AlertCircle size={16} />Vencido</button></>) : (<button onClick={(e) => { e.stopPropagation(); onUpdateCheckStatus(check.purchaseId, check.id, "PENDING"); }} className="w-full py-3 rounded-2xl bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[10px] font-black uppercase tracking-widest border border-amber-100 dark:border-amber-900/50 active:scale-95 transition-all flex items-center justify-center gap-3"><RefreshCcw size={16} strokeWidth={3} />Reverter Liquidação</button>)}</div></div>)}
+                          <div key={check.id} className={`p-5 rounded-3xl border-2 border-dashed transition-all ${isExpanded ? (isDarkMode ? 'bg-slate-800/50 border-indigo-500/50' : 'bg-slate-50/50 border-indigo-200') : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100')}`}>
+                             <button onClick={() => setExpandedCheckId(isExpanded ? null : check.id)} className="w-full text-left group">
+                               <div className="flex items-center justify-between mb-4 pb-4 border-b border-dashed border-slate-200 dark:border-slate-800">
+                                 <div className="flex items-center gap-3">
+                                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-sm transition-all duration-300 group-hover:scale-110 group-active:scale-95 ${isDarkMode ? 'bg-amber-950/40 text-amber-500 border border-amber-800/30' : 'bg-amber-50 text-amber-500 border border-amber-100'} ${!isExpanded && check.status === 'PENDING' ? 'animate-pulse ring-4 ring-amber-500/20' : ''}`}>
+                                     <Hash size={18} strokeWidth={3} />
+                                   </div>
+                                   <div>
+                                     <p className="text-[9px] font-black text-slate-400 tracking-widest leading-none mb-1">Nº do Cheque</p>
+                                     <div className="flex items-center gap-2">
+                                       <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{check.number}</p>
+                                       {isLate && <div className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />}
+                                     </div>
+                                   </div>
+                                 </div>
+                                 <div className="text-right">
+                                   <p className="text-[9px] font-black text-indigo-500 tracking-widest leading-none mb-1">Valor</p>
+                                   <p className="text-sm font-black tracking-tight text-indigo-600 dark:text-indigo-400">R$ {check.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                 </div>
+                               </div>
+                               <div className="grid grid-cols-2 gap-y-4">
+                                 <div className="flex items-center gap-3">
+                                   <Calendar size={14} className="text-slate-300 dark:text-slate-600" />
+                                   <div>
+                                     <p className="text-[8px] font-black text-slate-400 tracking-widest leading-none mb-1">Bom Para</p>
+                                     <p className={`text-[10px] font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{format(check.dueDate, 'dd/MM/yyyy')}</p>
+                                     {check.status === 'PENDING' && (
+                                       <p className={`text-[8px] font-bold mt-0.5 ${isLate ? 'text-rose-500' : isToday ? 'text-amber-500' : 'text-slate-400 dark:text-slate-500'}`}>
+                                         {isLate ? `${Math.abs(daysUntil)} dias vencidos` : isToday ? 'Vence hoje' : `Faltam ${daysUntil} dias`}
+                                       </p>
+                                     )}
+                                   </div>
+                                 </div>
+                                 <div className="flex items-center gap-3">
+                                   <AlertCircle size={14} className="text-slate-300 dark:text-slate-600" />
+                                   <div>
+                                     <p className="text-[8px] font-black text-slate-400 tracking-widest leading-none mb-1">Status</p>
+                                     <p className={`text-[10px] font-bold ${statusMap[check.status]?.color || 'text-slate-600'}`}>{statusMap[check.status]?.label || check.status}</p>
+                                   </div>
+                                 </div>
+                               </div>
+                             </button>
+                             {isExpanded && (
+                               <div className="mt-6 pt-6 border-t border-dashed border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-top-4 duration-500">
+                                 <div className="mb-4 bg-white dark:bg-slate-950/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                                   <div className="flex items-center justify-between mb-3">
+                                     <div className="flex items-center gap-2">
+                                       <User size={12} className="text-slate-400" />
+                                       <p className="text-[9px] font-black text-slate-400 tracking-widest">Fornecedor</p>
+                                     </div>
+                                     <p className="text-[11px] font-black text-slate-700 dark:text-slate-200 tracking-tight">{check.supplierName}</p>
+                                   </div>
+                                   <div className="flex items-center justify-between">
+                                     <div className="flex items-center gap-2">
+                                       <Landmark size={12} className="text-slate-400" />
+                                       <p className="text-[9px] font-black text-slate-400 tracking-widest">Empresa</p>
+                                     </div>
+                                     <p className="text-[11px] font-black text-slate-400 dark:text-slate-500 tracking-tight leading-none">Vendas Pro</p>
+                                   </div>
+                                 </div>
+                                 <div className="flex gap-2">
+                                   {check.status !== 'CLEARED' ? (
+                                     <>
+                                       <button onClick={(e) => { e.stopPropagation(); onUpdateCheckStatus(check.purchaseId, check.id, "CLEARED"); }} className="flex-1 py-3 rounded-2xl bg-emerald-500 text-white text-[9px] font-black tracking-widest shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-2">
+                                         <CheckCircle2 size={16} strokeWidth={3} />Liquidar
+                                       </button>
+                                       <button onClick={(e) => { e.stopPropagation(); onUpdateCheckStatus(check.purchaseId, check.id, "OVERDUE"); }} className={`flex-1 py-3 rounded-2xl text-[9px] font-black tracking-widest border transition-all flex items-center justify-center gap-2 active:scale-95 ${check.status === 'OVERDUE' ? 'bg-rose-600 border-rose-600 text-white shadow-lg shadow-rose-500/20' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400'}`}>
+                                         <AlertCircle size={16} />Vencido
+                                       </button>
+                                     </>
+                                   ) : (
+                                     <button onClick={(e) => { e.stopPropagation(); onUpdateCheckStatus(check.purchaseId, check.id, "PENDING"); }} className="w-full py-3 rounded-2xl bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[10px] font-black tracking-widest border border-amber-100 dark:border-amber-900/50 active:scale-95 transition-all flex items-center justify-center gap-3">
+                                       <RefreshCcw size={16} strokeWidth={3} />Reverter Liquidação
+                                     </button>
+                                   )}
+                                 </div>
+                               </div>
+                             )}
                           </div>
                         );
                       })
                     ) : (
-                      <div className="py-12 bg-slate-50/50 dark:bg-slate-950/50 rounded-3xl border-2 border-dashed border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center gap-3"><Filter className="text-slate-200 dark:text-slate-800" size={32} strokeWidth={1.5} /><p className="text-[10px] font-black uppercase text-slate-300 dark:text-slate-700 tracking-[0.2em] italic">Nenhum cheque encontrado</p></div>
+                      <div className="py-12 bg-slate-50/50 dark:bg-slate-950/50 rounded-3xl border-2 border-dashed border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center gap-3"><Filter className="text-slate-200 dark:text-slate-800" size={32} strokeWidth={1.5} /><p className="text-[10px] font-black text-slate-300 dark:text-slate-700 tracking-[0.2em] italic">Nenhum cheque encontrado</p></div>
                     )}
                   </div>
                 </div>
@@ -1332,7 +1407,7 @@ export default function DashboardView({
                       <TrendingUp size={24} strokeWidth={2.5} />
                     </div>
                     <div>
-                      <p className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.2em] mb-0.5">Análise de Lucro</p>
+                      <p className="text-[10px] font-black text-emerald-500 tracking-[0.2em] mb-0.5">Análise de Lucro</p>
                       <h4 className={`text-2xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"}`}>R$ {profitAnalysis.current.profit.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
                     </div>
                   </div>
@@ -1352,13 +1427,13 @@ export default function DashboardView({
                       <div className="flex gap-2 p-1 bg-slate-50 dark:bg-slate-950 rounded-xl mt-2">
                         <button 
                           onClick={() => setProfitComparisonMode('AUTO')}
-                          className={`flex-1 py-2 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${profitComparisonMode === 'AUTO' ? 'bg-white dark:bg-slate-800 shadow-sm text-emerald-600' : 'text-slate-400'}`}
+                          className={`flex-1 py-2 rounded-lg text-[8px] font-black tracking-widest transition-all ${profitComparisonMode === 'AUTO' ? 'bg-white dark:bg-slate-800 shadow-sm text-emerald-600' : 'text-slate-400'}`}
                         >
                           Auto (Anterior)
                         </button>
                         <button 
                           onClick={() => setProfitComparisonMode('MANUAL')}
-                          className={`flex-1 py-2 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${profitComparisonMode === 'MANUAL' ? 'bg-white dark:bg-slate-800 shadow-sm text-emerald-600' : 'text-slate-400'}`}
+                          className={`flex-1 py-2 rounded-lg text-[8px] font-black tracking-widest transition-all ${profitComparisonMode === 'MANUAL' ? 'bg-white dark:bg-slate-800 shadow-sm text-emerald-600' : 'text-slate-400'}`}
                         >
                           Manual (Comparar)
                         </button>
@@ -1367,11 +1442,11 @@ export default function DashboardView({
                       <div className="space-y-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div className="space-y-1.5">
-                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Período Atual</p>
+                            <p className="text-[8px] font-black text-slate-400 tracking-widest px-1">Período Atual</p>
                             <div className="flex gap-2">
                               <select 
                                 title="Tipo Período"
-                                className="bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-2 py-2.5 text-[9px] font-bold uppercase"
+                                className="bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-2 py-2.5 text-[9px] font-bold"
                                 value={profitPeriodType}
                                 onChange={(e) => setProfitPeriodType(e.target.value as any)}
                               >
@@ -1383,7 +1458,7 @@ export default function DashboardView({
                               <input 
                                 type="month" 
                                 title="Data Referência"
-                                className="flex-1 bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold uppercase" 
+                                className="flex-1 bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold" 
                                 value={profitPeriodDate} 
                                 onChange={(e) => setProfitPeriodDate(e.target.value)} 
                               />
@@ -1396,7 +1471,7 @@ export default function DashboardView({
                               <div className="flex gap-2">
                                 <select 
                                   title="Tipo Período Comp"
-                                  className="bg-indigo-50 dark:bg-indigo-900/30 border-none rounded-xl px-2 py-2.5 text-[9px] font-bold uppercase text-indigo-600 dark:text-indigo-400"
+                                  className="bg-indigo-50 dark:bg-indigo-900/30 border-none rounded-xl px-2 py-2.5 text-[9px] font-bold text-indigo-600 dark:text-indigo-400"
                                   value={profitCompPeriodType}
                                   onChange={(e) => setProfitCompPeriodType(e.target.value as any)}
                                 >
@@ -1408,7 +1483,7 @@ export default function DashboardView({
                                 <input 
                                   type="month" 
                                   title="Data Referência Comp"
-                                  className="flex-1 bg-indigo-50 dark:bg-indigo-900/30 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold uppercase text-indigo-600 dark:text-indigo-400" 
+                                  className="flex-1 bg-indigo-50 dark:bg-indigo-900/30 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold text-indigo-600 dark:text-indigo-400" 
                                   value={profitCompPeriodDate} 
                                   onChange={(e) => setProfitCompPeriodDate(e.target.value)} 
                                 />
@@ -1423,15 +1498,15 @@ export default function DashboardView({
 
                 <div className="grid grid-cols-3 gap-4">
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 flex flex-col gap-1">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Receitas</p>
+                    <p className="text-[8px] font-black text-slate-400 tracking-widest">Receitas</p>
                     <p className="text-sm font-black text-emerald-500">R$ {profitAnalysis.current.income.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                   </div>
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 flex flex-col gap-1">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Despesas</p>
+                    <p className="text-[8px] font-black text-slate-400 tracking-widest">Despesas</p>
                     <p className="text-sm font-black text-rose-500">R$ {profitAnalysis.current.expenses.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                   </div>
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 flex flex-col gap-1">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Comparativo</p>
+                    <p className="text-[8px] font-black text-slate-400 tracking-widest">Comparativo</p>
                     <div className="flex items-center gap-1">
                       {profitAnalysis.profitDiff >= 0 ? <TrendingUp size={12} className="text-emerald-500" /> : <TrendingDown size={12} className="text-rose-500" />}
                       <p className={`text-sm font-black ${profitAnalysis.profitDiff >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
@@ -1442,20 +1517,20 @@ export default function DashboardView({
                 </div>
 
                 <div className={`p-4 rounded-2xl border-2 border-dashed ${isDarkMode ? "border-slate-800" : "border-slate-50"} flex flex-col gap-3`}>
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                  <p className="text-[9px] font-black text-slate-400 tracking-widest">
                     {profitComparisonMode === 'AUTO' ? 'Período Anterior Automático' : 'Comparação Manual Selecionada'}
                   </p>
                   <div className="space-y-2">
                     <div className="flex justify-between items-end">
                       <div className="flex flex-col gap-1">
-                        <p className="text-[8px] font-bold text-indigo-400 uppercase">
+                        <p className="text-[8px] font-bold text-indigo-400">
                           {format(new Date(profitAnalysis.previousStart), profitCompPeriodType === 'YEAR' ? 'yyyy' : 'MM/yy')} 
                           {profitCompPeriodType === 'QUARTER' ? ' (Trim)' : profitCompPeriodType === 'SEMESTER' ? ' (Sem)' : ''}
                         </p>
                         <p className={`text-xs font-black ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>R$ {profitAnalysis.previous.profit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                       </div>
                       <div className="flex flex-col gap-1 text-right">
-                        <p className="text-[8px] font-bold text-emerald-500 uppercase">
+                        <p className="text-[8px] font-bold text-emerald-500">
                           {format(new Date(profitAnalysis.currentStart), profitPeriodType === 'YEAR' ? 'yyyy' : 'MM/yy')}
                         </p>
                         <p className={`text-xs font-black ${isDarkMode ? "text-white" : "text-slate-900"}`}>R$ {profitAnalysis.current.profit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
@@ -1486,17 +1561,17 @@ export default function DashboardView({
                   className="flex items-center justify-between w-full mb-4 px-1 group"
                 >
                   <div>
-                    <h2 className={`text-[13px] font-black uppercase tracking-tight ${isDarkMode ? "text-white" : "text-slate-800"}`}>Atividade</h2>
-                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest leading-none">Recentes</p>
+                    <h2 className={`text-[13px] font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-800"}`}>Atividade</h2>
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-widest leading-none">Recentes</p>
                   </div>
                   <div className={`p-2 rounded-full transition-all group-hover:scale-110 ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-500'}`}>
                     {isRecentActivityExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                   </div>
                 </button>
                 {isRecentActivityExpanded && (
-                  <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                    {recentActivity.map((activity: any) => (
-                      <div key={activity.id} className={`flex items-center gap-4 p-3 border rounded-2xl shadow-sm dark:shadow-none hover:border-slate-200 dark:hover:border-slate-700 transition-colors ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}><div className={`flex items-center justify-center p-2 rounded-xl ${activity.activityType === "sale" ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30" : activity.activityType === "purchase" ? "bg-slate-50 text-slate-400 dark:bg-slate-800" : (activity.type === TransactionType.INCOME) ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30" : "bg-rose-50 text-rose-600 dark:bg-rose-900/30"}`}>{activity.activityType === "sale" ? (<ShoppingBag size={20} strokeWidth={2.5} />) : activity.activityType === "purchase" ? (<TrendingDown size={20} strokeWidth={2.5} />) : activity.type === TransactionType.INCOME ? (<TrendingUp size={20} strokeWidth={2.5} />) : (<TrendingDown size={20} strokeWidth={2.5} />)}</div><div className="flex-1 min-w-0"><p className={`text-[12px] font-black truncate uppercase tracking-tight leading-none ${isDarkMode ? "text-white" : "text-slate-800"}`}>{activity.activityType === "sale" ? "Venda" : activity.activityType === "purchase" ? "Compra" : (activity.description || "Lançamento")}</p><p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-1.5 ">{format(activity.date || Date.now(), "dd MMM, HH:mm", { locale: ptBR })}</p></div><div className="text-right"><p className={`text-[13px] font-black tracking-tight ${activity.activityType === "sale" || (activity.activityType === "transaction" && activity.type === TransactionType.INCOME) ? "text-emerald-500" : "text-rose-500"}`}>{(activity.activityType === "sale" || (activity.activityType === "transaction" && activity.type === TransactionType.INCOME)) ? "+" : "-"} R$ {Number(activity.total || activity.amount || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p><div className="flex items-center gap-1 justify-end mt-1"><span className={`text-[7px] px-1.5 py-0.5 rounded-lg uppercase font-black tracking-widest ${(activity.status === 'PENDING' || activity.activityStatus === 'PENDING') ? "bg-amber-100 text-amber-600" : "bg-slate-100 dark:bg-slate-800 text-slate-500"}`}>{(activity.status === 'PENDING' || activity.activityStatus === 'PENDING') ? "Pendente" : "OK"}</span></div></div></div>
+                  <div className="space-y-3 animate-in slide-in-from-top-2 duration-200">
+                    {recentActivity.map(activity => (
+                      <div key={activity.id} className={`flex items-center gap-4 p-3 border rounded-2xl shadow-sm dark:shadow-none hover:border-slate-200 dark:hover:border-slate-700 transition-colors ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}><div className={`flex items-center justify-center p-2 rounded-xl ${activity.activityType === "sale" ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30" : activity.activityType === "purchase" ? "bg-slate-50 text-slate-400 dark:bg-slate-800" : (activity.type === TransactionType.INCOME) ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30" : "bg-rose-50 text-rose-600 dark:bg-rose-900/30"}`}>{activity.activityType === "sale" ? (<ShoppingBag size={20} strokeWidth={2.5} />) : activity.activityType === "purchase" ? (<TrendingDown size={20} strokeWidth={2.5} />) : activity.type === TransactionType.INCOME ? (<TrendingUp size={20} strokeWidth={2.5} />) : (<TrendingDown size={20} strokeWidth={2.5} />)}</div><div className="flex-1 min-w-0"><p className={`text-[12px] font-black truncate tracking-tight leading-none ${isDarkMode ? "text-white" : "text-slate-800"}`}>{activity.activityType === "sale" ? "Venda" : activity.activityType === "purchase" ? "Compra" : (activity.description || "Lançamento")}</p><p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold tracking-widest mt-1.5 ">{format(activity.date || Date.now(), "dd MMM, HH:mm", { locale: ptBR })}</p></div><div className="text-right"><p className={`text-[13px] font-black tracking-tight ${activity.activityType === "sale" || (activity.activityType === "transaction" && activity.type === TransactionType.INCOME) ? "text-emerald-500" : "text-rose-500"}`}>{(activity.activityType === "sale" || (activity.activityType === "transaction" && activity.type === TransactionType.INCOME)) ? "+" : "-"} R$ {Number(activity.total || activity.amount || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p><div className="flex items-center gap-1 justify-end mt-1"><span className={`text-[7px] px-1.5 py-0.5 rounded-lg font-black tracking-widest ${(activity.status === 'PENDING' || activity.activityStatus === 'PENDING') ? "bg-amber-100 text-amber-600" : "bg-slate-100 dark:bg-slate-800 text-slate-500"}`}>{(activity.status === 'PENDING' || activity.activityStatus === 'PENDING') ? "Pendente" : "OK"}</span></div></div></div>
                     ))}
                     {recentActivity.length === 0 && (<div className="text-center py-20 bg-slate-50/50 dark:bg-slate-900/50 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[2.5rem] flex flex-col items-center"><History size={40} className="text-slate-200 dark:text-slate-800 mb-2" strokeWidth={1} /><p className="text-[10px] font-black uppercase text-slate-300 dark:text-slate-700 tracking-[0.2em] italic">Vazio histórico</p></div>)}
                   </div>

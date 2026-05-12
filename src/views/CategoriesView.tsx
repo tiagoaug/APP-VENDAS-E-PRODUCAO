@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Category, CategoryType, AppModulesConfig, ViewType } from '../types';
-import { Search, Plus, Tags, Trash2, Edit, ShoppingBag, TrendingDown, TrendingUp, Factory, LayoutGrid, User, Package, PlusCircle, Settings } from 'lucide-react';
+import { Search, Plus, Tags, Trash2, Edit, ShoppingBag, TrendingDown, TrendingUp, Factory, LayoutGrid, User, Package, PlusCircle, Settings, ChevronRight } from 'lucide-react';
+
 import CategoryModal from '../components/CategoryModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 
@@ -113,13 +114,14 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between px-1">
            <h2 className={`text-sm font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Categorias Principais</h2>
-           <button 
-             onClick={() => onNavigate(ViewType.CATEGORY_CONFIG)}
-             className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-           >
-             <Settings size={14} />
-             Configurar
-           </button>
+            <button 
+              onClick={() => onNavigate(ViewType.CATEGORY_CONFIG)}
+              title="Configurar Categorias"
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >
+              <Settings size={14} />
+              Configurar
+            </button>
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -142,15 +144,15 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                   <LayoutGrid size={20} />
                 </div>
               </div>
-              <span className="text-[10px] font-black uppercase tracking-widest text-center">{cat.name}</span>
+              <span className="text-[11px] font-black uppercase tracking-widest text-center">{cat.name}</span>
             </button>
           ))}
           
           {rootCategories.length === 0 && (
             <div className={`col-span-full p-8 rounded-[2.5rem] border border-dashed flex flex-col items-center justify-center text-center gap-2 ${isDarkMode ? 'bg-slate-900/30 border-slate-800 text-slate-600' : 'bg-slate-50/50 border-slate-200 text-slate-400'}`}>
               <LayoutGrid size={24} className="opacity-20" />
-              <p className="text-[10px] font-bold uppercase tracking-widest">Nenhuma categoria principal definida</p>
-              <p className="text-[8px] font-medium max-w-[200px]">Marque "Categoria Principal" ao criar ou editar para fixá-la aqui.</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest">Nenhuma categoria principal definida</p>
+              <p className="text-[11px] font-medium max-w-[200px]">Marque "Categoria Principal" ao criar ou editar para fixá-la aqui.</p>
             </div>
           )}
         </div>
@@ -166,6 +168,8 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
+              title={`Filtrar por ${tab.label}`}
+              aria-label={`Filtrar categorias por ${tab.label}`}
               className={`flex flex-col items-center justify-center gap-2 py-3 px-1 rounded-2xl border transition-all ${
                 activeTab === tab.id 
                   ? `${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200 shadow-lg shadow-slate-100'} scale-[1.05]` 
@@ -179,7 +183,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
               }`}>
                 {tab.icon}
               </div>
-              <span className={`text-[9.5px] font-black uppercase tracking-tight text-center leading-tight h-6 flex items-center ${
+              <span className={`text-[11px] font-black uppercase tracking-tight text-center leading-tight h-6 flex items-center ${
                 activeTab === tab.id ? tab.text : 'text-inherit'
               }`}>{tab.label}</span>
             </button>
@@ -192,6 +196,8 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
             <input 
               type="text" 
               placeholder={`Buscar em ${tabs.find(t => t.id === activeTab)?.label}...`}
+              title="Pesquisar Categorias"
+              aria-label="Campo de pesquisa de categorias"
               className={`w-full border rounded-2xl py-3.5 pl-11 pr-4 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-indigo-500/5 dark:focus:ring-indigo-500/10 placeholder:text-slate-400 text-slate-800 dark:text-slate-100 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -203,7 +209,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
           <div className="flex flex-col gap-2 p-4 rounded-[2rem] bg-emerald-50/30 dark:bg-emerald-950/20 border-2 border-emerald-100/50 dark:border-emerald-900/30">
             <div className="flex items-center gap-2 mb-1">
               <PlusCircle size={14} className="text-emerald-500" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600/70">Sugestões de Insumos</span>
+              <span className="text-[11px] font-black uppercase tracking-widest text-emerald-600/70">Sugestões de Insumos</span>
             </div>
             <div className="flex flex-wrap gap-2">
               {suggestedSupplies.map(name => {
@@ -213,7 +219,8 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                     key={name}
                     onClick={() => handleAddSuggested(name)}
                     disabled={exists}
-                    className={`px-3 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${
+                    title={`Adicionar sugestão: ${name}`}
+                    className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
                       exists 
                         ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600 border-2 border-transparent' 
                         : 'bg-white text-emerald-600 border-2 border-emerald-100 hover:border-emerald-500 dark:bg-slate-900 dark:text-emerald-400 dark:border-emerald-900 shadow-sm active:scale-95'
@@ -247,11 +254,11 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                       <h3 className={`font-black text-xs uppercase tracking-wider flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                         {parent.name}
                         {parent.isPersonal && (
-                          <span className="px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400 text-[8px] font-black uppercase tracking-widest border border-indigo-200 dark:border-indigo-800/50">Pessoal</span>
+                          <span className="px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400 text-[11px] font-black uppercase tracking-widest border border-indigo-200 dark:border-indigo-800/50">Pessoal</span>
                         )}
                       </h3>
                       <div className="mt-1 flex items-center gap-2">
-                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">
+                        <span className="text-[11px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">
                           {children.length > 0 ? `${children.length} Subcategorias` : 'Categoria Principal'}
                         </span>
                       </div>
@@ -261,12 +268,14 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                   <div className="flex items-center gap-2 pr-2">
                       <button 
                         onClick={() => { setEditingCategory(parent); setIsModalOpen(true); }} 
+                        title="Editar Categoria"
                         className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-600 hover:text-indigo-400 hover:bg-slate-800' : 'text-slate-300 hover:text-indigo-600 hover:bg-slate-50'}`}
                       >
                         <Edit size={16} />
                       </button>
                       <button 
                         onClick={() => handleDeleteClick(parent.id)}
+                        title="Excluir Categoria"
                         className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-600 hover:text-rose-500 hover:bg-slate-800' : 'text-slate-300 hover:text-rose-500 hover:bg-slate-50'}`}
                       >
                         <Trash2 size={16} />
@@ -285,12 +294,14 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                     <div className="flex items-center gap-1 pr-1">
                       <button 
                         onClick={() => { setEditingCategory(child); setIsModalOpen(true); }} 
+                        title="Editar Subcategoria"
                         className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'text-slate-600 hover:text-indigo-400 hover:bg-slate-800' : 'text-slate-300 hover:text-indigo-600 hover:bg-slate-50'}`}
                       >
                         <Edit size={14} />
                       </button>
                       <button 
                         onClick={() => handleDeleteClick(child.id)}
+                        title="Excluir Subcategoria"
                         className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'text-slate-600 hover:text-rose-500 hover:bg-slate-800' : 'text-slate-300 hover:text-rose-500 hover:bg-slate-50'}`}
                       >
                         <Trash2 size={14} />
@@ -313,7 +324,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
           <div className="w-8 h-8 rounded-xl bg-indigo-500 text-white flex items-center justify-center shadow-lg transform transition-transform duration-500 group-hover:scale-110">
             <Plus size={16} strokeWidth={3} />
           </div>
-          <span className="text-[8px] font-black uppercase tracking-widest text-center">Nova</span>
+          <span className="text-[11px] font-black uppercase tracking-widest text-center">Nova</span>
         </button>
       </div>
     </div>

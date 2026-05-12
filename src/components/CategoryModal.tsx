@@ -1,6 +1,7 @@
 
 import { useState, useEffect } from 'react';
-import { Category, CategoryType } from '../types';
+import { Category, CategoryType, AppModulesConfig } from '../types';
+
 
 interface CategoryModalProps {
   isOpen: boolean;

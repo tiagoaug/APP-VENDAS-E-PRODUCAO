@@ -134,25 +134,25 @@ export default function BackupView({
           </div>
           <div>
             <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Limpeza de Duplicidades</h3>
-            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Otimizar banco de dados</p>
+            <p className="text-[11px] text-slate-400 font-black uppercase tracking-widest">Otimizar banco de dados</p>
           </div>
         </div>
 
         <div className={`p-4 rounded-2xl flex flex-col gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Transações Duplicadas</span>
+              <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">Transações Duplicadas</span>
               <span className={`text-xs font-black ${duplicates.transactions.length > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
                 {duplicates.transactions.length}
               </span>
            </div>
            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Compras Duplicadas</span>
+              <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">Compras Duplicadas</span>
               <span className={`text-xs font-black ${duplicates.purchases.length > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
                 {duplicates.purchases.length}
               </span>
            </div>
            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Vendas Duplicadas</span>
+              <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">Vendas Duplicadas</span>
               <span className={`text-xs font-black ${duplicates.sales.length > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
                 {duplicates.sales.length}
               </span>
@@ -162,12 +162,14 @@ export default function BackupView({
         {cleanMessage ? (
           <div className="bg-emerald-500/10 text-emerald-500 p-4 rounded-2xl flex items-center gap-3">
             <CheckCircle2 size={20} />
-            <p className="text-[10px] font-black uppercase tracking-widest leading-relaxed">{cleanMessage}</p>
+            <p className="text-[11px] font-black uppercase tracking-widest leading-relaxed">{cleanMessage}</p>
           </div>
         ) : (
           <button 
             onClick={handleCleanDuplicates}
             disabled={totalDuplicates === 0 || isCleaning}
+            title="Limpar Duplicidades"
+            aria-label={totalDuplicates > 0 ? `Remover ${totalDuplicates} registros duplicados` : 'Nenhuma duplicidade encontrada para limpar'}
             className={`w-full py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${
               totalDuplicates > 0 
                 ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20' 
@@ -181,22 +183,30 @@ export default function BackupView({
       </section>
 
       <div className="flex flex-col gap-4">
-        <button className={`p-6 rounded-[2rem] shadow-xl flex items-center justify-between group active:scale-[0.98] transition-all ${isDarkMode ? 'bg-indigo-700 text-white shadow-none' : 'bg-indigo-600 text-white shadow-indigo-200'}`}>
+        <button 
+          title="Fazer Backup"
+          aria-label="Exportar todos os dados para um arquivo JSON"
+          className={`p-6 rounded-[2rem] shadow-xl flex items-center justify-between group active:scale-[0.98] transition-all ${isDarkMode ? 'bg-indigo-700 text-white shadow-none' : 'bg-indigo-600 text-white shadow-indigo-200'}`}
+        >
           <div className="flex items-center gap-4 text-left">
             <Download size={28} />
             <div>
               <p className="font-bold text-sm">Fazer Backup Agora</p>
-              <p className="text-[10px] opacity-70 font-black uppercase tracking-widest mt-0.5">Exportar banco de dados .json</p>
+              <p className="text-[11px] opacity-70 font-black uppercase tracking-widest mt-0.5">Exportar banco de dados .json</p>
             </div>
           </div>
         </button>
 
-        <button className={`p-6 rounded-[2rem] border shadow-sm flex items-center justify-between group active:scale-[0.98] transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+        <button 
+          title="Restaurar Dados"
+          aria-label="Importar dados de um arquivo JSON anteriormente exportado"
+          className={`p-6 rounded-[2rem] border shadow-sm flex items-center justify-between group active:scale-[0.98] transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
+        >
           <div className="flex items-center gap-4 text-left">
             <Upload size={28} className="text-emerald-500 dark:text-emerald-400" />
             <div>
               <p className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Restaurar Dados</p>
-              <p className="text-[10px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest mt-0.5">Importar arquivo compatível</p>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest mt-0.5">Importar arquivo compatível</p>
             </div>
           </div>
         </button>
@@ -211,6 +221,8 @@ export default function BackupView({
         <button 
           onClick={() => setShowFormatConfirm(true)}
           disabled={isResetting}
+          title="Formatar Sistema"
+          aria-label="Apagar todos os dados do sistema e redefinir para o padrão de fábrica"
           className={`bg-rose-600 text-white py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95 ${isDarkMode ? 'shadow-none' : 'shadow-rose-100'}`}
         >
            {isResetting ? <RefreshCw size={18} className="animate-spin" /> : <RefreshCw size={18} />} 
@@ -249,6 +261,7 @@ export default function BackupView({
                 <button 
                   onClick={() => setShowFormatConfirm(false)}
                   disabled={isResetting}
+                  title="Cancelar Formatação"
                   className="flex-1 py-4 px-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all"
                 >
                   Cancelar
@@ -256,6 +269,7 @@ export default function BackupView({
                 <button 
                   onClick={handleFormatSystem}
                   disabled={isResetting}
+                  title="Confirmar Formatação"
                   className="flex-1 py-4 px-4 bg-rose-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all"
                 >
                   {isResetting ? 'Apagando...' : 'Formatar Agora'}

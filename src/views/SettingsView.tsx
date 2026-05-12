@@ -110,11 +110,13 @@ export default function SettingsView({
       <div className="flex flex-col gap-6">
         {menuGroups.map((group, idx) => (
           <div key={idx} className="flex flex-col gap-3">
-            <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">{group.title}</h3>
+            <h3 className="px-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">{group.title}</h3>
             <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
               {group.items.map((item, itemIdx) => (
                 <button
                   key={item.id}
+                  title={item.label}
+                  aria-label={`Navegar para ${item.label}`}
                   onClick={() => {
                     if (item.id === 'SOLE_MATRIX_DIRECT') {
                       onNavigateProduction('MATRIZES');
@@ -139,12 +141,14 @@ export default function SettingsView({
 
         {/* ── ACESSIBILIDADE ── */}
         <div className="flex flex-col gap-3">
-          <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Personalização</h3>
+          <h3 className="px-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Personalização</h3>
           <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
 
             {/* Accessibility accordion trigger */}
             <button
               onClick={() => setShowA11y(v => !v)}
+              title="Acessibilidade e Aparência"
+              aria-label="Abrir configurações de acessibilidade e aparência"
               className={`w-full flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50'}`}
             >
               <div className="flex items-center gap-4">
@@ -153,7 +157,7 @@ export default function SettingsView({
                 </div>
                 <div className="text-left">
                   <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Acessibilidade</p>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Aparência e tamanho de fonte</p>
+                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Aparência e tamanho de fonte</p>
                 </div>
               </div>
               <ChevronDown
@@ -174,13 +178,14 @@ export default function SettingsView({
                     </div>
                     <div>
                       <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Modo {isDarkMode ? 'Noturno' : 'Diurno'}</p>
-                      <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Ajustar aparência</p>
+                      <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Ajustar aparência</p>
                     </div>
                   </div>
                   <button
                     onClick={toggleDarkMode}
-                    title={`Mudar para modo ${appTheme === 'dark' ? 'diurno' : 'noturno'}`}
-                    className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${appTheme === 'dark' ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                    title={`Mudar para modo ${isDarkMode ? 'diurno' : 'noturno'}`}
+                    aria-label={`Mudar para modo ${isDarkMode ? 'diurno' : 'noturno'}`}
+                    className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${isDarkMode ? 'bg-indigo-600' : 'bg-slate-200'}`}
                   >
                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${appTheme === 'dark' ? 'left-7' : 'left-1'}`} />
                   </button>
@@ -194,12 +199,13 @@ export default function SettingsView({
                     </div>
                     <div>
                       <p className={`text-sm font-black ${appTheme === 'industrial' ? 'text-slate-900' : isDarkMode ? 'text-white' : 'text-slate-900'}`}>Padrão Industrial</p>
-                      <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Cinza claro de alta visibilidade</p>
+                      <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Cinza claro de alta visibilidade</p>
                     </div>
                   </div>
                   <button
                     onClick={() => setAppTheme(appTheme === 'industrial' ? 'light' : 'industrial')}
                     title={`Mudar para padrão industrial`}
+                    aria-label={appTheme === 'industrial' ? 'Desativar padrão industrial' : 'Ativar padrão industrial'}
                     className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${appTheme === 'industrial' ? 'bg-zinc-500' : 'bg-slate-200'}`}
                   >
                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${appTheme === 'industrial' ? 'left-7' : 'left-1'}`} />
@@ -210,7 +216,7 @@ export default function SettingsView({
                 <div className={`p-4 rounded-2xl flex flex-col gap-3 ${isDarkMode ? 'bg-slate-800' : 'bg-white border border-slate-100'}`}>
                   <div className="flex items-center gap-2 mb-1">
                     <Type size={14} className="text-slate-400" />
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tamanho da Fonte</p>
+                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Tamanho da Fonte</p>
                   </div>
                   <div className="flex gap-2">
                     {fontSizeOptions.map(opt => (
@@ -230,7 +236,7 @@ export default function SettingsView({
                         } ${fontSize === opt.key ? 'text-violet-600 dark:text-violet-400' : isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                           A
                         </span>
-                        <span className={`text-[9px] font-black uppercase tracking-wide ${
+                        <span className={`text-[11px] font-black uppercase tracking-wide ${
                           fontSize === opt.key ? 'text-violet-500' : 'text-slate-400'
                         }`}>
                           {opt.label}
@@ -245,6 +251,8 @@ export default function SettingsView({
             {/* ── LOGOUT — último item do menu ── */}
             <button
               onClick={() => setShowLogoutConfirm(true)}
+              title="Encerrar Sessão"
+              aria-label="Sair da conta atual"
               className="w-full flex items-center justify-between p-4 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-colors active:bg-rose-100 dark:active:bg-rose-900/20"
             >
               <div className="flex items-center gap-4">
@@ -253,7 +261,7 @@ export default function SettingsView({
                 </div>
                 <div className="text-left">
                   <p className="text-sm font-black tracking-tight text-rose-500">Encerrar Sessão</p>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Sair da conta atual</p>
+                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Sair da conta atual</p>
                 </div>
               </div>
               <ChevronRight size={18} className="text-rose-300" />
@@ -263,7 +271,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[10px] text-slate-300 font-bold uppercase tracking-widest">Gestão Cloud Pro v1.2.4</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">Gestão Cloud Pro v1.2.4</p>
       </div>
 
       {/* ── LOGOUT CONFIRM MODAL ── */}
@@ -287,6 +295,7 @@ export default function SettingsView({
             <div className="flex gap-3 w-full mt-1">
               <button
                 onClick={() => setShowLogoutConfirm(false)}
+                title="Cancelar Sair"
                 className={`flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 ${
                   isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
                 }`}
@@ -295,6 +304,7 @@ export default function SettingsView({
               </button>
               <button
                 onClick={() => { setShowLogoutConfirm(false); onLogout(); }}
+                title="Confirmar Sair"
                 className="flex-1 py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-rose-500 text-white shadow-lg shadow-rose-500/20 transition-all active:scale-95"
               >
                 Sair

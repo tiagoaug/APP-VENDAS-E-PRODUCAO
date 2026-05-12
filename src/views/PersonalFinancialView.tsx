@@ -370,20 +370,20 @@ export default function PersonalFinancialView({
         <>
           {/* Dashboard View */}
           <div className={`p-8 rounded-[2.5rem] border shadow-xl relative overflow-hidden transition-all ${
-            isDarkMode 
-              ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/30 border-slate-800' 
-              : 'bg-gradient-to-br from-indigo-600 via-indigo-600 to-indigo-800 border-indigo-500 text-white'
+            isDarkMode
+              ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/30 border-slate-800'
+              : 'bg-gradient-to-br from-sky-100 via-blue-100 to-sky-200 border-sky-200 text-sky-900'
           }`}>
-            <div className="absolute -right-20 -top-20 w-64 h-64 bg-white/5 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -right-20 -top-20 w-64 h-64 bg-sky-300/20 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-blue-200/30 rounded-full blur-3xl pointer-events-none" />
             
             <div className="absolute top-6 right-8 z-20">
                 <button 
                   onClick={handleTransfer} 
                   className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-lg ${
-                    isDarkMode 
-                      ? 'bg-slate-800/80 text-indigo-400 border border-slate-700 hover:bg-slate-700' 
-                      : 'bg-white/20 text-white backdrop-blur-md border border-white/30 hover:bg-white/30'
+                    isDarkMode
+                      ? 'bg-slate-800/80 text-indigo-400 border border-slate-700 hover:bg-slate-700'
+                      : 'bg-white/60 text-sky-700 backdrop-blur-md border border-sky-200 hover:bg-white/80'
                   }`}
                   title="Receber da Empresa"
                   aria-label="Receber transferência da empresa para conta pessoal"
@@ -393,23 +393,23 @@ export default function PersonalFinancialView({
             </div>
             
             <div className="relative z-10">
-              <p className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-indigo-100/70'}`}>Saldo Disponível</p>
+              <p className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Saldo Disponível</p>
               <h2 className="text-4xl font-black mt-2 tracking-tighter flex items-baseline gap-2">
                 <span className="text-sm opacity-50 font-bold tracking-normal">R$</span>
                 {stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </h2>
               
               <div className="grid grid-cols-2 gap-4 mt-10">
-                <div className={`p-4 rounded-3xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-white/10 backdrop-blur-sm'}`}>
-                  <p className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">Entradas (Mês)</p>
-                  <p className="text-lg font-black text-emerald-400 flex items-center gap-2">
+                <div className={`p-4 rounded-3xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-white/50 backdrop-blur-sm'}`}>
+                  <p className={`text-[8px] font-black uppercase tracking-widest mb-1 ${isDarkMode ? 'opacity-60' : 'text-sky-500'}`}>Entradas (Mês)</p>
+                  <p className={`text-lg font-black flex items-center gap-2 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>
                     <TrendingUp size={16} />
                     R$ {stats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
-                <div className={`p-4 rounded-3xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-white/10 backdrop-blur-sm'}`}>
-                  <p className="text-[8px] font-black uppercase tracking-widest opacity-60 mb-1">Saídas (Mês)</p>
-                  <p className="text-lg font-black text-rose-400 flex items-center gap-2">
+                <div className={`p-4 rounded-3xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-white/50 backdrop-blur-sm'}`}>
+                  <p className={`text-[8px] font-black uppercase tracking-widest mb-1 ${isDarkMode ? 'opacity-60' : 'text-sky-500'}`}>Saídas (Mês)</p>
+                  <p className={`text-lg font-black flex items-center gap-2 ${isDarkMode ? 'text-rose-400' : 'text-rose-500'}`}>
                     <TrendingDown size={16} />
                     R$ {stats.expenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>

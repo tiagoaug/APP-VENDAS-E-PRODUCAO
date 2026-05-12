@@ -677,7 +677,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                   <span className="text-[14px] font-black">
                                     {(() => {
                                       const matBaseCost = material?.metadata?.baseCost;
-                                      const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((material || mat)?.metadata?.baseCost || 0);
+                                      const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((material)?.metadata?.baseCost || 0);
                                       const result = item.quantity * unitVal;
                                       return result.toFixed(2).replace('.', ',');
                                     })()}
@@ -694,7 +694,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                   <span className="text-[14px] font-black text-indigo-600 dark:text-indigo-400">
                                     {(() => {
                                       const matBaseCost = material?.metadata?.baseCost;
-                                      const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((material || mat)?.metadata?.baseCost || 0);
+                                      const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((material)?.metadata?.baseCost || 0);
                                       const result = (item.quantity * unitVal) + (item.services || []).reduce((acc, s) => acc + s.cost, 0);
                                       return result.toFixed(2).replace('.', ',');
                                     })()}
@@ -783,8 +783,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                       </div>
                                     </div>
                                     <div className="flex items-center gap-1">
-                                       <button onClick={() => { setEditingConsumption(item); setConsumptionCategory(group.cat); setIsConsumptionModalOpen(true); }} title="Configurações" className="p-1.5 text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"><Settings size={14} /></button>
-                                       <button onClick={() => { const newC = (v.consumptions || []).filter(c => c.id !== item.id); updateVariation(activeVariationIndex, { consumptions: newC }); }} title="Excluir" className="p-1.5 text-rose-500 bg-rose-50 dark:bg-rose-900/30 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors"><Trash2 size={14} /></button>
+                                       <button onClick={() => { setEditingConsumption(item); setConsumptionCategory(group.cat); setIsConsumptionModalOpen(true); }} title="Configurações do Item" className="p-1.5 text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"><Settings size={14} /></button>
+                                       <button onClick={() => { const newC = (v.consumptions || []).filter(c => c.id !== item.id); updateVariation(activeVariationIndex, { consumptions: newC }); }} title="Excluir Item" className="p-1.5 text-rose-500 bg-rose-50 dark:bg-rose-900/30 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors"><Trash2 size={14} /></button>
                                      </div>
                                   </div>
                                   <div className="flex flex-col pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
@@ -799,7 +799,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                       <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">
                                         R$ {(() => {
                                           const matBaseCost = mat?.metadata?.baseCost;
-                                          const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((material || mat)?.metadata?.baseCost || 0);
+                                          const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((mat)?.metadata?.baseCost || 0);
                                           return (item.quantity * unitVal).toFixed(2).replace('.', ',');
                                         })()}
                                       </span>
@@ -828,9 +828,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         <p className="text-2xl font-black text-white leading-none mt-1">
                           {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
                             (v.consumptions || []).reduce((acc, item) => {
-                              const material = productionConfigs.find(c => c.id === item.materialId);
-                              const matBaseCost = material?.metadata?.baseCost;
-                              const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((material || mat)?.metadata?.baseCost || 0);
+                              const mat = productionConfigs.find(c => c.id === item.materialId);
+                              const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((mat)?.metadata?.baseCost || 0);
                               const matCost = (item.quantity * unitVal);
                               const serviceCost = (item.services || []).reduce((sAcc, s) => sAcc + s.cost, 0);
                               return acc + matCost + serviceCost;

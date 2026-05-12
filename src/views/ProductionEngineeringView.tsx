@@ -89,7 +89,7 @@ export default function ProductionEngineeringView({
                 <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
                   Engenharia de Produto
                 </h2>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest">
                   Fichas Técnicas e Configurações
                 </p>
              </div>
@@ -121,7 +121,7 @@ export default function ProductionEngineeringView({
         <div
           className={`flex items-center justify-center text-center p-8 border rounded-[2rem] mt-2 border-dashed ${isDarkMode ? "bg-slate-900/50 border-slate-800" : "bg-white border-slate-100"}`}
         >
-          <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest">
+          <p className="text-slate-500 text-[11px] font-bold uppercase tracking-widest">
             Nenhum modelo em desenvolvimento encontrado.
           </p>
         </div>
@@ -174,7 +174,7 @@ function EngineeringCard({
                <Hammer size={28} />
             </div>
             <div className="flex flex-col min-w-0">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1.5 block truncate">
+              <span className="text-[11px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1.5 block truncate">
                 REF: {product.reference}
               </span>
               <h3 className="font-black text-lg text-slate-800 dark:text-white uppercase tracking-tight leading-tight line-clamp-2">
@@ -186,9 +186,11 @@ function EngineeringCard({
           <div className="flex flex-col items-end gap-2 shrink-0">
             <button 
               onClick={onToggleStatus}
+              title={`Mudar para ${product.status === ProductStatus.ACTIVE ? 'Inativo' : 'Ativo'}`}
+              aria-label={`Mudar status do produto para ${product.status === ProductStatus.ACTIVE ? 'Inativo' : 'Ativo'}`}
               className={`px-2.5 py-1 rounded-lg transition-all whitespace-nowrap ${product.status === ProductStatus.ACTIVE ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-500/10 text-slate-500'}`}
             >
-              <span className="text-[7.5px] font-black uppercase tracking-wider">
+              <span className="text-[11px] font-black uppercase tracking-wider">
                 {product.status === ProductStatus.ACTIVE ? 'Em Uso' : 'Inativo'}
               </span>
             </button>
@@ -198,11 +200,11 @@ function EngineeringCard({
         <div className="flex flex-wrap gap-2">
            <div className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
               <Package size={14} className="text-indigo-500" />
-              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{variationsCount} Cores</span>
+              <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">{variationsCount} Cores</span>
            </div>
            {product.categoryId && (
              <div className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">
                   {categories.find(c => c.id === product.categoryId)?.name || 'S/ Cat'}
                 </span>
              </div>
@@ -212,7 +214,8 @@ function EngineeringCard({
         <div className="flex items-center gap-3 pt-2">
           <button
             onClick={onEdit}
-            className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 active:scale-95 transition-all"
+            title="Editar Engenharia"
+            className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-[11px] hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 active:scale-95 transition-all"
           >
             Editar Engenharia <ChevronRight size={16} />
           </button>

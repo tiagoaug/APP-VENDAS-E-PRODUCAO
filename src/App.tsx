@@ -2328,11 +2328,11 @@ export default function App() {
             flowTags={flowTags}
             sectors={sectors}
             productionConfigs={productionConfigs}
-            onSaveFlowTag={(tag) => firebaseService.saveDocument("flowTags", tag)}
-            onDeleteFlowTag={(id) => firebaseService.deleteDocument("flowTags", id)}
-            onSaveSector={(sector) => firebaseService.saveDocument("sectors", sector)}
-            onDeleteSector={(id) => firebaseService.deleteDocument("sectors", id)}
-            onSaveConfigItem={async (item) => {
+            onSaveFlowTag={(tag: any) => firebaseService.saveDocument("flowTags", tag)}
+            onDeleteFlowTag={(id: string) => firebaseService.deleteDocument("flowTags", id)}
+            onSaveSector={(sector: any) => firebaseService.saveDocument("sectors", sector)}
+            onDeleteSector={(id: string) => firebaseService.deleteDocument("sectors", id)}
+            onSaveConfigItem={async (item: any) => {
               try {
                 await firebaseService.saveDocument("productionConfigs", item);
                 // The modal usually closes itself or is closed via state change in the view
@@ -2341,9 +2341,10 @@ export default function App() {
                 alert("Erro ao salvar item: " + (err.message || err));
               }
             }}
-            onDeleteConfigItem={(id) => firebaseService.deleteDocument("productionConfigs", id)}
-            onUpdateSectorsOrder={(updatedSectors) => Promise.all(updatedSectors.map(s => firebaseService.saveDocument('sectors', s))).then(() => {})}
+            onDeleteConfigItem={(id: string) => firebaseService.deleteDocument("productionConfigs", id)}
+            onUpdateSectorsOrder={(updatedSectors: any[]) => Promise.all(updatedSectors.map(s => firebaseService.saveDocument('sectors', s))).then(() => {})}
             onBack={goBack}
+
             isDarkMode={isDarkMode}
             people={people}
             colors={colors}
@@ -2409,7 +2410,7 @@ export default function App() {
                 Gestão integrada de insumos e matérias-primas.
               </p>
             </div>
-            <button onClick={goBack} className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest">Voltar</button>
+            <button onClick={goBack} title="Voltar" className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[11px] font-black uppercase tracking-widest">Voltar</button>
           </div>
         );
       case ViewType.PRODUCTION_PURCHASE_NEEDS:
@@ -2424,7 +2425,7 @@ export default function App() {
                 Cálculo automático de compra baseado na produção pendente.
               </p>
             </div>
-            <button onClick={goBack} className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest">Voltar</button>
+            <button onClick={goBack} title="Voltar" className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[11px] font-black uppercase tracking-widest">Voltar</button>
           </div>
         );
       case ViewType.PRODUCTION_WEIGHING:
@@ -2482,7 +2483,7 @@ export default function App() {
                 Esta funcionalidade ainda não está pronta para uso.
               </p>
             </div>
-            <button onClick={goBack} className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[10px] font-black uppercase tracking-widest">Voltar</button>
+            <button onClick={goBack} title="Voltar" className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[11px] font-black uppercase tracking-widest">Voltar</button>
           </div>
         );
     }
@@ -2749,7 +2750,7 @@ export default function App() {
       }`}>
         <TabItem
           icon={<LayoutDashboard size={22} />}
-          label="HOME"
+          label="Home"
           active={activeTab === "dashboard"}
           onClick={() => resetTo(ViewType.DASHBOARD)}
           colorClass="text-indigo-600 dark:text-indigo-400"
@@ -2759,7 +2760,7 @@ export default function App() {
           <>
             <TabItem
               icon={<ShoppingCart size={22} />}
-              label="COMPRAS"
+              label="Compras"
               active={activeTab === "purchases"}
               onClick={() => resetTo(ViewType.PURCHASES)}
               colorClass="text-cyan-500 dark:text-cyan-400"
@@ -2767,7 +2768,7 @@ export default function App() {
             />
             <TabItem
               icon={<ShoppingBag size={22} />}
-              label="VENDAS"
+              label="Vendas"
               active={activeTab === "sales"}
               onClick={() => resetTo(ViewType.SALES)}
               colorClass="text-emerald-500 dark:text-emerald-400"
@@ -2778,7 +2779,7 @@ export default function App() {
         {modulesConfig.sales && modulesConfig.production && (
           <TabItem
             icon={<Factory size={22} />}
-            label="PROD."
+            label="Prod."
             active={activeTab === "production"}
             onClick={() => resetTo(ViewType.PRODUCTION_MENU)}
             colorClass="text-indigo-600 dark:text-indigo-400"
@@ -2788,7 +2789,7 @@ export default function App() {
         {modulesConfig.sales && (
           <TabItem
             icon={<DollarSign size={22} />}
-            label="FINAN."
+            label="Finan."
             active={activeTab === "financial"}
             onClick={() => resetTo(ViewType.FINANCIAL)}
             colorClass="text-amber-500 dark:text-amber-400"
@@ -2798,7 +2799,7 @@ export default function App() {
         {modulesConfig.personal && (
           <TabItem
             icon={<UserIcon size={22} />}
-            label="PESSOAL"
+            label="Pessoal"
             active={activeTab === "personal"}
             onClick={() => resetTo(ViewType.PERSONAL_FINANCIAL)}
             colorClass="text-amber-600 dark:text-amber-500"
@@ -2807,7 +2808,7 @@ export default function App() {
         )}
         <TabItem
           icon={<Settings size={22} />}
-          label="MAIS"
+          label="Mais"
           active={activeTab === "settings"}
           onClick={() => resetTo(ViewType.SETTINGS)}
           colorClass="text-slate-500 dark:text-slate-400"
@@ -2906,6 +2907,8 @@ function TabItem({
   return (
     <button
       onClick={onClick}
+      title={label}
+      aria-label={`Ir para ${label}`}
       className={`flex flex-col items-center justify-center p-1 min-w-[50px] h-[60px] transition-all rounded-[15px] ${
         active ? activeBg : "bg-transparent"
       }`}
@@ -2916,7 +2919,7 @@ function TabItem({
         {icon}
       </div>
       <span
-        className={`text-[7px] font-black tracking-tight mt-0.5 uppercase transition-all ${
+        className={`text-[11px] font-black tracking-tighter mt-0.5 transition-all ${
           appTheme === 'industrial' ? 'text-black' : (active ? iconColor : iconColor + ' opacity-70')
         } ${active ? "opacity-100" : (appTheme === 'industrial' ? "opacity-60" : "opacity-70")}`}
       >

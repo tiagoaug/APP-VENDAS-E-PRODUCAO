@@ -331,6 +331,30 @@ const DEFAULT_UNITS = [
   { name: 'MIL', description: 'Milheiro' },
 ];
 
+interface ProductionConfigViewProps {
+  flowTags?: FlowTag[];
+  sectors?: Sector[];
+  productionConfigs?: ProductionConfigItem[];
+  onSaveFlowTag: (tag: FlowTag) => Promise<void>;
+  onDeleteFlowTag: (id: string) => Promise<void>;
+  onSaveSector: (sector: Sector) => Promise<void>;
+  onDeleteSector: (id: string) => Promise<void>;
+  onSaveConfigItem: (item: ProductionConfigItem) => Promise<void>;
+  onDeleteConfigItem: (id: string) => Promise<void>;
+  onUpdateSectorsOrder: (updatedSectors: Sector[]) => void;
+  onBack: () => void;
+  isDarkMode?: boolean;
+  configItems?: ProductionConfigItem[];
+  people?: Person[];
+  colors?: ColorValue[];
+  grids?: Grid[];
+  categories?: any[];
+  initialScreen?: ProductionScreenType;
+  onNavigate?: (view: ViewType) => void;
+  onAddProduct?: () => void;
+  onNavigateGrids?: () => void;
+}
+
 export default function ProductionConfigView({
   flowTags = [],
   sectors = [],
@@ -344,7 +368,6 @@ export default function ProductionConfigView({
   onUpdateSectorsOrder,
   onBack,
   isDarkMode = false,
-  configItems = [],
   people = [],
   colors = [],
   grids = [],
@@ -354,6 +377,7 @@ export default function ProductionConfigView({
   onAddProduct,
   onNavigateGrids
 }: ProductionConfigViewProps) {
+
   const [currentScreen, setCurrentScreen] = useState<ProductionScreenType>(initialScreen);
 
   const handleNavigateShortcut = (screen: ProductionScreenType | ViewType) => {

@@ -75,7 +75,7 @@ export default function ConsumptionCalculatorModal({ isOpen, onClose, onResult, 
                 {sizeLabel && <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Tamanho {sizeLabel}</span>}
               </div>
            </div>
-           <button onClick={onClose} className={`p-3 rounded-2xl transition-colors ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}>
+           <button onClick={onClose} title="Fechar Calculadora" className={`p-3 rounded-2xl transition-colors ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-100'}`}>
             <X size={22} className="text-slate-300" />
            </button>
         </div>
@@ -146,20 +146,22 @@ export default function ConsumptionCalculatorModal({ isOpen, onClose, onResult, 
 
         {/* Footer Actions (matching image) */}
         <div className="px-10 pb-10 flex gap-4">
-           <button 
-             onClick={handleCopy}
-             className={`flex-1 py-5 rounded-[1.8rem] flex items-center justify-center gap-3 font-black uppercase tracking-widest text-[11px] transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
-           >
-             <Copy size={18} />
-             Copiar
-           </button>
-           <button 
-             onClick={handleApply}
-             className="flex-[1.2] py-5 rounded-[1.8rem] bg-emerald-600 text-white flex items-center justify-center gap-3 font-black uppercase tracking-widest text-[11px] shadow-xl shadow-emerald-600/20 active:scale-95 transition-all hover:bg-emerald-500"
-           >
-             <Check size={18} strokeWidth={3} />
-             Aplicar
-           </button>
+            <button 
+              onClick={handleCopy}
+              title="Copiar Valor"
+              className={`flex-1 py-5 rounded-[1.8rem] flex items-center justify-center gap-3 font-black uppercase tracking-widest text-[11px] transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
+            >
+              <Copy size={18} />
+              Copiar
+            </button>
+            <button 
+              onClick={handleApply}
+              title="Aplicar Valor ao Campo"
+              className="flex-[1.2] py-5 rounded-[1.8rem] bg-emerald-600 text-white flex items-center justify-center gap-3 font-black uppercase tracking-widest text-[11px] shadow-xl shadow-emerald-600/20 active:scale-95 transition-all hover:bg-emerald-500"
+            >
+              <Check size={18} strokeWidth={3} />
+              Aplicar
+            </button>
         </div>
       </motion.div>
     </div>,

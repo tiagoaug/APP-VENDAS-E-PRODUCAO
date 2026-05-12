@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Purchase, Person, PurchaseType, PaymentStatus } from "../types";
+import { Purchase, Person, PurchaseType, PaymentStatus, PaymentTerm } from "../types";
 import {
   ShoppingCart,
   Plus,
@@ -181,19 +181,19 @@ export default function PurchasesView({
           <div className={`flex flex-1 border p-1 rounded-2xl shadow-sm dark:shadow-none ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             <button 
               onClick={() => setTypeFilter('ALL')}
-              className={`flex-1 px-2 py-1.5 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${typeFilter === 'ALL' ? 'bg-slate-900 dark:bg-slate-700 text-white shadow-md' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+              className={`px-4 py-2 rounded-xl text-[10px] font-bold tracking-wider transition-all whitespace-nowrap ${typeFilter === 'ALL' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}
             >
               Todos
             </button>
             <button 
               onClick={() => setTypeFilter(PurchaseType.REPLENISHMENT)}
-              className={`flex-1 px-2 py-1.5 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${typeFilter === PurchaseType.REPLENISHMENT ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+              className={`px-4 py-2 rounded-xl text-[10px] font-bold tracking-wider transition-all whitespace-nowrap ${typeFilter === PurchaseType.REPLENISHMENT ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}
             >
               Estoque
             </button>
             <button 
               onClick={() => setTypeFilter(PurchaseType.GENERAL)}
-              className={`flex-1 px-2 py-1.5 rounded-xl transition-all text-[10px] font-black uppercase tracking-widest ${typeFilter === PurchaseType.GENERAL ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+              className={`px-4 py-2 rounded-xl text-[10px] font-bold tracking-wider transition-all whitespace-nowrap ${typeFilter === PurchaseType.GENERAL ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}
             >
               Geral
             </button>
@@ -201,12 +201,12 @@ export default function PurchasesView({
 
           {/* Period Filter */}
           <select
-            className={`min-w-[100px] px-3 py-1.5 rounded-2xl text-[10px] font-black uppercase tracking-widest outline-none border shadow-sm dark:shadow-none ${isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-100 text-slate-800"} focus:ring-2 focus:ring-indigo-500`}
+            className={`min-w-[100px] px-3 py-1.5 rounded-2xl text-[10px] font-bold tracking-wider outline-none border shadow-sm dark:shadow-none ${isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-100 text-slate-800"} focus:ring-2 focus:ring-indigo-500`}
             value={periodFilter}
             onChange={(e) => setPeriodFilter(e.target.value)}
             title="Filtrar por Período"
           >
-            <option value="">MESES</option>
+            <option value="">Meses</option>
             {availableMonths.map(month => {
                const [y, m] = month.split('-');
                const date = new Date(parseInt(y), parseInt(m)-1);
@@ -226,6 +226,8 @@ export default function PurchasesView({
           const itemCount = purchase.type === PurchaseType.GENERAL 
             ? (purchase.generalItems?.length || 0)
             : (purchase.items?.length || 0);
+          
+          const isLate = purchase.dueDate && new Date(purchase.dueDate) < new Date() && purchase.paymentStatus !== PaymentStatus.PAID;
 
           return (
             <div
@@ -246,18 +248,18 @@ export default function PurchasesView({
                   </div>
                   <div className="min-w-0">
                     <h3
-                      className={`font-black text-base tracking-tight leading-none uppercase truncate mb-1 ${isDarkMode ? "text-white" : "text-slate-900"}`}
+                      className={`font-black text-base tracking-tight leading-none truncate mb-1 ${isDarkMode ? "text-white" : "text-slate-900"}`}
                     >
                       {supplier?.name || "Fornecedor"}
                     </h3>
                     <div className="flex flex-col gap-1.5">
                       <div className="flex items-center gap-2">
                         {purchase.sellerName && (
-                          <span className="text-[7px] font-black uppercase px-2 py-0.5 rounded-md leading-none tracking-widest bg-indigo-600 text-white shadow-sm">
+                          <span className="text-[7px] font-bold px-2 py-0.5 rounded-md leading-none tracking-wider bg-indigo-600 text-white shadow-sm">
                             {purchase.sellerName}
                           </span>
                         )}
-                        <div className="flex items-center gap-1.5 text-[9px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-bold text-slate-400 tracking-wider mt-0.5">
                           <Calendar size={12} strokeWidth={3} />
                           {purchase.date ? (
                           (() => {
@@ -267,7 +269,7 @@ export default function PurchasesView({
                         ) : "Sem Data"}
                         </div>
                       </div>
-                      <div className="flex items-center gap-1.5 text-[9px] text-indigo-500 dark:text-indigo-400 font-black uppercase tracking-widest">
+                      <div className="flex items-center gap-1.5 text-[9px] text-indigo-500 dark:text-indigo-400 font-bold tracking-wider">
                         <Hash size={12} strokeWidth={3} />
                         #{purchase.batchNumber || purchase.id.slice(-6).toUpperCase()}
                       </div>
@@ -277,36 +279,19 @@ export default function PurchasesView({
 
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <div className="flex flex-col gap-1.5 items-end">
-                    <span
-                      className={`text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest shadow-lg ${purchase.type === PurchaseType.REPLENISHMENT ? "bg-indigo-500 text-white" : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"}`}
-                    >
-                      {purchase.type === PurchaseType.REPLENISHMENT
-                        ? "ESTOQUE"
-                        : "GERAL"}
-                    </span>
                     {purchase.dueDate && purchase.paymentStatus === PaymentStatus.PENDING && (
-                      <span className={`text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest shadow-lg ${
-                        new Date(purchase.dueDate) < new Date()
-                          ? 'bg-rose-600 text-white animate-pulse-vencimento'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                      }`}>
-                        VENC. DATA {(() => {
-                          const d = new Date(purchase.dueDate);
-                          return isNaN(d.getTime()) ? "INVÁLIDA" : format(d, "dd/MM", { locale: ptBR });
-                        })()}
+                      <span className={`px-2 py-0.5 rounded-lg text-[8px] font-bold tracking-wider ${isLate ? 'bg-rose-50 text-rose-500' : 'bg-amber-50 text-amber-500'}`}>
+                        Venc: {purchase.dueDate ? format(new Date(purchase.dueDate), "dd/MM/yyyy") : 'Inválida'}
                       </span>
                     )}
-                    <span className={`text-[8px] font-black uppercase px-3 py-1 rounded-lg leading-none tracking-widest shadow-lg ${
-                      purchase.generateTransaction === false 
-                        ? "bg-slate-400 text-white" 
-                        : (purchase.paymentStatus === PaymentStatus.PAID 
-                            ? 'bg-emerald-600 text-white shadow-emerald-500/20' 
-                            : 'bg-amber-500 text-white shadow-amber-500/20')
-                    }`}>
-                      {purchase.generateTransaction === false 
-                        ? 'NÃO CONTÁBIL' 
-                        : (purchase.paymentStatus === PaymentStatus.PAID ? 'COMPRA • QUITADA' : 'COMPRA • PENDENTE')}
-                    </span>
+                    {purchase.generateTransaction === false && <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-500 text-[8px] font-bold tracking-wider">Não Contábil</span>}
+                    {purchase.paymentTerm === PaymentTerm.CASH ? (
+                      <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-500 text-[8px] font-bold tracking-wider">Compra • Quitada</span>
+                    ) : (
+                      <span className={`px-2 py-0.5 rounded-lg text-[8px] font-bold tracking-wider ${purchase.paymentStatus === PaymentStatus.PAID ? 'bg-emerald-50 text-emerald-500' : 'bg-amber-50 text-amber-500'}`}>
+                        {purchase.paymentStatus === PaymentStatus.PAID ? 'Compra • Quitada' : 'Compra • Prazo'}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -324,7 +309,7 @@ export default function PurchasesView({
                           }}
                           title="Ver Histórico de Cheques"
                           aria-label="Ver Histórico de Cheques"
-                          className={`py-2 px-3 rounded-xl border flex items-center gap-2 text-[8px] font-black uppercase tracking-widest transition-all active:scale-[0.98] w-fit ${
+                          className={`py-2 px-3 rounded-xl border flex items-center gap-2 text-[8px] font-black tracking-widest transition-all active:scale-[0.98] w-fit ${
                             isDarkMode 
                               ? 'bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/20' 
                               : 'bg-blue-50 border-blue-100 text-blue-600 hover:bg-blue-100 shadow-sm'
@@ -334,16 +319,16 @@ export default function PurchasesView({
                           Histórico de Cheques
                         </button>
                     )}
-                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                    <span className="text-[10px] font-bold text-slate-400 tracking-widest leading-none">
                        {itemCount} {itemCount === 1 ? 'Lançamento' : 'Lançamentos'}
                     </span>
                 </div>
 
                 {/* Price Display (Right) */}
                 <div className="flex flex-col items-end shrink-0 justify-end min-w-fit">
-                   <p className={`text-lg font-black leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                   <h3 className={`font-black text-xs tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                       R$ {purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                   </p>
+                   </h3>
                 </div>
               </div>
 

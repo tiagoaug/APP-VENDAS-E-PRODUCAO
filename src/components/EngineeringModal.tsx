@@ -146,7 +146,7 @@ export default function EngineeringModal({
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-500 transition-all active:scale-90">
+          <button onClick={onClose} title="Fechar Modal" className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-rose-500 transition-all active:scale-90">
             <X size={20} strokeWidth={3} />
           </button>
         </div>
@@ -277,6 +277,7 @@ export default function EngineeringModal({
                   setNewServiceId('');
                   setNewServiceCost(0);
                 }}
+                title="Adicionar Serviço Terceirizado"
                 className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center"
               >
                 <Plus size={20} />
@@ -291,7 +292,11 @@ export default function EngineeringModal({
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-[10px] font-black text-amber-600">R$ {s.cost.toFixed(2)}</span>
-                    <button onClick={() => setEditing({ ...editing, services: editing.services?.filter((_, i) => i !== idx) })} className="text-slate-300 hover:text-rose-500">
+                    <button 
+                      onClick={() => setEditing({ ...editing, services: editing.services?.filter((_, i) => i !== idx) })} 
+                      title="Excluir Serviço"
+                      className="text-slate-300 hover:text-rose-500"
+                    >
                       <Trash2 size={14} />
                     </button>
                   </div>

@@ -49,6 +49,8 @@ export default function ConfirmDialog({
           <div className="p-6 bg-slate-50 dark:bg-slate-800/50 flex flex-col gap-2">
             <button
               onClick={onConfirm}
+              title={confirmLabel}
+              aria-label={confirmLabel}
               className={`w-full py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg transition-all active:scale-[0.98] ${
                 isDanger 
                   ? 'bg-rose-500 text-white shadow-rose-100 dark:shadow-none hover:bg-rose-600' 
@@ -59,6 +61,8 @@ export default function ConfirmDialog({
             </button>
             <button
               onClick={onCancel}
+              title={cancelLabel}
+              aria-label={cancelLabel}
               className="w-full py-4 rounded-2xl font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"
             >
               {cancelLabel}

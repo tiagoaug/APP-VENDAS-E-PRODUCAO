@@ -482,19 +482,13 @@ export type SoleStockEntry = {
   notes?: string;
 };
 
-export type ProductionLot = {
-  id: string;
-  batchId: string;
-  productId: string;
-  variationId: string;
-  gridId: string;
-  number: string;
-  pairs: { [size: string]: number };
-  totalPairs: number;
-  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
-  currentSectorId?: string;
-  history?: ProductionLotHistory[];
-  createdAt: number;
+export type ProductionLotHistory = {
+  sectorId: string;
+  statusId: string; // FlowTag ID
+  timestamp: number;
+  userId?: string;
+  userName?: string;
+  notes?: string;
 };
 
 export type SolePurchase = {
@@ -516,13 +510,6 @@ export type SolePurchaseItem = {
   quantities: { [size: string]: number };
   unitCost: number;
   totalCost: number;
-};export type ProductionLotHistory = {
-  sectorId: string;
-  statusId: string; // FlowTag ID
-  timestamp: number;
-  userId?: string;
-  userName?: string;
-  notes?: string;
 };
 
 export type ProductionLot = {
@@ -540,5 +527,14 @@ export type ProductionLot = {
   notes?: string;
   createdAt: number;
   finishedAt?: number;
+  
+  // Fields from duplicate/legacy definition
+  batchId?: string;
+  gridId?: string;
+  number?: string;
+  pairs?: { [size: string]: number };
+  status?: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+  currentSectorId?: string;
 };
+
 
