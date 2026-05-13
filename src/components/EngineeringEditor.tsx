@@ -58,12 +58,23 @@ export default function EngineeringEditor({
   );
   const [unitValManualEdited, setUnitValManualEdited] = useState(!!(consumption.unitValue && consumption.unitValue > 0));
   const [activeCalcField, setActiveCalcField] = useState<'qty' | 'unit' | null>(null);
+  const [qtyMode, setQtyMode] = useState<'simple' | 'yield'>('simple');
+  const [qtyEmbalagem, setQtyEmbalagem] = useState('1');
+  const [qtyRendimento, setQtyRendimento] = useState('1');
   const [showPieceSuggestions, setShowPieceSuggestions] = useState(false);
   const [pieceSearch, setPieceSearch] = useState(consumption.name || '');
   const [showMaterialSuggestions, setShowMaterialSuggestions] = useState(false);
   const [materialSearch, setMaterialSearch] = useState(material?.name || '');
   const [showToolSuggestions, setShowToolSuggestions] = useState(false);
   const [toolSearch, setToolSearch] = useState(productionConfigs.find(t => t.id === editing.toolId)?.name || '');
+  const [showQuickAddMaterial, setShowQuickAddMaterial] = useState(false);
+  const [quickAddMaterialName, setQuickAddMaterialName] = useState('');
+  const [quickAddCategory, setQuickAddCategory] = useState('');
+  const [quickAddUnitId, setQuickAddUnitId] = useState('');
+  const [quickAddBaseCost, setQuickAddBaseCost] = useState('');
+  const [quickAddObservacao, setQuickAddObservacao] = useState('');
+  const [isSavingQuickMaterial, setIsSavingQuickMaterial] = useState(false);
+  const [showQuickCostCalc, setShowQuickCostCalc] = useState(false);
 
   const pieces = productionConfigs.filter(c => c.type === 'PIECE');
   const filteredPieces = pieces.filter(p => 
@@ -97,6 +108,15 @@ export default function EngineeringEditor({
     const q = evaluate(qStr);
     // Para itens de consumo direto, a quantidade salva na engenharia é o fator de consumo (calcQty)
     setEditing(prev => ({ ...prev, quantity: q }));
+  };
+
+  const computeYieldQty = (emb: string, rend: string) => {
+    const e = parseFloat(emb.replace(',', '.')) || 0;
+    const r = parseFloat(rend.replace(',', '.')) || 1;
+    const result = r > 0 ? e / r : 0;
+    const str = result.toFixed(4).replace('.', ',');
+    setCalcQty(str);
+    updateQuantity(str, calcUnitVal);
   };
 
   const handleCalcBlur = () => {
@@ -235,6 +255,49 @@ export default function EngineeringEditor({
     // Automatically open mapping modal when a tool is selected
     if (toolId) {
       setShowToolMapping(true);
+    }
+  };
+
+  const openQuickAddMaterial = () => {
+    setShowMaterialSuggestions(false);
+    setQuickAddMaterialName(materialSearch.trim());
+    setQuickAddCategory('');
+    setQuickAddUnitId('');
+    setQuickAddBaseCost('');
+    setQuickAddObservacao('');
+    setShowQuickAddMaterial(true);
+  };
+
+  const handleSaveQuickMaterial = async () => {
+    if (!quickAddMaterialName.trim() || !onSaveConfigItem || isSavingQuickMaterial) return;
+    setIsSavingQuickMaterial(true);
+    try {
+      const newId = `m-${Date.now()}`;
+      const newMaterial: ProductionConfigItem = {
+        id: newId,
+        name: quickAddMaterialName.trim().toUpperCase(),
+        description: quickAddObservacao.trim() || quickAddCategory,
+        type: 'MATERIAL',
+        createdAt: Date.now(),
+        metadata: {
+          masterCategory: quickAddCategory,
+          reference: '',
+          unitId: quickAddUnitId,
+          baseCost: parseFloat(quickAddBaseCost.replace(',', '.')) || 0,
+          width: 0,
+          colorIds: [],
+          flowTagId: '',
+          supplierId: ''
+        }
+      };
+      await onSaveConfigItem(newMaterial);
+      setEditing(prev => ({ ...prev, materialId: newId }));
+      setMaterialSearch(newMaterial.name);
+      setShowQuickAddMaterial(false);
+    } catch (err) {
+      console.error('Erro ao cadastrar insumo:', err);
+    } finally {
+      setIsSavingQuickMaterial(false);
     }
   };
 
@@ -577,74 +640,149 @@ export default function EngineeringEditor({
           </div>
         ) : material && (
           <div className={`p-4 sm:p-8 rounded-[2.5rem] border shadow-2xl space-y-8 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-            {/* MATERIAL FIELD */}
-            <div className="flex flex-col gap-3">
+            {/* MATERIAL + UNID. em linha única */}
+            <div className="flex flex-col gap-2">
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-2">Material</label>
-              <div className="relative group">
-                <div className={`w-full px-6 py-4 rounded-2xl font-black text-sm border-2 flex items-center justify-between ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
-                  <span>{material.name}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* UNID. DISPLAY */}
-            <div className="flex flex-col gap-3 text-center">
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Unid.</label>
-              <div className={`mx-auto w-full max-w-[280px] py-6 rounded-2xl border-2 flex items-center justify-center text-2xl font-black ${isDarkMode ? 'bg-slate-950/50 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}>
-                {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
+              <div className={`w-full px-5 py-4 rounded-2xl border-2 flex items-center justify-between gap-3 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                <span className={`font-black text-sm truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{material.name}</span>
+                <span className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-indigo-300 border border-slate-700' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}>
+                  {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
+                </span>
               </div>
             </div>
 
             {/* QTY & UNIT VAL FIELDS */}
-            <div className="grid grid-cols-2 gap-6">
-              <div className="flex flex-col gap-3">
-                <label htmlFor="quantity-input" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-2">Quantidade</label>
-                <div className="relative">
-                  <input 
-                    id="quantity-input"
-                    type="text" 
-                    value={calcQty} 
-                    onChange={(e) => { setCalcQty(e.target.value); updateQuantity(e.target.value, calcUnitVal); }}
-                    className={`w-full px-6 py-5 rounded-2xl font-black text-sm outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600 shadow-sm'}`}
-                  />
-                  {editing.ignoreQuantity && (
-                    <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mt-2 ml-2">
-                      Consumo p/ Lote (12 Pr): {(Number(calcQty.replace(',', '.')) * 12).toFixed(4).replace('.', ',')} {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
-                    </p>
-                  )}
-                  <div className="absolute right-3 top-[22px] flex items-center gap-1.5">
-                    <button 
-                      onClick={() => setActiveCalcField('qty')} 
-                      title="Abrir Calculadora de Quantidade"
-                      aria-label="Abrir calculadora para definir a quantidade"
-                      className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
-                    >
-                      <Calculator size={16} />
-                    </button>
-                  </div>
+            <div className="flex flex-col gap-3">
+
+              {/* Toggle — acima de tudo, largura da coluna de Quantidade */}
+              <div className="flex items-center gap-3">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Quantidade</label>
+                <div className={`inline-flex gap-0.5 p-0.5 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                  <button
+                    type="button"
+                    onClick={() => setQtyMode('simple')}
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${qtyMode === 'simple' ? (isDarkMode ? 'bg-slate-600 text-white shadow-sm' : 'bg-white text-slate-800 shadow-sm') : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                  >
+                    Simples
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setQtyMode('yield'); computeYieldQty(qtyEmbalagem, qtyRendimento); }}
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${qtyMode === 'yield' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                  >
+                    Rendimento
+                  </button>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-3">
-                <label htmlFor="unit-val-input" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-2">Valor Unitário</label>
-                <div className="relative">
-                  <input 
-                    id="unit-val-input"
-                    type="text" 
-                    value={calcUnitVal} 
-                    onChange={(e) => { setCalcUnitVal(e.target.value); setUnitValManualEdited(true); updateQuantity(calcQty, e.target.value); }}
-                    className={`w-full px-6 py-5 rounded-2xl font-black text-sm outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600 shadow-sm'}`}
+              {/* Inputs principais — sempre alinhados lado a lado */}
+              <div className="grid grid-cols-3 gap-4 items-end">
+                {/* Quantidade — col-span-2, sempre o mesmo input */}
+                <div className="col-span-2 relative">
+                  <input
+                    id="quantity-input"
+                    type="text"
+                    value={calcQty}
+                    readOnly={qtyMode === 'yield'}
+                    title={qtyMode === 'yield' ? 'Quantidade calculada pelo rendimento' : 'Quantidade'}
+                    placeholder="0"
+                    onChange={qtyMode === 'simple' ? (e) => { setCalcQty(e.target.value); updateQuantity(e.target.value, calcUnitVal); } : undefined}
+                    className={`w-full px-6 py-5 rounded-2xl font-black text-sm outline-none border-2 transition-all ${
+                      qtyMode === 'yield'
+                        ? (isDarkMode ? 'bg-indigo-950/40 border-indigo-900/40 text-indigo-300 cursor-default' : 'bg-indigo-50 border-indigo-100 text-indigo-700 cursor-default')
+                        : (isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600 shadow-sm')
+                    }`}
                   />
-                  <button 
-                    onClick={() => setActiveCalcField('unit')} 
-                    title="Abrir Calculadora de Valor Unitário"
-                    aria-label="Abrir calculadora para definir o valor unitário"
-                    className="absolute right-4 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
-                  >
+                  {qtyMode === 'simple' && (
+                    <>
+                      {editing.ignoreQuantity && (
+                        <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mt-2 ml-2">
+                          Consumo p/ Lote (12 Pr): {(Number(calcQty.replace(',', '.')) * 12).toFixed(4).replace('.', ',')} {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
+                        </p>
+                      )}
+                      <div className="absolute right-3 top-[22px]">
+                        <button
+                          type="button"
+                          onClick={() => setActiveCalcField('qty')}
+                          title="Abrir Calculadora de Quantidade"
+                          aria-label="Abrir calculadora para definir a quantidade"
+                          className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                        >
+                          <Calculator size={16} />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  {qtyMode === 'yield' && (
+                    <span className="absolute left-1/2 -translate-x-1/2 bottom-1.5 text-[8px] font-black uppercase tracking-widest text-indigo-400">
+                      {qtyEmbalagem || '1'} ÷ {qtyRendimento || '1'}
+                    </span>
+                  )}
+                </div>
+
+                {/* Valor Unitário — col-span-1, fixo */}
+                <div className="flex flex-col gap-2">
+                  <label htmlFor="unit-val-input" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-center">Valor Unit.</label>
+                  <div className="relative">
+                    <input
+                      id="unit-val-input"
+                      type="text"
+                      value={calcUnitVal}
+                      onChange={(e) => { setCalcUnitVal(e.target.value); setUnitValManualEdited(true); updateQuantity(calcQty, e.target.value); }}
+                      className={`w-full px-3 py-5 rounded-2xl font-black text-sm outline-none border-2 transition-all text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600 shadow-sm'}`}
+                    />
+                    <button
+                      onClick={() => setActiveCalcField('unit')}
+                      title="Abrir Calculadora de Valor Unitário"
+                      aria-label="Abrir calculadora para definir o valor unitário"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                    >
                     <Calculator size={16} />
                   </button>
                 </div>
               </div>
+            </div>
+
+              {/* Campos de Rendimento — aparecem abaixo do par principal */}
+              {qtyMode === 'yield' && (
+                <div className={`p-4 rounded-2xl border-2 flex flex-col gap-3 ${isDarkMode ? 'bg-indigo-950/30 border-indigo-900/40' : 'bg-indigo-50/60 border-indigo-100'}`}>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-indigo-400 text-center">Embalagem</label>
+                      <input
+                        type="text"
+                        value={qtyEmbalagem}
+                        onChange={(e) => { setQtyEmbalagem(e.target.value); computeYieldQty(e.target.value, qtyRendimento); }}
+                        placeholder="1"
+                        title="Quantidade da embalagem do produto"
+                        className={`w-full px-4 py-3 rounded-xl font-black text-sm outline-none border-2 transition-all text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-indigo-200 text-slate-900 focus:border-indigo-500 shadow-sm'}`}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-indigo-400 text-center">Rendimento (pares)</label>
+                      <input
+                        type="text"
+                        value={qtyRendimento}
+                        onChange={(e) => { setQtyRendimento(e.target.value); computeYieldQty(qtyEmbalagem, e.target.value); }}
+                        placeholder="1"
+                        title="Rendimento em pares por embalagem"
+                        className={`w-full px-4 py-3 rounded-xl font-black text-sm outline-none border-2 transition-all text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-indigo-200 text-slate-900 focus:border-indigo-500 shadow-sm'}`}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-indigo-400">
+                      {qtyEmbalagem || '1'} ÷ {qtyRendimento || '1'} = qtd/par
+                    </span>
+                    <span className={`text-sm font-black ${isDarkMode ? 'text-indigo-300' : 'text-indigo-700'}`}>
+                      {calcQty}
+                      <span className="text-[9px] font-bold ml-1">
+                        {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
 
              {/* RESUMO TÉCNICO E FINANCEIRO (DIRETO) */}
@@ -873,10 +1011,20 @@ export default function EngineeringEditor({
                   }, 200);
                 }}
               />
-              <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none">
-                <ChevronDown size={18} className="text-slate-400" />
+              <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                {materialSearch.trim().length > 0 && onSaveConfigItem && !materials.some(m => m.name.toLowerCase() === materialSearch.trim().toLowerCase()) && (
+                  <button
+                    type="button"
+                    onClick={openQuickAddMaterial}
+                    title="Cadastrar como novo insumo"
+                    className="p-1.5 rounded-lg text-emerald-500 hover:bg-emerald-500/10 transition-colors pointer-events-auto"
+                  >
+                    <Database size={18} />
+                  </button>
+                )}
+                <ChevronDown size={18} className="text-slate-400 pointer-events-none" />
               </div>
-              {showMaterialSuggestions && filteredMaterials.length > 0 && (
+              {showMaterialSuggestions && (filteredMaterials.length > 0 || materialSearch.trim().length > 0) && (
                 <div className={`absolute z-50 mt-1 w-full rounded-2xl border-2 shadow-xl overflow-hidden max-h-60 overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`} style={{ top: '100%', left: 0 }}>
                   {filteredMaterials.slice(0, 10).map(m => (
                     <button
@@ -892,6 +1040,18 @@ export default function EngineeringEditor({
                       {m.name}
                     </button>
                   ))}
+                  {materialSearch.trim().length > 0 && onSaveConfigItem && !materials.some(m => m.name.toLowerCase() === materialSearch.trim().toLowerCase()) && (
+                    <button
+                      type="button"
+                      className={`w-full px-4 py-3 text-left text-sm font-black flex items-center gap-3 transition-colors border-t ${isDarkMode ? 'text-emerald-400 hover:bg-slate-800 border-slate-700' : 'text-emerald-600 hover:bg-emerald-50 border-slate-100'}`}
+                      onMouseDown={openQuickAddMaterial}
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
+                        <Database size={16} />
+                      </div>
+                      <span>Cadastrar como novo insumo: "{materialSearch.trim()}"</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -1001,8 +1161,8 @@ export default function EngineeringEditor({
                   </div>
                   <div className="flex items-center gap-4">
                     <span className="text-xs font-black text-amber-600">R$ {s.cost.toFixed(2)}</span>
-                    <button 
-                      onClick={() => setEditing({ ...editing, services: editing.services?.filter((_, i) => i !== idx) })} 
+                    <button
+                      onClick={() => setEditing({ ...editing, services: editing.services?.filter((_, i) => i !== idx) })}
                       title="Remover Setor"
                       className="text-slate-300 hover:text-rose-500 transition-colors"
                     >
@@ -1015,6 +1175,129 @@ export default function EngineeringEditor({
         </div>
 
       </div>
+
+      {/* Modal de Cadastro Rápido de Insumo */}
+      <Modal
+        isOpen={showQuickAddMaterial}
+        onClose={() => setShowQuickAddMaterial(false)}
+        title="Cadastrar Novo Insumo"
+        maxWidth="max-w-md"
+        zIndex={100000}
+      >
+        <div className="flex flex-col gap-5 p-6">
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Nome do Insumo *</label>
+            <input
+              type="text"
+              value={quickAddMaterialName}
+              onChange={(e) => setQuickAddMaterialName(e.target.value.toUpperCase())}
+              placeholder="NOME DO MATERIAL"
+              autoFocus
+              className={`w-full px-4 py-3 rounded-2xl border-2 font-bold text-sm outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-200 text-slate-900 focus:border-emerald-500'}`}
+            />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Categoria</label>
+            <select
+              value={quickAddCategory}
+              onChange={(e) => setQuickAddCategory(e.target.value)}
+              title="Categoria do Insumo"
+              className={`w-full px-4 py-3 rounded-2xl border-2 font-bold text-sm outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
+            >
+              <option value="">SELECIONAR...</option>
+              {[...new Set([
+                ...materials.map(m => m.metadata?.masterCategory).filter(Boolean) as string[],
+                'SOLADOS', 'PALMILHAS', 'COURO/SINTÉTICO', 'FORROS', 'ADESIVOS', 'LINHAS', 'EMBALAGENS', 'OUTROS'
+              ])].sort().map(cat => <option key={cat} value={cat}>{cat}</option>)}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Unidade</label>
+              <select
+                value={quickAddUnitId}
+                onChange={(e) => setQuickAddUnitId(e.target.value)}
+                title="Unidade de Medida"
+                className={`w-full px-4 py-3 rounded-2xl border-2 font-bold text-sm outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
+              >
+                <option value="">UN</option>
+                {productionConfigs.filter(c => c.type === 'UNIT').map(u => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Custo Base</label>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={quickAddBaseCost}
+                  onChange={(e) => setQuickAddBaseCost(e.target.value)}
+                  placeholder="0,00"
+                  className={`w-full pl-4 pr-11 py-3 rounded-2xl border-2 font-bold text-sm outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowQuickCostCalc(true)}
+                  title="Abrir Calculadora"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                >
+                  <Calculator size={16} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 ml-1">Observação</label>
+            <textarea
+              value={quickAddObservacao}
+              onChange={(e) => setQuickAddObservacao(e.target.value)}
+              placeholder="Anotações para conferência posterior..."
+              title="Observação sobre o insumo"
+              rows={3}
+              className={`w-full px-4 py-3 rounded-2xl border-2 font-medium text-sm outline-none transition-all resize-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white placeholder-slate-600 focus:border-emerald-500' : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400 focus:border-emerald-500'}`}
+            />
+          </div>
+
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+            * Outros detalhes podem ser completados no Catálogo de Insumos
+          </p>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setShowQuickAddMaterial(false)}
+              className={`flex-1 py-3 rounded-2xl font-black text-sm uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveQuickMaterial}
+              disabled={!quickAddMaterialName.trim() || isSavingQuickMaterial}
+              className="flex-1 py-3 rounded-2xl bg-emerald-600 text-white font-black text-sm uppercase tracking-widest shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:grayscale transition-all active:scale-[0.98]"
+            >
+              {isSavingQuickMaterial ? 'Salvando...' : 'Cadastrar'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <CalculatorModal
+        isOpen={showQuickCostCalc}
+        onClose={() => setShowQuickCostCalc(false)}
+        isDarkMode={isDarkMode}
+        initialValue={parseFloat(quickAddBaseCost.replace(',', '.')) || 0}
+        zIndex={110000}
+        onResult={(val) => {
+          setQuickAddBaseCost(val.toString().replace('.', ','));
+          setShowQuickCostCalc(false);
+        }}
+      />
     </motion.div>
   );
 }

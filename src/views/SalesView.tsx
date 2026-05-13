@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
-import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm } from '../types';
-import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig } from '../types';
+import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory } from 'lucide-react';
+import ProductionOrderModal from '../components/ProductionOrderModal';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { exportSale } from '../utils/saleExport';
@@ -15,6 +16,9 @@ interface SalesViewProps {
   people: Person[];
   paymentMethods: PaymentMethod[];
   accounts: Account[];
+  productionOrders: ProductionOrder[];
+  lots: ProductionLot[];
+  sectors: Sector[];
   onAdd: () => void;
   onEdit: (sale: Sale) => void;
   onDelete: (id: string) => void;
@@ -24,29 +28,37 @@ interface SalesViewProps {
   onPaySale: (saleId: string, amount: number, accountId: string, paymentMethodId: string, note: string) => Promise<void>;
   onUpdatePayment: (saleId: string, paymentId: string, amount: number, accountId: string, paymentMethodId: string, note: string) => Promise<void>;
   onDeletePayment: (saleId: string, paymentId: string) => Promise<void>;
+  onCreateProductionOrder: (order: ProductionOrder, lots: ProductionLot[], deductions: { productId: string; variationId: string; size?: string; quantity: number }[]) => Promise<void>;
+  modulesConfig: AppModulesConfig;
   isDarkMode: boolean;
   initialSearchQuery?: string;
 }
 
-export default function SalesView({ 
-  sales, 
-  products, 
-  grids, 
+export default function SalesView({
+  sales,
+  products,
+  grids,
   people,
   paymentMethods,
   accounts,
-  onAdd, 
-  onEdit, 
-  onDelete, 
-  onCancelOnly, 
-  onConvert, 
-  onUpdatePaymentStatus, 
+  productionOrders,
+  lots,
+  sectors,
+  onAdd,
+  onEdit,
+  onDelete,
+  onCancelOnly,
+  onConvert,
+  onUpdatePaymentStatus,
   onPaySale,
   onUpdatePayment,
   onDeletePayment,
+  onCreateProductionOrder,
+  modulesConfig,
   isDarkMode,
   initialSearchQuery = ''
 }: SalesViewProps) {
+  const hasProduction = modulesConfig.production;
   const [filter, setFilter] = useState<'ALL' | 'RETAIL' | 'WHOLESALE'>('ALL');
   const [paymentFilter, setPaymentFilter] = useState<'ALL' | 'PENDING' | 'PAID'>('ALL');
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
@@ -65,6 +77,7 @@ export default function SalesView({
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [saleToDelete, setSaleToDelete] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
+  const [productionOrderSale, setProductionOrderSale] = useState<Sale | null>(null);
 
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
@@ -382,9 +395,16 @@ export default function SalesView({
                     <ShoppingBag size={28} strokeWidth={2.5} />
                   </button>
                   <div className="min-w-0">
-                    <h3 className={`font-black text-base tracking-tight leading-none truncate mb-1 ${sale.status === SaleStatus.CANCELLED ? 'text-slate-500' : isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                      {sale.customerName || 'Cliente'}
-                    </h3>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className={`font-black text-base tracking-tight leading-none truncate ${sale.status === SaleStatus.CANCELLED ? 'text-slate-500' : isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                        {sale.saleDestination === 'STOCK' ? 'Estoque' : (sale.customerName || 'Cliente')}
+                      </h3>
+                      {sale.saleDestination === 'STOCK' && (
+                        <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white uppercase tracking-widest shrink-0">
+                          Estoque
+                        </span>
+                      )}
+                    </div>
                     <div className="flex flex-col gap-1.5">
                       {isExpanded && (
                         <div className="flex items-center gap-2">
@@ -408,6 +428,12 @@ export default function SalesView({
                 </div>
 
                 <div className="flex flex-col items-end gap-2 shrink-0">
+                  {/* Badge Não Contábil */}
+                  {sale.isAccounting === false && (
+                    <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-500 border border-rose-200 dark:border-rose-800 uppercase tracking-widest">
+                      Não Contábil
+                    </span>
+                  )}
                   {/* Status Badge */}
                   {sale.status === SaleStatus.CANCELLED ? (
                     <span className="text-[10px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-slate-900 text-rose-500 border border-rose-500/20 shadow-sm">
@@ -553,7 +579,7 @@ export default function SalesView({
                     )}
 
                     {/* Edit Button */}
-                    <button 
+                    <button
                       onClick={(e) => { e.stopPropagation(); onEdit(sale); }}
                       className="w-10 h-10 flex items-center justify-center bg-blue-50 dark:bg-blue-500/10 text-blue-500 rounded-full active:scale-90 transition-all"
                       title="Editar"
@@ -628,7 +654,7 @@ export default function SalesView({
       </button>
 
       {/* Modals */}
-      <ExportNoteModal 
+      <ExportNoteModal
         isOpen={exportModal.isOpen}
         onClose={() => setExportModal(prev => ({ ...prev, isOpen: false }))}
         onConfirm={handleConfirmExport}
@@ -636,6 +662,23 @@ export default function SalesView({
         initialFormat={exportModal.format}
         title={exportModal.sale?.status === SaleStatus.QUOTE ? "Exportar Orçamento" : "Exportar Venda"}
       />
+
+      {productionOrderSale && (
+        <ProductionOrderModal
+          isOpen={!!productionOrderSale}
+          onClose={() => setProductionOrderSale(null)}
+          sale={productionOrderSale}
+          products={products}
+          sectors={sectors}
+          existingOrdersCount={productionOrders.length}
+          existingLotsCount={lots.length}
+          isDarkMode={isDarkMode}
+          onConfirm={async (order, newLots, deductions) => {
+            await onCreateProductionOrder(order, newLots, deductions);
+            setProductionOrderSale(null);
+          }}
+        />
+      )}
     </div>
   );
 }

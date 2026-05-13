@@ -9,12 +9,15 @@ import {
   Settings2, Trash2, Edit3, ClipboardList,
   Save, X, Info, Layers, Tag, Package
 } from 'lucide-react';
-import { 
-  ProductionLot, Product, Sector, 
-  FlowTag, Variation, ColorValue 
+import {
+  ProductionLot, Product, Sector,
+  FlowTag, Variation, ColorValue, ProductionOrder
 } from '../types';
 import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
+import ScannerModal from '../components/ScannerModal';
+import { Camera } from 'lucide-react';
+import { labelService } from '../services/labelService';
 
 interface PCPViewProps {
   lots: ProductionLot[];
@@ -22,6 +25,7 @@ interface PCPViewProps {
   sectors: Sector[];
   flowTags: FlowTag[];
   colors: ColorValue[];
+  productionOrders: ProductionOrder[];
   isDarkMode: boolean;
   onSaveLot: (lot: ProductionLot) => Promise<void>;
   onDeleteLot: (id: string) => Promise<void>;
@@ -29,16 +33,18 @@ interface PCPViewProps {
   userName?: string;
 }
 
-export default function PCPView({ 
-  lots, products, sectors, flowTags, colors, 
-  isDarkMode, onSaveLot, onDeleteLot, onBack, userName 
+export default function PCPView({
+  lots, products, sectors, flowTags, colors,
+  productionOrders,
+  isDarkMode, onSaveLot, onDeleteLot, onBack, userName
 }: PCPViewProps) {
-  const [activeTab, setActiveTab] = useState<'monitor' | 'lots'>('monitor');
+  const [activeTab, setActiveTab] = useState<'monitor' | 'lots' | 'orders'>('monitor');
   const [searchTerm, setSearchTerm] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedLot, setSelectedLot] = useState<ProductionLot | null>(null);
   const [selectedSectorId, setSelectedSectorId] = useState<string | null>(null);
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
 
   // Filtered and organized data
   const filteredLots = useMemo(() => {
@@ -118,7 +124,7 @@ export default function PCPView({
       productId: newLot.productId,
       variationId: newLot.variationId,
       quantity: newLot.quantity,
-      route: product.productionRoute || sectors.map(s => s.id), // Default to all sectors in order if no route defined
+      route: product.productionRoute || sectors.map(s => s.id),
       currentSectorIndex: 0,
       priority: newLot.priority || 'NORMAL',
       history: [{
@@ -126,9 +132,14 @@ export default function PCPView({
         statusId: '',
         timestamp: Date.now(),
         userName: userName,
-        notes: 'Lote criado'
+        notes: newLot.productionOrderId ? `Criado via ${newLot.productionOrderId}` : 'Lote criado'
       }],
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      ...(newLot.saleId && { saleId: newLot.saleId }),
+      ...(newLot.productionOrderId && { productionOrderId: newLot.productionOrderId }),
+      ...(newLot.customerName && { customerName: newLot.customerName }),
+      ...(newLot.deliveryDate && { deliveryDate: newLot.deliveryDate }),
+      ...(newLot.saleOrderNumber && { saleOrderNumber: newLot.saleOrderNumber }),
     };
 
     await onSaveLot(lot);
@@ -166,6 +177,42 @@ export default function PCPView({
     setSelectedLot(null);
   };
 
+  const handleScanLotResult = async (result: any) => {
+    if (result.type === 'LOT') {
+      const lotId = result.lotId;
+      const lot = lots.find(l => l.id === lotId);
+      if (!lot) {
+        alert('Lote não encontrado.');
+        return;
+      }
+
+      if (lot.finishedAt) {
+        alert('Este lote já foi finalizado.');
+        return;
+      }
+
+      const currentSectorId = lot.route[lot.currentSectorIndex];
+      const currentSector = sectors.find(s => s.id === currentSectorId);
+      const nextSectorId = lot.route[lot.currentSectorIndex + 1];
+      const nextSector = nextSectorId ? sectors.find(s => s.id === nextSectorId) : null;
+
+      const message = nextSector 
+        ? `Lote identificado: ${lot.orderNumber}\nSetor Atual: ${currentSector?.name}\n\nConfirma a movimentação para o próximo setor: ${nextSector.name}?`
+        : `Lote identificado: ${lot.orderNumber}\n\nEste é o último setor (${currentSector?.name}). Confirma a finalização deste lote?`;
+
+      if (confirm(message)) {
+        await handleMoveLot(lot, '', 'Movimentação automática via Scanner');
+        alert('Movimentação registrada com sucesso!');
+      }
+    }
+  };
+
+  const handlePrintLotLabel = (lot: ProductionLot) => {
+    const product = products.find(p => p.id === lot.productId);
+    const variation = product?.variations.find(v => v.id === lot.variationId);
+    labelService.printLotLabel(lot, product?.name || 'Produto', variation?.colorName || 'Cor');
+  };
+
   return (
     <div className={`flex flex-col gap-6 pb-32 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
       <header className="flex flex-col gap-6">
@@ -184,33 +231,46 @@ export default function PCPView({
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Planejamento e Controle de Produção</p>
             </div>
           </div>
-          <button 
-            onClick={() => setIsCreateModalOpen(true)}
-            className="flex items-center gap-2 px-6 py-4 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 hover:scale-105 active:scale-95 transition-all"
-          >
-            <Plus size={16} strokeWidth={3} /> Iniciar Lote
-          </button>
+           <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setIsScannerOpen(true)}
+              className="flex items-center gap-2 px-6 py-4 bg-slate-100 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all"
+            >
+              <Camera size={16} strokeWidth={3} /> Escanear
+            </button>
+            <button 
+              onClick={() => setIsCreateModalOpen(true)}
+              className="flex items-center gap-2 px-6 py-4 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 hover:scale-105 active:scale-95 transition-all"
+            >
+              <Plus size={16} strokeWidth={3} /> Iniciar Lote
+            </button>
+          </div>
         </div>
 
         {/* Tabs */}
         <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-900 rounded-2xl w-fit self-center">
           <button
-            onClick={() => {
-              setActiveTab('monitor');
-              setSelectedSectorId(null);
-            }}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'monitor' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+            onClick={() => { setActiveTab('monitor'); setSelectedSectorId(null); }}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'monitor' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
           >
             <LayoutDashboard size={14} /> Monitor WIP
           </button>
           <button
-            onClick={() => {
-              setActiveTab('lots');
-              setSelectedSectorId(null);
-            }}
-            className={`flex items-center gap-2 px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'lots' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+            onClick={() => { setActiveTab('lots'); setSelectedSectorId(null); }}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'lots' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
           >
-            <ListTodo size={14} /> Lotes Ativos
+            <ListTodo size={14} /> Lotes
+          </button>
+          <button
+            onClick={() => { setActiveTab('orders'); setSelectedSectorId(null); }}
+            className={`flex items-center gap-2 px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'orders' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+          >
+            <ClipboardList size={14} /> Pedidos
+            {productionOrders.filter(o => o.status === 'PENDING').length > 0 && (
+              <span className="w-4 h-4 rounded-full bg-indigo-600 text-white text-[8px] font-black flex items-center justify-center">
+                {productionOrders.filter(o => o.status === 'PENDING').length}
+              </span>
+            )}
           </button>
         </div>
       </header>
@@ -395,6 +455,110 @@ export default function PCPView({
             </div>
           )}
         </div>
+      ) : activeTab === 'orders' ? (
+        <div className="flex flex-col gap-4">
+          {productionOrders.length === 0 ? (
+            <div className={`py-20 rounded-[3rem] border-2 border-dashed flex flex-col items-center justify-center gap-3 ${isDarkMode ? 'border-slate-800 text-slate-700' : 'border-slate-100 text-slate-300'}`}>
+              <ClipboardList size={40} className="opacity-30" />
+              <p className="text-xs font-black uppercase tracking-widest">Nenhum pedido de produção</p>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Gere um pelo módulo de Vendas</p>
+            </div>
+          ) : (
+            productionOrders
+              .sort((a, b) => a.deliveryDate - b.deliveryDate)
+              .map(order => {
+                const orderLots = lots.filter(l => l.productionOrderId === order.id);
+                const isOverdue = order.deliveryDate < Date.now() && order.status !== 'COMPLETED';
+                return (
+                  <div key={order.id} className={`p-5 rounded-3xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                    {/* Header */}
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1 rounded-xl">{order.orderNumber}</span>
+                          <span className="text-[9px] font-bold text-slate-400">Pedido #{order.saleOrderNumber}</span>
+                        </div>
+                        <p className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{order.customerName}</p>
+                      </div>
+                      <span className={`text-[8px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl ${
+                        order.status === 'COMPLETED' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                        order.status === 'IN_PRODUCTION' ? 'bg-indigo-100 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400' :
+                        'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
+                      }`}>
+                        {order.status === 'COMPLETED' ? 'Concluído' : order.status === 'IN_PRODUCTION' ? 'Em Produção' : 'Pendente'}
+                      </span>
+                    </div>
+
+                    {/* Dates */}
+                    <div className="flex gap-3 mb-4">
+                      <div className={`flex-1 p-3 rounded-xl flex items-center gap-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                        <Clock size={12} className="text-slate-400" />
+                        <div>
+                          <p className="text-[8px] font-black text-slate-400 uppercase">Pedido</p>
+                          <p className={`text-[10px] font-black ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{new Date(order.orderDate).toLocaleDateString('pt-BR')}</p>
+                        </div>
+                      </div>
+                      <div className={`flex-1 p-3 rounded-xl flex items-center gap-2 ${isOverdue ? 'bg-rose-50 dark:bg-rose-900/20' : isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                        <CheckCircle2 size={12} className={isOverdue ? 'text-rose-500' : 'text-emerald-500'} />
+                        <div>
+                          <p className={`text-[8px] font-black uppercase ${isOverdue ? 'text-rose-500' : 'text-slate-400'}`}>Entrega</p>
+                          <p className={`text-[10px] font-black ${isOverdue ? 'text-rose-500' : isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{new Date(order.deliveryDate).toLocaleDateString('pt-BR')}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Items summary */}
+                    <div className="flex flex-col gap-1.5 mb-4">
+                      {order.items.map((item, i) => (
+                        <div key={i} className={`flex items-center justify-between px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                          <div>
+                            <span className={`text-[10px] font-black uppercase ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>{item.productName}</span>
+                            <span className="text-[9px] font-bold text-slate-400 ml-2">{item.variationName}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            {item.fromStockQty > 0 && <span className="text-[9px] font-black text-emerald-500">Estoque: {item.fromStockQty}</span>}
+                            <span className="text-[9px] font-black text-indigo-500">Produzir: {item.toProductionQty}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Lots + action */}
+                    <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                        {orderLots.length} lote(s) vinculado(s)
+                      </span>
+                      {order.status === 'PENDING' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const firstItem = order.items[0];
+                            if (firstItem) {
+                              setNewLot({
+                                priority: 'NORMAL',
+                                quantity: firstItem.toProductionQty,
+                                productId: firstItem.productId,
+                                variationId: firstItem.variationId,
+                                saleId: order.saleId,
+                                productionOrderId: order.id,
+                                customerName: order.customerName,
+                                deliveryDate: order.deliveryDate,
+                                saleOrderNumber: order.saleOrderNumber,
+                              });
+                              setIsCreateModalOpen(true);
+                            }
+                          }}
+                          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 hover:bg-indigo-700 transition-all active:scale-95"
+                        >
+                          <Plus size={12} strokeWidth={3} /> Iniciar Lote
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+          )}
+        </div>
       ) : (
         <div className="flex flex-col gap-4">
           <div className="relative">
@@ -432,10 +596,21 @@ export default function PCPView({
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-sm font-black text-slate-900 dark:text-white uppercase leading-none">{lot.orderNumber}</span>
                         {isFinished && <span className="text-[8px] font-black uppercase tracking-widest bg-emerald-500 text-white px-2 py-0.5 rounded-md">Finalizado</span>}
+                        {lot.productionOrderId && (
+                          <span className="text-[8px] font-black uppercase tracking-widest bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 px-2 py-0.5 rounded-md">
+                            {productionOrders.find(o => o.id === lot.productionOrderId)?.orderNumber || 'OP'}
+                          </span>
+                        )}
                       </div>
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate">
                         {product?.name} • {variation?.colorName} • {lot.quantity} PARES
+                        {lot.customerName && ` • ${lot.customerName}`}
                       </p>
+                      {lot.deliveryDate && (
+                        <p className={`text-[9px] font-black uppercase tracking-widest mt-0.5 ${lot.deliveryDate < Date.now() ? 'text-rose-500' : 'text-slate-400'}`}>
+                          Entrega: {new Date(lot.deliveryDate).toLocaleDateString('pt-BR')}
+                        </p>
+                      )}
                     </div>
                   </div>
                   
@@ -550,9 +725,18 @@ export default function PCPView({
                 <div className="w-20 h-20 rounded-3xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xl shadow-indigo-500/20">
                   <Factory size={40} />
                 </div>
-                <div className="flex-1 text-center sm:text-left">
-                  <h3 className="text-lg font-black text-slate-900 dark:text-white uppercase tracking-tight">{product?.name}</h3>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">{product?.reference} • {variation?.colorName}</p>
+                <div className="flex flex-col min-w-0 flex-1 text-center sm:text-left">
+                  <div className="flex items-center justify-center sm:justify-start gap-3 mb-1">
+                    <h4 className="text-lg font-black text-slate-900 dark:text-white uppercase leading-none">{selectedLot.orderNumber}</h4>
+                    <button 
+                      onClick={() => handlePrintLotLabel(selectedLot)}
+                      className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-all"
+                      title="Imprimir Etiqueta"
+                    >
+                      <Tag size={14} strokeWidth={3} />
+                    </button>
+                  </div>
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{product?.name} • {variation?.colorName}</p>
                   <div className="flex items-center justify-center sm:justify-start gap-4 mt-3">
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full border border-black/10" style={{ backgroundColor: variation?.color }} />
@@ -667,6 +851,12 @@ export default function PCPView({
           );
         })()}
       </Modal>
+      <ScannerModal 
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onScan={handleScanLotResult}
+        title="Escanear Lote"
+      />
     </div>
   );
 }

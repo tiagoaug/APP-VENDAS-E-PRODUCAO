@@ -1,3 +1,22 @@
+export interface LabelLayout {
+  refX: number;
+  refY: number;
+  refSize: number;
+  qrX: number;
+  qrY: number;
+  qrSize: number;
+  colorX: number;
+  colorY: number;
+  colorSize: number;
+  footerX: number;
+  footerY: number;
+  footerSize: number;
+  showSize: boolean;
+  sizeX: number;
+  sizeY: number;
+  sizeSize: number;
+}
+
 export enum SaleType {
   RETAIL = 'RETAIL',
   WHOLESALE = 'WHOLESALE',
@@ -77,6 +96,7 @@ export type Variation = {
   soleMapping?: { [size: string]: string };
   subRef?: string;
   sku?: string;
+  stockPkgId?: string; // Padrão de embalagem associado ao estoque desta variação
 };
 
 
@@ -91,6 +111,7 @@ export type Product = {
   status: ProductStatus;
   costPrice: number;
   salePrice: number;
+  unitSalePrice?: number;
   minStockInBoxes: number;
   priceAdjustmentDate?: number;
   costPriceAdjustmentAmount?: number;
@@ -183,7 +204,8 @@ export type SaleItem = {
   size?: string; // specific size if Retail
   saleType: SaleType;
   quantity: number; // pairs or boxes
-  price: number;
+  price: number;    // preço por grade (atacado) ou por par (varejo)
+  unitPrice?: number; // preço por par (atacado)
 };
 
 export type SalePayment = {
@@ -211,11 +233,16 @@ export type Sale = {
   paymentMethodId?: string;
   accountId?: string;
   dueDate?: number;
+  deliveryDate?: number;
   paymentStatus?: PaymentStatus;
   paymentHistory?: SalePayment[];
   notes?: string;
   sellerId?: string;
   sellerName?: string;
+  productionOrderId?: string;
+  isProductionOrder?: boolean;
+  saleDestination?: 'CUSTOMER' | 'STOCK';
+  isAccounting?: boolean; // false = não gera lançamento financeiro
 };
 
 export type Person = {
@@ -352,6 +379,7 @@ export enum ViewType {
   PRODUCTION_SOLE_STOCK = 'PRODUCTION_SOLE_STOCK',
   PRODUCTION_ENGINEERING = 'PRODUCTION_ENGINEERING',
   CATEGORY_CONFIG = 'CATEGORY_CONFIG',
+  MANUAL = 'MANUAL',
 }
 
 export type DashboardCardConfig = {
@@ -512,10 +540,42 @@ export type SolePurchaseItem = {
   totalCost: number;
 };
 
+export type ProductionOrderItem = {
+  productId: string;
+  productName: string;
+  variationId: string;
+  variationName: string;
+  saleType: SaleType;
+  sizes: Record<string, { total: number; fromStock: number; toProduction: number }>;
+  totalQuantity: number;
+  fromStockQty: number;
+  toProductionQty: number;
+};
+
+export type ProductionOrder = {
+  id: string;
+  orderNumber: string;
+  saleId: string;
+  saleOrderNumber: string;
+  customerId?: string;
+  customerName: string;
+  orderDate: number;
+  deliveryDate: number;
+  items: ProductionOrderItem[];
+  status: 'PENDING' | 'IN_PRODUCTION' | 'COMPLETED';
+  lotIds: string[];
+  notes?: string;
+  createdAt: number;
+};
+
 export type ProductionLot = {
   id: string;
   orderNumber: string; // "Lote #001"
   saleId?: string; // Optional link to a sale
+  productionOrderId?: string;
+  saleOrderNumber?: string;
+  customerName?: string;
+  deliveryDate?: number;
   productId: string;
   variationId: string;
   quantity: number;

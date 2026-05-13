@@ -9,9 +9,10 @@ interface CalculatorModalProps {
   onResult: (result: number) => void;
   isDarkMode: boolean;
   initialValue?: number;
+  zIndex?: number;
 }
 
-export default function CalculatorModal({ isOpen, onClose, onResult, isDarkMode, initialValue }: CalculatorModalProps) {
+export default function CalculatorModal({ isOpen, onClose, onResult, isDarkMode, initialValue, zIndex = 80000 }: CalculatorModalProps) {
   const [display, setDisplay] = useState('0');
   const [equation, setEquation] = useState('');
   const [lastResult, setLastResult] = useState<number | null>(null);
@@ -117,7 +118,7 @@ export default function CalculatorModal({ isOpen, onClose, onResult, isDarkMode,
   ];
 
   return createPortal(
-    <div className="fixed inset-0 z-[80000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md">
+    <div className="fixed inset-0 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md" style={{ zIndex }}>
       <motion.div 
         initial={{ opacity: 0, scale: 0.9, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}

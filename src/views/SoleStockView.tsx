@@ -2,9 +2,10 @@ import { useState, useMemo } from 'react';
 import { ProductionConfigItem, ColorValue, SoleStockEntry } from '../types';
 import { 
   ArrowLeft, Package, Palette, Scale, Plus, Trash2, Save, 
-  ChevronDown, Search, Edit2, CheckCircle2, X, Calculator
+  ChevronDown, Search, Edit2, CheckCircle2, X, Calculator, Tag
 } from 'lucide-react';
 import { firebaseService } from '../services/firebaseService';
+import PrintSoleLabelModal from '../components/PrintSoleLabelModal';
 
 interface SoleStockViewProps {
   productionConfigs: ProductionConfigItem[];
@@ -24,6 +25,8 @@ export default function SoleStockView({
   const [selectedMoldId, setSelectedMoldId] = useState<string>('');
   const [editingEntry, setEditingEntry] = useState<SoleStockEntry | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
+  const [selectedStockItem, setSelectedStockItem] = useState<any>(null);
 
   const aggregatedStock = useMemo(() => {
     const stock: Record<string, { moldId: string; moldName: string; colorId: string; colorName: string; sizes: Record<string, number>; total: number }> = {};
@@ -109,7 +112,7 @@ export default function SoleStockView({
           <ArrowLeft size={20} />
         </button>
         <div className="flex-1">
-          <h2 className={`text-[13px] font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Estoque de Solados</h2>
+          <h2 className={`text-[11px] font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Estoque de Solados</h2>
           <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">Controle de estoque por modelo e cor</p>
         </div>
       </div>
@@ -161,7 +164,7 @@ export default function SoleStockView({
               alert('Nenhum item em estoque para ajustar');
             }
           }}
-          className="py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-violet-600 text-white flex items-center justify-center gap-2"
+          className="py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-slate-600 text-white flex items-center justify-center gap-2"
         >
           <Edit2 size={14} /> Editar
         </button>
@@ -223,41 +226,66 @@ export default function SoleStockView({
             const sizes = Object.entries(item.sizes).sort((a, b) => parseFloat(a[0]) - parseFloat(b[0]));
             
             return (
-              <div key={index} className={`p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                <div className="flex justify-between items-start mb-3">
+              <div key={index} className={`p-5 rounded-3xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                {/* Header */}
+                <div className="flex justify-between items-start mb-4">
                   <div>
-                    <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                    <p className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                       {item.moldName}
                     </p>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Palette size={12} className="text-violet-500" />
-                      <span className="text-[10px] font-bold text-violet-500 uppercase">{item.colorName}</span>
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <Palette size={13} className="text-slate-500" />
+                      <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">{item.colorName}</span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-black text-emerald-500">{item.total}</p>
-                    <p className="text-[8px] font-bold text-slate-400 uppercase">pares</p>
+                  <div className="flex items-start gap-3">
+                    <button
+                      onClick={() => {
+                        const mold = molds.find(m => m.id === item.moldId);
+                        if (mold) {
+                          setSelectedStockItem({
+                            mold,
+                            color: { id: item.colorId, name: item.colorName },
+                            stock: item.sizes
+                          });
+                          setIsPrintModalOpen(true);
+                        }
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-all border border-indigo-100/50 dark:border-indigo-500/20"
+                      title="Imprimir Etiquetas"
+                    >
+                      <Tag size={13} strokeWidth={3} />
+                      <span className="text-[9px] font-black uppercase tracking-widest">Imprimir</span>
+                    </button>
+                    <div className="flex flex-col items-center justify-center px-4 py-2.5 rounded-2xl bg-blue-50 border border-blue-100 min-w-[64px]">
+                      <p className="text-3xl font-black text-blue-600 leading-none">{item.total}</p>
+                      <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mt-0.5">pares</p>
+                    </div>
                   </div>
                 </div>
-                
+
+                {/* Grade de tamanhos */}
                 {sizes.length > 0 && (
-                  <div className="mt-3">
-                    <div className="grid grid-cols-6 sm:grid-cols-8 gap-1 mb-1">
-                      {sizes.map(([size]) => (
-                        <div key={`label-${size}`} className="text-center">
-                          <span className="text-[8px] font-black text-slate-400 uppercase">
-                            {size}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="grid grid-cols-6 sm:grid-cols-8 gap-1">
-                      {sizes.map(([size, qty]) => (
-                        <div key={size} className={`py-2 rounded-lg text-center ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-                          <span className="text-xs font-black text-emerald-500">{qty}</span>
-                        </div>
-                      ))}
-                    </div>
+                  <div className={`grid gap-2 ${
+                    sizes.length <= 2 ? 'grid-cols-2' :
+                    sizes.length === 3 ? 'grid-cols-3' :
+                    sizes.length === 4 ? 'grid-cols-4' :
+                    sizes.length === 5 ? 'grid-cols-5' :
+                    'grid-cols-6'
+                  }`}>
+                    {sizes.map(([size, qty]) => (
+                      <div
+                        key={size}
+                        className={`flex flex-col items-center justify-center gap-0.5 py-2.5 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+                      >
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight leading-none">
+                          {size}
+                        </span>
+                        <span className={`font-black text-slate-700 leading-none ${sizes.length <= 4 ? 'text-xl' : 'text-base'}`}>
+                          {qty}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -267,10 +295,23 @@ export default function SoleStockView({
       </div>
 
       {filteredStock.length > 0 && (
-        <div className={`p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-          <div className="flex justify-between items-center">
-            <p className="text-[10px] font-black text-slate-400 uppercase">Total Geral</p>
-            <p className="text-xl font-black text-emerald-500">{totalGeral} pares</p>
+        <div className="rounded-3xl overflow-hidden mb-2 shadow-lg">
+          <div className="bg-gradient-to-r from-blue-600 to-blue-500 p-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-white/20 flex items-center justify-center">
+                  <Package size={22} className="text-white" />
+                </div>
+                <div>
+                  <p className="text-[9px] font-black text-blue-100 uppercase tracking-widest">Valor Total de Pares</p>
+                  <p className="text-[10px] font-bold text-blue-200 uppercase tracking-wide">em estoque agora</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-4xl font-black text-blue-200 leading-none">{totalGeral}</p>
+                <p className="text-[10px] font-black text-blue-200 uppercase tracking-widest mt-0.5">pares</p>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -293,7 +334,7 @@ export default function SoleStockView({
             <div className="p-6 flex-1 overflow-y-auto">
               <div className={`p-4 rounded-2xl mb-4 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
                 <p className="text-sm font-black text-white">{editingEntry.moldName}</p>
-                <p className="text-xs font-bold text-violet-400 uppercase">{editingEntry.colorName}</p>
+                <p className="text-xs font-bold text-slate-400 uppercase">{editingEntry.colorName}</p>
               </div>
 
               <div className="grid grid-cols-4 gap-2">
@@ -318,7 +359,7 @@ export default function SoleStockView({
               <div className="mt-4 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-black text-emerald-600 uppercase">Total:</span>
-                  <span className="text-xl font-black text-emerald-500">
+                  <span className="text-xl font-black text-blue-500">
                     {Object.values(editingEntry.stock || {}).reduce((a, b) => a + b, 0)} pares
                   </span>
                 </div>
@@ -335,6 +376,20 @@ export default function SoleStockView({
             </div>
           </div>
         </div>
+      )}
+
+      {selectedStockItem && (
+        <PrintSoleLabelModal
+          isOpen={isPrintModalOpen}
+          onClose={() => {
+            setIsPrintModalOpen(false);
+            setSelectedStockItem(null);
+          }}
+          mold={selectedStockItem.mold}
+          color={selectedStockItem.color}
+          currentStock={selectedStockItem.stock}
+          isDarkMode={isDarkMode}
+        />
       )}
     </div>
   );

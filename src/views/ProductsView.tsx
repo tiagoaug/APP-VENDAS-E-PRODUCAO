@@ -10,8 +10,11 @@ import {
   Package,
   Filter,
   ChevronDown,
-  Copy
+  Copy,
+  Tag
 } from "lucide-react";
+import { labelService } from "../services/labelService";
+import PrintLabelModal from "../components/PrintLabelModal";
 
 interface ProductsViewProps {
   products: Product[];
@@ -36,6 +39,7 @@ export default function ProductsView({
 }: ProductsViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
+  const [productForLabels, setProductForLabels] = useState<Product | null>(null);
 
   const filteredProducts = products.filter(
     (p) =>
@@ -139,10 +143,20 @@ export default function ProductsView({
               onDelete={() => setItemToDelete(product.id)}
               onToggleStatus={() => onToggleStatus(product.id, product.status === ProductStatus.ACTIVE ? ProductStatus.INACTIVE : ProductStatus.ACTIVE)}
               onDuplicate={() => onDuplicate(product)}
+              onPrint={() => setProductForLabels(product)}
               isDarkMode={isDarkMode}
             />
           ))}
         </div>
+      )}
+
+      {productForLabels && (
+        <PrintLabelModal 
+          isOpen={!!productForLabels}
+          onClose={() => setProductForLabels(null)}
+          product={productForLabels}
+          isDarkMode={isDarkMode}
+        />
       )}
     </div>
   );
@@ -154,6 +168,7 @@ interface ProductCardProps {
   onDelete: () => void;
   onToggleStatus: () => void;
   onDuplicate: () => void;
+  onPrint: () => void;
   isDarkMode: boolean;
   key?: string;
 }
@@ -164,6 +179,7 @@ function ProductCard({
   onDelete,
   onToggleStatus,
   onDuplicate,
+  onPrint,
   isDarkMode,
 }: ProductCardProps) {
   return (
@@ -207,6 +223,13 @@ function ProductCard({
           </div>
 
           <div className="flex items-center gap-1">
+            <button
+              onClick={onPrint}
+              className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all shadow-sm border border-slate-100 dark:border-slate-700/50"
+              title="Imprimir Etiquetas"
+            >
+              <Tag size={16} strokeWidth={2.5} />
+            </button>
             <button
               onClick={onDuplicate}
               className="p-2 text-slate-300 dark:text-slate-600 hover:text-emerald-500 transition-colors transform active:scale-90"

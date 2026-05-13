@@ -71,6 +71,8 @@ import {
   WeighingRecord,
   AppModulesConfig,
   SoleStockEntry,
+  ProductionOrder,
+  ProductionLot,
 } from "./types";
 import {
   MOCK_PRODUCTS,
@@ -113,6 +115,7 @@ import ProductionConfigView from "./views/ProductionConfigView";
 import ProductSheetMenuView from "./views/ProductSheetMenuView";
 import PersonalFinancialView from "./views/PersonalFinancialView";
 import ModuleConfigView from "./views/ModuleConfigView";
+import ManualView from "./views/ManualView";
 import WeighingView from "./views/WeighingView";
 import SolePurchaseView from "./views/SolePurchaseView";
 import SoleStockView from "./views/SoleStockView";
@@ -242,6 +245,7 @@ export default function App() {
   const [weighingRecords, setWeighingRecords] = useState<WeighingRecord[]>([]);
   const [soleStockEntries, setSoleStockEntries] = useState<SoleStockEntry[]>([]);
   const [productionLots, setProductionLots] = useState<ProductionLot[]>([]);
+  const [productionOrders, setProductionOrders] = useState<ProductionOrder[]>([]);
 
   const defaultDashboardConfig: DashboardConfig = {
     cards: [
@@ -451,6 +455,11 @@ export default function App() {
       setProductionLots
     );
 
+    const unsubProductionOrders = firebaseService.subscribeToCollection<ProductionOrder>(
+      "productionOrders",
+      setProductionOrders
+    );
+
     const unsubDashboardConfig = firebaseService.subscribeToCollection<DashboardConfig>(
       "dashboard_config",
       (data) => {
@@ -513,6 +522,7 @@ export default function App() {
       unsubWeighingRecords();
       unsubSoleStock();
       unsubProductionLots();
+      unsubProductionOrders();
       unsubDashboardConfig();
 
     };
@@ -1873,6 +1883,31 @@ export default function App() {
 
               alert('Recebimento atualizado com sucesso!');
             }}
+            productionOrders={productionOrders}
+            lots={productionLots}
+            sectors={sectors}
+            onCreateProductionOrder={async (order, newLots, deductions) => {
+              await firebaseService.saveDocument("productionOrders", order);
+              for (const lot of newLots) {
+                await firebaseService.saveDocument("productionLots", lot);
+              }
+              for (const d of deductions) {
+                const product = products.find(p => p.id === d.productId);
+                if (!product) continue;
+                const updatedProduct = JSON.parse(JSON.stringify(product));
+                const variation = updatedProduct.variations.find((v: any) => v.id === d.variationId);
+                if (!variation) continue;
+                if (d.size) {
+                  variation.stock[d.size] = Math.max(0, (variation.stock[d.size] || 0) - d.quantity);
+                } else {
+                  variation.stock['WHOLESALE'] = Math.max(0, (variation.stock['WHOLESALE'] || 0) - d.quantity);
+                }
+                await firebaseService.saveDocument("products", updatedProduct);
+              }
+              const sale = sales.find(s => s.id === order.saleId);
+              if (sale) await firebaseService.saveDocument("sales", { ...sale, productionOrderId: order.id });
+            }}
+            modulesConfig={modulesConfig}
             isDarkMode={isDarkMode}
             initialSearchQuery={searchContext}
           />
@@ -2059,6 +2094,7 @@ export default function App() {
         return (
           <StockView
             products={products}
+            productionConfigs={productionConfigs}
             onUpdateProduct={async (product) => {
               await firebaseService.saveDocument("products", product);
             }}
@@ -2075,6 +2111,35 @@ export default function App() {
             people={people}
             paymentMethods={paymentMethods}
             accounts={accounts}
+            productionOrders={productionOrders}
+            lots={productionLots}
+            sectors={sectors}
+            productionConfigs={productionConfigs}
+            onCreateProductionOrder={async (order, newLots, deductions) => {
+              await firebaseService.saveDocument("productionOrders", order);
+              for (const lot of newLots) {
+                await firebaseService.saveDocument("productionLots", lot);
+              }
+              // Deduct stock from products
+              for (const d of deductions) {
+                const product = products.find(p => p.id === d.productId);
+                if (!product) continue;
+                const updatedProduct = JSON.parse(JSON.stringify(product));
+                const variation = updatedProduct.variations.find((v: any) => v.id === d.variationId);
+                if (!variation) continue;
+                if (d.size) {
+                  variation.stock[d.size] = Math.max(0, (variation.stock[d.size] || 0) - d.quantity);
+                } else {
+                  variation.stock['WHOLESALE'] = Math.max(0, (variation.stock['WHOLESALE'] || 0) - d.quantity);
+                }
+                await firebaseService.saveDocument("products", updatedProduct);
+              }
+              // Link order to sale
+              const sale = sales.find(s => s.id === order.saleId);
+              if (sale) {
+                await firebaseService.saveDocument("sales", { ...sale, productionOrderId: order.id });
+              }
+            }}
             onSave={async (sale) => {
               try {
                 const prevSale = selectedSaleId ? sales.find(s => s.id === selectedSaleId) : null;
@@ -2160,8 +2225,8 @@ export default function App() {
                 }
               }
 
-              // 2. Create New Transactions from paymentHistory
-              if (sale.paymentHistory && sale.paymentHistory.length > 0) {
+              // 2. Create New Transactions from paymentHistory (skip if non-accounting)
+              if (sale.isAccounting !== false && sale.paymentHistory && sale.paymentHistory.length > 0) {
                 for (const p of sale.paymentHistory) {
                   const newTransaction: Omit<Transaction, "id"> = {
                     type: TransactionType.INCOME,
@@ -2185,13 +2250,15 @@ export default function App() {
                 }
               }
 
-              // Save accumulated account updates
-              for (const [_, acc] of accountUpdates) {
-                await firebaseService.updateDocument("accounts", acc.id, { balance: acc.balance });
+              // Save accumulated account updates (skip if non-accounting)
+              if (sale.isAccounting !== false) {
+                for (const [_, acc] of accountUpdates) {
+                  await firebaseService.updateDocument("accounts", acc.id, { balance: acc.balance });
+                }
               }
 
-              // 3. Update Customer Credit (Haver)
-              if (sale.customerId) {
+              // 3. Update Customer Credit (Haver) — skip if non-accounting
+              if (sale.isAccounting !== false && sale.customerId) {
                 const amountPaid = sale.paymentHistory?.reduce((acc, p) => acc + p.amount, 0) || 0;
                 const surplus = Math.max(0, amountPaid - sale.total);
                 
@@ -2216,6 +2283,7 @@ export default function App() {
             onDelete={handleDeleteSale}
             onCancelOnly={handleCancelOnlySale}
             onCancel={goBack}
+            modulesConfig={modulesConfig}
             isDarkMode={isDarkMode}
           />
         );
@@ -2389,6 +2457,7 @@ export default function App() {
             lots={productionLots}
             products={products}
             sectors={sectors}
+            productionOrders={productionOrders}
             flowTags={flowTags}
             colors={colors}
             isDarkMode={isDarkMode}
@@ -2464,10 +2533,17 @@ export default function App() {
         );
       case ViewType.MODULES_CONFIG:
         return (
-          <ModuleConfigView 
+          <ModuleConfigView
             config={modulesConfig}
             onSave={saveModulesConfig}
             onNavigate={navigateTo}
+            isDarkMode={isDarkMode}
+          />
+        );
+      case ViewType.MANUAL:
+        return (
+          <ManualView
+            onBack={goBack}
             isDarkMode={isDarkMode}
           />
         );

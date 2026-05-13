@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { 
-  Users, 
-  Tags, 
-  Palette, 
-  CreditCard, 
+import {
+  Users,
+  Tags,
+  Palette,
+  CreditCard,
   Wallet,
-  BarChart3, 
+  BarChart3,
   Boxes,
   Moon,
   Sun,
@@ -23,7 +23,8 @@ import {
   LogOut,
   Accessibility,
   Type,
-  Layers
+  Layers,
+  BookOpen
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, AppModulesConfig } from '../types';
 
@@ -93,6 +94,7 @@ export default function SettingsView({
         { id: ViewType.MODULES_CONFIG, label: "Módulos do Sistema", icon: <Shield size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'any' },
         { id: ViewType.DASHBOARD_CONFIG, label: "Organizar Dashboard", icon: <Layout size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'any' },
         { id: ViewType.BACKUP, label: "Ajustes Técnicos", icon: <Database size={22} />, color: "text-gray-600 dark:text-gray-400", bg: "bg-slate-100 dark:bg-slate-800", module: 'any' },
+        { id: ViewType.MANUAL, label: "Manual do Sistema", icon: <BookOpen size={22} />, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/20", module: 'any' },
       ].filter(item => item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig])
     }
   ];
