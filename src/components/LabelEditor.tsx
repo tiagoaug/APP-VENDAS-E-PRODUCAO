@@ -54,7 +54,7 @@ export default function LabelEditor({
     <div className="flex flex-col gap-6 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-           <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pré-visualização e Ajuste</h4>
+           <h4 className="text-[10px] font-black tracking-widest text-slate-400">Pré-visualização e Ajuste</h4>
            <div className="group relative">
               <AlertCircle size={12} className="text-slate-300 cursor-help" />
               <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block w-48 p-2 bg-slate-800 text-[8px] text-white rounded-lg shadow-xl z-50">
@@ -66,7 +66,9 @@ export default function LabelEditor({
           onClick={() => {
             onChange(labelService.getDefaultLayout(dimensions));
           }}
-          className="text-[9px] font-bold text-indigo-500 flex items-center gap-1 uppercase hover:bg-indigo-50 dark:hover:bg-indigo-900/20 px-2 py-1 rounded-lg transition-colors"
+          title="Resetar posições para o padrão"
+          aria-label="Resetar layout"
+          className="text-[9px] font-bold text-indigo-500 flex items-center gap-1 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 px-2 py-1 rounded-lg transition-colors"
         >
           <RotateCcw size={10} /> Resetar
         </button>
@@ -92,6 +94,7 @@ export default function LabelEditor({
               onChange({ ...layout, refX: Math.round(nx * 10) / 10, refY: Math.round(ny * 10) / 10 });
             }}
             className="absolute cursor-move select-none whitespace-nowrap text-center flex flex-col items-center"
+            title="Arraste para mover a referência"
             style={{ 
               left: (layout.refX * scale) - (w * scale / 2), 
               top: layout.refY * scale,

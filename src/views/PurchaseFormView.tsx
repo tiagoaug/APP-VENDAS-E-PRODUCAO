@@ -14,6 +14,7 @@ import {
   SaleType,
   Grid,
   PaymentStatus,
+  ProductionConfigItem,
 } from "../types";
 import {
   Save,
@@ -46,9 +47,11 @@ interface PurchaseFormViewProps {
   accounts: Account[];
   grids: Grid[];
   people: Person[];
+  productionConfigs?: ProductionConfigItem[];
   onSave: (purchase: Purchase) => void;
   onCancel: () => void;
   isDarkMode: boolean;
+  initialParams?: any;
 }
 
 export default function PurchaseFormView({
@@ -60,9 +63,11 @@ export default function PurchaseFormView({
   accounts,
   grids,
   people,
+  productionConfigs = [],
   onSave,
   onCancel,
   isDarkMode,
+  initialParams,
 }: PurchaseFormViewProps) {
   const existing = purchaseId
     ? purchases.find((p) => p.id === purchaseId)
@@ -111,9 +116,9 @@ export default function PurchaseFormView({
   const [expandedBlocks, setExpandedBlocks] = useState<string[]>([]);
   
   const [generalItems, setGeneralItems] = useState<GeneralPurchaseItem[]>(
-    existing?.generalItems || [],
+    existing?.generalItems || initialParams?.initialGeneralItems || [],
   );
-  const [notes, setNotes] = useState(existing?.notes || "");
+  const [notes, setNotes] = useState(existing?.notes || initialParams?.initialDescription || "");
   const [batchNumber, setBatchNumber] = useState(
     existing?.batchNumber ||
       `LOT-${Date.now().toString().slice(-5).toUpperCase()}`,
@@ -136,6 +141,9 @@ export default function PurchaseFormView({
   });
   const [generateTransaction, setGenerateTransaction] = useState(
     existing?.generateTransaction !== undefined ? existing?.generateTransaction : true
+  );
+  const [registerAsReceived, setRegisterAsReceived] = useState(
+    existing?.registerAsReceived !== undefined ? existing.registerAsReceived : true
   );
 
   const activeProducts = useMemo(
@@ -190,9 +198,27 @@ export default function PurchaseFormView({
     return suppliers.find((s) => s.id === supplierId)?.name || "";
   }, [suppliers, supplierId]);
 
+  const availableMaterials = useMemo(
+    () => productionConfigs.filter(c => c.type === 'MATERIAL' || c.type === 'PACKAGING'),
+    [productionConfigs]
+  );
+
+  const unitConfigs = useMemo(
+    () => productionConfigs.filter(c => c.type === 'UNIT'),
+    [productionConfigs]
+  );
+
+  const getMaterialUnit = (mat: ProductionConfigItem) => {
+    const unitItem = unitConfigs.find(u => u.id === mat.metadata?.unitId);
+    return unitItem?.name || mat.metadata?.unit || '';
+  };
+
+  const itemTotal = (item: GeneralPurchaseItem) =>
+    (item.quantity ?? 1) * item.value;
+
   const total = useMemo(() => {
     if (type === PurchaseType.GENERAL) {
-      return generalItems.reduce((acc, item) => acc + item.value, 0);
+      return generalItems.reduce((acc, item) => acc + itemTotal(item), 0);
     }
     return blocks.reduce((acc, block) => {
       const qtySum = Object.values(block.variations).reduce((sum: number, v: any) => sum + Number(v.quantity || 0), 0) as number;
@@ -337,6 +363,7 @@ export default function PurchaseFormView({
       batchNumber,
       checks,
       generateTransaction,
+      registerAsReceived,
       sellerId,
       sellerName: people.find(p => p.id === sellerId)?.name || sellerId || '',
       paymentStatus: paymentTerm === PaymentTerm.INSTALLMENTS ? PaymentStatus.PENDING : PaymentStatus.PAID,
@@ -655,72 +682,116 @@ export default function PurchaseFormView({
           </div>
 
           <div className="flex flex-col gap-4">
-            {generalItems.map((item, index) => (
-              <div
-                key={item.id}
-                className={`p-4 rounded-[2rem] border shadow-sm flex flex-col gap-3 relative group overflow-hidden ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
-              >
-                <div className="flex justify-between items-center gap-3">
-                  <div className="flex-1">
-                    <input
-                      type="text"
-                      placeholder="Descrição do item"
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 py-3 text-[12px] font-black tracking-tight text-slate-800 dark:text-slate-100 focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-indigo-500/10 placeholder:text-slate-300 dark:placeholder:text-slate-700"
-                      value={item.description}
-                      onChange={(e) =>
-                        updateGeneralItem(index, {
-                          description: e.target.value,
-                        })
-                      }
-                      aria-label="Descrição do item"
-                      title="Descrição"
-                    />
-                  </div>
-                  <button
-                    onClick={() => removeGeneralItem(index)}
-                    className="p-3 bg-rose-50 dark:bg-rose-900/30 text-rose-500 rounded-xl hover:bg-rose-100 transition-colors"
-                    aria-label="Remover item"
-                    title="Remover"
-                  >
-                    <Trash2 size={16} strokeWidth={2.5} />
-                  </button>
-                </div>
+            {generalItems.map((item, index) => {
+              const selectedMat = availableMaterials.find(m => m.id === item.materialId);
+              const unitLabel = item.unit || (selectedMat ? getMaterialUnit(selectedMat) : '');
+              const total = itemTotal(item);
 
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <div className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-400 text-xs">
-                      R$
+              return (
+                <div
+                  key={item.id}
+                  className={`p-4 rounded-[2rem] border shadow-sm flex flex-col gap-3 relative group overflow-hidden ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
+                >
+                  {/* Campo 1: Seleção do Material */}
+                  <div className="flex gap-3 items-start">
+                    <div className="flex-1 flex flex-col gap-1">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Material</p>
+                      <ComboBox
+                        options={availableMaterials.map(m => ({ id: m.id, name: m.name }))}
+                        value={item.materialId || ''}
+                        onChange={(val) => {
+                          const mat = availableMaterials.find(m => m.id === val);
+                          updateGeneralItem(index, {
+                            materialId: val || undefined,
+                            description: mat?.name || item.description,
+                            unit: mat ? getMaterialUnit(mat) : item.unit,
+                            value: mat?.metadata?.baseCost ?? item.value,
+                          });
+                        }}
+                        placeholder="Pesquisar material..."
+                        isDarkMode={isDarkMode}
+                      />
+                      {!item.materialId && (
+                        <input
+                          type="text"
+                          placeholder="Ou descreva manualmente..."
+                          title="Descrição manual"
+                          className={`mt-1 w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-[11px] font-bold text-slate-600 dark:text-slate-300 placeholder:text-slate-300 dark:placeholder:text-slate-600 outline-none`}
+                          value={item.description}
+                          onChange={(e) => updateGeneralItem(index, { description: e.target.value })}
+                        />
+                      )}
                     </div>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl pl-[2.4rem] pr-4 py-3 text-[14px] font-black text-slate-800 dark:text-slate-100 focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-indigo-500/10 transition-all font-mono"
-                      value={item.value || ""}
-                      onChange={(e) =>
-                        updateGeneralItem(index, {
-                          value: parseFloat(e.target.value) || 0,
-                        })
-                      }
-                      placeholder="0.00"
-                      aria-label="Valor do item"
-                      title="Valor"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => removeGeneralItem(index)}
+                      className="mt-5 p-3 bg-rose-50 dark:bg-rose-900/30 text-rose-500 rounded-xl hover:bg-rose-100 transition-colors"
+                      aria-label="Remover item"
+                      title="Remover"
+                    >
+                      <Trash2 size={16} strokeWidth={2.5} />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      openCalculator(index, 'generalItems');
-                    }}
-                    className="w-[50px] shrink-0 flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-2xl hover:bg-indigo-100 transition-colors"
-                    aria-label="Abrir calculadora de valor"
-                    title="Calculadora"
-                  >
-                    <Calculator size={18} strokeWidth={2.5} />
-                  </button>
+
+                  {/* Campos 2 e 3: Quantidade + Valor Unitário */}
+                  <div className="flex gap-2 items-end">
+                    {/* Quantidade */}
+                    <div className="flex flex-col gap-1 w-28">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">
+                        Qtd{unitLabel ? ` (${unitLabel})` : ''}
+                      </p>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.001"
+                        title="Quantidade"
+                        placeholder="0"
+                        className={`w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-3 py-3 text-[13px] font-black text-center text-slate-800 dark:text-slate-100 outline-none`}
+                        value={item.quantity ?? ''}
+                        onChange={(e) => updateGeneralItem(index, { quantity: parseFloat(e.target.value) || 0 })}
+                      />
+                    </div>
+
+                    {/* Valor Unitário */}
+                    <div className="flex flex-col gap-1 flex-1">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Valor Unit. (R$)</p>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-black text-slate-400">R$</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min={0}
+                            title="Valor unitário"
+                            placeholder="0,00"
+                            className={`w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl pl-8 pr-3 py-3 text-[13px] font-black text-slate-800 dark:text-slate-100 outline-none font-mono`}
+                            value={item.value || ''}
+                            onChange={(e) => updateGeneralItem(index, { value: parseFloat(e.target.value) || 0 })}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openCalculator(index, 'generalItems')}
+                          className="w-11 shrink-0 flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-2xl hover:bg-indigo-100 transition-colors"
+                          aria-label="Calculadora"
+                          title="Calculadora"
+                        >
+                          <Calculator size={16} strokeWidth={2.5} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Total do item */}
+                    <div className="flex flex-col gap-1 w-24 text-right">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total</p>
+                      <p className={`py-3 text-[13px] font-black ${total > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-300'}`}>
+                        R$ {total.toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {generalItems.length === 0 && (
               <div className="text-center py-12 bg-slate-50/30 dark:bg-slate-900/40 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[2rem]">
@@ -1177,6 +1248,39 @@ export default function PurchaseFormView({
            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-emerald-500 dark:peer-checked:bg-emerald-400 border-2 border-transparent"></div>
         </label>
       </div>
+
+      {/* Toggle: Registrar como Recebido — só aparece quando vem de solicitação ou tem materiais */}
+      {(initialParams?.requestId || generalItems.some(i => i.materialId)) && (
+        <div
+          className={`p-6 rounded-[2.5rem] border shadow-sm flex items-center justify-between mt-2 ${
+            registerAsReceived
+              ? isDarkMode ? 'bg-indigo-950/30 border-indigo-800' : 'bg-indigo-50 border-indigo-100'
+              : isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${registerAsReceived ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
+              <Package size={18} strokeWidth={2.5} />
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-widest font-black text-slate-800 dark:text-white">Registrar como Recebido</p>
+              <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-tight mt-0.5 max-w-[200px]">
+                Dar baixa no estoque e na solicitação
+              </p>
+            </div>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              className="sr-only peer"
+              checked={registerAsReceived}
+              onChange={(e) => setRegisterAsReceived(e.target.checked)}
+              aria-label="Registrar como recebido no estoque"
+            />
+            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600 dark:peer-checked:bg-indigo-500 border-2 border-transparent"></div>
+          </label>
+        </div>
+      )}
 
       <div className="mt-6 mx-2 flex items-center justify-between bg-slate-900 dark:bg-slate-800 p-4 rounded-[2rem] shadow-xl z-40 animate-in slide-in-from-bottom-5">
         <div className="pl-3">

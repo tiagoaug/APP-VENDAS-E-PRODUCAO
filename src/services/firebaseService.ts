@@ -58,6 +58,23 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
+const isPlainObject = (obj: any) => {
+  return obj !== null && typeof obj === 'object' && (obj.constructor === Object || !obj.constructor);
+};
+
+const deepClean = (obj: any): any => {
+  if (Array.isArray(obj)) {
+    return obj.map(deepClean);
+  } else if (isPlainObject(obj)) {
+    return Object.fromEntries(
+      Object.entries(obj)
+        .filter(([_, value]) => value !== undefined)
+        .map(([key, value]) => [key, deepClean(value)])
+    );
+  }
+  return obj;
+};
+
 export const firebaseService = {
   runAtomic: async (operation: (transaction: any) => Promise<void>) => {
     try {
@@ -99,26 +116,18 @@ export const firebaseService = {
   saveDocument: async <T extends object>(path: string, data: T) => {
     if (!auth.currentUser) throw new Error('Not authenticated');
     const id = (data as any).id || doc(collection(db, 'temp')).id;
+    console.log(`[firebaseService] saveDocument: path=${path}, id=${id}`, { dataType: typeof data, data });
     const fullPath = `users/${auth.currentUser.uid}/${path}`;
+    if (!id || typeof id !== 'string') {
+      console.error('[firebaseService] Invalid ID for saveDocument:', id, typeof id);
+      throw new Error(`ID inválido para salvamento: ${typeof id === 'object' ? JSON.stringify(id) : id} (${typeof id})`);
+    }
     const docRef = doc(db, fullPath, id);
+    console.log(`[firebaseService] docRef created: ${docRef.path}`);
     
     // Remove id from payload if it exists
     const { id: _, ...payload } = data as any;
     
-    // Recursive clean to remove undefined values
-    const deepClean = (obj: any): any => {
-      if (Array.isArray(obj)) {
-        return obj.map(deepClean);
-      } else if (obj !== null && typeof obj === 'object') {
-        return Object.fromEntries(
-          Object.entries(obj)
-            .filter(([_, value]) => value !== undefined)
-            .map(([key, value]) => [key, deepClean(value)])
-        );
-      }
-      return obj;
-    };
-
     const cleanPayload = deepClean(payload);
     
     try {
@@ -131,25 +140,17 @@ export const firebaseService = {
 
   updateDocument: async (path: string, id: string, data: any) => {
     if (!auth.currentUser) throw new Error('Not authenticated');
+    console.log(`[firebaseService] updateDocument: path=${path}, id=${id}`, { dataType: typeof data, data });
     const fullPath = `users/${auth.currentUser.uid}/${path}`;
+    if (!id || typeof id !== 'string') {
+      console.error('[firebaseService] Invalid ID for updateDocument:', id, typeof id);
+      throw new Error(`ID inválido para atualização: ${typeof id === 'object' ? JSON.stringify(id) : id} (${typeof id})`);
+    }
     const docRef = doc(db, fullPath, id);
+    console.log(`[firebaseService] docRef created for update: ${docRef.path}`);
     
     console.log(`Updating document at ${fullPath}/${id} with data`, data);
     
-    // Recursive clean to remove undefined values
-    const deepClean = (obj: any): any => {
-      if (Array.isArray(obj)) {
-        return obj.map(deepClean);
-      } else if (obj !== null && typeof obj === 'object') {
-        return Object.fromEntries(
-          Object.entries(obj)
-            .filter(([_, value]) => value !== undefined)
-            .map(([key, value]) => [key, deepClean(value)])
-        );
-      }
-      return obj;
-    };
-
     const cleanData = deepClean(data);
     
     try {

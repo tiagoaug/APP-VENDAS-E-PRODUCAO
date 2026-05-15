@@ -71,8 +71,11 @@ import {
   WeighingRecord,
   AppModulesConfig,
   SoleStockEntry,
+  SolePurchaseItem,
   ProductionOrder,
+  ProductionOrderItem,
   ProductionLot,
+  PurchaseRequest,
 } from "./types";
 import {
   MOCK_PRODUCTS,
@@ -117,9 +120,10 @@ import PersonalFinancialView from "./views/PersonalFinancialView";
 import ModuleConfigView from "./views/ModuleConfigView";
 import ManualView from "./views/ManualView";
 import WeighingView from "./views/WeighingView";
-import SolePurchaseView from "./views/SolePurchaseView";
+import SoleProcurement from "./views/SolePurchaseView";
 import SoleStockView from "./views/SoleStockView";
 import PCPView from "./views/PCPView";
+import PurchaseNeedsView from "./views/PurchaseNeedsView";
 
 import ProductionEngineeringView from "./views/ProductionEngineeringView";
 
@@ -129,6 +133,7 @@ import AccountModal from "./components/AccountModal";
 import PaymentMethodModal from "./components/PaymentMethodModal";
 import Modal from "./components/Modal";
 import TransactionModal from "./components/TransactionModal";
+import SolePurchaseModal from "./components/SolePurchaseModal";
 
 const MODAL_VIEWS = [
   ViewType.PRODUCTS,
@@ -142,21 +147,13 @@ const MODAL_VIEWS = [
   ViewType.PAYMENT_METHODS,
   ViewType.BACKUP,
   ViewType.REPORTS,
-  ViewType.PRODUCTION_CONFIG,
-  ViewType.PRODUCTION_PCP,
-  ViewType.PRODUCTION_STOCK,
-  ViewType.PRODUCTION_PURCHASE_NEEDS,
-  ViewType.PRODUCTION_WEIGHING,
-  ViewType.PRODUCTION_SOLE_PURCHASE,
-  ViewType.PRODUCTION_SOLE_STOCK,
   ViewType.PRODUCT_SHEET,
   ViewType.STOCK,
   ViewType.SALE_FORM,
   ViewType.PURCHASE_FORM,
   ViewType.PRODUCT_DETAIL,
   ViewType.REPORT_DETAILED,
-  ViewType.MODULES_CONFIG,
-  ViewType.PRODUCTION_ENGINEERING
+  ViewType.MODULES_CONFIG
 ];
 
 const MODULE_VIEWS: Record<string, ViewType[]> = {
@@ -224,6 +221,9 @@ export default function App() {
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [transactionModalType, setTransactionModalType] = useState<TransactionType>(TransactionType.INCOME);
+  const [isSolePurchaseModalOpen, setIsSolePurchaseModalOpen] = useState(false);
+  const [solePurchaseParams, setSolePurchaseParams] = useState<any>(null);
+
 
   // App State
   const [products, setProducts] = useState<Product[]>([]);
@@ -246,6 +246,10 @@ export default function App() {
   const [soleStockEntries, setSoleStockEntries] = useState<SoleStockEntry[]>([]);
   const [productionLots, setProductionLots] = useState<ProductionLot[]>([]);
   const [productionOrders, setProductionOrders] = useState<ProductionOrder[]>([]);
+  const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequest[]>([]);
+  
+  const suppliers = useMemo(() => people.filter(p => p.isSupplier), [people]);
+  const buyers = useMemo(() => people.filter(p => p.isBuyer || p.isPersonal), [people]);
 
   const defaultDashboardConfig: DashboardConfig = {
     cards: [
@@ -460,6 +464,11 @@ export default function App() {
       setProductionOrders
     );
 
+    const unsubPurchaseRequests = firebaseService.subscribeToCollection<PurchaseRequest>(
+      "purchaseRequests",
+      (data) => setPurchaseRequests([...data].sort((a, b) => b.requestedAt - a.requestedAt))
+    );
+
     const unsubDashboardConfig = firebaseService.subscribeToCollection<DashboardConfig>(
       "dashboard_config",
       (data) => {
@@ -523,12 +532,12 @@ export default function App() {
       unsubSoleStock();
       unsubProductionLots();
       unsubProductionOrders();
+      unsubPurchaseRequests();
       unsubDashboardConfig();
 
     };
   }, [user]);
 
-  const suppliers = useMemo(() => people.filter((p) => p.isSupplier), [people]);
 
   // Selection state for editing
   const [selectedProductId, setSelectedProductId] = useState<string | null>(
@@ -542,13 +551,40 @@ export default function App() {
   const [searchContext, setSearchContext] = useState<string>('');
   const [productionSubScreen, setProductionSubScreen] = useState<ProductionScreenType>('MENU');
 
-  const navigateTo = (view: ViewType, id: string | null = null, search: string = '') => {
+  const [currentParams, setCurrentParams] = useState<any>(null);
+  
+  const navigateTo = (view: ViewType, idOrParams: string | any = null, maybeParams: any = null) => {
+    let id: string | null = null;
+    let params: any = null;
+
+    if (typeof idOrParams === 'string' || idOrParams === null) {
+      id = idOrParams;
+      params = maybeParams;
+    } else {
+      id = null;
+      params = idOrParams;
+    }
+
     if (view === ViewType.PRODUCT_FORM) setSelectedProductId(id);
     if (view === ViewType.PURCHASE_FORM) setSelectedPurchaseId(id);
     if (view === ViewType.SALE_FORM) setSelectedSaleId(id);
     if (view === ViewType.PERSON_DETAIL) setSelectedPersonId(id);
     if (view === ViewType.REPORT_DETAILED) setSelectedReportId(id);
-    setSearchContext(search);
+    
+    if (view === ViewType.PRODUCTION_SOLE_PURCHASE) {
+      setSolePurchaseParams(params);
+      setIsSolePurchaseModalOpen(true);
+      return;
+    }
+
+    // If params is a string, it might be the old 'search' parameter
+    if (typeof params === 'string') {
+      setSearchContext(params);
+      setCurrentParams(null);
+    } else {
+      setCurrentParams(params);
+      setSearchContext('');
+    }
 
     setCurrentView(view);
     setHistory((prev) => [...prev, view]);
@@ -720,6 +756,145 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    const handleOpenModal = (e: any) => {
+      const { params } = e.detail;
+      setSolePurchaseParams(params);
+      setIsSolePurchaseModalOpen(true);
+    };
+    window.addEventListener('open-sole-purchase-modal' as any, handleOpenModal);
+    return () => window.removeEventListener('open-sole-purchase-modal' as any, handleOpenModal);
+  }, []);
+
+  const handleSaveSolePurchase = async (purchase: Purchase, soleItems: SolePurchaseItem[]) => {
+    const parseLocaleNumber = (val: any): number => {
+      if (typeof val === 'number') return val;
+      if (!val) return 0;
+      const normalized = String(val).replace(',', '.');
+      const num = Number(normalized);
+      return isNaN(num) ? 0 : num;
+    };
+
+    console.log('[handleSaveSolePurchase] Starting save...', { purchase, soleItems });
+    try {
+      if (!purchase || !soleItems) throw new Error("Dados de compra incompletos");
+      if (!purchase.date) purchase.date = Date.now();
+      if (purchase.total === undefined || purchase.total === null) purchase.total = 0;
+      // 1. Vincular os itens à compra para que apareçam no histórico
+      const purchaseToSave = {
+        ...purchase,
+        items: soleItems // Cast ou ajuste de tipo se necessário
+      };
+      
+      console.log('[handleSaveSolePurchase] Saving purchase doc...');
+      const savedResult = await firebaseService.saveDocument("purchases", purchaseToSave);
+      const finalPurchaseId = (savedResult as any)?.id || purchase.id;
+      console.log('[handleSaveSolePurchase] Purchase saved. ID:', finalPurchaseId);
+
+      // 2. Atualizar Estoque de Solados (soleStock)
+      let itemIndex = 0;
+      for (const item of soleItems) {
+        console.log(`[handleSaveSolePurchase] Processing item ${itemIndex}...`, item);
+        // Tenta encontrar entrada existente para este molde/cor
+        const existingEntry = soleStockEntries.find(
+          s => s.moldId === item.moldId && s.colorId === item.colorId
+        );
+
+        if (existingEntry) {
+          const updatedStock = { ...existingEntry.stock };
+          Object.entries(item.quantities).forEach(([size, qty]) => {
+            updatedStock[size] = (updatedStock[size] || 0) + qty;
+          });
+
+          const totalPairs = Object.values(updatedStock).reduce((acc, curr) => acc + (Number(curr) || 0), 0);
+
+          await firebaseService.updateDocument("soleStock", existingEntry.id, {
+            stock: updatedStock,
+            totalPairs,
+            unitCost: item.unitCost,
+            totalCost: totalPairs * parseLocaleNumber(item.unitCost),
+            purchaseDate: purchase.date,
+            updatedAt: Date.now()
+          });
+        } else {
+          const totalPairs = Object.values(item.quantities).reduce((acc, curr) => acc + (Number(curr) || 0), 0);
+          const newEntry: Omit<SoleStockEntry, 'id'> = {
+            moldId: item.moldId,
+            moldName: item.moldName,
+            colorId: item.colorId,
+            colorName: item.colorName,
+            supplierId: purchase.supplierId,
+            supplierName: people.find(p => p.id === purchase.supplierId)?.name || 'Fornecedor',
+            stock: item.quantities,
+            totalPairs,
+            unitCost: parseLocaleNumber(item.unitCost),
+            totalCost: parseLocaleNumber(item.totalCost),
+            purchaseDate: purchase.date,
+            updatedAt: Date.now()
+          };
+          await firebaseService.saveDocument("soleStock", newEntry);
+        }
+      }
+
+      console.log('[handleSaveSolePurchase] Managing partial receipt...');
+      if (purchase.registerAsReceived && solePurchaseParams?.requestId) {
+        const request = purchaseRequests.find(r => r.id === solePurchaseParams.requestId);
+        if (request) {
+          console.log('[handleSaveSolePurchase] Found request:', request.id);
+          const updatedReceivedBreakdown = { ...(request.receivedBreakdown || {}) };
+          let totalReceivedNow = 0;
+
+          soleItems.forEach(item => {
+            Object.entries(item.quantities).forEach(([size, qty]) => {
+              updatedReceivedBreakdown[size] = (updatedReceivedBreakdown[size] || 0) + qty;
+              totalReceivedNow += qty;
+            });
+          });
+
+          const totalReceivedAll = (request.receivedQty || 0) + totalReceivedNow;
+          const isFullyReceived = totalReceivedAll >= request.requiredQty;
+
+          await firebaseService.updateDocument("purchaseRequests", request.id, {
+            receivedQty: totalReceivedAll,
+            receivedBreakdown: updatedReceivedBreakdown,
+            status: isFullyReceived ? 'RECEIVED' : 'ORDERED',
+            updatedAt: Date.now()
+          });
+        }
+      }
+
+      console.log('[handleSaveSolePurchase] Generating financial entry...');
+      if (purchase.paymentTerm === PaymentTerm.CASH && purchase.accountId) {
+        console.log('[handleSaveSolePurchase] Cash payment detected.');
+        const transaction: Omit<Transaction, 'id'> = {
+          type: TransactionType.EXPENSE,
+          amount: parseLocaleNumber(purchase.total),
+          date: purchase.date,
+          categoryId: purchase.categoryId || (categories || []).find(c => String(c.name || '').toLowerCase().includes('solado'))?.id || categories?.[0]?.id || 'cat1',
+          accountId: purchase.accountId,
+          description: `Compra de Solados - ${people.find(p => p.id === purchase.supplierId)?.name || purchase.supplierId}`,
+          status: 'COMPLETED',
+          relatedId: finalPurchaseId
+        };
+        await financeService.createTransaction(transaction);
+        
+        const account = accounts.find(a => a.id === purchase.accountId);
+        if (account) {
+          await firebaseService.updateDocument("accounts", account.id, {
+            balance: account.balance - parseLocaleNumber(purchase.total)
+          });
+        }
+      }
+
+      alert("Compra de solados registrada e estoque atualizado com sucesso!");
+      setIsSolePurchaseModalOpen(false);
+      setSolePurchaseParams(null);
+    } catch (err: any) {
+      console.error("[App] Erro crítico ao salvar compra de sola:", err);
+      alert("Erro ao salvar compra: " + (err.message || JSON.stringify(err)));
+    }
+  };
+
   const handleDeleteSale = async (id: string) => {
     console.log("handleDeleteSale chamado para ID:", id);
     const sale = sales.find(s => s.id === id);
@@ -849,6 +1024,245 @@ export default function App() {
       alert('Erro ao excluir: ' + (err.message || err));
     }
   };
+  const handleSaveProductionLot = async (lot: ProductionLot) => {
+    try {
+      // 0. Pegar o estado anterior do lote para detectar remoções
+      const oldLot = productionLots.find(l => l.id === lot.id);
+      const oldLinkedIds = new Set<string>();
+      if (oldLot) {
+        if (oldLot.productionOrderId) oldLinkedIds.add(oldLot.productionOrderId);
+        if ((oldLot as any).metadata?.sourceItems) {
+          (oldLot as any).metadata.sourceItems.forEach((item: any) => oldLinkedIds.add(item.orderId));
+        }
+      }
+
+      await firebaseService.saveDocument("productionLots", lot);
+      
+      // 1. Identificar todas as OPs vinculadas ATUALMENTE
+      const linkedOrderIds = new Set<string>();
+      if (lot.productionOrderId) linkedOrderIds.add(lot.productionOrderId);
+      
+      const lotMetadata = (lot as any).metadata;
+      if (lotMetadata?.sourceItems) {
+        lotMetadata.sourceItems.forEach((item: any) => linkedOrderIds.add(item.orderId));
+      }
+
+      // 2. Identificar OPs que foram REMOVIDAS
+      const removedOrderIds = Array.from(oldLinkedIds).filter(id => !linkedOrderIds.has(id));
+
+      // 3. Atualizar OPs vinculadas (Adição ou Manutenção)
+      for (const orderId of Array.from(linkedOrderIds)) {
+        const order = productionOrders.find(o => o.id === orderId);
+        if (order) {
+          let newStatus = order.status;
+          if (lot.finishedAt) {
+            newStatus = 'COMPLETED';
+          } else if (order.status === 'PENDING') {
+            newStatus = 'IN_PRODUCTION';
+          }
+
+          const alreadyLinked = order.lotIds?.includes(lot.id);
+          if (newStatus !== order.status || !alreadyLinked) {
+            const updatedLotIds = alreadyLinked ? order.lotIds : [...(order.lotIds || []), lot.id];
+            await firebaseService.saveDocument("productionOrders", {
+              ...order,
+              status: newStatus,
+              lotIds: updatedLotIds
+            });
+          }
+        }
+      }
+
+      // 4. Limpar OPs que foram retiradas deste mapa
+      for (const orderId of removedOrderIds) {
+        const order = productionOrders.find(o => o.id === orderId);
+        if (order) {
+          const updatedLotIds = order.lotIds?.filter(id => id !== lot.id) || [];
+          // Se não restarem lotes ativos, a OP volta para PENDENTE
+          const hasOtherLots = productionLots.some(l => 
+            l.id !== lot.id && 
+            !l.finishedAt && 
+            (l.productionOrderId === orderId || (l as any).metadata?.sourceItems?.some((si: any) => si.orderId === orderId))
+          );
+          
+          await firebaseService.saveDocument("productionOrders", {
+            ...order,
+            status: hasOtherLots ? order.status : 'PENDING',
+            lotIds: updatedLotIds
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error("Erro ao salvar mapa:", err);
+      alert("Erro ao salvar mapa: " + (err.message || err));
+    }
+  };
+
+  const handleDeleteProductionLot = async (lotId: string) => {
+    try {
+      const lot = productionLots.find(l => l.id === lotId);
+      if (!lot) return;
+
+      await firebaseService.deleteDocument("productionLots", lotId);
+      
+      // 1. Identificar todas as OPs vinculadas
+      const linkedOrderIds = new Set<string>();
+      if (lot.productionOrderId) linkedOrderIds.add(lot.productionOrderId);
+      
+      const lotMetadata = (lot as any).metadata;
+      if (lotMetadata?.sourceItems) {
+        lotMetadata.sourceItems.forEach((item: any) => linkedOrderIds.add(item.orderId));
+      }
+
+      // 2. Para cada OP, verificar se deve voltar a PENDENTE
+      for (const orderId of Array.from(linkedOrderIds)) {
+        const order = productionOrders.find(o => o.id === orderId);
+        if (order) {
+          // Verificamos se existem outros mapas ativos para esta OP
+          // Importante: verificar tanto lot.productionOrderId quanto metadata.sourceItems nos outros lotes
+          const otherLots = productionLots.filter(l => 
+            l.id !== lotId && 
+            !l.finishedAt && 
+            (l.productionOrderId === orderId || (l as any).metadata?.sourceItems?.some((si: any) => si.orderId === orderId))
+          );
+          
+          const updatedLotIds = order.lotIds?.filter(id => id !== lotId) || [];
+          const newStatus = otherLots.length === 0 ? 'PENDING' : order.status;
+
+          await firebaseService.saveDocument("productionOrders", {
+            ...order,
+            status: newStatus,
+            lotIds: updatedLotIds
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error("Erro ao excluir mapa:", err);
+      alert("Erro ao excluir mapa: " + (err.message || err));
+    }
+  };
+
+  const handleSavePurchaseRequest = async (req: PurchaseRequest) => {
+    // Detect increase in receivedQty and update material stock accordingly
+    if (req.type === 'MATERIAL' && req.materialId) {
+      const existing = purchaseRequests.find(r => r.id === req.id);
+      const prevReceived = existing?.receivedQty || 0;
+      const newReceived = req.receivedQty || 0;
+      const delta = newReceived - prevReceived;
+
+      if (delta > 0) {
+        const mat = productionConfigs.find(c => c.id === req.materialId);
+        if (mat) {
+          const currentStock = mat.metadata?.stock || 0;
+          await firebaseService.saveDocument("productionConfigs", {
+            ...mat,
+            metadata: { ...mat.metadata, stock: currentStock + delta },
+          });
+        }
+      }
+    }
+
+    await firebaseService.saveDocument("purchaseRequests", req);
+  };
+
+  const handleCreatePurchaseRequest = async (req: Omit<PurchaseRequest, 'id'>) => {
+    console.log('[App] handleCreatePurchaseRequest called', req);
+    const id = Math.random().toString(36).substring(2, 11);
+    try {
+      await firebaseService.saveDocument("purchaseRequests", { ...req, id });
+      console.log('[App] Purchase request saved with ID:', id);
+    } catch (err) {
+      console.error('[App] Error saving purchase request:', err);
+      throw err;
+    }
+  };
+
+
+
+  const autoCreateProductionOrder = async (sale: Sale) => {
+    if (!modulesConfig.production) return;
+    if (sale.status !== SaleStatus.SALE) return;
+    
+    // Evitar duplicidade se já houver uma OP vinculada a esta venda
+    if (productionOrders.some(op => op.saleId === sale.id)) return;
+
+    try {
+      const orderId = Math.random().toString(36).substr(2, 9);
+      const orderNum = `OP #${String(productionOrders.length + 1).padStart(3, '0')}`;
+
+      // Agrupar itens da venda por Produto/Variação para criar os lotes (Mapas)
+      const groupedItems = new Map<string, {
+        productId: string;
+        productName: string;
+        variationId: string;
+        variationName: string;
+        saleType: SaleType;
+        sizes: Record<string, { total: number; fromStock: number; toProduction: number }>;
+        totalQty: number;
+      }>();
+
+      sale.items.forEach(item => {
+        const product = products.find(p => p.id === item.productId);
+        const variation = product?.variations.find(v => v.id === item.variationId);
+        if (!product || !variation) return;
+
+        const key = `${item.productId}-${item.variationId}`;
+        if (!groupedItems.has(key)) {
+          groupedItems.set(key, {
+            productId: item.productId,
+            productName: product.name,
+            variationId: item.variationId,
+            variationName: variation.colorName,
+            saleType: item.saleType,
+            sizes: {},
+            totalQty: 0
+          });
+        }
+        const g = groupedItems.get(key)!;
+        const sizeKey = item.size || '__all__';
+        if (!g.sizes[sizeKey]) g.sizes[sizeKey] = { total: 0, fromStock: 0, toProduction: 0 };
+        g.sizes[sizeKey].total += item.quantity;
+        g.sizes[sizeKey].toProduction += item.quantity;
+        g.totalQty += item.quantity;
+      });
+
+      const items: ProductionOrderItem[] = Array.from(groupedItems.values()).map(g => ({
+        productId: g.productId,
+        productName: g.productName,
+        variationId: g.variationId,
+        variationName: g.variationName,
+        saleType: g.saleType,
+        sizes: g.sizes,
+        totalQuantity: g.totalQty,
+        fromStockQty: 0,
+        toProductionQty: g.totalQty
+      }));
+
+      const order: ProductionOrder = {
+        id: orderId,
+        orderNumber: orderNum,
+        saleId: sale.id,
+        saleOrderNumber: sale.orderNumber,
+        customerId: sale.customerId,
+        customerName: sale.customerName || 'Avulso',
+        orderDate: sale.date,
+        deliveryDate: sale.deliveryDate || (Date.now() + 7 * 24 * 60 * 60 * 1000),
+        items,
+        status: 'PENDING',
+        lotIds: [], // Inicia vazio, será preenchido ao criar mapas manualmente
+        createdAt: Date.now()
+      };
+
+      await firebaseService.saveDocument("productionOrders", order);
+      
+      // Vincula o ID da OP à venda
+      await firebaseService.saveDocument("sales", { ...sale, productionOrderId: order.id });
+
+    } catch (err) {
+      console.error("Erro ao criar OP automática:", err);
+    }
+  };
+
   const renderView = (view: ViewType) => {
     // Route Guard: Check if the view is allowed by the current module configuration
     const isSalesView = MODULE_VIEWS.sales.includes(view);
@@ -1331,6 +1745,8 @@ export default function App() {
             accounts={accounts}
             grids={grids}
             people={people}
+            productionConfigs={productionConfigs}
+            initialParams={currentParams}
             onSave={async (purchase) => {
               try {
                 const prevPurchase = selectedPurchaseId ? purchases.find(p => p.id === selectedPurchaseId) : null;
@@ -1444,6 +1860,38 @@ export default function App() {
 
                 for (const [_, acc] of accountUpdates) {
                   await firebaseService.updateDocument("accounts", acc.id, { balance: acc.balance });
+                }
+
+                // Update material stock + PurchaseRequest only if user confirmed
+                if (purchase.registerAsReceived && purchase.type === PurchaseType.GENERAL && purchase.generalItems) {
+                  for (const gi of purchase.generalItems) {
+                    if (gi.materialId && gi.quantity && gi.quantity > 0) {
+                      const mat = productionConfigs.find(c => c.id === gi.materialId);
+                      if (mat) {
+                        const currentStock = mat.metadata?.stock || 0;
+                        await firebaseService.saveDocument("productionConfigs", {
+                          ...mat,
+                          metadata: { ...mat.metadata, stock: currentStock + gi.quantity },
+                        });
+                      }
+                    }
+                  }
+
+                  if (currentParams?.requestId) {
+                    const req = purchaseRequests.find(r => r.id === currentParams.requestId);
+                    if (req) {
+                      const purchasedQty = purchase.generalItems.reduce(
+                        (sum, gi) => sum + (gi.quantity || 0), 0
+                      );
+                      const newReceivedQty = (req.receivedQty || 0) + purchasedQty;
+                      const isFullyReceived = newReceivedQty >= req.requiredQty;
+                      await firebaseService.updateDocument("purchaseRequests", req.id, {
+                        receivedQty: newReceivedQty,
+                        status: isFullyReceived ? 'RECEIVED' : 'ORDERED',
+                        updatedAt: Date.now(),
+                      });
+                    }
+                  }
                 }
 
                 goBack();
@@ -1568,6 +2016,12 @@ export default function App() {
                 });
 
                 alert("Orçamento confirmado como venda com sucesso!");
+                
+                // Auto-create Production Order
+                const fullSale = sales.find(s => s.id === id);
+                if (fullSale) {
+                  await autoCreateProductionOrder({ ...fullSale, status: SaleStatus.SALE });
+                }
               } catch (err: any) {
                 console.error("Conversion Error:", err);
                 alert("Erro ao converter orçamento: " + (err.message || err));
@@ -2274,6 +2728,12 @@ export default function App() {
                   }
                 }
               }
+
+              // 4. Auto-create Production Order if it's a new SALE or updated SALE
+              if (sale.status === SaleStatus.SALE) {
+                await autoCreateProductionOrder(sale);
+              }
+
               } catch (err: any) {
                 console.error("Save Error:", err);
                 alert("Erro ao salvar: " + (err.message || err));
@@ -2324,10 +2784,9 @@ export default function App() {
                 <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                   {[
                     { id: ViewType.PRODUCTION_PCP, label: 'PCP Central', icon: <GanttChartSquare size={22} />, color: 'text-indigo-600' },
-                    { id: ViewType.PRODUCTION_STOCK, label: 'Estoque de Materiais', icon: <PackageOpen size={22} />, color: 'text-emerald-600' },
+                    { id: ViewType.PRODUCTION_ESTOQUES_MENU, label: 'Estoques', icon: <Boxes size={22} />, color: 'text-emerald-600' },
                     { id: ViewType.PRODUCTION_WEIGHING, label: 'Pesagem e Contagem', icon: <Scale size={22} />, color: 'text-violet-600' },
                     { id: ViewType.PRODUCTION_SOLE_PURCHASE, label: 'Entrada de Solados', icon: <ShoppingCart size={22} />, color: 'text-cyan-600' },
-                    { id: ViewType.PRODUCTION_SOLE_STOCK, label: 'Estoque de Solados', icon: <Package size={22} />, color: 'text-emerald-600' },
                     { id: ViewType.PRODUCTION_PURCHASE_NEEDS, label: 'Necessidade de Compras', icon: <ClipboardList size={22} />, color: 'text-amber-600' },
                   ].map((item, index, array) => (
                     <button
@@ -2383,7 +2842,7 @@ export default function App() {
               </div>
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Módulo de Manufatura</p>
-                <p className="text-[11px] text-slate-400 font-bold mt-2 leading-relaxed italic max-w-[240px]">
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-1">
                   Controle total do seu processo produtivo, desde a matéria-prima até o produto acabado.
                 </p>
               </div>
@@ -2403,7 +2862,6 @@ export default function App() {
             onSaveConfigItem={async (item: any) => {
               try {
                 await firebaseService.saveDocument("productionConfigs", item);
-                // The modal usually closes itself or is closed via state change in the view
               } catch (err: any) {
                 console.error("Erro ao salvar item de configuração:", err);
                 alert("Erro ao salvar item: " + (err.message || err));
@@ -2412,7 +2870,6 @@ export default function App() {
             onDeleteConfigItem={(id: string) => firebaseService.deleteDocument("productionConfigs", id)}
             onUpdateSectorsOrder={(updatedSectors: any[]) => Promise.all(updatedSectors.map(s => firebaseService.saveDocument('sectors', s))).then(() => {})}
             onBack={goBack}
-
             isDarkMode={isDarkMode}
             people={people}
             colors={colors}
@@ -2422,6 +2879,9 @@ export default function App() {
             onNavigate={navigateTo}
             onAddProduct={() => navigateTo(ViewType.PRODUCT_FORM)}
             onNavigateGrids={() => navigateTo(ViewType.GRIDS)}
+            lots={productionLots}
+            products={products}
+            soleStock={soleStockEntries}
           />
         );
       case ViewType.PRODUCTION_ENGINEERING:
@@ -2461,42 +2921,54 @@ export default function App() {
             flowTags={flowTags}
             colors={colors}
             isDarkMode={isDarkMode}
-            onSaveLot={(lot) => firebaseService.saveDocument("productionLots", lot)}
-            onDeleteLot={(id) => firebaseService.deleteDocument("productionLots", id)}
+            onSaveLot={handleSaveProductionLot}
+            onDeleteLot={handleDeleteProductionLot}
             onBack={goBack}
             userName={user?.displayName || user?.email || 'Usuário'}
+            productionConfigs={productionConfigs}
+            soleStock={soleStockEntries}
+            onNavigate={navigateTo}
+            purchaseRequests={purchaseRequests}
+            onRequestPurchase={handleCreatePurchaseRequest}
+            initialTab={currentParams?.initialTab}
           />
         );
       case ViewType.PRODUCTION_STOCK:
         return (
-          <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center gap-6">
-            <div className="w-20 h-20 rounded-3xl bg-emerald-50 dark:bg-emerald-900/30 flex items-center justify-center text-emerald-600 dark:emerald-400">
-              <PackageOpen size={40} />
-            </div>
-            <div>
-              <h2 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white mb-2">Estoque de Materiais</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs mx-auto font-bold uppercase tracking-widest leading-relaxed">
-                Gestão integrada de insumos e matérias-primas.
-              </p>
-            </div>
-            <button onClick={goBack} title="Voltar" className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[11px] font-black uppercase tracking-widest">Voltar</button>
-          </div>
+          <ProductionConfigView 
+            flowTags={flowTags}
+            sectors={sectors}
+            productionConfigs={productionConfigs}
+            onSaveFlowTag={(tag: any) => firebaseService.saveDocument("flowTags", tag)}
+            onDeleteFlowTag={(id: string) => firebaseService.deleteDocument("flowTags", id)}
+            onSaveSector={(sector: any) => firebaseService.saveDocument("sectors", sector)}
+            onDeleteSector={(id: string) => firebaseService.deleteDocument("sectors", id)}
+            onSaveConfigItem={async (item: any) => {
+              try {
+                await firebaseService.saveDocument("productionConfigs", item);
+              } catch (err: any) {
+                console.error("Erro ao salvar item de configuração:", err);
+                alert("Erro ao salvar item: " + (err.message || err));
+              }
+            }}
+            onDeleteConfigItem={(id: string) => firebaseService.deleteDocument("productionConfigs", id)}
+            onUpdateSectorsOrder={(updatedSectors: any[]) => Promise.all(updatedSectors.map(s => firebaseService.saveDocument('sectors', s))).then(() => {})}
+            onBack={goBack}
+            isDarkMode={isDarkMode}
+            people={people}
+            colors={colors}
+            grids={grids}
+            categories={categories}
+            initialScreen="INSUMOS"
+            onNavigate={navigateTo}
+            onAddProduct={() => navigateTo(ViewType.PRODUCT_FORM)}
+            onNavigateGrids={() => navigateTo(ViewType.GRIDS)}
+            lots={productionLots}
+            products={products}
+            soleStock={soleStockEntries}
+          />
         );
-      case ViewType.PRODUCTION_PURCHASE_NEEDS:
-        return (
-          <div className="flex flex-col items-center justify-center min-h-screen p-8 text-center gap-6">
-            <div className="w-20 h-20 rounded-3xl bg-amber-50 dark:bg-amber-900/30 flex items-center justify-center text-amber-600 dark:text-amber-400">
-              <ClipboardList size={40} />
-            </div>
-            <div>
-              <h2 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white mb-2">Necessidade de Compras</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs mx-auto font-bold uppercase tracking-widest leading-relaxed">
-                Cálculo automático de compra baseado na produção pendente.
-              </p>
-            </div>
-            <button onClick={goBack} title="Voltar" className="px-8 py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl text-[11px] font-black uppercase tracking-widest">Voltar</button>
-          </div>
-        );
+
       case ViewType.PRODUCTION_WEIGHING:
         return (
           <WeighingView
@@ -2511,25 +2983,72 @@ export default function App() {
         );
       case ViewType.PRODUCTION_SOLE_PURCHASE:
         return (
-          <SolePurchaseView
-            productionConfigs={productionConfigs}
-            colors={colors}
-            people={people}
+          <SoleProcurement
             accounts={accounts}
+            productionConfigs={productionConfigs}
+            colors={colors as ColorValue[]}
+            people={people}
             onBack={goBack}
             onNavigateToStock={() => navigateTo(ViewType.PRODUCTION_SOLE_STOCK)}
             isDarkMode={isDarkMode}
+            initialParams={currentParams}
           />
         );
       case ViewType.PRODUCTION_SOLE_STOCK:
         return (
           <SoleStockView
-            stockEntries={soleStockEntries}
+            stockEntries={soleStockEntries as SoleStockEntry[]}
             productionConfigs={productionConfigs}
-            colors={colors}
+            colors={colors as ColorValue[]}
             onBack={goBack}
             isDarkMode={isDarkMode}
           />
+        );
+      case ViewType.PRODUCTION_PURCHASE_NEEDS:
+        return (
+          <PurchaseNeedsView
+            purchaseRequests={purchaseRequests}
+            onUpdateRequest={handleSavePurchaseRequest}
+            onNavigate={navigateTo}
+            onBack={goBack}
+            isDarkMode={isDarkMode}
+            userName={user?.displayName || user?.email || 'Usuário'}
+            soleStock={soleStockEntries}
+            productionConfigs={productionConfigs}
+          />
+        );
+      case ViewType.PRODUCTION_ESTOQUES_MENU:
+        return (
+          <div className="flex flex-col gap-6">
+            <header className="mb-4">
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Controle de Estoques</h2>
+              <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Materiais e Solados</p>
+            </header>
+            
+            <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+              {[
+                { id: ViewType.PRODUCTION_STOCK, label: 'Estoques Gerais', description: 'Matéria-prima, adesivos e insumos', icon: <PackageOpen size={24} />, color: 'text-emerald-600' },
+                { id: ViewType.PRODUCTION_SOLE_STOCK, label: 'Estoque de Solados', description: 'Gerenciamento por modelo, cor e tamanho', icon: <Package size={24} />, color: 'text-indigo-600' },
+              ].map((item, index, array) => (
+                <button
+                  key={item.id}
+                  onClick={() => navigateTo(item.id)}
+                  className={`w-full flex items-center justify-between p-8 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all active:scale-[0.98] ${index !== array.length - 1 ? (isDarkMode ? "border-b border-slate-800" : "border-b border-slate-50") : ""}`}
+                >
+                  <div className="flex items-center gap-6">
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? "bg-slate-800" : "bg-slate-50"} ${item.color}`}>
+                      {item.icon}
+                    </div>
+                    <div className="text-left">
+                      <p className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>{item.label}</p>
+                      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">{item.description}</p>
+                    </div>
+                  </div>
+                  <ChevronRight size={24} className={isDarkMode ? "text-slate-700" : "text-slate-300"} />
+                </button>
+              ))}
+            </div>
+          </div>
         );
       case ViewType.MODULES_CONFIG:
         return (
@@ -2658,6 +3177,8 @@ export default function App() {
         return "Entrada de Solados";
       case ViewType.PRODUCTION_SOLE_STOCK:
         return "Estoque de Solados";
+      case ViewType.PRODUCTION_ESTOQUES_MENU:
+        return "Controle de Estoques";
       case ViewType.PRODUCTION_PURCHASE_NEEDS:
         return "Necessidade de Compras";
       case ViewType.PRODUCTION_CONFIG:
@@ -2710,6 +3231,7 @@ export default function App() {
       case ViewType.PRODUCTION_WEIGHING: return <Scale size={24} className="text-violet-600 dark:text-violet-400" />;
       case ViewType.PRODUCTION_SOLE_PURCHASE: return <ShoppingCart size={24} className="text-cyan-600 dark:text-cyan-400" />;
       case ViewType.PRODUCTION_SOLE_STOCK: return <Package size={24} className="text-emerald-600 dark:text-emerald-400" />;
+      case ViewType.PRODUCTION_ESTOQUES_MENU: return <Boxes size={24} className="text-emerald-600 dark:text-emerald-400" />;
       case ViewType.PRODUCTION_PURCHASE_NEEDS: return <ClipboardList size={24} className="text-amber-600 dark:text-amber-400" />;
       case ViewType.PRODUCTION_CONFIG: return <Hammer size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.PRODUCTION_ENGINEERING: return <Database size={24} className="text-indigo-600 dark:text-indigo-400" />;
@@ -2813,7 +3335,12 @@ export default function App() {
         isOpen={MODAL_VIEWS.includes(currentView)} 
         onClose={goBack}
         title={viewTitle}
-        maxWidth={currentView === ViewType.PRODUCT_FORM ? "max-w-4xl" : "max-w-2xl"}
+        maxWidth={
+          (currentView === ViewType.PRODUCT_FORM || 
+           currentView === ViewType.PRODUCTION_PCP || 
+           currentView === ViewType.PRODUCTION_PURCHASE_NEEDS ||
+           currentView === ViewType.PRODUCTION_ENGINEERING) ? "max-w-5xl" : "max-w-2xl"
+        }
       >
         {renderView(currentView)}
       </Modal>
@@ -2955,6 +3482,25 @@ export default function App() {
         accounts={accounts.filter(a => a.type !== AccountType.PERSONAL)}
         people={people}
         initialType={transactionModalType}
+      />
+      
+
+
+      <SolePurchaseModal
+        isOpen={isSolePurchaseModalOpen}
+        onClose={() => {
+          setIsSolePurchaseModalOpen(false);
+          setSolePurchaseParams(null);
+        }}
+        initialParams={solePurchaseParams}
+        productionConfigs={productionConfigs}
+        colors={colors}
+        suppliers={suppliers}
+        people={people}
+        categories={categories}
+        accounts={accounts}
+        isDarkMode={isDarkMode}
+        onSave={handleSaveSolePurchase}
       />
     </div>
   );

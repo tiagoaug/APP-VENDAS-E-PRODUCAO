@@ -578,6 +578,7 @@ export default function SalesView({
                       </button>
                     )}
 
+
                     {/* Edit Button */}
                     <button
                       onClick={(e) => { e.stopPropagation(); onEdit(sale); }}

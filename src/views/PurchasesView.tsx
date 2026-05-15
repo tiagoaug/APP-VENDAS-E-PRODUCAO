@@ -15,6 +15,7 @@ import {
   Clipboard,
   Hash,
   Lightbulb,
+  Tag,
 } from "lucide-react";
 import { format, isSameMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -322,6 +323,57 @@ export default function PurchasesView({
                     <span className="text-[10px] font-bold text-slate-400 tracking-widest leading-none">
                        {itemCount} {itemCount === 1 ? 'Lançamento' : 'Lançamentos'}
                     </span>
+                    
+                    {/* Items List Preview */}
+                    <div className="flex flex-col gap-2 mt-2">
+                      {purchase.items?.slice(0, 5).map((item: any, idx) => {
+                        const isSole = 'moldId' in item;
+                        if (isSole) {
+                          const soleItem = item as any;
+                          const totalPairs = Object.values(soleItem.quantities || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+                          return (
+                            <div key={idx} className="flex flex-col gap-1 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Package size={12} className="text-indigo-500" />
+                                  <span className="text-[10px] font-black uppercase tracking-tight">{soleItem.moldName}</span>
+                                  <span className="text-[9px] text-slate-400">•</span>
+                                  <span className="text-[10px] font-bold text-slate-500">{soleItem.colorName}</span>
+                                </div>
+                                <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400">{totalPairs} pares</span>
+                              </div>
+                              {/* Grid breakdown */}
+                              <div className="flex flex-wrap gap-x-2 gap-y-1 mt-0.5">
+                                {Object.entries(soleItem.quantities || {}).map(([size, qty]) => (
+                                  qty > 0 && (
+                                    <div key={size} className="flex items-center gap-0.5 text-[8px] font-black uppercase">
+                                      <span className="text-slate-400">{size}:</span>
+                                      <span className="text-slate-600 dark:text-slate-300">{qty}</span>
+                                    </div>
+                                  )
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        } else {
+                          const genItem = item as any;
+                          return (
+                            <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
+                              <div className="flex items-center gap-2">
+                                <Tag size={12} className="text-slate-400" />
+                                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 truncate">{genItem.description}</span>
+                              </div>
+                              <span className="text-[9px] font-black text-slate-400">{genItem.quantity} un</span>
+                            </div>
+                          );
+                        }
+                      })}
+                      {(purchase.items?.length || 0) > 5 && (
+                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2 italic">
+                          + {(purchase.items?.length || 0) - 5} outros itens
+                        </span>
+                      )}
+                    </div>
                 </div>
 
                 {/* Price Display (Right) */}
@@ -395,33 +447,37 @@ export default function PurchasesView({
         )}
       </div>
 
-      {selectedPurchaseForChecks && (
-        <ChecksModal 
-          isOpen={isChecksModalOpen}
-          onClose={() => {
-            setIsChecksModalOpen(false);
-            setSelectedPurchaseForChecks(null);
-          }}
-          purchase={selectedPurchaseForChecks}
-          supplier={suppliers.find(p => p.id === selectedPurchaseForChecks.supplierId)}
-          isDarkMode={isDarkMode}
-          onUpdateCheque={(chequeId, newStatus) => {
-            if (!selectedPurchaseForChecks.checks) return;
-            
-            const updatedChecks = selectedPurchaseForChecks.checks.map(c => 
-              c.id === chequeId ? { ...c, status: newStatus } : c
-            );
-            
-            const updatedPurchase = {
-              ...selectedPurchaseForChecks,
-              checks: updatedChecks
-            };
-            
-            onUpdate(updatedPurchase);
-            setSelectedPurchaseForChecks(updatedPurchase);
-          }}
-        />
-      )}
+      {(() => {
+        const p = selectedPurchaseForChecks;
+        if (!p) return null;
+        return (
+          <ChecksModal 
+            isOpen={isChecksModalOpen}
+            onClose={() => {
+              setIsChecksModalOpen(false);
+              setSelectedPurchaseForChecks(null);
+            }}
+            purchase={p}
+            supplier={suppliers.find(s => s.id === p.supplierId)}
+            isDarkMode={isDarkMode}
+            onUpdateCheque={(chequeId, newStatus) => {
+              if (!p.checks) return;
+              
+              const updatedChecks = p.checks.map(c => 
+                c.id === chequeId ? { ...c, status: newStatus } : c
+              );
+              
+              const updatedPurchase = {
+                ...p,
+                checks: updatedChecks
+              };
+              
+              onUpdate(updatedPurchase);
+              setSelectedPurchaseForChecks(updatedPurchase);
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

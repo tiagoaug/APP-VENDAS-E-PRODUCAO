@@ -309,15 +309,17 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
           <ArrowLeft size={20} />
         </button>
         <div className="flex-1">
-          <h2 className={`text-[13px] font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Pesagem e Contagem</h2>
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">Conferência de solados por peso</p>
+          <h2 className={`text-[13px] font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Pesagem e Contagem</h2>
+          <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-widest">Conferência de solados por peso</p>
         </div>
       </div>
 
       <div className="flex gap-2 mb-6">
         <button
           onClick={() => setActiveTab('new')}
-          className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+          title="Iniciar nova pesagem"
+          aria-label="Nova pesagem"
+          className={`flex-1 py-3 rounded-2xl text-[10px] font-black tracking-widest transition-all ${
             activeTab === 'new' 
               ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' 
               : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
@@ -327,7 +329,9 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
         </button>
         <button
           onClick={() => setActiveTab('history')}
-          className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+          title="Ver histórico de pesagens"
+          aria-label="Ver histórico"
+          className={`flex-1 py-3 rounded-2xl text-[10px] font-black tracking-widest transition-all flex items-center justify-center gap-2 ${
             activeTab === 'history' 
               ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' 
               : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
@@ -345,10 +349,10 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
               <Scale size={24} />
             </div>
             <div>
-              <h3 className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+              <h3 className={`text-[11px] font-black tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 Selecione a Matriz
               </h3>
-              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
+              <p className="text-[9px] text-slate-400 font-bold tracking-widest">
                 Escolha o solado para pesar
               </p>
             </div>
@@ -387,10 +391,10 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                     <Palette size={24} />
                   </div>
                   <div>
-                    <h3 className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    <h3 className={`text-[11px] font-black tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                       Cor do Solado
                     </h3>
-                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
+                    <p className="text-[9px] text-slate-400 font-bold tracking-widest">
                       {hasColorWeights ? 'Selecione para usar peso específico da cor' : 'Use para identificar a cor (sem peso específico)'}
                     </p>
                   </div>
@@ -425,7 +429,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
 
                 {selectedColorId && hasColorWeights && (
                   <div className="mt-4 p-3 rounded-xl bg-violet-50 dark:bg-violet-900/20 border border-violet-100 dark:border-violet-500/30">
-                    <p className="text-[9px] font-black text-violet-600 dark:text-violet-400 uppercase tracking-widest text-center">
+                    <p className="text-[9px] font-black text-violet-600 dark:text-violet-400 tracking-widest text-center">
                       ✓ Peso específico por cor será usado
                     </p>
                   </div>
@@ -440,10 +444,10 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                     <Calculator size={24} />
                   </div>
                   <div>
-                    <h3 className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    <h3 className={`text-[11px] font-black tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                       Tamanho Específico
                     </h3>
-                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
+                    <p className="text-[9px] text-slate-400 font-bold tracking-widest">
                       Deixe vazio para cálculo médio
                     </p>
                   </div>
@@ -460,8 +464,8 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                           : isDarkMode ? 'bg-slate-800 text-slate-400 border border-slate-700' : 'bg-white text-slate-500 border border-slate-200 shadow-sm'
                       } ${isAccumulating ? 'opacity-100' : ''}`}
                     >
-                      <span className="text-[10px] font-black uppercase tracking-widest">Média</span>
-                      {gridAverageWeight > 0 && <span className={`text-[8px] font-bold uppercase ${selectedSize === '' ? 'text-indigo-200' : 'text-slate-400'}`}>{gridAverageWeight.toFixed(1)}g</span>}
+                      <span className="text-[10px] font-black tracking-widest">Média</span>
+                      {gridAverageWeight > 0 && <span className={`text-[8px] font-bold ${selectedSize === '' ? 'text-indigo-200' : 'text-slate-400'}`}>{gridAverageWeight.toFixed(1)}g</span>}
                     </button>
                   )}
 
@@ -484,7 +488,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                         } ${isAccumulating ? 'opacity-100' : ''}`}
                       >
                         <span className={`text-sm font-black ${selectedSize === size ? 'text-white' : isDarkMode ? 'text-slate-200' : 'text-slate-900'}`}>{size}</span>
-                        {sizeWeight && <span className={`text-[8px] font-bold uppercase ${selectedSize === size ? 'text-indigo-200' : 'text-slate-400'}`}>{sizeWeight}g</span>}
+                        {sizeWeight && <span className={`text-[8px] font-bold ${selectedSize === size ? 'text-indigo-200' : 'text-slate-400'}`}>{sizeWeight}g</span>}
                       </button>
                     );
                   })}
@@ -498,10 +502,10 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                   <Weight size={24} />
                 </div>
                 <div>
-                  <h3 className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  <h3 className={`text-[11px] font-black tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     Peso do Montante
                   </h3>
-                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">
+                  <p className="text-[9px] text-slate-400 font-bold tracking-widest">
                     Digite o peso total em kg (lido na balança)
                   </p>
                 </div>
@@ -518,7 +522,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                   className={`w-full border-2 rounded-2xl px-6 py-4 pl-12 pr-24 text-2xl font-black transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-600'}`}
                 />
                 <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                  <span className="text-sm font-black text-slate-400 uppercase">kg</span>
+                  <span className="text-sm font-black text-slate-400">kg</span>
                   <button
                     onClick={() => setShowCalculator(true)}
                     title="Abrir Calculadora de Peso"
@@ -533,13 +537,13 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
 
             <div className={`p-8 rounded-[3rem] border-2 shadow-xl ${isDarkMode ? 'bg-gradient-to-br from-emerald-900/50 to-slate-900 border-emerald-500/30' : 'bg-gradient-to-br from-emerald-50 to-white border-emerald-200'}`}>
               <div className="text-center">
-                <p className={`text-[10px] font-black uppercase tracking-[0.3em] mb-4 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                <p className={`text-[10px] font-black tracking-[0.3em] mb-4 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>
                   Quantidade de Pares
                 </p>
                 <p className={`text-7xl font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   {quantity || '0'}
                 </p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-4">
+                <p className="text-[10px] text-slate-400 font-bold tracking-widest mt-4">
                   pares de solados
                 </p>
               </div>
@@ -650,7 +654,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                   
                   {accumulationHistory.length > 0 && (
                     <div className={`mb-4 p-3 rounded-xl border border-dashed ${isDarkMode ? 'bg-slate-950 border-slate-700' : 'bg-white border-slate-200'}`}>
-                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Histórico de Acúmulo</p>
+                      <p className="text-[8px] font-black text-slate-400 tracking-widest mb-2">Histórico de Acúmulo</p>
                       <div className="flex flex-wrap gap-1.5 items-center">
                         {accumulationHistory.map((w, i) => (
                           <span key={i} className="flex items-center gap-1.5">

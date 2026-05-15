@@ -19,6 +19,7 @@ interface SaleBlock {
   price: number;      // preço por grade (atacado)
   unitPrice: number;  // preço por par
   variations: Record<string, { quantity: number; price: number; size?: string }>;
+  blockPkgId?: string; // padrão de embalagem do bloco (aplica a todas as variações)
 }
 
 interface SaleFormViewProps {
@@ -384,6 +385,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
           productId,
           saleType: product.type || SaleType.RETAIL,
           price: product.salePrice || 0,
+          unitPrice: product.unitSalePrice || product.salePrice || 0,
           variations: {},
         };
         newBlocks.push(newBlock);
@@ -441,6 +443,43 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     }
 
     return currentStock >= quantity;
+  };
+
+  // Aplica padrão de embalagem a TODAS as variações do bloco de uma vez
+  const applyBlockPackaging = (blockIndex: number, pkgId: string) => {
+    const block = blocks[blockIndex];
+    const product = products.find(p => p.id === block.productId);
+    if (!product) return;
+
+    updateBlock(blockIndex, { blockPkgId: pkgId || undefined });
+
+    if (!pkgId) {
+      // Remove packaging para todas as variações
+      setPackagingPerVar(prev => {
+        const next = { ...prev };
+        product.variations.forEach(v => { delete next[`${block.id}-${v.id}`]; });
+        return next;
+      });
+      return;
+    }
+
+    const pkg = productionConfigs.find(c => c.id === pkgId && c.type === 'PACKAGING');
+    if (!pkg) return;
+
+    // Monta breakdown a partir do sizeQuantities do padrão
+    const sizeQtys: Record<string, number> = pkg.metadata?.sizeQuantities || {};
+    const pkgSizes: string[] = pkg.metadata?.sizes?.length ? pkg.metadata.sizes as string[] : Object.keys(sizeQtys);
+    const breakdown: Record<string, number> = {};
+    pkgSizes.forEach(s => { breakdown[s] = sizeQtys[s] || 0; });
+
+    // Aplica a todas as variações do bloco
+    setPackagingPerVar(prev => {
+      const next = { ...prev };
+      product.variations.forEach(v => {
+        next[`${block.id}-${v.id}`] = { pkgId, breakdown, fromStock: {} };
+      });
+      return next;
+    });
   };
 
   const handleSave = async () => {
@@ -502,16 +541,14 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     try {
       setIsSaving(true);
 
-      // Auto-create production order if flagged and status is SALE
+      // Cria o Pedido de Produção na fila de espera do PCP (sem criar mapas — feito manualmente lá)
       if (isProductionOrder && status === SaleStatus.SALE) {
         const orderId = Math.random().toString(36).substring(2, 9);
         const orderNum = `OP #${String(productionOrders.length + 1).padStart(3, '0')}`;
-        const newLots: ProductionLot[] = [];
         const orderItems: import('../types').ProductionOrderItem[] = [];
 
         blocks.forEach(block => {
           const product = products.find(p => p.id === block.productId);
-          const route = product?.productionRoute || sectors.map(s => s.id);
 
           Object.entries(block.variations).forEach(([variationKey, varData]) => {
             if (varData.quantity <= 0) return;
@@ -519,7 +556,6 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             const variation = product?.variations.find(v => v.id === variationId);
             const varKey = `${block.id}-${variationId}`;
             const pkg = packagingPerVar[varKey];
-            // Use packaging breakdown OR grade breakdown (grade = fallback when no packaging)
             const breakdown: Record<string, number> = pkg?.pkgId
               ? pkg.breakdown
               : (gradePerVar[varKey] || {});
@@ -535,26 +571,6 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               }
             });
             if (totalPairs === 0) return;
-
-            const lot: ProductionLot = {
-              id: Math.random().toString(36).substring(2, 9),
-              orderNumber: `Lote #${String(lots.length + newLots.length + 1).padStart(3, '0')}`,
-              saleId: saleToSave.id,
-              productionOrderId: orderId,
-              saleOrderNumber: saleToSave.orderNumber,
-              customerName: saleToSave.customerName,
-              deliveryDate: saleToSave.deliveryDate,
-              productId: block.productId,
-              variationId,
-              quantity: totalPairs,
-              pairs: totalPairsPerSize,
-              route,
-              currentSectorIndex: 0,
-              priority: 'NORMAL',
-              history: [{ sectorId: route[0] || '', statusId: '', timestamp: Date.now(), notes: `Criado via ${orderNum}` }],
-              createdAt: Date.now()
-            };
-            newLots.push(lot);
 
             const stockDeductPerSize = pkg?.fromStock || {};
             const sizesResult: Record<string, { total: number; fromStock: number; toProduction: number }> = {};
@@ -578,7 +594,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
           });
         });
 
-        if (newLots.length > 0) {
+        if (orderItems.length > 0) {
           const order: ProductionOrder = {
             id: orderId,
             orderNumber: orderNum,
@@ -590,12 +606,12 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             deliveryDate: saleToSave.deliveryDate || Date.now(),
             items: orderItems,
             status: 'PENDING',
-            lotIds: newLots.map(l => l.id),
+            lotIds: [], // mapas criados manualmente no PCP
             createdAt: Date.now()
           };
           saleToSave.productionOrderId = orderId;
           await onSave(saleToSave);
-          await onCreateProductionOrder(order, newLots, []);
+          await onCreateProductionOrder(order, [], []); // sem lotes — fila de espera
         } else {
           await onSave(saleToSave);
         }
@@ -1206,8 +1222,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               </p>
               <p className={`text-[9px] font-bold leading-relaxed ${saleDestination === 'STOCK' ? 'text-amber-500' : 'text-violet-500'}`}>
                 {saleDestination === 'STOCK'
-                  ? 'Produção destinada ao estoque de produtos. Configure a embalagem ou a grade por variação.'
-                  : 'Expanda cada produto e selecione o Padrão de Embalagem ou Grade. Os lotes serão gerados automaticamente ao salvar.'}
+                  ? 'Produção para estoque. Configure o padrão de embalagem e salve — o pedido entra na fila de espera do PCP. Os mapas são criados manualmente lá.'
+                  : 'Configure o padrão de embalagem e salve — o pedido entra na fila de espera do PCP. Os mapas de produção são criados manualmente no PCP.'}
               </p>
             </div>
           </div>
@@ -1380,6 +1396,53 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                         })()}
                       </div>
                     </div>
+
+                    {/* Padrão de Embalagem do Bloco (nível produto — aplica a todas as variações) */}
+                    {hasProduction && isProductionOrder && block.saleType === SaleType.WHOLESALE && (() => {
+                      const packagingConfigs = productionConfigs.filter(c => c.type === 'PACKAGING');
+                      const selectedPkg = block.blockPkgId ? packagingConfigs.find(c => c.id === block.blockPkgId) : null;
+                      const capacity = selectedPkg?.metadata?.capacity || 0;
+                      return (
+                        <div className="mb-5">
+                          <label className="text-[8px] uppercase font-black text-violet-500 tracking-widest px-1 mb-2 block flex items-center gap-1.5">
+                            <Layers size={10} />
+                            Caixa Coletiva (Padrão de Embalagem)
+                          </label>
+                          <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border-2 transition-all ${
+                            selectedPkg
+                              ? isDarkMode ? 'bg-violet-900/20 border-violet-700' : 'bg-violet-50 border-violet-300'
+                              : isDarkMode ? 'bg-slate-800 border-slate-700 border-dashed' : 'bg-slate-50 border-dashed border-slate-300'
+                          }`}>
+                            <Package size={16} className={selectedPkg ? 'text-violet-500' : 'text-slate-400'} />
+                            <select
+                              value={block.blockPkgId || ''}
+                              onChange={e => applyBlockPackaging(index, e.target.value)}
+                              title="Padrão de embalagem do produto"
+                              aria-label="Padrão de embalagem"
+                              className={`flex-1 bg-transparent font-black text-[11px] outline-none cursor-pointer ${selectedPkg ? 'text-violet-700 dark:text-violet-300' : 'text-slate-400'}`}
+                            >
+                              <option value="">Selecione o padrão de embalagem…</option>
+                              {packagingConfigs.map(pkg => (
+                                <option key={pkg.id} value={pkg.id}>
+                                  {pkg.name} — {pkg.metadata?.capacity || 0} pares {pkg.metadata?.mode === 'FREE' ? '(Livre)' : '(Fixo)'}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          {selectedPkg && capacity > 0 && (
+                            <p className="text-[9px] text-violet-500 font-black mt-1.5 px-1 flex items-center gap-1">
+                              <CheckCircle2 size={10} />
+                              1 grade = 1 caixa coletiva de {capacity} pares — aplicado a todas as variações
+                            </p>
+                          )}
+                          {packagingConfigs.length === 0 && (
+                            <p className="text-[9px] text-amber-500 font-bold mt-1 px-1">
+                              Nenhum padrão cadastrado. Acesse Produção → Configurações → Embalagens.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     <div className="flex flex-col gap-3">
                       <h4 className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest mb-1">Variações Disponíveis</h4>

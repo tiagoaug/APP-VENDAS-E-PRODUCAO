@@ -655,7 +655,7 @@ export default function EngineeringEditor({
             <div className="flex flex-col gap-3">
 
               {/* Toggle — acima de tudo, largura da coluna de Quantidade */}
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Quantidade</label>
                 <div className={`inline-flex gap-0.5 p-0.5 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
                   <button
@@ -673,6 +673,28 @@ export default function EngineeringEditor({
                     Rendimento
                   </button>
                 </div>
+                {/* Basis: por par ou por grade — só visível para categoria PACKAGING */}
+                {editing.category === 'PACKAGING' && (
+                  <div className={`inline-flex gap-0.5 p-0.5 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                    <button
+                      type="button"
+                      onClick={() => setEditing(prev => ({ ...prev, consumptionBasis: 'pair' }))}
+                      className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${(!editing.consumptionBasis || editing.consumptionBasis === 'pair') ? (isDarkMode ? 'bg-slate-600 text-white shadow-sm' : 'bg-white text-slate-800 shadow-sm') : 'text-slate-400'}`}
+                    >
+                      /par
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditing(prev => ({ ...prev, consumptionBasis: 'grade', quantity: 1 }));
+                        setCalcQty('1');
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${editing.consumptionBasis === 'grade' ? 'bg-violet-600 text-white shadow-sm' : 'text-slate-400'}`}
+                    >
+                      /grade
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Inputs principais — sempre alinhados lado a lado */}
@@ -695,11 +717,6 @@ export default function EngineeringEditor({
                   />
                   {qtyMode === 'simple' && (
                     <>
-                      {editing.ignoreQuantity && (
-                        <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mt-2 ml-2">
-                          Consumo p/ Lote (12 Pr): {(Number(calcQty.replace(',', '.')) * 12).toFixed(4).replace('.', ',')} {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
-                        </p>
-                      )}
                       <div className="absolute right-3 top-[22px]">
                         <button
                           type="button"
@@ -787,6 +804,11 @@ export default function EngineeringEditor({
 
              {/* RESUMO TÉCNICO E FINANCEIRO (DIRETO) */}
              <div className="flex flex-col gap-2">
+                {editing.ignoreQuantity && qtyMode === 'simple' && (
+                  <p className={`text-[10px] font-black uppercase tracking-widest px-2 py-1.5 rounded-xl ${isDarkMode ? 'bg-indigo-900/30 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+                    Consumo p/ Lote (12 Pr): {Math.round(Number(calcQty.replace(',', '.')) * 12)} {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
+                  </p>
+                )}
                 {editing.ignoreQuantity && (
                   <button 
                     onClick={() => {
@@ -801,7 +823,9 @@ export default function EngineeringEditor({
                 )}
                <div className={`p-6 rounded-[2rem] border-2 border-dashed flex items-center justify-between ${isDarkMode ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-emerald-50 border-emerald-100'}`}>
                   <div className="flex flex-col">
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Consumo</span>
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
+                      Consumo {editing.consumptionBasis === 'grade' ? '/ grade' : '/ par'}
+                    </span>
                     <div className="flex items-baseline gap-1">
                       <span className="text-xl font-black text-slate-700 dark:text-slate-200">
                         {evaluate(calcQty).toFixed(4).replace('.', ',')}

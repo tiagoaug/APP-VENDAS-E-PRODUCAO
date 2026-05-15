@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { ProductionConfigItem, ColorValue, Person, SolePurchaseItem } from '../types';
 import { 
   ArrowLeft, Plus, Trash2, ShoppingCart, Package, Palette, 
@@ -14,11 +14,11 @@ interface SolePurchaseViewProps {
   onBack: () => void;
   onNavigateToStock?: () => void;
   isDarkMode: boolean;
+  initialParams?: any;
 }
 
-export default function SolePurchaseView({ 
-  productionConfigs, colors, people, accounts, onBack, onNavigateToStock, isDarkMode 
-}: SolePurchaseViewProps) {
+export default function SolePurchaseView(props: SolePurchaseViewProps) {
+  const { productionConfigs, colors, people, accounts, onBack, onNavigateToStock, isDarkMode, initialParams } = props;
   const molds = useMemo(() => productionConfigs.filter(c => c.type === 'MOLD'), [productionConfigs]);
   
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
@@ -34,8 +34,17 @@ export default function SolePurchaseView({
 
   const availableMolds = useMemo(() => {
     if (!selectedSupplierId) return [];
-    return molds.filter(m => m.metadata?.supplierId === selectedSupplierId);
-  }, [molds, selectedSupplierId]);
+    const supplierMolds = molds.filter(m => m.metadata?.supplierId === selectedSupplierId);
+    
+    // Always include the requested mold in available options if it exists
+    if (initialParams?.moldId) {
+      const requestedMold = molds.find(m => m.id === initialParams.moldId || m.name === initialParams.moldId);
+      if (requestedMold && !supplierMolds.find(m => m.id === requestedMold.id)) {
+        return [...supplierMolds, requestedMold];
+      }
+    }
+    return supplierMolds;
+  }, [molds, selectedSupplierId, initialParams]);
 
   const addItem = (moldId: string, existingColorId?: string) => {
     const mold = molds.find(m => m.id === moldId);
@@ -52,14 +61,24 @@ export default function SolePurchaseView({
 
     const defaultUnitCost = mold.metadata?.unitCost || 0;
 
+    const resolvedColor = existingColorId 
+      ? (colors.find(c => c.id === existingColorId || c.name.toLowerCase() === String(existingColorId).toLowerCase()) || colors[0])
+      : (nextAvailableColor ? colors.find(c => c.id === nextAvailableColor.colorId) : colors[0]);
+
+    // Pre-fill quantities if this matches the initial request (checking both ID and Name)
+    const isRequestedMold = initialParams?.moldId && 
+      (initialParams.moldId === mold.id || initialParams.moldId === mold.name);
+    
+    const initialQuantities = isRequestedMold ? (initialParams.initialGrid || {}) : {};
+
     setItems(prev => [...prev, {
       moldId: mold.id,
       moldName: mold.name,
-      colorId: nextAvailableColor?.colorId || existingColorId || availableColors[0]?.colorId || '',
-      colorName: nextAvailableColor?.colorName || availableColors[0]?.colorName || '',
-      quantities: {},
+      colorId: resolvedColor?.id || '',
+      colorName: resolvedColor?.name || '',
+      quantities: initialQuantities,
       unitCost: defaultUnitCost,
-      totalCost: 0
+      totalCost: Object.values(initialQuantities).reduce((a: number, b: any) => a + (Number(b) || 0), 0) * defaultUnitCost
     }]);
   };
 
@@ -83,20 +102,47 @@ export default function SolePurchaseView({
           if (newItem.unitCost === 0 || newItem.unitCost === item.unitCost) {
             newItem.unitCost = mold.metadata?.unitCost || 0;
           }
+          // Se mudou para o molde inicial da solicitação, preenche a grade automaticamente
+          if (initialParams?.moldId === updates.moldId && initialParams.initialGrid) {
+            newItem.quantities = initialParams.initialGrid;
+            const totalPairs = Object.values(newItem.quantities).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+            newItem.totalCost = totalPairs * newItem.unitCost;
+          }
         }
       }
       
       if (updates.quantities) {
-        const totalPairs = Object.values(newItem.quantities).reduce((a, b) => a + b, 0);
+        const totalPairs = Object.values(newItem.quantities || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
         newItem.totalCost = totalPairs * newItem.unitCost;
       }
       if (updates.unitCost !== undefined) {
-        const totalPairs = Object.values(newItem.quantities || {}).reduce((a, b) => a + b, 0);
+        const totalPairs = Object.values(newItem.quantities || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
         newItem.totalCost = totalPairs * newItem.unitCost;
       }
       return newItem;
     }));
   };
+
+  // Pre-filling and auto-add logic from initialParams
+  useEffect(() => {
+    if (!initialParams?.moldId || items.length > 0) return;
+
+    const mold = molds.find(m => m.id === initialParams.moldId || m.name === initialParams.moldId);
+    if (!mold) return;
+
+    const supplierId = mold.metadata?.supplierId;
+    
+    // Auto-select supplier if mold has one
+    if (supplierId && !selectedSupplierId) {
+      setSelectedSupplierId(supplierId);
+      return; // Wait for next effect cycle after state update
+    }
+
+    // If a supplier is selected, auto-add the item
+    if (selectedSupplierId) {
+      addItem(mold.id, initialParams.colorId);
+    }
+  }, [initialParams, selectedSupplierId, molds, colors]);
 
   const totalGeral = useMemo(() => {
     return items.reduce((sum, item) => sum + item.totalCost, 0);
@@ -117,14 +163,20 @@ export default function SolePurchaseView({
     try {
       const supplier = people.find(p => p.id === selectedSupplierId);
       
-      const purchase = {
+      const purchase: any = {
+        id: `PUR-${Date.now()}`,
         supplierId: selectedSupplierId,
         supplierName: supplier?.name || 'Fornecedor',
         date: Date.now(),
-        items: itemsWithQuantity,
+        type: PurchaseType.GENERAL,
+        status: 'COMPLETED',
+        soleItems: itemsWithQuantity.map((item: any) => ({
+          ...item,
+          totalPairs: Object.values(item.quantities || {}).reduce((a: any, b: any) => a + (Number(b) || 0), 0)
+        })),
         total: totalGeral,
         notes: notes || undefined,
-        status: 'COMPLETED' as const
+        paymentStatus: 'PAID'
       };
 
       console.log('Salvando compra:', purchase);
@@ -132,7 +184,7 @@ export default function SolePurchaseView({
       console.log('Compra salva com sucesso');
       
       let stockEntriesCount = 0;
-      for (const item of purchase.items) {
+      for (const item of purchase.soleItems) {
         const sizes = Object.keys(item.quantities || {}).filter(s => Number(item.quantities[s]) > 0);
         console.log('Item:', item.moldName, 'Tamanhos com quantidade:', sizes);
         
@@ -151,7 +203,8 @@ export default function SolePurchaseView({
             totalPairs: qty,
             unitCost: item.unitCost || 0,
             totalCost: qty * (item.unitCost || 0),
-            purchaseDate: Date.now()
+            purchaseDate: Date.now(),
+            updatedAt: Date.now()
           };
           
           console.log('Salvando stock entry:', stockEntry);
@@ -188,6 +241,24 @@ export default function SolePurchaseView({
       </div>
 
       <div className="space-y-6">
+        {/* Form Context Info */}
+        {initialParams?.moldId && items.length === 0 && (
+          <div className={`p-5 rounded-[2rem] border-2 border-dashed flex items-center gap-5 ${
+            isDarkMode ? 'bg-indigo-500/10 border-indigo-500/30' : 'bg-indigo-50 border-indigo-200'
+          }`}>
+            <div className="w-14 h-14 rounded-2xl bg-indigo-500 flex items-center justify-center text-white shrink-0 shadow-lg shadow-indigo-500/20">
+              <ShoppingCart size={28} />
+            </div>
+            <div>
+              <h3 className="font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest text-xs mb-1">Solicitação de Compra Pendente</h3>
+              <p className="text-slate-500 dark:text-slate-400 text-sm leading-snug">
+                Pedido de <strong>{initialParams.description || 'solados'}</strong> identificado. 
+                {!selectedSupplierId ? ' Por favor, selecione o fornecedor para carregar os dados automaticamente.' : ' O item foi adicionado com sucesso!'}
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className={`p-6 rounded-[2.5rem] border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
           <div className="flex items-center gap-4 mb-6">
             <div className="w-12 h-12 rounded-2xl bg-cyan-100 dark:bg-cyan-900/30 flex items-center justify-center text-cyan-600 dark:text-cyan-400">
@@ -244,15 +315,7 @@ export default function SolePurchaseView({
                     for (const color of availableColors) {
                       const combo = `${mold.id}-${color.id}`;
                       if (!usedMoldColorCombos.includes(combo)) {
-                        setItems(prev => [...prev, {
-                          moldId: mold.id,
-                          moldName: mold.name,
-                          colorId: color.id,
-                          colorName: color.name,
-                          quantities: {},
-                          unitCost: mold.metadata?.unitCost || 0,
-                          totalCost: 0
-                        }]);
+                        addItem(mold.id, color.id);
                         return;
                       }
                     }
@@ -281,7 +344,7 @@ export default function SolePurchaseView({
                 items.map((item, index) => {
                   const mold = molds.find(m => m.id === item.moldId);
                   const sizes = mold?.metadata?.sizes || [];
-                  const totalPairs = Object.values(item.quantities).reduce((a, b) => a + b, 0);
+                  const totalPairs = Object.values(item.quantities || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
 
                   return (
                     <div key={index} className={`p-5 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>

@@ -72,7 +72,8 @@ export type ComponentConsumption = {
   // Ignore flags for conditional requirements
   ignoreColor?: boolean;
   ignoreQuantity?: boolean;
-  
+  consumptionBasis?: 'pair' | 'grade'; // 'grade' = 1 unidade por grade (caixa coletiva), não por par
+
   // Outsourced services
   services?: {
     serviceId: string; // Link to FlowTag subcategory
@@ -139,7 +140,10 @@ export type PurchaseItem = {
 export type GeneralPurchaseItem = {
   id: string;
   description: string;
-  value: number;
+  materialId?: string;  // Link to ProductionConfigItem (type MATERIAL/PACKAGING)
+  quantity?: number;    // Quantity purchased
+  unit?: string;        // Unit label (e.g., "ML", "UN", "KG")
+  value: number;        // Unit price
 };
 
 export type CompanyCheck = {
@@ -166,8 +170,9 @@ export type Purchase = {
   dueDate?: number; // Vencimento, para compras gerais
   paymentTerm?: PaymentTerm; // A vista ou a prazo
   type: PurchaseType;
-  items: PurchaseItem[];
+  items?: PurchaseItem[];
   generalItems?: GeneralPurchaseItem[];
+  soleItems?: SolePurchaseItem[];
   total: number;
   notes?: string;
   batchNumber?: string; // Controle por lote
@@ -175,6 +180,7 @@ export type Purchase = {
   categoryId?: string;
   accountId?: string;
   generateTransaction?: boolean;
+  registerAsReceived?: boolean;  // Se true, atualiza estoque e solicitação de compra ao salvar
   paymentStatus?: PaymentStatus;
   paymentHistory?: PaymentHistory[];
   isAccounting?: boolean;
@@ -379,6 +385,7 @@ export enum ViewType {
   PRODUCTION_SOLE_STOCK = 'PRODUCTION_SOLE_STOCK',
   PRODUCTION_ENGINEERING = 'PRODUCTION_ENGINEERING',
   CATEGORY_CONFIG = 'CATEGORY_CONFIG',
+  PRODUCTION_ESTOQUES_MENU = 'PRODUCTION_ESTOQUES_MENU',
   MANUAL = 'MANUAL',
 }
 
@@ -473,6 +480,10 @@ export type ProductionConfigItem = {
     }[];
     extraServices?: { name: string, cost: number }[];
     
+    // Insumo / Peça specific
+    stock?: number;
+    minStock?: number;
+
     [key: string]: any;
   };
   createdAt: number;
@@ -508,6 +519,7 @@ export type SoleStockEntry = {
   source?: string;
   sourceRecordId?: string;
   notes?: string;
+  updatedAt?: number;
 };
 
 export type ProductionLotHistory = {
@@ -536,6 +548,7 @@ export type SolePurchaseItem = {
   colorId: string;
   colorName: string;
   quantities: { [size: string]: number };
+  totalPairs?: number;
   unitCost: number;
   totalCost: number;
 };
@@ -568,6 +581,29 @@ export type ProductionOrder = {
   createdAt: number;
 };
 
+export type PurchaseRequestStatus = 'PENDING' | 'IN_PROGRESS' | 'ORDERED' | 'RECEIVED';
+
+export type PurchaseRequest = {
+  id: string;
+  requestKey: string; // item.id from materialReqs: materialId or "SOLE_moldId_colorId"
+  type: 'MATERIAL' | 'SOLE';
+  name: string;
+  unit: string;
+  requiredQty: number;
+  sizeBreakdown?: Record<string, number>;
+  receivedQty?: number;
+  receivedBreakdown?: Record<string, number>;
+  status: PurchaseRequestStatus;
+  requestedAt: number;
+  requestedBy?: string;
+  contributingLots?: string[];
+  materialId?: string;
+  moldId?: string;
+  colorId?: string;
+  notes?: string;
+  updatedAt?: number;
+};
+
 export type ProductionLot = {
   id: string;
   orderNumber: string; // "Lote #001"
@@ -593,6 +629,7 @@ export type ProductionLot = {
   gridId?: string;
   number?: string;
   pairs?: { [size: string]: number };
+  gradesQty?: number; // número de grades (caixas) do lote — salvo no ato da criação
   status?: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
   currentSectorId?: string;
 };

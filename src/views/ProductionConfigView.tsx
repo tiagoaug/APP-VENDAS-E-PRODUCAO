@@ -15,9 +15,16 @@ class ErrorBoundary extends Component<{ children: ReactNode; label?: string }, {
     if (this.state.hasError) {
       return (
         <div className="p-6 rounded-2xl bg-red-50 border-2 border-red-200 text-red-700 flex flex-col gap-2">
-          <p className="font-black text-sm uppercase tracking-widest">Erro ao Renderizar {this.props.label}</p>
+          <p className="font-black text-sm tracking-widest">Erro ao Renderizar {this.props.label}</p>
           <p className="text-xs font-mono break-all">{this.state.error?.message}</p>
-          <button onClick={() => this.setState({ hasError: false, error: null })} className="mt-2 px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-black uppercase tracking-widest">Tentar Novamente</button>
+          <button 
+            onClick={() => this.setState({ hasError: false, error: null })} 
+            title="Recarregar o componente"
+            aria-label="Tentar novamente"
+            className="mt-2 px-4 py-2 rounded-xl bg-red-600 text-white text-xs font-black tracking-widest"
+          >
+            Tentar Novamente
+          </button>
         </div>
       );
     }
@@ -99,7 +106,7 @@ const AreaInput = ({ size, value, onChange, isDarkMode, onShowCalc, onShowConsum
   return (
     <div className={`flex flex-row sm:flex-col items-center sm:items-center justify-between sm:justify-start gap-4 sm:gap-2 p-4 sm:p-0 rounded-[1.5rem] sm:rounded-none border-2 sm:border-0 transition-all ${isDarkMode ? 'bg-slate-950/50 border-slate-800/50' : 'bg-white border-slate-100'} sm:bg-transparent sm:border-transparent w-full`}>
       <div className="flex items-center justify-between w-auto sm:w-full px-1 gap-3">
-        <label htmlFor={`area-input-${size}`} className="text-[10px] font-black text-slate-400 uppercase tracking-tighter shrink-0">
+        <label htmlFor={`area-input-${size}`} className="text-[10px] font-black text-slate-400 tracking-tighter shrink-0">
           <span className="sm:hidden text-indigo-500 mr-1">TAM</span>{size}
         </label>
         {onShowCalc && (
@@ -251,7 +258,7 @@ function PecasConfig({
 
       {entradas.length > 0 && (
         <div className="flex flex-col gap-3">
-          <h3 className={`text-xs font-black uppercase tracking-[0.2em] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Entradas</h3>
+          <h3 className={`text-xs font-black tracking-[0.2em] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Entradas</h3>
           <div className="flex flex-wrap gap-2">
             {entradas.map(p => (
               <div
@@ -273,7 +280,7 @@ function PecasConfig({
 
       {pecasLista.length > 0 && (
         <div className="flex flex-col gap-3">
-          <h3 className={`text-xs font-black uppercase tracking-[0.2em] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Peças</h3>
+          <h3 className={`text-xs font-black tracking-[0.2em] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Peças</h3>
           <div className="flex flex-wrap gap-2">
             {pecasLista.map(p => (
               <div
@@ -295,7 +302,7 @@ function PecasConfig({
 
       {pecas.length === 0 && (
         <div className={`text-center py-8 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-          <p className="text-sm font-bold uppercase tracking-wider">Nenhuma peça cadastrada</p>
+          <p className="text-sm font-bold tracking-wider">Nenhuma peça cadastrada</p>
         </div>
       )}
     </div>
@@ -353,6 +360,9 @@ interface ProductionConfigViewProps {
   onNavigate?: (view: ViewType) => void;
   onAddProduct?: () => void;
   onNavigateGrids?: () => void;
+  lots?: ProductionLot[];
+  products?: Product[];
+  soleStock?: SoleStockEntry[];
 }
 
 export default function ProductionConfigView({
@@ -375,7 +385,10 @@ export default function ProductionConfigView({
   initialScreen = 'MENU',
   onNavigate,
   onAddProduct,
-  onNavigateGrids
+  onNavigateGrids,
+  lots = [],
+  products = [],
+  soleStock = []
 }: ProductionConfigViewProps) {
 
   const [currentScreen, setCurrentScreen] = useState<ProductionScreenType>(initialScreen);
@@ -404,6 +417,23 @@ export default function ProductionConfigView({
     // Fallback if no categories defined in system yet
     return ['SOLADOS', 'PALMILHAS', 'COURO/SINTÉTICO', 'FORROS', 'ADESIVOS', 'LINHAS', 'EMBALAGENS', 'OUTROS'];
   }, [categories]);
+
+  const purchaseNeeds = useMemo(() => {
+    const materialReqs: Record<string, number> = {};
+    const activeLots = lots.filter(l => !l.finishedAt);
+
+    activeLots.forEach(lot => {
+      const product = products.find(p => p.id === lot.productId);
+      const variation = product?.variations.find(v => v.id === lot.variationId);
+      if (!variation) return;
+
+      variation.consumptions?.forEach(cons => {
+        if (!cons.materialId) return;
+        materialReqs[cons.materialId] = (materialReqs[cons.materialId] || 0) + (lot.quantity * cons.quantity);
+      });
+    });
+    return materialReqs;
+  }, [lots, products]);
 
   const [editingTag, setEditingTag] = useState<FlowTag | null>(null);
   const [editingSector, setEditingSector] = useState<Sector | null>(null);
@@ -482,7 +512,7 @@ export default function ProductionConfigView({
               <div className="flex flex-col gap-8 pb-10">
                 {/* CARD: GESTÃO DE PROCESSOS */}
                 <div className="flex flex-col gap-3">
-                  <h3 className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Gestão de Processos</h3>
+                  <h3 className="px-4 text-[10px] font-black tracking-[0.2em] text-slate-400 leading-none">Gestão de Processos</h3>
                   <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                     <ConfigMenuItem
                       icon={<TableCellsMerge size={22} />}
@@ -517,7 +547,7 @@ export default function ProductionConfigView({
 
                 {/* CARD: PARÂMETROS DE MODELAGEM (Same as Dashboard) */}
                 <div className="flex flex-col gap-3">
-                  <h3 className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Parâmetros de Modelagem</h3>
+                  <h3 className="px-4 text-[10px] font-black tracking-[0.2em] text-slate-400 leading-none">Parâmetros de Modelagem</h3>
                   <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                     <ConfigMenuItem
                       icon={<Package size={22} />}
@@ -570,7 +600,7 @@ export default function ProductionConfigView({
 
                 {/* CARD: ESTRUTURA E LOGÍSTICA */}
                 <div className="flex flex-col gap-3">
-                  <h3 className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Estrutura e Logística</h3>
+                  <h3 className="px-4 text-[10px] font-black tracking-[0.2em] text-slate-400 leading-none">Estrutura e Logística</h3>
                   <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                     <ConfigMenuItem
                       icon={<GanttChartSquare size={22} />}
@@ -638,8 +668,8 @@ export default function ProductionConfigView({
         <div className="flex flex-col gap-6">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Setores de Fábrica</h3>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Defina a ordem da produção</p>
+              <h3 className={`text-lg font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Setores de Fábrica</h3>
+              <p className="text-[10px] text-slate-400 font-bold tracking-widest mt-1">Defina a ordem da produção</p>
             </div>
             <button
               onClick={() => {
@@ -933,6 +963,7 @@ export default function ProductionConfigView({
             flowTags={flowTags}
             productionConfigs={productionConfigs}
             onNavigateToScreen={handleNavigateShortcut}
+            soleStock={soleStock}
           />
         </ErrorBoundary>
       </Modal>
@@ -1129,6 +1160,7 @@ function GenericConfigList({
   supplyCategoryNames?: string[];
   onNavigateToScreen?: (screen: ProductionScreenType | ViewType) => void;
   zIndex?: number;
+  soleStock?: SoleStockEntry[];
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ProductionConfigItem | null>(null);
@@ -1526,6 +1558,7 @@ function GenericConfigList({
                     onDelete={() => { if (confirm(`Deseja excluir ${item.name}?`)) onDelete(item.id); }}
                     flowTags={flowTags}
                     people={people}
+                    need={purchaseNeeds[item.id] || 0}
                   />
                 ))}
               </div>
@@ -1543,6 +1576,7 @@ function GenericConfigList({
                 flowTags={flowTags}
                 colors={colors}
                 productionConfigs={productionConfigs}
+                soleStock={soleStock}
               />
             ) : (
               <motion.div
@@ -2272,6 +2306,22 @@ function GenericConfigList({
                 <div className="flex flex-col gap-2"><label htmlFor="mat-cost" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Custo Base</label><div className="relative group"><input id="mat-cost" type="number" step="0.01" value={editingItem?.metadata?.baseCost || ''} title="Custo Base" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir custo base" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.baseCost || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
                 <div className="flex flex-col gap-2"><label htmlFor="mat-width" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Largura (m)</label><div className="relative group"><input id="mat-width" type="number" step="0.01" value={editingItem?.metadata?.width || ''} title="Largura" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir largura" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.width || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2">
+                  <label htmlFor="mat-stock" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Estoque Atual</label>
+                  <div className="relative group">
+                    <input id="mat-stock" type="number" step="0.01" value={editingItem?.metadata?.stock || ''} title="Estoque Atual" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, stock: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
+                    <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir estoque" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.stock || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, stock: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label htmlFor="mat-min-stock" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Estoque Mínimo</label>
+                  <div className="relative group">
+                    <input id="mat-min-stock" type="number" step="0.01" value={editingItem?.metadata?.minStock || ''} title="Estoque Mínimo" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, minStock: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
+                    <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir estoque mínimo" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.minStock || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, minStock: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button>
+                  </div>
+                </div>
+              </div>
               <div className="flex flex-col gap-2">
                 {renderLabelWithShortcut('mat-colors', 'Cores Disponíveis', ViewType.COLORS)}
                 <div className={`p-4 rounded-2xl border-2 flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>{colors.map(color => { const isSelected = (editingItem?.metadata?.colorIds || []).includes(color.id); return (<button key={color.id} type="button" onClick={() => { const currentIds = editingItem?.metadata?.colorIds || []; const newIds = isSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id]; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, colorIds: newIds } } : null); }} className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${isSelected ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'}`}>{color.name}</button>); })}</div>
@@ -2729,6 +2779,7 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people }: 
   onDelete: () => void | Promise<void>,
   flowTags: FlowTag[],
   people: any[],
+  need?: number,
   key?: React.Key
 }) {
   const flowTag = flowTags.find(t => t.id === item.metadata?.flowTagId);
@@ -2774,39 +2825,72 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people }: 
         </div>
       </div>
 
-      <div className="flex items-center justify-between mt-2">
+      <div className="grid grid-cols-2 gap-4">
+        <div className={`p-4 rounded-2xl flex flex-col gap-1 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50'}`}>
+          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Estoque Atual</span>
+          <div className="flex items-baseline gap-1">
+            <span className={`text-lg font-black ${(item.metadata?.stock || 0) < (item.metadata?.minStock || 0) ? 'text-red-500' : 'text-slate-600 dark:text-slate-300'}`}>
+              {(item.metadata?.stock || 0).toLocaleString('pt-BR')}
+            </span>
+            <span className="text-[9px] font-black text-slate-400 uppercase">{item.metadata?.unit || 'UN'}</span>
+          </div>
+          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">MÍNIMO: {item.metadata?.minStock || 0}</p>
+        </div>
+
+        <div className={`p-4 rounded-2xl flex flex-col gap-1 ${need > 0 ? (isDarkMode ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-amber-50 border border-amber-100') : (isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50')}`}>
+          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Necessidade Prod.</span>
+          <div className="flex items-baseline gap-1">
+            <span className={`text-lg font-black ${need > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
+              {need.toLocaleString('pt-BR')}
+            </span>
+            <span className="text-[9px] font-black text-slate-400 uppercase">{item.metadata?.unit || 'UN'}</span>
+          </div>
+          {need > 0 && (
+            <div className="flex items-center gap-1 mt-1">
+              <Sparkles size={10} className="text-amber-500" />
+              <span className="text-[8px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest">Aguardando Produção</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between mt-2 pt-4 border-t border-slate-100 dark:border-slate-800/50">
         <div className="flex flex-col gap-2">
           <div className="flex gap-2">
             <div className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[8px] font-black uppercase tracking-widest">
               {item.metadata?.masterCategory || 'GERAL'}
-            </div>
-            <div className="px-3 py-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-500 text-[8px] font-black uppercase tracking-widest">
-              {item.metadata?.unit || 'UN'}
             </div>
           </div>
           {yieldVal > 0 && (
             <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
               <Hash size={10} className="text-emerald-500" />
               <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase">
-                {yieldVal.toFixed(2)} PRS / KG
+                {yieldVal.toFixed(2)} PRS / {item.metadata?.unit || 'UN'}
               </span>
             </div>
           )}
         </div>
-        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Cores: {item.metadata?.colorIds?.length || 0}</span>
+        <div className="flex flex-col items-end gap-1">
+          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Cores: {item.metadata?.colorIds?.length || 0}</span>
+          <div className="flex items-baseline gap-1">
+            <span className="text-[8px] font-black text-emerald-500">R$</span>
+            <span className="text-sm font-black text-emerald-500">{(item.metadata?.baseCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, productionConfigs }: {
+function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, productionConfigs, soleStock }: {
   item: ProductionConfigItem,
   isDarkMode: boolean,
   onEdit: () => void,
   onDelete: () => void | Promise<void>,
   flowTags: FlowTag[],
-  colors: ColorValue[],
+  colors: any[],
   productionConfigs: ProductionConfigItem[],
+  soleStock?: SoleStockEntry[],
   key?: React.Key
 }) {
   const safeFlowTags = Array.isArray(flowTags) ? flowTags : [];
@@ -2817,6 +2901,13 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
   const safeExtraServices = Array.isArray(item.metadata?.extraServices) ? item.metadata!.extraServices! : [];
   const safeComposition = Array.isArray(item.metadata?.composition) ? item.metadata!.composition! : [];
   const safeSizeWeights = (item.metadata?.sizeWeights && typeof item.metadata.sizeWeights === 'object' && !Array.isArray(item.metadata.sizeWeights)) ? item.metadata.sizeWeights : {};
+  const safeSoleStock = Array.isArray(soleStock) ? soleStock : [];
+
+  const getStockForSize = (size: string) => {
+    return safeSoleStock
+      .filter(s => s.moldId === item.id && s.size === size)
+      .reduce((acc, s) => acc + (s.quantity || 0), 0);
+  };
 
   return (
     <div className={`p-6 rounded-[2.5rem] border flex flex-col gap-6 relative transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
@@ -2859,12 +2950,20 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
             <span className="text-[9px] font-black uppercase tracking-widest">Pesos por Tamanho (GR)</span>
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-2">
-            {Object.entries(safeSizeWeights).map(([size, weight]) => (
-              <div key={size} className="flex items-center gap-1.5">
-                <span className="text-[10px] font-black text-slate-400">{size}</span>
-                <span className={`text-[10px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{Number(weight) || 0}g</span>
-              </div>
-            ))}
+            {Object.entries(safeSizeWeights).map(([size, weight]) => {
+              const stock = getStockForSize(size);
+              return (
+                <div key={size} className="flex flex-col gap-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black text-slate-400">{size}</span>
+                    <span className={`text-[10px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{Number(weight) || 0}g</span>
+                  </div>
+                  {stock > 0 && (
+                    <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Estoque: {stock}</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

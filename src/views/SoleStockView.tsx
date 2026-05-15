@@ -24,7 +24,8 @@ export default function SoleStockView({
   const [search, setSearch] = useState('');
   const [selectedMoldId, setSelectedMoldId] = useState<string>('');
   const [editingEntry, setEditingEntry] = useState<SoleStockEntry | null>(null);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isBalanceMode, setIsBalanceMode] = useState(false);
+  const [balanceData, setBalanceData] = useState<Record<string, Record<string, number>>>({});
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [selectedStockItem, setSelectedStockItem] = useState<any>(null);
 
@@ -55,6 +56,26 @@ export default function SoleStockView({
   }, [stockEntries]);
 
   const filteredStock = useMemo(() => {
+    if (isBalanceMode && selectedMoldId) {
+      const mold = molds.find(m => m.id === selectedMoldId);
+      if (!mold) return [];
+      
+      return colors.map(color => {
+        const existing = aggregatedStock.find(s => s.moldId === selectedMoldId && s.colorId === color.id);
+        return existing || {
+          moldId: selectedMoldId,
+          moldName: mold.name,
+          colorId: color.id,
+          colorName: color.name,
+          sizes: {},
+          total: 0
+        };
+      }).filter(item => {
+        // Still allow searching within the colors of the mold
+        return !search || item.colorName.toLowerCase().includes(search.toLowerCase());
+      });
+    }
+
     return aggregatedStock.filter(item => {
       const matchesSearch = !search || 
         item.moldName.toLowerCase().includes(search.toLowerCase()) ||
@@ -62,7 +83,7 @@ export default function SoleStockView({
       const matchesMold = !selectedMoldId || item.moldId === selectedMoldId;
       return matchesSearch && matchesMold;
     });
-  }, [aggregatedStock, search, selectedMoldId]);
+  }, [aggregatedStock, search, selectedMoldId, isBalanceMode, molds, colors]);
 
   const totalGeral = useMemo(() => {
     return filteredStock.reduce((sum, item) => sum + item.total, 0);
@@ -128,80 +149,44 @@ export default function SoleStockView({
           />
           <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
         </div>
-        <select
-          value={selectedMoldId}
-          onChange={(e) => setSelectedMoldId(e.target.value)}
-          className={`border-2 rounded-2xl px-4 py-3 text-xs font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
-        >
-          <option value="">Todos</option>
-          {molds.map(m => (
-            <option key={m.id} value={m.id}>{m.name}</option>
-          ))}
-        </select>
       </div>
 
       <div className="flex gap-2 mb-4">
         <button
           onClick={() => {
-            if (filteredStock.length > 0) {
-              const firstItem = filteredStock[0];
-              setEditingEntry({
-                id: `${firstItem.moldId}-${firstItem.colorId}`,
-                moldId: firstItem.moldId,
-                moldName: firstItem.moldName,
-                colorId: firstItem.colorId,
-                colorName: firstItem.colorName,
-                supplierId: '',
-                supplierName: '',
-                stock: firstItem.sizes,
-                totalPairs: firstItem.total,
-                unitCost: 0,
-                totalCost: 0,
-                purchaseDate: Date.now()
-              });
-              setIsEditing(true);
+            if (isBalanceMode) {
+              setIsBalanceMode(false);
+              setBalanceData({});
             } else {
-              alert('Nenhum item em estoque para ajustar');
+              // Initialize balance data with current aggregated stock
+              const initialData: Record<string, Record<string, number>> = {};
+              aggregatedStock.forEach(item => {
+                initialData[`${item.moldId}-${item.colorId}`] = { ...item.sizes };
+              });
+              setBalanceData(initialData);
+              setIsBalanceMode(true);
             }
           }}
-          className="py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-slate-600 text-white flex items-center justify-center gap-2"
+          className={`py-3 px-6 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
+            isBalanceMode 
+              ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20' 
+              : 'bg-slate-600 text-white hover:bg-slate-700'
+          }`}
         >
-          <Edit2 size={14} /> Editar
+          {isBalanceMode ? <X size={14} strokeWidth={3} /> : <Calculator size={14} />}
+          {isBalanceMode ? 'Cancelar' : 'Balanço'}
         </button>
-        
-        {filteredStock.length > 0 && (
-          <select
-            value={editingEntry ? `${editingEntry.moldId}-${editingEntry.colorId}` : ''}
-            onChange={(e) => {
-              const [moldId, colorId] = e.target.value.split('-');
-              const item = filteredStock.find(i => i.moldId === moldId && i.colorId === colorId);
-              if (item) {
-                setEditingEntry({
-                  id: `${item.moldId}-${item.colorId}`,
-                  moldId: item.moldId,
-                  moldName: item.moldName,
-                  colorId: item.colorId,
-                  colorName: item.colorName,
-                  supplierId: '',
-                  supplierName: '',
-                  stock: item.sizes,
-                  totalPairs: item.total,
-                  unitCost: 0,
-                  totalCost: 0,
-                  purchaseDate: Date.now()
-                });
-                setIsEditing(true);
-              }
-            }}
-            className={`flex-1 border-2 rounded-2xl px-4 py-3 text-xs font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
-          >
-            {filteredStock.map((item, idx) => (
-              <option key={idx} value={`${item.moldId}-${item.colorId}`}>
-                {item.moldName} - {item.colorName} ({item.total} pares)
-              </option>
-            ))}
-          </select>
-        )}
+
+        <select
+          value={selectedMoldId}
+          onChange={(e) => setSelectedMoldId(e.target.value)}
+          className={`flex-1 border-2 rounded-2xl px-4 py-3 text-xs font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
+        >
+          <option value="">Todos os Modelos</option>
+          {molds.map(m => (
+            <option key={m.id} value={m.id}>{m.name}</option>
+          ))}
+        </select>
       </div>
 
       <div className="flex gap-2 mb-4">
@@ -258,7 +243,12 @@ export default function SoleStockView({
                       <span className="text-[9px] font-black uppercase tracking-widest">Imprimir</span>
                     </button>
                     <div className="flex flex-col items-center justify-center px-4 py-2.5 rounded-2xl bg-blue-50 border border-blue-100 min-w-[64px]">
-                      <p className="text-3xl font-black text-blue-600 leading-none">{item.total}</p>
+                      <p className="text-3xl font-black text-blue-600 leading-none">
+                        {isBalanceMode 
+                          ? Object.values(balanceData[`${item.moldId}-${item.colorId}`] || item.sizes).reduce((a, b) => a + b, 0)
+                          : item.total
+                        }
+                      </p>
                       <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mt-0.5">pares</p>
                     </div>
                   </div>
@@ -273,19 +263,46 @@ export default function SoleStockView({
                     sizes.length === 5 ? 'grid-cols-5' :
                     'grid-cols-6'
                   }`}>
-                    {sizes.map(([size, qty]) => (
-                      <div
-                        key={size}
-                        className={`flex flex-col items-center justify-center gap-0.5 py-2.5 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
-                      >
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight leading-none">
-                          {size}
-                        </span>
-                        <span className={`font-black text-slate-700 leading-none ${sizes.length <= 4 ? 'text-xl' : 'text-base'}`}>
-                          {qty}
-                        </span>
-                      </div>
-                    ))}
+                    {sizes.map(([size, qty]) => {
+                      const itemKey = `${item.moldId}-${item.colorId}`;
+                      const currentVal = isBalanceMode ? (balanceData[itemKey]?.[size] ?? qty) : qty;
+                      
+                      return (
+                        <div
+                          key={size}
+                          className={`flex flex-col items-center justify-center gap-0.5 py-2.5 rounded-xl transition-all ${
+                            isBalanceMode 
+                              ? (isDarkMode ? 'bg-indigo-900/20 border border-indigo-500/30' : 'bg-indigo-50 border border-indigo-200')
+                              : (isDarkMode ? 'bg-slate-800 border border-transparent' : 'bg-slate-50 border border-transparent')
+                          }`}
+                        >
+                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-tight leading-none">
+                            {size}
+                          </span>
+                          {isBalanceMode ? (
+                            <input
+                              type="number"
+                              value={currentVal}
+                              onChange={(e) => {
+                                const newVal = parseInt(e.target.value) || 0;
+                                setBalanceData(prev => ({
+                                  ...prev,
+                                  [itemKey]: {
+                                    ...(prev[itemKey] || item.sizes),
+                                    [size]: newVal
+                                  }
+                                }));
+                              }}
+                              className="w-full bg-transparent text-center font-black text-indigo-600 dark:text-indigo-400 outline-none text-base"
+                            />
+                          ) : (
+                            <span className={`font-black text-slate-700 dark:text-slate-200 leading-none ${sizes.length <= 4 ? 'text-xl' : 'text-base'}`}>
+                              {qty}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -294,7 +311,74 @@ export default function SoleStockView({
         )}
       </div>
 
-      {filteredStock.length > 0 && (
+      {isBalanceMode && (
+        <div className="fixed bottom-24 left-4 right-4 z-50">
+          <button
+            onClick={async () => {
+              const entriesToUpdate = Object.entries(balanceData);
+              if (entriesToUpdate.length === 0) {
+                setIsBalanceMode(false);
+                return;
+              }
+
+              if (!confirm(`Deseja salvar o balanço de ${entriesToUpdate.length} itens?`)) return;
+
+              try {
+                // For each modified item, we create/update a master soleStock document
+                // To keep it simple and consistent with how Editar worked, we use the key as ID
+                for (const [key, stock] of entriesToUpdate) {
+                  const [moldId, colorId] = key.split('-');
+                  const mold = molds.find(m => m.id === moldId);
+                  const color = colors.find(c => c.id === colorId);
+                  
+                  if (!mold || !color) continue;
+
+                  const totalPairs = Object.values(stock).reduce((a, b) => a + b, 0);
+                  
+                  // Delete existing entries for this mold/color to avoid duplicates if they had different IDs
+                  // Actually, if we just use the key as ID, it will create/overwrite ONE document.
+                  // But there might be other documents in soleStock with different IDs for same mold/color.
+                  // For a TRUE balance, we should probably clear them.
+                  const existingDocs = stockEntries.filter(s => s.moldId === moldId && s.colorId === colorId);
+                  for (const doc of existingDocs) {
+                    if (doc.id !== key) {
+                      await firebaseService.deleteDocument('soleStock', doc.id);
+                    }
+                  }
+
+                  await firebaseService.saveDocument('soleStock', {
+                    id: key,
+                    moldId,
+                    moldName: mold.name,
+                    colorId,
+                    colorName: color.name,
+                    supplierId: '',
+                    supplierName: 'Balanço de Estoque',
+                    stock,
+                    totalPairs,
+                    unitCost: 0,
+                    totalCost: 0,
+                    purchaseDate: Date.now(),
+                    notes: 'Ajuste de Balanço'
+                  });
+                }
+                
+                alert('Balanço salvo com sucesso!');
+                setIsBalanceMode(false);
+                setBalanceData({});
+              } catch (err) {
+                console.error(err);
+                alert('Erro ao salvar balanço');
+              }
+            }}
+            className="w-full py-5 rounded-[2rem] bg-indigo-600 text-white font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-500/40 flex items-center justify-center gap-3 hover:bg-indigo-700 active:scale-95 transition-all"
+          >
+            <Save size={20} /> Salvar Balanço Total
+          </button>
+        </div>
+      )}
+
+      {filteredStock.length > 0 && !isBalanceMode && (
         <div className="rounded-3xl overflow-hidden mb-2 shadow-lg">
           <div className="bg-gradient-to-r from-blue-600 to-blue-500 p-5">
             <div className="flex items-center justify-between">
@@ -311,68 +395,6 @@ export default function SoleStockView({
                 <p className="text-4xl font-black text-blue-200 leading-none">{totalGeral}</p>
                 <p className="text-[10px] font-black text-blue-200 uppercase tracking-widest mt-0.5">pares</p>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isEditing && editingEntry && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className={`w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
-            <div className="p-6 flex items-center justify-between border-b border-slate-50 dark:border-slate-800">
-              <h2 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                Ajuste de Estoque
-              </h2>
-              <button 
-                onClick={() => { setIsEditing(false); setEditingEntry(null); }} 
-                className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-50 dark:bg-slate-800 text-slate-400"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            
-            <div className="p-6 flex-1 overflow-y-auto">
-              <div className={`p-4 rounded-2xl mb-4 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-                <p className="text-sm font-black text-white">{editingEntry.moldName}</p>
-                <p className="text-xs font-bold text-slate-400 uppercase">{editingEntry.colorName}</p>
-              </div>
-
-              <div className="grid grid-cols-4 gap-2">
-                {moldSizes.map(size => (
-                  <div key={size} className="flex flex-col gap-1">
-                    <label className="text-[8px] font-black text-slate-400 uppercase text-center">{size}</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={editingEntry.stock?.[size] || 0}
-                      onChange={(e) => {
-                        const newStock = { ...editingEntry.stock, [size]: parseInt(e.target.value) || 0 };
-                        const total = Object.values(newStock).reduce((a, b) => a + b, 0);
-                        setEditingEntry({ ...editingEntry, stock: newStock, totalPairs: total });
-                      }}
-                      className={`px-2 py-2 rounded-lg font-black text-xs text-center outline-none border ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-4 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-black text-emerald-600 uppercase">Total:</span>
-                  <span className="text-xl font-black text-blue-500">
-                    {Object.values(editingEntry.stock || {}).reduce((a, b) => a + b, 0)} pares
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-6 border-t border-slate-50 dark:border-slate-800">
-              <button
-                onClick={() => updateStockEntry(editingEntry)}
-                className="w-full py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-emerald-600 text-white hover:bg-emerald-700 flex items-center justify-center gap-2"
-              >
-                <Save size={18} /> Salvar Ajuste
-              </button>
             </div>
           </div>
         </div>

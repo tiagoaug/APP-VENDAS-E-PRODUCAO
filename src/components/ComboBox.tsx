@@ -16,7 +16,7 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const filteredOptions = options.filter(option =>
-    option.name.toLowerCase().includes(search.toLowerCase())
+    String(option?.name || "").toLowerCase().includes(search.toLowerCase())
   );
 
   const selectedOption = options.find(o => o.id === value);

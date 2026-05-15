@@ -58,7 +58,12 @@ export default function ProductFormView({ productId, products, grids, suppliers,
     consumptions: ComponentConsumption[];
     soleMapping: { [size: string]: string };
     sourceName: string;
-  } | null>(null);
+  } | null>(() => {
+    try {
+      const saved = localStorage.getItem('engineering_clipboard');
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
   const [showToolMapping, setShowToolMapping] = useState(false);
   const [type, setType] = useState<SaleType>(existingProduct?.type || SaleType.WHOLESALE);
   const [status, setStatus] = useState<ProductStatus>(existingProduct?.status || ProductStatus.ACTIVE);
@@ -431,19 +436,27 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                   value={v.soleColorId || ''}
                                   onChange={(e) => updateVariation(activeVariationIndex, { soleColorId: e.target.value })}
                                 >
-                                  <option value="">MESMA COR DO CABEDAL</option>
+                                  <option value="">Selecione a cor do solado…</option>
                                   {(() => {
                                     const selectedMold = molds.find(m => m.id === moldId);
-                                    const moldColorIds = selectedMold?.metadata?.colorIds || [];
+                                    if (!selectedMold) return (
+                                      <option disabled value="">Selecione uma matriz primeiro</option>
+                                    );
 
-                                    // If mold has specific colors, filter them. Otherwise show all.
-                                    const availableColors = moldColorIds.length > 0
-                                      ? colors.filter(c => moldColorIds.includes(c.id))
-                                      : colors;
+                                    // Prioridade: colorVariations → colorIds → vazio
+                                    const cvIds: string[] = selectedMold.metadata?.colorVariations?.map((cv: any) => cv.colorId).filter(Boolean) || [];
+                                    const legacyIds: string[] = selectedMold.metadata?.colorIds || [];
+                                    const allIds = cvIds.length > 0 ? cvIds : legacyIds;
 
-                                    return availableColors.map(c => (
-                                      <option key={c.id} value={c.id}>{c.name}</option>
-                                    ));
+                                    if (allIds.length === 0) return (
+                                      <option disabled value="">Nenhuma cor cadastrada na matriz</option>
+                                    );
+
+                                    return colors
+                                      .filter(c => allIds.includes(c.id))
+                                      .map(c => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                      ));
                                   })()}
                                 </select>
                                 <div className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border border-black/10 flex items-center justify-center bg-slate-100 dark:bg-slate-800">
@@ -793,7 +806,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                     <div className="flex items-center justify-between mb-0.5">
                                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Consumo:</span>
                                       <span className="text-[10px] font-black text-slate-900 dark:text-slate-200 uppercase">
-                                        {item.quantity.toFixed(4).replace('.', ',')} {productionConfigs.find(u => u.id === mat?.metadata?.unitId)?.name || 'UN'}
+                                        {item.consumptionBasis === 'grade'
+                                          ? `${Math.round(item.quantity < 1 ? 1 : item.quantity)} /grade`
+                                          : `${item.quantity.toFixed(4).replace('.', ',')} /par`
+                                        } {productionConfigs.find(u => u.id === mat?.metadata?.unitId)?.name || 'UN'}
                                       </span>
                                     </div>
                                     <div className="flex items-center justify-between">
@@ -1459,11 +1475,13 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     {modulesConfig.production && (v.consumptions || []).length > 0 && (
                       <button
                         onClick={() => {
-                          setEngineeringClipboard({
+                          const clip = {
                             consumptions: JSON.parse(JSON.stringify(v.consumptions || [])),
                             soleMapping: JSON.parse(JSON.stringify(v.soleMapping || {})),
                             sourceName: v.colorName
-                          });
+                          };
+                          setEngineeringClipboard(clip);
+                          try { localStorage.setItem('engineering_clipboard', JSON.stringify(clip)); } catch {}
                           setCopySuccess(`Engenharia de "${v.colorName}" COPIADA!`);
                           setTimeout(() => setCopySuccess(null), 2000);
                         }}
@@ -1475,10 +1493,12 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       </button>
                     )}
 
-                    {/* Botão de Colar (Aparece se houver algo no clipboard e a variação estiver vazia e produção ativa) */}
-                    {modulesConfig.production && engineeringClipboard && (v.consumptions || []).length === 0 && (
+                    {/* Botão de Colar — sempre disponível enquanto houver clipboard, inclusive para sobrescrever */}
+                    {modulesConfig.production && engineeringClipboard && engineeringClipboard.sourceName !== v.colorName && (
                       <button
                         onClick={() => {
+                          const hasExisting = (v.consumptions || []).length > 0;
+                          if (hasExisting && !confirm(`Substituir a ficha atual de "${v.colorName}" pela de "${engineeringClipboard.sourceName}"?`)) return;
                           const newVariations = [...variations];
                           newVariations[i] = {
                             ...newVariations[i],
@@ -1486,14 +1506,18 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                             soleMapping: JSON.parse(JSON.stringify(engineeringClipboard.soleMapping))
                           };
                           setVariations(newVariations);
-                          setCopySuccess(`Ficha de "${engineeringClipboard.sourceName}" COLADA em "${v.colorName}"!`);
+                          setCopySuccess(`Ficha de "${engineeringClipboard.sourceName}" colada em "${v.colorName}"!`);
                           setTimeout(() => setCopySuccess(null), 3000);
                         }}
-                        className={`flex-1 flex items-center justify-center gap-2 px-4 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all animate-pulse ${isDarkMode ? 'bg-emerald-900/20 text-emerald-400 hover:bg-emerald-900/40' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
-                        title={`Colar engenharia de ${engineeringClipboard.sourceName}`}
+                        className={`flex-1 flex items-center justify-center gap-2 px-4 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                          (v.consumptions || []).length === 0
+                            ? `animate-pulse ${isDarkMode ? 'bg-emerald-900/20 text-emerald-400 hover:bg-emerald-900/40' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`
+                            : isDarkMode ? 'bg-slate-800 text-slate-400 hover:bg-slate-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                        }`}
+                        title={`Colar ficha de ${engineeringClipboard.sourceName}`}
                         aria-label={`Colar engenharia de ${engineeringClipboard.sourceName} nesta variação`}
                       >
-                        <Sparkles size={14} /> Colar
+                        <Sparkles size={14} /> Colar de {engineeringClipboard.sourceName}
                       </button>
                     )}
                   </div>

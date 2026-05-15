@@ -1,0 +1,7 @@
+﻿                        const groupedByProduct: Record<string, { name: string, color: string, qty: number }> = {};
+                        selectedData.forEach(item => {
+                            if (!item) return;
+                            const key = `${item.productId}-${item.variationId}`;
+                            if (!groupedByProduct[key]) groupedByProduct[key] = { name: item.productName, color: item.variationName, qty: 0 };
+                            groupedByProduct[key].qty += item.toProductionQty;
+                        });

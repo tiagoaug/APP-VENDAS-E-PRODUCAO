@@ -9,7 +9,7 @@ import { sharePDF } from '../utils/pdfExport';
 interface ChecksModalProps {
   isOpen: boolean;
   onClose: () => void;
-  purchase: Purchase;
+  purchase: any;
   supplier?: Person;
   isDarkMode: boolean;
   onUpdateCheque?: (chequeId: string, status: 'PENDING' | 'CLEARED' | 'OVERDUE') => void;
