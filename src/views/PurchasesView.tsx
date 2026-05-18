@@ -342,16 +342,16 @@ export default function PurchasesView({
                                 </div>
                                 <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400">{totalPairs} pares</span>
                               </div>
-                              {/* Grid breakdown */}
                               <div className="flex flex-wrap gap-x-2 gap-y-1 mt-0.5">
-                                {Object.entries(soleItem.quantities || {}).map(([size, qty]) => (
-                                  qty > 0 && (
+                                {Object.entries(soleItem.quantities || {}).map(([size, qty]) => {
+                                  const q = qty as number;
+                                  return q > 0 && (
                                     <div key={size} className="flex items-center gap-0.5 text-[8px] font-black uppercase">
                                       <span className="text-slate-400">{size}:</span>
-                                      <span className="text-slate-600 dark:text-slate-300">{qty}</span>
+                                      <span className="text-slate-600 dark:text-slate-300">{q}</span>
                                     </div>
-                                  )
-                                ))}
+                                  );
+                                })}
                               </div>
                             </div>
                           );

@@ -86,6 +86,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [consumptionCategory, setConsumptionCategory] = useState<ComponentCategory>('CUTTING_PIECE');
   const [saleTypes, setSaleTypes] = useState<SaleType[]>(existingProduct?.saleTypes || (existingProduct?.type ? [existingProduct.type] : [SaleType.WHOLESALE]));
   const [productionRoute, setProductionRoute] = useState<string[]>(existingProduct?.productionRoute || []);
+  const [sectorPrices, setSectorPrices] = useState<Record<string, number>>(existingProduct?.sectorPrices || {});
+  const [photoUrl, setPhotoUrl] = useState<string>(existingProduct?.photoUrl || '');
 
   // Scroll to top when variation is opened or modal toggled
   useEffect(() => {
@@ -206,6 +208,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const toggleSectorInRoute = (sectorId: string) => {
     setProductionRoute(prev => {
       if (prev.includes(sectorId)) {
+        setSectorPrices(p => { const n = { ...p }; delete n[sectorId]; return n; });
         return prev.filter(id => id !== sectorId);
       }
       if (prev.length >= 9) return prev;
@@ -251,6 +254,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       toolMapping: modulesConfig.production ? toolMapping : {},
       variations,
       productionRoute: modulesConfig.production ? productionRoute : undefined,
+      sectorPrices: modulesConfig.production ? sectorPrices : undefined,
+      photoUrl: photoUrl || undefined,
       createdAt: existingProduct?.createdAt || Date.now()
     };
 
@@ -927,6 +932,64 @@ export default function ProductFormView({ productId, products, grids, suppliers,
     <>
       <div className="flex flex-col gap-4 pb-60 px-2 sm:px-4 pt-4 min-h-screen">
         <div className={`p-4 sm:p-6 rounded-[2rem] border flex flex-col gap-6 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+
+          {/* Foto do produto */}
+          <div className="flex justify-center">
+            <label className="relative cursor-pointer group" title="Toque para adicionar foto do produto">
+              <div className={`w-24 h-24 rounded-3xl overflow-hidden border-2 flex items-center justify-center transition-all ${photoUrl ? 'border-indigo-300 dark:border-indigo-600' : 'border-dashed border-slate-200 dark:border-slate-700'} ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                {photoUrl
+                  ? <img src={photoUrl} alt="Foto do produto" className="w-full h-full object-cover" />
+                  : <div className="flex flex-col items-center gap-1">
+                      <Camera size={28} className="text-slate-300 dark:text-slate-600" />
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Foto</span>
+                    </div>
+                }
+              </div>
+              {/* Botão de remover foto */}
+              {photoUrl && (
+                <button
+                  type="button"
+                  onClick={e => { e.preventDefault(); setPhotoUrl(''); }}
+                  className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-md hover:bg-rose-600 transition-all"
+                  title="Remover foto"
+                >
+                  <X size={12} strokeWidth={3} />
+                </button>
+              )}
+              {/* Overlay de câmera ao hover */}
+              <div className="absolute inset-0 rounded-3xl bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <Camera size={22} className="text-white" />
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = ev => {
+                    const result = ev.target?.result as string;
+                    // Resize to max 400px to keep base64 small
+                    const img = new Image();
+                    img.onload = () => {
+                      const maxSide = 400;
+                      const ratio = Math.min(maxSide / img.width, maxSide / img.height, 1);
+                      const canvas = document.createElement('canvas');
+                      canvas.width  = img.width  * ratio;
+                      canvas.height = img.height * ratio;
+                      canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                      setPhotoUrl(canvas.toDataURL('image/jpeg', 0.82));
+                    };
+                    img.src = result;
+                  };
+                  reader.readAsDataURL(file);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+          </div>
+
           {module === 'SALES' && (
             <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl">
               <button
@@ -1356,43 +1419,66 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     {productionRoute.map((sectorId, index) => {
                       const sector = sectors.find(s => s.id === sectorId);
                       return (
-                        <div 
-                          key={sectorId} 
-                          className={`group p-4 rounded-2xl border-2 flex items-center justify-between transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 hover:border-indigo-500/50' : 'bg-slate-50/50 border-slate-100 shadow-sm hover:border-indigo-200'}`}
+                        <div
+                          key={sectorId}
+                          className={`p-4 rounded-2xl border-2 flex flex-col gap-3 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 hover:border-indigo-500/50' : 'bg-slate-50/50 border-slate-100 shadow-sm hover:border-indigo-200'}`}
                         >
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-xs font-black text-indigo-600 dark:text-indigo-400">
-                              {index + 1}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-xs font-black text-indigo-600 dark:text-indigo-400">
+                                {index + 1}
+                              </div>
+                              <span className="text-xs font-black uppercase text-slate-700 dark:text-slate-300">{sector?.name || '---'}</span>
                             </div>
-                            <span className="text-xs font-black uppercase text-slate-700 dark:text-slate-300">{sector?.name || '---'}</span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => moveSectorInRoute(index, 'up')}
+                                disabled={index === 0}
+                                title="Mover para cima"
+                                aria-label="Mover este setor para cima no fluxo de produção"
+                                className="p-2 text-slate-400 hover:text-indigo-500 disabled:opacity-20"
+                              >
+                                <ChevronLeft size={16} className="rotate-90" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveSectorInRoute(index, 'down')}
+                                disabled={index === productionRoute.length - 1}
+                                title="Mover para baixo"
+                                aria-label="Mover este setor para baixo no fluxo de produção"
+                                className="p-2 text-slate-400 hover:text-indigo-500 disabled:opacity-20"
+                              >
+                                <ChevronDown size={16} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => toggleSectorInRoute(sectorId)}
+                                title="Remover do Fluxo"
+                                aria-label="Remover este setor do fluxo de produção"
+                                className="p-2 text-rose-400 hover:text-rose-600 ml-1"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button 
-                              onClick={() => moveSectorInRoute(index, 'up')}
-                              disabled={index === 0}
-                              title="Mover para cima"
-                              aria-label="Mover este setor para cima no fluxo de produção"
-                              className="p-2 text-slate-400 hover:text-indigo-500 disabled:opacity-20"
-                            >
-                              <ChevronLeft size={16} className="rotate-90" />
-                            </button>
-                            <button 
-                              onClick={() => moveSectorInRoute(index, 'down')}
-                              disabled={index === productionRoute.length - 1}
-                              title="Mover para baixo"
-                              aria-label="Mover este setor para baixo no fluxo de produção"
-                              className="p-2 text-slate-400 hover:text-indigo-500 disabled:opacity-20"
-                            >
-                              <ChevronDown size={16} />
-                            </button>
-                            <button 
-                              onClick={() => toggleSectorInRoute(sectorId)}
-                              title="Remover do Fluxo"
-                              aria-label="Remover este setor do fluxo de produção"
-                              className="p-2 text-rose-400 hover:text-rose-600 ml-1"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 whitespace-nowrap">R$/par</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              placeholder={sector?.defaultServiceValue ? sector.defaultServiceValue.toFixed(2) : '0.00'}
+                              value={sectorPrices[sectorId] ?? ''}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setSectorPrices(prev => {
+                                  if (val === '' || val === null) { const n = { ...prev }; delete n[sectorId]; return n; }
+                                  return { ...prev, [sectorId]: parseFloat(val) || 0 };
+                                });
+                              }}
+                              className={`w-full px-3 py-2 rounded-xl text-xs font-bold border transition-all outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-500'}`}
+                            />
                           </div>
                         </div>
                       );

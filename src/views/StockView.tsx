@@ -10,7 +10,7 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
-import PrintLabelModal from "../components/PrintLabelModal";
+import PrintLabelEditorModal from "../components/PrintLabelEditorModal";
 
 interface StockViewProps {
   products: Product[];
@@ -173,7 +173,7 @@ export default function StockView({
         ))}
 
         {productForLabels && (
-          <PrintLabelModal
+          <PrintLabelEditorModal
             isOpen={!!productForLabels}
             onClose={() => setProductForLabels(null)}
             product={productForLabels}
@@ -217,8 +217,10 @@ const StockCard: React.FC<{
     <div className={`p-5 rounded-[2.5rem] border shadow-sm flex flex-col gap-4 transition-all ${isEditing ? 'ring-2 ring-indigo-500/20' : ''} ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700">
-            <Package size={24} className="text-indigo-500" />
+          <div className="w-12 h-12 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700 overflow-hidden shrink-0">
+            {product.photoUrl
+              ? <img src={product.photoUrl} alt={product.name} className="w-full h-full object-cover" />
+              : <Package size={24} className="text-indigo-500" />}
           </div>
           <div>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">{product.reference}</p>

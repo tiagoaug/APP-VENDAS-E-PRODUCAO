@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import {
   Sale, Product, ProductionOrder, ProductionOrderItem,
-  ProductionLot, SaleType, Sector
+  ProductionLot, SaleType, Sector, Grid
 } from '../types';
 import {
   X, Factory, Package, CheckCircle2, Layers,
@@ -20,6 +20,7 @@ interface ProductionOrderModalProps {
   onClose: () => void;
   sale: Sale;
   products: Product[];
+  grids: Grid[];
   sectors: Sector[];
   existingOrdersCount: number;
   existingLotsCount: number;
@@ -34,7 +35,7 @@ interface ProductionOrderModalProps {
 type Mode = 'FULL' | 'PARTIAL';
 
 export default function ProductionOrderModal({
-  isOpen, onClose, sale, products, sectors,
+  isOpen, onClose, sale, products, grids, sectors,
   existingOrdersCount, existingLotsCount,
   isDarkMode, onConfirm
 }: ProductionOrderModalProps) {
@@ -152,6 +153,34 @@ export default function ProductionOrderModal({
         if (g.toProductionQty <= 0) return;
         const product = products.find(p => p.id === g.productId);
         const route = product?.productionRoute || sectors.map(s => s.id);
+
+        let lotPairs: { [size: string]: number } = {};
+        let totalPairs = g.toProductionQty;
+        let gradesQty: number | undefined = undefined;
+
+        if (g.saleType === SaleType.WHOLESALE) {
+          const gridId = product?.productionGridId || product?.defaultGridId;
+          const grid = grids.find(gr => gr.id === gridId);
+          const pairsPerGrade = grid ? Object.values(grid.configuration).reduce((a, b) => a + b, 0) : 12;
+          totalPairs = g.toProductionQty * pairsPerGrade;
+          gradesQty = g.toProductionQty;
+
+          if (grid) {
+            Object.entries(grid.configuration).forEach(([size, qty]) => {
+              if (qty > 0) {
+                lotPairs[size] = qty * g.toProductionQty;
+              }
+            });
+          }
+        } else {
+          // Retail: g.sizesResult has size breakdown
+          Object.entries(g.sizesResult).forEach(([size, res]) => {
+            if (res.toProduction > 0 && size !== '__all__') {
+              lotPairs[size] = res.toProduction;
+            }
+          });
+        }
+
         const lot: ProductionLot = {
           id: Math.random().toString(36).substr(2, 9),
           orderNumber: `Lote #${String(existingLotsCount + lots.length + 1).padStart(3, '0')}`,
@@ -162,10 +191,12 @@ export default function ProductionOrderModal({
           deliveryDate: new Date(deliveryDate).getTime(),
           productId: g.productId,
           variationId: g.variationId,
-          quantity: g.toProductionQty,
+          quantity: totalPairs,
+          pairs: lotPairs,
+          gradesQty,
           route,
           currentSectorIndex: 0,
-          priority: 'NORMAL',
+          prioridade: sale.prioridade || 'NORMAL',
           history: [{
             sectorId: route[0] || '',
             statusId: '',

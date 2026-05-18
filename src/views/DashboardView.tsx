@@ -1,7 +1,7 @@
 import { useState, useMemo, ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Sale, Purchase, Product, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig } from "../types";
-import { Share2, TrendingUp, TrendingDown, Package, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette } from "lucide-react";
+import { Share2, TrendingUp, TrendingDown, Package, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { jsPDF } from 'jspdf';
@@ -1570,13 +1570,49 @@ export default function DashboardView({
                 </button>
                 {isRecentActivityExpanded && (
                   <div className="space-y-3 animate-in slide-in-from-top-2 duration-200">
-                    {recentActivity.map(activity => (
+                    {recentActivity.map((activity: any) => (
                       <div key={activity.id} className={`flex items-center gap-4 p-3 border rounded-2xl shadow-sm dark:shadow-none hover:border-slate-200 dark:hover:border-slate-700 transition-colors ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}><div className={`flex items-center justify-center p-2 rounded-xl ${activity.activityType === "sale" ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30" : activity.activityType === "purchase" ? "bg-slate-50 text-slate-400 dark:bg-slate-800" : (activity.type === TransactionType.INCOME) ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30" : "bg-rose-50 text-rose-600 dark:bg-rose-900/30"}`}>{activity.activityType === "sale" ? (<ShoppingBag size={20} strokeWidth={2.5} />) : activity.activityType === "purchase" ? (<TrendingDown size={20} strokeWidth={2.5} />) : activity.type === TransactionType.INCOME ? (<TrendingUp size={20} strokeWidth={2.5} />) : (<TrendingDown size={20} strokeWidth={2.5} />)}</div><div className="flex-1 min-w-0"><p className={`text-[12px] font-black truncate tracking-tight leading-none ${isDarkMode ? "text-white" : "text-slate-800"}`}>{activity.activityType === "sale" ? "Venda" : activity.activityType === "purchase" ? "Compra" : (activity.description || "Lançamento")}</p><p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold tracking-widest mt-1.5 ">{format(activity.date || Date.now(), "dd MMM, HH:mm", { locale: ptBR })}</p></div><div className="text-right"><p className={`text-[13px] font-black tracking-tight ${activity.activityType === "sale" || (activity.activityType === "transaction" && activity.type === TransactionType.INCOME) ? "text-emerald-500" : "text-rose-500"}`}>{(activity.activityType === "sale" || (activity.activityType === "transaction" && activity.type === TransactionType.INCOME)) ? "+" : "-"} R$ {Number(activity.total || activity.amount || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p><div className="flex items-center gap-1 justify-end mt-1"><span className={`text-[7px] px-1.5 py-0.5 rounded-lg font-black tracking-widest ${(activity.status === 'PENDING' || activity.activityStatus === 'PENDING') ? "bg-amber-100 text-amber-600" : "bg-slate-100 dark:bg-slate-800 text-slate-500"}`}>{(activity.status === 'PENDING' || activity.activityStatus === 'PENDING') ? "Pendente" : "OK"}</span></div></div></div>
                     ))}
                     {recentActivity.length === 0 && (<div className="text-center py-20 bg-slate-50/50 dark:bg-slate-900/50 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[2.5rem] flex flex-col items-center"><History size={40} className="text-slate-200 dark:text-slate-800 mb-2" strokeWidth={1} /><p className="text-[10px] font-black text-slate-300 dark:text-slate-700 tracking-[0.2em] italic">Vazio histórico</p></div>)}
                   </div>
                 )}
               </section>
+            );
+
+          case "print_center":
+            return (
+              <div key="print_center" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-5 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className={`text-sm font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Central de Impressões</h3>
+                    <p className="text-[10px] font-bold text-slate-400 tracking-[0.2em] mt-0.5">OS • Lotes • Pedidos • Fichas</p>
+                  </div>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+                    <Printer size={20} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {[
+                    { label: 'Ordens de Serviço', icon: <ClipboardList size={20}/>, color: 'text-rose-500', bg: isDarkMode ? 'bg-rose-500/10 border-rose-500/20' : 'bg-rose-50 border-rose-100' },
+                    { label: 'Mapa de Produção', icon: <Factory size={20}/>, color: 'text-violet-500', bg: isDarkMode ? 'bg-violet-500/10 border-violet-500/20' : 'bg-violet-50 border-violet-100' },
+                    { label: 'Pedidos de Venda', icon: <ShoppingBag size={20}/>, color: 'text-indigo-500', bg: isDarkMode ? 'bg-indigo-500/10 border-indigo-500/20' : 'bg-indigo-50 border-indigo-100' },
+                    { label: 'Fichas de Produto', icon: <BookOpen size={20}/>, color: 'text-amber-500', bg: isDarkMode ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 border-amber-100' },
+                  ].map(item => (
+                    <button key={item.label} type="button"
+                      onClick={() => onNavigate(ViewType.PRINT_CENTER)}
+                      className={`h-24 p-4 rounded-[1.5rem] flex flex-col items-center justify-center gap-2 transition-all active:scale-95 border ${item.bg}`}>
+                      <span className={item.color}>{item.icon}</span>
+                      <span className={`text-[9px] font-black tracking-widest text-center leading-tight ${item.color}`}>{item.label}</span>
+                    </button>
+                  ))}
+                </div>
+                <button type="button"
+                  onClick={() => onNavigate(ViewType.PRINT_CENTER)}
+                  className={`w-full py-4 rounded-2xl border border-dashed flex items-center justify-center gap-2 transition-all active:scale-[0.98] ${isDarkMode ? 'border-slate-800 text-slate-400 hover:bg-slate-800/50' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                  <span className="text-[10px] font-black tracking-[0.2em]">Abrir Central de Impressões</span>
+                  <ChevronRight size={14} strokeWidth={3}/>
+                </button>
+              </div>
             );
 
           default:

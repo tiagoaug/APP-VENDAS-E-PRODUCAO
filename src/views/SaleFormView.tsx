@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Sale, Product, SaleType, SaleItem, SalePayment, Grid, Person, PaymentMethod, SaleStatus, PaymentTerm, Account, ProductStatus, PaymentStatus, ProductionOrder, ProductionLot, Sector, AppModulesConfig, ProductionConfigItem } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import ComboBox from '../components/ComboBox';
-import { Save, Plus, Trash2, Tag, User, CreditCard, Info, Box, MessageSquare, AlertCircle, Hash, Percent, Receipt, TrendingUp, Wallet, Package, ChevronDown, ChevronUp, Search, X, CheckCircle2, Minus, FileText, Copy, Share, Share2, Calendar, Clock, RotateCcw, Ban, ShoppingCart, Users, Factory, Layers } from 'lucide-react';
+import { Save, Plus, Trash2, Tag, User, CreditCard, Info, Box, MessageSquare, AlertCircle, Hash, Percent, Receipt, TrendingUp, Wallet, Package, ChevronDown, ChevronUp, Search, X, CheckCircle2, Minus, FileText, Copy, Share, Share2, Calendar, Clock, RotateCcw, Ban, ShoppingCart, Users, Factory, Layers, Warehouse } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { sharePDF } from '../utils/pdfExport';
@@ -45,6 +45,44 @@ interface SaleFormViewProps {
 
 export default function SaleFormView({ saleId, sales, products, grids, people, paymentMethods, accounts, productionOrders, lots, sectors, productionConfigs, onSave, onDelete, onCancelOnly, onCancel, onCreateProductionOrder, modulesConfig, isDarkMode }: SaleFormViewProps) {
   const hasProduction = modulesConfig.production;
+  const [deliveryDate, setDeliveryDate] = useState<string>('');
+  const [prioridade, setPrioridade] = useState<string>('NORMAL');
+
+  // Helper to get default days based on productionConfigs (matching PCP deadlines)
+  const getDefaultDaysForDeadline = (deadlineName: string): number => {
+    const cleanName = (deadlineName || '').toUpperCase().trim();
+    const matchedConfig = (productionConfigs || []).find(c => 
+      c.type === 'DEADLINE' && 
+      (c.name.toUpperCase().trim() === cleanName || 
+       (cleanName === 'ALTA' && c.name.toUpperCase().trim() === 'PADRÃO') || 
+       (cleanName === 'URGENTE' && c.name.toUpperCase().trim() === 'URGENTE'))
+    );
+    if (matchedConfig && typeof matchedConfig.metadata?.days === 'number') {
+      return matchedConfig.metadata.days;
+    }
+    if (cleanName === 'URGENTE') return 3;
+    if (cleanName === 'ALTA') return 7;
+    return 15;
+  };
+
+  const deadlineConfigs = useMemo(() => {
+    return (productionConfigs || []).filter(c => c.type === 'DEADLINE');
+  }, [productionConfigs]);
+
+  const priorityOptions = useMemo(() => {
+    if (deadlineConfigs.length > 0) {
+      return deadlineConfigs.map(c => c.name.toUpperCase().trim());
+    }
+    return ['NORMAL', 'ALTA', 'URGENTE'];
+  }, [deadlineConfigs]);
+
+  const handlePriorityChange = (p: string) => {
+    setPrioridade(p);
+    const defaultDays = getDefaultDaysForDeadline(p);
+    const calculatedDate = new Date(Date.now() + defaultDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    setDeliveryDate(calculatedDate);
+  };
+
   const [orderNumber, setOrderNumber] = useState(Math.floor(Math.random() * 10000).toString().padStart(5, '0'));
   const [isAutoOrderNumber, setIsAutoOrderNumber] = useState(true);
   const [customerId, setCustomerId] = useState('');
@@ -79,6 +117,9 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         }
         if (sale.deliveryDate) {
           setDeliveryDate(new Date(sale.deliveryDate).toISOString().split('T')[0]);
+        }
+        if (sale.prioridade) {
+          setPrioridade(sale.prioridade);
         }
         if (sale.isProductionOrder) {
           setIsProductionOrder(true);
@@ -119,6 +160,9 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         setIsInitialized(true);
       }
     } else if (!saleId && !isInitialized) {
+      const defaultDays = getDefaultDaysForDeadline('NORMAL');
+      const calculatedDate = new Date(Date.now() + defaultDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      setDeliveryDate(calculatedDate);
       setIsInitialized(true);
     }
   }, [saleId, sales, products, isInitialized]);
@@ -150,7 +194,6 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-  const [deliveryDate, setDeliveryDate] = useState<string>('');
   const [showProductionOrderModal, setShowProductionOrderModal] = useState(false);
   const [isProductionOrder, setIsProductionOrder] = useState(false);
   const [saleDestination, setSaleDestination] = useState<'CUSTOMER' | 'STOCK'>('CUSTOMER');
@@ -518,6 +561,9 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       notes
     };
 
+    if (prioridade) {
+      saleToSave.prioridade = prioridade;
+    }
     if (customerId) saleToSave.customerId = customerId;
     if (paymentMethodId) saleToSave.paymentMethodId = paymentMethodId;
     if (accountId) saleToSave.accountId = accountId;
@@ -1067,24 +1113,84 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             )}
           </div>
 
-          <div className="flex gap-2">
-            <div className="flex flex-col gap-1 flex-1">
-              <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-1 block tracking-widest leading-none">Data de Entrega</label>
-              <div className={`flex items-center gap-2 px-4 py-3 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-                <Calendar size={14} className="text-indigo-400 shrink-0" />
-                <input
-                  type="date"
-                  value={deliveryDate}
-                  onChange={e => setDeliveryDate(e.target.value)}
-                  title="Data de entrega combinada"
-                  aria-label="Data de entrega"
-                  className={`flex-1 bg-transparent font-black text-xs outline-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
-                />
-              </div>
+          {/* SLA Timeline and Prioridade Section */}
+          <div className="flex flex-col gap-3 p-4 rounded-3xl border border-dashed border-indigo-500/30 dark:border-indigo-500/20 bg-indigo-50/10 dark:bg-indigo-950/10">
+            <div className="flex items-center justify-between">
+              <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 tracking-widest leading-none">Prazo e Prioridade</label>
+              
+              {/* Active SLA Badge Info */}
+              {prioridade && (
+                <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-full border border-slate-200/50 dark:border-slate-700/50">
+                  <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                    prioridade === 'URGENTE' ? 'bg-rose-500' : prioridade === 'ALTA' ? 'bg-amber-500' : 'bg-emerald-500'
+                  }`} />
+                  <span className="text-[8px] font-black uppercase tracking-wider text-slate-500">
+                    SLA: {getDefaultDaysForDeadline(prioridade)} dias
+                  </span>
+                </div>
+              )}
             </div>
-            {hasProduction && (
-              <div className="flex flex-col gap-1">
-                <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 mb-1 block tracking-widest leading-none">Produção</label>
+
+            {/* Quick SLA Selector Buttons */}
+            <div className="flex flex-wrap gap-2">
+              {priorityOptions.map(p => {
+                const label = p.charAt(0) + p.slice(1).toLowerCase();
+                const days = getDefaultDaysForDeadline(p);
+                const isActive = prioridade === p;
+                
+                let activeStyles = '';
+                
+                if (isActive) {
+                  if (p === 'URGENTE') {
+                    activeStyles = 'bg-rose-500 text-white shadow-lg shadow-rose-500/20 scale-[1.02] border-rose-500';
+                  } else if (p === 'ALTA') {
+                    activeStyles = 'bg-amber-500 text-white shadow-lg shadow-amber-500/20 scale-[1.02] border-amber-500';
+                  } else {
+                    activeStyles = 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 scale-[1.02] border-emerald-600';
+                  }
+                } else {
+                  activeStyles = isDarkMode 
+                    ? 'bg-slate-800/40 text-slate-400 hover:text-slate-200 border-slate-700/50 hover:bg-slate-800/80' 
+                    : 'bg-white text-slate-600 hover:text-slate-900 border-slate-200 hover:bg-slate-50';
+                }
+
+                return (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => handlePriorityChange(p)}
+                    className={`flex-1 min-w-[85px] flex flex-col items-center justify-center py-2 px-1 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all duration-300 relative ${activeStyles}`}
+                  >
+                    <span>{label}</span>
+                    <span className={`text-[8px] font-bold mt-0.5 opacity-80`}>
+                      {days} {days === 1 ? 'dia' : 'dias'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Manual Date Selection & Production Toggle */}
+            <div className="flex gap-2 mt-1">
+              <div className="flex flex-col gap-1 flex-1">
+                <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${
+                  isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
+                }`}>
+                  <Calendar size={13} className="text-indigo-400 shrink-0" />
+                  <input
+                    type="date"
+                    value={deliveryDate}
+                    onChange={e => {
+                      setDeliveryDate(e.target.value);
+                    }}
+                    title="Data de entrega combinada"
+                    aria-label="Data de entrega"
+                    className={`flex-1 bg-transparent font-black text-xs outline-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
+                  />
+                </div>
+              </div>
+
+              {hasProduction && (
                 <div className="relative">
                   {!isProductionOrder && (
                     <span className="absolute inset-0 rounded-xl bg-sky-400 animate-ping opacity-25 pointer-events-none" />
@@ -1093,20 +1199,20 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                     type="button"
                     onClick={() => setIsProductionOrder(v => !v)}
                     title={isProductionOrder ? 'Desativar pedido de produção' : 'Ativar pedido de produção'}
-                    className={`relative h-[46px] px-4 rounded-xl flex items-center gap-2 font-black text-[9px] uppercase tracking-widest border-2 transition-all ${
+                    className={`relative h-[38px] px-3.5 rounded-xl flex items-center gap-1.5 font-black text-[9px] uppercase tracking-widest border-2 transition-all ${
                       isProductionOrder
-                        ? 'bg-sky-500 border-sky-400 text-white shadow-lg shadow-sky-400/30'
+                        ? 'bg-sky-500 border-sky-400 text-white shadow-lg shadow-sky-400/30 border-none'
                         : isDarkMode
                           ? 'bg-sky-900/30 border-sky-700 text-sky-400'
                           : 'bg-sky-50 border-sky-300 text-sky-600'
                     }`}
                   >
-                    <Factory size={14} strokeWidth={2.5} />
+                    <Factory size={12} strokeWidth={2.5} />
                     OP
                   </button>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -2416,6 +2522,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             onClose={() => setShowProductionOrderModal(false)}
             sale={{ ...currentSale, deliveryDate: deliveryDate ? new Date(deliveryDate).getTime() : currentSale.deliveryDate }}
             products={products}
+            grids={grids}
             sectors={sectors}
             existingOrdersCount={productionOrders.length}
             existingLotsCount={lots.length}

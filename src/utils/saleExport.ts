@@ -49,9 +49,9 @@ async function generatePDF(data: ExportData, filename: string) {
   const paymentMethod = paymentMethods.find(pm => pm.id === sale.paymentMethodId);
 
   // Colors
-  const headerBgColor = [15, 23, 42]; // slate-900
-  const labelColor = [100, 116, 139]; // slate-500
-  const textColor = [30, 41, 59]; // slate-800
+  const headerBgColor: [number, number, number] = [15, 23, 42]; // slate-900
+  const labelColor: [number, number, number] = [100, 116, 139]; // slate-500
+  const textColor: [number, number, number] = [30, 41, 59]; // slate-800
 
   // Header Banner
   doc.setFillColor(headerBgColor[0], headerBgColor[1], headerBgColor[2]);

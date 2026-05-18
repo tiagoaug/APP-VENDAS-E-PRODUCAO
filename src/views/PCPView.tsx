@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, Search, ChevronRight, Filter,
@@ -7,22 +7,29 @@ import {
   CheckCircle2, AlertCircle, Clock,
   ArrowUpRight, ArrowDownRight, Loader2,
   Settings2, Trash2, Edit3, Edit2, ClipboardList,
-  Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart
+  Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart,
+  DollarSign, Hammer, FileText, CheckSquare
 } from 'lucide-react';
 import {
   ProductionLot, Product, Sector,
   FlowTag, Variation, ColorValue, ProductionOrder,
-  ProductionConfigItem, SoleStockEntry, ViewType, PurchaseRequest
+  ProductionConfigItem, SoleStockEntry, ViewType, PurchaseRequest, Grid,
+  ServiceOrder, Person, Account, Category, Transaction
 } from '../types';
 import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
 import ScannerModal from '../components/ScannerModal';
+import PrintOSModal from '../components/PrintOSModal';
 import { Camera } from 'lucide-react';
 import { labelService } from '../services/labelService';
+import { scannerService } from '../services/scannerService';
+import { financeService } from '../services/financeService';
+import { firebaseService } from '../services/firebaseService';
 
 interface PCPViewProps {
   lots: ProductionLot[];
   products: Product[];
+  grids?: Grid[];
   sectors: Sector[];
   flowTags: FlowTag[];
   colors: ColorValue[];
@@ -38,11 +45,16 @@ interface PCPViewProps {
   onBack: () => void;
   userName?: string;
   initialTab?: 'monitor' | 'lots' | 'orders' | 'needs';
+  people?: Person[];
+  accounts?: Account[];
+  categories?: Category[];
+  serviceOrders?: ServiceOrder[];
 }
 
 export default function PCPView({
   lots = [],
   products = [],
+  grids = [],
   sectors = [],
   flowTags = [],
   colors = [],
@@ -58,6 +70,10 @@ export default function PCPView({
   onBack,
   userName,
   initialTab = 'monitor',
+  people = [],
+  accounts = [],
+  categories = [],
+  serviceOrders = [],
 }: PCPViewProps) {
   const [activeTab, setActiveTab] = useState<'monitor' | 'lots' | 'orders' | 'needs'>(initialTab);
   const [requestingId, setRequestingId] = useState<string | null>(null);
@@ -67,11 +83,30 @@ export default function PCPView({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedLot, setSelectedLot] = useState<ProductionLot | null>(null);
+  const [selectedLots, setSelectedLots] = useState<ProductionLot[]>([]);
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
+  const [selectedLotIds, setSelectedLotIds] = useState<string[]>([]);
   const [selectedSectorId, setSelectedSectorId] = useState<string | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [isSoleOrderModalOpen, setIsSoleOrderModalOpen] = useState(false);
   const [selectedSoleNeed, setSelectedSoleNeed] = useState<any>(null);
   const [extraSoleQty, setExtraSoleQty] = useState<Record<string, number>>({});
+
+  // Service Order (OS) state declarations
+  const [isOSModalOpen, setIsOSModalOpen] = useState(false);
+  const [editingOS, setEditingOS] = useState<ServiceOrder | null>(null);
+  const [osNumber, setOsNumber] = useState('');
+  const [osType, setOsType] = useState<'INTERNAL' | 'OUTSOURCED'>('OUTSOURCED');
+  const [osProviderId, setOsProviderId] = useState('');
+  const [osProviderManualName, setOsProviderManualName] = useState('');
+  const [osValuePerPair, setOsValuePerPair] = useState<number>(0);
+  const [osNotes, setOsNotes] = useState('');
+  const [osAccountId, setOsAccountId] = useState('');
+  const [osCategoryId, setOsCategoryId] = useState('');
+  const [osDirectComplete, setOsDirectComplete] = useState(false);
+  const [isSavingOS, setIsSavingOS] = useState(false);
+  const [isPrintOSModalOpen, setIsPrintOSModalOpen] = useState(false);
+  const [printOSData, setPrintOSData] = useState<{ os: ServiceOrder; nextSectorName: string; lot?: ProductionLot } | null>(null);
 
   // Filtered and organized data
   const filteredLots = useMemo(() => {
@@ -79,7 +114,7 @@ export default function PCPView({
     
     if (statusFilter === 'active') list = list.filter(l => !l.finishedAt);
     if (statusFilter === 'finished') list = list.filter(l => !!l.finishedAt);
-    if (statusFilter === 'urgent') list = list.filter(l => (l.priority === 'URGENT' || l.priority === 'HIGH') && !l.finishedAt);
+    if (statusFilter === 'urgent') list = list.filter(l => (l.prioridade === 'URGENTE' || l.prioridade === 'ALTA') && !l.finishedAt);
 
     if (searchTerm) {
       const q = searchTerm.toLowerCase();
@@ -125,7 +160,7 @@ export default function PCPView({
           metrics[sectorId].delayedCount += 1;
         }
 
-        if (lot.priority === 'URGENT' || lot.priority === 'HIGH') {
+        if (lot.prioridade === 'URGENTE' || lot.prioridade === 'ALTA') {
           metrics[sectorId].urgentCount += 1;
         }
       }
@@ -162,11 +197,13 @@ export default function PCPView({
     }> = {};
 
     const sizeToGradeCache: Record<string, Record<string, string>> = {};
-    const getGradeForSize = (moldId: string, size: string) => {
+    const moldHasStockEntries: Record<string, boolean> = {};
+    const getGradeForSize = (moldId: string, size: string): string | null => {
       const mId = String(moldId).trim();
       if (!sizeToGradeCache[mId]) {
         sizeToGradeCache[mId] = {};
         const entries = soleStock.filter(s => String(s.moldId).trim() === mId);
+        moldHasStockEntries[mId] = entries.length > 0;
         entries.forEach(entry => {
           Object.keys(entry.stock).forEach(k => {
             const key = String(k).trim();
@@ -182,7 +219,11 @@ export default function PCPView({
           });
         });
       }
-      return sizeToGradeCache[mId][size] || size;
+      if (sizeToGradeCache[mId][size]) return sizeToGradeCache[mId][size];
+      // Se há estoque cadastrado para este molde mas o tamanho não pertence a nenhuma grade → ignora
+      if (moldHasStockEntries[mId]) return null;
+      // Sem estoque cadastrado ainda → fallback para não bloquear o fluxo
+      return size;
     };
 
     activeLots.forEach(lot => {
@@ -221,7 +262,11 @@ export default function PCPView({
             const pairsPerGrade = Math.round(1 / cons.quantity);
             lotMultiplier = Math.round(lot.quantity / Math.max(1, pairsPerGrade));
           } else {
-            lotMultiplier = lot.quantity;
+            // Tenta obter pairsPerGrade pelo grid do produto para maior precisão
+            const gridId = product?.productionGridId || product?.defaultGridId;
+            const grid = grids.find(gr => gr.id === gridId);
+            const pairsPerGrade = grid ? Object.values(grid.configuration).reduce((a: number, b: number) => a + b, 0) : 12;
+            lotMultiplier = Math.round(lot.quantity / Math.max(1, pairsPerGrade));
           }
         } else {
           lotMultiplier = lot.quantity;
@@ -303,9 +348,10 @@ export default function PCPView({
           const colorId = String(variation.soleColorId || '').trim();
           const key = `SOLE_${resolvedMoldId}_${colorId || 'default'}`;
           
-          // Resolve a grade da sola (ex: 38 -> "38-39")
+          // Resolve a grade da sola (ex: 38 -> "38-39"); null = tamanho não existe nesta sola
           const gradeKey = getGradeForSize(resolvedMoldId, size);
-          
+          if (!gradeKey) return;
+
           const mold = productionConfigs.find(c => c.id === resolvedMoldId);
           const color = colors.find(c => c.id === colorId);
           
@@ -352,8 +398,8 @@ export default function PCPView({
 
     return Object.values(materialReqs).filter(item => {
       if (item.type === 'SOLE' && item.sizeShortages) {
-        // Mostra se há qualquer solado requerido (para fins de necessidade de compra)
-        return item.required > 0;
+        // Só aparece se houver falta real em pelo menos uma grade
+        return Object.values(item.sizeShortages).some((s: any) => s.required > s.stock);
       }
       return (item.required > item.stock) || (item.stock < item.minStock);
     });
@@ -425,9 +471,76 @@ export default function PCPView({
 
   // Lot Creation State
   const [newLot, setNewLot] = useState<Partial<ProductionLot>>({
-    priority: 'NORMAL',
+    prioridade: 'NORMAL',
     quantity: 0
   });
+
+  // Helper for deadline days based on productionConfigs (type === 'DEADLINE')
+  const getDefaultDaysForDeadline = (deadlineName: string): number => {
+    const cleanName = (deadlineName || '').toUpperCase().trim();
+    const matchedConfig = (productionConfigs || []).find(c => 
+      c.type === 'DEADLINE' && 
+      (c.name.toUpperCase().trim() === cleanName || 
+       (cleanName === 'ALTA' && c.name.toUpperCase().trim() === 'PADRÃO') || 
+       (cleanName === 'URGENTE' && c.name.toUpperCase().trim() === 'URGENTE'))
+    );
+    if (matchedConfig && typeof matchedConfig.metadata?.days === 'number') {
+      return matchedConfig.metadata.days;
+    }
+    // Fallback defaults
+    if (cleanName === 'URGENTE') return 3;
+    if (cleanName === 'ALTA') return 7;
+    return 15; // default for NORMAL
+  };
+
+  const formatDateForInput = (timestamp?: number) => {
+    if (!timestamp) return '';
+    const d = new Date(timestamp);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const parseDateFromInput = (dateString: string) => {
+    if (!dateString) return undefined;
+    const parts = dateString.split('-');
+    if (parts.length !== 3) return undefined;
+    return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
+  };
+
+  // Automatically calculate custom delivery date when creating a brand new lot and modal opens
+  useEffect(() => {
+    if (isCreateModalOpen && !newLot.id && !newLot.deliveryDate) {
+      const defaultDays = getDefaultDaysForDeadline(newLot.prioridade || 'NORMAL');
+      const calculatedDate = Date.now() + defaultDays * 24 * 60 * 60 * 1000;
+      setNewLot(prev => ({
+        ...prev,
+        deliveryDate: calculatedDate
+      }));
+    }
+  }, [isCreateModalOpen]);
+
+  const deadlineConfigs = useMemo(() => {
+    return (productionConfigs || []).filter(c => c.type === 'DEADLINE');
+  }, [productionConfigs]);
+
+  const priorityOptions = useMemo(() => {
+    if (deadlineConfigs.length > 0) {
+      return deadlineConfigs.map(c => c.name.toUpperCase().trim());
+    }
+    return ['NORMAL', 'ALTA', 'URGENTE'];
+  }, [deadlineConfigs]);
+
+  const handlePriorityChange = (p: string) => {
+    const defaultDays = getDefaultDaysForDeadline(p);
+    const calculatedDate = Date.now() + defaultDays * 24 * 60 * 60 * 1000;
+    setNewLot(prev => ({
+      ...prev,
+      prioridade: p,
+      deliveryDate: calculatedDate
+    }));
+  };
 
   const handleCreateLot = async () => {
     if (!newLot.productId || !newLot.variationId || !newLot.quantity) {
@@ -457,7 +570,8 @@ export default function PCPView({
         productId: newLot.productId,
         variationId: newLot.variationId,
         quantity: newLot.quantity,
-        priority: newLot.priority || 'NORMAL',
+        prioridade: newLot.prioridade || 'NORMAL',
+        deliveryDate: newLot.deliveryDate || undefined,
       } as ProductionLot);
     } else {
       // MODO CRIAÇÃO
@@ -469,7 +583,7 @@ export default function PCPView({
         quantity: newLot.quantity,
         route: product.productionRoute || sectors.map(s => s.id),
         currentSectorIndex: 0,
-        priority: newLot.priority || 'NORMAL',
+        prioridade: newLot.prioridade || 'NORMAL',
         history: [{
           sectorId: (product.productionRoute || sectors.map(s => s.id))[0],
           statusId: '',
@@ -489,10 +603,10 @@ export default function PCPView({
     }
 
     setIsCreateModalOpen(false);
-    setNewLot({ priority: 'NORMAL', quantity: 0 });
+    setNewLot({ prioridade: 'NORMAL', quantity: 0 });
   };
 
-  const handleMoveLot = async (lot: ProductionLot, nextStatusId: string, notes: string) => {
+  const handleMoveLotSilent = async (lot: ProductionLot, nextStatusId: string, notes: string) => {
     const isLastSector = lot.route && lot.currentSectorIndex === lot.route.length - 1;
     
     const updatedLot: ProductionLot = {
@@ -518,10 +632,315 @@ export default function PCPView({
     }
 
     await onSaveLot(updatedLot);
+  };
+
+  const handleMoveLot = async (lot: ProductionLot, nextStatusId: string, notes: string) => {
+    await handleMoveLotSilent(lot, nextStatusId, notes);
     setIsDetailModalOpen(false);
     setSelectedLot(null);
   };
 
+  const handleRevertLot = async (lot: ProductionLot) => {
+    if (!lot.history || lot.history.length === 0) return;
+    if (!confirm(`Reverter o lote ${lot.orderNumber} para o setor anterior?`)) return;
+
+    const newHistory = lot.history.slice(0, -1); // remove última movimentação
+    const prevStatusId = newHistory.length > 0 ? newHistory[newHistory.length - 1].statusId : undefined;
+
+    const revertedLot: ProductionLot = {
+      ...lot,
+      history: newHistory,
+      currentStatusId: prevStatusId,
+      finishedAt: undefined, // desfaz finalização se houver
+      currentSectorIndex: lot.finishedAt
+        ? (lot.route?.length ?? 1) - 1   // estava finalizado → volta ao último setor
+        : Math.max(0, lot.currentSectorIndex - 1),
+    };
+
+    await onSaveLot(revertedLot);
+    setSelectedLot(revertedLot);
+  };
+
+  const handleOpenOSModal = (lotsToProcess: ProductionLot | ProductionLot[]) => {
+    const list = Array.isArray(lotsToProcess) ? lotsToProcess : [lotsToProcess];
+    setSelectedLots(list);
+    
+    if (!Array.isArray(lotsToProcess)) {
+      setSelectedLot(lotsToProcess);
+    } else {
+      setSelectedLot(null);
+    }
+
+    let nextNum = 1;
+    if (serviceOrders && serviceOrders.length > 0) {
+      serviceOrders.forEach(so => {
+        const match = so.osNumber.match(/OS-(\d+)/i);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num >= nextNum) {
+            nextNum = num + 1;
+          }
+        }
+      });
+    }
+    const formattedOSNum = `OS-${String(nextNum).padStart(4, '0')}`;
+    setOsNumber(formattedOSNum);
+
+    setOsType('OUTSOURCED');
+    
+    const lot = list[0];
+    const currentSector = sectors.find(s => s.id === (lot.route && lot.route[lot.currentSectorIndex]));
+    
+    if (currentSector && currentSector.defaultServiceProviderId) {
+      setOsProviderId(currentSector.defaultServiceProviderId);
+      setOsProviderManualName(currentSector.defaultServiceProviderName || '');
+    } else {
+      const workers = people.filter(p => p.isSupplier || (p as any).isWorker || (p as any).role);
+      if (workers.length > 0) {
+        setOsProviderId(workers[0].id);
+        setOsProviderManualName(workers[0].name);
+      } else if (people.length > 0) {
+        setOsProviderId(people[0].id);
+        setOsProviderManualName(people[0].name);
+      } else {
+        setOsProviderId('');
+        setOsProviderManualName('');
+      }
+    }
+
+    const lotProduct = products.find(p => p.id === lot.productId);
+    const productSectorPrice = lotProduct?.sectorPrices?.[currentSector?.id || ''];
+    if (productSectorPrice !== undefined) {
+      setOsValuePerPair(productSectorPrice);
+    } else if (currentSector && currentSector.defaultServiceValue !== undefined) {
+      setOsValuePerPair(currentSector.defaultServiceValue);
+    } else {
+      setOsValuePerPair(0);
+    }
+
+    setOsNotes('');
+
+    const defAccount = accounts.find(a => a.isDefault) || accounts[0];
+    setOsAccountId(defAccount?.id || '');
+
+    const prodCategory = categories.find(c => 
+      c.type === 'EXPENSE' && 
+      (c.name.toLowerCase().includes('produ') || c.name.toLowerCase().includes('mão') || c.name.toLowerCase().includes('obra') || c.name.toLowerCase().includes('servi'))
+    ) || categories.find(c => c.type === 'EXPENSE');
+    setOsCategoryId(prodCategory?.id || '');
+
+    setOsDirectComplete(false);
+    setIsOSModalOpen(true);
+  };
+
+  const handleSaveOS = async () => {
+    const targetLots = selectedLots.length > 0 ? selectedLots : (selectedLot ? [selectedLot] : []);
+    if (targetLots.length === 0) return;
+    if (!osNumber.trim()) {
+      alert("Por favor, digite o número da OS.");
+      return;
+    }
+
+    const firstLot = targetLots[0];
+    const currentSector = sectors.find(s => s.id === (firstLot.route && firstLot.route[firstLot.currentSectorIndex]));
+    if (!currentSector) {
+      alert("Setor atual inválido.");
+      return;
+    }
+
+    const product = products.find(p => p.id === firstLot.productId);
+    const variation = product?.variations.find(v => v.id === firstLot.variationId);
+
+    const providerName = osProviderId 
+      ? (people.find(p => p.id === osProviderId)?.name || osProviderManualName)
+      : osProviderManualName;
+
+    if (!providerName.trim()) {
+      alert("Por favor, selecione ou digite o prestador de serviço.");
+      return;
+    }
+
+    if (osValuePerPair < 0) {
+      alert("O valor por par não pode ser negativo.");
+      return;
+    }
+
+    setIsSavingOS(true);
+    try {
+      const quantity = targetLots.reduce((acc, l) => acc + (l.quantity || 0), 0);
+      const totalValue = quantity * osValuePerPair;
+
+      // --- MODO EDIÇÃO ---
+      if (editingOS) {
+        let newTransactionId = editingOS.transactionId;
+        if (editingOS.transactionId) {
+          await financeService.deleteTransaction(editingOS.transactionId);
+          newTransactionId = undefined;
+        }
+        if (osAccountId && osCategoryId && totalValue > 0) {
+          const txId = `tx_os_${editingOS.id}`;
+          await financeService.createTransaction({
+            id: txId,
+            type: 'EXPENSE',
+            amount: totalValue,
+            description: `Mão de Obra - OS ${editingOS.osNumber} (Lote: ${firstLot.orderNumber} - Setor: ${currentSector.name})`,
+            accountId: osAccountId,
+            categoryId: osCategoryId,
+            date: Date.now(),
+            status: 'PENDING',
+            personId: osProviderId || undefined,
+            notes: `OS Número: ${editingOS.osNumber}\nPrestador: ${providerName}\nQuantidade: ${quantity} pares\nValor por par: R$ ${osValuePerPair.toFixed(2)}`
+          });
+          newTransactionId = txId;
+        }
+        await firebaseService.updateDocument("serviceOrders", editingOS.id, {
+          type: osType,
+          providerId: osProviderId || undefined,
+          providerName,
+          valuePerPair: osValuePerPair,
+          totalValue,
+          notes: osNotes,
+          transactionId: newTransactionId || undefined,
+        });
+        alert("Ordem de Serviço atualizada com sucesso!");
+        setEditingOS(null);
+        setIsOSModalOpen(false);
+        return;
+      }
+
+      // --- MODO CRIAÇÃO ---
+      const uniqueId = `os_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      let transactionId = '';
+      if (osAccountId && osCategoryId && totalValue > 0) {
+        const txId = `tx_os_${uniqueId}`;
+        const txData = {
+          id: txId,
+          type: 'EXPENSE',
+          amount: totalValue,
+          description: `Mão de Obra - OS ${osNumber} (${targetLots.length === 1 ? `Lote: ${firstLot.orderNumber}` : `${targetLots.length} Lotes`} - Setor: ${currentSector.name})`,
+          accountId: osAccountId,
+          categoryId: osCategoryId,
+          date: Date.now(),
+          status: osDirectComplete ? 'COMPLETED' : 'PENDING',
+          personId: osProviderId || undefined,
+          notes: `OS Número: ${osNumber}\nPrestador: ${providerName}\nLotes: ${targetLots.map(l => l.orderNumber).join(', ')}\nQuantidade: ${quantity} pares\nValor por par: R$ ${osValuePerPair.toFixed(2)}`
+        };
+
+        await financeService.createTransaction(txData);
+        transactionId = txId;
+      }
+
+      const newOS: ServiceOrder = {
+        id: uniqueId,
+        osNumber: osNumber,
+        lotId: firstLot.id,
+        lotNumber: firstLot.orderNumber,
+        lotIds: targetLots.map(l => l.id),
+        lotNumbers: targetLots.map(l => l.orderNumber),
+        productId: firstLot.productId,
+        productName: product?.name || '',
+        variationId: firstLot.variationId,
+        variationName: variation?.colorName || '',
+        sectorId: currentSector.id,
+        sectorName: currentSector.name,
+        type: osType,
+        providerId: osProviderId || undefined,
+        providerName: providerName,
+        quantity: quantity,
+        valuePerPair: osValuePerPair,
+        totalValue: totalValue,
+        notes: osNotes,
+        status: osDirectComplete ? 'COMPLETED' : 'PENDING',
+        transactionId: transactionId || undefined,
+        createdAt: Date.now(),
+        finishedAt: osDirectComplete ? Date.now() : undefined
+      };
+
+      await firebaseService.saveDocument("serviceOrders", newOS);
+
+      if (osDirectComplete) {
+        for (const lot of targetLots) {
+          await handleMoveLotSilent(lot, lot.currentStatusId || '', `Baixa automática via OS ${osNumber}. ${osNotes}`);
+        }
+      }
+
+      alert("Ordem de Serviço criada com sucesso!");
+      setIsOSModalOpen(false);
+      setIsDetailModalOpen(false);
+
+      // Reset multi-select states
+      setSelectedLotIds([]);
+      setIsMultiSelectMode(false);
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao salvar Ordem de Serviço: " + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setIsSavingOS(false);
+    }
+  };
+
+  const handleCompleteOS = async (os: ServiceOrder) => {
+    if (confirm(`Deseja concluir a Ordem de Serviço ${os.osNumber} e realizar a baixa de todos os lotes vinculados?`)) {
+      try {
+        await firebaseService.updateDocument("serviceOrders", os.id, {
+          status: 'COMPLETED',
+          finishedAt: Date.now()
+        });
+
+        if (os.transactionId) {
+          await financeService.settleTransaction(os.transactionId);
+        }
+
+        const targetLotIds = os.lotIds || [os.lotId];
+        for (const lotId of targetLotIds) {
+          const lotObj = activeLots.find(l => l.id === lotId) || lots.find(l => l.id === lotId);
+          if (lotObj) {
+            await handleMoveLotSilent(lotObj, lotObj.currentStatusId || '', `Baixa via conclusão de OS ${os.osNumber}.`);
+          }
+        }
+        
+        setIsDetailModalOpen(false);
+        setSelectedLot(null);
+        alert(`Ordem de Serviço ${os.osNumber} concluída e lotes baixados com sucesso!`);
+      } catch (e) {
+        console.error(e);
+        alert("Erro ao concluir Ordem de Serviço: " + (e instanceof Error ? e.message : String(e)));
+      }
+    }
+  };
+
+  const handleDeleteOS = async (os: ServiceOrder) => {
+    if (confirm(`Tem certeza de que deseja excluir a Ordem de Serviço ${os.osNumber}? Isso removerá a movimentação financeira correspondente.`)) {
+      try {
+        if (os.transactionId) {
+          await financeService.deleteTransaction(os.transactionId);
+        }
+        await firebaseService.deleteDocument("serviceOrders", os.id);
+        alert("Ordem de Serviço excluída com sucesso!");
+      } catch (e) {
+        console.error(e);
+        alert("Erro ao excluir Ordem de Serviço: " + (e instanceof Error ? e.message : String(e)));
+      }
+    }
+  };
+
+
+  const handleEditOS = (os: ServiceOrder) => {
+    setEditingOS(os);
+    setOsNumber(os.osNumber);
+    setOsType(os.type);
+    setOsProviderId(os.providerId || '');
+    setOsProviderManualName(os.providerName);
+    setOsValuePerPair(os.valuePerPair);
+    setOsNotes(os.notes || '');
+    setOsDirectComplete(false);
+    const defAccount = accounts.find(a => a.isDefault) || accounts[0];
+    setOsAccountId(os.transactionId ? os.transactionId.replace(/^tx_os_os_\d+_/, '') : (defAccount?.id || ''));
+    const prodCategory = categories.find(c => c.type === 'EXPENSE' && (c.name.toLowerCase().includes('produ') || c.name.toLowerCase().includes('mão') || c.name.toLowerCase().includes('obra') || c.name.toLowerCase().includes('servi'))) || categories.find(c => c.type === 'EXPENSE');
+    setOsCategoryId(prodCategory?.id || '');
+    setIsOSModalOpen(true);
+  };
 
   const handlePrintLotLabel = (lot: ProductionLot) => {
     const product = products.find(p => p.id === lot.productId);
@@ -574,7 +993,7 @@ export default function PCPView({
         quantity: group.quantity,
         route,
         currentSectorIndex: 0,
-        priority: 'NORMAL',
+        prioridade: 'NORMAL',
         history: [{
           sectorId: route[0] || '',
           statusId: '',
@@ -655,29 +1074,37 @@ export default function PCPView({
   };
 
   const handleScanLotResult = (result: string) => {
-    // Try to parse as JSON first (full object) or ID
-    let lotId = '';
-    try {
-      const parsed = JSON.parse(result);
-      lotId = parsed.id || result;
-    } catch {
-      lotId = result;
-    }
+    setIsScannerOpen(false);
 
-    if (!lotId) {
-      alert('QR Code inválido');
+    // Tentar parsear formato estruturado (OS|id, LOT|id, etc.)
+    const parsed = scannerService.parseScanResult(result);
+
+    if (parsed?.type === 'OS') {
+      const os = serviceOrders?.find(so => so.id === parsed.osId);
+      if (!os) { alert('Ordem de Serviço não encontrada.'); return; }
+      if (os.status === 'COMPLETED') { alert(`A OS ${os.osNumber} já foi concluída.`); return; }
+      const lot = lots.find(l => l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id)));
+      const nextSectorId = lot && lot.route && lot.route[lot.currentSectorIndex + 1];
+      const nextSec = sectors.find(s => s.id === nextSectorId);
+      if (confirm(`Concluir ${os.osNumber} e avançar lote(s) para "${nextSec?.name || 'CONCLUÍDO'}"?`)) {
+        handleCompleteOS(os);
+      }
       return;
     }
+
+    // Formato LOT|id ou fallback JSON/id direto
+    let lotId = parsed?.type === 'LOT' ? parsed.lotId : '';
+    if (!lotId) {
+      try { lotId = JSON.parse(result)?.id || result; } catch { lotId = result; }
+    }
+
+    if (!lotId) { alert('QR Code inválido'); return; }
 
     const lot = lots.find(l => l.id === lotId || l.orderNumber === lotId);
-    if (!lot) {
-      alert('Mapa não encontrado: ' + lotId);
-      return;
-    }
+    if (!lot) { alert('Mapa não encontrado: ' + lotId); return; }
 
     setSelectedLot(lot);
     setIsDetailModalOpen(true);
-    setIsScannerOpen(false);
   };
 
   return (
@@ -771,22 +1198,25 @@ export default function PCPView({
         </AnimatePresence>
 
         {/* Tabs */}
-        <div className="flex gap-2 p-1 bg-slate-100 dark:bg-slate-900 rounded-2xl w-fit self-center">
+        <div className="grid grid-cols-2 sm:flex gap-1.5 p-1 bg-slate-100 dark:bg-slate-900 rounded-2xl w-full sm:w-fit sm:self-center">
           <button
+            type="button"
             onClick={() => { setActiveTab('monitor'); setSelectedSectorId(null); }}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'monitor' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'monitor' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
           >
             <LayoutDashboard size={14} /> Monitor WIP
           </button>
           <button
+            type="button"
             onClick={() => { setActiveTab('lots'); setSelectedSectorId(null); }}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'lots' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'lots' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
           >
             <ListTodo size={14} /> MAPAS
           </button>
           <button
+            type="button"
             onClick={() => { setActiveTab('orders'); setSelectedSectorId(null); }}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'orders' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'orders' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
           >
             <ClipboardList size={14} /> Pedidos
             {pendingOrders.length > 0 && (
@@ -796,8 +1226,9 @@ export default function PCPView({
             )}
           </button>
           <button
+            type="button"
             onClick={() => { setActiveTab('needs'); setSelectedSectorId(null); }}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'needs' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'needs' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
           >
             <AlertCircle size={14} /> Necessidades
             {purchaseNeeds.length > 0 && (
@@ -893,20 +1324,123 @@ export default function PCPView({
             </div>
           ) : (
             <div className="flex flex-col gap-6">
-              <div className="flex items-center justify-between px-2">
-                <button 
-                  onClick={() => setSelectedSectorId(null)}
-                  className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:gap-3 transition-all"
-                >
-                  <ChevronRight size={16} className="rotate-180" /> Voltar para Setores
-                </button>
-                <div className="flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
-                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">
-                    {sectors.find(s => s.id === selectedSectorId)?.name}
-                  </h3>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-2">
+                <div className="flex items-center gap-4">
+                  <button 
+                    onClick={() => {
+                      setSelectedSectorId(null);
+                      setIsMultiSelectMode(false);
+                      setSelectedLotIds([]);
+                    }}
+                    className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:gap-3 transition-all shrink-0"
+                  >
+                    <ChevronRight size={16} className="rotate-180" /> Voltar para Setores
+                  </button>
+                  <div className="flex items-center gap-3">
+                    <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-500">
+                      {sectors.find(s => s.id === selectedSectorId)?.name}
+                    </h3>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setIsMultiSelectMode(!isMultiSelectMode);
+                      setSelectedLotIds([]);
+                    }}
+                    className={`px-4 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-2 relative ${
+                      isMultiSelectMode 
+                        ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25 ring-4 ring-rose-500/30 animate-pulse'
+                        : isDarkMode
+                        ? 'bg-slate-900 text-slate-400 border border-slate-800 hover:border-indigo-500/50'
+                        : 'bg-white text-slate-500 border border-slate-100 shadow-sm hover:border-indigo-300'
+                    }`}
+                  >
+                    {isMultiSelectMode && (
+                      <span className="relative flex h-2 w-2 mr-1">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                      </span>
+                    )}
+                    {isMultiSelectMode ? 'Cancelar Seleção' : 'Seleção Múltipla'}
+                  </button>
                 </div>
               </div>
+
+              {isMultiSelectMode && selectedLotIds.length > 0 && (
+                <div className={`p-5 rounded-[2rem] border-2 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all ${isDarkMode ? 'bg-slate-900 border-indigo-950/50 text-white' : 'bg-indigo-50/50 border-indigo-100/50 text-indigo-950 shadow-sm'}`}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/20 shrink-0">
+                      <CheckSquare size={20} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-wider">{selectedLotIds.length} Lote(s) Selecionado(s)</p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                        Total: {filteredActiveLots.filter(l => selectedLotIds.includes(l.id)).reduce((acc, l) => acc + (l.quantity || 0), 0)} Pares
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                    <button
+                      onClick={() => {
+                        const lotsToEmit = filteredActiveLots.filter(l => selectedLotIds.includes(l.id));
+                        handleOpenOSModal(lotsToEmit);
+                      }}
+                      className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+                    >
+                      Emitir OS em Grupo
+                    </button>
+                    
+                    <button
+                      onClick={async () => {
+                        if (confirm(`Deseja avançar os ${selectedLotIds.length} lotes selecionados de uma vez?`)) {
+                          try {
+                            const lotsToAdvance = filteredActiveLots.filter(l => selectedLotIds.includes(l.id));
+                            for (const lot of lotsToAdvance) {
+                              await handleMoveLotSilent(lot, lot.currentStatusId || '', 'Avanço em lote (Massa).');
+                            }
+                            setSelectedLotIds([]);
+                            setIsMultiSelectMode(false);
+                            alert("Todos os lotes avançaram com sucesso!");
+                          } catch (e) {
+                            console.error(e);
+                            alert("Erro ao avançar lotes: " + (e instanceof Error ? e.message : String(e)));
+                          }
+                        }
+                      }}
+                      className={`flex-1 sm:flex-none px-5 py-3 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${
+                        isDarkMode ? 'border-slate-800 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      Avançar em Massa
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        if (confirm(`Tem certeza de que deseja EXCLUIR e CANCELAR todos os ${selectedLotIds.length} mapas selecionados?`)) {
+                          try {
+                            for (const id of selectedLotIds) {
+                              await onDeleteLot(id);
+                            }
+                            setSelectedLotIds([]);
+                            setIsMultiSelectMode(false);
+                            alert("Mapas excluídos com sucesso!");
+                          } catch (e) {
+                            console.error(e);
+                            alert("Erro ao excluir mapas: " + (e instanceof Error ? e.message : String(e)));
+                          }
+                        }
+                      }}
+                      className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-900/30 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
+                    >
+                      Excluir Lotes
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredActiveLots.filter(l => l.route && l.route[l.currentSectorIndex] === selectedSectorId).map(lot => {
@@ -917,40 +1451,60 @@ export default function PCPView({
                     ? lot.history[lot.history.length - 1]?.timestamp || lot.createdAt 
                     : lot.createdAt;
                   const isDelayed = Date.now() - lastMove > 24 * 60 * 60 * 1000;
+                  const isSelected = selectedLotIds.includes(lot.id);
                   
                   return (
                     <motion.div
                       layoutId={lot.id}
                       key={lot.id}
                       onClick={() => {
-                        setSelectedLot(lot);
-                        setIsDetailModalOpen(true);
+                        if (isMultiSelectMode) {
+                          setSelectedLotIds(prev => 
+                            prev.includes(lot.id) 
+                              ? prev.filter(id => id !== lot.id) 
+                              : [...prev, lot.id]
+                          );
+                        } else {
+                          setSelectedLot(lot);
+                          setIsDetailModalOpen(true);
+                        }
                       }}
                       className={`group p-6 rounded-[2.5rem] border-2 shadow-sm cursor-pointer hover:scale-[1.02] active:scale-95 transition-all ${
-                        isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'
+                        isMultiSelectMode && isSelected
+                          ? 'border-indigo-600 bg-indigo-50/10 dark:bg-indigo-950/10'
+                          : isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'
                       }`}
                     >
                       <div className="flex items-start justify-between mb-4">
-                        <div className="flex flex-col gap-1.5">
-                          <span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest w-fit ${
-                            lot.priority === 'URGENT' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20' :
-                            lot.priority === 'HIGH' ? 'bg-amber-500 text-white' :
-                            isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
-                          }`}>
-                            {lot.priority}
-                          </span>
-                          {isDelayed && (
-                            <span className="text-[8px] font-black text-rose-500 uppercase tracking-widest flex items-center gap-1">
-                              <Clock size={10} /> Atrasado há {Math.floor((Date.now() - lastMove) / (1000 * 60 * 60))}h
-                            </span>
+                        <div className="flex items-center gap-3">
+                          {isMultiSelectMode && (
+                            <div className={`w-5 h-5 rounded-lg flex items-center justify-center border-2 transition-all shrink-0 ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/30' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'}`}>
+                              {isSelected && <CheckCircle2 size={12} strokeWidth={4} />}
+                            </div>
                           )}
+                          <div className="flex flex-col gap-1.5">
+                            <span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest w-fit ${
+                              lot.prioridade === 'URGENTE' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20' :
+                              lot.prioridade === 'ALTA' ? 'bg-amber-500 text-white' :
+                              isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
+                            }`}>
+                              {lot.prioridade}
+                            </span>
+                            {isDelayed && (
+                              <span className="text-[8px] font-black text-rose-500 uppercase tracking-widest flex items-center gap-1">
+                                <Clock size={10} /> Atrasado há {Math.floor((Date.now() - lastMove) / (1000 * 60 * 60))}h
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-xl">{lot.orderNumber}</span>
                       </div>
                       
                       <div className="flex items-center gap-4 mb-5">
-                        <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/20 transition-colors">
-                          <Package size={24} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                        <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/20 transition-colors overflow-hidden">
+                          {product?.photoUrl
+                            ? <img src={product.photoUrl} alt={product.name} className="w-full h-full object-cover" />
+                            : <Package size={24} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />}
                         </div>
                         <div className="flex flex-col min-w-0">
                           <p className="text-sm font-black truncate text-slate-900 dark:text-white uppercase leading-tight">{product?.name || '---'}</p>
@@ -1688,17 +2242,71 @@ export default function PCPView({
 
             <div className="flex flex-col gap-2">
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Prioridade</label>
-              <div className="grid grid-cols-2 gap-2">
-                {(['NORMAL', 'HIGH', 'URGENT'] as const).map(p => (
-                  <button
-                    key={p}
-                    onClick={() => setNewLot({ ...newLot, priority: p })}
-                    className={`py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border-2 ${newLot.priority === p ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-50 dark:bg-slate-800 border-transparent text-slate-500'}`}
-                  >
-                    {p}
-                  </button>
-                ))}
+              <div className="flex flex-wrap gap-2">
+                {priorityOptions.map(p => {
+                  const isActive = newLot.prioridade === p;
+                  return (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => handlePriorityChange(p)}
+                      className={`flex-1 min-w-[85px] py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border-2 ${
+                        isActive 
+                          ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/20 scale-[1.02]' 
+                          : isDarkMode 
+                            ? 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200' 
+                            : 'bg-slate-50 border-transparent text-slate-500 hover:bg-slate-100'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
               </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6">
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Prazo de Entrega (Personalizado)</label>
+              <div className="relative flex items-center">
+                <CalendarClock size={18} className="absolute left-4 text-slate-400" />
+                <input
+                  type="date"
+                  className={`w-full pl-12 pr-6 py-4 rounded-2xl border-2 font-black text-sm outline-none transition-all ${
+                    isDarkMode 
+                      ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500 [color-scheme:dark]' 
+                      : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'
+                  }`}
+                  value={formatDateForInput(newLot.deliveryDate)}
+                  onChange={(e) => {
+                    const parsed = parseDateFromInput(e.target.value);
+                    setNewLot({ ...newLot, deliveryDate: parsed });
+                  }}
+                />
+              </div>
+              {(() => {
+                const currentPriority = newLot.prioridade || 'NORMAL';
+                const cleanPriorityName = currentPriority.toUpperCase().trim();
+                const matchedConfig = (productionConfigs || []).find(c => 
+                  c.type === 'DEADLINE' && 
+                  (c.name.toUpperCase().trim() === cleanPriorityName || 
+                   (cleanPriorityName === 'ALTA' && c.name.toUpperCase().trim() === 'PADRÃO') || 
+                   (cleanPriorityName === 'URGENTE' && c.name.toUpperCase().trim() === 'URGENTE'))
+                );
+                const defaultDays = matchedConfig?.metadata?.days ?? (currentPriority === 'URGENTE' ? 3 : currentPriority === 'ALTA' ? 7 : 15);
+                
+                return (
+                  <div className="flex items-center gap-2 px-1">
+                    <span className={`w-2 h-2 rounded-full ${
+                      currentPriority === 'URGENTE' ? 'bg-rose-500 animate-pulse' : currentPriority === 'ALTA' ? 'bg-amber-500' : 'bg-green-500'
+                    }`} />
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Prazo Padrão ({currentPriority}): {defaultDays} dias
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
@@ -1750,7 +2358,7 @@ export default function PCPView({
                             productId: selectedLot.productId,
                             variationId: selectedLot.variationId,
                             quantity: selectedLot.quantity,
-                            priority: selectedLot.priority,
+                            prioridade: selectedLot.prioridade,
                             productionOrderId: selectedLot.productionOrderId,
                             customerName: selectedLot.customerName,
                             deliveryDate: selectedLot.deliveryDate,
@@ -1768,20 +2376,25 @@ export default function PCPView({
                     </div>
                   </div>
                   <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{product?.name} • {variation?.colorName}</p>
-                  <div className="flex items-center justify-center sm:justify-start gap-4 mt-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full border border-black/10" style={{ backgroundColor: variation?.color }} />
-                      <span className="text-xs font-black text-slate-700 dark:text-slate-300">{selectedLot.quantity} <span className="text-[9px] text-slate-400">Pares</span></span>
-                    </div>
-                    <div className="w-1 h-1 rounded-full bg-slate-300" />
-                    <span className="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-widest">{selectedLot.priority}</span>
+
+                  <div className="flex items-center justify-center sm:justify-start gap-2 mt-1">
+                    <div className="w-3 h-3 rounded-full border border-black/10 shrink-0" style={{ backgroundColor: variation?.color }} />
+                    {selectedLot.prioridade && (
+                      <span className="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-widest">{selectedLot.prioridade}</span>
+                    )}
                   </div>
 
-                  {/* Grid in Detail Modal */}
+                  {/* Total em linha única acima da grade */}
+                  <div className="flex items-center justify-center sm:justify-start gap-2 mt-3">
+                    <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400 leading-none">{selectedLot.quantity}</span>
+                    <span className="text-sm font-black text-slate-400 uppercase tracking-widest leading-none">Pares</span>
+                  </div>
+
+                  {/* Chips de grade */}
                   {selectedLot.pairs && (
-                    <div className="flex flex-wrap gap-1.5 mt-4 justify-center sm:justify-start">
+                    <div className="flex flex-wrap gap-1.5 mt-2 justify-center sm:justify-start">
                       {Object.entries(selectedLot.pairs).map(([size, qty]) => (
-                        <div key={size} className="flex flex-col items-center min-w-[36px] p-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
+                        <div key={size} className="flex flex-col items-center min-w-[36px] px-2 py-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
                           <span className="text-[10px] font-black text-slate-400 leading-none mb-1">{size}</span>
                           <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 leading-none">{qty as number}</span>
                         </div>
@@ -1837,82 +2450,210 @@ export default function PCPView({
                 </div>
               )}
 
-              {!isFinished && (
-                <div className="flex flex-col gap-6">
-                  <div className="flex flex-col gap-4">
-                    <div className="flex items-center justify-between px-1">
-                      <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Apontamento de Produção</h4>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-black text-slate-500 uppercase">{currentSector?.name}</span>
-                        <ChevronRight size={14} className="text-slate-300" />
-                        <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">{nextSector?.name || 'CONCLUÍDO'}</span>
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="flex flex-col gap-2">
-                        <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Status / Operação</label>
-                        <ComboBox
-                          options={flowTags.map(t => ({ id: t.id, name: t.name }))}
-                          value={selectedLot.currentStatusId || ''}
-                          onChange={(id) => setSelectedLot({ ...selectedLot, currentStatusId: id })}
-                          placeholder="Selecionar operação..."
-                          isDarkMode={isDarkMode}
-                          icon={<ClipboardList size={18} />}
-                        />
-                      </div>
-                      <div className="flex flex-col gap-2">
-                        <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Anotações do Setor</label>
-                        <input
-                          type="text"
-                          className={`w-full px-5 py-4 rounded-xl border-2 font-bold text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
-                          placeholder="Opcional: perdas, observações..."
-                          id="lot-notes-input"
-                        />
-                      </div>
-                    </div>
-                  </div>
+              {!isFinished && (() => {
+                const currentSectorId = selectedLot.route && selectedLot.route[selectedLot.currentSectorIndex];
+                const activeOS = serviceOrders.find(so => 
+                  (so.lotId === selectedLot.id || (so.lotIds && so.lotIds.includes(selectedLot.id))) && 
+                  so.sectorId === currentSectorId && 
+                  so.status === 'PENDING'
+                );
 
-                  <button
-                    onClick={() => {
-                      const notesInput = document.getElementById('lot-notes-input') as HTMLInputElement;
-                      handleMoveLot(selectedLot, selectedLot.currentStatusId || '', notesInput.value);
-                    }}
-                    className={`w-full py-5 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-95 ${
-                      nextSector ? 'bg-indigo-600 text-white shadow-indigo-600/20' : 'bg-emerald-600 text-white shadow-emerald-600/20'
-                    }`}
-                  >
-                    {nextSector ? (
-                      <>Próximo Setor: {nextSector.name} <ArrowRight size={18} /></>
+                return (
+                  <div className="flex flex-col gap-6">
+                    {/* OS Section */}
+                    {activeOS ? (
+                      <div className="p-6 rounded-[2rem] bg-indigo-50/50 dark:bg-indigo-950/20 border-2 border-indigo-500/20 flex flex-col gap-4">
+                        {/* OS header: icon + info */}
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25 shrink-0">
+                            <Hammer size={18} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <h5 className="text-xs font-black text-indigo-950 dark:text-indigo-200 leading-none mb-1">
+                              OS Ativa: {activeOS.osNumber}
+                            </h5>
+                            <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest leading-none truncate">
+                              {activeOS.type === 'INTERNAL' ? 'Interna' : 'Terceirizada'} • {activeOS.providerName}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Action buttons — own row so never overflow on mobile */}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const lot = selectedLot || lots.find(l => l.id === activeOS.lotId);
+                              const nextSectorId = lot?.route && lot.route[(lot.currentSectorIndex ?? 0) + 1];
+                              const nextSec = sectors.find(s => s.id === nextSectorId);
+                              setPrintOSData({ os: activeOS, nextSectorName: nextSec?.name || 'CONCLUIDO', lot });
+                              setIsPrintOSModalOpen(true);
+                            }}
+                            className="flex-1 text-[11px] font-black uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 py-2.5 rounded-xl transition-all text-center"
+                          >
+                            Imprimir
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEditOS(activeOS)}
+                            className="flex-1 text-[11px] font-black uppercase text-indigo-600 bg-indigo-50 dark:bg-indigo-950/20 hover:bg-indigo-100 py-2.5 rounded-xl transition-all text-center"
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteOS(activeOS)}
+                            className="flex-1 text-[11px] font-black uppercase text-rose-500 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 py-2.5 rounded-xl transition-all text-center"
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                        
+                        <div className="grid grid-cols-3 gap-3 bg-white dark:bg-slate-900/50 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-950 shadow-sm">
+                          <div className="flex flex-col">
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Pares</span>
+                            <span className="text-xs font-black text-slate-800 dark:text-slate-200">{activeOS.quantity} prs</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Vlr / Par</span>
+                            <span className="text-xs font-black text-slate-800 dark:text-slate-200">R$ {activeOS.valuePerPair.toFixed(2)}</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Total OS</span>
+                            <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">R$ {activeOS.totalValue.toFixed(2)}</span>
+                          </div>
+                        </div>
+
+                        {activeOS.notes && (
+                          <div className="p-3 bg-indigo-50/30 dark:bg-indigo-950/10 rounded-xl border border-indigo-100/50 dark:border-indigo-950/50 text-[10px] font-medium italic text-indigo-900/80 dark:text-indigo-300">
+                            Obs: {activeOS.notes}
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleCompleteOS(activeOS)}
+                          className="w-full py-5 rounded-[2rem] bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-600/25 flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-95"
+                        >
+                          <CheckSquare size={18} /> Concluir OS & Baixar Setor
+                        </button>
+                      </div>
                     ) : (
-                      <>Finalizar Produção <CheckCircle2 size={18} /></>
+                      <>
+                        <div className="p-5 rounded-[2rem] bg-slate-50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center shrink-0">
+                              <FileText size={20} />
+                            </div>
+                            <div className="text-left">
+                              <h5 className="text-xs font-black text-slate-800 dark:text-slate-200 leading-none mb-1">
+                                Emitir Ordem de Serviço
+                              </h5>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none">
+                                Gerar OS para mão de obra (Interna ou Terceirizada)
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenOSModal(selectedLot)}
+                            className="px-5 py-3.5 rounded-2xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest flex items-center gap-2 transition-all hover:scale-[1.02] active:scale-95"
+                          >
+                            <Plus size={14} strokeWidth={3} /> Emitir OS
+                          </button>
+                        </div>
+
+                        {/* Standard Apontamento de Produção */}
+                        <div className="flex flex-col gap-4">
+                          <div className="flex items-center justify-between px-1">
+                            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Apontamento de Produção</h4>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black text-slate-500 uppercase">{currentSector?.name}</span>
+                              <ChevronRight size={14} className="text-slate-300" />
+                              <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">{nextSector?.name || 'CONCLUÍDO'}</span>
+                            </div>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="flex flex-col gap-2">
+                              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Status / Operação</label>
+                              <ComboBox
+                                options={flowTags.map(t => ({ id: t.id, name: t.name }))}
+                                value={selectedLot.currentStatusId || ''}
+                                onChange={(id) => setSelectedLot({ ...selectedLot, currentStatusId: id })}
+                                placeholder="Selecionar operação..."
+                                isDarkMode={isDarkMode}
+                                icon={<ClipboardList size={18} />}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Anotações do Setor</label>
+                              <input
+                                type="text"
+                                className={`w-full px-5 py-4 rounded-xl border-2 font-bold text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+                                placeholder="Opcional: perdas, observações..."
+                                id="lot-notes-input"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const notesInput = document.getElementById('lot-notes-input') as HTMLInputElement;
+                            handleMoveLot(selectedLot, selectedLot.currentStatusId || '', notesInput.value);
+                          }}
+                          className={`w-full py-5 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-95 ${
+                            nextSector ? 'bg-indigo-600 text-white shadow-indigo-600/20' : 'bg-emerald-600 text-white shadow-emerald-600/20'
+                          }`}
+                        >
+                          {nextSector ? (
+                            <>Próximo Setor: {nextSector.name} <ArrowRight size={18} /></>
+                          ) : (
+                            <>Finalizar Produção <CheckCircle2 size={18} /></>
+                          )}
+                        </button>
+                      </>
                     )}
-                  </button>
-                </div>
-              )}
+                  </div>
+                );
+              })()}
 
               {/* History Timeline */}
               <div className="flex flex-col gap-4">
-                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Histórico de Movimentação</h4>
+                <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">Histórico de Movimentação</h4>
                 <div className="flex flex-col gap-3">
                   {selectedLot.history.sort((a, b) => b.timestamp - a.timestamp).map((h, i) => {
                     const sector = sectors.find(s => s.id === h.sectorId);
                     const tag = flowTags.find(t => t.id === h.statusId);
+                    const canRevert = i === 0 && selectedLot.history.length > 0;
                     return (
                       <div key={i} className={`p-4 rounded-2xl border flex items-center gap-4 ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${i === 0 ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-400'}`}>
-                          {i === 0 ? <Clock size={16} /> : <History size={16} />}
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${i === 0 ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-400'}`}>
+                          {i === 0 ? <Clock size={17} /> : <History size={17} />}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between mb-0.5">
-                            <span className="text-[10px] font-black uppercase text-slate-700 dark:text-slate-300">{sector?.name || '---'}</span>
-                            <span className="text-[8px] font-bold text-slate-400">{new Date(h.timestamp).toLocaleString()}</span>
+                            <span className="text-xs font-black uppercase text-slate-700 dark:text-slate-300">{sector?.name || '---'}</span>
+                            <span className="text-[9px] font-bold text-slate-400">{new Date(h.timestamp).toLocaleString()}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">{tag?.name || 'MIGRAÇÃO'}</span>
-                            {h.notes && <span className="text-[9px] text-slate-400 font-bold italic truncate">• {h.notes}</span>}
+                            <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">{tag?.name || 'MIGRAÇÃO'}</span>
+                            {h.notes && <span className="text-[10px] text-slate-400 font-bold italic truncate">• {h.notes}</span>}
                           </div>
                         </div>
+                        {canRevert && (
+                          <button
+                            type="button"
+                            onClick={() => handleRevertLot(selectedLot)}
+                            title="Reverter esta movimentação"
+                            className="shrink-0 flex items-center gap-1 px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-all"
+                          >
+                            <History size={13} />
+                            Reverter
+                          </button>
+                        )}
                       </div>
                     );
                   })}
@@ -1922,6 +2663,7 @@ export default function PCPView({
               {/* Delete Option */}
               <div className="mt-4 pt-6 border-t border-slate-100 dark:border-slate-800 flex justify-end">
                 <button
+                  type="button"
                   onClick={async () => {
                     if (confirm('Deseja excluir este mapa permanentemente?')) {
                       await onDeleteLot(selectedLot.id);
@@ -2203,6 +2945,233 @@ export default function PCPView({
           );
         })()}
       </Modal>
+
+      {/* Service Order (OS) Creation Modal */}
+      <Modal
+        isOpen={isOSModalOpen}
+        onClose={() => { setIsOSModalOpen(false); setEditingOS(null); }}
+        title={editingOS ? `Editar OS ${editingOS.osNumber}` : "Emitir Ordem de Serviço (OS)"}
+        maxWidth="max-w-2xl"
+      >
+        <div className="flex flex-col gap-6 p-1">
+          {/* OS Header Info */}
+          {selectedLot && (
+            <div className={`p-4 rounded-2xl flex flex-col gap-2 ${isDarkMode ? 'bg-slate-900' : 'bg-slate-50'}`}>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Mapa / Lote</span>
+                <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">
+                  Qtd: {selectedLot.quantity} Pares
+                </span>
+              </div>
+              <h4 className="text-sm font-black text-slate-800 dark:text-slate-200">
+                {selectedLot.customerName || 'Lote sem cliente'} - OS: {selectedLot.saleOrderNumber || '---'}
+              </h4>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                Referência: {products.find(p => p.id === selectedLot.productId)?.reference || '---'} • Setor Atual: {sectors.find(s => s.id === (selectedLot.route && selectedLot.route[selectedLot.currentSectorIndex]))?.name || '---'}
+              </p>
+            </div>
+          )}
+
+          {/* OS Form */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* OS Number & Type */}
+            <div className="flex flex-col gap-2">
+              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Número da OS</label>
+              <input
+                type="text"
+                value={osNumber}
+                onChange={e => setOsNumber(e.target.value)}
+                placeholder="Ex: OS-0001"
+                className={`w-full px-5 py-4 rounded-xl border-2 font-bold text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-500'}`}
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Tipo de Serviço</label>
+              <div className="grid grid-cols-2 gap-2 h-full">
+                <button
+                  type="button"
+                  onClick={() => setOsType('INTERNAL')}
+                  className={`py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+                    osType === 'INTERNAL'
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                      : isDarkMode
+                      ? 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                      : 'bg-slate-100 text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Interno
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOsType('OUTSOURCED')}
+                  className={`py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
+                    osType === 'OUTSOURCED'
+                      ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                      : isDarkMode
+                      ? 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                      : 'bg-slate-100 text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Terceirizado
+                </button>
+              </div>
+            </div>
+
+            {/* Provider Selection */}
+            <div className="flex flex-col gap-2 sm:col-span-2">
+              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Prestador do Serviço</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <ComboBox
+                  options={people
+                    .filter(p => p.isSupplier || (p as any).role === 'WORKER')
+                    .map(p => ({ id: p.id || '', name: p.name }))}
+                  value={osProviderId}
+                  onChange={(id) => {
+                    setOsProviderId(id);
+                    if (id) setOsProviderManualName('');
+                  }}
+                  placeholder="Selecionar da agenda..."
+                  isDarkMode={isDarkMode}
+                  icon={<ClipboardList size={18} />}
+                />
+                <input
+                  type="text"
+                  value={osProviderManualName}
+                  onChange={e => {
+                    setOsProviderManualName(e.target.value);
+                    if (e.target.value) setOsProviderId('');
+                  }}
+                  placeholder="Ou digite o nome manualmente..."
+                  className={`w-full px-5 py-4 rounded-xl border-2 font-bold text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-500'}`}
+                />
+              </div>
+            </div>
+
+            {/* Account & Category Selection */}
+            <div className="flex flex-col gap-2">
+              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Conta Financeira (Débito)</label>
+              <ComboBox
+                options={accounts.map(acc => ({ id: acc.id || '', name: acc.name }))}
+                value={osAccountId}
+                onChange={setOsAccountId}
+                placeholder="Selecionar conta..."
+                isDarkMode={isDarkMode}
+                icon={<DollarSign size={18} />}
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Categoria de Despesa</label>
+              <ComboBox
+                options={categories.filter(c => c.type === 'EXPENSE').map(c => ({ id: c.id || '', name: c.name }))}
+                value={osCategoryId}
+                onChange={setOsCategoryId}
+                placeholder="Selecionar categoria..."
+                isDarkMode={isDarkMode}
+                icon={<Tag size={18} />}
+              />
+            </div>
+
+            {/* Financial cost pricing */}
+            <div className="flex flex-col gap-2">
+              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Valor por Par (R$)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={osValuePerPair || ''}
+                onChange={e => setOsValuePerPair(parseFloat(e.target.value) || 0)}
+                placeholder="0,00"
+                className={`w-full px-5 py-4 rounded-xl border-2 font-bold text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-500'}`}
+              />
+            </div>
+
+            <div className="flex flex-col gap-2 justify-center">
+              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Valor Total Estimado</label>
+              <div className={`px-5 py-4 rounded-xl border border-dashed text-sm font-black text-emerald-600 dark:text-emerald-400 ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                R$ {((selectedLot?.quantity || 0) * osValuePerPair).toFixed(2)}
+              </div>
+            </div>
+
+            {/* Observations */}
+            <div className="flex flex-col gap-2 sm:col-span-2">
+              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Anotações da OS</label>
+              <textarea
+                value={osNotes}
+                onChange={e => setOsNotes(e.target.value)}
+                placeholder="Observações ou instruções específicas para esta OS..."
+                rows={2}
+                className={`w-full px-5 py-4 rounded-xl border-2 font-bold text-xs outline-none resize-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-500'}`}
+              />
+            </div>
+
+            {/* Direct completion check */}
+            <div className="flex items-center gap-3 p-4 rounded-2xl bg-indigo-50/20 dark:bg-indigo-950/10 border border-indigo-100/30 dark:border-indigo-950/30 sm:col-span-2">
+              <input
+                type="checkbox"
+                id="os-direct-complete"
+                checked={osDirectComplete}
+                onChange={e => setOsDirectComplete(e.target.checked)}
+                className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
+              />
+              <label htmlFor="os-direct-complete" className="text-[11px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300 select-none cursor-pointer">
+                Concluir e baixar setor imediatamente?
+              </label>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-3 mt-2">
+            <button
+              type="button"
+              onClick={() => setIsOSModalOpen(false)}
+              className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all ${
+                isDarkMode 
+                  ? 'border-slate-800 text-slate-400 hover:bg-slate-900' 
+                  : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              disabled={isSavingOS || (!osProviderId && !osProviderManualName)}
+              onClick={handleSaveOS}
+              className={`flex-[2] py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 transition-all ${
+                isSavingOS || (!osProviderId && !osProviderManualName)
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                  : 'bg-indigo-600 text-white shadow-indigo-600/20 hover:bg-indigo-700 hover:scale-[1.01] active:scale-95'
+              }`}
+            >
+              {isSavingOS ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Salvando OS...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 size={16} />
+                  {editingOS ? 'Salvar Alterações' : 'Emitir Ordem de Serviço'}
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {isPrintOSModalOpen && printOSData && (
+        <PrintOSModal
+          isOpen={isPrintOSModalOpen}
+          onClose={() => { setIsPrintOSModalOpen(false); setPrintOSData(null); }}
+          os={printOSData.os}
+          nextSectorName={printOSData.nextSectorName}
+          isDarkMode={isDarkMode}
+          product={products.find(p => p.id === printOSData.os.productId)}
+          grids={grids}
+          lot={printOSData.lot}
+        />
+      )}
     </div>
   );
 }

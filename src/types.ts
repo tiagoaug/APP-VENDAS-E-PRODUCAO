@@ -15,6 +15,11 @@ export interface LabelLayout {
   sizeX: number;
   sizeY: number;
   sizeSize: number;
+  showPhoto?: boolean;
+  photoX?: number;
+  photoY?: number;
+  photoW?: number;
+  photoH?: number;
 }
 
 export enum SaleType {
@@ -98,6 +103,7 @@ export type Variation = {
   subRef?: string;
   sku?: string;
   stockPkgId?: string; // Padrão de embalagem associado ao estoque desta variação
+  photoUrl?: string;   // Optional photo URL for this variation (used in labels)
 };
 
 
@@ -124,6 +130,8 @@ export type Product = {
   variations: Variation[];
   saleTypes?: SaleType[];
   productionRoute?: string[]; // Sector IDs in order
+  sectorPrices?: Record<string, number>; // Price per pair per sector (sectorId → R$/par)
+  photoUrl?: string; // Foto miniatura do produto (base64) usada em etiquetas, PCP e estoque
   createdAt: number;
 };
 
@@ -186,6 +194,7 @@ export type Purchase = {
   isAccounting?: boolean;
   sellerId?: string;
   sellerName?: string;
+  requestId?: string;
 };
 
 export enum SaleStatus {
@@ -240,6 +249,7 @@ export type Sale = {
   accountId?: string;
   dueDate?: number;
   deliveryDate?: number;
+  prioridade?: string;
   paymentStatus?: PaymentStatus;
   paymentHistory?: SalePayment[];
   notes?: string;
@@ -295,6 +305,8 @@ export type Transaction = {
   relatedId?: string;
   memberId?: string; // For Family Members in personal finance
   isPersonal?: boolean;
+  isManual?: boolean; // true = lançamento manual pelo usuário; false/undefined = gerado automaticamente
+  referenceNumber?: string; // número de indicação / referência do lançamento
   items?: TransactionItem[];
 };
 
@@ -386,7 +398,9 @@ export enum ViewType {
   PRODUCTION_ENGINEERING = 'PRODUCTION_ENGINEERING',
   CATEGORY_CONFIG = 'CATEGORY_CONFIG',
   PRODUCTION_ESTOQUES_MENU = 'PRODUCTION_ESTOQUES_MENU',
+  PRODUCTION_GENERAL_RECEIPT = 'PRODUCTION_GENERAL_RECEIPT',
   MANUAL = 'MANUAL',
+  PRINT_CENTER = 'PRINT_CENTER',
 }
 
 export type DashboardCardConfig = {
@@ -430,6 +444,9 @@ export type Sector = {
   color: string;
   order: number;
   flowTagIds: string[];
+  defaultServiceValue?: number;
+  defaultServiceProviderId?: string;
+  defaultServiceProviderName?: string;
 };
 
 export type ProductionScreenType = 'MENU' | 'SECTORS' | 'FLOW_TAGS' | 'UNIDADES' | 'FACAS' | 'INFESTO' | 'PRAZOS' | 'FICHAS' | 'EMBALAGENS' | 'INSUMOS' | 'MATRIZES' | 'PECAS';
@@ -619,7 +636,7 @@ export type ProductionLot = {
   currentSectorIndex: number;
   currentStatusId?: string; // FlowTag ID (the current status in the sector)
   history: ProductionLotHistory[];
-  priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+  prioridade: string;
   notes?: string;
   createdAt: number;
   finishedAt?: number;
@@ -633,5 +650,35 @@ export type ProductionLot = {
   status?: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
   currentSectorId?: string;
 };
+
+export interface ServiceOrder {
+  id: string;
+  osNumber: string; // automatic sequential or manual e.g. "OS-0001"
+  lotId: string; // Reference to ProductionLot ID
+  lotNumber: string; // e.g. "MAPA #001"
+  lotIds?: string[]; // Array of associated ProductionLot IDs for group OS
+  lotNumbers?: string[]; // Array of associated lot numbers for group OS
+  productId: string;
+  productName: string;
+  variationId: string;
+  variationName: string;
+  sectorId: string;
+  sectorName: string;
+  type: 'INTERNAL' | 'OUTSOURCED';
+  providerId?: string; // Reference to Person ID
+  providerName: string; // Provider Name
+  quantity: number; // total pairs of the lot
+  valuePerPair: number;
+  totalValue: number;
+  notes?: string;
+  status: 'PENDING' | 'COMPLETED';
+  transactionId?: string; // Reference to financial transaction
+  createdAt: number;
+  finishedAt?: number;
+  // Print extras
+  productPhotoUrl?: string; // URL of the product/variation photo for label printing
+  sizeGrid?: string;        // Human-readable size range, e.g. "37-38-39-40-41"
+}
+
 
 

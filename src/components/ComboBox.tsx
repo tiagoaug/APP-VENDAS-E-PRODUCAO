@@ -34,18 +34,18 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
 
   return (
     <div className="relative" ref={dropdownRef}>
-      <div 
-        className={`w-full flex items-center justify-between bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl ${icon ? 'pl-12' : 'px-5'} py-4 cursor-pointer focus-within:ring-4 focus-within:ring-slate-900/5 dark:focus-within:ring-indigo-500/10 transition-all ${isDarkMode ? "text-slate-100" : "text-slate-900"}`}
+      <div
+        className={`w-full flex items-center bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl ${icon ? 'pl-12' : 'pl-5'} pr-0 py-4 cursor-pointer focus-within:ring-4 focus-within:ring-slate-900/5 dark:focus-within:ring-indigo-500/10 transition-all ${isDarkMode ? "text-slate-100" : "text-slate-900"}`}
         onClick={() => setIsOpen(!isOpen)}
       >
         {icon && (
-          <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors pointer-events-none">
+          <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
             {icon}
           </div>
         )}
         <input
           type="text"
-          className="w-full bg-transparent border-none outline-none text-[12px] font-black uppercase tracking-widest placeholder:text-slate-400 dark:placeholder:text-slate-500"
+          className="flex-1 bg-transparent border-none outline-none text-[12px] font-black uppercase tracking-widest placeholder:text-slate-400 dark:placeholder:text-slate-500 min-w-0"
           placeholder={selectedOption ? selectedOption.name : placeholder}
           value={isOpen ? search : ""}
           onChange={(e) => {
@@ -54,7 +54,10 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
           }}
           onClick={(e) => e.stopPropagation()}
         />
-        <ChevronDown size={14} className="text-indigo-400" strokeWidth={3} />
+        {/* Área clicável generosa ao redor da seta */}
+        <div className="flex items-center justify-center w-12 h-full self-stretch shrink-0 text-indigo-400">
+          <ChevronDown size={22} strokeWidth={2.5} className={`transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        </div>
       </div>
 
       {isOpen && (
@@ -63,7 +66,7 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
             filteredOptions.map(option => (
               <div
                 key={option.id}
-                className={`px-5 py-3 text-[12px] font-bold uppercase cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 ${value === option.id ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200"}`}
+                className={`px-5 py-4 text-[13px] font-bold uppercase cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 active:bg-indigo-50 ${value === option.id ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200"}`}
                 onClick={() => {
                   onChange(option.id);
                   setIsOpen(false);

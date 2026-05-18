@@ -1,0 +1,40 @@
+﻿brain/9b118579-7cb6-4ba4-8b40-f0ed9877b295/scratch/verify_scanner.ts(2,32): error TS2307: Cannot find module '../../src/services/scannerService' or its corresponding type declarations.
+src/App.tsx(1748,42): error TS18048: 'purchase.items' is possibly 'undefined'.
+src/App.tsx(1829,38): error TS18048: 'prevPurchase.items' is possibly 'undefined'.
+src/App.tsx(1850,38): error TS18048: 'purchase.items' is possibly 'undefined'.
+src/components/ChecksModal.tsx(39,35): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/components/ChecksModal.tsx(39,38): error TS7006: Parameter 'idx' implicitly has an 'any' type.
+src/components/ChecksModal.tsx(47,171): error TS7006: Parameter 'acc' implicitly has an 'any' type.
+src/components/ChecksModal.tsx(47,176): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/components/ChecksModal.tsx(67,39): error TS7006: Parameter 'acc' implicitly has an 'any' type.
+src/components/ChecksModal.tsx(67,44): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/components/ChecksModal.tsx(73,34): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/components/ChecksModal.tsx(146,26): error TS7006: Parameter 'check' implicitly has an 'any' type.
+src/components/ChecksModal.tsx(146,33): error TS7006: Parameter 'index' implicitly has an 'any' type.
+src/utils/saleExport.ts(128,5): error TS2322: Type '(string | { content: string; styles: { textColor: number[]; }; })[][]' is not assignable to type 'RowInput[]'.
+  Type '(string | { content: string; styles: { textColor: number[]; }; })[]' is not assignable to type 'RowInput'.
+    Type '(string | { content: string; styles: { textColor: number[]; }; })[]' is not assignable to type 'CellInput[]'.
+      Type 'string | { content: string; styles: { textColor: number[]; }; }' is not assignable to type 'CellInput'.
+        Type '{ content: string; styles: { textColor: number[]; }; }' is not assignable to type 'CellInput'.
+          Type '{ content: string; styles: { textColor: number[]; }; }' is not assignable to type 'CellDef'.
+            The types of 'styles.textColor' are incompatible between these types.
+              Type 'number[]' is not assignable to type 'Color | undefined'.
+                Type 'number[]' is not assignable to type '[number, number, number]'.
+                  Target requires 3 element(s) but source may have fewer.
+src/utils/saleExport.ts(130,47): error TS2322: Type 'number[]' is not assignable to type 'Color | undefined'.
+  Type 'number[]' is not assignable to type '[number, number, number]'.
+    Target requires 3 element(s) but source may have fewer.
+src/utils/saleExport.ts(131,48): error TS2322: Type 'number[]' is not assignable to type 'Color | undefined'.
+  Type 'number[]' is not assignable to type '[number, number, number]'.
+    Target requires 3 element(s) but source may have fewer.
+src/views/DashboardView.tsx(1574,1890): error TS2339: Property 'amount' does not exist on type '{ activityType: "sale"; id: string; orderNumber: string; date: number; customerId?: string | undefined; customerName?: string | undefined; items: SaleItem[]; subtotal: number; discount: number; ... 15 more ...; isAccounting?: boolean | undefined; } | { ...; } | { ...; }'.
+  Property 'amount' does not exist on type '{ activityType: "sale"; id: string; orderNumber: string; date: number; customerId?: string | undefined; customerName?: string | undefined; items: SaleItem[]; subtotal: number; discount: number; ... 15 more ...; isAccounting?: boolean | undefined; }'.
+src/views/DashboardView.tsx(1574,2138): error TS2339: Property 'status' does not exist on type '{ activityType: "sale"; id: string; orderNumber: string; date: number; customerId?: string | undefined; customerName?: string | undefined; items: SaleItem[]; subtotal: number; discount: number; ... 15 more ...; isAccounting?: boolean | undefined; } | { ...; } | { ...; }'.
+  Property 'status' does not exist on type '{ activityType: "purchase"; id: string; supplierId: string; date: number; dueDate?: number | undefined; paymentTerm?: PaymentTerm | undefined; type: PurchaseType; ... 16 more ...; requestId?: string | undefined; }'.
+src/views/DashboardView.tsx(1574,2171): error TS2339: Property 'activityStatus' does not exist on type '{ activityType: "sale"; id: string; orderNumber: string; date: number; customerId?: string | undefined; customerName?: string | undefined; items: SaleItem[]; subtotal: number; discount: number; ... 15 more ...; isAccounting?: boolean | undefined; } | { ...; } | { ...; }'.
+  Property 'activityStatus' does not exist on type '{ activityType: "sale"; id: string; orderNumber: string; date: number; customerId?: string | undefined; customerName?: string | undefined; items: SaleItem[]; subtotal: number; discount: number; ... 15 more ...; isAccounting?: boolean | undefined; }'.
+src/views/DashboardView.tsx(1574,2297): error TS2339: Property 'status' does not exist on type '{ activityType: "sale"; id: string; orderNumber: string; date: number; customerId?: string | undefined; customerName?: string | undefined; items: SaleItem[]; subtotal: number; discount: number; ... 15 more ...; isAccounting?: boolean | undefined; } | { ...; } | { ...; }'.
+  Property 'status' does not exist on type '{ activityType: "purchase"; id: string; supplierId: string; date: number; dueDate?: number | undefined; paymentTerm?: PaymentTerm | undefined; type: PurchaseType; ... 16 more ...; requestId?: string | undefined; }'.
+src/views/DashboardView.tsx(1574,2330): error TS2339: Property 'activityStatus' does not exist on type '{ activityType: "sale"; id: string; orderNumber: string; date: number; customerId?: string | undefined; customerName?: string | undefined; items: SaleItem[]; subtotal: number; discount: number; ... 15 more ...; isAccounting?: boolean | undefined; } | { ...; } | { ...; }'.
+  Property 'activityStatus' does not exist on type '{ activityType: "sale"; id: string; orderNumber: string; date: number; customerId?: string | undefined; customerName?: string | undefined; items: SaleItem[]; subtotal: number; discount: number; ... 15 more ...; isAccounting?: boolean | undefined; }'.
+src/views/PersonalFinancialView.tsx(302,8): error TS2739: Type '{ isOpen: boolean; onClose: () => void; onSave: (data: Omit<Category, "id">) => Promise<void>; category: Category | undefined; }' is missing the following properties from type 'CategoryModalProps': categories, modulesConfig

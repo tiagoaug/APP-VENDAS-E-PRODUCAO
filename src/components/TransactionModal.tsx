@@ -41,7 +41,8 @@ export default function TransactionModal({
   const [activeCalculatorId, setActiveCalculatorId] = useState<string | 'main' | null>(null);
   const [status, setStatus] = useState<'PENDING' | 'COMPLETED'>('COMPLETED');
   const [items, setItems] = useState<TransactionItem[]>([]);
-  const [isAutoEnabled, setIsAutoEnabled] = useState(true);
+  const [isManual, setIsManual] = useState(true);
+  const [referenceNumber, setReferenceNumber] = useState('');
   const calculatorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,7 +57,11 @@ export default function TransactionModal({
       setDate(format(transaction.date, 'yyyy-MM-dd'));
       setStatus(transaction.status);
       setItems(transaction.items || []);
+      setIsManual(transaction.isManual !== false);
+      setReferenceNumber(transaction.referenceNumber || '');
     } else {
+      setIsManual(true);
+      setReferenceNumber('');
       setType(initialType);
       setAmount(initialValue !== undefined ? initialValue : 0);
       setDescription('');
@@ -114,8 +119,8 @@ export default function TransactionModal({
   if (!isOpen) return null;
 
   const handleSave = () => {
-    if (!description || !amount || !categoryId || !accountId) {
-      alert('Preencha todos os campos obrigatórios');
+    if (!description || !(Number(amount) > 0) || !categoryId || !accountId) {
+      alert('Preencha todos os campos obrigatórios (valor deve ser maior que zero)');
       return;
     }
 
@@ -131,6 +136,8 @@ export default function TransactionModal({
       contactName: contact?.name,
       date: new Date(date).getTime() + (new Date().getTime() % (24 * 60 * 60 * 1000)), // Preserve current time of day roughly if possible, but simple date is fine
       status,
+      isManual,
+      referenceNumber: referenceNumber.trim() || undefined,
       memberId: memberId || undefined,
       items: items.length > 0 ? items : undefined,
     });
@@ -156,20 +163,9 @@ export default function TransactionModal({
       <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-t-[3rem] sm:rounded-[3rem] shadow-2xl overflow-hidden flex flex-col h-full sm:h-auto max-h-screen sm:max-h-[90vh]">
         {/* Header */}
         <div className="p-8 pb-4 flex items-center justify-between shrink-0">
-          <div className="flex flex-col gap-2">
-            <h2 className="text-xl font-black uppercase tracking-tight text-slate-800 dark:text-white">
-              {transaction ? 'Editar Lançamento' : 'Novo Lançamento'}
-            </h2>
-            <div className="flex items-center gap-2">
-              <button 
-                onClick={() => setIsAutoEnabled(!isAutoEnabled)}
-                className={`w-10 h-5 rounded-full transition-all relative ${isAutoEnabled ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-slate-700'}`}
-              >
-                <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${isAutoEnabled ? 'left-6' : 'left-1'}`} />
-              </button>
-              <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">Auto 74356</span>
-            </div>
-          </div>
+          <h2 className="text-xl font-black uppercase tracking-tight text-slate-800 dark:text-white">
+            {transaction ? 'Editar Lançamento' : 'Novo Lançamento'}
+          </h2>
           <button 
             onClick={onClose} 
             className="p-3 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-colors text-slate-300"
@@ -328,7 +324,7 @@ export default function TransactionModal({
               </div>
             </div>
 
-            {/* Descrição */}
+            {/* Descrição + Nº Indicação */}
             <div className="flex flex-col gap-3">
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Descrição do Lançamento</label>
               <input
@@ -338,6 +334,34 @@ export default function TransactionModal({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
               />
+            </div>
+
+            {/* Nº de Indicação + toggle Manual/Automático */}
+            <div className="flex flex-col gap-3">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Nº de Indicação</label>
+              <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800 rounded-[1.8rem] pr-4">
+                <input
+                  type="text"
+                  className={`flex-1 bg-transparent border-none rounded-[1.8rem] py-5 px-7 text-sm font-bold focus:ring-0 outline-none dark:text-white placeholder:text-slate-300 ${!isManual ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  placeholder={isManual ? 'Ex: NF-001, REF-2024, #123...' : 'Gerado automaticamente'}
+                  value={referenceNumber}
+                  readOnly={!isManual}
+                  onChange={(e) => setReferenceNumber(e.target.value)}
+                />
+                <button
+                  type="button"
+                  aria-label={isManual ? 'Lançamento manual — clique para automático' : 'Lançamento automático — clique para manual'}
+                  onClick={() => setIsManual(v => !v)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-2xl shrink-0 transition-all ${isManual ? 'bg-indigo-100 dark:bg-indigo-900/30' : 'bg-slate-200 dark:bg-slate-700'}`}
+                >
+                  <div className={`w-7 h-4 rounded-full relative transition-all ${isManual ? 'bg-indigo-500' : 'bg-slate-400'}`}>
+                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${isManual ? 'left-3.5' : 'left-0.5'}`} />
+                  </div>
+                  <span className={`text-[9px] font-black uppercase tracking-widest whitespace-nowrap ${isManual ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
+                    {isManual ? 'Manual' : 'Auto'}
+                  </span>
+                </button>
+              </div>
             </div>
 
             {/* Categoria and Conta */}
@@ -403,8 +427,9 @@ export default function TransactionModal({
 
         <div className="p-8 pt-0 shrink-0 mt-4">
           <button
+            type="button"
             onClick={handleSave}
-            className="w-full bg-slate-400 text-white py-6 rounded-[2rem] font-black uppercase tracking-[0.2em] shadow-xl transition-all active:scale-[0.98] hover:bg-indigo-600 shadow-indigo-600/10"
+            className="w-full bg-indigo-600 text-white py-6 rounded-[2rem] font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-600/20 transition-all active:scale-[0.98] hover:bg-indigo-700"
           >
             Confirmar Lançamento
           </button>

@@ -5,11 +5,12 @@ import { Sale, Transaction, SaleStatus, TransactionType } from '../types';
 interface ReportsViewProps {
   isDarkMode: boolean;
   onSelectReport: (reportId: string) => void;
+  onOpenPrintCenter?: () => void;
   sales: Sale[];
   transactions: Transaction[];
 }
 
-export default function ReportsView({ isDarkMode, onSelectReport, sales, transactions }: ReportsViewProps) {
+export default function ReportsView({ isDarkMode, onSelectReport, onOpenPrintCenter, sales, transactions }: ReportsViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [filterType, setFilterType] = useState<'ALL' | 'PENDING' | 'PAID'>('ALL');
 

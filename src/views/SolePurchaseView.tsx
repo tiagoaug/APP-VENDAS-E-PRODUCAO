@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { ProductionConfigItem, ColorValue, Person, SolePurchaseItem } from '../types';
+import { ProductionConfigItem, ColorValue, Person, SolePurchaseItem, PurchaseType } from '../types';
 import { 
   ArrowLeft, Plus, Trash2, ShoppingCart, Package, Palette, 
   ChevronDown, Save, X, DollarSign, Calculator, CheckCircle2
@@ -214,6 +214,13 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
       }
       
       console.log('Total de entradas de estoque salvas:', stockEntriesCount);
+
+      if (initialParams?.requestId) {
+        await firebaseService.updateDocument('purchaseRequests', initialParams.requestId, {
+          status: 'IN_PROGRESS',
+          updatedAt: Date.now()
+        });
+      }
 
       setShowSuccess(true);
 

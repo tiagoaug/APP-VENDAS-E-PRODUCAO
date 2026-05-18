@@ -30,7 +30,8 @@ import {
   FileText,
   User as UserIcon,
   AlertCircle,
-  Scale
+  Scale,
+  Printer
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { auth, db, signInWithGoogle, logout } from "./lib/firebase";
@@ -76,6 +77,7 @@ import {
   ProductionOrderItem,
   ProductionLot,
   PurchaseRequest,
+  ServiceOrder,
 } from "./types";
 import {
   MOCK_PRODUCTS,
@@ -108,6 +110,7 @@ import ColorsView from "./views/ColorsView";
 import PaymentMethodsView from "./views/PaymentMethodsView";
 import ReportsView from "./views/ReportsView";
 import ReportDetailedView from "./views/ReportDetailedView";
+import PrintCenterView from "./views/PrintCenterView";
 import BackupView from "./views/BackupView";
 import AccountsView from "./views/AccountsView";
 import StockView from "./views/StockView";
@@ -124,6 +127,7 @@ import SoleProcurement from "./views/SolePurchaseView";
 import SoleStockView from "./views/SoleStockView";
 import PCPView from "./views/PCPView";
 import PurchaseNeedsView from "./views/PurchaseNeedsView";
+import GeneralReceiptsView from "./views/GeneralReceiptsView";
 
 import ProductionEngineeringView from "./views/ProductionEngineeringView";
 
@@ -153,7 +157,8 @@ const MODAL_VIEWS = [
   ViewType.PURCHASE_FORM,
   ViewType.PRODUCT_DETAIL,
   ViewType.REPORT_DETAILED,
-  ViewType.MODULES_CONFIG
+  ViewType.MODULES_CONFIG,
+  ViewType.PRINT_CENTER,
 ];
 
 const MODULE_VIEWS: Record<string, ViewType[]> = {
@@ -165,7 +170,8 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
     ViewType.FINANCIAL,
     ViewType.ACCOUNTS,
     ViewType.REPORTS,
-    ViewType.STOCK
+    ViewType.STOCK,
+    ViewType.PRINT_CENTER,
   ],
   production: [
     ViewType.PRODUCTION_MENU,
@@ -247,6 +253,7 @@ export default function App() {
   const [productionLots, setProductionLots] = useState<ProductionLot[]>([]);
   const [productionOrders, setProductionOrders] = useState<ProductionOrder[]>([]);
   const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequest[]>([]);
+  const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
   
   const suppliers = useMemo(() => people.filter(p => p.isSupplier), [people]);
   const buyers = useMemo(() => people.filter(p => p.isBuyer || p.isPersonal), [people]);
@@ -272,6 +279,7 @@ export default function App() {
       { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 16, module: 'sales' },
       { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 17, module: 'production' },
       { id: 'personal_balance', label: 'Saldo Pessoal', visible: true, order: 18, module: 'personal' },
+      { id: 'print_center', label: 'Central de Impressões', visible: true, order: 19, module: 'any' },
     ]
   };
 
@@ -302,7 +310,13 @@ export default function App() {
       config.cards.push({ id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: config.cards.length });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
-    
+
+    // Migration: ensure print_center is present
+    if (config.cards && !config.cards.find((c: any) => c.id === 'print_center')) {
+      config.cards.push({ id: 'print_center', label: 'Central de Impressões', visible: true, order: 19, module: 'any' });
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+
     return config;
   });
 
@@ -469,6 +483,11 @@ export default function App() {
       (data) => setPurchaseRequests([...data].sort((a, b) => b.requestedAt - a.requestedAt))
     );
 
+    const unsubServiceOrders = firebaseService.subscribeToCollection<ServiceOrder>(
+      "serviceOrders",
+      setServiceOrders
+    );
+
     const unsubDashboardConfig = firebaseService.subscribeToCollection<DashboardConfig>(
       "dashboard_config",
       (data) => {
@@ -533,6 +552,7 @@ export default function App() {
       unsubProductionLots();
       unsubProductionOrders();
       unsubPurchaseRequests();
+      unsubServiceOrders();
       unsubDashboardConfig();
 
     };
@@ -1143,7 +1163,7 @@ export default function App() {
   };
 
   const handleSavePurchaseRequest = async (req: PurchaseRequest) => {
-    // Detect increase in receivedQty and update material stock accordingly
+    // 1. Detect increase in receivedQty and update material stock accordingly (Estoques Gerais)
     if (req.type === 'MATERIAL' && req.materialId) {
       const existing = purchaseRequests.find(r => r.id === req.id);
       const prevReceived = existing?.receivedQty || 0;
@@ -1162,8 +1182,55 @@ export default function App() {
       }
     }
 
+    // 2. Detect increase in receivedBreakdown and update sole stock accordingly (Estoque de Solados)
+    if (req.type === 'SOLE' && req.moldId) {
+      const existing = purchaseRequests.find(r => r.id === req.id);
+      const prevBreakdown = existing?.receivedBreakdown || {};
+      const newBreakdown = req.receivedBreakdown || {};
+
+      const mold = productionConfigs.find(c => c.id === req.moldId);
+      const moldName = mold?.name || req.name || 'Solado';
+      const color = colors.find(c => c.id === req.colorId);
+      const colorName = color?.name || 'Cor';
+      const unitCost = mold?.metadata?.unitCost || 0;
+
+      const deltaSizes: Record<string, number> = {};
+      let totalDeltaPairs = 0;
+
+      const allSizes = Array.from(new Set([...Object.keys(newBreakdown), ...Object.keys(prevBreakdown)]));
+      allSizes.forEach(size => {
+        const prev = prevBreakdown[size] || 0;
+        const current = newBreakdown[size] || 0;
+        const delta = current - prev;
+        if (delta > 0) {
+          deltaSizes[size] = delta;
+          totalDeltaPairs += delta;
+        }
+      });
+
+      if (totalDeltaPairs > 0) {
+        const stockEntry: Omit<SoleStockEntry, 'id'> = {
+          moldId: req.moldId,
+          moldName,
+          colorId: req.colorId || '',
+          colorName,
+          supplierId: '',
+          supplierName: 'Necessidade de Compras',
+          stock: deltaSizes,
+          totalPairs: totalDeltaPairs,
+          unitCost,
+          totalCost: totalDeltaPairs * unitCost,
+          purchaseDate: Date.now(),
+          updatedAt: Date.now(),
+          notes: `Recebido da Solicitação de Compras: ${req.name}`
+        };
+        await firebaseService.saveDocument('soleStock', stockEntry);
+      }
+    }
+
     await firebaseService.saveDocument("purchaseRequests", req);
   };
+
 
   const handleCreatePurchaseRequest = async (req: Omit<PurchaseRequest, 'id'>) => {
     console.log('[App] handleCreatePurchaseRequest called', req);
@@ -1595,6 +1662,7 @@ export default function App() {
               setSelectedReportId(reportId);
               setCurrentView(ViewType.REPORT_DETAILED);
             }}
+            onOpenPrintCenter={() => navigateTo(ViewType.PRINT_CENTER)}
           />
         );
       case ViewType.REPORT_DETAILED:
@@ -1609,6 +1677,19 @@ export default function App() {
             people={people}
             categories={categories}
             onBack={() => setCurrentView(ViewType.REPORTS)}
+          />
+        );
+      case ViewType.PRINT_CENTER:
+        return (
+          <PrintCenterView
+            isDarkMode={isDarkMode}
+            products={products}
+            sales={sales}
+            purchases={purchases}
+            productionLots={productionLots}
+            serviceOrders={serviceOrders}
+            people={people}
+            sectors={sectors}
           />
         );
       case ViewType.BACKUP:
@@ -1695,7 +1776,7 @@ export default function App() {
                     }
                     
                     // Revert stock if replenishment
-                    if (purchase.type === PurchaseType.REPLENISHMENT) {
+                    if (purchase.type === PurchaseType.REPLENISHMENT && purchase.items) {
                       console.log('Reverting stock');
                       for (const item of purchase.items) {
                         const product = products.find((p) => p.id === item.productId);
@@ -1777,7 +1858,7 @@ export default function App() {
                 };
 
                 // 1. REVERT OLD STOCK if it was REPLENISHMENT
-                if (prevPurchase && prevPurchase.type === PurchaseType.REPLENISHMENT) {
+                if (prevPurchase && prevPurchase.type === PurchaseType.REPLENISHMENT && prevPurchase.items) {
                   for (const item of prevPurchase.items) {
                     const updatedProduct = getProductForUpdate(item.productId);
                     if (updatedProduct) {
@@ -1798,7 +1879,7 @@ export default function App() {
                 }
 
                 // 2. APPLY NEW STOCK if it is REPLENISHMENT
-                if (purchase.type === PurchaseType.REPLENISHMENT) {
+                if (purchase.type === PurchaseType.REPLENISHMENT && purchase.items) {
                   for (const item of purchase.items) {
                     const updatedProduct = getProductForUpdate(item.productId);
                     if (updatedProduct) {
@@ -1852,7 +1933,11 @@ export default function App() {
                 }
 
                 // SAVE ALL MUTATIONS
-                await firebaseService.saveDocument("purchases", purchase);
+                const purchaseToSave = {
+                  ...purchase,
+                  requestId: purchase.requestId || currentParams?.requestId || ""
+                };
+                await firebaseService.saveDocument("purchases", purchaseToSave);
 
                 for (const [_, prod] of productUpdates) {
                   await firebaseService.saveDocument("products", prod);
@@ -1891,6 +1976,14 @@ export default function App() {
                         updatedAt: Date.now(),
                       });
                     }
+                  }
+                } else if (currentParams?.requestId) {
+                  const req = purchaseRequests.find(r => r.id === currentParams.requestId);
+                  if (req && req.status === 'PENDING') {
+                    await firebaseService.updateDocument("purchaseRequests", req.id, {
+                      status: 'IN_PROGRESS',
+                      updatedAt: Date.now(),
+                    });
                   }
                 }
 
@@ -2916,6 +3009,7 @@ export default function App() {
           <PCPView
             lots={productionLots}
             products={products}
+            grids={grids}
             sectors={sectors}
             productionOrders={productionOrders}
             flowTags={flowTags}
@@ -2931,6 +3025,10 @@ export default function App() {
             purchaseRequests={purchaseRequests}
             onRequestPurchase={handleCreatePurchaseRequest}
             initialTab={currentParams?.initialTab}
+            people={people}
+            accounts={accounts}
+            categories={categories}
+            serviceOrders={serviceOrders}
           />
         );
       case ViewType.PRODUCTION_STOCK:
@@ -3029,6 +3127,7 @@ export default function App() {
               {[
                 { id: ViewType.PRODUCTION_STOCK, label: 'Estoques Gerais', description: 'Matéria-prima, adesivos e insumos', icon: <PackageOpen size={24} />, color: 'text-emerald-600' },
                 { id: ViewType.PRODUCTION_SOLE_STOCK, label: 'Estoque de Solados', description: 'Gerenciamento por modelo, cor e tamanho', icon: <Package size={24} />, color: 'text-indigo-600' },
+                { id: ViewType.PRODUCTION_GENERAL_RECEIPT, label: 'Recebimento de Compras', description: 'Dar entrada de materiais comprados no estoque', icon: <ClipboardList size={24} />, color: 'text-amber-600' },
               ].map((item, index, array) => (
                 <button
                   key={item.id}
@@ -3049,6 +3148,17 @@ export default function App() {
               ))}
             </div>
           </div>
+        );
+      case ViewType.PRODUCTION_GENERAL_RECEIPT:
+        return (
+          <GeneralReceiptsView
+            purchases={purchases}
+            suppliers={suppliers}
+            productionConfigs={productionConfigs}
+            purchaseRequests={purchaseRequests}
+            onBack={goBack}
+            isDarkMode={isDarkMode}
+          />
         );
       case ViewType.MODULES_CONFIG:
         return (
@@ -3149,6 +3259,8 @@ export default function App() {
         return "Pagamentos";
       case ViewType.REPORTS:
         return "Relatórios";
+      case ViewType.PRINT_CENTER:
+        return "Central de Impressões";
       case ViewType.BACKUP:
         return "Ajustes Técnicos";
       case ViewType.PURCHASES:
@@ -3223,6 +3335,7 @@ export default function App() {
       case ViewType.ACCOUNTS: return <Wallet size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.PAYMENT_METHODS: return <CreditCard size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.REPORTS: return <BarChart3 size={24} className="text-slate-500 dark:text-slate-400" />;
+      case ViewType.PRINT_CENTER: return <Printer size={24} className="text-indigo-500" />;
       case ViewType.BACKUP: return <Database size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.DASHBOARD_CONFIG: return <LayoutDashboard size={24} className="text-indigo-600 dark:text-indigo-400" />;
       case ViewType.PRODUCTION_MENU: return <Factory size={24} className="text-indigo-600 dark:text-indigo-400" />;

@@ -36,7 +36,7 @@ export default function ChecksModal({
   const handleCopy = () => {
     if (checks.length === 0) return;
 
-    const checkList = checks.map((c, idx) => 
+    const checkList = checks.map((c: CompanyCheck, idx: number) => 
       `Cheque ${idx + 1}:\n` +
       `- Número: ${c.number}\n` +
       `- Vencimento: ${format(c.dueDate, 'dd/MM/yyyy')}\n` +
@@ -44,7 +44,7 @@ export default function ChecksModal({
       `- Status: ${statusMap[c.status]?.label || c.status}`
     ).join('\n\n');
 
-    const summary = `HISTÓRICO DE CHEQUES - Compra #${purchase.id.slice(-6).toUpperCase()}\nFornecedor: ${supplier?.name || '---'}\nTotal em Cheques: R$ ${checks.reduce((acc, c) => acc + c.value, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n${checkList}`;
+    const summary = `HISTÓRICO DE CHEQUES - Compra #${purchase.id.slice(-6).toUpperCase()}\nFornecedor: ${supplier?.name || '---'}\nTotal em Cheques: R$ ${checks.reduce((acc: number, c: CompanyCheck) => acc + c.value, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n${checkList}`;
 
     navigator.clipboard.writeText(summary);
     alert('Registros de cheques copiados!');
@@ -64,13 +64,13 @@ export default function ChecksModal({
     doc.text(`Fornecedor: ${supplier?.name || '---'}`, 14, 35);
     
     // Summary
-    const totalValue = checks.reduce((acc, c) => acc + c.value, 0);
+    const totalValue = checks.reduce((acc: number, c: CompanyCheck) => acc + c.value, 0);
     doc.setFontSize(12);
     doc.setTextColor(0);
     doc.text(`Total em Cheques: R$ ${totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 14, 45);
     
     // Table
-    const tableData = checks.map(c => [
+    const tableData = checks.map((c: CompanyCheck) => [
       c.number,
       format(c.dueDate, 'dd/MM/yyyy'),
       statusMap[c.status]?.label || c.status,
@@ -143,7 +143,7 @@ export default function ChecksModal({
 
           {/* List */}
           <div className="space-y-4">
-            {checks.map((check, index) => (
+            {checks.map((check: CompanyCheck, index: number) => (
               <div key={index} className={`p-5 rounded-3xl border-2 border-dashed ${isDarkMode ? 'bg-slate-800/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                 <div className="flex items-center justify-between mb-4 pb-4 border-b border-white dark:border-slate-800">
                   <div className="flex items-center gap-3">

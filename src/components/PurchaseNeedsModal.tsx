@@ -88,7 +88,19 @@ export default function PurchaseNeedsModal({
     }
   };
 
-  const handleOrder = (req: PurchaseRequest) => {
+  const handleOrder = async (req: PurchaseRequest) => {
+    if (req.status === 'PENDING') {
+      try {
+        await onUpdateRequest({
+          ...req,
+          status: 'IN_PROGRESS',
+          updatedAt: Date.now(),
+        });
+      } catch (err) {
+        console.error("Erro ao alterar status da solicitação para Em Andamento:", err);
+      }
+    }
+
     if (req.type === 'SOLE') {
       const remainingGrid: Record<string, number> = {};
       if (req.sizeBreakdown) {
@@ -110,6 +122,7 @@ export default function PurchaseNeedsModal({
     } else {
       const remainingQty = req.requiredQty - (req.receivedQty || 0);
       onNavigate(ViewType.PURCHASE_FORM, {
+        requestId: req.id,
         initialDescription: `Compra de ${req.name} para produção`,
         initialGeneralItems: [{
           id: Math.random().toString(36).substr(2, 9),
@@ -120,6 +133,7 @@ export default function PurchaseNeedsModal({
       onClose();
     }
   };
+
 
   const filters: Array<{ key: PurchaseRequestStatus | 'ALL'; label: string }> = [
     { key: 'ALL',         label: 'Todos' },

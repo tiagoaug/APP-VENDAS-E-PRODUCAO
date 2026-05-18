@@ -100,7 +100,7 @@ export default function SalesView({
         additionalNote: note,
         isDarkMode
       }, format);
-      setExportModal({ isOpen: false });
+      setExportModal(prev => ({ ...prev, isOpen: false }));
     } catch (error) {
       console.error('Export error:', error);
       alert('Erro ao exportar venda.');
@@ -670,6 +670,7 @@ export default function SalesView({
           onClose={() => setProductionOrderSale(null)}
           sale={productionOrderSale}
           products={products}
+          grids={grids}
           sectors={sectors}
           existingOrdersCount={productionOrders.length}
           existingLotsCount={lots.length}

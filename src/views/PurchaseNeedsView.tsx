@@ -184,7 +184,19 @@ export default function PurchaseNeedsView({
     }
   };
 
-  const handleOrder = (req: PurchaseRequest) => {
+  const handleOrder = async (req: PurchaseRequest) => {
+    if (req.status === 'PENDING') {
+      try {
+        await onUpdateRequest({
+          ...req,
+          status: 'IN_PROGRESS',
+          updatedAt: Date.now(),
+        });
+      } catch (err) {
+        console.error("Erro ao alterar status da solicitação para Em Andamento:", err);
+      }
+    }
+
     if (req.type === 'SOLE') {
       const remainingGrid: Record<string, number> = {};
       if (req.sizeBreakdown) {
@@ -218,6 +230,7 @@ export default function PurchaseNeedsView({
       });
     }
   };
+
 
   const filters: Array<{ key: PurchaseRequestStatus | 'ALL'; label: string }> = [
     { key: 'ALL',         label: 'Todos' },
@@ -544,7 +557,7 @@ export default function PurchaseNeedsView({
                       </button>
                     </div>
                   )}
-                  {req.status !== 'RECEIVED' && (
+                  {req.status === 'ORDERED' && (
                     <button
                       type="button"
                       onClick={() => openReceive(req)}

@@ -75,6 +75,12 @@ export const scannerService = {
         size: parts[3]
       };
     }
+    if (parts[0] === 'OS' && parts.length >= 2) {
+      return {
+        type: 'OS',
+        osId: parts[1]
+      };
+    }
     return null;
   },
 

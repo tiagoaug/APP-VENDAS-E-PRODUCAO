@@ -307,6 +307,8 @@ export default function PersonalFinancialView({
           else await onSaveCategory({ ...data, isPersonal: true } as any);
         }}
         category={editingCategory || undefined}
+        categories={categories}
+        modulesConfig={{ personal: true, sales: true, production: true }}
       />
 
       <FamilyMemberModal 

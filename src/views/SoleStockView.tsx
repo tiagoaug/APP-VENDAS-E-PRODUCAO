@@ -89,39 +89,7 @@ export default function SoleStockView({
     return filteredStock.reduce((sum, item) => sum + item.total, 0);
   }, [filteredStock]);
 
-  const updateStockEntry = async (entry: SoleStockEntry) => {
-    try {
-      await firebaseService.saveDocument('soleStock', entry);
-      setIsEditing(false);
-      setEditingEntry(null);
-    } catch (err) {
-      console.error('Erro ao atualizar estoque:', err);
-      alert('Erro ao atualizar estoque');
-    }
-  };
 
-  const deleteStockEntry = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta entrada de estoque?')) return;
-    try {
-      await firebaseService.deleteDocument('soleStock', id);
-    } catch (err) {
-      console.error('Erro ao excluir:', err);
-    }
-  };
-
-  const handleBalance = () => {
-    if (!editingEntry) {
-      alert('Selecione um item para fazer o balanço');
-      return;
-    }
-    setIsEditing(true);
-  };
-
-  const moldSizes = useMemo(() => {
-    if (!editingEntry?.moldId) return [];
-    const mold = molds.find(m => m.id === editingEntry.moldId);
-    return mold?.metadata?.sizes || [];
-  }, [editingEntry, molds]);
 
   return (
     <div className="flex flex-col h-full pb-44 px-1 overflow-y-auto overflow-x-hidden force-scrollbar">

@@ -78,8 +78,9 @@ import {
   Settings,
   Percent
 } from 'lucide-react';
-import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, ProductionScreenType, ViewType } from '../types';
+import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, ProductionScreenType, ViewType, Product, SoleStockEntry, ProductionLot } from '../types';
 import Modal from '../components/Modal';
+import ComboBox from '../components/ComboBox';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import CalculatorModal from '../components/CalculatorModal';
 
@@ -424,12 +425,28 @@ export default function ProductionConfigView({
 
     activeLots.forEach(lot => {
       const product = products.find(p => p.id === lot.productId);
-      const variation = product?.variations.find(v => v.id === lot.variationId);
+      const variation = product?.variations.find((v: any) => v.id === lot.variationId);
       if (!variation) return;
 
-      variation.consumptions?.forEach(cons => {
+      variation.consumptions?.forEach((cons: any) => {
         if (!cons.materialId) return;
-        materialReqs[cons.materialId] = (materialReqs[cons.materialId] || 0) + (lot.quantity * cons.quantity);
+        let increment: number;
+        if (cons.consumptionBasis === 'grade') {
+          // Caixas coletivas são unidades inteiras — calcula por grade e arredonda para cima
+          let grades: number;
+          if (lot.gradesQty) {
+            grades = lot.gradesQty;
+          } else if (cons.quantity > 0 && cons.quantity < 1) {
+            const pairsPerGrade = Math.round(1 / cons.quantity);
+            grades = Math.round(lot.quantity / Math.max(1, pairsPerGrade));
+          } else {
+            grades = lot.quantity;
+          }
+          increment = Math.ceil(grades * (cons.quantity < 1 ? 1 : cons.quantity));
+        } else {
+          increment = lot.quantity * cons.quantity;
+        }
+        materialReqs[cons.materialId] = (materialReqs[cons.materialId] || 0) + increment;
       });
     });
     return materialReqs;
@@ -936,6 +953,7 @@ export default function ProductionConfigView({
           flowTags={flowTags}
           onNavigateToScreen={handleNavigateShortcut}
           zIndex={60000}
+          purchaseNeeds={purchaseNeeds}
         />
       </Modal>
 
@@ -987,6 +1005,7 @@ export default function ProductionConfigView({
         isOpen={!!editingTag}
         onClose={() => setEditingTag(null)}
         title={isAddingTag ? "Nova Flow Tag" : "Editar Flow Tag"}
+        zIndex={70000}
       >
         <form onSubmit={handleSaveTag} className="flex flex-col gap-6">
           <div className="flex flex-col gap-2">
@@ -1060,6 +1079,7 @@ export default function ProductionConfigView({
         isOpen={!!editingSector}
         onClose={() => setEditingSector(null)}
         title={isAddingSector ? "Novo Setor" : "Editar Setor"}
+        zIndex={70000}
       >
         <form onSubmit={handleSaveSector} className="flex flex-col gap-6">
           <div className="flex flex-col gap-2">
@@ -1072,6 +1092,42 @@ export default function ProductionConfigView({
               className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
               required
             />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Valor por Par Padrão (R$)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={editingSector?.defaultServiceValue ?? ''}
+                onChange={(e) => setEditingSector(prev => prev ? { ...prev, defaultServiceValue: parseFloat(e.target.value) || 0 } : null)}
+                placeholder="Ex: 1.50"
+                className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Prestador de Serviço Padrão</label>
+              <ComboBox
+                options={people
+                  .filter(p => p.isSupplier || (p as any).role === 'WORKER')
+                  .map(p => ({ id: p.id || '', name: p.name }))}
+                value={editingSector?.defaultServiceProviderId || ''}
+                onChange={(id) => {
+                  const selectedPerson = people.find(p => p.id === id);
+                  setEditingSector(prev => prev ? { 
+                    ...prev, 
+                    defaultServiceProviderId: id,
+                    defaultServiceProviderName: selectedPerson ? selectedPerson.name : '' 
+                  } : null);
+                }}
+                placeholder="Selecionar da agenda..."
+                isDarkMode={isDarkMode}
+                icon={<Users size={18} />}
+              />
+            </div>
           </div>
 
           <div className="flex flex-col gap-4">
@@ -1139,7 +1195,9 @@ function GenericConfigList({
   grids = [],
   supplyCategoryNames = [],
   onNavigateToScreen,
-  zIndex = 60000
+  zIndex = 60000,
+  soleStock = [],
+  purchaseNeeds = {}
 }: {
   title: string;
   label: string;
@@ -1161,6 +1219,7 @@ function GenericConfigList({
   onNavigateToScreen?: (screen: ProductionScreenType | ViewType) => void;
   zIndex?: number;
   soleStock?: SoleStockEntry[];
+  purchaseNeeds?: Record<string, number>;
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ProductionConfigItem | null>(null);
@@ -2758,6 +2817,23 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: {
         </div>
       </div>
 
+      {(sector.defaultServiceValue !== undefined || sector.defaultServiceProviderName) && (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-bold px-2 py-1">
+          {sector.defaultServiceValue !== undefined && sector.defaultServiceValue > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] font-black uppercase text-slate-400">Custo/Par:</span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-extrabold">R$ {sector.defaultServiceValue.toFixed(2)}</span>
+            </div>
+          )}
+          {sector.defaultServiceProviderName && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] font-black uppercase text-slate-400">Prestador Padrão:</span>
+              <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">{sector.defaultServiceProviderName}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {sectorTags.length > 0 && (
         <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/50">
           {sectorTags.map(tag => (
@@ -2772,7 +2848,7 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: {
   );
 }
 
-function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people }: {
+function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, need = 0 }: {
   item: ProductionConfigItem,
   isDarkMode: boolean,
   onEdit: () => void,
@@ -2905,8 +2981,8 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
 
   const getStockForSize = (size: string) => {
     return safeSoleStock
-      .filter(s => s.moldId === item.id && s.size === size)
-      .reduce((acc, s) => acc + (s.quantity || 0), 0);
+      .filter(s => s.moldId === item.id)
+      .reduce((acc, s) => acc + (s.stock?.[size] || 0), 0);
   };
 
   return (
