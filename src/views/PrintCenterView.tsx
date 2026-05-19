@@ -757,6 +757,124 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
   const elemKeys = Object.keys(layout.elems);
   const selElem = selectedElem ? layout.elems[selectedElem] : null;
 
+  // ── Labels panel ──────────────────────────────────────────────────────────
+
+  const renderLabelsPanel = () => {
+    const labelProduct  = products.find(p => p.id === labelProductId);
+    const labelVariation = labelProduct?.variations.find(v => v.id === labelVariationId);
+    const availSizes = labelVariation ? Object.keys(labelVariation.stock).filter(s => s !== 'WHOLESALE') : [];
+    const labelDims: [number, number] = labelSizeKey === 'manual'
+      ? [labelManualW, labelManualH]
+      : (LABEL_SIZES.find(s => s.key === labelSizeKey)?.dims || [75, 24]);
+
+    return (
+      <div key="labels-panel" className="flex flex-col gap-4">
+        {/* Tamanho da etiqueta */}
+        <div className={`p-4 rounded-2xl border ${dk ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Tamanho da Etiqueta</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {LABEL_SIZES.map(opt => (
+              <button key={opt.key} type="button" onClick={() => setLabelSizeKey(opt.key)}
+                className={`py-2 px-3 rounded-xl border-2 font-black text-[9px] tracking-tight transition-all flex items-center justify-between ${labelSizeKey === opt.key ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20 text-pink-600' : dk ? 'border-slate-800 text-slate-400' : 'border-slate-100 text-slate-400'}`}>
+                {opt.label}
+                {opt.star && <span className="text-[7px] font-black text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded-full ml-1">minha</span>}
+              </button>
+            ))}
+          </div>
+          {/* Manual */}
+          <div className={`flex items-center gap-2 mt-2 p-3 rounded-xl border-2 ${labelSizeKey === 'manual' ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20' : dk ? 'border-slate-800' : 'border-slate-100'}`}>
+            <button type="button" onClick={() => setLabelSizeKey('manual')} className={`text-[9px] font-black uppercase whitespace-nowrap ${labelSizeKey === 'manual' ? 'text-pink-600' : 'text-slate-400'}`}>Manual</button>
+            <div className="flex items-center gap-1 flex-1">
+              <input type="number" min={10} max={200} value={labelManualW} title="Largura mm"
+                onChange={e => { setLabelManualW(+e.target.value || 10); setLabelSizeKey('manual'); }}
+                className={`w-14 text-center px-2 py-1 rounded-lg border text-[10px] font-black outline-none ${dk ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}/>
+              <span className="text-[9px] text-slate-400 font-bold">×</span>
+              <input type="number" min={10} max={200} value={labelManualH} title="Altura mm"
+                onChange={e => { setLabelManualH(+e.target.value || 10); setLabelSizeKey('manual'); }}
+                className={`w-14 text-center px-2 py-1 rounded-lg border text-[10px] font-black outline-none ${dk ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}/>
+              <span className="text-[9px] text-slate-400 font-bold">mm</span>
+            </div>
+            <span className="text-[8px] text-slate-400 font-bold">{labelDims[0]}×{labelDims[1]}</span>
+          </div>
+        </div>
+
+        {/* Produto */}
+        <div className={`p-4 rounded-2xl border ${dk ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Produto</p>
+          <div className="flex flex-col gap-2">
+            {products.slice(0, 50).map(p => (
+              <button key={p.id} type="button" onClick={() => { setLabelProductId(p.id); setLabelVariationId(p.variations[0]?.id || ''); setLabelSelectedSizes([]); }}
+                className={`flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${labelProductId === p.id ? 'border-pink-400 bg-pink-50 dark:bg-pink-900/20' : dk ? 'border-slate-800' : 'border-slate-100'}`}>
+                {p.photoUrl
+                  ? <img src={p.photoUrl} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0"/>
+                  : <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${dk ? 'bg-slate-800' : 'bg-slate-100'}`}><Package size={14} className="text-slate-400"/></div>}
+                <div className="flex-1 min-w-0">
+                  <p className="text-[9px] font-black text-pink-600 dark:text-pink-400">{p.reference}</p>
+                  <p className={`text-[11px] font-bold truncate ${dk ? 'text-white' : 'text-slate-800'}`}>{p.name}</p>
+                </div>
+                {labelProductId === p.id && <Check size={14} className="text-pink-500 shrink-0"/>}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Variação */}
+        {labelProduct && (
+          <div className={`p-4 rounded-2xl border ${dk ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Variação (Cor)</p>
+            <div className="flex flex-wrap gap-1.5">
+              {labelProduct.variations.map(v => (
+                <button key={v.id} type="button" onClick={() => { setLabelVariationId(v.id); setLabelSelectedSizes([]); }}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border-2 text-[9px] font-black transition-all ${labelVariationId === v.id ? 'border-pink-400 bg-pink-50 dark:bg-pink-900/20 text-pink-600' : dk ? 'border-slate-800 text-slate-400' : 'border-slate-100 text-slate-400'}`}>
+                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: v.color }}/>
+                  {v.colorName}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Modo: por tamanho ou caixa */}
+        {labelProduct && (
+          <div className={`p-4 rounded-2xl border ${dk ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Tipo de Etiqueta</p>
+            <div className="flex gap-2 mb-3">
+              <button type="button" onClick={() => setLabelIsBox(false)}
+                className={`flex-1 py-2 rounded-xl border-2 text-[9px] font-black uppercase transition-all ${!labelIsBox ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20 text-pink-600' : dk ? 'border-slate-800 text-slate-400' : 'border-slate-100 text-slate-400'}`}>
+                Por Tamanho
+              </button>
+              <button type="button" onClick={() => setLabelIsBox(true)}
+                className={`flex-1 py-2 rounded-xl border-2 text-[9px] font-black uppercase transition-all ${labelIsBox ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20 text-pink-600' : dk ? 'border-slate-800 text-slate-400' : 'border-slate-100 text-slate-400'}`}>
+                Caixa (BOX)
+              </button>
+            </div>
+
+            {!labelIsBox && availSizes.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-3">
+                {availSizes.map(sz => (
+                  <button key={sz} type="button"
+                    onClick={() => setLabelSelectedSizes(p => p.includes(sz) ? p.filter(s => s !== sz) : [...p, sz])}
+                    className={`min-w-[36px] h-9 rounded-xl border-2 font-black text-[10px] transition-all ${labelSelectedSizes.includes(sz) ? 'border-pink-500 bg-pink-500 text-white' : dk ? 'border-slate-800 text-slate-400' : 'border-slate-100 text-slate-500'}`}>
+                    {sz}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] font-black text-slate-400 uppercase">Qtd. cópias:</span>
+              <button aria-label="Diminuir quantidade" type="button" onClick={() => setLabelQty(q => Math.max(1, q - 1))}
+                className={`w-8 h-8 rounded-xl flex items-center justify-center ${dk ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><Minus size={12}/></button>
+              <span className={`w-10 text-center text-sm font-black ${dk ? 'text-white' : 'text-slate-800'}`}>{labelQty}</span>
+              <button aria-label="Aumentar quantidade" type="button" onClick={() => setLabelQty(q => q + 1)}
+                className={`w-8 h-8 rounded-xl flex items-center justify-center ${dk ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><Plus size={12}/></button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // ── List rows ─────────────────────────────────────────────────────────────
 
   const renderRows = () => {
