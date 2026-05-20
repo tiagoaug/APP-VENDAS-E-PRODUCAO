@@ -1,12 +1,16 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Layers, Hammer, Scissors, Check,
   ChevronRight, ArrowLeft, Plus, Minus,
   Play, User, DollarSign, FileText, CheckCircle2,
   AlertCircle, Info, Hash, Clock, Settings, HelpCircle,
-  Sparkles, List, Printer, Eye, Settings2, X
+  Sparkles, List, Printer, Eye, Settings2, X, Tag,
+  QrCode, ScanLine, CheckSquare
 } from 'lucide-react';
+import PrintLabelEditorModal from './PrintLabelEditorModal';
+import { scannerService } from '../services/scannerService';
 import {
   ProductionLot, Product, Sector, FlowTag, ColorValue,
   ProductionConfigItem, ServiceOrder, Person, Account, Category
@@ -87,6 +91,18 @@ export default function CuttingProjectionPanel({
   const [osDirectComplete, setOsDirectComplete] = useState(false);
   const [isSavingOS, setIsSavingOS] = useState(false);
 
+  // Label modal state
+  const [labelModalOpen, setLabelModalOpen] = useState(false);
+
+  // QR Baixa modal state
+  const [qrBaixaOpen, setQrBaixaOpen] = useState(false);
+  const [qrBaixaManualCode, setQrBaixaManualCode] = useState('');
+  const [qrBaixaScanning, setQrBaixaScanning] = useState(false);
+  const [qrBaixaConfirm, setQrBaixaConfirm] = useState<{
+    os: ServiceOrder;
+    nextSectorName: string;
+  } | null>(null);
+
   // Print states
   const [printModalData, setPrintModalData] = useState<{
     lot: ProductionLot;
@@ -94,6 +110,7 @@ export default function CuttingProjectionPanel({
     isFromOSCreation?: boolean;
     osNumber?: string;
     providerName?: string;
+    osNotes?: string;
   } | null>(null);
   const [printTab, setPrintTab] = useState<'os' | 'sheet' | 'both'>('both');
 
@@ -246,6 +263,14 @@ export default function CuttingProjectionPanel({
   // Generate Service Order
   const handleCreateOS = async () => {
     if (!selectedLot || !lotProductDetails?.product) return;
+
+    // Trava: impede OS duplicada para o mesmo lote+setor
+    if (activeOSForSelectedLot) {
+      alert(`Já existe a OS ${activeOSForSelectedLot.osNumber} em aberto para este lote no setor de corte. Conclua ou exclua-a antes de emitir uma nova.`);
+      setIsOSPanelOpen(false);
+      return;
+    }
+
     if (!osProviderId) {
       alert("Por favor, selecione o Cortador (Prestador)!");
       return;
@@ -345,7 +370,8 @@ export default function CuttingProjectionPanel({
         pieces: resolvedPieces,
         isFromOSCreation: true,
         osNumber: osNumberStr,
-        providerName: providerName
+        providerName: providerName,
+        osNotes: osNotes
       });
       setPrintTab('both');
 
@@ -375,6 +401,85 @@ export default function CuttingProjectionPanel({
     );
   }, [serviceOrders, printModalData, selectedSectorId]);
 
+  // OS pendente do lote ATUALMENTE selecionado na estação de trabalho
+  const activeOSForSelectedLot = useMemo(() => {
+    if (!selectedLot) return null;
+    return serviceOrders.find(os =>
+      (os.lotId === selectedLot.id || (os.lotIds && os.lotIds.includes(selectedLot.id))) &&
+      os.sectorId === selectedSectorId &&
+      os.status === 'PENDING'
+    ) || null;
+  }, [serviceOrders, selectedLot, selectedSectorId]);
+
+  // Complete an OS from cutting sector (baixa)
+  const handleCompleteOSCutting = async (os: ServiceOrder) => {
+    try {
+      await firebaseService.updateDocument('serviceOrders', os.id, {
+        status: 'COMPLETED',
+        finishedAt: Date.now(),
+      });
+      if (os.transactionId) {
+        const { financeService } = await import('../services/financeService');
+        await financeService.settleTransaction(os.transactionId);
+      }
+      // Advance lot to next sector
+      const lotObj = cuttingLots.find(l =>
+        l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id))
+      );
+      if (lotObj) {
+        const nextIdx = lotObj.currentSectorIndex + 1;
+        const nextRouteId = lotObj.route[nextIdx] || '';
+        await firebaseService.updateDocument('productionLots', lotObj.id, {
+          currentSectorIndex: Math.min(nextIdx, lotObj.route.length - 1),
+          currentStatusId: '',
+          finishedAt: nextRouteId ? undefined : Date.now(),
+          history: [
+            ...(lotObj.history || []),
+            {
+              sectorId: selectedSectorId,
+              statusId: 'CONCLUÍDO',
+              timestamp: Date.now(),
+              userName: userName,
+              notes: `Baixa via QR — OS ${os.osNumber} concluída.`,
+            },
+          ],
+        });
+      }
+      alert(`OS ${os.osNumber} concluída com sucesso!`);
+      const remaining = cuttingLots.filter(l => l.id !== lotObj?.id);
+      if (remaining.length > 0) setSelectedLotId(remaining[0].id);
+      else setSelectedLotId(null);
+    } catch (e) {
+      alert('Erro ao concluir OS: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
+  // Resolve OS from a raw scan string or manual OS number
+  const handleQrBaixaResolve = (raw: string) => {
+    const parsed = scannerService.parseScanResult(raw);
+    let os: ServiceOrder | undefined;
+
+    if (parsed?.type === 'OS') {
+      os = serviceOrders.find(so => so.id === parsed.osId);
+    } else {
+      const normalized = raw.trim().toUpperCase();
+      os = serviceOrders.find(so =>
+        so.osNumber.toUpperCase() === normalized || so.id === raw.trim()
+      );
+    }
+
+    if (!os) { alert('OS não encontrada. Verifique o código e tente novamente.'); return; }
+    if (os.status === 'COMPLETED') { alert(`A OS ${os.osNumber} já foi concluída.`); return; }
+
+    const lotObj = cuttingLots.find(l =>
+      l.id === os!.lotId || (os!.lotIds && os!.lotIds.includes(l.id))
+    );
+    const nextIdx = (lotObj?.currentSectorIndex ?? 0) + 1;
+    const nextSectorId = lotObj?.route?.[nextIdx] || '';
+    const nextSec = sectors.find(s => s.id === nextSectorId);
+    setQrBaixaConfirm({ os, nextSectorName: nextSec?.name || 'CONCLUÍDO' });
+  };
+
   // High-fidelity browser print trigger
   const handlePrint = () => {
     if (!printModalData) return;
@@ -395,6 +500,9 @@ export default function CuttingProjectionPanel({
           display: none !important;
         }
       }
+      @page { size: A4 portrait; margin: 1.8cm 1.5cm; }
+      @page landscape { size: A4 landscape; margin: 1.2cm 1.0cm; }
+
       @media print {
         body > *:not(#temp-cutting-print-container) {
           display: none !important;
@@ -411,23 +519,33 @@ export default function CuttingProjectionPanel({
         .print-page {
           page-break-after: always;
           page-break-inside: avoid;
-          padding: 1.8cm !important;
+          padding: 0 !important;
           margin: 0 !important;
           box-sizing: border-box;
         }
-        .print-page:last-child {
+        .print-page-landscape {
+          page-break-after: always;
+          page-break-inside: avoid;
+          padding: 0 !important;
+          margin: 0 !important;
+          box-sizing: border-box;
+        }
+        .print-page:last-child,
+        .print-page-landscape:last-child {
           page-break-after: avoid;
         }
         table {
           width: 100% !important;
           border-collapse: collapse !important;
-          margin: 15px 0 !important;
+          margin: 10px 0 !important;
+          table-layout: auto !important;
         }
         th, td {
-          border: 1.5px solid #000 !important;
-          padding: 8px 10px !important;
+          border: 1px solid #000 !important;
+          padding: 5px 6px !important;
           text-align: left !important;
-          font-size: 11px !important;
+          font-size: 10px !important;
+          word-break: break-word;
         }
         th {
           background-color: #f3f4f6 !important;
@@ -436,6 +554,24 @@ export default function CuttingProjectionPanel({
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
         }
+        /* Tabela de facadas: forçar paisagem com largura expandida */
+        .facadas-table {
+          width: 100% !important;
+          font-size: 9px !important;
+          border-collapse: collapse !important;
+        }
+        .facadas-table th,
+        .facadas-table td {
+          border: 1px solid #000 !important;
+          padding: 4px 4px !important;
+          font-size: 9px !important;
+          white-space: nowrap;
+        }
+        .facadas-table .col-peca { width: 110px !important; white-space: normal !important; }
+        .facadas-table .col-mat  { width: 90px  !important; white-space: normal !important; }
+        .facadas-table .col-num  { width: 38px  !important; text-align: center !important; }
+        .facadas-table .col-size { width: 32px  !important; text-align: center !important; font-weight: 900 !important; }
+        .facadas-table .col-bat  { width: 48px  !important; text-align: center !important; background: #e5e7eb !important; font-weight: 900 !important; }
         .header-title {
           font-size: 20px !important;
           font-weight: 900 !important;
@@ -555,7 +691,7 @@ export default function CuttingProjectionPanel({
             </div>
             <div class="info-item">
               <span class="info-label">Referência / Produto</span>
-              <span class="info-val">${product?.name || 'Não cadastrado'} <span style="font-weight: normal; color: #4b5563;">(${product?.metadata?.reference || 'S/Ref'})</span></span>
+              <span class="info-val">${product?.name || 'Não cadastrado'} <span style="font-weight: normal; color: #4b5563;">(${product?.reference || 'S/Ref'})</span></span>
             </div>
             <div class="info-item">
               <span class="info-label">Cor / Variação</span>
@@ -667,7 +803,7 @@ export default function CuttingProjectionPanel({
           <div class="info-grid" style="grid-template-cols: repeat(3, 1fr) !important;">
             <div class="info-item">
               <span class="info-label">Referência / Modelo</span>
-              <span class="info-val">${product?.name || 'Não cadastrado'} (${product?.metadata?.reference || 'S/Ref'})</span>
+              <span class="info-val">${product?.name || 'Não cadastrado'} (${product?.reference || 'S/Ref'})</span>
             </div>
             <div class="info-item">
               <span class="info-label">Grade / Cor</span>
@@ -719,91 +855,83 @@ export default function CuttingProjectionPanel({
         </div>
       `;
 
-      // Part B: Ficha Técnica - Padrão de Facadas e Assinaturas
+      // Part B: Ficha Técnica - Padrão de Facadas (paisagem para caber todas as colunas)
       htmlContent += `
-        <div class="print-page" style="page-break-before: always;">
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #000; padding-bottom: 12px; margin-bottom: 24px;">
+        <div class="print-page-landscape" style="page-break-before: always;">
+          <style>@page { size: A4 landscape; margin: 1.2cm 1.0cm; }</style>
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #000; padding-bottom: 10px; margin-bottom: 18px;">
             <div>
-              <h1 style="margin: 0; font-size: 26px; font-weight: 900; letter-spacing: -1px; text-transform: uppercase;">GESTÃO PRO</h1>
-              <p style="margin: 3px 0 0 0; font-size: 10px; font-weight: 800; color: #4b5563; text-transform: uppercase; letter-spacing: 2px;">Sistema de Produção & PCP</p>
+              <h1 style="margin: 0; font-size: 22px; font-weight: 900; letter-spacing: -1px; text-transform: uppercase;">GESTÃO PRO</h1>
+              <p style="margin: 2px 0 0 0; font-size: 9px; font-weight: 800; color: #4b5563; text-transform: uppercase; letter-spacing: 2px;">Sistema de Produção & PCP</p>
             </div>
             <div style="text-align: right;">
-              <span class="badge" style="background: #e0f2fe !important; border: 1.5px solid #000 !important; color: #000 !important;">Ficha Técnica - Padrão de Corte</span>
-              <p style="margin: 6px 0 0 0; font-size: 12px; font-weight: 900; text-transform: uppercase; color: #374151;">Lote: #${lot.orderNumber} • Emissão: ${formattedDate}</p>
+              <span class="badge" style="background: #e0f2fe !important; border: 1.5px solid #000 !important; color: #000 !important;">Padrão de Facadas / Batidas por Peça</span>
+              <p style="margin: 4px 0 0 0; font-size: 11px; font-weight: 900; text-transform: uppercase; color: #374151;">Lote: #${lot.orderNumber} • ${formattedDate}</p>
             </div>
           </div>
 
-          <div class="info-grid" style="grid-template-cols: repeat(3, 1fr) !important;">
-            <div class="info-item">
-              <span class="info-label">Referência / Modelo</span>
-              <span class="info-val">${product?.name || 'Não cadastrado'} (${product?.metadata?.reference || 'S/Ref'})</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Grade / Cor</span>
-              <span class="info-val">${variation?.colorName || 'Não cadastrado'}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">Total de Pares</span>
-              <span class="info-val">${lot.quantity} Pares</span>
-            </div>
+          <div style="display: flex; gap: 24px; margin-bottom: 16px;">
+            <div><span style="font-size: 9px; font-weight: 800; text-transform: uppercase; color: #6b7280; display: block;">Referência / Modelo</span>
+              <span style="font-size: 12px; font-weight: 900;">${product?.name || '—'} <span style="font-weight: normal; color: #4b5563;">(${product?.reference || 'S/Ref'})</span></span></div>
+            <div><span style="font-size: 9px; font-weight: 800; text-transform: uppercase; color: #6b7280; display: block;">Cor / Variação</span>
+              <span style="font-size: 12px; font-weight: 900;">${variation?.colorName || '—'}</span></div>
+            <div><span style="font-size: 9px; font-weight: 800; text-transform: uppercase; color: #6b7280; display: block;">Total do Mapa</span>
+              <span style="font-size: 12px; font-weight: 900; color: #1e3a8a;">${lot.quantity} Pares</span></div>
           </div>
 
-          <h3 style="font-size: 13px; font-weight: 900; text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 6px; margin-top: 25px;">Padrão de Facadas / Batidas por Peça e Tamanho</h3>
-          <p style="font-size: 9px; color: #4b5563; font-style: italic; margin-bottom: 12px; margin-top: 6px;">
-            * Batidas calculadas com base nas camadas de infesto e conjugação da faca (molde).
+          <p style="font-size: 8px; color: #4b5563; font-style: italic; margin: 0 0 10px 0;">
+            * As batidas mostram exatamente quantos golpes o cortador precisa dar para cada grade com base nas camadas.
           </p>
 
-          <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+          <table class="facadas-table">
             <thead>
               <tr>
-                <th style="font-size: 10px; font-weight: 900; padding: 6px;">Peça / Faca</th>
-                <th style="font-size: 10px; font-weight: 900; padding: 6px;">Material</th>
-                <th style="font-size: 10px; font-weight: 900; padding: 6px; text-align: center; width: 45px;">Conj.</th>
-                <th style="font-size: 10px; font-weight: 900; padding: 6px; text-align: center; width: 55px;">Infesto</th>
-                ${Object.keys(lot.pairs || {}).map(sz => `<th style="text-align: center; font-size: 9px; padding: 4px; font-weight: 900; background: #f9fafb;">T${sz}</th>`).join('')}
-                <th style="font-size: 10px; font-weight: 900; padding: 6px; text-align: center; width: 75px; background: #e5e7eb;">Batidas</th>
+                <th class="col-peca">Peça / Faca</th>
+                <th class="col-mat">Material</th>
+                <th class="col-num" style="text-align:center;">Conj.</th>
+                <th class="col-num" style="text-align:center; color:#1e3a8a;">Infesto</th>
+                ${Object.keys(lot.pairs || {}).map(sz => `<th class="col-size">T${sz}</th>`).join('')}
+                <th class="col-bat">Batidas<br/>Total</th>
               </tr>
             </thead>
             <tbody>
               ${pieces.map(item => {
                 const conjugation = item.tool?.metadata?.conjugation || 1;
                 const layers = item.layers;
-                
                 let totalStrikes = 0;
                 const sizeStrikesHtml = Object.entries(lot.pairs || {}).map(([size, qty]) => {
                   const strokesNeeded = Math.ceil(qty / (conjugation * layers));
                   totalStrikes += strokesNeeded;
-                  return `<td style="text-align: center; font-size: 11px; font-weight: ${strokesNeeded > 0 ? '900' : 'normal'}; color: ${strokesNeeded > 0 ? '#000' : '#d1d5db'};">${strokesNeeded || '-'}</td>`;
+                  return `<td class="col-size" style="font-weight:${strokesNeeded > 0 ? '900' : 'normal'}; color:${strokesNeeded > 0 ? '#000' : '#d1d5db'};">${strokesNeeded || '—'}</td>`;
                 }).join('');
-
                 return `
                   <tr>
-                    <td style="padding: 6px;">
-                      <div style="font-weight: 900; font-size: 11px;">${item.piece.name}</div>
-                      <div style="font-size: 8px; color: #4b5563; margin-top: 2px;">Faca: ${item.tool?.name || 'S/Ref'}</div>
+                    <td class="col-peca">
+                      <div style="font-weight:900; font-size:10px;">${item.piece.name}</div>
+                      <div style="font-size:8px; color:#4b5563; margin-top:1px;">Faca: ${item.tool?.name || 'S/Ref'}<br/>Ref: ${item.tool?.metadata?.reference || '—'}</div>
                     </td>
-                    <td style="padding: 6px;">
-                      <div style="font-size: 10px; font-weight: bold;">${item.material?.name || 'Manual'}</div>
-                      <div style="font-size: 8px; color: #4b5563; margin-top: 2px;">Ref: ${item.material?.metadata?.reference || 'S/Ref'}</div>
+                    <td class="col-mat">
+                      <div style="font-weight:bold; font-size:10px;">${item.material?.name || 'Manual'}</div>
+                      <div style="font-size:8px; color:#4b5563; margin-top:1px;">Ref: ${item.material?.metadata?.reference || 'S/Ref'}</div>
                     </td>
-                    <td style="text-align: center; font-weight: 900; font-size: 11px;">${conjugation}x</td>
-                    <td style="text-align: center; font-weight: 900; font-size: 11px; color: #1e3a8a;">${layers} cam.</td>
+                    <td class="col-num" style="text-align:center; font-weight:900; font-size:11px;">${conjugation}x</td>
+                    <td class="col-num" style="text-align:center; font-weight:900; font-size:11px; color:#1e3a8a;">${layers}c.</td>
                     ${sizeStrikesHtml}
-                    <td style="text-align: center; font-weight: 900; background: #f9fafb; font-size: 12px; color: #000;">${totalStrikes}</td>
+                    <td class="col-bat" style="font-weight:900; font-size:13px; color:#000; background:#e5e7eb !important;">${totalStrikes}</td>
                   </tr>
                 `;
               }).join('')}
             </tbody>
           </table>
 
-          <div class="signature-section" style="margin-top: 50px !important;">
-            <div class="signature-box" style="margin-top: 30px !important;">
-              <p style="margin: 0; font-weight: 900;">${providerName}</p>
-              <p style="margin: 3px 0 0 0; color: #374151; font-size: 9px; text-transform: uppercase; font-weight: bold;">Assinatura do Cortador</p>
+          <div style="margin-top: 50px; display: flex; justify-content: space-between; gap: 60px;">
+            <div style="flex:1; text-align:center; border-top: 2px solid #000; padding-top: 6px; margin-top: 30px;">
+              <p style="margin:0; font-weight:900; font-size:11px;">${providerName}</p>
+              <p style="margin:3px 0 0 0; color:#374151; font-size:9px; text-transform:uppercase; font-weight:bold;">Assinatura do Cortador</p>
             </div>
-            <div class="signature-box" style="margin-top: 30px !important;">
-              <p style="margin: 0; font-weight: 900;">Supervisão de Produção</p>
-              <p style="margin: 3px 0 0 0; color: #374151; font-size: 9px; text-transform: uppercase; font-weight: bold;">Assinatura de Controle</p>
+            <div style="flex:1; text-align:center; border-top: 2px solid #000; padding-top: 6px; margin-top: 30px;">
+              <p style="margin:0; font-weight:900; font-size:11px;">Supervisão de Produção</p>
+              <p style="margin:3px 0 0 0; color:#374151; font-size:9px; text-transform:uppercase; font-weight:bold;">Assinatura de Controle</p>
             </div>
           </div>
         </div>
@@ -875,7 +1003,12 @@ export default function CuttingProjectionPanel({
                   const product = products.find(p => p.id === lot.productId);
                   const variation = product?.variations.find(v => v.id === lot.variationId);
                   const isSelected = selectedLotId === lot.id;
-                  
+                  const lotOS = serviceOrders.find(os =>
+                    (os.lotId === lot.id || (os.lotIds && os.lotIds.includes(lot.id))) &&
+                    os.sectorId === selectedSectorId &&
+                    os.status === 'PENDING'
+                  );
+
                   return (
                     <button
                       key={lot.id}
@@ -884,30 +1017,36 @@ export default function CuttingProjectionPanel({
                         setIsOSPanelOpen(false);
                       }}
                       className={`w-full p-4 rounded-2xl border-2 text-left transition-all flex items-center justify-between ${
-                        isSelected 
+                        isSelected
                           ? isDarkMode
                             ? 'border-indigo-500 bg-indigo-950/40 text-white font-black'
                             : 'border-indigo-600 bg-indigo-50 text-indigo-950 font-black shadow-md'
-                          : isDarkMode 
-                            ? 'border-slate-800 hover:border-slate-700 bg-slate-950/40 text-slate-350' 
+                          : isDarkMode
+                            ? 'border-slate-800 hover:border-slate-700 bg-slate-950/40 text-slate-350'
                             : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700 shadow-sm'
                       }`}
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className={`px-2 py-0.5 rounded-lg text-[8px] font-black uppercase ${
                             lot.prioridade === 'URGENTE' ? 'bg-rose-500 text-white' : 'bg-slate-800 text-slate-400'
                           }`}>
                             {lot.prioridade}
                           </span>
                           <span className={`text-[10px] font-black ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-indigo-500'}`}>#{lot.orderNumber}</span>
+                          {/* Badge OS já emitida */}
+                          {lotOS && (
+                            <span className="px-2 py-0.5 rounded-lg text-[8px] font-black uppercase bg-emerald-500 text-white flex items-center gap-1">
+                              ✓ {lotOS.osNumber}
+                            </span>
+                          )}
                         </div>
                         <h4 className={`text-xs font-black uppercase truncate ${isSelected ? 'text-indigo-950 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>{product?.name || 'Sem nome'}</h4>
                         <p className={`text-[9px] font-bold uppercase tracking-wider mt-0.5 ${isSelected ? 'text-indigo-750 dark:text-slate-400' : 'text-slate-500 dark:text-slate-400'}`}>
                           Ref: {product?.reference} • Cor: {variation?.colorName}
                         </p>
                       </div>
-                      
+
                       <div className="text-right shrink-0 ml-3">
                         <span className={`text-sm font-black ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300'}`}>{lot.quantity}</span>
                         <p className={`text-[8px] font-black uppercase tracking-widest leading-none mt-1 ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-455 dark:text-slate-500'}`}>Pares</p>
@@ -970,9 +1109,9 @@ export default function CuttingProjectionPanel({
           {!selectedLot ? (
             <div className={`h-full min-h-[450px] rounded-3xl border border-dashed flex flex-col items-center justify-center text-center p-8 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
               <Scissors size={48} className="text-slate-600 animate-bounce mb-4" />
-              <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">Aguardando Seleção de Lote</h3>
+              <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">Selecione um Mapa de Produção</h3>
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-2">
-                Selecione um dos lotes da fila na coluna à esquerda para iniciar a projeção de corte
+                Selecione um Mapa de Produção na coluna à esquerda para iniciar a projeção de corte
               </p>
             </div>
           ) : (
@@ -982,42 +1121,109 @@ export default function CuttingProjectionPanel({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-2 mb-2">
                 <div className="w-full sm:w-auto">
                   <h3 className="text-xs font-black uppercase tracking-[0.25em] text-indigo-400 leading-tight">
-                    Estação de Trabalho do Lote #{selectedLot.orderNumber}
+                    Mapa de Produção #{selectedLot.orderNumber}
                   </h3>
                   <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 leading-normal">
-                    Visualização e setup de facas, materiais e infestos
+                    Ficha Técnica de Corte: facas, materiais e infestos
                   </p>
                 </div>
                 
-                {/* Workspace Header Actions */}
-                <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-between sm:justify-end">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPrintModalData({
-                        lot: selectedLot,
-                        pieces: resolvedPieces
-                      });
-                      setPrintTab('sheet');
-                    }}
-                    className={`flex-1 sm:flex-initial px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-2 border ${
-                      isDarkMode 
-                        ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white' 
-                        : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-200 hover:text-slate-900 shadow-sm'
-                    }`}
-                  >
-                    <Printer size={14} /> Imprimir Ficha
-                  </button>
-
-                  {!isOSPanelOpen && (
+                {/* Workspace Header Actions — 2 rows on mobile */}
+                <div className="flex flex-col gap-2 w-full sm:w-auto">
+                  {/* Row 1: Imprimir Ficha + Etiqueta Térmica */}
+                  <div className="flex gap-2">
                     <button
-                      onClick={() => setIsOSPanelOpen(true)}
-                      className="flex-1 sm:flex-initial px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-600/35 transition-all active:scale-95 flex items-center justify-center gap-2"
+                      type="button"
+                      onClick={() => {
+                        setPrintModalData({
+                          lot: selectedLot,
+                          pieces: resolvedPieces,
+                          osNotes: existingOS?.notes
+                        });
+                        setPrintTab('sheet');
+                      }}
+                      className={`flex-1 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-2 border ${
+                        isDarkMode
+                          ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
+                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-200 hover:text-slate-900 shadow-sm'
+                      }`}
                     >
-                      <Play size={14} fill="currentColor" /> Iniciar / Emitir OS
+                      <Printer size={14} /> Imprimir Ficha
                     </button>
+
+                    {lotProductDetails?.product && (
+                      <button
+                        type="button"
+                        onClick={() => setLabelModalOpen(true)}
+                        className={`flex-1 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-2 border ${
+                          isDarkMode
+                            ? 'bg-amber-950/30 border-amber-700/40 text-amber-400 hover:bg-amber-900/40 hover:text-amber-300'
+                            : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 hover:text-amber-900 shadow-sm'
+                        }`}
+                      >
+                        <Tag size={14} /> Etiqueta Térmica
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Row 2: OS badge/button + QR baixa */}
+                  {!isOSPanelOpen && (
+                    <div className="flex gap-2">
+                      {activeOSForSelectedLot ? (
+                        <>
+                          <div className="flex-1 flex items-center gap-2 px-4 py-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border-2 border-emerald-400 dark:border-emerald-700 min-w-0">
+                            <span className="text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-widest truncate">
+                              ✓ {activeOSForSelectedLot.osNumber}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            title="Dar Baixa por QR Code"
+                            onClick={() => {
+                              setQrBaixaOpen(true);
+                              setQrBaixaManualCode('');
+                              setQrBaixaConfirm(null);
+                            }}
+                            className={`px-4 py-3 rounded-2xl border-2 active:scale-95 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shrink-0 ${
+                              isDarkMode
+                                ? 'bg-violet-950/40 border-violet-700/40 text-violet-400 hover:bg-violet-900/50'
+                                : 'bg-violet-50 border-violet-200 text-violet-600 hover:bg-violet-100'
+                            }`}
+                          >
+                            <QrCode size={14} /> Baixa QR
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setIsOSPanelOpen(true)}
+                          className="flex-1 px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-600/35 transition-all active:scale-95 flex items-center justify-center gap-2"
+                        >
+                          <Play size={14} fill="currentColor" /> Iniciar / Emitir OS
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
+              </div>
+
+              {/* ── Legenda do setor de corte ─────────────────────────────── */}
+              <div className={`flex flex-wrap gap-3 px-3 py-2.5 rounded-2xl border text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-200 bg-slate-50'}`}>
+                <span className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Legenda:</span>
+                {[
+                  { dot: 'bg-indigo-500',   label: 'Mapa de Produção', desc: 'Agrupamento de pares em rota de produção — o que está sendo cortado' },
+                  { dot: 'bg-violet-500',   label: 'Ficha Técnica',    desc: 'Especificação de corte: peças, facas, materiais e infestos — clique em "Imprimir Ficha"' },
+                  { dot: 'bg-emerald-500',  label: 'OS de Corte',      desc: 'Ordem de Serviço emitida para o cortador — gera registro financeiro' },
+                  { dot: 'bg-amber-500',    label: 'Batidas/Facadas',  desc: 'Quantidade de golpes por tamanho com base nas camadas de infesto e conjugação da faca' },
+                ].map(item => (
+                  <div key={item.label} className="flex items-center gap-1.5 group relative">
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${item.dot}`}/>
+                    <span className={`${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{item.label}</span>
+                    <div className={`absolute bottom-full left-0 mb-1 px-2.5 py-1.5 rounded-xl text-[9px] font-bold normal-case tracking-normal whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-lg ${isDarkMode ? 'bg-slate-700 text-white' : 'bg-slate-800 text-white'}`}>
+                      {item.desc}
+                    </div>
+                  </div>
+                ))}
               </div>
 
               {/* OS Configuration Panel Inline */}
@@ -1036,6 +1242,8 @@ export default function CuttingProjectionPanel({
                       </div>
                       <button
                         onClick={() => setIsOSPanelOpen(false)}
+                        aria-label="Fechar"
+                        title="Fechar"
                         className={`p-1.5 rounded-lg text-slate-400 hover:text-white ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
                       >
                         <X size={14} />
@@ -1046,8 +1254,9 @@ export default function CuttingProjectionPanel({
                       
                       {/* Worker select */}
                       <div className="flex flex-col gap-2">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Cortador (Operador) *</label>
+                        <label htmlFor="os-provider-select" className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Cortador (Operador) *</label>
                         <select
+                          id="os-provider-select"
                           value={osProviderId}
                           onChange={(e) => setOsProviderId(e.target.value)}
                           className={`w-full px-4 py-3.5 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 text-slate-805 dark:text-white ${
@@ -1081,8 +1290,9 @@ export default function CuttingProjectionPanel({
 
                       {/* Account selection for Finance */}
                       <div className="flex flex-col gap-2">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Caixa / Conta Financeira</label>
+                        <label htmlFor="os-account-select" className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Caixa / Conta Financeira</label>
                         <select
+                          id="os-account-select"
                           value={osAccountId}
                           onChange={(e) => setOsAccountId(e.target.value)}
                           className={`w-full px-4 py-3.5 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 text-slate-805 dark:text-white ${
@@ -1371,6 +1581,8 @@ export default function CuttingProjectionPanel({
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => handleLayerChange(piece.id, -1)}
+                                aria-label="Diminuir camadas"
+                                title="Diminuir camadas"
                                 className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors border ${
                                   isDarkMode
                                     ? 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
@@ -1388,6 +1600,8 @@ export default function CuttingProjectionPanel({
                               </div>
                               <button
                                 onClick={() => handleLayerChange(piece.id, 1)}
+                                aria-label="Aumentar camadas"
+                                title="Aumentar camadas"
                                 className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors border ${
                                   isDarkMode
                                     ? 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
@@ -1433,10 +1647,11 @@ export default function CuttingProjectionPanel({
                               <select
                                 value={foldConfig.dobraType}
                                 onChange={(e) => handleFoldConfigChange(piece.id, { dobraType: e.target.value })}
+                                aria-label="Selecione o tipo de dobra"
                                 className={`w-full px-3 py-2.5 rounded-xl font-bold text-[10px] uppercase tracking-wider outline-none border ${
                                   isDarkMode 
                                     ? 'bg-slate-900 border-slate-800 text-slate-200 focus:border-indigo-500' 
-                                    : 'bg-white border-slate-200 text-slate-705 focus:border-indigo-600 shadow-sm'
+                                    : 'bg-white border-slate-200 text-slate-750 focus:border-indigo-600 shadow-sm'
                                 }`}
                               >
                                 <option value="Sem Dobra">Sem Dobra</option>
@@ -1590,16 +1805,28 @@ export default function CuttingProjectionPanel({
                                     </p>
                                   </div>
                                 </div>
-                                
-                                <span className={`text-[8px] font-black px-2.5 py-1 rounded-full ${
-                                  currentSobra === 0
-                                    ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
-                                    : currentSobra <= 2
-                                      ? 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
-                                      : 'bg-rose-500/10 text-rose-600 border border-rose-500/20'
-                                }`}>
-                                  {currentSobra === 0 ? 'DESPERDÍCIO ZERO' : `SOBRA ATUAL: ${currentSobra} PARES`}
-                                </span>
+
+                                <div className="flex items-center gap-2 flex-wrap justify-end">
+                                  {/* Smart choice button — applies the best layer instantly */}
+                                  {bestSingleSetup.layers !== layers && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePresetLayer(piece.id, bestSingleSetup.layers)}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white text-[8px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-sm shadow-indigo-600/30"
+                                    >
+                                      <Sparkles size={10} /> Escolha Inteligente
+                                    </button>
+                                  )}
+                                  <span className={`text-[8px] font-black px-2.5 py-1 rounded-full ${
+                                    currentSobra === 0
+                                      ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/20'
+                                      : currentSobra <= 2
+                                        ? 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
+                                        : 'bg-rose-500/10 text-rose-600 border border-rose-500/20'
+                                  }`}>
+                                    {currentSobra === 0 ? 'DESPERDÍCIO ZERO' : `SOBRA ATUAL: ${currentSobra} PARES`}
+                                  </span>
+                                </div>
                               </div>
 
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[10px]">
@@ -1620,7 +1847,7 @@ export default function CuttingProjectionPanel({
                                       </div>
                                       <div className="text-right">
                                         <p className="font-bold text-slate-400 uppercase text-[8px] tracking-wider">Excedente</p>
-                                        <p className={`font-black mt-0.5 ${currentSobra === 0 ? 'text-emerald-500' : 'text-slate-600 dark:text-slate-300'}`}>
+                                        <p className={`font-black mt-0.5 ${currentSobra === 0 ? 'text-emerald-500 text-[11px]' : 'text-rose-600 dark:text-rose-400 text-[13px]'}`}>
                                           {currentSobra} Par(es)
                                         </p>
                                       </div>
@@ -1678,7 +1905,7 @@ export default function CuttingProjectionPanel({
                                           Opção A: Dobra Única Padrão
                                         </span>
                                         {currentSobra > 0 && isTwoFoldBetter && (
-                                          <span className="text-[7px] font-black uppercase bg-slate-105 dark:bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded">
+                                          <span className="text-[8px] font-black uppercase bg-rose-500/10 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 rounded border border-rose-300/30">
                                             Sobra: {currentSobra}p
                                           </span>
                                         )}
@@ -1703,12 +1930,16 @@ export default function CuttingProjectionPanel({
                                           <span className="font-black uppercase tracking-widest text-[8px] text-emerald-650 dark:text-emerald-400 flex items-center gap-1">
                                             <Layers size={10} /> Opção B: Instrução de Dobra Dupla
                                           </span>
-                                          <span className={`text-[7px] font-black uppercase px-1.5 py-0.5 rounded ${
+                                          <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded border ${
                                             isTwoFoldBetter
-                                              ? 'bg-emerald-500/10 text-emerald-500'
-                                              : 'bg-slate-105 dark:bg-slate-800 text-slate-500'
+                                              ? totalTwoFoldSobra === 0
+                                                ? 'bg-emerald-500/10 text-emerald-600 border-emerald-300/30'
+                                                : 'bg-emerald-500/10 text-emerald-600 border-emerald-300/30'
+                                              : totalTwoFoldSobra > 0
+                                                ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-300/30'
+                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-transparent'
                                           }`}>
-                                            Sobra: {totalTwoFoldSobra}p {isTwoFoldBetter && '⭐ Economia'}
+                                            {totalTwoFoldSobra > 0 ? `Sobra: ${totalTwoFoldSobra}p` : 'Zero Sobra'} {isTwoFoldBetter && '⭐ Economia'}
                                           </span>
                                         </div>
                                         <div className="flex flex-col gap-1 text-slate-650 dark:text-slate-300 leading-tight">
@@ -1915,6 +2146,8 @@ export default function CuttingProjectionPanel({
 
                   <button
                     onClick={() => setPrintModalData(null)}
+                    aria-label="Fechar"
+                    title="Fechar"
                     className="p-2 rounded-xl text-slate-400 hover:text-slate-250 dark:hover:text-white transition-colors"
                   >
                     <X size={20} />
@@ -1959,7 +2192,7 @@ export default function CuttingProjectionPanel({
                           <div>
                             <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Referência / Produto</span>
                             <span className="font-bold text-sm">
-                              {product?.name || 'Não cadastrado'} <span className="font-normal text-xs text-slate-500">({product?.metadata?.reference || 'S/Ref'})</span>
+                              {product?.name || 'Não cadastrado'} <span className="font-normal text-xs text-slate-500">({product?.reference || 'S/Ref'})</span>
                             </span>
                           </div>
                           <div>
@@ -2074,7 +2307,7 @@ export default function CuttingProjectionPanel({
                           <div className="grid grid-cols-3 gap-4 mb-6">
                             <div>
                               <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Referência / Modelo</span>
-                              <span className="font-bold text-xs">{product?.name || 'Não cadastrado'} <span className="text-[10px] text-slate-500">({product?.metadata?.reference || 'S/Ref'})</span></span>
+                              <span className="font-bold text-xs">{product?.name || 'Não cadastrado'} <span className="text-[10px] text-slate-500">({product?.reference || 'S/Ref'})</span></span>
                             </div>
                             <div>
                               <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Cor / Grade</span>
@@ -2163,7 +2396,7 @@ export default function CuttingProjectionPanel({
                           <div className="grid grid-cols-3 gap-4 mb-6">
                             <div>
                               <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Referência / Modelo</span>
-                              <span className="font-bold text-xs">{product?.name || 'Não cadastrado'} <span className="text-[10px] text-slate-500">({product?.metadata?.reference || 'S/Ref'})</span></span>
+                              <span className="font-bold text-xs">{product?.name || 'Não cadastrado'} <span className="text-[10px] text-slate-500">({product?.reference || 'S/Ref'})</span></span>
                             </div>
                             <div>
                               <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Cor / Grade</span>
@@ -2275,6 +2508,186 @@ export default function CuttingProjectionPanel({
           );
         })()}
       </AnimatePresence>
+
+      {/* Etiqueta Térmica — editor completo de etiquetas para o produto do lote */}
+      {labelModalOpen && lotProductDetails?.product && (
+        <PrintLabelEditorModal
+          isOpen={labelModalOpen}
+          onClose={() => setLabelModalOpen(false)}
+          product={lotProductDetails.product}
+          isDarkMode={isDarkMode}
+        />
+      )}
+
+      {/* ── QR Baixa Modal — Setor de Corte ──────────────────────────── */}
+      {qrBaixaOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
+          <div className={`w-full max-w-sm rounded-[2rem] border shadow-2xl flex flex-col overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+
+            {/* Header */}
+            <div className={`flex items-center justify-between px-6 pt-6 pb-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
+                  <QrCode size={20} className="text-violet-500" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">Baixa por QR Code</h3>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Setor de Corte</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Fechar"
+                title="Fechar"
+                onClick={() => { setQrBaixaOpen(false); setQrBaixaConfirm(null); setQrBaixaManualCode(''); }}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-5 p-6">
+
+              {/* Active OS info pill */}
+              {activeOSForSelectedLot && !qrBaixaConfirm && (
+                <div className={`p-4 rounded-2xl border flex flex-col gap-1 ${isDarkMode ? 'bg-emerald-950/20 border-emerald-800/40' : 'bg-emerald-50 border-emerald-100'}`}>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500">OS Ativa no Mapa Selecionado</span>
+                  <span className="text-sm font-black text-slate-900 dark:text-white">{activeOSForSelectedLot.osNumber}</span>
+                  <span className="text-[10px] font-bold text-slate-400">{activeOSForSelectedLot.providerName} • R$ {activeOSForSelectedLot.totalValue.toFixed(2)}</span>
+                </div>
+              )}
+
+              {/* Confirmation panel */}
+              {qrBaixaConfirm ? (
+                <div className="flex flex-col gap-4">
+                  <div className={`p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <CheckSquare size={16} className="text-emerald-500" />
+                      <span className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Confirmar Baixa</span>
+                    </div>
+                    <div className="flex flex-col gap-1.5 text-[11px]">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-bold uppercase tracking-wider">OS</span>
+                        <span className="font-black text-indigo-600 dark:text-indigo-400">{qrBaixaConfirm.os.osNumber}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-bold uppercase tracking-wider">Cortador</span>
+                        <span className="font-black text-slate-800 dark:text-slate-200">{qrBaixaConfirm.os.providerName}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-bold uppercase tracking-wider">Próximo Setor</span>
+                        <span className={`font-black ${qrBaixaConfirm.nextSectorName === 'CONCLUÍDO' ? 'text-emerald-500' : 'text-violet-600 dark:text-violet-400'}`}>
+                          {qrBaixaConfirm.nextSectorName}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-bold uppercase tracking-wider">Valor</span>
+                        <span className="font-black text-rose-500">R$ {qrBaixaConfirm.os.totalValue.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setQrBaixaConfirm(null)}
+                      className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    >
+                      Voltar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const os = qrBaixaConfirm.os;
+                        setQrBaixaOpen(false);
+                        setQrBaixaConfirm(null);
+                        setQrBaixaManualCode('');
+                        await handleCompleteOSCutting(os);
+                      }}
+                      className="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+                    >
+                      <CheckSquare size={14} /> Confirmar Baixa
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Camera scan button */}
+                  <button
+                    type="button"
+                    disabled={qrBaixaScanning}
+                    onClick={async () => {
+                      setQrBaixaScanning(true);
+                      try {
+                        if (activeOSForSelectedLot) {
+                          // OS already known — go straight to confirm
+                          handleQrBaixaResolve(`OS|${activeOSForSelectedLot.id}`);
+                        } else {
+                          const raw = await scannerService.scan();
+                          if (raw) handleQrBaixaResolve(raw);
+                        }
+                      } finally {
+                        setQrBaixaScanning(false);
+                      }
+                    }}
+                    className={`w-full flex flex-col items-center justify-center gap-3 py-8 rounded-2xl border-2 border-dashed transition-all ${
+                      qrBaixaScanning
+                        ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20 animate-pulse'
+                        : isDarkMode
+                          ? 'border-violet-700/50 bg-violet-950/10 hover:bg-violet-950/25 text-violet-400'
+                          : 'border-violet-200 bg-violet-50/50 hover:bg-violet-50 text-violet-600'
+                    }`}
+                  >
+                    <ScanLine size={40} className={qrBaixaScanning ? 'animate-bounce' : ''} />
+                    <div className="text-center">
+                      <p className="text-sm font-black uppercase tracking-widest">
+                        {qrBaixaScanning ? 'Abrindo câmera...' : activeOSForSelectedLot ? 'Confirmar OS Ativa' : 'Escanear QR Code da OS'}
+                      </p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-1">
+                        {activeOSForSelectedLot ? 'Toque para ver detalhes e confirmar a baixa' : 'Toque para abrir a câmera'}
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Divider */}
+                  <div className="flex items-center gap-3">
+                    <div className={`flex-1 h-px ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">ou digitar manualmente</span>
+                    <div className={`flex-1 h-px ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                  </div>
+
+                  {/* Manual input */}
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Hash size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={qrBaixaManualCode}
+                        onChange={e => setQrBaixaManualCode(e.target.value.toUpperCase())}
+                        onKeyDown={e => { if (e.key === 'Enter' && qrBaixaManualCode.trim()) handleQrBaixaResolve(qrBaixaManualCode); }}
+                        placeholder="Ex: OS-C-1895"
+                        className={`w-full pl-8 pr-3 py-3 rounded-2xl text-xs font-black uppercase tracking-widest outline-none border-2 transition-colors ${
+                          isDarkMode
+                            ? 'bg-slate-950 border-slate-800 text-white focus:border-violet-500 placeholder:text-slate-700'
+                            : 'bg-white border-slate-200 text-slate-900 focus:border-violet-500 placeholder:text-slate-300'
+                        }`}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!qrBaixaManualCode.trim()}
+                      onClick={() => handleQrBaixaResolve(qrBaixaManualCode)}
+                      className="px-4 py-3 rounded-2xl bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 shrink-0"
+                    >
+                      Buscar
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

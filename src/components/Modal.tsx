@@ -28,7 +28,7 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
   return createPortal(
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex }}>
+        <div className="fixed inset-0 flex items-center justify-center p-4 no-print" data-no-print="true" style={{ zIndex }}>
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -45,8 +45,8 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             className={`relative w-full ${maxWidth} max-h-[90vh] bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden border border-slate-100 dark:border-slate-800`}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between px-8 py-6 border-b border-slate-50 dark:border-slate-800/50 shrink-0">
+            {/* Header — hidden on print */}
+            <div className="flex items-center justify-between px-8 py-6 border-b border-slate-50 dark:border-slate-800/50 shrink-0 no-print" data-no-print="true">
               <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
                 {title}
               </h2>
@@ -64,8 +64,8 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
               {children}
             </div>
 
-            {/* Footer */}
-            <div className="px-4 py-6 border-t border-slate-50 dark:border-slate-800/50 shrink-0 bg-slate-50/30 dark:bg-slate-900/50">
+            {/* Footer — hidden on print */}
+            <div className="px-4 py-6 border-t border-slate-50 dark:border-slate-800/50 shrink-0 bg-slate-50/30 dark:bg-slate-900/50 no-print" data-no-print="true">
               <button
                 onClick={onClose}
                 className="w-full py-4 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-black uppercase tracking-widest text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-[0.98]"

@@ -569,6 +569,19 @@ export default function FinancialView({
                             </div>
                           );
                         }
+
+                        // Beneficiário/Prestador via personId (OS de corte, mão de obra)
+                        const beneficiary = transaction.personId
+                          ? people.find(p => p.id === transaction.personId)
+                          : null;
+                        if (beneficiary) {
+                          return (
+                            <div className="flex items-center gap-1 text-[9px] font-black text-indigo-500 dark:text-indigo-400 tracking-widest mt-0.5">
+                              <User size={10} /> {beneficiary.name}
+                            </div>
+                          );
+                        }
+
                         return null;
                       })()}
 

@@ -117,6 +117,8 @@ const AreaInput = ({ size, value, onChange, isDarkMode, onShowCalc, onShowConsum
               setLocalValue(val.toFixed(4).replace('.', ','));
               onChange(val);
             })}
+            aria-label="Abrir calculadora"
+            title="Abrir calculadora"
             className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'hover:bg-slate-800 text-slate-500' : 'hover:bg-slate-100 text-slate-400'}`}
           >
             <Calculator size={14} />
@@ -137,6 +139,7 @@ const AreaInput = ({ size, value, onChange, isDarkMode, onShowCalc, onShowConsum
           }}
           className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-500 hover:text-emerald-600 transition-all active:scale-95 z-10"
           title="Abrir Calculador de Consumo"
+          aria-label="Abrir Calculador de Consumo"
         >
           <Ruler size={14} strokeWidth={3} className="rotate-90" />
         </button>
@@ -2801,6 +2804,7 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: {
           <button
             onClick={onEdit}
             title="Editar Setor"
+            aria-label="Editar Setor"
             className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-indigo-600'}`}
           >
             <Edit3 size={18} />
@@ -2810,6 +2814,7 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: {
               if (confirm(`Deseja excluir o setor ${sector.name}?`)) onDelete();
             }}
             title="Excluir Setor"
+            aria-label="Excluir Setor"
             className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-red-400' : 'bg-slate-50 text-slate-400 hover:text-red-500'}`}
           >
             <Trash2 size={18} />

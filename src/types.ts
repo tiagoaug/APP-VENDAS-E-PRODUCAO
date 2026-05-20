@@ -302,6 +302,7 @@ export type Transaction = {
   status: 'PENDING' | 'COMPLETED';
   contactId?: string; // ID for Customer/Supplier
   contactName?: string;
+  personId?: string; // Beneficiário/Prestador (OS de corte, mão de obra)
   relatedId?: string;
   memberId?: string; // For Family Members in personal finance
   isPersonal?: boolean;

@@ -1,12 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Printer, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
   RotateCcw, Eye, EyeOff, Plus, Minus, Settings2, FileText, Tag,
-  LayoutDashboard, X, Check, Layers
+  LayoutDashboard, X, Check, Layers, ImageIcon
 } from 'lucide-react';
 import Modal from './Modal';
 import { ServiceOrder, Product, Grid, ProductionLot } from '../types';
 import { labelService } from '../services/labelService';
+import { shareImage } from '../utils/pdfExport';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -185,6 +186,7 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
   const [printing,  setPrinting]  = useState(false);
   const [qrPreview, setQrPreview] = useState('');
   const [elemConfigOpen, setElemConfigOpen] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   // Manual size state
   const savedManual = (() => { try { return JSON.parse(localStorage.getItem(STORAGE_MANUAL) || '[80,40]'); } catch { return [80, 40]; } })();
@@ -269,6 +271,40 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
     setPrinting(true);
     try { await labelService.printServiceOrder(os, nextSectorName, paperDims, layout, photoUrl, sizeGrid); onClose(); }
     finally { setPrinting(false); }
+  };
+
+  const handleExportJPG = async () => {
+    // Garante que a aba de visualização está ativa (onde o ref está montado)
+    if (tab !== 'view') {
+      setTab('view');
+      // Aguarda o React re-renderizar e o DOM atualizar
+      await new Promise(r => setTimeout(r, 350));
+    }
+    const el = previewRef.current;
+    if (!el) {
+      console.warn('Preview não encontrado para captura JPG');
+      return;
+    }
+    setPrinting(true);
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const shortSide = Math.min(previewW, previewH);
+      // Mínimo 4× de escala para imagens nítidas em etiquetas pequenas
+      const captureScale = Math.max(4, 400 / shortSide);
+      const canvas = await html2canvas(el, {
+        scale: captureScale,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        imageTimeout: 5000,
+      });
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+      await shareImage(dataUrl, `OS_${os.osNumber}.jpg`);
+      onClose();
+    } catch (err) {
+      console.error('Erro ao gerar JPG', err);
+    } finally { setPrinting(false); }
   };
 
   const sel = selected ? layout.elems[selected] : null;
@@ -447,7 +483,7 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
       <div className="flex flex-col gap-4 py-1">
 
         {/* ── Print mode toggle ── */}
-        <div className={`flex p-1 rounded-2xl gap-1 ${dk?'bg-slate-800':'bg-slate-100'}`}>
+        <div className={`flex p-1 rounded-2xl gap-1 no-print ${dk?'bg-slate-800':'bg-slate-100'}`} data-no-print="true">
           {([['document','Documento',<FileText size={12}/>],['thermal','Etiqueta Térmica',<Tag size={12}/>]] as const).map(([m,lbl,icon])=>(
             <button key={m} type="button" onClick={() => handleModeChange(m as PrintMode)}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${printMode===m?`bg-white dark:bg-slate-700 text-indigo-600 shadow-sm`:'text-slate-400'}`}>
@@ -457,7 +493,7 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
         </div>
 
         {/* ── Size selection ── */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 no-print" data-no-print="true">
           <div className="flex items-center justify-between px-1">
             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
               {printMode==='thermal' ? 'Tamanho da Etiqueta' : 'Tamanho do Papel'}
@@ -513,7 +549,7 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
         </div>
 
         {/* ── View / Edit tabs ── */}
-        <div className={`flex p-1 rounded-2xl gap-1 ${dk?'bg-slate-800':'bg-slate-100'}`}>
+        <div className={`flex p-1 rounded-2xl gap-1 no-print ${dk?'bg-slate-800':'bg-slate-100'}`} data-no-print="true">
           {([['view','Visualizar',<FileText size={12}/>],['edit','Ajustar',<Settings2 size={12}/>]] as const).map(([t,lbl,icon])=>(
             <button key={t} type="button" onClick={() => { setTab(t as any); setSelected(null); }}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${tab===t?'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm':'text-slate-400'}`}>
@@ -538,7 +574,7 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
               </>
             ) : (
               <div className="flex justify-center p-3">
-                <div style={{ boxShadow:'0 4px 24px rgba(0,0,0,0.12)', borderRadius:2, overflow:'hidden', flexShrink:0 }}>
+                <div ref={previewRef} style={{ boxShadow:'0 4px 24px rgba(0,0,0,0.12)', borderRadius:2, overflow:'hidden', flexShrink:0 }}>
                   <ContentPreview/>
                 </div>
               </div>
@@ -595,6 +631,8 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
                 <button
                   type="button"
                   onClick={() => setElemConfigOpen(false)}
+                  aria-label="Fechar"
+                  title="Fechar"
                   className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${dk ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-800'}`}
                 >
                   <X size={16} />
@@ -639,6 +677,7 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
                           setSelected(isSel ? null : key);
                           setElemConfigOpen(false);
                         }}
+                        aria-label={isSel ? 'Selecionado - Clique para desmarcar' : 'Ajustar'}
                         className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
                           isSel
                             ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-500/20'
@@ -801,11 +840,20 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
         </div>
 
         {/* ── Actions ── */}
-        <div className="flex gap-3">
-          <button type="button" onClick={onClose} className={`flex-1 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest ${dk?'bg-slate-800 text-slate-400':'bg-slate-100 text-slate-500'}`}>Cancelar</button>
-          <button type="button" onClick={handlePrint} disabled={printing}
-            className="flex-[2] py-4 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
-            <Printer size={16}/> {printing?'Gerando…':'Gerar PDF'}
+        <div className="flex flex-col gap-2 no-print" data-no-print="true">
+          {/* Exportar — card único com PDF + JPG lado a lado */}
+          <div className={`flex gap-2 p-2 rounded-2xl ${dk?'bg-slate-800':'bg-slate-100'}`}>
+            <button type="button" onClick={handlePrint} disabled={printing}
+              className="flex-1 py-3.5 rounded-xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-md shadow-indigo-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
+              <Printer size={15}/> PDF
+            </button>
+            <button type="button" onClick={handleExportJPG} disabled={printing}
+              className={`flex-1 py-3.5 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5 active:scale-95 transition-all disabled:opacity-60 ${dk?'bg-amber-600/20 text-amber-400 border border-amber-600/30':'bg-amber-500 text-white'}`}>
+              <ImageIcon size={15}/> JPG
+            </button>
+          </div>
+          <button type="button" onClick={onClose} className={`w-full py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest ${dk?'bg-slate-800 text-slate-400':'bg-slate-100 text-slate-500'}`}>
+            Cancelar
           </button>
         </div>
       </div>

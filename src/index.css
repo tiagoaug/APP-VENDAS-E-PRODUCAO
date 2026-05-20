@@ -186,3 +186,30 @@
     animation: pulse-vencimento 2s infinite;
   }
 }
+
+/* ── Global Print Rules ───────────────────────────────────────────────────── */
+@media print {
+  /* Hide everything by default; the print container re-shows itself */
+  body > * { display: none !important; }
+
+  /* React root is a direct body child — hide it so the app UI doesn't print */
+  #root { display: none !important; }
+
+  /* Print containers injected by handlePrint() / printLotSheet() */
+  #temp-cutting-print-container,
+  #_lot_print_container {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Never print modal overlays, nav bars, fixed headers */
+  [class*="fixed"],
+  [class*="backdrop"],
+  [data-no-print],
+  .no-print {
+    display: none !important;
+  }
+}

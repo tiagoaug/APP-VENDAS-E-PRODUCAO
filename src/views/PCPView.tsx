@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, Search, ChevronRight, Filter,
@@ -8,7 +9,8 @@ import {
   ArrowUpRight, ArrowDownRight, Loader2,
   Settings2, Trash2, Edit3, Edit2, ClipboardList,
   Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart,
-  DollarSign, Hammer, FileText, CheckSquare, Scissors
+  DollarSign, Hammer, FileText, CheckSquare, Scissors, Printer,
+  QrCode, ScanLine, Hash
 } from 'lucide-react';
 import {
   ProductionLot, Product, Sector,
@@ -20,8 +22,10 @@ import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
 import ScannerModal from '../components/ScannerModal';
 import PrintOSModal from '../components/PrintOSModal';
+import PrintLabelEditorModal from '../components/PrintLabelEditorModal';
 import { Camera } from 'lucide-react';
 import { labelService } from '../services/labelService';
+import { printLotSheet } from '../utils/pdfExport';
 import { scannerService } from '../services/scannerService';
 import { financeService } from '../services/financeService';
 import { firebaseService } from '../services/firebaseService';
@@ -109,6 +113,20 @@ export default function PCPView({
   const [isSavingOS, setIsSavingOS] = useState(false);
   const [isPrintOSModalOpen, setIsPrintOSModalOpen] = useState(false);
   const [printOSData, setPrintOSData] = useState<{ os: ServiceOrder; nextSectorName: string } | null>(null);
+  const [labelModalProduct, setLabelModalProduct] = useState<import('../types').Product | null>(null);
+
+  // QR Baixa modal state
+  const [qrBaixaModal, setQrBaixaModal] = useState<{
+    sectorId: string;
+    preselectedOS: ServiceOrder | null;
+  } | null>(null);
+  const [qrBaixaManualCode, setQrBaixaManualCode] = useState('');
+  const [qrBaixaScanning, setQrBaixaScanning] = useState(false);
+  const [qrBaixaConfirm, setQrBaixaConfirm] = useState<{
+    os: ServiceOrder;
+    lot: import('../types').ProductionLot | null;
+    nextSectorName: string;
+  } | null>(null);
 
   // Filtered and organized data
   const filteredLots = useMemo(() => {
@@ -758,6 +776,21 @@ export default function PCPView({
       return;
     }
 
+    // Trava: impede duplicação — verifica se já existe OS pendente para o mesmo lote+setor
+    if (!editingOS) {
+      for (const lot of targetLots) {
+        const existing = serviceOrders.find(so =>
+          (so.lotId === lot.id || (so.lotIds && so.lotIds.includes(lot.id))) &&
+          so.sectorId === currentSector.id &&
+          so.status === 'PENDING'
+        );
+        if (existing) {
+          alert(`Já existe a OS ${existing.osNumber} em aberto para este lote no setor "${currentSector.name}". Conclua ou exclua-a antes de criar uma nova.`);
+          return;
+        }
+      }
+    }
+
     const product = products.find(p => p.id === firstLot.productId);
     const variation = product?.variations.find(v => v.id === firstLot.variationId);
 
@@ -918,6 +951,32 @@ export default function PCPView({
         alert("Erro ao concluir Ordem de Serviço: " + (e instanceof Error ? e.message : String(e)));
       }
     }
+  };
+
+  // Resolve an OS from a raw scan string or manual OS number and show confirmation
+  const handleQrBaixaResolve = (raw: string) => {
+    const parsed = scannerService.parseScanResult(raw);
+    let os: ServiceOrder | undefined;
+
+    if (parsed?.type === 'OS') {
+      os = (serviceOrders || []).find(so => so.id === parsed.osId);
+    } else {
+      // Try matching by osNumber directly (e.g. "OS-0003" typed manually)
+      const normalized = raw.trim().toUpperCase();
+      os = (serviceOrders || []).find(so =>
+        so.osNumber.toUpperCase() === normalized || so.id === raw.trim()
+      );
+    }
+
+    if (!os) { alert('OS não encontrada. Verifique o código e tente novamente.'); return; }
+    if (os.status === 'COMPLETED') { alert(`A OS ${os.osNumber} já foi concluída.`); return; }
+
+    const lot = (lots || []).find(l =>
+      l.id === os!.lotId || (os!.lotIds && os!.lotIds.includes(l.id))
+    ) || null;
+    const nextSectorId = lot?.route?.[( lot?.currentSectorIndex ?? 0) + 1] || '';
+    const nextSec = (sectors || []).find(s => s.id === nextSectorId);
+    setQrBaixaConfirm({ os, lot, nextSectorName: nextSec?.name || 'CONCLUÍDO' });
   };
 
   const handleDeleteOS = async (os: ServiceOrder) => {
@@ -1212,25 +1271,25 @@ export default function PCPView({
           <button
             type="button"
             onClick={() => { setActiveTab('monitor'); setSelectedSectorId(null); }}
-            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'monitor' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'monitor' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
           >
-            <LayoutDashboard size={14} /> Monitor WIP
+            <LayoutDashboard size={14} className="text-indigo-500 shrink-0" /> Monitor WIP
           </button>
           <button
             type="button"
             onClick={() => { setActiveTab('lots'); setSelectedSectorId(null); }}
-            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'lots' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'lots' ? 'bg-white dark:bg-slate-800 text-emerald-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
           >
-            <ListTodo size={14} /> MAPAS
+            <ListTodo size={14} className="text-emerald-500 shrink-0" /> MAPAS
           </button>
           <button
             type="button"
             onClick={() => { setActiveTab('orders'); setSelectedSectorId(null); }}
-            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'orders' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'orders' ? 'bg-white dark:bg-slate-800 text-violet-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
           >
-            <ClipboardList size={14} /> Pedidos
+            <ClipboardList size={14} className="text-violet-500 shrink-0" /> Pedidos
             {pendingOrders.length > 0 && (
-              <span className="w-4 h-4 rounded-full bg-indigo-600 text-white text-[8px] font-black flex items-center justify-center">
+              <span className="w-4 h-4 rounded-full bg-violet-500 text-white text-[8px] font-black flex items-center justify-center">
                 {pendingOrders.length}
               </span>
             )}
@@ -1238,9 +1297,9 @@ export default function PCPView({
           <button
             type="button"
             onClick={() => { setActiveTab('needs'); setSelectedSectorId(null); }}
-            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'needs' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-400'}`}
+            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'needs' ? 'bg-white dark:bg-slate-800 text-amber-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
           >
-            <AlertCircle size={14} /> Necessidades
+            <AlertCircle size={14} className="text-amber-500 shrink-0" /> Necessidades
             {purchaseNeeds.length > 0 && (
               <span className={`w-4 h-4 rounded-full text-white text-[8px] font-black flex items-center justify-center ${
                 purchaseNeeds.some(i => i.type === 'MATERIAL' ? i.required > i.stock : i.sizeShortages ? Object.values(i.sizeShortages).some((s: any) => s.required > s.stock) : false)
@@ -1367,7 +1426,7 @@ export default function PCPView({
                       }`}
                     >
                       <Scissors size={14} />
-                      {isProjectionMode ? 'Ver Lotes Padrão' : 'Painel de Projeção'}
+                      {isProjectionMode ? 'Ver Mapas do Setor' : 'Painel de Projeção'}
                     </button>
                   )}
 
@@ -1393,6 +1452,26 @@ export default function PCPView({
                     {isMultiSelectMode ? 'Cancelar Seleção' : 'Seleção Múltipla'}
                   </button>
                 </div>
+              </div>
+
+              {/* ── Legenda do setor ───────────────────────────────────────── */}
+              <div className={`flex flex-wrap gap-3 px-1 py-3 rounded-2xl border text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-100 bg-slate-50'}`}>
+                <span className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Legenda:</span>
+                {[
+                  { dot: 'bg-indigo-500',  label: 'Mapa de Produção', desc: 'Agrupamento de pares de um pedido na rota de produção' },
+                  { dot: 'bg-emerald-500', label: 'OS (Ordem de Serviço)', desc: 'Ordem emitida para um prestador executar o trabalho no setor' },
+                  { dot: 'bg-amber-500',   label: 'Baixa de Setor', desc: 'Concluir a OS e avançar o Mapa para o próximo setor' },
+                  ...(isCuttingSector ? [{ dot: 'bg-violet-500', label: 'Ficha Técnica', desc: 'Especificação de corte: materiais, facas e infestos' }] : []),
+                ].map(item => (
+                  <div key={item.label} className="flex items-center gap-1.5 group relative">
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${item.dot}`}/>
+                    <span className={`${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{item.label}</span>
+                    {/* Tooltip ao passar o mouse */}
+                    <div className={`absolute bottom-full left-0 mb-1 px-2.5 py-1.5 rounded-xl text-[9px] font-bold normal-case tracking-normal whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-lg ${isDarkMode ? 'bg-slate-700 text-white' : 'bg-slate-800 text-white'}`}>
+                      {item.desc}
+                    </div>
+                  </div>
+                ))}
               </div>
 
               {isCuttingSector && isProjectionMode ? (
@@ -1426,7 +1505,7 @@ export default function PCPView({
                       <CheckSquare size={20} />
                     </div>
                     <div>
-                      <p className="text-xs font-black uppercase tracking-wider">{selectedLotIds.length} Lote(s) Selecionado(s)</p>
+                      <p className="text-xs font-black uppercase tracking-wider">{selectedLotIds.length} Mapa(s) Selecionado(s)</p>
                       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
                         Total: {filteredActiveLots.filter(l => selectedLotIds.includes(l.id)).reduce((acc, l) => acc + (l.quantity || 0), 0)} Pares
                       </p>
@@ -1486,7 +1565,7 @@ export default function PCPView({
                       }}
                       className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-900/30 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
                     >
-                      Excluir Lotes
+                      Excluir Mapas
                     </button>
                   </div>
                 </div>
@@ -1502,7 +1581,12 @@ export default function PCPView({
                     : lot.createdAt;
                   const isDelayed = Date.now() - lastMove > 24 * 60 * 60 * 1000;
                   const isSelected = selectedLotIds.includes(lot.id);
-                  
+                  const cardOS = serviceOrders.find(so =>
+                    (so.lotId === lot.id || (so.lotIds && so.lotIds.includes(lot.id))) &&
+                    so.sectorId === selectedSectorId &&
+                    so.status === 'PENDING'
+                  );
+
                   return (
                     <motion.div
                       layoutId={lot.id}
@@ -1547,7 +1631,18 @@ export default function PCPView({
                             )}
                           </div>
                         </div>
-                        <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-xl">{lot.orderNumber}</span>
+                        <div className="flex flex-col items-end gap-1.5">
+                          <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-xl">{lot.orderNumber}</span>
+                          {cardOS ? (
+                            <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest">
+                              <Hammer size={9}/> {cardOS.osNumber}
+                            </span>
+                          ) : (
+                            <span className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-slate-100 text-slate-400'}`}>
+                              Sem OS
+                            </span>
+                          )}
+                        </div>
                       </div>
                       
                       <div className="flex items-center gap-4 mb-5">
@@ -1590,6 +1685,111 @@ export default function PCPView({
                           ))}
                         </div>
                       )}
+
+                      {/* Ações do card: OS, Baixa, Imprimir, Etiqueta */}
+                      <div className="mt-3 flex flex-col gap-2" onClick={e => e.stopPropagation()}>
+                        {/* Linha 1: OS info + Baixa rápida + QR Baixa */}
+                        {cardOS ? (
+                          <div className="flex items-center gap-2">
+                            <div className={`flex-1 text-[9px] font-bold truncate ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                              {cardOS.providerName} • R$ {cardOS.totalValue.toFixed(2)}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleCompleteOS(cardOS)}
+                              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500 text-white text-[9px] font-black uppercase tracking-widest shadow-sm shadow-emerald-500/20 active:scale-95 transition-all shrink-0"
+                            >
+                              <CheckSquare size={11}/> Baixa
+                            </button>
+                            {/* QR Baixa — abre scanner com a OS pré-selecionada */}
+                            <button
+                              type="button"
+                              title="Baixa por QR Code"
+                              onClick={() => {
+                                setQrBaixaModal({ sectorId: selectedSectorId!, preselectedOS: cardOS });
+                                setQrBaixaManualCode('');
+                                setQrBaixaConfirm(null);
+                              }}
+                              className={`flex items-center gap-1 px-2.5 py-2 rounded-xl active:scale-95 transition-all border shrink-0 text-[9px] font-black uppercase tracking-widest ${
+                                isDarkMode
+                                  ? 'bg-violet-950/40 border-violet-700/40 text-violet-400 hover:bg-violet-900/50'
+                                  : 'bg-violet-50 border-violet-200 text-violet-600 hover:bg-violet-100'
+                              }`}
+                            >
+                              <QrCode size={12} /> Baixa QR
+                            </button>
+                          </div>
+                        ) : (
+                          /* Sem OS — botão Emitir OS + QR scan para buscar OS existente */
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenOSModal(lot)}
+                              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all border ${
+                                isDarkMode
+                                  ? 'bg-indigo-950/40 border-indigo-700/50 text-indigo-400 hover:bg-indigo-900/50'
+                                  : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
+                              }`}
+                            >
+                              <Hammer size={11}/> Emitir OS
+                            </button>
+                            <button
+                              type="button"
+                              title="Baixa por QR Code"
+                              onClick={() => {
+                                setQrBaixaModal({ sectorId: selectedSectorId!, preselectedOS: null });
+                                setQrBaixaManualCode('');
+                                setQrBaixaConfirm(null);
+                              }}
+                              className={`flex items-center gap-1 px-2.5 py-2 rounded-xl active:scale-95 transition-all border shrink-0 text-[9px] font-black uppercase tracking-widest ${
+                                isDarkMode
+                                  ? 'bg-violet-950/40 border-violet-700/40 text-violet-400 hover:bg-violet-900/50'
+                                  : 'bg-violet-50 border-violet-200 text-violet-600 hover:bg-violet-100'
+                              }`}
+                            >
+                              <QrCode size={12} /> Baixa QR
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Linha 2: Imprimir A4 + Etiqueta Térmica — sempre disponíveis */}
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => printLotSheet({
+                              lot,
+                              product,
+                              variationName: variation?.colorName,
+                              sectorName: sectors.find(s => s.id === selectedSectorId)?.name,
+                              os: cardOS || serviceOrders.find(so =>
+                                (so.lotId === lot.id || (so.lotIds && so.lotIds.includes(lot.id))) &&
+                                so.sectorId === selectedSectorId
+                              ) || null,
+                              productionConfigs,
+                            })}
+                            className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all border ${
+                              isDarkMode
+                                ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+                                : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            <Printer size={11}/> Imprimir A4
+                          </button>
+                          {product && (
+                            <button
+                              type="button"
+                              onClick={() => setLabelModalProduct(product)}
+                              className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all border ${
+                                isDarkMode
+                                  ? 'bg-amber-950/30 border-amber-700/40 text-amber-400 hover:bg-amber-900/40'
+                                  : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                              }`}
+                            >
+                              <Tag size={11}/> Etiqueta
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     </motion.div>
                   );
                 })}
@@ -1740,7 +1940,7 @@ export default function PCPView({
                    </div>
                    <div>
                       <h4 className="text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">Carrinho</h4>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mt-0.5">Formação de Lote</p>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mt-0.5">Novo Mapa de Produção</p>
                    </div>
                 </div>
 
@@ -2558,6 +2758,15 @@ export default function PCPView({
                             Excluir
                           </button>
                         </div>
+
+                        {/* Baixa Direta — acesso rápido sem abrir o modal de detalhe */}
+                        <button
+                          type="button"
+                          onClick={() => handleCompleteOS(activeOS)}
+                          className="w-full py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-[0.15em] shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-3 transition-all active:scale-95"
+                        >
+                          <CheckSquare size={16} /> Dar Baixa Direta
+                        </button>
                         
                         <div className="grid grid-cols-3 gap-3 bg-white dark:bg-slate-900/50 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-950 shadow-sm">
                           <div className="flex flex-col">
@@ -3008,7 +3217,7 @@ export default function PCPView({
           {selectedLot && (
             <div className={`p-4 rounded-2xl flex flex-col gap-2 ${isDarkMode ? 'bg-slate-900' : 'bg-slate-50'}`}>
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Mapa / Lote</span>
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Mapa de Produção</span>
                 <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">
                   Qtd: {selectedLot.quantity} Pares
                 </span>
@@ -3221,6 +3430,209 @@ export default function PCPView({
           grids={grids || []}
           lot={(lots || []).find(l => l.id === printOSData.os.lotId)}
         />
+      )}
+
+      {labelModalProduct && (
+        <PrintLabelEditorModal
+          isOpen={!!labelModalProduct}
+          onClose={() => setLabelModalProduct(null)}
+          product={labelModalProduct}
+          isDarkMode={isDarkMode}
+        />
+      )}
+
+      {/* ── QR Baixa Modal ──────────────────────────────────────────── */}
+      {qrBaixaModal && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
+          <div className={`w-full max-w-sm rounded-[2rem] border shadow-2xl flex flex-col gap-0 overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+
+            {/* Header */}
+            <div className={`flex items-center justify-between px-6 pt-6 pb-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
+                  <QrCode size={20} className="text-violet-500" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">Baixa por QR Code</h3>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Escanear ou digitar número da OS</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Fechar"
+                title="Fechar"
+                onClick={() => { setQrBaixaModal(null); setQrBaixaConfirm(null); setQrBaixaManualCode(''); }}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-5 p-6">
+
+              {/* Pre-selected OS info */}
+              {qrBaixaModal.preselectedOS && !qrBaixaConfirm && (
+                <div className={`p-4 rounded-2xl border flex flex-col gap-1 ${isDarkMode ? 'bg-emerald-950/20 border-emerald-800/40' : 'bg-emerald-50 border-emerald-100'}`}>
+                  <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500">OS Pré-selecionada</span>
+                  <span className="text-sm font-black text-slate-900 dark:text-white">{qrBaixaModal.preselectedOS.osNumber}</span>
+                  <span className="text-[10px] font-bold text-slate-400">{qrBaixaModal.preselectedOS.providerName} • R$ {qrBaixaModal.preselectedOS.totalValue.toFixed(2)}</span>
+                </div>
+              )}
+
+              {/* Confirmation panel — shown after resolving an OS */}
+              {qrBaixaConfirm ? (
+                <div className="flex flex-col gap-4">
+                  <div className={`p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <CheckSquare size={16} className="text-emerald-500" />
+                      <span className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Confirmar Baixa</span>
+                    </div>
+                    <div className="flex flex-col gap-1.5 text-[11px]">
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-bold uppercase tracking-wider">OS</span>
+                        <span className="font-black text-indigo-600 dark:text-indigo-400">{qrBaixaConfirm.os.osNumber}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-bold uppercase tracking-wider">Prestador</span>
+                        <span className="font-black text-slate-800 dark:text-slate-200">{qrBaixaConfirm.os.providerName}</span>
+                      </div>
+                      {qrBaixaConfirm.lot && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400 font-bold uppercase tracking-wider">Mapa</span>
+                          <span className="font-black text-slate-800 dark:text-slate-200">#{qrBaixaConfirm.lot.orderNumber}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-bold uppercase tracking-wider">Próximo Setor</span>
+                        <span className={`font-black ${qrBaixaConfirm.nextSectorName === 'CONCLUÍDO' ? 'text-emerald-500' : 'text-violet-600 dark:text-violet-400'}`}>
+                          {qrBaixaConfirm.nextSectorName}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400 font-bold uppercase tracking-wider">Valor</span>
+                        <span className="font-black text-rose-500">R$ {qrBaixaConfirm.os.totalValue.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setQrBaixaConfirm(null)}
+                      className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const os = qrBaixaConfirm.os;
+                        setQrBaixaModal(null);
+                        setQrBaixaConfirm(null);
+                        setQrBaixaManualCode('');
+                        await handleCompleteOS(os);
+                      }}
+                      className="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+                    >
+                      <CheckSquare size={14} /> Confirmar Baixa
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {/* Camera scan button */}
+                  <button
+                    type="button"
+                    disabled={qrBaixaScanning}
+                    onClick={async () => {
+                      setQrBaixaScanning(true);
+                      try {
+                        // If OS pre-selected, confirm directly without scanning
+                        if (qrBaixaModal.preselectedOS) {
+                          const os = qrBaixaModal.preselectedOS;
+                          const lot = (lots || []).find(l => l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id))) || null;
+                          const nextSectorId = lot?.route?.[(lot?.currentSectorIndex ?? 0) + 1] || '';
+                          const nextSec = (sectors || []).find(s => s.id === nextSectorId);
+                          setQrBaixaConfirm({ os, lot, nextSectorName: nextSec?.name || 'CONCLUÍDO' });
+                        } else {
+                          const raw = await scannerService.scan();
+                          if (raw) handleQrBaixaResolve(raw);
+                        }
+                      } finally {
+                        setQrBaixaScanning(false);
+                      }
+                    }}
+                    className={`w-full flex flex-col items-center justify-center gap-3 py-8 rounded-2xl border-2 border-dashed transition-all active:scale-98 ${
+                      qrBaixaScanning
+                        ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20 animate-pulse'
+                        : isDarkMode
+                          ? 'border-violet-700/50 bg-violet-950/10 hover:bg-violet-950/25 text-violet-400'
+                          : 'border-violet-200 bg-violet-50/50 hover:bg-violet-50 text-violet-600'
+                    }`}
+                  >
+                    <div className="relative">
+                      <ScanLine size={40} className={qrBaixaScanning ? 'animate-bounce' : ''} />
+                      {!qrBaixaModal.preselectedOS && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <div className={`w-full h-0.5 rounded-full ${isDarkMode ? 'bg-violet-400' : 'bg-violet-500'} opacity-60`} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm font-black uppercase tracking-widest">
+                        {qrBaixaScanning
+                          ? 'Abrindo câmera...'
+                          : qrBaixaModal.preselectedOS
+                            ? 'Confirmar esta OS'
+                            : 'Escanear QR Code da OS'}
+                      </p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-1">
+                        {qrBaixaModal.preselectedOS
+                          ? 'Clique para ver os detalhes e confirmar a baixa'
+                          : 'Toque para abrir a câmera'}
+                      </p>
+                    </div>
+                  </button>
+
+                  {/* Manual entry divider */}
+                  <div className="flex items-center gap-3">
+                    <div className={`flex-1 h-px ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">ou digitar manualmente</span>
+                    <div className={`flex-1 h-px ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                  </div>
+
+                  {/* Manual OS number input */}
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Hash size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        value={qrBaixaManualCode}
+                        onChange={e => setQrBaixaManualCode(e.target.value.toUpperCase())}
+                        onKeyDown={e => { if (e.key === 'Enter' && qrBaixaManualCode.trim()) handleQrBaixaResolve(qrBaixaManualCode); }}
+                        placeholder="Ex: OS-0003"
+                        className={`w-full pl-8 pr-3 py-3 rounded-2xl text-xs font-black uppercase tracking-widest outline-none border-2 transition-colors ${
+                          isDarkMode
+                            ? 'bg-slate-950 border-slate-800 text-white focus:border-violet-500 placeholder:text-slate-700'
+                            : 'bg-white border-slate-200 text-slate-900 focus:border-violet-500 placeholder:text-slate-300'
+                        }`}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!qrBaixaManualCode.trim()}
+                      onClick={() => handleQrBaixaResolve(qrBaixaManualCode)}
+                      className="px-4 py-3 rounded-2xl bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 shrink-0"
+                    >
+                      Buscar
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

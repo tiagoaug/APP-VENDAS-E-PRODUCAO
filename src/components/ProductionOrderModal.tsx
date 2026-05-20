@@ -296,7 +296,7 @@ export default function ProductionOrderModal({
               </p>
             </div>
           </div>
-          <button onClick={onClose} className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-800'}`}>
+          <button onClick={onClose} aria-label="Fechar" title="Fechar" className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-800'}`}>
             <X size={18} />
           </button>
         </div>
@@ -362,10 +362,11 @@ export default function ProductionOrderModal({
               <div className={`p-4 rounded-2xl flex items-center gap-3 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
                 <Calendar size={16} className="text-indigo-500 shrink-0" />
                 <div className="flex-1">
-                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-1">
+                  <label htmlFor="delivery-date-input" className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-1">
                     Data de Entrega Combinada
                   </label>
                   <input
+                    id="delivery-date-input"
                     type="date"
                     value={deliveryDate}
                     onChange={e => setDeliveryDate(e.target.value)}
@@ -438,6 +439,7 @@ export default function ProductionOrderModal({
                                   max={Math.min(available, qty)}
                                   value={alloc || ''}
                                   placeholder="0"
+                                  aria-label={`Alocar tamanho ${size}`}
                                   onChange={e => setAllocation(prev => ({
                                     ...prev,
                                     [k]: Math.min(Math.max(0, parseInt(e.target.value) || 0), Math.min(available, qty))
@@ -466,6 +468,7 @@ export default function ProductionOrderModal({
                             max={Math.min(g.stock['__all__'] || 0, g.totalQty)}
                             value={allocation[`${g.productId}-${g.variationId}-__all__`] || ''}
                             placeholder="0"
+                            aria-label="Alocar do estoque"
                             onChange={e => setAllocation(prev => ({
                               ...prev,
                               [`${g.productId}-${g.variationId}-__all__`]: Math.min(
