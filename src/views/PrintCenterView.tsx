@@ -4,7 +4,7 @@ import {
   Factory, ClipboardList, Check, X,
   AlertCircle, Settings2, BookOpen, Truck,
   ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
-  RotateCcw, Eye, EyeOff, Plus, Minus, Tag
+  RotateCcw, Eye, EyeOff, Plus, Minus, Tag, ExternalLink
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import {
@@ -12,7 +12,7 @@ import {
   SaleStatus, PaymentStatus, PurchaseType, SaleType
 } from '../types';
 import { sharePDF } from '../utils/pdfExport';
-import { labelService } from '../services/labelService';
+import PrintLabelEditorModal from '../components/PrintLabelEditorModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -133,6 +133,7 @@ function defaultElems(section: Section): Record<string, LayoutElem> {
       variations:{ x:8,y:46,  w:194, h:60,  label:'Variações',   color:'#7c3aed', visible:true,  fontSize:8,  fontFamily:'helvetica', bold:false },
       footer:   { x:0, y:285,  w:210, h:12,  label:'Rodapé',      color:'#94a3b8', visible:true,  fontSize:6,  fontFamily:'helvetica', bold:false },
     };
+    case 'labels': return {};
   }
 }
 
@@ -419,7 +420,7 @@ async function renderOSPDF(
       applyFont(e.header, 10); doc.setTextColor(255, 255, 255);
       doc.text(`ORDEM DE SERVIÇO — ${os.osNumber}`, e.header.x + e.header.w / 2, e.header.y + e.header.h * 0.55, { align: 'center' });
       doc.setFontSize((e.header.fontSize ?? 10) * 0.7);
-      doc.text(os.completedAt ? 'CONCLUÍDA' : 'EM ABERTO', e.header.x + e.header.w / 2, e.header.y + e.header.h * 0.85, { align: 'center' });
+      doc.text(os.finishedAt ? 'CONCLUÍDA' : 'EM ABERTO', e.header.x + e.header.w / 2, e.header.y + e.header.h * 0.85, { align: 'center' });
     }
     if (e.info?.visible !== false) {
       const col = e.info.w / 2; const lineH = e.info.h / 4;
@@ -601,15 +602,9 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
   const [selectedElem, setSelectedElem] = useState<string | null>(null);
   const [step, setStep] = useState(1);
 
-  // Label section state
-  const [labelSizeKey,      setLabelSizeKey]      = useState('75x24');
-  const [labelProductId,    setLabelProductId]    = useState('');
-  const [labelVariationId,  setLabelVariationId]  = useState('');
-  const [labelSelectedSizes,setLabelSelectedSizes]= useState<string[]>([]);
-  const [labelQty,          setLabelQty]          = useState(1);
-  const [labelIsBox,        setLabelIsBox]        = useState(false);
-  const [labelManualW,      setLabelManualW]      = useState(50);
-  const [labelManualH,      setLabelManualH]      = useState(30);
+  // Label section state — opens PrintLabelEditorModal
+  const [labelProductId,       setLabelProductId]       = useState('');
+  const [labelModalOpen,       setLabelModalOpen]       = useState(false);
 
   const layout: PrintLayout = allLayouts[activeSection] ?? defaultLayout(activeSection);
   const [W, H] = layout.paper;
@@ -643,8 +638,8 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
   const q = search.toLowerCase();
 
   const filteredOS      = useMemo(() => serviceOrders.filter(o => {
-    if (osFilter === 'open' && o.completedAt) return false;
-    if (osFilter === 'done' && !o.completedAt) return false;
+    if (osFilter === 'open' && o.finishedAt) return false;
+    if (osFilter === 'done' && !o.finishedAt) return false;
     return !q || `${o.osNumber} ${o.productName} ${o.sectorName} ${o.providerName}`.toLowerCase().includes(q);
   }), [serviceOrders, osFilter, q]);
 
@@ -677,7 +672,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
   function toggle<T>(set: Set<T>, item: T): Set<T> { const n = new Set(set); n.has(item) ? n.delete(item) : n.add(item); return n; }
 
   function selCount() {
-    if (activeSection === 'labels')    return labelProductId ? 1 : 0;
+    if (activeSection === 'labels')    return labelProductId ? 1 : 0; // label uses modal, count just for button state
     if (activeSection === 'os')        return selOS.size;
     if (activeSection === 'lots')      return selLots.size;
     if (activeSection === 'sales')     return selSales.size;
@@ -722,24 +717,14 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
   };
 
   const handlePrint = async () => {
+    if (activeSection === 'labels') {
+      // Labels use the full PrintLabelEditorModal — open it
+      setLabelModalOpen(true);
+      return;
+    }
     setPrinting(true);
     try {
-      if (activeSection === 'labels') {
-        const product = products.find(p => p.id === labelProductId);
-        const variation = product?.variations.find(v => v.id === labelVariationId);
-        if (!product) return;
-        const dims: [number, number] = labelSizeKey === 'manual'
-          ? [labelManualW, labelManualH]
-          : (LABEL_SIZES.find(s => s.key === labelSizeKey)?.dims || [75, 24]);
-        const sizes = labelIsBox ? ['WHOLESALE'] : (labelSelectedSizes.length > 0 ? labelSelectedSizes : Object.keys(variation?.stock || {}).filter(s => s !== 'WHOLESALE'));
-        const quantities: Record<string, number> = {};
-        sizes.forEach(s => { quantities[s] = labelQty; });
-        if (labelIsBox) {
-          await labelService.printWholesaleLabel(product, variation!, labelQty, dims, undefined, product.photoUrl);
-        } else {
-          await labelService.printProductLabels(product, variation, sizes, quantities, dims, undefined, product.photoUrl);
-        }
-      } else if (activeSection === 'os')
+      if (activeSection === 'os')
         await renderOSPDF(filteredOS.filter(o => selOS.has(o.id)), products, sectors, layout);
       else if (activeSection === 'lots')
         await renderLotsPDF(filteredLots.filter(l => selLots.has(l.id)), products, sectors, layout);
@@ -757,120 +742,58 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
   const elemKeys = Object.keys(layout.elems);
   const selElem = selectedElem ? layout.elems[selectedElem] : null;
 
-  // ── Labels panel ──────────────────────────────────────────────────────────
+  // ── Labels panel — seleciona produto e abre o editor completo ───────────────
 
   const renderLabelsPanel = () => {
-    const labelProduct  = products.find(p => p.id === labelProductId);
-    const labelVariation = labelProduct?.variations.find(v => v.id === labelVariationId);
-    const availSizes = labelVariation ? Object.keys(labelVariation.stock).filter(s => s !== 'WHOLESALE') : [];
-    const labelDims: [number, number] = labelSizeKey === 'manual'
-      ? [labelManualW, labelManualH]
-      : (LABEL_SIZES.find(s => s.key === labelSizeKey)?.dims || [75, 24]);
-
+    const labelProduct = products.find(p => p.id === labelProductId);
     return (
       <div key="labels-panel" className="flex flex-col gap-4">
-        {/* Tamanho da etiqueta */}
-        <div className={`p-4 rounded-2xl border ${dk ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Tamanho da Etiqueta</p>
-          <div className="grid grid-cols-2 gap-1.5">
-            {LABEL_SIZES.map(opt => (
-              <button key={opt.key} type="button" onClick={() => setLabelSizeKey(opt.key)}
-                className={`py-2 px-3 rounded-xl border-2 font-black text-[9px] tracking-tight transition-all flex items-center justify-between ${labelSizeKey === opt.key ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20 text-pink-600' : dk ? 'border-slate-800 text-slate-400' : 'border-slate-100 text-slate-400'}`}>
-                {opt.label}
-                {opt.star && <span className="text-[7px] font-black text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded-full ml-1">minha</span>}
-              </button>
-            ))}
-          </div>
-          {/* Manual */}
-          <div className={`flex items-center gap-2 mt-2 p-3 rounded-xl border-2 ${labelSizeKey === 'manual' ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20' : dk ? 'border-slate-800' : 'border-slate-100'}`}>
-            <button type="button" onClick={() => setLabelSizeKey('manual')} className={`text-[9px] font-black uppercase whitespace-nowrap ${labelSizeKey === 'manual' ? 'text-pink-600' : 'text-slate-400'}`}>Manual</button>
-            <div className="flex items-center gap-1 flex-1">
-              <input type="number" min={10} max={200} value={labelManualW} title="Largura mm"
-                onChange={e => { setLabelManualW(+e.target.value || 10); setLabelSizeKey('manual'); }}
-                className={`w-14 text-center px-2 py-1 rounded-lg border text-[10px] font-black outline-none ${dk ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}/>
-              <span className="text-[9px] text-slate-400 font-bold">×</span>
-              <input type="number" min={10} max={200} value={labelManualH} title="Altura mm"
-                onChange={e => { setLabelManualH(+e.target.value || 10); setLabelSizeKey('manual'); }}
-                className={`w-14 text-center px-2 py-1 rounded-lg border text-[10px] font-black outline-none ${dk ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}/>
-              <span className="text-[9px] text-slate-400 font-bold">mm</span>
-            </div>
-            <span className="text-[8px] text-slate-400 font-bold">{labelDims[0]}×{labelDims[1]}</span>
+        {/* Info */}
+        <div className={`p-4 rounded-2xl border flex items-center gap-3 ${dk ? 'bg-indigo-900/20 border-indigo-700/30' : 'bg-indigo-50 border-indigo-100'}`}>
+          <Tag size={20} className="text-pink-500 shrink-0"/>
+          <div>
+            <p className="text-sm font-black text-pink-600 dark:text-pink-400">Impressão de Etiquetas</p>
+            <p className="text-xs text-slate-400 mt-0.5">Selecione o produto abaixo e clique em "Abrir Editor de Etiquetas" para configurar tamanho, layout, QR Code e imprimir.</p>
           </div>
         </div>
 
-        {/* Produto */}
-        <div className={`p-4 rounded-2xl border ${dk ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Produto</p>
-          <div className="flex flex-col gap-2">
-            {products.slice(0, 50).map(p => (
-              <button key={p.id} type="button" onClick={() => { setLabelProductId(p.id); setLabelVariationId(p.variations[0]?.id || ''); setLabelSelectedSizes([]); }}
-                className={`flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${labelProductId === p.id ? 'border-pink-400 bg-pink-50 dark:bg-pink-900/20' : dk ? 'border-slate-800' : 'border-slate-100'}`}>
+        {/* Produto selecionado */}
+        {labelProduct && (
+          <div className={`p-4 rounded-2xl border-2 border-pink-400 bg-pink-50 dark:bg-pink-900/20 flex items-center gap-3`}>
+            {labelProduct.photoUrl
+              ? <img src={labelProduct.photoUrl} alt="" className="w-12 h-12 rounded-xl object-cover shrink-0"/>
+              : <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${dk ? 'bg-slate-800' : 'bg-white'}`}><Package size={20} className="text-slate-400"/></div>}
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-black text-pink-600 dark:text-pink-400">{labelProduct.reference}</p>
+              <p className={`text-sm font-bold truncate ${dk ? 'text-white' : 'text-slate-800'}`}>{labelProduct.name}</p>
+              <p className="text-xs text-slate-400">{labelProduct.variations.length} variação(ões)</p>
+            </div>
+            <button aria-label="Remover produto selecionado" type="button" onClick={() => setLabelProductId('')} className="text-slate-400 p-1"><X size={16}/></button>
+          </div>
+        )}
+
+        {/* Lista de produtos */}
+        <div className={`rounded-2xl border overflow-hidden ${dk ? 'border-slate-800' : 'border-slate-100'}`}>
+          <p className={`px-4 py-3 text-xs font-black uppercase tracking-widest border-b ${dk ? 'text-slate-400 border-slate-800 bg-slate-900' : 'text-slate-400 border-slate-100 bg-slate-50'}`}>
+            {labelProductId ? 'Trocar Produto' : 'Selecione o Produto'}
+          </p>
+          <div className={`flex flex-col divide-y ${dk ? 'divide-slate-800' : 'divide-slate-50'}`}>
+            {products.map(p => (
+              <button key={p.id} type="button"
+                onClick={() => setLabelProductId(p.id)}
+                className={`flex items-center gap-3 p-4 text-left transition-all ${labelProductId === p.id ? dk ? 'bg-pink-900/20' : 'bg-pink-50' : dk ? 'bg-slate-900 hover:bg-slate-800' : 'bg-white hover:bg-slate-50'}`}>
                 {p.photoUrl
-                  ? <img src={p.photoUrl} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0"/>
-                  : <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${dk ? 'bg-slate-800' : 'bg-slate-100'}`}><Package size={14} className="text-slate-400"/></div>}
+                  ? <img src={p.photoUrl} alt="" className="w-10 h-10 rounded-xl object-cover shrink-0"/>
+                  : <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${dk ? 'bg-slate-800' : 'bg-slate-100'}`}><Package size={16} className="text-slate-400"/></div>}
                 <div className="flex-1 min-w-0">
-                  <p className="text-[9px] font-black text-pink-600 dark:text-pink-400">{p.reference}</p>
-                  <p className={`text-[11px] font-bold truncate ${dk ? 'text-white' : 'text-slate-800'}`}>{p.name}</p>
+                  <p className="text-xs font-black text-pink-600 dark:text-pink-400">{p.reference}</p>
+                  <p className={`text-sm font-bold truncate ${dk ? 'text-white' : 'text-slate-800'}`}>{p.name}</p>
                 </div>
-                {labelProductId === p.id && <Check size={14} className="text-pink-500 shrink-0"/>}
+                {labelProductId === p.id && <Check size={16} className="text-pink-500 shrink-0"/>}
               </button>
             ))}
           </div>
         </div>
-
-        {/* Variação */}
-        {labelProduct && (
-          <div className={`p-4 rounded-2xl border ${dk ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Variação (Cor)</p>
-            <div className="flex flex-wrap gap-1.5">
-              {labelProduct.variations.map(v => (
-                <button key={v.id} type="button" onClick={() => { setLabelVariationId(v.id); setLabelSelectedSizes([]); }}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border-2 text-[9px] font-black transition-all ${labelVariationId === v.id ? 'border-pink-400 bg-pink-50 dark:bg-pink-900/20 text-pink-600' : dk ? 'border-slate-800 text-slate-400' : 'border-slate-100 text-slate-400'}`}>
-                  <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: v.color }}/>
-                  {v.colorName}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Modo: por tamanho ou caixa */}
-        {labelProduct && (
-          <div className={`p-4 rounded-2xl border ${dk ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Tipo de Etiqueta</p>
-            <div className="flex gap-2 mb-3">
-              <button type="button" onClick={() => setLabelIsBox(false)}
-                className={`flex-1 py-2 rounded-xl border-2 text-[9px] font-black uppercase transition-all ${!labelIsBox ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20 text-pink-600' : dk ? 'border-slate-800 text-slate-400' : 'border-slate-100 text-slate-400'}`}>
-                Por Tamanho
-              </button>
-              <button type="button" onClick={() => setLabelIsBox(true)}
-                className={`flex-1 py-2 rounded-xl border-2 text-[9px] font-black uppercase transition-all ${labelIsBox ? 'border-pink-500 bg-pink-50 dark:bg-pink-900/20 text-pink-600' : dk ? 'border-slate-800 text-slate-400' : 'border-slate-100 text-slate-400'}`}>
-                Caixa (BOX)
-              </button>
-            </div>
-
-            {!labelIsBox && availSizes.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-3">
-                {availSizes.map(sz => (
-                  <button key={sz} type="button"
-                    onClick={() => setLabelSelectedSizes(p => p.includes(sz) ? p.filter(s => s !== sz) : [...p, sz])}
-                    className={`min-w-[36px] h-9 rounded-xl border-2 font-black text-[10px] transition-all ${labelSelectedSizes.includes(sz) ? 'border-pink-500 bg-pink-500 text-white' : dk ? 'border-slate-800 text-slate-400' : 'border-slate-100 text-slate-500'}`}>
-                    {sz}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            <div className="flex items-center gap-2">
-              <span className="text-[9px] font-black text-slate-400 uppercase">Qtd. cópias:</span>
-              <button aria-label="Diminuir quantidade" type="button" onClick={() => setLabelQty(q => Math.max(1, q - 1))}
-                className={`w-8 h-8 rounded-xl flex items-center justify-center ${dk ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><Minus size={12}/></button>
-              <span className={`w-10 text-center text-sm font-black ${dk ? 'text-white' : 'text-slate-800'}`}>{labelQty}</span>
-              <button aria-label="Aumentar quantidade" type="button" onClick={() => setLabelQty(q => q + 1)}
-                className={`w-8 h-8 rounded-xl flex items-center justify-center ${dk ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}><Plus size={12}/></button>
-            </div>
-          </div>
-        )}
       </div>
     );
   };
@@ -890,7 +813,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
               <span className="text-[10px] font-black text-rose-600 dark:text-rose-400">{os.osNumber}</span>
-              <Badge label={os.completedAt ? 'Concluída' : 'Em aberto'} color={os.completedAt ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}/>
+              <Badge label={os.finishedAt ? 'Concluída' : 'Em aberto'} color={os.finishedAt ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}/>
             </div>
             <p className={`text-sm font-bold truncate ${dk ? 'text-white' : 'text-slate-800'}`}>{os.productName}</p>
             <p className="text-[10px] text-slate-400 truncate">{sector?.name || os.sectorName} • {os.providerName} • {os.quantity} prs</p>
@@ -971,8 +894,6 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
       );
     });
 
-    if (activeSection === 'labels') return [renderLabelsPanel()];
-
     return filteredProducts.map(product => {
       const sel = selProducts.has(product.id);
       return (
@@ -1015,7 +936,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
     return null;
   };
 
-  const rows = renderRows();
+  const rows = activeSection === 'labels' ? [] : renderRows();
 
   // ── Layout editor view ────────────────────────────────────────────────────
 
@@ -1028,6 +949,36 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
           <RotateCcw size={9}/> Resetar
         </button>
       </div>
+
+      {/* Paper size selector */}
+      {activeSection !== 'labels' && (
+        <div className={`p-3 rounded-2xl border ${dk ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+          <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Tamanho do Papel</p>
+          <div className="flex flex-wrap gap-1.5">
+            {PAPER_PRESETS.map(p => {
+              const active = layout.paper[0] === p.dims[0] && layout.paper[1] === p.dims[1];
+              return (
+                <button key={p.key} type="button" onClick={() => changePaper(p)}
+                  className={`px-3 py-1.5 rounded-xl border-2 text-[9px] font-black tracking-tight transition-all flex items-center gap-1 ${active ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600' : dk ? 'border-slate-800 text-slate-400' : 'border-slate-100 text-slate-400'}`}>
+                  {p.label}
+                  {p.thermal && <span className="text-[7px] text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-1 py-0.5 rounded-full">térmica</span>}
+                  {p.star && <span className="text-[7px] text-amber-500">★</span>}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex items-center gap-2 mt-2">
+            <span className="text-[8px] font-black text-slate-400 uppercase">Atual:</span>
+            <span className="text-[9px] font-black text-indigo-600">{W}×{H} mm • {layout.orientation === 'portrait' ? 'Retrato' : 'Paisagem'}</span>
+            <button type="button" onClick={() => {
+              saveLayout(activeSection, { ...layout, orientation: layout.orientation === 'portrait' ? 'landscape' : 'portrait', paper: [layout.paper[1], layout.paper[0]] as [number,number] });
+              setSelectedElem(null);
+            }} className="ml-auto text-[8px] font-black text-indigo-500 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-900/30 hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
+              Girar ↻
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Preview with rulers */}
       <div className={`rounded-2xl border-2 overflow-auto ${dk ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-slate-100'}`}>
@@ -1152,12 +1103,6 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
         </div>
       )}
 
-      {/* Print from editor */}
-      <button type="button" onClick={handlePrint} disabled={printing || cnt === 0}
-        className={`w-full py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 transition-all shadow-lg active:scale-95 disabled:opacity-40 ${cnt>0?'bg-indigo-600 text-white shadow-indigo-500/20':dk?'bg-slate-800 text-slate-500':'bg-slate-100 text-slate-400'}`}>
-        <Printer size={16}/>
-        {printing ? 'Gerando PDF…' : cnt > 0 ? `Imprimir ${cnt} ${sec.shortLabel}` : 'Selecione itens na lista'}
-      </button>
     </div>
   );
 
@@ -1181,18 +1126,24 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
           ))}
         </div>
 
-        {/* View toggle */}
-        <div className={`flex p-1 rounded-2xl gap-1 mb-3 ${dk?'bg-slate-800':'bg-slate-100'}`}>
-          {([['list','Lista',<FileText size={11}/>],['editor','Ajustar Impressão',<Settings2 size={11}/>]] as const).map(([v,l,icon])=>(
-            <button key={v} type="button" onClick={()=>{setView(v as any);setSelectedElem(null);}}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${view===v?'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm':'text-slate-400'}`}>
-              {icon}{l}
-            </button>
-          ))}
-        </div>
+        {/* View toggle — hidden for labels section */}
+        {activeSection !== 'labels' && (
+          <div className={`flex p-1 rounded-2xl gap-1 mb-3 ${dk?'bg-slate-800':'bg-slate-100'}`}>
+            {([['list','Lista',<FileText size={11}/>],['editor','Ajustar Impressão',<Settings2 size={11}/>]] as const).map(([v,l,icon])=>(
+              <button key={v} type="button" onClick={()=>{setView(v as any);setSelectedElem(null);}}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${view===v?'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm':'text-slate-400'}`}>
+                {icon}{l}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      {view === 'editor' ? (
+      {activeSection === 'labels' ? (
+        <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3">
+          {renderLabelsPanel()}
+        </div>
+      ) : view === 'editor' ? (
         <EditorView/>
       ) : (
         <>
@@ -1230,16 +1181,35 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
               : rows}
           </div>
 
-          {/* Print bar */}
-          <div className={`px-4 py-4 border-t ${dk?'border-slate-800 bg-slate-900':'border-slate-100 bg-white'}`}>
-            <button type="button" onClick={handlePrint} disabled={printing || cnt === 0}
-              className={`w-full py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 transition-all shadow-lg active:scale-95 disabled:opacity-40 ${cnt>0?'bg-indigo-600 text-white shadow-indigo-500/20':dk?'bg-slate-800 text-slate-500':'bg-slate-100 text-slate-400'}`}>
-              <Printer size={18}/>
-              {printing ? 'Gerando PDF…' : cnt > 0 ? `Imprimir ${cnt} ${sec.shortLabel}` : 'Selecione itens para imprimir'}
-            </button>
-          </div>
         </>
       )}
+
+      {/* ── Print bar — always visible at bottom ── */}
+      <div className={`px-4 py-4 border-t shrink-0 ${dk?'border-slate-800 bg-slate-900':'border-slate-100 bg-white'}`}>
+        <button type="button" onClick={handlePrint} disabled={printing || cnt === 0}
+          className={`w-full py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 transition-all shadow-lg active:scale-95 disabled:opacity-40 ${cnt>0?'bg-indigo-600 text-white shadow-indigo-500/20':dk?'bg-slate-800 text-slate-500':'bg-slate-100 text-slate-400'}`}>
+          <Printer size={18}/>
+          {printing ? 'Gerando PDF…'
+            : activeSection === 'labels' && cnt > 0 ? 'Abrir Editor de Etiquetas'
+            : cnt > 0 ? `Imprimir ${cnt} ${sec.shortLabel}`
+            : activeSection === 'labels' ? 'Selecione um produto acima'
+            : 'Selecione itens para imprimir'}
+        </button>
+      </div>
+
+      {/* ── PrintLabelEditorModal — abre quando produto selecionado em Etiquetas ── */}
+      {labelModalOpen && labelProductId && (() => {
+        const prod = (products || []).find(p => p.id === labelProductId);
+        if (!prod) return null;
+        return (
+          <PrintLabelEditorModal
+            isOpen={labelModalOpen}
+            onClose={() => setLabelModalOpen(false)}
+            product={prod}
+            isDarkMode={isDarkMode}
+          />
+        );
+      })()}
     </div>
   );
 }

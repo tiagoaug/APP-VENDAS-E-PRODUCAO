@@ -237,7 +237,7 @@ export const labelService = {
     const doc = new jsPDF({ orientation: W > H ? 'landscape' : 'portrait', unit: 'mm', format: [W, H] });
     const qrCode = await this.generateQRCode(`OS|${os.id}`);
 
-    type ElemData = { x: number; y: number; w: number; h: number; visible: boolean; fontSize?: number; fontFamily?: string; bold?: boolean };
+    type ElemData = { x: number; y: number; w: number; h: number; visible: boolean; fontSize?: number; fontSizeQty?: number; fontFamily?: string; bold?: boolean };
     const el = (key: string, defX: number, defY: number, defW: number, defH: number): ElemData => {
       const e = layout?.elems?.[key];
       if (e) return e as ElemData;
@@ -401,8 +401,8 @@ export const labelService = {
       });
       const hasQty  = entries.some(e => e.qty !== null);
       const cellW   = grade.w / entries.length;
-      const szFontSz  = fitFont(hasQty ? grade.h * 0.55 : grade.h, cellW, 0.55, 10, 3);
-      const qtyFontSz = fitFont(grade.h * 0.38, cellW, 0.38, 7, 2);
+      const szFontSz  = grade.fontSize ? grade.fontSize : fitFont(hasQty ? grade.h * 0.55 : grade.h, cellW, 0.55, 10, 3);
+      const qtyFontSz = grade.fontSizeQty ?? (grade.fontSize ? grade.fontSize * 0.7 : fitFont(grade.h * 0.38, cellW, 0.38, 7, 2));
 
       entries.forEach(({ sz, qty }, i) => {
         const cellX = grade.x + cellW * i;
@@ -413,7 +413,7 @@ export const labelService = {
         doc.roundedRect(cellX + 0.3, grade.y + 0.3, cellW - 0.6, grade.h - 0.6, 0.8, 0.8, 'FD');
         // Size number (top half)
         doc.setFont(grade.fontFamily || 'helvetica', grade.bold !== false ? 'bold' : 'normal');
-        doc.setFontSize(grade.fontSize ? grade.fontSize * (hasQty ? 1 : 1.4) : szFontSz);
+        doc.setFontSize(szFontSz);
         doc.setTextColor(146, 64, 14);  // amber-800
         const szY = hasQty ? grade.y + grade.h * 0.48 : grade.y + grade.h * 0.72;
         doc.text(sz, cx, szY, { align: 'center' });

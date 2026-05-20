@@ -10,11 +10,16 @@ import { labelService } from '../services/labelService';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ElemKey    = 'header' | 'info' | 'total' | 'notes' | 'qr' | 'instruction' | 'footer' | 'photo' | 'grade';
+type ElemKey = 'header' | 'info' | 'total' | 'notes' | 'qr' | 'instruction' | 'footer' | 'photo' | 'grade';
 type FontFamily = 'helvetica' | 'times' | 'courier';
-type Elem = {
-  x: number; y: number; w: number; h: number;
-  label: string; color: string; visible: boolean;
+type Elem    = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  label: string;
+  color: string;
+  visible: boolean;
   fontSize?: number;
   fontFamily?: FontFamily;
   bold?: boolean;
@@ -47,7 +52,7 @@ const STEPS = [0.5, 1, 2, 5];
 const STORAGE_MODE    = 'os_print_mode';
 const STORAGE_SIZE    = 'os_print_size';
 const STORAGE_MANUAL  = 'os_print_manual';
-const STORAGE_LAYOUTS = 'os_print_layouts_v2'; // v2: added photo+grade elements
+const STORAGE_LAYOUTS = 'os_print_layouts';
 
 // ─── Default layouts ──────────────────────────────────────────────────────────
 
@@ -68,15 +73,15 @@ function defaultLayout([W, H]: [number, number]): Layout {
     return {
       paper: [W, H],
       elems: {
-        header:      { x: 0,    y: 0,           w: textW, h: hdrH,          label: 'Cabeçalho',   color: '#4338ca', visible: true,  fontSize: 7,   fontFamily: 'helvetica', bold: true  },
-        info:        { x: 0,    y: hdrH + 0.5,  w: textW, h: H - hdrH - 1,  label: 'Informações', color: '#6366f1', visible: true,  fontSize: 5,   fontFamily: 'helvetica', bold: false },
-        total:       { x: 0,    y: H * 0.7,     w: textW, h: H * 0.3,        label: 'Total OS',    color: '#16a34a', visible: false, fontSize: 6,   fontFamily: 'helvetica', bold: true  },
-        notes:       { x: 0,    y: H * 0.8,     w: W,     h: H * 0.2,        label: 'Observações', color: '#f59e0b', visible: false, fontSize: 5,   fontFamily: 'helvetica', bold: false },
-        qr:          { x: qrX,  y: qrY,         w: qrSize,h: qrSize,         label: 'QR Code',     color: '#0ea5e9', visible: true,  fontSize: 8,   fontFamily: 'helvetica', bold: false },
-        photo:       { x: qrX,  y: 0,           w: photoSz, h: photoSz,      label: 'Foto',        color: '#e11d48', visible: false, fontSize: 6,   fontFamily: 'helvetica', bold: false },
-        grade:       { x: 0,    y: H - 3.5,     w: textW, h: 3.5,            label: 'Grade',       color: '#d97706', visible: true,  fontSize: 4.5, fontFamily: 'helvetica', bold: true  },
-        instruction: { x: 0,    y: H - 3,       w: W,     h: 3,              label: 'Instrução',   color: '#8b5cf6', visible: false, fontSize: 4,   fontFamily: 'helvetica', bold: false },
-        footer:      { x: 0,    y: H - 2,       w: W,     h: 2,              label: 'Rodapé',      color: '#94a3b8', visible: false, fontSize: 3.5, fontFamily: 'helvetica', bold: false },
+        header:      { x: 0,    y: 0,           w: textW, h: hdrH,          label: 'Cabeçalho',   color: '#4338ca', visible: true  },
+        info:        { x: 0,    y: hdrH + 0.5,  w: textW, h: H - hdrH - 1,  label: 'Informações', color: '#6366f1', visible: true  },
+        total:       { x: 0,    y: H * 0.7,     w: textW, h: H * 0.3,        label: 'Total OS',    color: '#16a34a', visible: false },
+        notes:       { x: 0,    y: H * 0.8,     w: W,     h: H * 0.2,        label: 'Observações', color: '#f59e0b', visible: false },
+        qr:          { x: qrX,  y: qrY,         w: qrSize,h: qrSize,         label: 'QR Code',     color: '#0ea5e9', visible: true  },
+        photo:       { x: qrX,  y: 0,           w: photoSz, h: photoSz,      label: 'Foto',        color: '#e11d48', visible: false },
+        grade:       { x: 0,    y: H - 3.5,     w: textW, h: 3.5,            label: 'Grade',       color: '#d97706', visible: true  },
+        instruction: { x: 0,    y: H - 3,       w: W,     h: 3,              label: 'Instrução',   color: '#8b5cf6', visible: false },
+        footer:      { x: 0,    y: H - 2,       w: W,     h: 2,              label: 'Rodapé',      color: '#94a3b8', visible: false },
       },
     };
   }
@@ -86,15 +91,15 @@ function defaultLayout([W, H]: [number, number]): Layout {
   return {
     paper: [W, H],
     elems: {
-      header:      { x: 0,           y: 0,      w: W,       h: 22*s,  label: 'Cabeçalho',   color: '#4338ca', visible: true,  fontSize: 9*s,   fontFamily: 'helvetica', bold: true  },
-      info:        { x: 8*s,         y: 28*s,   w: W-16*s,  h: 52*s,  label: 'Informações', color: '#6366f1', visible: true,  fontSize: 9*s,   fontFamily: 'helvetica', bold: false },
-      total:       { x: 8*s,         y: 82*s,   w: W-16*s,  h: 12*s,  label: 'Total OS',    color: '#16a34a', visible: true,  fontSize: 10*s,  fontFamily: 'helvetica', bold: true  },
-      notes:       { x: 8*s,         y: 96*s,   w: W-16*s,  h: 10*s,  label: 'Observações', color: '#f59e0b', visible: true,  fontSize: 7.5*s, fontFamily: 'helvetica', bold: false },
-      qr:          { x: (W-60*s)/2,  y: 110*s,  w: 60*s,    h: 60*s,  label: 'QR Code',     color: '#0ea5e9', visible: true,  fontSize: 8*s,   fontFamily: 'helvetica', bold: false },
-      photo:       { x: W-46*s,      y: 28*s,   w: 38*s,    h: 38*s,  label: 'Foto',        color: '#e11d48', visible: false, fontSize: 8*s,   fontFamily: 'helvetica', bold: false },
-      grade:       { x: 8*s,         y: 75*s,   w: W-16*s,  h: 7*s,   label: 'Grade',       color: '#d97706', visible: true,  fontSize: 7*s,   fontFamily: 'helvetica', bold: true  },
-      instruction: { x: 8*s,         y: 173*s,  w: W-16*s,  h: 14*s,  label: 'Instrução',   color: '#8b5cf6', visible: true,  fontSize: 8*s,   fontFamily: 'helvetica', bold: true  },
-      footer:      { x: 0,           y: H-8*s,  w: W,       h: 8*s,   label: 'Rodapé',      color: '#94a3b8', visible: true,  fontSize: 6*s,   fontFamily: 'helvetica', bold: false },
+      header:      { x: 0,           y: 0,      w: W,       h: 22*s,  label: 'Cabeçalho',   color: '#4338ca', visible: true },
+      info:        { x: 8*s,         y: 28*s,   w: W-16*s,  h: 52*s,  label: 'Informações', color: '#6366f1', visible: true },
+      total:       { x: 8*s,         y: 82*s,   w: W-16*s,  h: 12*s,  label: 'Total OS',    color: '#16a34a', visible: true },
+      notes:       { x: 8*s,         y: 96*s,   w: W-16*s,  h: 10*s,  label: 'Observações', color: '#f59e0b', visible: true },
+      qr:          { x: (W-60*s)/2,  y: 110*s,  w: 60*s,    h: 60*s,  label: 'QR Code',     color: '#0ea5e9', visible: true },
+      photo:       { x: W-46*s,      y: 28*s,   w: 38*s,    h: 38*s,  label: 'Foto',        color: '#e11d48', visible: false },
+      grade:       { x: 8*s,         y: 75*s,   w: W-16*s,  h: 7*s,   label: 'Grade',       color: '#d97706', visible: true  },
+      instruction: { x: 8*s,         y: 173*s,  w: W-16*s,  h: 14*s,  label: 'Instrução',   color: '#8b5cf6', visible: true },
+      footer:      { x: 0,           y: H-8*s,  w: W,       h: 8*s,   label: 'Rodapé',      color: '#94a3b8', visible: true },
     },
   };
 }
@@ -154,7 +159,9 @@ interface Props {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDarkMode, product, grids = [], lot }: Props) {
-  const photoUrl = product?.photoUrl || '';
+  // Derive variation photo from product prop
+  const variation   = (product?.variations || []).find(v => v.id === os.variationId);
+  const photoUrl    = variation?.photoUrl || os.productPhotoUrl || '';
 
   // Build size grid string from lot.pairs (e.g. "37x2-38x4-39x4-40x2")
   // Falls back to the grid's sizes if no pairs data available
@@ -202,13 +209,15 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
   const previewW = W * scale;
   const previewH = H * scale;
 
-  // Merge saved layout with current default so newly added elements (photo, grade)
-  // are always present even in old persisted layouts — prevents undefined crashes
-  const rawLayout = layouts[sizeKey === 'manual' ? `${manualW}x${manualH}` : sizeKey];
+  const rawLayout = layouts[sizeKey === 'manual' ? `${manualW}x${manualH}` : sizeKey] ?? defaultLayout(paperDims);
   const def = defaultLayout(paperDims);
-  const layout: Layout = rawLayout
-    ? { ...rawLayout, elems: { ...def.elems, ...rawLayout.elems } }
-    : def;
+  const layout: Layout = {
+    ...rawLayout,
+    elems: {
+      ...def.elems,
+      ...(rawLayout.elems || {})
+    }
+  };
 
   useEffect(() => { labelService.generateQRCode(`OS|${os.id}`).then(setQrPreview); }, [os.id]);
 
@@ -265,64 +274,61 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
   const sel = selected ? layout.elems[selected] : null;
   const dk  = isDarkMode;
 
-  // ── Helpers para preview fiel ao PDF ──────────────────────────────────────
-  // 1 pt jsPDF = 0.353 mm; conversão para px: pt * 0.353 * scale
-  const ptToPx = (pt: number) => pt * 0.353 * scale;
-  const cssFont = (el: Elem, fallbackPt: number) => ({
-    fontSize: ptToPx(el.fontSize ?? fallbackPt),
-    fontFamily: el.fontFamily === 'times' ? 'Georgia, Times, serif'
-              : el.fontFamily === 'courier' ? 'Courier New, monospace'
-              : 'Arial, Helvetica, sans-serif',
-    fontWeight: el.bold ? 900 : 400,
-  });
-  // Posição absoluta de um elemento
-  const pos = (el: Elem) => ({
-    position: 'absolute' as const,
-    left: el.x * scale, top: el.y * scale,
-    width: el.w * scale, height: el.h * scale,
-    overflow: 'hidden',
-  });
-
-  // ── Content preview (fiel ao layout do PDF) ───────────────────────────────
+  // ── Content preview (actual content at scale) ──────────────────────────────
   const ContentPreview = () => {
     const e  = layout.elems;
+    const sc = scale;
     const thermal = isThermal(paperDims);
+
+    const ptToPx = (pt: number) => pt * 0.353 * sc;
+    const cssFont = (el: Elem, fallbackPt: number) => ({
+      fontSize:   ptToPx(el.fontSize ?? fallbackPt),
+      fontFamily: el.fontFamily === 'times'   ? 'Georgia, Times, serif'
+                : el.fontFamily === 'courier' ? 'Courier New, monospace'
+                : 'Arial, Helvetica, sans-serif',
+      fontWeight: el.bold ? 900 : 400,
+    });
+
+    const clamp = (txt: string, maxPx: number) => {
+      const approx = txt.length * 1.7 * sc;
+      return approx > maxPx ? txt.slice(0, Math.floor(maxPx / (1.7 * sc))) + '…' : txt;
+    };
+
     return (
       <div style={{ position: 'relative', width: previewW, height: previewH, backgroundColor: '#fff', flexShrink: 0, overflow: 'hidden' }}>
-
         {/* Header */}
         {e.header.visible && !thermal && (
-          <div style={{ ...pos(e.header), backgroundColor: '#4338ca', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap: 2 }}>
-            <span style={{ ...cssFont(e.header, 7), color:'#fff', letterSpacing: 0.5 }}>ORDEM DE SERVIÇO</span>
-            <span style={{ ...cssFont(e.header, 14), fontSize: ptToPx((e.header.fontSize ?? 9) * 1.7), color:'#fff' }}>{os.osNumber}</span>
+          <div style={{ position: 'absolute', left: e.header.x*sc, top: e.header.y*sc, width: e.header.w*sc, height: e.header.h*sc, backgroundColor: '#4338ca', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+            <span style={{ color:'#fff', letterSpacing:1, ...cssFont(e.header, 10), fontSize: ptToPx(e.header.fontSize ?? 10) * 0.7 }}>ORDEM DE SERVIÇO</span>
+            <span style={{ color:'#fff', ...cssFont(e.header, 10), fontSize: ptToPx(e.header.fontSize ?? 10) * 1.5 }}>{os.osNumber}</span>
           </div>
         )}
         {e.header.visible && thermal && (
-          <div style={{ ...pos(e.header), display:'flex', flexDirection:'column', justifyContent:'center', paddingLeft: 2*scale }}>
-            <span style={{ ...cssFont(e.header, 7), color:'#4338ca', lineHeight:1 }}>{os.osNumber}</span>
-            <span style={{ ...cssFont(e.header, 5), color:'#64748b', lineHeight:1, marginTop: 1, fontWeight:700 }}>{os.productName}</span>
+          <div style={{ position: 'absolute', left: e.header.x*sc, top: e.header.y*sc, width: e.header.w*sc, height: e.header.h*sc, display: 'flex', flexDirection: 'column', justifyContent: 'center', paddingLeft: 2*sc, overflow: 'hidden' }}>
+            <span style={{ color:'#4338ca', ...cssFont(e.header, 14) }}>{os.osNumber}</span>
+            <span style={{ color:'#64748b', ...cssFont(e.header, 14), fontSize: ptToPx(e.header.fontSize ?? 14) * 0.7, marginTop:1 }}>{clamp(os.productName, e.header.w*sc - 4)}</span>
           </div>
         )}
-
         {/* Info */}
-        {e.info.visible && !thermal && (() => {
-          const lh = (e.info.h / 4) * scale;
-          const rows = [
-            ['Produto', os.productName, 'Variação', os.variationName||'—'],
-            ['Setor', os.sectorName, 'Próximo', nextSectorName],
-            ['Prestador', os.providerName, 'Tipo', os.type==='INTERNAL'?'Interna':'Terceirizada'],
-            ['Qtd', `${os.quantity} prs`, 'Vlr/par', `R$ ${os.valuePerPair.toFixed(2)}`],
-          ];
-          const labelSt = { ...cssFont(e.info, 7), fontSize: ptToPx((e.info.fontSize??9)*0.70), color:'#94a3b8', textTransform:'uppercase' as const, lineHeight:1 };
-          const valueSt = { ...cssFont(e.info, 9), color:'#1e293b', lineHeight:1.2, marginTop:1 };
+        {e.info.visible && (() => {
+          if (thermal) {
+            return (
+              <div style={{ position:'absolute', left: e.info.x*sc, top: e.info.y*sc, width: e.info.w*sc, height: e.info.h*sc, overflow:'hidden', paddingLeft: 2*sc, display:'flex', flexDirection:'column', justifyContent:'center', gap: 1 }}>
+                <span style={{ color:'#334155', ...cssFont(e.info, 10), fontSize: ptToPx(e.info.fontSize ?? 10) * 0.8 }}>{clamp(os.sectorName, e.info.w*sc - 4)} → {clamp(nextSectorName, e.info.w*sc/2)}</span>
+                <span style={{ color:'#16a34a', ...cssFont(e.info, 10), fontSize: ptToPx(e.info.fontSize ?? 10) }}>R$ {os.totalValue.toFixed(2)} • {os.quantity}prs</span>
+              </div>
+            );
+          }
+          const pad=e.info.x*sc, col2=(e.info.x+e.info.w/2)*sc, lh=(e.info.h/4)*sc;
+          const rows=[['Produto',os.productName,'Variação',os.variationName||'—'],['Setor',os.sectorName,'Próximo',nextSectorName],['Prestador',os.providerName,'Tipo',os.type==='INTERNAL'?'Int':'Terc'],['Qtd',`${os.quantity}prs`,'R$/par',`R$${os.valuePerPair.toFixed(2)}`]];
           return (
-            <div style={pos(e.info)}>
+            <div style={{ position:'absolute', left: e.info.x*sc, top: e.info.y*sc, width: e.info.w*sc, height: e.info.h*sc, overflow:'hidden' }}>
               {rows.map(([l1,v1,l2,v2],i)=>(
                 <div key={i} style={{ position:'absolute', top: i*lh, left:0, width:'100%', height:lh }}>
-                  {[{x:0,l:l1,v:v1},{x:e.info.w/2*scale,l:l2,v:v2}].map(({x,l,v})=>(
-                    <div key={l} style={{ position:'absolute', left:x, top: lh*0.08 }}>
-                      <div style={labelSt}>{l}</div>
-                      <div style={valueSt}>{String(v)}</div>
+                  {[{x:0,l:l1,v:v1},{x:e.info.w/2*sc,l:l2,v:v2}].map(({x,l,v})=>(
+                    <div key={l} style={{ position:'absolute', left:x, top:0 }}>
+                      <div style={{ color:'#94a3b8', textTransform:'uppercase', ...cssFont(e.info, 10), fontSize: ptToPx(e.info.fontSize ?? 10) * 0.7 }}>{l}</div>
+                      <div style={{ color:'#1e293b', marginTop:1, ...cssFont(e.info, 10), fontSize: ptToPx(e.info.fontSize ?? 10) }}>{clamp(String(v), e.info.w/2*sc-4)}</div>
                     </div>
                   ))}
                 </div>
@@ -330,79 +336,86 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
             </div>
           );
         })()}
-        {e.info.visible && thermal && (
-          <div style={{ ...pos(e.info), display:'flex', flexDirection:'column', justifyContent:'center', paddingLeft: 2*scale, gap:2 }}>
-            <span style={{ ...cssFont(e.info, 5), color:'#334155', lineHeight:1 }}>{os.sectorName} → {nextSectorName}</span>
-            <span style={{ ...cssFont(e.info, 6), color:'#16a34a', lineHeight:1, fontWeight:900 }}>R$ {os.totalValue.toFixed(2)} • {os.quantity}prs</span>
-          </div>
-        )}
-
         {/* Total */}
         {e.total.visible && (
-          <div style={{ ...pos(e.total), backgroundColor:'#f0fdf4', border:'1px solid #86efac', borderRadius:2, display:'flex', alignItems:'center', justifyContent:'space-between', padding:`0 ${2*scale}px` }}>
-            <span style={{ ...cssFont(e.total, 8), color:'#15803d' }}>TOTAL OS</span>
-            <span style={{ ...cssFont(e.total, 11), fontSize: ptToPx((e.total.fontSize??10)*1.4), color:'#15803d' }}>R$ {os.totalValue.toFixed(2)}</span>
+          <div style={{ position:'absolute', left:e.total.x*sc, top:e.total.y*sc, width:e.total.w*sc, height:e.total.h*sc, backgroundColor:'#f0fdf4', border:'1px solid #86efac', borderRadius:2, display:'flex', alignItems:'center', justifyContent:'space-between', padding:`0 ${2*sc}px`, overflow:'hidden' }}>
+            <span style={{ color:'#15803d', ...cssFont(e.total, 10), fontSize: ptToPx(e.total.fontSize ?? 10) * 0.8 }}>TOTAL</span>
+            <span style={{ color:'#15803d', ...cssFont(e.total, 10), fontSize: ptToPx(e.total.fontSize ?? 10) * 1.2 }}>R$ {os.totalValue.toFixed(2)}</span>
           </div>
         )}
-
         {/* Notes */}
         {e.notes.visible && os.notes && (
-          <div style={{ ...pos(e.notes), display:'flex', alignItems:'center' }}>
-            <span style={{ ...cssFont(e.notes, 7.5), color:'#78716c', fontStyle: e.notes.bold ? 'normal' : 'italic' }}>Obs: {os.notes}</span>
+          <div style={{ position:'absolute', left:e.notes.x*sc, top:e.notes.y*sc, width:e.notes.w*sc, height:e.notes.h*sc, overflow:'hidden' }}>
+            <span style={{ color:'#78716c', ...cssFont(e.notes, 8) }}>Obs: {os.notes}</span>
           </div>
         )}
-
         {/* QR */}
         {e.qr.visible && (
-          <div style={pos(e.qr)}>
+          <div style={{ position:'absolute', left:e.qr.x*sc, top:e.qr.y*sc, width:e.qr.w*sc, height:e.qr.h*sc }}>
             {qrPreview ? <img src={qrPreview} alt="QR" style={{ width:'100%', height:'100%', objectFit:'contain' }} /> : <div style={{ width:'100%', height:'100%', backgroundColor:'#f1f5f9' }} />}
           </div>
         )}
-
         {/* Photo */}
         {e.photo.visible && (
-          <div style={{ ...pos(e.photo), borderRadius:2, border:'1px solid #fecaca' }}>
+          <div style={{ position:'absolute', left:e.photo.x*sc, top:e.photo.y*sc, width:e.photo.w*sc, height:e.photo.h*sc, overflow:'hidden', borderRadius:2, border:'1px solid #fecaca' }}>
             {photoUrl
               ? <img src={photoUrl} alt="Produto" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
               : <div style={{ width:'100%', height:'100%', backgroundColor:'#fff1f2', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                  <span style={{ ...cssFont(e.photo, 7), color:'#e11d48' }}>FOTO</span>
+                  <span style={{ fontSize:Math.max(4,5*sc), color:'#e11d48', fontWeight:900 }}>FOTO</span>
                 </div>
             }
           </div>
         )}
-
-        {/* Grade */}
+        {/* Grade com quantidades */}
         {e.grade.visible && sizeGrid && (() => {
-          const entries = sizeGrid.split('-').map(tok => { const [sz,qty]=tok.split('x'); return { sz:sz||tok, qty:qty?parseInt(qty):null }; });
+          const entries = sizeGrid.split('-').map(tok => {
+            const [sz, qty] = tok.split('x');
+            return { sz: sz || tok, qty: qty ? parseInt(qty) : null };
+          });
+          const hasQty = entries.some(e => e.qty !== null);
+          
+          const szFontSz = ptToPx(e.grade.fontSize ?? 10);
+          const qtyFontSz = szFontSz * 0.7;
+
           return (
-            <div style={{ ...pos(e.grade), display:'flex', alignItems:'stretch', gap: 0.8*scale }}>
+            <div style={{ position:'absolute', left:e.grade.x*sc, top:e.grade.y*sc, width:e.grade.w*sc, height:e.grade.h*sc, overflow:'hidden', display:'flex', alignItems:'stretch', gap: 0.8*sc }}>
               {entries.map(({ sz, qty }) => (
-                <div key={sz} style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', backgroundColor:'#fef3c7', border:'0.5px solid #fbbf24', borderRadius:2, padding:`0 ${1.5*scale}px`, flexShrink:0 }}>
-                  <span style={{ ...cssFont(e.grade, 7), color:'#92400e', lineHeight:1 }}>{sz}</span>
-                  {qty!==null && <span style={{ ...cssFont(e.grade, 5), fontSize: ptToPx((e.grade.fontSize??7)*0.7), color:'#b45309', lineHeight:1, marginTop:0.5 }}>{qty}p</span>}
+                <div key={sz} style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', backgroundColor:'#fef3c7', border:'0.5px solid #fbbf24', borderRadius:2, padding:`0 ${1.5*sc}px`, flexShrink:0, minWidth: hasQty ? 7*sc : 'auto' }}>
+                  <span style={{ ...cssFont(e.grade, 10), fontSize: szFontSz, color:'#92400e', lineHeight:1 }}>{sz}</span>
+                  {qty !== null && (
+                    <span style={{ ...cssFont(e.grade, 10), fontSize: qtyFontSz, fontWeight:700, color:'#b45309', lineHeight:1, marginTop:0.5 }}>{qty}p</span>
+                  )}
                 </div>
               ))}
             </div>
           );
         })()}
         {e.grade.visible && !sizeGrid && (
-          <div style={{ ...pos(e.grade), display:'flex', alignItems:'center' }}>
-            <span style={{ ...cssFont(e.grade, 6), color:'#d97706', fontStyle:'italic' }}>Grade</span>
+          <div style={{ position:'absolute', left:e.grade.x*sc, top:e.grade.y*sc, width:e.grade.w*sc, height:e.grade.h*sc, overflow:'hidden', display:'flex', alignItems:'center' }}>
+            <span style={{ color:'#d97706', ...cssFont(e.grade, 8) }}>Grade nao disponivel</span>
           </div>
         )}
-
         {/* Instruction */}
         {e.instruction.visible && !thermal && (
-          <div style={{ ...pos(e.instruction), display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2 }}>
-            <span style={{ ...cssFont(e.instruction, 8), color:'#4338ca', textAlign:'center', lineHeight:1.2 }}>ESCANEIE PARA DAR BAIXA E AVANÇAR O LOTE</span>
-            <span style={{ ...cssFont(e.instruction, 7), fontSize: ptToPx((e.instruction.fontSize??8)*0.8), color:'#94a3b8', textAlign:'center', fontWeight:400 }}>Próximo setor: {nextSectorName}</span>
+          <div style={{ position:'absolute', left:e.instruction.x*sc, top:e.instruction.y*sc, width:e.instruction.w*sc, height:e.instruction.h*sc, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', overflow:'hidden', gap:1 }}>
+            <span style={{ color:'#4338ca', textAlign:'center', lineHeight:1.2, ...cssFont(e.instruction, 10) }}>ESCANEIE PARA DAR BAIXA</span>
+            <span style={{ color:'#94a3b8', textAlign:'center', ...cssFont(e.instruction, 8) }}>→ {nextSectorName}</span>
           </div>
         )}
-
         {/* Footer */}
         {e.footer.visible && (
-          <div style={{ ...pos(e.footer), display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ ...cssFont(e.footer, 6), color:'#cbd5e1' }}>Emitida em: {new Date(os.createdAt).toLocaleDateString('pt-BR')}</span>
+          <div style={{ position:'absolute', left:e.footer.x*sc, top:e.footer.y*sc, width:e.footer.w*sc, height:e.footer.h*sc, display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+            <span style={{ color:'#cbd5e1', ...cssFont(e.footer, 8) }}>
+              {(() => {
+                if (!os.createdAt) return new Date().toLocaleDateString('pt-BR');
+                try {
+                  const d = new Date(os.createdAt);
+                  return isNaN(d.getTime()) ? new Date().toLocaleDateString('pt-BR') : d.toLocaleDateString('pt-BR');
+                } catch {
+                  return new Date().toLocaleDateString('pt-BR');
+                }
+              })()}
+            </span>
           </div>
         )}
       </div>
@@ -745,38 +758,32 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
               </div>
             </div>
 
-            {/* ── Font controls ── */}
-            <div className={`pt-3 border-t flex flex-col gap-3 ${dk?'border-slate-800':'border-slate-100'}`}>
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Tipografia</span>
-
-              {/* Font family */}
-              <div className="flex items-center gap-2">
-                <span className="text-[8px] font-black text-slate-400 w-11 uppercase shrink-0">Fonte</span>
-                <div className="flex gap-1.5 flex-1">
-                  {(['helvetica','times','courier'] as FontFamily[]).map(f=>(
-                    <button key={f} type="button" onClick={()=>updateElem(selected,{fontFamily:f})}
-                      className={`flex-1 py-1.5 rounded-xl border text-[9px] font-black transition-all ${sel.fontFamily===f||(!sel.fontFamily&&f==='helvetica')?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600':'border-slate-200 dark:border-slate-700 text-slate-400'}`}
-                      style={{fontFamily: f==='helvetica'?'Arial':f==='times'?'Georgia':'monospace'}}>
-                      {f==='helvetica'?'Sans':f==='times'?'Serif':'Mono'}
-                    </button>
-                  ))}
+            {/* Typography controls */}
+            {selected !== 'qr' && selected !== 'photo' && (
+              <div className={`pt-3 border-t flex flex-col gap-3 ${dk?'border-slate-800':'border-slate-100'}`}>
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Tipografia</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[8px] font-black text-slate-400 w-11 uppercase shrink-0">Fonte</span>
+                  <div className="flex gap-1.5 flex-1">
+                    {(['helvetica','times','courier'] as FontFamily[]).map(f=>(
+                      <button key={f} type="button" onClick={()=>updateElem(selected,{fontFamily:f})}
+                        className={`flex-1 py-1.5 rounded-xl border text-[9px] font-black transition-all ${(sel.fontFamily===f||(!sel.fontFamily&&f==='helvetica'))?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600':'border-slate-200 dark:border-slate-700 text-slate-400'}`}
+                        style={{fontFamily:f==='helvetica'?'Arial':f==='times'?'Georgia':'monospace'}}>
+                        {f==='helvetica'?'Sans':f==='times'?'Serif':'Mono'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[8px] font-black text-slate-400 w-11 uppercase shrink-0">Tamanho</span>
+                  <button type="button" aria-label="Diminuir fonte" onClick={()=>updateElem(selected,{fontSize:Math.max(3,(sel.fontSize||8)-0.5)})} className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Minus size={12}/></button>
+                  <span className={`w-14 text-center text-[10px] font-black ${dk?'text-slate-200':'text-slate-700'}`}>{(sel.fontSize||8).toFixed(1)} pt</span>
+                  <button type="button" aria-label="Aumentar fonte" onClick={()=>updateElem(selected,{fontSize:(sel.fontSize||8)+0.5})} className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Plus size={12}/></button>
+                  <button type="button" aria-label="Negrito" onClick={()=>updateElem(selected,{bold:!sel.bold})}
+                    className={`w-9 h-7 rounded-xl border text-[11px] font-black transition-all ml-1 ${sel.bold?'border-indigo-500 bg-indigo-600 text-white':'border-slate-200 dark:border-slate-700 text-slate-400'}`}>B</button>
                 </div>
               </div>
-
-              {/* Font size + bold */}
-              <div className="flex items-center gap-2">
-                <span className="text-[8px] font-black text-slate-400 w-11 uppercase shrink-0">Tamanho</span>
-                <button type="button" aria-label="Diminuir fonte" onClick={()=>updateElem(selected,{fontSize:Math.max(3,(sel.fontSize||8)-0.5)})}
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Minus size={12}/></button>
-                <span className={`w-14 text-center text-[10px] font-black ${dk?'text-slate-200':'text-slate-700'}`}>{(sel.fontSize||8).toFixed(1)} pt</span>
-                <button type="button" aria-label="Aumentar fonte" onClick={()=>updateElem(selected,{fontSize:(sel.fontSize||8)+0.5})}
-                  className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Plus size={12}/></button>
-                <button type="button" aria-label="Negrito" onClick={()=>updateElem(selected,{bold:!sel.bold})}
-                  className={`w-9 h-7 rounded-xl border text-[11px] font-black transition-all ml-1 ${sel.bold?'border-indigo-500 bg-indigo-600 text-white':'border-slate-200 dark:border-slate-700 text-slate-400'}`}>
-                  B
-                </button>
-              </div>
-            </div>
+            )}
           </div>
         )}
 

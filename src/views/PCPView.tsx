@@ -8,7 +8,7 @@ import {
   ArrowUpRight, ArrowDownRight, Loader2,
   Settings2, Trash2, Edit3, Edit2, ClipboardList,
   Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart,
-  DollarSign, Hammer, FileText, CheckSquare
+  DollarSign, Hammer, FileText, CheckSquare, Scissors
 } from 'lucide-react';
 import {
   ProductionLot, Product, Sector,
@@ -25,6 +25,7 @@ import { labelService } from '../services/labelService';
 import { scannerService } from '../services/scannerService';
 import { financeService } from '../services/financeService';
 import { firebaseService } from '../services/firebaseService';
+import CuttingProjectionPanel from '../components/CuttingProjectionPanel';
 
 interface PCPViewProps {
   lots: ProductionLot[];
@@ -91,6 +92,7 @@ export default function PCPView({
   const [isSoleOrderModalOpen, setIsSoleOrderModalOpen] = useState(false);
   const [selectedSoleNeed, setSelectedSoleNeed] = useState<any>(null);
   const [extraSoleQty, setExtraSoleQty] = useState<Record<string, number>>({});
+  const [isProjectionMode, setIsProjectionMode] = useState(true);
 
   // Service Order (OS) state declarations
   const [isOSModalOpen, setIsOSModalOpen] = useState(false);
@@ -106,7 +108,7 @@ export default function PCPView({
   const [osDirectComplete, setOsDirectComplete] = useState(false);
   const [isSavingOS, setIsSavingOS] = useState(false);
   const [isPrintOSModalOpen, setIsPrintOSModalOpen] = useState(false);
-  const [printOSData, setPrintOSData] = useState<{ os: ServiceOrder; nextSectorName: string; lot?: ProductionLot } | null>(null);
+  const [printOSData, setPrintOSData] = useState<{ os: ServiceOrder; nextSectorName: string } | null>(null);
 
   // Filtered and organized data
   const filteredLots = useMemo(() => {
@@ -132,6 +134,14 @@ export default function PCPView({
   const filteredActiveLots = useMemo(() => {
     return filteredLots.filter(l => !l.finishedAt);
   }, [filteredLots]);
+
+  const isCuttingSector = useMemo(() => {
+    if (!selectedSectorId) return false;
+    const currentSector = sectors.find(s => s.id === selectedSectorId);
+    return currentSector?.name.toLowerCase().includes('corte') || false;
+  }, [selectedSectorId, sectors]);
+
+  const knives = useMemo(() => productionConfigs.filter(c => c.type === 'TOOL'), [productionConfigs]);
 
   // Sector Metrics for Dashboard
   const sectorMetrics = useMemo(() => {
@@ -1345,6 +1355,22 @@ export default function PCPView({
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {isCuttingSector && (
+                    <button
+                      onClick={() => setIsProjectionMode(!isProjectionMode)}
+                      className={`px-4 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+                        isProjectionMode
+                          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                          : isDarkMode
+                          ? 'bg-slate-900 text-slate-400 border border-slate-800 hover:border-indigo-500/50'
+                          : 'bg-white text-slate-500 border border-slate-100 shadow-sm hover:border-indigo-300'
+                      }`}
+                    >
+                      <Scissors size={14} />
+                      {isProjectionMode ? 'Ver Lotes Padrão' : 'Painel de Projeção'}
+                    </button>
+                  )}
+
                   <button
                     onClick={() => {
                       setIsMultiSelectMode(!isMultiSelectMode);
@@ -1369,7 +1395,31 @@ export default function PCPView({
                 </div>
               </div>
 
-              {isMultiSelectMode && selectedLotIds.length > 0 && (
+              {isCuttingSector && isProjectionMode ? (
+                <CuttingProjectionPanel
+                  lots={filteredActiveLots.filter(l => l.route && l.route[l.currentSectorIndex] === selectedSectorId)}
+                  products={products}
+                  sectors={sectors}
+                  flowTags={flowTags}
+                  colors={colors}
+                  productionConfigs={productionConfigs}
+                  people={people}
+                  accounts={accounts}
+                  categories={categories}
+                  serviceOrders={serviceOrders}
+                  isDarkMode={isDarkMode}
+                  selectedSectorId={selectedSectorId!}
+                  onBack={() => {
+                    setSelectedSectorId(null);
+                    setIsMultiSelectMode(false);
+                    setSelectedLotIds([]);
+                  }}
+                  onSaveLot={onSaveLot}
+                  userName={userName}
+                />
+              ) : (
+                <>
+                  {isMultiSelectMode && selectedLotIds.length > 0 && (
                 <div className={`p-5 rounded-[2rem] border-2 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all ${isDarkMode ? 'bg-slate-900 border-indigo-950/50 text-white' : 'bg-indigo-50/50 border-indigo-100/50 text-indigo-950 shadow-sm'}`}>
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/20 shrink-0">
@@ -1501,10 +1551,8 @@ export default function PCPView({
                       </div>
                       
                       <div className="flex items-center gap-4 mb-5">
-                        <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/20 transition-colors overflow-hidden">
-                          {product?.photoUrl
-                            ? <img src={product.photoUrl} alt={product.name} className="w-full h-full object-cover" />
-                            : <Package size={24} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />}
+                        <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/20 transition-colors">
+                          <Package size={24} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
                         </div>
                         <div className="flex flex-col min-w-0">
                           <p className="text-sm font-black truncate text-slate-900 dark:text-white uppercase leading-tight">{product?.name || '---'}</p>
@@ -1555,6 +1603,8 @@ export default function PCPView({
                   </div>
                 )}
               </div>
+            </>
+          )}
             </div>
           )}
         </div>
@@ -2483,10 +2533,10 @@ export default function PCPView({
                           <button
                             type="button"
                             onClick={() => {
-                              const lot = selectedLot || lots.find(l => l.id === activeOS.lotId);
+                              const lot = selectedLot || (lots || []).find(l => l.id === activeOS.lotId);
                               const nextSectorId = lot?.route && lot.route[(lot.currentSectorIndex ?? 0) + 1];
-                              const nextSec = sectors.find(s => s.id === nextSectorId);
-                              setPrintOSData({ os: activeOS, nextSectorName: nextSec?.name || 'CONCLUIDO', lot });
+                              const nextSec = (sectors || []).find(s => s.id === nextSectorId);
+                              setPrintOSData({ os: activeOS, nextSectorName: nextSec?.name || 'CONCLUÍDO' });
                               setIsPrintOSModalOpen(true);
                             }}
                             className="flex-1 text-[11px] font-black uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 py-2.5 rounded-xl transition-all text-center"
@@ -3167,9 +3217,9 @@ export default function PCPView({
           os={printOSData.os}
           nextSectorName={printOSData.nextSectorName}
           isDarkMode={isDarkMode}
-          product={products.find(p => p.id === printOSData.os.productId)}
-          grids={grids}
-          lot={printOSData.lot}
+          product={(products || []).find(p => p.id === printOSData.os.productId)}
+          grids={grids || []}
+          lot={(lots || []).find(l => l.id === printOSData.os.lotId)}
         />
       )}
     </div>

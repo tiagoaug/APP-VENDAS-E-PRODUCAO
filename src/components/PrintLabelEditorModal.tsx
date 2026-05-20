@@ -141,7 +141,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   const [qrPreview, setQrPreview] = useState('');
 
   // Label options
-  const [selectedVariationId, setSelectedVariationId] = useState(product.variations[0]?.id || '');
+  const [selectedVariationId, setSelectedVariationId] = useState((product.variations || [])[0]?.id || '');
   const [selectedSizes, setSelectedSizes]             = useState<string[]>([]);
   const [useStockQty, setUseStockQty]                 = useState(false);
   const [isBoxLabel, setIsBoxLabel]                   = useState(product.type === SaleType.WHOLESALE);
@@ -166,9 +166,17 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   const scale  = Math.min(scaleW, scaleH);
   const previewW = W * scale, previewH = H * scale;
 
-  const layout: Layout = layouts[sizeKey === 'manual' ? `${manualW}x${manualH}` : sizeKey] ?? defaultLayout(paperDims);
+  const rawLayout = layouts[sizeKey === 'manual' ? `${manualW}x${manualH}` : sizeKey] ?? defaultLayout(paperDims);
+  const def = defaultLayout(paperDims);
+  const layout: Layout = {
+    ...rawLayout,
+    elems: {
+      ...def.elems,
+      ...(rawLayout.elems || {})
+    }
+  };
 
-  const variation = product.variations.find(v => v.id === selectedVariationId) || product.variations[0];
+  const variation = (product.variations || []).find(v => v.id === selectedVariationId) || (product.variations || [])[0];
   const availSizes = variation ? Object.keys(variation.stock).filter(s => s !== 'WHOLESALE') : [];
   const previewSize = selectedSizes[0] || availSizes[0] || '38';
 
@@ -542,7 +550,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
 
           {/* Variation */}
           <div className="flex flex-wrap gap-1.5">
-            {product.variations.map(v=>(
+            {(product.variations || []).map(v=>(
               <button key={v.id} type="button" onClick={()=>{setSelectedVariationId(v.id);setSelectedSizes([]);}}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2 text-[9px] font-black transition-all ${selectedVariationId===v.id?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600':'border-slate-100 dark:border-slate-800 text-slate-400'}`}>
                 <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{backgroundColor:v.color}}/>
