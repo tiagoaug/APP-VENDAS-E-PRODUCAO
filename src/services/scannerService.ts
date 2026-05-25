@@ -38,8 +38,9 @@ export const scannerService = {
 
   async scan(): Promise<string | null> {
     if (Capacitor.getPlatform() === 'web') {
-      const manualCode = prompt('Digite o número da OS (ex: OS-C-1895):');
-      return manualCode?.trim() || null;
+      // On web, scanning is handled by WebCameraScanner component embedded in the modal.
+      // This path is only reached as a last resort (e.g. from ScannerModal on web).
+      return null;
     }
 
     const hasPermission = await this.checkPermissions();

@@ -28,6 +28,8 @@ import { labelService } from '../services/labelService';
 import { printLotSheet } from '../utils/pdfExport';
 import { scannerService } from '../services/scannerService';
 import { financeService } from '../services/financeService';
+import WebCameraScanner from '../components/WebCameraScanner';
+import { Capacitor } from '@capacitor/core';
 import { firebaseService } from '../services/firebaseService';
 import CuttingProjectionPanel from '../components/CuttingProjectionPanel';
 
@@ -122,6 +124,8 @@ export default function PCPView({
   } | null>(null);
   const [qrBaixaManualCode, setQrBaixaManualCode] = useState('');
   const [qrBaixaScanning, setQrBaixaScanning] = useState(false);
+  const [qrBaixaShowWebCamera, setQrBaixaShowWebCamera] = useState(false);
+  const isWebPlatform = Capacitor.getPlatform() === 'web';
   const [qrBaixaConfirm, setQrBaixaConfirm] = useState<{
     os: ServiceOrder;
     lot: import('../types').ProductionLot | null;
@@ -960,6 +964,24 @@ export default function PCPView({
 
     if (parsed?.type === 'OS') {
       os = (serviceOrders || []).find(so => so.id === parsed.osId);
+    } else if (parsed?.type === 'PRODUCT') {
+      // Product label scanned — try to find the associated OS
+      const preSelected = qrBaixaModal?.preselectedOS;
+      if (preSelected && preSelected.productId === parsed.productId && preSelected.variationId === parsed.variationId) {
+        os = preSelected;
+      } else {
+        const matches = (serviceOrders || []).filter(so =>
+          so.status !== 'COMPLETED' &&
+          so.productId === parsed.productId &&
+          so.variationId === parsed.variationId
+        );
+        if (matches.length === 1) {
+          os = matches[0];
+        } else if (matches.length > 1) {
+          alert(`Encontradas ${matches.length} OS abertas para este produto. Use a busca manual ou escaneie o QR da OS específica.`);
+          return;
+        }
+      }
     } else {
       // Try matching by osNumber directly (e.g. "OS-0003" typed manually)
       const normalized = raw.trim().toUpperCase();
@@ -3461,7 +3483,7 @@ export default function PCPView({
                 type="button"
                 aria-label="Fechar"
                 title="Fechar"
-                onClick={() => { setQrBaixaModal(null); setQrBaixaConfirm(null); setQrBaixaManualCode(''); }}
+                onClick={() => { setQrBaixaModal(null); setQrBaixaConfirm(null); setQrBaixaManualCode(''); setQrBaixaShowWebCamera(false); }}
                 className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
               >
                 <X size={18} />
@@ -3530,6 +3552,7 @@ export default function PCPView({
                         setQrBaixaModal(null);
                         setQrBaixaConfirm(null);
                         setQrBaixaManualCode('');
+                        setQrBaixaShowWebCamera(false);
                         await handleCompleteOS(os);
                       }}
                       className="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 active:scale-95 transition-all flex items-center justify-center gap-2"
@@ -3540,59 +3563,76 @@ export default function PCPView({
                 </div>
               ) : (
                 <>
-                  {/* Camera scan button */}
-                  <button
-                    type="button"
-                    disabled={qrBaixaScanning}
-                    onClick={async () => {
-                      setQrBaixaScanning(true);
-                      try {
-                        // If OS pre-selected, confirm directly without scanning
-                        if (qrBaixaModal.preselectedOS) {
+                  {/* Camera scan area */}
+                  {isWebPlatform && qrBaixaShowWebCamera ? (
+                    <WebCameraScanner
+                      onScan={(raw) => {
+                        setQrBaixaShowWebCamera(false);
+                        handleQrBaixaResolve(raw);
+                      }}
+                      onClose={() => setQrBaixaShowWebCamera(false)}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={qrBaixaScanning}
+                      onClick={async () => {
+                        if (!isWebPlatform) {
+                          // Native Android: câmera SEMPRE abre primeiro
+                          setQrBaixaScanning(true);
+                          try {
+                            const raw = await scannerService.scan();
+                            if (raw) {
+                              handleQrBaixaResolve(raw);
+                            } else if (qrBaixaModal.preselectedOS) {
+                              // Usuário cancelou scan — confirmar a OS pré-selecionada
+                              const os = qrBaixaModal.preselectedOS;
+                              const lot = (lots || []).find(l => l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id))) || null;
+                              const nextSectorId = lot?.route?.[(lot?.currentSectorIndex ?? 0) + 1] || '';
+                              const nextSec = (sectors || []).find(s => s.id === nextSectorId);
+                              setQrBaixaConfirm({ os, lot, nextSectorName: nextSec?.name || 'CONCLUÍDO' });
+                            }
+                          } finally {
+                            setQrBaixaScanning(false);
+                          }
+                        } else if (qrBaixaModal.preselectedOS) {
+                          // Web + OS pré-selecionada: confirmar direto
                           const os = qrBaixaModal.preselectedOS;
                           const lot = (lots || []).find(l => l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id))) || null;
                           const nextSectorId = lot?.route?.[(lot?.currentSectorIndex ?? 0) + 1] || '';
                           const nextSec = (sectors || []).find(s => s.id === nextSectorId);
                           setQrBaixaConfirm({ os, lot, nextSectorName: nextSec?.name || 'CONCLUÍDO' });
                         } else {
-                          const raw = await scannerService.scan();
-                          if (raw) handleQrBaixaResolve(raw);
+                          // Web + sem pré-seleção: abre câmera web
+                          setQrBaixaShowWebCamera(true);
                         }
-                      } finally {
-                        setQrBaixaScanning(false);
-                      }
-                    }}
-                    className={`w-full flex flex-col items-center justify-center gap-3 py-8 rounded-2xl border-2 border-dashed transition-all active:scale-98 ${
-                      qrBaixaScanning
-                        ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20 animate-pulse'
-                        : isDarkMode
-                          ? 'border-violet-700/50 bg-violet-950/10 hover:bg-violet-950/25 text-violet-400'
-                          : 'border-violet-200 bg-violet-50/50 hover:bg-violet-50 text-violet-600'
-                    }`}
-                  >
-                    <div className="relative">
-                      <ScanLine size={40} className={qrBaixaScanning ? 'animate-bounce' : ''} />
-                      {!qrBaixaModal.preselectedOS && (
+                      }}
+                      className={`w-full flex flex-col items-center justify-center gap-3 py-8 rounded-2xl border-2 border-dashed transition-all active:scale-98 ${
+                        qrBaixaScanning
+                          ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20 animate-pulse'
+                          : isDarkMode
+                            ? 'border-violet-700/50 bg-violet-950/10 hover:bg-violet-950/25 text-violet-400'
+                            : 'border-violet-200 bg-violet-50/50 hover:bg-violet-50 text-violet-600'
+                      }`}
+                    >
+                      <div className="relative">
+                        <ScanLine size={40} className={qrBaixaScanning ? 'animate-bounce' : ''} />
                         <div className="absolute inset-0 flex items-center justify-center">
                           <div className={`w-full h-0.5 rounded-full ${isDarkMode ? 'bg-violet-400' : 'bg-violet-500'} opacity-60`} />
                         </div>
-                      )}
-                    </div>
-                    <div className="text-center">
-                      <p className="text-sm font-black uppercase tracking-widest">
-                        {qrBaixaScanning
-                          ? 'Abrindo câmera...'
-                          : qrBaixaModal.preselectedOS
-                            ? 'Confirmar esta OS'
-                            : 'Escanear QR Code da OS'}
-                      </p>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-1">
-                        {qrBaixaModal.preselectedOS
-                          ? 'Clique para ver os detalhes e confirmar a baixa'
-                          : 'Toque para abrir a câmera'}
-                      </p>
-                    </div>
-                  </button>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-sm font-black uppercase tracking-widest">
+                          {qrBaixaScanning ? 'Abrindo câmera...' : 'Escanear QR Code da OS'}
+                        </p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-1">
+                          {qrBaixaModal.preselectedOS && !isWebPlatform
+                            ? `Escaneie para confirmar ${qrBaixaModal.preselectedOS.osNumber || ''}`
+                            : 'Toque para abrir a câmera'}
+                        </p>
+                      </div>
+                    </button>
+                  )}
 
                   {/* Manual entry divider */}
                   <div className="flex items-center gap-3">

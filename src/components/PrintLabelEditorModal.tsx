@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Printer, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
-  RotateCcw, Eye, EyeOff, Plus, Minus, Settings2, FileText, Tag
+  RotateCcw, Eye, EyeOff, Plus, Minus, Settings2, FileText, Tag,
+  Image as ImageIcon,
 } from 'lucide-react';
 import Modal from './Modal';
 import { Product, Variation, SaleType, LabelLayout } from '../types';
 import { labelService } from '../services/labelService';
+import { shareImage } from '../utils/pdfExport';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -137,7 +139,8 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   const [selected, setSelected]   = useState<ElemKey | null>(null);
   const [step, setStep]           = useState(1);
   const [tab, setTab]             = useState<'view'|'edit'>('view');
-  const [printing, setPrinting]   = useState(false);
+  const [printing, setPrinting]     = useState(false);
+  const [exportingJpg, setExportingJpg] = useState(false);
   const [qrPreview, setQrPreview] = useState('');
 
   // Label options
@@ -264,6 +267,109 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
       }
       onClose();
     } finally { setPrinting(false); }
+  };
+
+  const handleExportJpg = async () => {
+    setExportingJpg(true);
+    try {
+      const DPI = 300;
+      const mmToPx = (mm: number) => Math.round(mm * DPI / 25.4);
+      const ptToPxHigh = (pt: number) => pt * DPI / 72;
+      const cW = mmToPx(W);
+      const cH = mmToPx(H);
+
+      const sizesToPrint = isBoxLabel ? ['WHOLESALE'] : (selectedSizes.length > 0 ? selectedSizes : availSizes);
+      const quantities: Record<string, number> = {};
+      if (isBoxLabel) {
+        quantities['WHOLESALE'] = customQty;
+      } else if (useStockQty) {
+        sizesToPrint.forEach(s => { quantities[s] = variation?.stock[s] || 0; });
+      } else {
+        sizesToPrint.forEach(s => { quantities[s] = customQty; });
+      }
+
+      const frames: string[] = [];
+
+      for (const size of sizesToPrint) {
+        const qty = quantities[size] || 1;
+        const qrData = isBoxLabel
+          ? `PRD|${product.id}|${variation?.id || ''}|WHOLESALE`
+          : `PRD|${product.id}|${variation?.id || ''}|${size}`;
+        const qrDataUrl = await labelService.generateQRCode(qrData);
+
+        for (let i = 0; i < qty; i++) {
+          const canvas = document.createElement('canvas');
+          canvas.width  = cW;
+          canvas.height = cH;
+          const ctx = canvas.getContext('2d')!;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, cW, cH);
+
+          const e = layout.elems;
+
+          const drawText = (el: Elem, text: string, fallbackPt: number) => {
+            if (!el.visible || !text) return;
+            const fsPx = ptToPxHigh(el.fontSize ?? fallbackPt);
+            const ff = el.fontFamily === 'times'   ? 'Georgia, serif'
+                     : el.fontFamily === 'courier' ? '"Courier New", monospace'
+                     : 'Arial, Helvetica, sans-serif';
+            ctx.font         = `${el.bold ? '900' : '400'} ${fsPx}px ${ff}`;
+            ctx.fillStyle    = el.color;
+            ctx.textAlign    = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, mmToPx(el.x + el.w / 2), mmToPx(el.y + el.h / 2));
+          };
+
+          if (e.qr.visible && qrDataUrl) {
+            await new Promise<void>(res => {
+              const img = new window.Image();
+              img.onload  = () => { ctx.drawImage(img, mmToPx(e.qr.x), mmToPx(e.qr.y), mmToPx(e.qr.w), mmToPx(e.qr.h)); res(); };
+              img.onerror = () => res();
+              img.src = qrDataUrl;
+            });
+          }
+
+          if (e.photo.visible && product.photoUrl) {
+            await new Promise<void>(res => {
+              const img = new window.Image();
+              img.crossOrigin = 'anonymous';
+              img.onload  = () => { ctx.drawImage(img, mmToPx(e.photo.x), mmToPx(e.photo.y), mmToPx(e.photo.w), mmToPx(e.photo.h)); res(); };
+              img.onerror = () => res();
+              img.src = product.photoUrl!;
+            });
+          }
+
+          drawText(e.reference, product.reference || product.name, 8);
+          drawText(e.name,      product.name,                       6);
+          drawText(e.color,     variation?.colorName || '---',      7);
+          if (e.size.visible) drawText(e.size, isBoxLabel ? 'BOX' : size, 11);
+          drawText(e.footer,    'ANTIGRAVITY SYSTEM',               4);
+
+          frames.push(canvas.toDataURL('image/jpeg', 0.92));
+        }
+      }
+
+      if (frames.length === 0) return;
+
+      // Stack all frames vertically into one image
+      const out = document.createElement('canvas');
+      out.width  = cW;
+      out.height = cH * frames.length;
+      const oCtx = out.getContext('2d')!;
+      oCtx.fillStyle = '#ffffff';
+      oCtx.fillRect(0, 0, out.width, out.height);
+      for (let i = 0; i < frames.length; i++) {
+        await new Promise<void>(res => {
+          const img = new window.Image();
+          img.onload = () => { oCtx.drawImage(img, 0, i * cH); res(); };
+          img.src = frames[i];
+        });
+      }
+
+      await shareImage(out.toDataURL('image/jpeg', 0.92), `Etiquetas_${product.reference || product.name}.jpg`);
+    } finally {
+      setExportingJpg(false);
+    }
   };
 
   // ── Helpers preview ──────────────────────────────────────────────────────────
@@ -604,11 +710,19 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         </div>
 
         {/* Actions */}
-        <div className="flex gap-3">
-          <button type="button" onClick={onClose} className={`flex-1 py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest ${dk?'bg-slate-800 text-slate-400':'bg-slate-100 text-slate-500'}`}>Cancelar</button>
-          <button type="button" onClick={handlePrint} disabled={printing}
-            className="flex-[2] py-4 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
-            <Printer size={16}/> {printing?'Gerando…':'Gerar PDF'}
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <button type="button" onClick={handleExportJpg} disabled={printing || exportingJpg}
+              className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
+              <ImageIcon size={16}/> {exportingJpg ? 'Gerando…' : 'Gerar JPG'}
+            </button>
+            <button type="button" onClick={handlePrint} disabled={printing || exportingJpg}
+              className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
+              <Printer size={16}/> {printing ? 'Gerando…' : 'Gerar PDF'}
+            </button>
+          </div>
+          <button type="button" onClick={onClose} className={`w-full py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest ${dk?'bg-slate-800 text-slate-400':'bg-slate-100 text-slate-500'}`}>
+            Cancelar
           </button>
         </div>
       </div>
