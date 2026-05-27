@@ -351,7 +351,7 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
             return (
               <div style={{ position:'absolute', left: e.info.x*sc, top: e.info.y*sc, width: e.info.w*sc, height: e.info.h*sc, overflow:'hidden', paddingLeft: 2*sc, display:'flex', flexDirection:'column', justifyContent:'center', gap: 1 }}>
                 <span style={{ color:'#334155', ...cssFont(e.info, 10), fontSize: ptToPx(e.info.fontSize ?? 10) * 0.8 }}>{clamp(os.sectorName, e.info.w*sc - 4)} → {clamp(nextSectorName, e.info.w*sc/2)}</span>
-                <span style={{ color:'#16a34a', ...cssFont(e.info, 10), fontSize: ptToPx(e.info.fontSize ?? 10) }}>R$ {os.totalValue.toFixed(2)} • {os.quantity}prs</span>
+                <span style={{ color:'#000000', ...cssFont(e.info, 10), fontSize: ptToPx(e.info.fontSize ?? 10) }}>R$ {os.totalValue.toFixed(2)} • {os.quantity}prs</span>
               </div>
             );
           }
@@ -374,9 +374,9 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
         })()}
         {/* Total */}
         {e.total.visible && (
-          <div style={{ position:'absolute', left:e.total.x*sc, top:e.total.y*sc, width:e.total.w*sc, height:e.total.h*sc, backgroundColor:'#f0fdf4', border:'1px solid #86efac', borderRadius:2, display:'flex', alignItems:'center', justifyContent:'space-between', padding:`0 ${2*sc}px`, overflow:'hidden' }}>
-            <span style={{ color:'#15803d', ...cssFont(e.total, 10), fontSize: ptToPx(e.total.fontSize ?? 10) * 0.8 }}>TOTAL</span>
-            <span style={{ color:'#15803d', ...cssFont(e.total, 10), fontSize: ptToPx(e.total.fontSize ?? 10) * 1.2 }}>R$ {os.totalValue.toFixed(2)}</span>
+          <div style={{ position:'absolute', left:e.total.x*sc, top:e.total.y*sc, width:e.total.w*sc, height:e.total.h*sc, backgroundColor:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:2, display:'flex', alignItems:'center', justifyContent:'space-between', padding:`0 ${2*sc}px`, overflow:'hidden' }}>
+            <span style={{ color:'#000000', ...cssFont(e.total, 10), fontSize: ptToPx(e.total.fontSize ?? 10) * 0.8 }}>TOTAL</span>
+            <span style={{ color:'#000000', ...cssFont(e.total, 10), fontSize: ptToPx(e.total.fontSize ?? 10) * 1.2 }}>R$ {os.totalValue.toFixed(2)}</span>
           </div>
         )}
         {/* Notes */}
@@ -408,18 +408,16 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
             const [sz, qty] = tok.split('x');
             return { sz: sz || tok, qty: qty ? parseInt(qty) : null };
           });
-          const hasQty = entries.some(e => e.qty !== null);
-          
           const szFontSz = ptToPx(e.grade.fontSize ?? 10);
           const qtyFontSz = szFontSz * 0.7;
 
           return (
-            <div style={{ position:'absolute', left:e.grade.x*sc, top:e.grade.y*sc, width:e.grade.w*sc, height:e.grade.h*sc, overflow:'hidden', display:'flex', alignItems:'stretch', gap: 0.8*sc }}>
+            <div style={{ position:'absolute', left:e.grade.x*sc, top:e.grade.y*sc, width:e.grade.w*sc, height:e.grade.h*sc, overflow:'hidden', display:'flex', alignItems:'stretch', gap: 0.5*sc }}>
               {entries.map(({ sz, qty }) => (
-                <div key={sz} style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', backgroundColor:'#fef3c7', border:'0.5px solid #fbbf24', borderRadius:2, padding:`0 ${1.5*sc}px`, flexShrink:0, minWidth: hasQty ? 7*sc : 'auto' }}>
-                  <span style={{ ...cssFont(e.grade, 10), fontSize: szFontSz, color:'#92400e', lineHeight:1 }}>{sz}</span>
+                <div key={sz} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+                  <span style={{ ...cssFont(e.grade, 10), fontSize: szFontSz, color:'#ffffff', backgroundColor:'#000000', borderRadius: 0.6*sc, padding:`${0.3*sc}px ${0.5*sc}px`, lineHeight:1 }}>{sz}</span>
                   {qty !== null && (
-                    <span style={{ ...cssFont(e.grade, 10), fontSize: qtyFontSz, fontWeight:700, color:'#b45309', lineHeight:1, marginTop:0.5 }}>{qty}p</span>
+                    <span style={{ ...cssFont(e.grade, 10), fontSize: qtyFontSz, fontWeight:700, color:'#000000', lineHeight:1, marginTop:0.5*sc }}>{qty}</span>
                   )}
                 </div>
               ))}
@@ -428,7 +426,7 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
         })()}
         {e.grade.visible && !sizeGrid && (
           <div style={{ position:'absolute', left:e.grade.x*sc, top:e.grade.y*sc, width:e.grade.w*sc, height:e.grade.h*sc, overflow:'hidden', display:'flex', alignItems:'center' }}>
-            <span style={{ color:'#d97706', ...cssFont(e.grade, 8) }}>Grade nao disponivel</span>
+            <span style={{ color:'#000000', ...cssFont(e.grade, 8) }}>Grade nao disponivel</span>
           </div>
         )}
         {/* Instruction */}

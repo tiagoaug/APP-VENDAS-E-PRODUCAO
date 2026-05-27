@@ -2,16 +2,16 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Printer, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
   RotateCcw, Eye, EyeOff, Plus, Minus, Settings2, FileText, Tag,
-  Image as ImageIcon,
+  Image as ImageIcon, Layers, Check, X,
 } from 'lucide-react';
 import Modal from './Modal';
-import { Product, Variation, SaleType, LabelLayout } from '../types';
+import { Product, Variation, SaleType, LabelLayout, Grid, ProductionLot, ServiceOrder } from '../types';
 import { labelService } from '../services/labelService';
 import { shareImage } from '../utils/pdfExport';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ElemKey    = 'reference' | 'name' | 'color' | 'size' | 'qr' | 'footer' | 'photo';
+type ElemKey    = 'reference' | 'name' | 'color' | 'size' | 'qr' | 'footer' | 'photo' | 'grade' | 'osdata';
 type FontFamily = 'helvetica' | 'times' | 'courier';
 type Elem = {
   x: number; y: number; w: number; h: number;
@@ -40,7 +40,7 @@ const THERMAL_SIZES: { label: string; dims: [number, number]; star?: boolean }[]
   { label: '40 × 30 mm',  dims: [40, 30]  },
 ];
 
-const ELEM_KEYS: ElemKey[] = ['reference', 'name', 'color', 'size', 'qr', 'footer', 'photo'];
+const ELEM_KEYS: ElemKey[] = ['reference', 'name', 'color', 'size', 'qr', 'footer', 'photo', 'grade', 'osdata'];
 const STEPS = [0.5, 1, 2, 5];
 const STORAGE_MODE    = 'lbl_print_mode';
 const STORAGE_SIZE    = 'lbl_print_size';
@@ -60,13 +60,15 @@ function defaultLayout([W, H]: [number, number]): Layout {
     return {
       paper: [W, H],
       elems: {
-        reference: { x: 0,   y: 0,          w: textW, h: H * 0.32, label: 'Referência', color: '#4338ca', visible: true,  fontSize: 7,   fontFamily: 'helvetica', bold: true  },
-        name:      { x: 0,   y: H * 0.32,   w: textW, h: H * 0.26, label: 'Nome',       color: '#6366f1', visible: false, fontSize: 5,   fontFamily: 'helvetica', bold: false },
-        color:     { x: 0,   y: H * 0.42,   w: textW, h: H * 0.28, label: 'Cor',        color: '#e11d48', visible: true,  fontSize: 5.5, fontFamily: 'helvetica', bold: false },
-        size:      { x: 0,   y: H * 0.68,   w: textW, h: H * 0.32, label: 'Tamanho',    color: '#0ea5e9', visible: true,  fontSize: 9,   fontFamily: 'helvetica', bold: true  },
-        qr:        { x: qrX, y: qrY,        w: qrSize,h: qrSize,   label: 'QR Code',    color: '#0ea5e9', visible: true,  fontSize: 8,   fontFamily: 'helvetica', bold: false },
-        footer:    { x: 0,   y: H - 2,      w: W,     h: 2,        label: 'Rodapé',     color: '#94a3b8', visible: false, fontSize: 3,   fontFamily: 'helvetica', bold: false },
-        photo:     { x: 0,   y: 0,          w: 0,     h: 0,        label: 'Foto',       color: '#f59e0b', visible: false, fontSize: 6,   fontFamily: 'helvetica', bold: false },
+        reference: { x: 0,   y: 0,          w: textW, h: H * 0.32, label: 'Referência', color: '#000000', visible: true,  fontSize: 7,   fontFamily: 'helvetica', bold: true  },
+        name:      { x: 0,   y: H * 0.32,   w: textW, h: H * 0.26, label: 'Nome',       color: '#000000', visible: false, fontSize: 5,   fontFamily: 'helvetica', bold: false },
+        color:     { x: 0,   y: H * 0.42,   w: textW, h: H * 0.28, label: 'Cor',        color: '#000000', visible: true,  fontSize: 5.5, fontFamily: 'helvetica', bold: false },
+        size:      { x: 0,   y: H * 0.68,   w: textW, h: H * 0.32, label: 'Tamanho',    color: '#000000', visible: true,  fontSize: 9,   fontFamily: 'helvetica', bold: true  },
+        qr:        { x: qrX, y: qrY,        w: qrSize,h: qrSize,   label: 'QR Code',    color: '#000000', visible: true,  fontSize: 8,   fontFamily: 'helvetica', bold: false },
+        footer:    { x: 0,   y: H - 2,      w: W,     h: 2,        label: 'Rodapé',     color: '#000000', visible: false, fontSize: 3,   fontFamily: 'helvetica', bold: false },
+        photo:     { x: 0,   y: 0,          w: 0,     h: 0,        label: 'Foto',       color: '#000000', visible: false, fontSize: 6,   fontFamily: 'helvetica', bold: false },
+        grade:     { x: 0,   y: H * 0.62,   w: textW, h: H * 0.38, label: 'Grade',      color: '#f59e0b', visible: false, fontSize: 5,   fontFamily: 'helvetica', bold: true  },
+        osdata:    { x: 0,   y: H - 3,      w: textW, h: 3,        label: 'Dados OS',   color: '#6366f1', visible: false, fontSize: 3.5, fontFamily: 'helvetica', bold: false },
       },
     };
   }
@@ -75,13 +77,15 @@ function defaultLayout([W, H]: [number, number]): Layout {
   return {
     paper: [W, H],
     elems: {
-      reference: { x: 0,        y: 0,       w: W,     h: 6*s,     label: 'Referência', color: '#4338ca', visible: true,  fontSize: 8*s,  fontFamily: 'helvetica', bold: true  },
-      name:      { x: 2*s,      y: 7*s,     w: W-4*s, h: 5*s,     label: 'Nome',       color: '#6366f1', visible: true,  fontSize: 6*s,  fontFamily: 'helvetica', bold: false },
-      color:     { x: 0,        y: H-4*s,   w: W,     h: 4*s,     label: 'Cor',        color: '#e11d48', visible: true,  fontSize: 7*s,  fontFamily: 'helvetica', bold: true  },
-      size:      { x: W-9*s,    y: 5*s,     w: 8*s,   h: 8*s,     label: 'Tamanho',    color: '#0ea5e9', visible: true,  fontSize: 11*s, fontFamily: 'helvetica', bold: true  },
-      qr:        { x: (W-20*s)/2, y: 6*s,  w: 20*s,  h: 20*s,    label: 'QR Code',    color: '#0ea5e9', visible: true,  fontSize: 8,    fontFamily: 'helvetica', bold: false },
-      footer:    { x: 0,        y: H-2*s,   w: W,     h: 2*s,     label: 'Rodapé',     color: '#94a3b8', visible: true,  fontSize: 4*s,  fontFamily: 'helvetica', bold: false },
-      photo:     { x: W-photoSz, y: H-4*s-photoSz, w: photoSz, h: photoSz, label: 'Foto', color: '#f59e0b', visible: false, fontSize: 6, fontFamily: 'helvetica', bold: false },
+      reference: { x: 0,        y: 0,       w: W,     h: 6*s,     label: 'Referência', color: '#000000', visible: true,  fontSize: 8*s,  fontFamily: 'helvetica', bold: true  },
+      name:      { x: 2*s,      y: 7*s,     w: W-4*s, h: 5*s,     label: 'Nome',       color: '#000000', visible: true,  fontSize: 6*s,  fontFamily: 'helvetica', bold: false },
+      color:     { x: 0,        y: H-4*s,   w: W,     h: 4*s,     label: 'Cor',        color: '#000000', visible: true,  fontSize: 7*s,  fontFamily: 'helvetica', bold: true  },
+      size:      { x: W-9*s,    y: 5*s,     w: 8*s,   h: 8*s,     label: 'Tamanho',    color: '#000000', visible: true,  fontSize: 11*s, fontFamily: 'helvetica', bold: true  },
+      qr:        { x: (W-20*s)/2, y: 6*s,  w: 20*s,  h: 20*s,    label: 'QR Code',    color: '#000000', visible: true,  fontSize: 8,    fontFamily: 'helvetica', bold: false },
+      footer:    { x: 0,        y: H-2*s,   w: W,     h: 2*s,     label: 'Rodapé',     color: '#000000', visible: true,  fontSize: 4*s,  fontFamily: 'helvetica', bold: false },
+      photo:     { x: W-photoSz, y: H-4*s-photoSz, w: photoSz, h: photoSz, label: 'Foto', color: '#000000', visible: false, fontSize: 6, fontFamily: 'helvetica', bold: false },
+      grade:     { x: 2*s,      y: H-10*s,  w: W-4*s, h: 7*s,     label: 'Grade',      color: '#f59e0b', visible: false, fontSize: 6*s,  fontFamily: 'helvetica', bold: true  },
+      osdata:    { x: 2*s,      y: H-3.5*s, w: W-4*s, h: 3*s,     label: 'Dados OS',   color: '#6366f1', visible: false, fontSize: 4*s,  fontFamily: 'helvetica', bold: false },
     },
   };
 }
@@ -128,17 +132,22 @@ function Ruler({ axis, totalMm, scale, isDark }: { axis: 'h'|'v'; totalMm: numbe
 interface Props {
   isOpen: boolean; onClose: () => void;
   product: Product; isDarkMode: boolean;
+  grids?: Grid[];
+  lot?: ProductionLot;
+  sizeGridOverride?: string;
+  os?: ServiceOrder | null;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function PrintLabelEditorModal({ isOpen, onClose, product, isDarkMode }: Props) {
+export default function PrintLabelEditorModal({ isOpen, onClose, product, isDarkMode, grids = [], lot, sizeGridOverride, os }: Props) {
   const [printMode, setPrintMode] = useState<PrintMode>(() => (localStorage.getItem(STORAGE_MODE) as PrintMode) || 'thermal');
   const [sizeKey, setSizeKey]     = useState<string>(() => localStorage.getItem(STORAGE_SIZE) || '75x24');
   const [layouts, setLayouts]     = useState<Record<string, Layout>>(loadLayouts);
   const [selected, setSelected]   = useState<ElemKey | null>(null);
   const [step, setStep]           = useState(1);
   const [tab, setTab]             = useState<'view'|'edit'>('view');
+  const [elemConfigOpen, setElemConfigOpen] = useState(false);
   const [printing, setPrinting]     = useState(false);
   const [exportingJpg, setExportingJpg] = useState(false);
   const [qrPreview, setQrPreview] = useState('');
@@ -182,6 +191,31 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   const variation = (product.variations || []).find(v => v.id === selectedVariationId) || (product.variations || [])[0];
   const availSizes = variation ? Object.keys(variation.stock).filter(s => s !== 'WHOLESALE') : [];
   const previewSize = selectedSizes[0] || availSizes[0] || '38';
+
+  const activeGrid = grids.find(g => g.id === product.defaultGridId);
+  const sizeGrid = (() => {
+    if (sizeGridOverride) return sizeGridOverride;
+    if (lot?.pairs && Object.keys(lot.pairs).length > 0) {
+      return Object.entries(lot.pairs)
+        .filter(([, qty]) => qty > 0)
+        .sort(([a], [b]) => Number(a) - Number(b))
+        .map(([sz, qty]) => `${sz}x${qty}`)
+        .join('-');
+    }
+    const sizes = availSizes.slice().sort((a, b) => Number(a) - Number(b));
+    if (activeGrid && sizes.length > 0) {
+      return sizes.map(s => {
+        const qty = activeGrid.configuration[s];
+        return qty !== undefined ? `${s}x${qty}` : s;
+      }).join('-');
+    }
+    const nonZeroStock = variation ? sizes.filter(s => (variation.stock[s] ?? 0) > 0) : [];
+    if (nonZeroStock.length > 0) return nonZeroStock.map(s => `${s}x${variation!.stock[s]}`).join('-');
+    return sizes.join('-');
+  })();
+  const sizeGridEntries = sizeGrid
+    ? sizeGrid.split('-').map(tok => { const [sz, q] = tok.split('x'); return { sz, qty: q ? parseInt(q) : null }; })
+    : [];
 
   useEffect(() => {
     const qd = isBoxLabel
@@ -258,12 +292,24 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         photoW:   layout.elems.photo.w,
         photoH:   layout.elems.photo.h,
         showPhoto: layout.elems.photo.visible,
+        showGrade: layout.elems.grade.visible,
+        gradeX:   layout.elems.grade.x,
+        gradeY:   layout.elems.grade.y,
+        gradeW:   layout.elems.grade.w,
+        gradeH:   layout.elems.grade.h,
+        showOsData: layout.elems.osdata.visible,
+        osDataX:  layout.elems.osdata.x + layout.elems.osdata.w / 2,
+        osDataY:  layout.elems.osdata.y + (layout.elems.osdata.fontSize ?? 3.5) * 0.353 + 1,
+        osDataW:  layout.elems.osdata.w,
+        osDataH:  layout.elems.osdata.h,
+        osDataSize: layout.elems.osdata.fontSize ?? 3.5,
+        osDataText: os ? `${os.osNumber} | ${os.providerName} | R$ ${os.totalValue.toFixed(2)}` : undefined,
       };
       const photoUrl = product.photoUrl;
       if (isBoxLabel) {
-        await labelService.printWholesaleLabel(product, variation!, customQty, paperDims, ll, photoUrl);
+        await labelService.printWholesaleLabel(product, variation!, customQty, paperDims, ll, photoUrl, sizeGrid);
       } else {
-        await labelService.printProductLabels(product, variation, sizesToPrint, quantities, paperDims, ll, photoUrl);
+        await labelService.printProductLabels(product, variation, sizesToPrint, quantities, paperDims, ll, photoUrl, sizeGrid);
       }
       onClose();
     } finally { setPrinting(false); }
@@ -288,7 +334,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         sizesToPrint.forEach(s => { quantities[s] = customQty; });
       }
 
-      const frames: string[] = [];
+      const frames: HTMLCanvasElement[] = [];
 
       for (const size of sizesToPrint) {
         const qty = quantities[size] || 1;
@@ -314,7 +360,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                      : el.fontFamily === 'courier' ? '"Courier New", monospace'
                      : 'Arial, Helvetica, sans-serif';
             ctx.font         = `${el.bold ? '900' : '400'} ${fsPx}px ${ff}`;
-            ctx.fillStyle    = el.color;
+            ctx.fillStyle    = '#000000';
             ctx.textAlign    = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(text, mmToPx(el.x + el.w / 2), mmToPx(el.y + el.h / 2));
@@ -345,11 +391,64 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           if (e.size.visible) drawText(e.size, isBoxLabel ? 'BOX' : size, 11);
           drawText(e.footer,    'ANTIGRAVITY SYSTEM',               4);
 
-          frames.push(canvas.toDataURL('image/jpeg', 0.92));
+          // Grade pills
+          if (e.grade.visible && sizeGridEntries.length > 0) {
+            const gX = mmToPx(e.grade.x), gY = mmToPx(e.grade.y);
+            const gW = mmToPx(e.grade.w), gH = mmToPx(e.grade.h);
+            const hasQty = sizeGridEntries.some(en => en.qty !== null);
+            const cellW  = gW / sizeGridEntries.length;
+            const szFsPx  = ptToPxHigh(e.grade.fontSize ?? 5);
+            const qtyFsPx = ptToPxHigh((e.grade.fontSize ?? 5) * 0.90);
+            const szH = hasQty ? gH * 0.48 : gH * 0.70;
+            const pad = mmToPx(0.4);
+            sizeGridEntries.forEach(({ sz, qty }, idx) => {
+              const cx = gX + cellW * idx;
+              // Numeração: fundo preto + texto branco
+              ctx.fillStyle = '#000000';
+              ctx.beginPath();
+              if (typeof (ctx as any).roundRect === 'function') {
+                (ctx as any).roundRect(cx + pad, gY + pad, cellW - pad * 2, szH, mmToPx(0.5));
+              } else {
+                ctx.rect(cx + pad, gY + pad, cellW - pad * 2, szH);
+              }
+              ctx.fill();
+              ctx.fillStyle    = '#ffffff';
+              ctx.font         = `900 ${szFsPx}px Arial`;
+              ctx.textAlign    = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(sz, cx + cellW / 2, gY + szH * 0.52);
+              // Valor: texto preto simples
+              if (qty !== null) {
+                ctx.fillStyle = '#000000';
+                ctx.font      = `900 ${qtyFsPx}px Arial`;
+                ctx.fillText(`${qty}`, cx + cellW / 2, gY + szH + (gH - szH) * 0.6);
+              }
+            });
+          }
+
+          // OS Data
+          if (e.osdata.visible && os) {
+            const osText = `${os.osNumber} | ${os.providerName} | R$ ${os.totalValue.toFixed(2)}`;
+            const osFsPx = ptToPxHigh(e.osdata.fontSize ?? 3.5);
+            ctx.font         = `400 ${osFsPx}px Arial, Helvetica, sans-serif`;
+            ctx.fillStyle    = '#6366f1';
+            ctx.textAlign    = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(osText, mmToPx(e.osdata.x + e.osdata.w / 2), mmToPx(e.osdata.y + e.osdata.h / 2));
+            ctx.strokeStyle  = '#6366f1';
+            ctx.lineWidth    = mmToPx(0.15);
+            const pad = mmToPx(0.3);
+            ctx.strokeRect(mmToPx(e.osdata.x) + pad, mmToPx(e.osdata.y) + pad, mmToPx(e.osdata.w) - pad * 2, mmToPx(e.osdata.h) - pad * 2);
+          }
+
+          frames.push(canvas);
         }
       }
 
-      if (frames.length === 0) return;
+      if (frames.length === 0) {
+        alert('Nenhuma etiqueta para gerar. Selecione ao menos um tamanho ou variação.');
+        return;
+      }
 
       // Stack all frames vertically into one image
       const out = document.createElement('canvas');
@@ -359,14 +458,13 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
       oCtx.fillStyle = '#ffffff';
       oCtx.fillRect(0, 0, out.width, out.height);
       for (let i = 0; i < frames.length; i++) {
-        await new Promise<void>(res => {
-          const img = new window.Image();
-          img.onload = () => { oCtx.drawImage(img, 0, i * cH); res(); };
-          img.src = frames[i];
-        });
+        oCtx.drawImage(frames[i], 0, i * cH);
       }
 
       await shareImage(out.toDataURL('image/jpeg', 0.92), `Etiquetas_${product.reference || product.name}.jpg`);
+    } catch (err) {
+      console.error('Erro ao gerar JPG:', err);
+      alert('Erro ao gerar JPG: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setExportingJpg(false);
     }
@@ -397,28 +495,28 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
     return (
       <div style={{ position:'relative', width:previewW, height:previewH, backgroundColor:'#fff', flexShrink:0, overflow:'hidden' }}>
         {e.reference.visible && (
-          <div style={{ ...pos(e.reference), display:'flex', alignItems:'center', justifyContent:'center', backgroundColor: isThermal(paperDims)?'transparent':'#4338ca10' }}>
-            <span style={{ ...cssFont(e.reference, 8), color:'#4338ca', textAlign:'center' }}>{product.reference || product.name}</span>
+          <div style={{ ...pos(e.reference), display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <span style={{ ...cssFont(e.reference, 8), color:'#000000', textAlign:'center' }}>{product.reference || product.name}</span>
           </div>
         )}
         {e.name.visible && (
           <div style={{ ...pos(e.name), display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ ...cssFont(e.name, 6), color:'#475569', textAlign:'center' }}>{product.name}</span>
+            <span style={{ ...cssFont(e.name, 6), color:'#000000', textAlign:'center' }}>{product.name}</span>
           </div>
         )}
         {e.color.visible && (
           <div style={{ ...pos(e.color), display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ ...cssFont(e.color, 7), color:'#1e293b', textAlign:'center' }}>{variation?.colorName || '---'}</span>
+            <span style={{ ...cssFont(e.color, 7), color:'#000000', textAlign:'center' }}>{variation?.colorName || '---'}</span>
           </div>
         )}
         {e.size.visible && !isBoxLabel && (
           <div style={{ ...pos(e.size), display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ ...cssFont(e.size, 11), color:'#0ea5e9', textAlign:'center' }}>{previewSize}</span>
+            <span style={{ ...cssFont(e.size, 11), color:'#000000', textAlign:'center' }}>{previewSize}</span>
           </div>
         )}
         {e.size.visible && isBoxLabel && (
           <div style={{ ...pos(e.size), display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ ...cssFont(e.size, 11), color:'#0ea5e9', textAlign:'center' }}>BOX</span>
+            <span style={{ ...cssFont(e.size, 11), color:'#000000', textAlign:'center' }}>BOX</span>
           </div>
         )}
         {e.qr.visible && (
@@ -435,7 +533,24 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         )}
         {e.footer.visible && (
           <div style={{ ...pos(e.footer), display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ ...cssFont(e.footer, 4), color:'#94a3b8' }}>ANTIGRAVITY SYSTEM</span>
+            <span style={{ ...cssFont(e.footer, 4), color:'#000000' }}>ANTIGRAVITY SYSTEM</span>
+          </div>
+        )}
+        {e.osdata.visible && (
+          <div style={{ ...pos(e.osdata), display:'flex', alignItems:'center', justifyContent:'center', padding: `${scale*0.3}px ${scale*0.5}px`, border:`${scale*0.4}px solid #6366f1`, borderRadius: scale*0.8, boxSizing:'border-box' }}>
+            <span style={{ ...cssFont(e.osdata, 3.5), color:'#6366f1', textAlign:'center', lineHeight:1.2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', width:'100%' }}>
+              {os ? `${os.osNumber} | ${os.providerName} | R$ ${os.totalValue.toFixed(2)}` : 'OS-C-0000 | Fornecedor | R$ 0,00'}
+            </span>
+          </div>
+        )}
+        {e.grade.visible && sizeGridEntries.length > 0 && (
+          <div style={{ ...pos(e.grade), display:'flex', alignItems:'stretch', gap: scale * 0.5 }}>
+            {sizeGridEntries.map(({ sz, qty }, i) => (
+              <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+                <span style={{ ...cssFont(e.grade, 5), color:'#ffffff', backgroundColor:'#000000', borderRadius: scale * 0.6, padding:`${scale * 0.3}px ${scale * 0.5}px`, lineHeight:1 }}>{sz}</span>
+                {qty !== null && <span style={{ fontSize: ptToPx((e.grade.fontSize ?? 5) * 0.90), fontFamily:'Arial,sans-serif', fontWeight:900, color:'#000000', lineHeight:1, marginTop: scale * 0.5 }}>{qty}</span>}
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -555,25 +670,121 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           </div>
         </div>
 
-        {/* Element chips */}
+        {/* Configurar Elementos button */}
         {tab === 'edit' && (
-          <div className="flex flex-wrap gap-1.5">
-            {ELEM_KEYS.map(key => {
-              const el = layout.elems[key]; const isSel = selected===key;
-              return (
-                <button key={key} type="button" onClick={()=>setSelected(isSel?null:key)}
-                  className={`flex items-center gap-1.5 pl-2 pr-1 py-1.5 rounded-xl border-2 text-[9px] font-black uppercase tracking-tight transition-all ${isSel?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600':'border-slate-100 dark:border-slate-800 text-slate-400'}`}
-                  style={isSel?{}:{borderColor:el.color+'70'}}>
-                  <div className="w-2 h-2 rounded-full shrink-0" style={{backgroundColor:el.color}}/>
-                  {el.label}
-                  <button type="button" aria-label={el.visible?`Ocultar ${el.label}`:`Mostrar ${el.label}`}
-                    onClick={e=>{e.stopPropagation();updateElem(key,{visible:!el.visible});}}
-                    className="ml-1 p-0.5 rounded opacity-60 hover:opacity-100 transition-opacity">
-                    {el.visible?<Eye size={9}/>:<EyeOff size={9}/>}
-                  </button>
+          <button
+            type="button"
+            onClick={() => setElemConfigOpen(true)}
+            className={`w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl border-2 font-black text-[11px] uppercase tracking-widest transition-all ${
+              dk
+                ? 'bg-slate-800 border-slate-700 text-slate-200 hover:border-indigo-500 hover:text-indigo-400'
+                : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-400 hover:text-indigo-600'
+            }`}
+          >
+            <Layers size={15} />
+            Configurar Elementos
+            <span className={`ml-1 text-[9px] font-black px-2 py-0.5 rounded-full ${dk ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
+              {ELEM_KEYS.filter(k => layout.elems[k].visible).length}/{ELEM_KEYS.length} visíveis
+            </span>
+          </button>
+        )}
+
+        {/* Element config panel — bottom sheet */}
+        {elemConfigOpen && (
+          <div className="fixed inset-0 z-[70] flex flex-col" onClick={() => setElemConfigOpen(false)}>
+            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+            <div
+              className={`relative mt-auto w-full max-h-[80vh] flex flex-col rounded-t-3xl shadow-2xl overflow-hidden ${dk ? 'bg-slate-900' : 'bg-white'}`}
+              onClick={e => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className={`flex items-center justify-between px-6 py-4 border-b ${dk ? 'border-slate-800' : 'border-slate-100'}`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shrink-0">
+                    <Layers size={16} />
+                  </div>
+                  <div>
+                    <p className={`text-sm font-black leading-none ${dk ? 'text-white' : 'text-slate-900'}`}>Configurar Elementos</p>
+                    <p className="text-[10px] font-bold text-slate-400 mt-0.5">Visibilidade e seleção para ajuste</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setElemConfigOpen(false)}
+                  aria-label="Fechar"
+                  className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${dk ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-800'}`}
+                >
+                  <X size={16} />
                 </button>
-              );
-            })}
+              </div>
+              {/* Element list */}
+              <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2">
+                {ELEM_KEYS.map(key => {
+                  const el = layout.elems[key];
+                  const isSel = selected === key;
+                  return (
+                    <div
+                      key={key}
+                      className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all ${
+                        isSel ? 'border-indigo-500 shadow-lg shadow-indigo-500/10' : dk ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
+                      }`}
+                      style={isSel ? { borderColor: el.color, backgroundColor: el.color + '15' } : {}}
+                    >
+                      <div className="w-4 h-4 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: el.color }} />
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-black leading-none ${dk ? 'text-white' : 'text-slate-900'}`}>{el.label}</p>
+                        <p className="text-[10px] font-bold text-slate-400 mt-0.5">X:{el.x.toFixed(1)} Y:{el.y.toFixed(1)} • {el.w.toFixed(1)}×{el.h.toFixed(1)} mm</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => { setSelected(isSel ? null : key); setElemConfigOpen(false); }}
+                        className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
+                          isSel
+                            ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-500/20'
+                            : dk
+                              ? 'bg-slate-700 border-slate-600 text-slate-300 hover:border-indigo-400 hover:text-indigo-300'
+                              : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-400 hover:text-indigo-600'
+                        }`}
+                      >
+                        {isSel ? <Check size={12} /> : 'Ajustar'}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={el.visible ? `Ocultar ${el.label}` : `Mostrar ${el.label}`}
+                        onClick={() => updateElem(key, { visible: !el.visible })}
+                        className={`w-12 h-7 rounded-full transition-all relative flex-shrink-0 ${el.visible ? 'shadow-inner' : dk ? 'bg-slate-700' : 'bg-slate-200'}`}
+                        style={el.visible ? { backgroundColor: el.color } : {}}
+                      >
+                        <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-sm transition-all duration-200 flex items-center justify-center ${el.visible ? 'left-5' : 'left-0.5'}`}>
+                          {el.visible ? <Eye size={10} style={{ color: el.color }} /> : <EyeOff size={10} className="text-slate-400" />}
+                        </span>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Footer */}
+              <div className={`px-4 py-4 border-t ${dk ? 'border-slate-800' : 'border-slate-100'}`}>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { ELEM_KEYS.forEach(k => updateElem(k, { visible: true })); }}
+                    className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2 flex items-center justify-center gap-1.5 ${
+                      dk ? 'border-slate-700 text-slate-300 hover:border-emerald-500 hover:text-emerald-400' : 'border-slate-200 text-slate-500 hover:border-emerald-400 hover:text-emerald-600'
+                    }`}
+                  >
+                    <Eye size={12} /> Mostrar Todos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setElemConfigOpen(false)}
+                    className="flex-[2] py-3 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

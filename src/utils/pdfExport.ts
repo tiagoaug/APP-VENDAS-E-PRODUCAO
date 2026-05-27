@@ -254,7 +254,26 @@ export const shareImage = async (base64: string, filename: string) => {
       });
     } catch (error) {
       console.error('Error sharing image:', error);
-      alert('Erro ao compartilhar imagem. Tente novamente.');
+      try {
+        // Fallback to web download in webview/mobile browser
+        const dataStr = base64.includes('base64,') ? base64 : `data:image/jpeg;base64,${base64}`;
+        const arr = dataStr.split(',');
+        const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+        const bstr = atob(arr[1]);
+        const u8arr = new Uint8Array(bstr.length);
+        for (let i = 0; i < bstr.length; i++) u8arr[i] = bstr.charCodeAt(i);
+        const blob = new Blob([u8arr], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch (fallbackError) {
+        alert('Erro ao compartilhar imagem. Tente novamente.');
+      }
     }
   }
 };

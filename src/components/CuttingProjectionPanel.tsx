@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -7,7 +7,7 @@ import {
   Play, User, DollarSign, FileText, CheckCircle2,
   AlertCircle, Info, Hash, Clock, Settings, HelpCircle,
   Sparkles, List, Printer, Eye, Settings2, X, Tag,
-  QrCode, ScanLine, CheckSquare
+  QrCode, ScanLine, CheckSquare, Edit2, Trash2, Share2
 } from 'lucide-react';
 import PrintLabelEditorModal from './PrintLabelEditorModal';
 import { scannerService } from '../services/scannerService';
@@ -15,10 +15,11 @@ import WebCameraScanner from './WebCameraScanner';
 import { Capacitor } from '@capacitor/core';
 import {
   ProductionLot, Product, Sector, FlowTag, ColorValue,
-  ProductionConfigItem, ServiceOrder, Person, Account, Category
+  ProductionConfigItem, ServiceOrder, Person, Account, Category, ProductionOrder
 } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import { financeService } from '../services/financeService';
+import { printLotSheet, shareImage } from '../utils/pdfExport';
 
 interface CuttingProjectionPanelProps {
   lots: ProductionLot[];
@@ -31,6 +32,7 @@ interface CuttingProjectionPanelProps {
   accounts: Account[];
   categories: Category[];
   serviceOrders: ServiceOrder[];
+  productionOrders?: ProductionOrder[];
   isDarkMode: boolean;
   selectedSectorId: string;
   onBack: () => void;
@@ -49,6 +51,7 @@ export default function CuttingProjectionPanel({
   accounts = [],
   categories = [],
   serviceOrders = [],
+  productionOrders = [],
   isDarkMode,
   selectedSectorId,
   onBack,
@@ -92,9 +95,13 @@ export default function CuttingProjectionPanel({
   const [osCategoryId, setOsCategoryId] = useState('');
   const [osDirectComplete, setOsDirectComplete] = useState(false);
   const [isSavingOS, setIsSavingOS] = useState(false);
+  const [editingOsId, setEditingOsId] = useState<string | null>(null);
+  const [editingOsOriginal, setEditingOsOriginal] = useState<ServiceOrder | null>(null);
 
   // Label modal state
   const [labelModalOpen, setLabelModalOpen] = useState(false);
+  const [labelSizeGridOverride, setLabelSizeGridOverride] = useState<string | undefined>(undefined);
+  const [labelOsOverride, setLabelOsOverride] = useState<ServiceOrder | null | undefined>(undefined);
 
   // QR Baixa modal state
   const [qrBaixaOpen, setQrBaixaOpen] = useState(false);
@@ -107,6 +114,11 @@ export default function CuttingProjectionPanel({
     nextSectorName: string;
   } | null>(null);
 
+  // Order selection state for per-order OS creation
+  const [selectedOrderKeys, setSelectedOrderKeys] = useState<Set<string>>(new Set());
+  const [pendingOsSourceOrderIds, setPendingOsSourceOrderIds] = useState<string[]>([]);
+  const [pendingOsQuantityOverride, setPendingOsQuantityOverride] = useState<number | null>(null);
+
   // Print states
   const [printModalData, setPrintModalData] = useState<{
     lot: ProductionLot;
@@ -117,6 +129,10 @@ export default function CuttingProjectionPanel({
     osNotes?: string;
   } | null>(null);
   const [printTab, setPrintTab] = useState<'os' | 'sheet' | 'both'>('both');
+  const [isShareExporting, setIsShareExporting] = useState(false);
+  const [sharePopupOpen, setSharePopupOpen] = useState(false);
+  const sharePopupRef = useRef<HTMLDivElement>(null);
+  const [osSharePopupId, setOsSharePopupId] = useState<string | null>(null);
 
   // Active selected lot object
   const selectedLot = useMemo(() => {
@@ -268,11 +284,14 @@ export default function CuttingProjectionPanel({
   const handleCreateOS = async () => {
     if (!selectedLot || !lotProductDetails?.product) return;
 
-    // Trava: impede OS duplicada para o mesmo lote+setor
-    if (activeOSForSelectedLot) {
-      alert(`Já existe a OS ${activeOSForSelectedLot.osNumber} em aberto para este lote no setor de corte. Conclua ou exclua-a antes de emitir uma nova.`);
-      setIsOSPanelOpen(false);
-      return;
+    // Trava: impede OS duplicada apenas quando é OS do lote inteiro (sem pedidos específicos) e não é edição
+    if (pendingOsSourceOrderIds.length === 0 && !editingOsId) {
+      const wholeLotOS = lotActiveOSListFull.find(os => !os.sourceOrderIds || os.sourceOrderIds.length === 0);
+      if (wholeLotOS) {
+        alert(`Já existe a OS ${wholeLotOS.osNumber} em aberto para este lote no setor de corte. Conclua ou exclua-a antes de emitir uma nova.`);
+        setIsOSPanelOpen(false);
+        return;
+      }
     }
 
     if (!osProviderId) {
@@ -282,13 +301,40 @@ export default function CuttingProjectionPanel({
 
     setIsSavingOS(true);
     try {
-      const uniqueId = `os_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      const osNumberStr = `OS-C-${Date.now().toString().slice(-4)}`;
       const provider = people.find(p => p.id === osProviderId);
       const providerName = provider?.name || 'Cortador Avulso';
-      
-      const totalPairs = selectedLot.quantity;
+      const totalPairs = pendingOsQuantityOverride !== null ? pendingOsQuantityOverride : selectedLot.quantity;
       const totalValue = totalPairs * osValuePerPair;
+
+      // ── Edit existing OS ──────────────────────────────────────────────────
+      if (editingOsId) {
+        const osToEdit = serviceOrders.find(o => o.id === editingOsId);
+        await firebaseService.updateDocument('serviceOrders', editingOsId, {
+          providerId: osProviderId,
+          providerName,
+          quantity: totalPairs,
+          valuePerPair: osValuePerPair,
+          totalValue,
+          notes: osNotes,
+        });
+        if (osToEdit?.transactionId && totalValue > 0) {
+          try {
+            await firebaseService.updateDocument('transactions', osToEdit.transactionId, {
+              amount: totalValue,
+              personId: osProviderId || undefined,
+            });
+          } catch { /* ignore if transaction not found */ }
+        }
+        alert(`OS ${osToEdit?.osNumber || editingOsId} atualizada com sucesso!`);
+        setEditingOsId(null);
+        setIsOSPanelOpen(false);
+        setIsSavingOS(false);
+        return;
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
+      const uniqueId = `os_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const osNumberStr = `OS-C-${Date.now().toString().slice(-4)}`;
 
       let transactionId = '';
       if (osAccountId && osCategoryId && totalValue > 0) {
@@ -312,7 +358,7 @@ export default function CuttingProjectionPanel({
       // Consolidate pieces and fold configurations as notes in OS
       const resolvedDetailsNotes = resolvedPieces.map(item => {
         const conjugation = item.tool?.metadata?.conjugation || 1;
-        const totalFacadas = Object.entries(selectedLot.pairs || {}).reduce((sum, [size, qty]) => {
+        const totalFacadas = Object.entries(effectivePairs).reduce((sum, [size, qty]) => {
           return sum + Math.ceil(qty / (conjugation * item.layers));
         }, 0);
         
@@ -342,7 +388,8 @@ export default function CuttingProjectionPanel({
         status: osDirectComplete ? 'COMPLETED' : 'PENDING',
         transactionId: transactionId || undefined,
         createdAt: Date.now(),
-        finishedAt: osDirectComplete ? Date.now() : undefined
+        finishedAt: osDirectComplete ? Date.now() : undefined,
+        ...(pendingOsSourceOrderIds.length > 0 && { sourceOrderIds: pendingOsSourceOrderIds })
       };
 
       await firebaseService.saveDocument("serviceOrders", newOS);
@@ -415,6 +462,76 @@ export default function CuttingProjectionPanel({
     ) || null;
   }, [serviceOrders, selectedLot, selectedSectorId]);
 
+  // All active OS for selected lot (to check per-order coverage)
+  const lotActiveOSListFull = useMemo(() => {
+    if (!selectedLot) return [];
+    return serviceOrders.filter(os =>
+      (os.lotId === selectedLot.id || (os.lotIds && os.lotIds.includes(selectedLot.id))) &&
+      os.sectorId === selectedSectorId &&
+      os.status === 'PENDING'
+    );
+  }, [serviceOrders, selectedLot, selectedSectorId]);
+
+  // Source order items (pedidos vinculados) for selected lot
+  const lotSourceItems = useMemo(() => {
+    if (!selectedLot) return [];
+    const items = (selectedLot as any).metadata?.sourceItems;
+    if (items && items.length > 0) return items;
+    if (selectedLot.productionOrderId) {
+      return [{ orderId: selectedLot.productionOrderId, itemIdx: 0, qty: selectedLot.quantity }];
+    }
+    return [];
+  }, [selectedLot]);
+
+  // True when every source order already has an active OS in this sector
+  const allSourceOrdersCovered = useMemo(() => {
+    if (!lotSourceItems.length) return false;
+    const hasWholeLotOS = lotActiveOSListFull.some(os => !os.sourceOrderIds || os.sourceOrderIds.length === 0);
+    if (hasWholeLotOS) return true;
+    const coveredIds = new Set(lotActiveOSListFull.flatMap(os => os.sourceOrderIds || []));
+    return lotSourceItems.every((si: any) => coveredIds.has(si.orderId));
+  }, [lotSourceItems, lotActiveOSListFull]);
+
+  // Effective size grade — prefers lot.pairs but falls back to aggregating from production order items
+  const effectivePairs = useMemo<Record<string, number>>(() => {
+    const direct = selectedLot?.pairs;
+    if (direct && Object.values(direct).some(v => (v || 0) > 0)) return direct;
+    // Build from linked production order items
+    const result: Record<string, number> = {};
+    lotSourceItems.forEach((si: any) => {
+      const order = productionOrders.find((o: ProductionOrder) => o.id === si.orderId);
+      if (!order) return;
+      const item = order.items[si.itemIdx ?? 0];
+      if (!item?.sizes) return;
+      Object.entries(item.sizes).forEach(([size, sizeData]) => {
+        const qty = typeof sizeData === 'object'
+          ? ((sizeData as any).toProduction || (sizeData as any).total || 0)
+          : (Number(sizeData) || 0);
+        result[size] = (result[size] || 0) + qty;
+      });
+    });
+    return Object.keys(result).length > 0 ? result : (direct || {});
+  }, [selectedLot, lotSourceItems, productionOrders]);
+
+  // Reset order selection when the selected lot changes
+  useEffect(() => {
+    setSelectedOrderKeys(new Set());
+    setPendingOsSourceOrderIds([]);
+    setPendingOsQuantityOverride(null);
+  }, [selectedLotId]);
+
+  // Close share popup when clicking outside
+  useEffect(() => {
+    if (!sharePopupOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (sharePopupRef.current && !sharePopupRef.current.contains(e.target as Node)) {
+        setSharePopupOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [sharePopupOpen]);
+
   // Complete an OS from cutting sector (baixa)
   const handleCompleteOSCutting = async (os: ServiceOrder) => {
     try {
@@ -423,8 +540,12 @@ export default function CuttingProjectionPanel({
         finishedAt: Date.now(),
       });
       if (os.transactionId) {
-        const { financeService } = await import('../services/financeService');
-        await financeService.settleTransaction(os.transactionId);
+        try {
+          const { financeService } = await import('../services/financeService');
+          await financeService.settleTransaction(os.transactionId);
+        } catch (txErr) {
+          console.error("Erro ao liquidar transação financeira da OS:", txErr);
+        }
       }
       // Advance lot to next sector
       const lotObj = cuttingLots.find(l =>
@@ -455,6 +576,217 @@ export default function CuttingProjectionPanel({
       else setSelectedLotId(null);
     } catch (e) {
       alert('Erro ao concluir OS: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
+  const handleDeleteOS = async (os: ServiceOrder) => {
+    if (!confirm(`Excluir a OS ${os.osNumber}? Esta ação não pode ser desfeita.`)) return;
+    try {
+      await firebaseService.deleteDocument('serviceOrders', os.id);
+      if (os.transactionId) {
+        try { await firebaseService.deleteDocument('transactions', os.transactionId); } catch { /* ignore */ }
+      }
+    } catch (e) {
+      alert('Erro ao excluir OS: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
+  const handleEditOS = (os: ServiceOrder) => {
+    setEditingOsId(os.id);
+    setEditingOsOriginal(os);
+    setOsProviderId(os.providerId || '');
+    setOsValuePerPair(os.valuePerPair || 0);
+    setOsNotes(os.notes || '');
+    setIsOSPanelOpen(true);
+  };
+
+  const computeOSSizeGrid = (os: ServiceOrder): string => {
+    if (!os.sourceOrderIds?.length) {
+      return Object.entries(effectivePairs)
+        .filter(([, q]) => q > 0)
+        .sort(([a], [b]) => Number(a) - Number(b))
+        .map(([sz, q]) => `${sz}x${q}`)
+        .join('-');
+    }
+    const result: Record<string, number> = {};
+    os.sourceOrderIds.forEach(orderId => {
+      const si = lotSourceItems.find((s: any) => s.orderId === orderId);
+      const order = productionOrders.find(o => o.id === orderId);
+      if (!order) return;
+      const item = order.items[si?.itemIdx ?? 0];
+      if (!item?.sizes) return;
+      Object.entries(item.sizes).forEach(([size, sd]: any) => {
+        const qty = sd.toProduction || sd.total || 0;
+        if (qty > 0) result[size] = (result[size] || 0) + qty;
+      });
+    });
+    return Object.entries(result)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([sz, q]) => `${sz}x${q}`)
+      .join('-');
+  };
+
+  const handleShareDoc = async (type: 'ficha' | 'os', format: 'pdf' | 'jpg', osOverride?: ServiceOrder | null) => {
+    if (!selectedLot) return;
+    const lot = selectedLot;
+    const product = lotProductDetails?.product;
+    const variation = lotProductDetails?.variation;
+    const colorName = variation?.colorName || '—';
+    const os = type === 'os' ? (osOverride !== undefined ? osOverride : activeOSForSelectedLot) : null;
+
+    if (format === 'pdf') {
+      printLotSheet({ lot: { ...lot, pairs: effectivePairs }, product, variationName: colorName, sectorName: currentSector?.name, os: os ?? null, productionConfigs });
+      return;
+    }
+
+    // JPG: pure Canvas rendering — no html2canvas, works natively on Android
+    setIsShareExporting(true);
+    try {
+      const pairs = effectivePairs;
+      const sizes = Object.keys(pairs).sort((a, b) => Number(a) - Number(b));
+      const date = new Date().toLocaleDateString('pt-BR');
+
+      // Build materials list
+      const matList: { name: string; ref: string; consumption: number; unit: string }[] = [];
+      (variation?.consumptions?.filter((c: any) => c.category === 'CUTTING_PIECE') || []).forEach((piece: any) => {
+        const mat = productionConfigs.find(c => c.id === piece.materialId && c.type === 'MATERIAL');
+        if (!mat) return;
+        const unitName = productionConfigs.find(u => u.id === mat.metadata?.unitId)?.name || 'UN';
+        const totalCons = lot.quantity * (Number(piece.quantity) || 0);
+        const ex = matList.find(m => m.name === mat.name);
+        if (ex) ex.consumption += totalCons;
+        else matList.push({ name: mat.name, ref: mat.metadata?.reference || 'S/Ref', consumption: totalCons, unit: unitName });
+      });
+
+      const W = 794, S = 2, pad = 40;
+      const ROW_H = 26, TH_H = 26;
+
+      // Dynamic height
+      const matRows = Math.max(1, matList.length);
+      const totalH = pad + 68 + 16 + 50 + (os ? 56 : 0) + 36 + TH_H + matRows * ROW_H + 24 + 36 + TH_H + ROW_H + pad;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = W * S; canvas.height = totalH * S;
+      const ctx = canvas.getContext('2d')!;
+      ctx.scale(S, S);
+
+      // Helpers
+      const fillRect = (x: number, y: number, w: number, h: number, fill: string) => { ctx.fillStyle = fill; ctx.fillRect(x, y, w, h); };
+      const strokeRect = (x: number, y: number, w: number, h: number, color: string, lw = 1) => { ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.strokeRect(x + lw / 2, y + lw / 2, w - lw, h - lw); };
+      const line = (x1: number, y1: number, x2: number, y2: number, color: string, lw = 1) => { ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); };
+      const txt = (s: string, x: number, y: number, font: string, color: string, align: CanvasTextAlign = 'left', maxW?: number) => { ctx.font = font; ctx.fillStyle = color; ctx.textAlign = align; maxW ? ctx.fillText(s, x, y, maxW) : ctx.fillText(s, x, y); };
+
+      // Background
+      fillRect(0, 0, W, totalH, '#ffffff');
+
+      let y = pad;
+
+      // ── Header ──────────────────────────────────────────────
+      txt('GESTÃO PRO', pad, y + 26, 'bold 26px Arial', '#000000');
+      txt('Sistema de Produção & PCP', pad, y + 44, 'bold 9px Arial', '#4b5563');
+      ctx.font = 'bold 10px Arial';
+      const badge = 'Ficha Técnica – Materiais e Grade';
+      const bw = ctx.measureText(badge).width + 18;
+      fillRect(W - pad - bw, y, bw, 22, '#e0f2fe');
+      strokeRect(W - pad - bw, y, bw, 22, '#000000', 1.5);
+      txt(badge, W - pad - bw / 2, y + 15, 'bold 10px Arial', '#000000', 'center');
+      txt(`Lote: #${lot.orderNumber} • Emissão: ${date}`, W - pad, y + 40, 'bold 11px Arial', '#374151', 'right');
+      y += 58; line(pad, y, W - pad, y, '#000000', 3); y += 16;
+
+      // ── Info row ─────────────────────────────────────────────
+      const col3 = (W - pad * 2) / 3;
+      [
+        { label: 'Referência / Modelo', value: `${product?.name || '—'} (${product?.reference || 'S/Ref'})` },
+        { label: 'Cor / Variação', value: colorName },
+        { label: currentSector ? 'Setor / Pares' : 'Total de Pares', value: currentSector ? `${currentSector.name} • ${lot.quantity}P` : `${lot.quantity} Pares` },
+      ].forEach((inf, i) => {
+        const x = pad + i * col3;
+        txt(inf.label.toUpperCase(), x, y + 12, 'bold 9px Arial', '#374151');
+        txt(inf.value, x, y + 28, 'bold 13px Arial', '#000000', 'left', col3 - 8);
+        if (i === 2 && currentSector) { ctx.fillStyle = currentSector.color; ctx.beginPath(); ctx.arc(x - 10, y + 22, 5, 0, Math.PI * 2); ctx.fill(); }
+      });
+      y += 50;
+
+      // ── OS block ─────────────────────────────────────────────
+      if (os) {
+        fillRect(pad, y, W - pad * 2, 48, '#f9fafb');
+        strokeRect(pad, y, W - pad * 2, 48, '#000000', 1.5);
+        txt('ORDEM DE SERVIÇO', pad + 10, y + 13, 'bold 9px Arial', '#374151');
+        [{ l: 'Número', v: os.osNumber }, { l: 'Prestador', v: os.providerName || '—' }, { l: 'Total', v: `R$ ${os.totalValue.toFixed(2)}` }]
+          .forEach((f, i) => { const fx = pad + 10 + i * 200; txt(f.l, fx, y + 26, '500 9px Arial', '#6b7280'); txt(f.v, fx, y + 42, 'bold 13px Arial', '#000000'); });
+        y += 56;
+      }
+
+      // ── Materials table ──────────────────────────────────────
+      txt('REQUISIÇÃO CONSOLIDADA DE MATERIAIS', pad, y + 18, 'bold 12px Arial', '#000000');
+      line(pad, y + 22, W - pad, y + 22, '#000000', 2); y += 36;
+
+      const mCols = [(W - pad * 2) * 0.44, (W - pad * 2) * 0.3, (W - pad * 2) * 0.26];
+      let cx = pad;
+      ['Código / Nome do Material', 'Referência', 'Consumo Total Estimado'].forEach((h, i) => {
+        fillRect(cx, y, mCols[i], TH_H, '#f3f4f6'); strokeRect(cx, y, mCols[i], TH_H, '#000000', 1);
+        txt(h.toUpperCase(), i === 2 ? cx + mCols[i] - 7 : cx + 7, y + 17, 'bold 9px Arial', '#374151', i === 2 ? 'right' : 'left');
+        cx += mCols[i];
+      });
+      y += TH_H;
+
+      if (matList.length === 0) {
+        fillRect(pad, y, W - pad * 2, ROW_H, '#ffffff'); strokeRect(pad, y, W - pad * 2, ROW_H, '#000000', 1);
+        txt('Sem materiais cadastrados', pad + (W - pad * 2) / 2, y + 17, '500 11px Arial', '#6b7280', 'center');
+        y += ROW_H;
+      } else {
+        matList.forEach((m, i) => {
+          cx = pad;
+          [m.name, m.ref, `${m.consumption.toFixed(3)} ${m.unit}`].forEach((v, ci) => {
+            fillRect(cx, y, mCols[ci], ROW_H, i % 2 === 1 ? '#fafafa' : '#ffffff');
+            strokeRect(cx, y, mCols[ci], ROW_H, '#000000', 1);
+            txt(v, ci === 2 ? cx + mCols[ci] - 7 : cx + 7, y + 17, ci === 0 ? 'bold 12px Arial' : '500 12px Arial', '#000000', ci === 2 ? 'right' : 'left', mCols[ci] - 14);
+            cx += mCols[ci];
+          });
+          y += ROW_H;
+        });
+      }
+      y += 24;
+
+      // ── Size grid ────────────────────────────────────────────
+      txt('GRADE DETALHADA DO MAPA', pad, y + 18, 'bold 12px Arial', '#000000');
+      line(pad, y + 22, W - pad, y + 22, '#000000', 2); y += 36;
+
+      const labelW = 100, totalColW = 80;
+      const sColW = sizes.length > 0 ? (W - pad * 2 - labelW - totalColW) / sizes.length : 60;
+
+      // Header row
+      fillRect(pad, y, labelW, TH_H, '#f3f4f6'); strokeRect(pad, y, labelW, TH_H, '#000000', 1);
+      txt('Tamanho', pad + 7, y + 17, 'bold 9px Arial', '#374151');
+      let sx = pad + labelW;
+      sizes.forEach(sz => {
+        fillRect(sx, y, sColW, TH_H, '#e5e7eb'); strokeRect(sx, y, sColW, TH_H, '#000000', 1);
+        txt(sz, sx + sColW / 2, y + 17, 'bold 9px Arial', '#374151', 'center');
+        sx += sColW;
+      });
+      fillRect(sx, y, totalColW, TH_H, '#e5e7eb'); strokeRect(sx, y, totalColW, TH_H, '#000000', 1);
+      txt('TOTAL', sx + totalColW / 2, y + 17, 'bold 9px Arial', '#374151', 'center');
+      y += TH_H;
+
+      // Data row
+      fillRect(pad, y, labelW, ROW_H, '#ffffff'); strokeRect(pad, y, labelW, ROW_H, '#000000', 1);
+      txt('Pares', pad + 7, y + 18, 'bold 12px Arial', '#000000');
+      sx = pad + labelW;
+      sizes.forEach(sz => {
+        fillRect(sx, y, sColW, ROW_H, '#ffffff'); strokeRect(sx, y, sColW, ROW_H, '#000000', 1);
+        txt(String(pairs[sz] || 0), sx + sColW / 2, y + 18, 'bold 14px Arial', '#000000', 'center');
+        sx += sColW;
+      });
+      fillRect(sx, y, totalColW, ROW_H, '#f3f4f6'); strokeRect(sx, y, totalColW, ROW_H, '#000000', 1);
+      txt(String(lot.quantity), sx + totalColW / 2, y + 18, 'bold 14px Arial', '#000000', 'center');
+
+      const prefix = type === 'os' ? `Ficha_OS_${os?.osNumber || ''}` : `Ficha_Lote_${lot.orderNumber}`;
+      await shareImage(canvas.toDataURL('image/jpeg', 0.93), `${prefix}.jpg`);
+    } catch (err) {
+      console.error('Erro ao gerar JPG:', err);
+      alert('Erro ao gerar imagem. Tente novamente.');
+    } finally {
+      setIsShareExporting(false);
     }
   };
 
@@ -716,14 +1048,14 @@ export default function CuttingProjectionPanel({
             <thead>
               <tr>
                 <th style="width: 140px;">Tamanho</th>
-                ${Object.keys(lot.pairs || {}).map(sz => `<th class="grid-header-cell">${sz}</th>`).join('')}
+                ${Object.keys(effectivePairs).map(sz => `<th class="grid-header-cell">${sz}</th>`).join('')}
                 <th style="background: #e5e7eb; font-weight: 900; text-align: center; width: 100px;">TOTAL</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td style="font-weight: 900;">Quantidade (Pares)</td>
-                ${Object.values(lot.pairs || {}).map(val => `<td class="grid-value-cell">${val}</td>`).join('')}
+                ${Object.values(effectivePairs).map(val => `<td class="grid-value-cell">${val}</td>`).join('')}
                 <td style="font-weight: 900; text-align: center; background: #f3f4f6; font-size: 14px;">${lot.quantity}</td>
               </tr>
             </tbody>
@@ -844,14 +1176,14 @@ export default function CuttingProjectionPanel({
             <thead>
               <tr>
                 <th style="width: 140px;">Tamanho</th>
-                ${Object.keys(lot.pairs || {}).map(sz => `<th class="grid-header-cell">${sz}</th>`).join('')}
+                ${Object.keys(effectivePairs).map(sz => `<th class="grid-header-cell">${sz}</th>`).join('')}
                 <th style="background: #e5e7eb; font-weight: 900; text-align: center; width: 100px;">TOTAL</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td style="font-weight: bold;">Pares</td>
-                ${Object.values(lot.pairs || {}).map(val => `<td class="grid-value-cell">${val}</td>`).join('')}
+                ${Object.values(effectivePairs).map(val => `<td class="grid-value-cell">${val}</td>`).join('')}
                 <td style="font-weight: 900; text-align: center; background: #f3f4f6; font-size: 13px;">${lot.quantity}</td>
               </tr>
             </tbody>
@@ -894,7 +1226,7 @@ export default function CuttingProjectionPanel({
                 <th class="col-mat">Material</th>
                 <th class="col-num" style="text-align:center;">Conj.</th>
                 <th class="col-num" style="text-align:center; color:#1e3a8a;">Infesto</th>
-                ${Object.keys(lot.pairs || {}).map(sz => `<th class="col-size">T${sz}</th>`).join('')}
+                ${Object.keys(effectivePairs).map(sz => `<th class="col-size">T${sz}</th>`).join('')}
                 <th class="col-bat">Batidas<br/>Total</th>
               </tr>
             </thead>
@@ -903,7 +1235,7 @@ export default function CuttingProjectionPanel({
                 const conjugation = item.tool?.metadata?.conjugation || 1;
                 const layers = item.layers;
                 let totalStrikes = 0;
-                const sizeStrikesHtml = Object.entries(lot.pairs || {}).map(([size, qty]) => {
+                const sizeStrikesHtml = Object.entries(effectivePairs).map(([size, qty]) => {
                   const strokesNeeded = Math.ceil(qty / (conjugation * layers));
                   totalStrikes += strokesNeeded;
                   return `<td class="col-size" style="font-weight:${strokesNeeded > 0 ? '900' : 'normal'}; color:${strokesNeeded > 0 ? '#000' : '#d1d5db'};">${strokesNeeded || '—'}</td>`;
@@ -949,21 +1281,21 @@ export default function CuttingProjectionPanel({
   };
 
   return (
-    <div className={`p-6 rounded-[2.5rem] border-2 flex flex-col gap-6 ${isDarkMode ? 'bg-slate-950 border-slate-900 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'}`}>
+    <div className={`p-6 rounded-[2.5rem] border-2 flex flex-col gap-6 ${isDarkMode ? 'bg-slate-950 border-slate-900 text-white' : 'bg-gradient-to-br from-sky-50 via-white to-blue-50/50 border-sky-100 text-slate-900'}`}>
       
       {/* Header Area */}
-      <div className="flex items-center justify-between border-b pb-6 border-slate-250 dark:border-slate-800">
+      <div className="flex items-center justify-between border-b pb-6 border-sky-100 dark:border-slate-800">
         <div className="flex items-center gap-4">
           <button
             onClick={onBack}
-            className={`p-3 rounded-2xl transition-all ${isDarkMode ? 'bg-slate-900 text-slate-400 hover:text-white' : 'bg-white text-slate-500 hover:text-slate-900 shadow-sm'}`}
+            className={`p-3 rounded-2xl border transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white' : 'bg-sky-50 border-sky-100 text-sky-600 hover:text-sky-900 hover:bg-sky-100 shadow-sm'}`}
             title="Voltar ao PCP"
           >
             <ArrowLeft size={18} />
           </button>
           <div>
             <div className="flex items-center gap-2">
-              <Scissors size={22} className="text-indigo-500 animate-pulse" />
+              <Scissors size={22} className="text-sky-500 animate-pulse" />
               <h2 className="text-xl font-black uppercase tracking-wider">Projeção e Corte Digital</h2>
             </div>
             <p className="text-[9px] font-bold text-slate-450 dark:text-slate-400 uppercase tracking-widest mt-1">
@@ -975,9 +1307,9 @@ export default function CuttingProjectionPanel({
         {/* Quick status */}
         <div className="flex items-center gap-3">
           <span className={`text-[10px] font-black px-4 py-2 rounded-xl border ${
-            isDarkMode 
-              ? 'text-indigo-400 bg-indigo-950/40 border-indigo-500/20' 
-              : 'text-indigo-700 bg-indigo-50 border-indigo-200/50'
+            isDarkMode
+              ? 'text-sky-400 bg-sky-950/40 border-sky-500/20'
+              : 'text-sky-700 bg-sky-50 border-sky-200'
           }`}>
             {cuttingLots.length} MAPAS NA FILA
           </span>
@@ -990,7 +1322,7 @@ export default function CuttingProjectionPanel({
         
         {/* Left column: Lot Selection & Overview (4 cols) */}
         <div className="lg:col-span-4 flex flex-col gap-4">
-          <div className={`p-6 rounded-3xl flex flex-col gap-4 border ${isDarkMode ? 'bg-slate-900/60 border-slate-850' : 'bg-white border-slate-100 shadow-sm'}`}>
+          <div className={`p-6 rounded-3xl flex flex-col gap-4 border ${isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-sky-100 shadow-sm'}`}>
             <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
               <List size={14} /> Selecione o Mapa de Produção
             </h3>
@@ -1023,8 +1355,8 @@ export default function CuttingProjectionPanel({
                       className={`w-full p-4 rounded-2xl border-2 text-left transition-all flex items-center justify-between ${
                         isSelected
                           ? isDarkMode
-                            ? 'border-indigo-500 bg-indigo-950/40 text-white font-black'
-                            : 'border-indigo-600 bg-indigo-50 text-indigo-950 font-black shadow-md'
+                            ? 'border-sky-500 bg-sky-950/40 text-white font-black'
+                            : 'border-sky-500 bg-sky-50 text-sky-950 font-black shadow-md'
                           : isDarkMode
                             ? 'border-slate-800 hover:border-slate-700 bg-slate-950/40 text-slate-350'
                             : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700 shadow-sm'
@@ -1037,7 +1369,7 @@ export default function CuttingProjectionPanel({
                           }`}>
                             {lot.prioridade}
                           </span>
-                          <span className={`text-[10px] font-black ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-indigo-500'}`}>#{lot.orderNumber}</span>
+                          <span className={`text-[10px] font-black ${isSelected ? 'text-sky-600 dark:text-sky-400' : 'text-sky-500'}`}>#{lot.orderNumber}</span>
                           {/* Badge OS já emitida */}
                           {lotOS && (
                             <span className="px-2 py-0.5 rounded-lg text-[8px] font-black uppercase bg-emerald-500 text-white flex items-center gap-1">
@@ -1052,8 +1384,8 @@ export default function CuttingProjectionPanel({
                       </div>
 
                       <div className="text-right shrink-0 ml-3">
-                        <span className={`text-sm font-black ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300'}`}>{lot.quantity}</span>
-                        <p className={`text-[8px] font-black uppercase tracking-widest leading-none mt-1 ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-455 dark:text-slate-500'}`}>Pares</p>
+                        <span className={`text-sm font-black ${isSelected ? 'text-sky-600 dark:text-sky-400' : 'text-slate-700 dark:text-slate-300'}`}>{lot.quantity}</span>
+                        <p className={`text-[8px] font-black uppercase tracking-widest leading-none mt-1 ${isSelected ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500'}`}>Pares</p>
                       </div>
                     </button>
                   );
@@ -1064,7 +1396,7 @@ export default function CuttingProjectionPanel({
 
           {/* Product Big Info and Size Distribution Card */}
           {selectedLot && lotProductDetails?.product && (
-            <div className={`p-6 rounded-3xl border flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900/60 border-slate-850' : 'bg-white border-slate-100 shadow-sm'}`}>
+            <div className={`p-6 rounded-3xl border flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white/90 border-sky-100 shadow-sm'}`}>
               <div className="flex items-center gap-4">
                 {lotProductDetails.product.photoUrl ? (
                   <img src={lotProductDetails.product.photoUrl} alt={lotProductDetails.product.name} className="w-16 h-16 rounded-2xl object-cover border border-slate-800" />
@@ -1078,7 +1410,7 @@ export default function CuttingProjectionPanel({
                   <p className="text-[10px] font-bold text-slate-600 dark:text-slate-350 uppercase tracking-widest mt-1">
                     Ref: {lotProductDetails.product.reference} • Cor: {lotProductDetails.variation?.colorName}
                   </p>
-                  <p className="text-[11px] font-black text-indigo-650 dark:text-indigo-400 uppercase mt-1">
+                  <p className="text-[11px] font-black text-sky-600 dark:text-sky-400 uppercase mt-1">
                     TOTAL MAPA: {selectedLot.quantity} PARES
                   </p>
                 </div>
@@ -1086,19 +1418,19 @@ export default function CuttingProjectionPanel({
 
               {/* Large Size Grid Projection */}
               <div className="flex flex-col gap-2">
-                <span className="text-[9px] font-black text-slate-455 dark:text-slate-400 uppercase tracking-widest">Distribuição da Grade (Pares)</span>
+                <span className="text-[9px] font-black text-sky-500 dark:text-sky-400 uppercase tracking-widest">Distribuição da Grade (Pares)</span>
                 <div className="grid grid-cols-5 sm:grid-cols-6 gap-1.5">
-                  {Object.entries(selectedLot.pairs || {}).map(([size, qty]) => (
+                  {Object.entries(effectivePairs).map(([size, qty]) => (
                     <div key={size} className={`flex flex-col items-center p-2 rounded-xl border transition-all ${
-                      qty > 0 
+                      qty > 0
                         ? isDarkMode
-                          ? 'border-indigo-500 bg-indigo-950/40 text-white shadow-sm' 
-                          : 'border-indigo-300 bg-indigo-50/80 text-indigo-950 shadow-sm'
+                          ? 'border-sky-500 bg-sky-950/40 text-white shadow-sm'
+                          : 'border-sky-300 bg-sky-50 text-sky-950 shadow-sm'
                         : isDarkMode 
                           ? 'border-slate-800 bg-slate-950/20 opacity-30 text-slate-605' 
                           : 'border-slate-200 bg-slate-50 opacity-40 text-slate-450'
                     }`}>
-                      <span className={`text-[10px] font-black leading-none mb-1 ${qty > 0 ? 'text-indigo-600 dark:text-indigo-350' : 'text-slate-455 dark:text-slate-400'}`}>{size}</span>
+                      <span className={`text-[10px] font-black leading-none mb-1 ${qty > 0 ? 'text-sky-600 dark:text-sky-400' : 'text-slate-400 dark:text-slate-500'}`}>{size}</span>
                       <span className={`text-sm font-black leading-none ${qty > 0 ? 'text-indigo-950 dark:text-white font-black' : 'text-slate-400'}`}>{qty}</span>
                     </div>
                   ))}
@@ -1106,6 +1438,130 @@ export default function CuttingProjectionPanel({
               </div>
             </div>
           )}
+
+          {/* Pedidos Vinculados — order selection for per-order OS */}
+          {selectedLot && lotSourceItems.length > 0 && (() => {
+            const getOrderOS = (orderId: string): ServiceOrder | undefined =>
+              lotActiveOSListFull.find(so =>
+                so.sourceOrderIds && so.sourceOrderIds.length > 0 && so.sourceOrderIds.includes(orderId)
+              );
+
+            const selectableItems = lotSourceItems.filter((si: any) => !getOrderOS(si.orderId));
+            const selectedItems = lotSourceItems.filter((si: any, idx: number) =>
+              selectedOrderKeys.has(`${si.orderId}-${idx}`) && !getOrderOS(si.orderId)
+            );
+            const selectedQty = selectedItems.reduce((acc: number, si: any) => acc + (si.qty || 0), 0);
+            const allSelected =
+              selectableItems.length > 0 &&
+              selectableItems.every((si: any) => {
+                const idx = lotSourceItems.indexOf(si);
+                return selectedOrderKeys.has(`${si.orderId}-${idx}`);
+              });
+
+            return (
+              <div className={`p-5 rounded-3xl flex flex-col gap-3 border ${isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-sky-100 shadow-sm'}`}>
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {selectableItems.length > 0 && (
+                      <input
+                        type="checkbox"
+                        title="Selecionar todos os pedidos"
+                        checked={allSelected}
+                        onChange={() => {
+                          if (allSelected) {
+                            setSelectedOrderKeys(new Set());
+                          } else {
+                            const keys = new Set<string>();
+                            lotSourceItems.forEach((si: any, idx: number) => {
+                              if (!getOrderOS(si.orderId)) keys.add(`${si.orderId}-${idx}`);
+                            });
+                            setSelectedOrderKeys(keys);
+                          }
+                        }}
+                        className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                      />
+                    )}
+                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                      <Hash size={13} /> Pedidos Vinculados
+                    </h3>
+                  </div>
+                  <span className="text-[9px] font-black text-indigo-500 uppercase">{lotSourceItems.length} {lotSourceItems.length === 1 ? 'Pedido' : 'Pedidos'}</span>
+                </div>
+
+                {/* Order cards */}
+                <div className="flex flex-col gap-2">
+                  {lotSourceItems.map((si: any, idx: number) => {
+                    const order = productionOrders.find((o: ProductionOrder) => o.id === si.orderId);
+                    const key = `${si.orderId}-${idx}`;
+                    const isChecked = selectedOrderKeys.has(key);
+                    const orderOS = getOrderOS(si.orderId);
+                    const hasOS = !!orderOS;
+
+                    return (
+                      <div
+                        key={key}
+                        className={`p-3 rounded-2xl border flex items-center gap-3 transition-all ${
+                          hasOS
+                            ? isDarkMode ? 'bg-emerald-950/30 border-emerald-700/50' : 'bg-emerald-50 border-emerald-200'
+                            : isChecked
+                              ? isDarkMode ? 'bg-indigo-950/30 border-indigo-700' : 'bg-indigo-50 border-indigo-200'
+                              : isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50 border-slate-100'
+                        }`}
+                      >
+                        {hasOS ? (
+                          <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
+                            <div className="w-2 h-2 rounded-full bg-white" />
+                          </div>
+                        ) : (
+                          <input
+                            type="checkbox"
+                            title="Selecionar pedido"
+                            checked={isChecked}
+                            onChange={() => {
+                              const next = new Set(selectedOrderKeys);
+                              if (isChecked) next.delete(key); else next.add(key);
+                              setSelectedOrderKeys(next);
+                            }}
+                            className="w-4 h-4 accent-indigo-600 cursor-pointer shrink-0"
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[11px] font-black uppercase truncate text-slate-800 dark:text-slate-200 leading-none mb-0.5">
+                            {order?.customerName || si.customerName || selectedLot.customerName || '---'}
+                          </p>
+                          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
+                            Pedido {order?.saleOrderNumber || si.saleOrderNumber || order?.orderNumber || '---'}
+                          </p>
+                          {hasOS && (
+                            <p className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mt-0.5">
+                              {orderOS!.osNumber}
+                            </p>
+                          )}
+                        </div>
+                        <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 shrink-0">{si.qty}P</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Emit OS action bar */}
+                {selectedQty > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingOsSourceOrderIds(selectedItems.map((si: any) => si.orderId));
+                      setPendingOsQuantityOverride(selectedQty);
+                      setIsOSPanelOpen(true);
+                    }}
+                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm shadow-sky-500/30"
+                  >
+                    <Hammer size={13} /> Emitir OS — {selectedItems.length} {selectedItems.length === 1 ? 'Pedido' : 'Pedidos'} ({selectedQty}P)
+                  </button>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Right column: Cutting detail Workspace (8 cols) */}
@@ -1124,7 +1580,7 @@ export default function CuttingProjectionPanel({
               {/* Workspace Navigation/Tabs */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-2 mb-2">
                 <div className="w-full sm:w-auto">
-                  <h3 className="text-xs font-black uppercase tracking-[0.25em] text-indigo-400 leading-tight">
+                  <h3 className="text-xs font-black uppercase tracking-[0.25em] text-sky-500 dark:text-sky-400 leading-tight">
                     Mapa de Produção #{selectedLot.orderNumber}
                   </h3>
                   <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 leading-normal">
@@ -1132,76 +1588,278 @@ export default function CuttingProjectionPanel({
                   </p>
                 </div>
                 
-                {/* Workspace Header Actions — 2 rows on mobile */}
+                {/* Workspace Header Actions */}
                 <div className="flex flex-col gap-2 w-full sm:w-auto">
-                  {/* Row 1: Imprimir Ficha + Etiqueta Térmica */}
+                  {/* Row 1: Compartilhar (popup) + Etiqueta Térmica */}
                   <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPrintModalData({
-                          lot: selectedLot,
-                          pieces: resolvedPieces,
-                          osNotes: existingOS?.notes
-                        });
-                        setPrintTab('sheet');
-                      }}
-                      className={`flex-1 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-2 border ${
-                        isDarkMode
-                          ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white'
-                          : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-200 hover:text-slate-900 shadow-sm'
-                      }`}
-                    >
-                      <Printer size={14} /> Imprimir Ficha
-                    </button>
+                    {/* Share popup trigger */}
+                    <div className="relative flex-1" ref={sharePopupRef}>
+                      <button
+                        type="button"
+                        disabled={isShareExporting}
+                        onClick={() => setSharePopupOpen(p => !p)}
+                        className={`w-full px-3 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-1.5 border ${
+                          isDarkMode
+                            ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800 hover:text-white disabled:opacity-50'
+                            : 'bg-sky-50 border-sky-200 text-sky-700 hover:bg-sky-100 hover:text-sky-900 shadow-sm disabled:opacity-50'
+                        }`}
+                      >
+                        {isShareExporting ? <span className="animate-spin text-base leading-none">⏳</span> : <Share2 size={13} />}
+                        Compartilhar
+                      </button>
+
+                      {/* Dropdown popup */}
+                      {sharePopupOpen && (
+                        <div className={`absolute top-full left-0 mt-1.5 rounded-2xl shadow-2xl border z-50 p-2 flex flex-col gap-1 min-w-[200px] ${
+                          isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
+                        }`}>
+                          <p className={`text-[8px] font-black uppercase tracking-widest px-2 pb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                            Ficha Técnica
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => { handleShareDoc('ficha', 'pdf'); setSharePopupOpen(false); }}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${
+                              isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'
+                            }`}
+                          >
+                            <Share2 size={12} className="shrink-0" /> PDF — Impressão
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { handleShareDoc('ficha', 'jpg'); setSharePopupOpen(false); }}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${
+                              isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'
+                            }`}
+                          >
+                            <Share2 size={12} className="shrink-0" /> JPG — Imagem
+                          </button>
+                          {activeOSForSelectedLot && (
+                            <>
+                              <div className={`my-1 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`} />
+                              <p className={`text-[8px] font-black uppercase tracking-widest px-2 pb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                                Ficha + OS de Corte
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => { handleShareDoc('os', 'pdf'); setSharePopupOpen(false); }}
+                                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${
+                                  isDarkMode ? 'text-emerald-400 hover:bg-slate-800' : 'text-emerald-600 hover:bg-emerald-50'
+                                }`}
+                              >
+                                <Share2 size={12} className="shrink-0" /> PDF — Com OS
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { handleShareDoc('os', 'jpg'); setSharePopupOpen(false); }}
+                                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${
+                                  isDarkMode ? 'text-emerald-400 hover:bg-slate-800' : 'text-emerald-600 hover:bg-emerald-50'
+                                }`}
+                              >
+                                <Share2 size={12} className="shrink-0" /> JPG — Com OS
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
                     {lotProductDetails?.product && (
                       <button
                         type="button"
                         onClick={() => setLabelModalOpen(true)}
-                        className={`flex-1 px-4 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-2 border ${
+                        className={`flex-1 px-3 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-1.5 border ${
                           isDarkMode
                             ? 'bg-amber-950/30 border-amber-700/40 text-amber-400 hover:bg-amber-900/40 hover:text-amber-300'
                             : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100 hover:text-amber-900 shadow-sm'
                         }`}
                       >
-                        <Tag size={14} /> Etiqueta Térmica
+                        <Tag size={13} /> Etiqueta
                       </button>
                     )}
                   </div>
 
-                  {/* Row 2: OS badge/button + QR baixa */}
+                  {/* Row 2: OS cards */}
                   {!isOSPanelOpen && (
-                    <div className="flex gap-2">
-                      {activeOSForSelectedLot ? (
+                    <div className="flex flex-col gap-2">
+                      {lotActiveOSListFull.length > 0 ? (
                         <>
-                          <div className="flex-1 flex items-center gap-2 px-4 py-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/30 border-2 border-emerald-400 dark:border-emerald-700 min-w-0">
-                            <span className="text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-widest truncate">
-                              ✓ {activeOSForSelectedLot.osNumber}
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            title="Dar Baixa por QR Code"
-                            onClick={() => {
-                              setQrBaixaOpen(true);
-                              setQrBaixaManualCode('');
-                              setQrBaixaConfirm(null);
-                            }}
-                            className={`px-4 py-3 rounded-2xl border-2 active:scale-95 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest shrink-0 ${
-                              isDarkMode
-                                ? 'bg-violet-950/40 border-violet-700/40 text-violet-400 hover:bg-violet-900/50'
-                                : 'bg-violet-50 border-violet-200 text-violet-600 hover:bg-violet-100'
-                            }`}
-                          >
-                            <QrCode size={14} /> Baixa QR
-                          </button>
+                          {lotActiveOSListFull.map(os => (
+                            <div key={os.id} className={`rounded-2xl border overflow-hidden shadow-sm ${
+                              isDarkMode ? 'bg-slate-900 border-emerald-800/50 shadow-emerald-950/30' : 'bg-white border-emerald-200 shadow-emerald-100/60'
+                            }`}>
+                              {/* OS info header */}
+                              <div className={`px-4 py-3 ${isDarkMode ? 'bg-gradient-to-r from-emerald-950/40 to-slate-900' : 'bg-gradient-to-r from-emerald-50 to-sky-50'}`}>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-emerald-900/50 text-emerald-400 border border-emerald-700/40' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'}`}>
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
+                                    {os.osNumber}
+                                  </span>
+                                  {currentSector && (
+                                    <span
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border"
+                                      style={{ backgroundColor: `${currentSector.color}18`, color: currentSector.color, borderColor: `${currentSector.color}40` }}
+                                    >
+                                      {currentSector.name}
+                                    </span>
+                                  )}
+                                </div>
+                                {os.providerName && (
+                                  <div className={`text-[11px] font-bold mt-1.5 flex items-center gap-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                                    <span className={`font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{os.providerName}</span>
+                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${isDarkMode ? 'bg-sky-950/60 text-sky-400' : 'bg-sky-50 text-sky-700 border border-sky-100'}`}>R$ {os.totalValue.toFixed(2)}</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Baixa QR — específica desta OS */}
+                              <div className={`border-t ${isDarkMode ? 'border-slate-800' : 'border-sky-100'}`}>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    const lotObj = cuttingLots.find(l =>
+                                      l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id))
+                                    );
+                                    const nextIdx = (lotObj?.currentSectorIndex ?? 0) + 1;
+                                    const nextSectorId = lotObj?.route?.[nextIdx] || '';
+                                    const nextSec = sectors.find(s => s.id === nextSectorId);
+                                    const confirmData = { os, nextSectorName: nextSec?.name || 'CONCLUÍDO' };
+                                    if (!isWebPlatform) {
+                                      // Android: abre câmera primeiro como verificação física
+                                      try { await scannerService.scan(); } catch (_) { /* ignore */ }
+                                    }
+                                    setQrBaixaOpen(true);
+                                    setQrBaixaManualCode('');
+                                    setQrBaixaConfirm(confirmData);
+                                  }}
+                                  className={`w-full py-3 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${
+                                    isDarkMode
+                                      ? 'bg-gradient-to-r from-violet-950/40 to-sky-950/30 text-violet-400 hover:from-violet-900/50'
+                                      : 'bg-gradient-to-r from-violet-50 to-sky-50 text-violet-700 hover:from-violet-100 hover:to-sky-100'
+                                  }`}
+                                >
+                                  <QrCode size={12} /> Baixa QR desta OS
+                                </button>
+                              </div>
+
+                              {/* Action buttons */}
+                              <div className={`flex border-t ${isDarkMode ? 'border-slate-800' : 'border-sky-100'}`}>
+                                {/* Compartilhar */}
+                                <div className="relative flex-1">
+                                  <button
+                                    type="button"
+                                    disabled={isShareExporting}
+                                    onClick={() => setOsSharePopupId(p => p === os.id ? null : os.id)}
+                                    className={`w-full py-2.5 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-wide border-r transition-all active:scale-95 ${
+                                      isDarkMode
+                                        ? 'border-slate-700 text-sky-400 hover:bg-sky-950/20'
+                                        : 'border-sky-100 text-sky-600 hover:bg-sky-50'
+                                    }`}
+                                  >
+                                    <Share2 size={11} /> Compartilhar
+                                  </button>
+                                  {osSharePopupId === os.id && (
+                                    <>
+                                      <div className="fixed inset-0 z-40" onClick={() => setOsSharePopupId(null)} />
+                                      <div className={`absolute bottom-full left-0 mb-2 rounded-2xl shadow-2xl border z-50 p-2 min-w-[190px] ${
+                                        isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
+                                      }`}>
+                                        <p className={`text-[8px] font-black uppercase tracking-widest px-2 pb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                                          Ficha Técnica
+                                        </p>
+                                        <button
+                                          type="button"
+                                          onClick={() => { handleShareDoc('ficha', 'pdf', null); setOsSharePopupId(null); }}
+                                          className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${
+                                            isDarkMode ? 'text-sky-400 hover:bg-slate-800' : 'text-sky-600 hover:bg-sky-50'
+                                          }`}
+                                        >
+                                          <Share2 size={11} /> PDF — Impressão
+                                        </button>
+                                        <div className={`my-1 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`} />
+                                        <p className={`text-[8px] font-black uppercase tracking-widest px-2 pb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                                          Ficha + {os.osNumber}
+                                        </p>
+                                        <button
+                                          type="button"
+                                          onClick={() => { handleShareDoc('os', 'pdf', os); setOsSharePopupId(null); }}
+                                          className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${
+                                            isDarkMode ? 'text-emerald-400 hover:bg-slate-800' : 'text-emerald-600 hover:bg-emerald-50'
+                                          }`}
+                                        >
+                                          <Share2 size={11} /> PDF — Com OS
+                                        </button>
+                                        {lotProductDetails?.product && (
+                                          <>
+                                            <div className={`my-1 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`} />
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setLabelSizeGridOverride(computeOSSizeGrid(os) || undefined);
+                                                setLabelOsOverride(os);
+                                                setLabelModalOpen(true);
+                                                setOsSharePopupId(null);
+                                              }}
+                                              className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${
+                                                isDarkMode ? 'text-amber-400 hover:bg-slate-800' : 'text-amber-600 hover:bg-amber-50'
+                                              }`}
+                                            >
+                                              <Tag size={11} /> Etiqueta desta OS
+                                            </button>
+                                          </>
+                                        )}
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+
+                                {/* Editar */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditOS(os)}
+                                  className={`flex-1 py-2.5 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-wide border-r transition-all active:scale-95 ${
+                                    isDarkMode
+                                      ? 'border-slate-700 text-blue-400 hover:bg-blue-950/20'
+                                      : 'border-sky-100 text-blue-600 hover:bg-blue-50'
+                                  }`}
+                                >
+                                  <Edit2 size={11} /> Editar
+                                </button>
+
+                                {/* Excluir */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteOS(os)}
+                                  className={`flex-1 py-2.5 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 ${
+                                    isDarkMode ? 'text-rose-400 hover:bg-white/5' : 'text-rose-500 hover:bg-white/70'
+                                  }`}
+                                >
+                                  <Trash2 size={11} /> Excluir
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+
+                          {/* Nova OS — bloqueada quando todos os pedidos já têm OS */}
+                          {!allSourceOrdersCovered && (
+                            <button
+                              type="button"
+                              onClick={() => setIsOSPanelOpen(true)}
+                              className={`w-full px-3 py-2.5 rounded-2xl border-2 active:scale-95 transition-all flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest ${
+                                isDarkMode
+                                  ? 'bg-sky-950/40 border-sky-700/40 text-sky-400 hover:bg-sky-900/50'
+                                  : 'bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100'
+                              }`}
+                            >
+                              <Plus size={13} /> Nova OS
+                            </button>
+                          )}
                         </>
                       ) : (
                         <button
                           type="button"
                           onClick={() => setIsOSPanelOpen(true)}
-                          className="flex-1 px-5 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-600/35 transition-all active:scale-95 flex items-center justify-center gap-2"
+                          className="flex-1 px-5 py-3 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-sky-500/35 transition-all active:scale-95 flex items-center justify-center gap-2"
                         >
                           <Play size={14} fill="currentColor" /> Iniciar / Emitir OS
                         </button>
@@ -1212,10 +1870,10 @@ export default function CuttingProjectionPanel({
               </div>
 
               {/* ── Legenda do setor de corte ─────────────────────────────── */}
-              <div className={`flex flex-wrap gap-3 px-3 py-2.5 rounded-2xl border text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-200 bg-slate-50'}`}>
+              <div className={`flex flex-wrap gap-3 px-3 py-2.5 rounded-2xl border text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-sky-100 bg-sky-50/60'}`}>
                 <span className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Legenda:</span>
                 {[
-                  { dot: 'bg-indigo-500',   label: 'Mapa de Produção', desc: 'Agrupamento de pares em rota de produção — o que está sendo cortado' },
+                  { dot: 'bg-sky-500',   label: 'Mapa de Produção', desc: 'Agrupamento de pares em rota de produção — o que está sendo cortado' },
                   { dot: 'bg-violet-500',   label: 'Ficha Técnica',    desc: 'Especificação de corte: peças, facas, materiais e infestos — clique em "Imprimir Ficha"' },
                   { dot: 'bg-emerald-500',  label: 'OS de Corte',      desc: 'Ordem de Serviço emitida para o cortador — gera registro financeiro' },
                   { dot: 'bg-amber-500',    label: 'Batidas/Facadas',  desc: 'Quantidade de golpes por tamanho com base nas camadas de infesto e conjugação da faca' },
@@ -1229,169 +1887,6 @@ export default function CuttingProjectionPanel({
                   </div>
                 ))}
               </div>
-
-              {/* OS Configuration Panel Inline */}
-              <AnimatePresence>
-                {isOSPanelOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    className={`p-6 rounded-3xl border-2 border-indigo-600 flex flex-col gap-6 ${isDarkMode ? 'bg-indigo-950/10' : 'bg-indigo-50/20'}`}
-                  >
-                    <div className="flex items-center justify-between border-b border-slate-800/20 pb-4">
-                      <div className="flex items-center gap-2">
-                        <User className="text-indigo-400 animate-pulse" size={18} />
-                        <h4 className="text-xs font-black uppercase tracking-widest text-indigo-400">Configuração da Ordem de Serviço (OS) de Corte</h4>
-                      </div>
-                      <button
-                        onClick={() => setIsOSPanelOpen(false)}
-                        aria-label="Fechar"
-                        title="Fechar"
-                        className={`p-1.5 rounded-lg text-slate-400 hover:text-white ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
-                      >
-                        <X size={14} />
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      
-                      {/* Worker select */}
-                      <div className="flex flex-col gap-2">
-                        <label htmlFor="os-provider-select" className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Cortador (Operador) *</label>
-                        <select
-                          id="os-provider-select"
-                          value={osProviderId}
-                          onChange={(e) => setOsProviderId(e.target.value)}
-                          className={`w-full px-4 py-3.5 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 text-slate-805 dark:text-white ${
-                            isDarkMode ? 'bg-slate-950 border-slate-800 focus:border-indigo-500' : 'bg-white border-slate-200 focus:border-indigo-500'
-                          }`}
-                        >
-                          <option value="" className="text-slate-800 dark:text-slate-200">Selecione...</option>
-                          {providers.map(p => (
-                            <option key={p.id} value={p.id} className="text-slate-800 dark:text-slate-200">{p.name}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Pay rate per pair */}
-                      <div className="flex flex-col gap-2">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Mão de Obra por Par (R$)</label>
-                        <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">R$</span>
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={osValuePerPair || ''}
-                            onChange={(e) => setOsValuePerPair(parseFloat(e.target.value) || 0)}
-                            className={`w-full pl-10 pr-4 py-3.5 rounded-2xl font-bold text-xs outline-none border-2 text-slate-805 dark:text-white ${
-                              isDarkMode ? 'bg-slate-950 border-slate-800 focus:border-indigo-500' : 'bg-white border-slate-200 focus:border-indigo-500'
-                            }`}
-                            placeholder="0,00"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Account selection for Finance */}
-                      <div className="flex flex-col gap-2">
-                        <label htmlFor="os-account-select" className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Caixa / Conta Financeira</label>
-                        <select
-                          id="os-account-select"
-                          value={osAccountId}
-                          onChange={(e) => setOsAccountId(e.target.value)}
-                          className={`w-full px-4 py-3.5 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 text-slate-805 dark:text-white ${
-                            isDarkMode ? 'bg-slate-950 border-slate-800 focus:border-indigo-500' : 'bg-white border-slate-200 focus:border-indigo-500'
-                          }`}
-                        >
-                          <option value="" className="text-slate-850 dark:text-slate-200">NÃO GERAR FINANCEIRO</option>
-                          {accounts.map(a => (
-                            <option key={a.id} value={a.id} className="text-slate-850 dark:text-slate-200">{a.name}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      
-                      {/* OS Notes */}
-                      <div className="flex flex-col gap-2">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Observações / Notas da OS</label>
-                        <input
-                          type="text"
-                          value={osNotes}
-                          onChange={(e) => setOsNotes(e.target.value)}
-                          placeholder="Ex: Corte prioritário de camurça"
-                          className={`w-full px-5 py-3.5 rounded-2xl font-bold text-xs outline-none border-2 text-slate-805 dark:text-white ${
-                            isDarkMode ? 'bg-slate-950 border-slate-800 focus:border-indigo-500' : 'bg-white border-slate-200 focus:border-indigo-500'
-                          }`}
-                        />
-                      </div>
-
-                      {/* Complete status or workflow update */}
-                      <div className="flex items-center gap-6 px-2 py-2">
-                        <label className="relative flex items-center cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={osDirectComplete}
-                            onChange={(e) => setOsDirectComplete(e.target.checked)}
-                            className="sr-only"
-                          />
-                          <div className={`relative w-11 h-6 rounded-full transition-all duration-200 shrink-0 ${
-                            osDirectComplete 
-                              ? 'bg-indigo-600' 
-                              : 'bg-slate-300 dark:bg-slate-700'
-                          }`}>
-                            <div className={`absolute top-0.5 left-0.5 bg-white w-5 h-5 rounded-full shadow-md transition-transform duration-200 ${
-                              osDirectComplete ? 'translate-x-5' : 'translate-x-0'
-                            }`} />
-                          </div>
-                          <div className="ml-3">
-                            <span className="text-[10px] font-black uppercase tracking-widest block text-slate-705 dark:text-slate-200">Baixa Direta / Concluir</span>
-                            <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
-                              Já avançar lote e finalizar OS no ato!
-                            </span>
-                          </div>
-                        </label>
-                      </div>
-
-                    </div>
-
-                    <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl border ${
-                      isDarkMode ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
-                    }`}>
-                      <div className="text-left">
-                        <span className="text-[8px] font-bold text-slate-500 dark:text-slate-450 uppercase tracking-widest block">Custo de Mão de Obra Calculado</span>
-                        <p className="text-base font-black text-indigo-600 dark:text-indigo-400 mt-0.5">
-                          R$ {(selectedLot.quantity * osValuePerPair).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                        </p>
-                      </div>
-
-                      <div className="flex flex-row gap-2 w-full sm:w-auto">
-                        <button
-                          type="button"
-                          onClick={() => setIsOSPanelOpen(false)}
-                          className={`flex-1 sm:flex-initial px-5 py-3.5 rounded-xl text-[9px] font-black uppercase tracking-widest text-center transition-all ${
-                            isDarkMode 
-                              ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' 
-                              : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
-                          }`}
-                        >
-                          Cancelar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleCreateOS}
-                          disabled={isSavingOS}
-                          className="flex-1 sm:flex-initial px-6 py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-black uppercase tracking-widest flex items-center justify-center gap-1 shadow-lg shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-50"
-                        >
-                          {isSavingOS ? 'Salvando...' : 'Confirmar e Salvar OS'}
-                        </button>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
 
               {/* Cutting pieces detail cards / panels */}
               {resolvedPieces.length === 0 ? (
@@ -1408,7 +1903,7 @@ export default function CuttingProjectionPanel({
                     const conjugation = tool?.metadata?.conjugation || 1;
                     
                     // Total strokes for this specific piece
-                    const totalFacadas = Object.entries(selectedLot.pairs || {}).reduce((sum, [size, qty]) => {
+                    const totalFacadas = Object.entries(effectivePairs).reduce((sum, [size, qty]) => {
                       return sum + Math.ceil(qty / (conjugation * layers));
                     }, 0);
 
@@ -1418,10 +1913,10 @@ export default function CuttingProjectionPanel({
                     // Dynamic premium color configurations for different pieces to identify at a glance
                     const pieceColors = [
                       {
-                        bg: 'bg-rose-50 dark:bg-rose-950/30',
-                        border: 'border-rose-200/50 dark:border-rose-500/20',
-                        text: 'text-rose-600 dark:text-rose-450',
-                        hoverBorder: 'hover:border-rose-400 dark:hover:border-rose-700/50'
+                        bg: 'bg-sky-50 dark:bg-sky-950/30',
+                        border: 'border-sky-200/50 dark:border-sky-500/20',
+                        text: 'text-sky-600 dark:text-sky-400',
+                        hoverBorder: 'hover:border-sky-400 dark:hover:border-sky-700/50'
                       },
                       {
                         bg: 'bg-emerald-50 dark:bg-emerald-950/30',
@@ -1462,31 +1957,59 @@ export default function CuttingProjectionPanel({
                     ];
 
                     const colorStyle = pieceColors[index % pieceColors.length];
-                    const isExpanded = expandedPieces[piece.id] !== false;
+                    const isExpanded = expandedPieces[piece.id] === true;
 
                     return (
-                      <div 
+                      <div
                         key={piece.id}
-                        className={`p-6 rounded-[2.2rem] border flex flex-col gap-6 transition-all duration-300 relative ${
-                          isDarkMode 
-                            ? `bg-slate-900 border-slate-800/80 ${colorStyle.hoverBorder}` 
+                        className={`rounded-[2.2rem] border flex flex-col transition-all duration-300 relative ${isExpanded ? 'p-6 gap-6' : ''} ${
+                          isDarkMode
+                            ? `bg-slate-900 border-slate-800/80 ${colorStyle.hoverBorder}`
                             : `bg-white border-slate-100 shadow-sm hover:shadow-md ${colorStyle.hoverBorder}`
                         }`}
                       >
-                        {/* Absolute Top-Right Chevron Toggle Button */}
+                        {/* Collapsed: compact list row */}
+                        {!isExpanded && (
+                          <div
+                            onClick={() => setExpandedPieces(prev => ({ ...prev, [piece.id]: true }))}
+                            className="flex items-center gap-3 px-5 py-3.5 cursor-pointer select-none group"
+                          >
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 ${colorStyle.bg} ${colorStyle.border} ${colorStyle.text}`}>
+                              <Scissors size={15} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className={`text-sm font-black uppercase tracking-tight ${colorStyle.text}`}>{piece.name}</span>
+                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                <span className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                                  {tool?.name || 'Faca não vinculada'}
+                                </span>
+                                {tool?.metadata?.reference && (
+                                  <>
+                                    <span className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700 shrink-0" />
+                                    <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                                      Ref: {tool.metadata.reference}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                            <ChevronRight size={15} className={`${colorStyle.text} shrink-0 opacity-60`} />
+                          </div>
+                        )}
+
+                        {/* Expanded: absolute top-right chevron */}
+                        {isExpanded && (
                         <div className="absolute top-6 right-6 z-10 pointer-events-none">
-                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center border transition-all duration-300 ${
-                            isExpanded 
-                              ? `${colorStyle.bg} ${colorStyle.border} ${colorStyle.text} rotate-180` 
-                              : 'bg-slate-50 dark:bg-slate-850 border-slate-200 dark:border-slate-800 text-slate-400'
-                          }`}>
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center border transition-all duration-300 ${colorStyle.bg} ${colorStyle.border} ${colorStyle.text} rotate-180`}>
                             <ChevronRight size={18} className="transform rotate-90" />
                           </div>
                         </div>
+                        )}
 
-                        {/* Piece Accordion Header (Click to toggle) */}
-                        <div 
-                          onClick={() => setExpandedPieces(prev => ({ ...prev, [piece.id]: !isExpanded }))}
+                        {/* Expanded: full piece header (Click to collapse) */}
+                        {isExpanded && (
+                        <div
+                          onClick={() => setExpandedPieces(prev => ({ ...prev, [piece.id]: false }))}
                           className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800 cursor-pointer select-none group pr-12 lg:pr-16"
                         >
                           <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -1519,7 +2042,7 @@ export default function CuttingProjectionPanel({
                                   <span className="text-[10px] font-black">Grade a Cortar:</span>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
-                                  {Object.entries(selectedLot.pairs || {}).map(([size, qty]) => {
+                                  {Object.entries(effectivePairs).map(([size, qty]) => {
                                     if (qty === 0) return null;
                                     return (
                                       <div 
@@ -1554,6 +2077,7 @@ export default function CuttingProjectionPanel({
                             </div>
                           </div>
                         </div>
+                        )}
 
                         {/* Collapsible Content Area */}
                         {isExpanded && (
@@ -1573,9 +2097,9 @@ export default function CuttingProjectionPanel({
                                 <Layers size={12} className="text-indigo-500 dark:text-indigo-400" /> Setup de Infesto (Camadas)
                               </span>
                               <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${
-                                isDarkMode 
-                                  ? 'text-indigo-400 bg-indigo-950/60' 
-                                  : 'text-indigo-700 bg-indigo-50 border border-indigo-100'
+                                isDarkMode
+                                  ? 'text-sky-400 bg-sky-950/60'
+                                  : 'text-sky-700 bg-sky-50 border border-sky-100'
                               }`}>
                                 {layers} Camadas Ativas
                               </span>
@@ -1626,8 +2150,8 @@ export default function CuttingProjectionPanel({
                                     onClick={() => handlePresetLayer(piece.id, preset)}
                                     title={presetName}
                                     className={`px-3 py-1.5 rounded-lg text-[9px] font-black transition-all flex items-center gap-1 ${
-                                      layers === preset 
-                                        ? 'bg-indigo-600 text-white shadow-sm'
+                                      layers === preset
+                                        ? 'bg-sky-600 text-white shadow-sm'
                                         : isDarkMode
                                           ? 'bg-slate-900 text-slate-400 hover:text-white border border-slate-800'
                                           : 'bg-white text-slate-500 hover:text-slate-900 border border-slate-200 hover:bg-slate-50 shadow-sm'
@@ -1711,7 +2235,7 @@ export default function CuttingProjectionPanel({
                           // 1. Calculate surplus (sobra) for a given layer option
                           const calculateSobraForLayers = (layerOption: number) => {
                             let totalParesCortados = 0;
-                            Object.entries(selectedLot.pairs || {}).forEach(([size, qty]) => {
+                            Object.entries(effectivePairs).forEach(([size, qty]) => {
                               const strokesForSize = Math.ceil(qty / (conjugation * layerOption));
                               totalParesCortados += strokesForSize * conjugation * layerOption;
                             });
@@ -1721,7 +2245,7 @@ export default function CuttingProjectionPanel({
                           // 2. Map all registered layer options to their sobra and strokes
                           const optionsMetrics = registeredLayers.map(l => {
                             const sobra = calculateSobraForLayers(l);
-                            const strokes = Object.entries(selectedLot.pairs || {}).reduce((sum, [size, qty]) => {
+                            const strokes = Object.entries(effectivePairs).reduce((sum, [size, qty]) => {
                               return sum + Math.ceil(qty / (conjugation * l));
                             }, 0);
                             return { layers: l, sobra, strokes };
@@ -1745,7 +2269,7 @@ export default function CuttingProjectionPanel({
                           const singleLayerLength = totalConsumoMetros / layers;
 
                           // 5. Two-Fold (Dobra Dupla) Calculation
-                          const splitData = Object.entries(selectedLot.pairs || {}).map(([size, qty]) => {
+                          const splitData = Object.entries(effectivePairs).map(([size, qty]) => {
                             const exactStrokes = Math.floor(qty / (conjugation * layers));
                             const cutQty1 = exactStrokes * conjugation * layers;
                             const remQty = qty - cutQty1;
@@ -1979,7 +2503,7 @@ export default function CuttingProjectionPanel({
                           </div>
 
                           <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-                            {Object.entries(selectedLot.pairs || {}).map(([size, qty]) => {
+                            {Object.entries(effectivePairs).map(([size, qty]) => {
                               if (qty === 0) return null;
                               
                               // Calculate strokes needed for this size
@@ -2220,7 +2744,7 @@ export default function CuttingProjectionPanel({
                             <thead>
                               <tr>
                                 <th className="border border-black p-2 text-left text-[10px] uppercase font-black bg-slate-100">Tamanho</th>
-                                {Object.keys(lot.pairs || {}).map(sz => (
+                                {Object.keys(effectivePairs).map(sz => (
                                   <th key={sz} className="border border-black p-2 text-center text-[10px] uppercase font-black bg-slate-50">{sz}</th>
                                 ))}
                                 <th className="border border-black p-2 text-center text-[10px] uppercase font-black bg-slate-200">TOTAL</th>
@@ -2229,7 +2753,7 @@ export default function CuttingProjectionPanel({
                             <tbody>
                               <tr>
                                 <td className="border border-black p-2 text-left font-black text-[11px]">Qtd (Pares)</td>
-                                {Object.values(lot.pairs || {}).map((val, idx) => (
+                                {Object.values(effectivePairs).map((val, idx) => (
                                   <td key={idx} className="border border-black p-2 text-center font-black text-sm">{val}</td>
                                 ))}
                                 <td className="border border-black p-2 text-center font-black text-sm bg-slate-50">{lot.quantity}</td>
@@ -2300,9 +2824,16 @@ export default function CuttingProjectionPanel({
                               <p className="margin-none text-[8px] font-black tracking-widest text-slate-500 uppercase">Sistema de Produção & PCP</p>
                             </div>
                             <div className="text-right">
-                              <span className="px-2 py-0.5 border border-black bg-sky-100 text-black text-[9px] font-black tracking-widest uppercase rounded">
-                                Ficha Técnica - Materiais e Grade
-                              </span>
+                              <div className="flex items-center justify-end gap-2 flex-wrap">
+                                <span className="px-2 py-0.5 border border-black bg-sky-100 text-black text-[9px] font-black tracking-widest uppercase rounded">
+                                  Ficha Técnica - Materiais e Grade
+                                </span>
+                                {currentSector && (
+                                  <span className="px-2 py-0.5 rounded text-[9px] font-black tracking-widest uppercase text-white" style={{ backgroundColor: currentSector.color }}>
+                                    {currentSector.name}
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-xs font-black mt-2 text-slate-500">Lote: #{lot.orderNumber} • Emissão: {formattedDate}</p>
                             </div>
                           </div>
@@ -2350,7 +2881,7 @@ export default function CuttingProjectionPanel({
                             <thead>
                               <tr>
                                 <th className="border border-black p-2 text-left text-[10px] uppercase font-black bg-slate-100">Tamanho</th>
-                                {Object.keys(lot.pairs || {}).map(sz => (
+                                {Object.keys(effectivePairs).map(sz => (
                                   <th key={sz} className="border border-black p-2 text-center text-[10px] uppercase font-black bg-slate-50">{sz}</th>
                                 ))}
                                 <th className="border border-black p-2 text-center text-[10px] uppercase font-black bg-slate-200">TOTAL</th>
@@ -2359,7 +2890,7 @@ export default function CuttingProjectionPanel({
                             <tbody>
                               <tr>
                                 <td className="border border-black p-2 text-left font-black text-[11px]">Pares</td>
-                                {Object.values(lot.pairs || {}).map((val, idx) => (
+                                {Object.values(effectivePairs).map((val, idx) => (
                                   <td key={idx} className="border border-black p-2 text-center font-black text-[11px]">{val}</td>
                                 ))}
                                 <td className="border border-black p-2 text-center font-black text-[11px] bg-slate-50">{lot.quantity}</td>
@@ -2389,9 +2920,16 @@ export default function CuttingProjectionPanel({
                               <p className="margin-none text-[8px] font-black tracking-widest text-slate-500 uppercase">Sistema de Produção & PCP</p>
                             </div>
                             <div className="text-right">
-                              <span className="px-2 py-0.5 border border-black bg-sky-100 text-black text-[9px] font-black tracking-widest uppercase rounded">
-                                Ficha Técnica - Padrão de Corte
-                              </span>
+                              <div className="flex items-center justify-end gap-2 flex-wrap">
+                                <span className="px-2 py-0.5 border border-black bg-sky-100 text-black text-[9px] font-black tracking-widest uppercase rounded">
+                                  Ficha Técnica - Padrão de Corte
+                                </span>
+                                {currentSector && (
+                                  <span className="px-2 py-0.5 rounded text-[9px] font-black tracking-widest uppercase text-white" style={{ backgroundColor: currentSector.color }}>
+                                    {currentSector.name}
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-xs font-black mt-2 text-slate-500">Lote: #{lot.orderNumber} • Emissão: {formattedDate}</p>
                             </div>
                           </div>
@@ -2422,7 +2960,7 @@ export default function CuttingProjectionPanel({
                                 <th className="border border-black p-2 text-left text-[9px] uppercase font-black bg-slate-50">Material</th>
                                 <th className="border border-black p-2 text-center text-[9px] uppercase font-black bg-slate-100">Conj.</th>
                                 <th className="border border-black p-2 text-center text-[9px] uppercase font-black bg-slate-100">Infesto</th>
-                                {Object.keys(lot.pairs || {}).map(sz => (
+                                {Object.keys(effectivePairs).map(sz => (
                                   <th key={sz} className="border border-black p-1 text-center text-[8px] uppercase font-black bg-slate-50">T{sz}</th>
                                 ))}
                                 <th className="border border-black p-2 text-center text-[9px] uppercase font-black bg-slate-200">Batidas</th>
@@ -2446,7 +2984,7 @@ export default function CuttingProjectionPanel({
                                     </td>
                                     <td className="border border-black p-2 text-center font-black text-[10px]">{conjugation}x</td>
                                     <td className="border border-black p-2 text-center font-black text-[10px] text-indigo-700">{layers} c.</td>
-                                    {Object.entries(lot.pairs || {}).map(([size, qty]) => {
+                                    {Object.entries(effectivePairs).map(([size, qty]) => {
                                       const strokesNeeded = Math.ceil(qty / (conjugation * layers));
                                       totalStrikes += strokesNeeded;
                                       return (
@@ -2517,10 +3055,187 @@ export default function CuttingProjectionPanel({
       {labelModalOpen && lotProductDetails?.product && (
         <PrintLabelEditorModal
           isOpen={labelModalOpen}
-          onClose={() => setLabelModalOpen(false)}
+          onClose={() => { setLabelModalOpen(false); setLabelSizeGridOverride(undefined); setLabelOsOverride(undefined); }}
           product={lotProductDetails.product}
           isDarkMode={isDarkMode}
+          lot={selectedLot ?? undefined}
+          os={labelOsOverride !== undefined ? labelOsOverride : (activeOSForSelectedLot ?? null)}
+          sizeGridOverride={
+            labelSizeGridOverride !== undefined
+              ? labelSizeGridOverride
+              : (Object.keys(effectivePairs).length > 0
+                  ? Object.entries(effectivePairs)
+                      .filter(([, q]) => q > 0)
+                      .sort(([a], [b]) => Number(a) - Number(b))
+                      .map(([sz, q]) => `${sz}x${q}`)
+                      .join('-') || undefined
+                  : undefined)
+          }
         />
+      )}
+
+      {/* ── OS Creation / Edit Modal ─────────────────────────────────── */}
+      {isOSPanelOpen && selectedLot && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
+          <div
+            className={`w-full max-w-lg rounded-[2rem] border shadow-2xl flex flex-col overflow-hidden max-h-[92vh] ${
+              isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'
+            }`}
+          >
+            {/* Header */}
+            <div className={`flex items-center justify-between px-6 pt-6 pb-4 border-b shrink-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center shrink-0">
+                  <Hammer size={20} className="text-indigo-500" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">
+                    {editingOsId ? 'Editar OS de Corte' : 'Emitir OS de Corte'}
+                  </h3>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                    {pendingOsSourceOrderIds.length > 0
+                      ? `${pendingOsSourceOrderIds.length} pedido(s) • ${pendingOsQuantityOverride}P`
+                      : `Mapa #${selectedLot.orderNumber} • ${selectedLot.quantity}P`}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Fechar"
+                title="Fechar"
+                onClick={() => { setIsOSPanelOpen(false); setEditingOsId(null); setEditingOsOriginal(null); setPendingOsSourceOrderIds([]); setPendingOsQuantityOverride(null); }}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Scrollable form body */}
+            <div className="flex flex-col gap-5 p-6 overflow-y-auto">
+
+              {/* Worker select */}
+              <div className="flex flex-col gap-2">
+                <label htmlFor="os-modal-provider" className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Cortador (Operador) *</label>
+                <select
+                  id="os-modal-provider"
+                  value={osProviderId}
+                  onChange={(e) => setOsProviderId(e.target.value)}
+                  className={`w-full px-4 py-3.5 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 dark:text-white ${
+                    isDarkMode ? 'bg-slate-950 border-slate-800 focus:border-indigo-500' : 'bg-white border-slate-200 focus:border-indigo-500'
+                  }`}
+                >
+                  <option value="">Selecione...</option>
+                  {providers.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Pay rate + Account row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">R$ / Par</label>
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">R$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={osValuePerPair || ''}
+                      onChange={(e) => setOsValuePerPair(parseFloat(e.target.value) || 0)}
+                      className={`w-full pl-10 pr-4 py-3.5 rounded-2xl font-bold text-xs outline-none border-2 dark:text-white ${
+                        isDarkMode ? 'bg-slate-950 border-slate-800 focus:border-indigo-500' : 'bg-white border-slate-200 focus:border-indigo-500'
+                      }`}
+                      placeholder="0,00"
+                    />
+                  </div>
+                  {editingOsId && editingOsOriginal && (
+                    <span className="text-[9px] font-bold text-amber-500 ml-1 mt-0.5">
+                      Anterior: R$ {(editingOsOriginal.valuePerPair || 0).toFixed(2).replace('.', ',')}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <label htmlFor="os-modal-account" className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Conta Financeira</label>
+                  <select
+                    id="os-modal-account"
+                    value={osAccountId}
+                    onChange={(e) => setOsAccountId(e.target.value)}
+                    className={`w-full px-4 py-3.5 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 dark:text-white ${
+                      isDarkMode ? 'bg-slate-950 border-slate-800 focus:border-indigo-500' : 'bg-white border-slate-200 focus:border-indigo-500'
+                    }`}
+                  >
+                    <option value="">Sem financeiro</option>
+                    {accounts.map(a => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Observações</label>
+                <input
+                  type="text"
+                  value={osNotes}
+                  onChange={(e) => setOsNotes(e.target.value)}
+                  placeholder="Ex: Corte prioritário de camurça"
+                  className={`w-full px-5 py-3.5 rounded-2xl font-bold text-xs outline-none border-2 dark:text-white ${
+                    isDarkMode ? 'bg-slate-950 border-slate-800 focus:border-indigo-500' : 'bg-white border-slate-200 focus:border-indigo-500'
+                  }`}
+                />
+              </div>
+
+              {/* Direct complete toggle */}
+              <label className="flex items-center gap-4 cursor-pointer select-none px-1">
+                <div className={`relative w-11 h-6 rounded-full transition-all duration-200 shrink-0 ${osDirectComplete ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'}`}>
+                  <input type="checkbox" checked={osDirectComplete} onChange={(e) => setOsDirectComplete(e.target.checked)} className="sr-only" />
+                  <div className={`absolute top-0.5 left-0.5 bg-white w-5 h-5 rounded-full shadow-md transition-transform duration-200 ${osDirectComplete ? 'translate-x-5' : 'translate-x-0'}`} />
+                </div>
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-widest block text-slate-700 dark:text-slate-200">Baixa Direta / Concluir</span>
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Já avançar lote e finalizar OS no ato!</span>
+                </div>
+              </label>
+
+              {/* Cost summary + actions */}
+              <div className={`flex items-center justify-between gap-4 p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                <div>
+                  <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest block">Custo Calculado</span>
+                  <p className="text-base font-black text-indigo-600 dark:text-indigo-400 mt-0.5">
+                    R$ {((pendingOsQuantityOverride !== null ? pendingOsQuantityOverride : selectedLot.quantity) * osValuePerPair).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </p>
+                  {editingOsId && editingOsOriginal && (
+                    <span className="text-[9px] font-bold text-amber-500 block mt-0.5">
+                      Antes: R$ {(editingOsOriginal.totalValue || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setIsOSPanelOpen(false); setEditingOsId(null); setEditingOsOriginal(null); setPendingOsSourceOrderIds([]); setPendingOsQuantityOverride(null); }}
+                    className={`px-5 py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
+                      isDarkMode ? 'bg-slate-800 hover:bg-slate-700 text-slate-300' : 'bg-slate-200 hover:bg-slate-300 text-slate-700'
+                    }`}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCreateOS}
+                    disabled={isSavingOS}
+                    className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-black uppercase tracking-widest flex items-center gap-1 shadow-lg shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    {isSavingOS ? 'Salvando...' : 'Confirmar'}
+                  </button>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* ── QR Baixa Modal — Setor de Corte ──────────────────────────── */}

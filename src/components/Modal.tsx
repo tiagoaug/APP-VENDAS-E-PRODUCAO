@@ -7,12 +7,13 @@ interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title?: string;
+  icon?: ReactNode;
   children: ReactNode;
   maxWidth?: string;
   zIndex?: number;
 }
 
-export default function Modal({ isOpen, onClose, title, children, maxWidth = "max-w-2xl", zIndex = 50000 }: ModalProps) {
+export default function Modal({ isOpen, onClose, title, icon, children, maxWidth = "max-w-2xl", zIndex = 50000 }: ModalProps) {
   // Prevent scrolling of background when modal is open
   useEffect(() => {
     if (isOpen) {
@@ -47,9 +48,16 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth = "ma
           >
             {/* Header — hidden on print */}
             <div className="flex items-center justify-between px-8 py-6 border-b border-slate-50 dark:border-slate-800/50 shrink-0 no-print" data-no-print="true">
-              <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
-                {title}
-              </h2>
+              <div className="flex items-center gap-3">
+                {icon && (
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                    {icon}
+                  </div>
+                )}
+                <h2 className="text-xl font-black text-slate-900 dark:text-white uppercase tracking-tight">
+                  {title}
+                </h2>
+              </div>
               <button
                 onClick={onClose}
                 className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"

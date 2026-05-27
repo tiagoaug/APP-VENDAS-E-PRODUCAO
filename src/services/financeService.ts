@@ -98,7 +98,7 @@ export const financeService = {
 
     await firebaseService.runAtomic(async (tx: FirestoreTransaction) => {
       // 1. References
-      const txId = doc(collection(db, `users/${userId}/transactions`)).id;
+      const txId = data.id || doc(collection(db, `users/${userId}/transactions`)).id;
       const txRef = doc(db, `users/${userId}/transactions`, txId);
       
       const payload = cleanPayload({ 

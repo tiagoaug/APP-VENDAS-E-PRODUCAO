@@ -13,8 +13,7 @@ import {
   Copy,
   Tag
 } from "lucide-react";
-import { labelService } from "../services/labelService";
-import PrintLabelModal from "../components/PrintLabelModal";
+import PrintLabelEditorModal from "../components/PrintLabelEditorModal";
 
 interface ProductsViewProps {
   products: Product[];
@@ -151,7 +150,7 @@ export default function ProductsView({
       )}
 
       {productForLabels && (
-        <PrintLabelModal 
+        <PrintLabelEditorModal
           isOpen={!!productForLabels}
           onClose={() => setProductForLabels(null)}
           product={productForLabels}

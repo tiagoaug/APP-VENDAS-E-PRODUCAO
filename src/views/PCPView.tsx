@@ -9,8 +9,8 @@ import {
   ArrowUpRight, ArrowDownRight, Loader2,
   Settings2, Trash2, Edit3, Edit2, ClipboardList,
   Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart,
-  DollarSign, Hammer, FileText, CheckSquare, Scissors, Printer,
-  QrCode, ScanLine, Hash
+  DollarSign, Hammer, FileText, CheckSquare, Scissors, Printer, Share2,
+  QrCode, ScanLine, Hash, Lock
 } from 'lucide-react';
 import {
   ProductionLot, Product, Sector,
@@ -25,7 +25,7 @@ import PrintOSModal from '../components/PrintOSModal';
 import PrintLabelEditorModal from '../components/PrintLabelEditorModal';
 import { Camera } from 'lucide-react';
 import { labelService } from '../services/labelService';
-import { printLotSheet } from '../utils/pdfExport';
+import { printLotSheet, shareImage } from '../utils/pdfExport';
 import { scannerService } from '../services/scannerService';
 import { financeService } from '../services/financeService';
 import WebCameraScanner from '../components/WebCameraScanner';
@@ -116,6 +116,10 @@ export default function PCPView({
   const [isPrintOSModalOpen, setIsPrintOSModalOpen] = useState(false);
   const [printOSData, setPrintOSData] = useState<{ os: ServiceOrder; nextSectorName: string } | null>(null);
   const [labelModalProduct, setLabelModalProduct] = useState<import('../types').Product | null>(null);
+  const [labelModalLot, setLabelModalLot] = useState<import('../types').ProductionLot | null>(null);
+  const [labelModalSizeGrid, setLabelModalSizeGrid] = useState<string>('');
+  const [selectedSourceItemKeys, setSelectedSourceItemKeys] = useState<Set<string>>(new Set());
+  const [pendingOsSourceOrderIds, setPendingOsSourceOrderIds] = useState<string[]>([]);
 
   // QR Baixa modal state
   const [qrBaixaModal, setQrBaixaModal] = useState<{
@@ -131,6 +135,8 @@ export default function PCPView({
     lot: import('../types').ProductionLot | null;
     nextSectorName: string;
   } | null>(null);
+  const [sharePopupLotId, setSharePopupLotId] = useState<string | null>(null);
+  const [isShareExporting, setIsShareExporting] = useState(false);
 
   // Filtered and organized data
   const filteredLots = useMemo(() => {
@@ -695,8 +701,26 @@ export default function PCPView({
 
   const handleOpenOSModal = (lotsToProcess: ProductionLot | ProductionLot[]) => {
     const list = Array.isArray(lotsToProcess) ? lotsToProcess : [lotsToProcess];
+
+    // Guard: block duplicate whole-lot OS creation
+    const firstLot = list[0];
+    const sectorId = firstLot.route && firstLot.route[firstLot.currentSectorIndex];
+    if (sectorId) {
+      const blockingOS = serviceOrders.find(so =>
+        list.some(l => so.lotId === l.id || (so.lotIds && so.lotIds.includes(l.id))) &&
+        so.sectorId === sectorId &&
+        so.status === 'PENDING' &&
+        (!so.sourceOrderIds || so.sourceOrderIds.length === 0)
+      );
+      if (blockingOS) {
+        const sectorName = sectors.find(s => s.id === sectorId)?.name || 'este setor';
+        alert(`Já existe a OS ${blockingOS.osNumber} em aberto para este lote em "${sectorName}". Conclua ou exclua-a antes de emitir uma nova.`);
+        return;
+      }
+    }
+
     setSelectedLots(list);
-    
+
     if (!Array.isArray(lotsToProcess)) {
       setSelectedLot(lotsToProcess);
     } else {
@@ -780,13 +804,15 @@ export default function PCPView({
       return;
     }
 
-    // Trava: impede duplicação — verifica se já existe OS pendente para o mesmo lote+setor
-    if (!editingOS) {
+    // Trava: impede duplicação de OS do lote inteiro
+    // Para OS por pedido, a UI já impede via checkbox desabilitado em pedidos com OS ativa
+    if (!editingOS && pendingOsSourceOrderIds.length === 0) {
       for (const lot of targetLots) {
         const existing = serviceOrders.find(so =>
           (so.lotId === lot.id || (so.lotIds && so.lotIds.includes(lot.id))) &&
           so.sectorId === currentSector.id &&
-          so.status === 'PENDING'
+          so.status === 'PENDING' &&
+          (!so.sourceOrderIds || so.sourceOrderIds.length === 0)
         );
         if (existing) {
           alert(`Já existe a OS ${existing.osNumber} em aberto para este lote no setor "${currentSector.name}". Conclua ou exclua-a antes de criar uma nova.`);
@@ -856,6 +882,7 @@ export default function PCPView({
       }
 
       // --- MODO CRIAÇÃO ---
+      const isPerOrderOS = pendingOsSourceOrderIds.length > 0;
       const uniqueId = `os_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
       let transactionId = '';
@@ -901,10 +928,12 @@ export default function PCPView({
         status: osDirectComplete ? 'COMPLETED' : 'PENDING',
         transactionId: transactionId || undefined,
         createdAt: Date.now(),
-        finishedAt: osDirectComplete ? Date.now() : undefined
+        finishedAt: osDirectComplete ? Date.now() : undefined,
+        ...(pendingOsSourceOrderIds.length > 0 && { sourceOrderIds: pendingOsSourceOrderIds })
       };
 
       await firebaseService.saveDocument("serviceOrders", newOS);
+      setPendingOsSourceOrderIds([]);
 
       if (osDirectComplete) {
         for (const lot of targetLots) {
@@ -914,7 +943,7 @@ export default function PCPView({
 
       alert("Ordem de Serviço criada com sucesso!");
       setIsOSModalOpen(false);
-      setIsDetailModalOpen(false);
+      if (!isPerOrderOS) setIsDetailModalOpen(false);
 
       // Reset multi-select states
       setSelectedLotIds([]);
@@ -927,6 +956,88 @@ export default function PCPView({
     }
   };
 
+  const handleShareLotSheet = async (
+    lot: ProductionLot,
+    product: Product | undefined,
+    variation: Variation | undefined,
+    cardOS: ServiceOrder | null | undefined,
+    format: 'pdf' | 'jpg',
+    includeOS: boolean
+  ) => {
+    const colorName = variation?.colorName || '—';
+    const os = includeOS ? cardOS || null : null;
+
+    if (format === 'pdf') {
+      printLotSheet({ lot, product, variationName: colorName, sectorName: sectors.find(s => s.id === selectedSectorId)?.name, os, productionConfigs });
+      return;
+    }
+
+    setIsShareExporting(true);
+    try {
+      const h2c = (await import('html2canvas')).default;
+      const pairs = lot.pairs || {};
+      const sizes = Object.keys(pairs);
+      const date = new Date().toLocaleDateString('pt-BR');
+
+      const matSummary: Record<string, { name: string; ref: string; consumption: number; unit: string }> = {};
+      (variation?.consumptions?.filter((c: any) => c.category === 'CUTTING_PIECE') || []).forEach((piece: any) => {
+        const mat = productionConfigs.find(c => c.id === piece.materialId && c.type === 'MATERIAL');
+        if (!mat) return;
+        const unitName = productionConfigs.find(u => u.id === mat.metadata?.unitId)?.name || 'UN';
+        const totalCons = lot.quantity * (Number(piece.quantity) || 0);
+        if (!matSummary[mat.id]) matSummary[mat.id] = { name: mat.name, ref: mat.metadata?.reference || 'S/Ref', consumption: 0, unit: unitName };
+        matSummary[mat.id].consumption += totalCons;
+      });
+
+      const materialsRows = Object.values(matSummary).length > 0
+        ? Object.values(matSummary).map(m => `<tr><td style="font-weight:bold;border:1px solid #000;padding:5px 6px;">${m.name}</td><td style="border:1px solid #000;padding:5px 6px;">${m.ref}</td><td style="text-align:right;font-weight:900;border:1px solid #000;padding:5px 6px;">${m.consumption.toFixed(3)} ${m.unit}</td></tr>`).join('')
+        : `<tr><td colspan="3" style="text-align:center;color:#6b7280;font-style:italic;border:1px solid #000;padding:5px 6px;">Sem materiais cadastrados</td></tr>`;
+
+      const osBlock = os ? `<div style="margin-bottom:18px;padding:10px 14px;border:1.5px solid #000;border-radius:6px;background:#f9fafb;"><div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#374151;margin-bottom:4px;">Ordem de Serviço</div><div style="display:flex;gap:32px;flex-wrap:wrap;"><div><span style="font-size:9px;color:#6b7280;display:block;">Número</span><strong>${os.osNumber}</strong></div><div><span style="font-size:9px;color:#6b7280;display:block;">Prestador</span><strong>${os.providerName || '—'}</strong></div><div><span style="font-size:9px;color:#6b7280;display:block;">Total</span><strong>R$ ${os.totalValue.toFixed(2)}</strong></div></div></div>` : '';
+
+      const sizeHeaders = sizes.map(sz => `<th style="border:1px solid #000;padding:5px 6px;background:#e5e7eb;text-align:center;font-weight:900;font-size:10px;">${sz}</th>`).join('');
+      const sizeCells = sizes.map(sz => `<td style="border:1px solid #000;padding:5px 6px;text-align:center;font-weight:900;font-size:13px;">${pairs[sz]}</td>`).join('');
+
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = 'position:fixed;left:-10000px;top:0;pointer-events:none;';
+      const el = document.createElement('div');
+      el.style.cssText = 'width:794px;padding:48px;box-sizing:border-box;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#000;font-size:12px;line-height:1.4;';
+      el.innerHTML = `
+        <div style="display:table;width:100%;border-bottom:3px solid #000;padding-bottom:12px;margin-bottom:22px;">
+          <div style="display:table-cell;vertical-align:middle;"><div style="font-size:26px;font-weight:900;letter-spacing:-1px;text-transform:uppercase;margin:0;">GESTÃO PRO</div><div style="margin-top:3px;font-size:10px;font-weight:800;color:#4b5563;text-transform:uppercase;letter-spacing:2px;">Sistema de Produção &amp; PCP</div></div>
+          <div style="display:table-cell;vertical-align:middle;text-align:right;"><span style="background:#e0f2fe;border:1.5px solid #000;color:#000;padding:4px 10px;border-radius:4px;font-weight:900;font-size:10px;display:inline-block;text-transform:uppercase;">Ficha Técnica – Materiais e Grade</span><div style="margin-top:6px;font-size:12px;font-weight:900;text-transform:uppercase;color:#374151;">Lote: #${lot.orderNumber} • Emissão: ${date}</div></div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;margin-bottom:22px;" cellpadding="0" cellspacing="0"><tr>
+          <td style="width:33%;padding-right:12px;vertical-align:top;"><div style="font-weight:800;text-transform:uppercase;font-size:10px;color:#374151;margin-bottom:2px;">Referência / Modelo</div><div style="font-weight:bold;font-size:13px;">${product?.name || '—'} <span style="font-weight:normal;color:#4b5563;">(${product?.reference || 'S/Ref'})</span></div></td>
+          <td style="width:33%;padding-right:12px;vertical-align:top;"><div style="font-weight:800;text-transform:uppercase;font-size:10px;color:#374151;margin-bottom:2px;">Cor / Variação</div><div style="font-weight:bold;font-size:13px;">${colorName}</div></td>
+          <td style="width:33%;vertical-align:top;"><div style="font-weight:800;text-transform:uppercase;font-size:10px;color:#374151;margin-bottom:2px;">Total de Pares</div><div style="font-weight:bold;font-size:13px;">${lot.quantity} Pares</div></td>
+        </tr></table>
+        ${osBlock}
+        <div style="font-size:13px;font-weight:900;text-transform:uppercase;border-bottom:2px solid #000;padding-bottom:6px;margin-top:20px;">Requisição Consolidada de Materiais</div>
+        <table style="width:100%;border-collapse:collapse;margin-top:10px;" cellpadding="0" cellspacing="0"><thead><tr><th style="border:1px solid #000;padding:5px 6px;background:#f3f4f6;font-weight:900;text-transform:uppercase;font-size:10px;text-align:left;">Código / Nome do Material</th><th style="border:1px solid #000;padding:5px 6px;background:#f3f4f6;font-weight:900;text-transform:uppercase;font-size:10px;text-align:left;">Referência</th><th style="border:1px solid #000;padding:5px 6px;background:#f3f4f6;font-weight:900;text-transform:uppercase;font-size:10px;text-align:right;width:180px;">Consumo Total Estimado</th></tr></thead><tbody>${materialsRows}</tbody></table>
+        <div style="font-size:13px;font-weight:900;text-transform:uppercase;border-bottom:2px solid #000;padding-bottom:6px;margin-top:28px;">Grade Detalhada do Mapa</div>
+        <table style="width:100%;border-collapse:collapse;margin-top:10px;" cellpadding="0" cellspacing="0"><thead><tr><th style="border:1px solid #000;padding:5px 6px;background:#f3f4f6;font-weight:900;text-transform:uppercase;font-size:10px;text-align:left;width:120px;">Tamanho</th>${sizeHeaders}<th style="border:1px solid #000;padding:5px 6px;background:#e5e7eb;text-align:center;font-weight:900;font-size:10px;width:80px;">TOTAL</th></tr></thead><tbody><tr><td style="border:1px solid #000;padding:5px 6px;font-weight:bold;">Pares</td>${sizeCells}<td style="border:1px solid #000;padding:5px 6px;text-align:center;font-weight:900;font-size:13px;background:#f3f4f6;">${lot.quantity}</td></tr></tbody></table>
+      `;
+      wrapper.appendChild(el);
+      document.body.appendChild(wrapper);
+      let dataUrl = '';
+      try {
+        void el.offsetHeight;
+        const canvas = await h2c(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, allowTaint: true, logging: false, width: 794 });
+        dataUrl = canvas.toDataURL('image/jpeg', 0.93);
+      } finally {
+        if (document.body.contains(wrapper)) document.body.removeChild(wrapper);
+      }
+      const prefix = includeOS && os ? `Ficha_OS_${os.osNumber}` : `Ficha_Lote_${lot.orderNumber}`;
+      await shareImage(dataUrl, `${prefix}.jpg`);
+    } catch (err) {
+      console.error('Erro ao gerar JPG:', err);
+      alert('Erro ao gerar imagem. Tente novamente.');
+    } finally {
+      setIsShareExporting(false);
+    }
+  };
+
   const handleCompleteOS = async (os: ServiceOrder) => {
     if (confirm(`Deseja concluir a Ordem de Serviço ${os.osNumber} e realizar a baixa de todos os lotes vinculados?`)) {
       try {
@@ -936,7 +1047,11 @@ export default function PCPView({
         });
 
         if (os.transactionId) {
-          await financeService.settleTransaction(os.transactionId);
+          try {
+            await financeService.settleTransaction(os.transactionId);
+          } catch (txErr) {
+            console.error("Erro ao conciliar transação financeira da OS:", txErr);
+          }
         }
 
         const targetLotIds = os.lotIds || [os.lotId];
@@ -1218,33 +1333,38 @@ export default function PCPView({
           </div>
         </div>
 
-        {/* Linha 2: Botões de ação */}
-        <div className="flex items-center gap-2 px-2">
+        {/* Linha 2: Botões de ação em card único */}
+        <div className={`flex items-center gap-2 px-3 py-3 rounded-[2rem] border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
           <button
             type="button"
             onClick={() => setIsScannerOpen(true)}
-            className={`flex items-center justify-center gap-2 h-12 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 text-indigo-400 border border-slate-800' : 'bg-white text-indigo-600 border border-slate-100 shadow-sm'}`}
+            className={`flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-sky-900/30 text-sky-400' : 'bg-sky-50 text-sky-600'}`}
           >
-            <Camera size={15} strokeWidth={3} /> Escanear
+            <Camera size={14} strokeWidth={3} /> Escanear
           </button>
           <button
             type="button"
             onClick={() => setIsFilterPopupOpen(!isFilterPopupOpen)}
-            className={`flex items-center justify-center gap-2 h-12 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border ${
-              statusFilter !== 'all' || isFilterPopupOpen
-                ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 border-indigo-200 dark:border-indigo-800'
-                : isDarkMode ? 'bg-slate-900 text-slate-400 border-slate-800' : 'bg-white text-slate-400 border-slate-100 shadow-sm'
-            }`}
+            className={`flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-sky-900/30 text-sky-400' : 'bg-sky-50 text-sky-600'}`}
           >
-            <Filter size={15} /> Filtros
-            {statusFilter !== 'all' && <span className="w-2 h-2 rounded-full bg-indigo-600 flex-shrink-0" />}
+            <Filter size={14} /> Filtros
+            {statusFilter !== 'all' && <span className="w-2 h-2 rounded-full bg-sky-500 flex-shrink-0" />}
           </button>
           <button
             type="button"
-            onClick={() => setIsCreateModalOpen(true)}
-            className="flex-1 flex items-center justify-center gap-2 h-12 px-4 bg-indigo-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+            onClick={() => pendingOrders.length > 0 && setIsCreateModalOpen(true)}
+            disabled={pendingOrders.length === 0}
+            title={pendingOrders.length === 0 ? 'Nenhum pedido pendente para formar um mapa' : 'Iniciar novo mapa de produção'}
+            className={`flex-1 flex items-center justify-center gap-2 h-10 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+              pendingOrders.length === 0
+                ? 'opacity-40 cursor-not-allowed ' + (isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-slate-100 text-slate-400')
+                : 'active:scale-95 ' + (isDarkMode ? 'bg-sky-900/30 text-sky-400' : 'bg-sky-50 text-sky-600')
+            }`}
           >
-            <Plus size={15} strokeWidth={3} /> Iniciar MAPA
+            {pendingOrders.length === 0
+              ? <><Lock size={12} strokeWidth={3} /> Iniciar MAPA</>
+              : <><Plus size={14} strokeWidth={3} /> Iniciar MAPA</>
+            }
           </button>
         </div>
 
@@ -1337,20 +1457,23 @@ export default function PCPView({
       {activeTab === 'monitor' && (
         <div className="flex flex-col gap-8">
           {/* WIP Overview */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className={`p-6 rounded-[2rem] border flex flex-col gap-1 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total em Produção</span>
-              <span className="text-3xl font-black text-indigo-600">{activeLots.reduce((acc, l) => acc + l.quantity, 0)} <span className="text-xs text-slate-400">Pares</span></span>
-            </div>
-            <div className={`p-6 rounded-[2rem] border flex flex-col gap-1 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">MAPAS Ativos</span>
-              <span className="text-3xl font-black text-emerald-600">{activeLots.length}</span>
-            </div>
-            <div className={`p-6 rounded-[2rem] border flex flex-col gap-1 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Atrasos Críticos</span>
-              <span className="text-3xl font-black text-rose-500">
-                {Object.values(sectorMetrics).reduce((acc, m) => acc + m.delayedCount, 0)}
-              </span>
+          <div className={`px-5 py-4 rounded-[2rem] border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <div className="grid grid-cols-3 divide-x divide-slate-100 dark:divide-slate-800">
+              <div className="flex flex-col gap-0.5 pr-4">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Produção</span>
+                <span className="text-2xl font-black text-indigo-600">{activeLots.reduce((acc, l) => acc + l.quantity, 0)}</span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase">Pares</span>
+              </div>
+              <div className="flex flex-col gap-0.5 px-4">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Mapas Ativos</span>
+                <span className="text-2xl font-black text-emerald-600">{activeLots.length}</span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase">Mapas</span>
+              </div>
+              <div className="flex flex-col gap-0.5 pl-4">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Atrasos</span>
+                <span className="text-2xl font-black text-rose-500">{Object.values(sectorMetrics).reduce((acc, m) => acc + m.delayedCount, 0)}</span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase">Críticos</span>
+              </div>
             </div>
           </div>
 
@@ -1360,14 +1483,17 @@ export default function PCPView({
               {sectors.map((sector) => {
                 const metric = sectorMetrics[sector.id];
                 return (
-                  <button 
+                  <button
                     key={sector.id}
                     onClick={() => setSelectedSectorId(sector.id)}
                     title={`Ver detalhes do setor ${sector.name}`}
-                    className={`group relative p-8 rounded-[2.5rem] border-2 transition-all flex flex-col gap-6 text-left hover:scale-[1.02] active:scale-95 ${
-                      isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200 shadow-sm shadow-slate-200/50'
+                    className={`group relative p-8 rounded-[2.5rem] border-2 transition-all flex flex-col gap-6 text-left hover:scale-[1.02] active:scale-95 overflow-hidden ${
+                      isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white shadow-sm shadow-slate-200/50'
                     }`}
+                    style={{ borderColor: `${sector.color}45` }}
                   >
+                    {/* Colored top accent bar */}
+                    <div className="absolute top-0 left-0 right-0 h-1.5" style={{ backgroundColor: sector.color }} />
                     {/* Status Badges */}
                     <div className="absolute top-6 right-6 flex gap-2">
                       {metric?.delayedCount > 0 && (
@@ -1385,11 +1511,11 @@ export default function PCPView({
                     </div>
 
                     <div className="flex items-center gap-4">
-                      <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+                      <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-lg" style={{ backgroundColor: `${sector.color}22`, color: sector.color }}>
                         <Factory size={28} />
                       </div>
                       <div className="flex flex-col">
-                        <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 dark:text-white leading-tight">{sector.name}</h3>
+                        <h3 className="text-lg font-black uppercase tracking-wider leading-tight text-slate-900 dark:text-white">{sector.name}</h3>
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Setor de Produção</span>
                       </div>
                     </div>
@@ -1406,8 +1532,8 @@ export default function PCPView({
                     </div>
 
                     <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
-                      <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest group-hover:translate-x-1 transition-transform">Ver Detalhes</span>
-                      <ChevronRight size={16} className="text-indigo-600 dark:text-indigo-400" />
+                      <span className="text-[10px] font-black uppercase tracking-widest group-hover:translate-x-1 transition-transform" style={{ color: sector.color }}>Ver Detalhes</span>
+                      <ChevronRight size={16} style={{ color: sector.color }} />
                     </div>
                   </button>
                 );
@@ -1517,6 +1643,7 @@ export default function PCPView({
                   }}
                   onSaveLot={onSaveLot}
                   userName={userName}
+                  productionOrders={productionOrders}
                 />
               ) : (
                 <>
@@ -1668,8 +1795,12 @@ export default function PCPView({
                       </div>
                       
                       <div className="flex items-center gap-4 mb-5">
-                        <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/20 transition-colors">
-                          <Package size={24} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                        <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/20 transition-colors">
+                          {(variation?.photoUrl || product?.photoUrl) ? (
+                            <img src={variation?.photoUrl || product?.photoUrl} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <Package size={24} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                          )}
                         </div>
                         <div className="flex flex-col min-w-0">
                           <p className="text-sm font-black truncate text-slate-900 dark:text-white uppercase leading-tight">{product?.name || '---'}</p>
@@ -1746,7 +1877,11 @@ export default function PCPView({
                           <div className="flex gap-2">
                             <button
                               type="button"
-                              onClick={() => handleOpenOSModal(lot)}
+                              onClick={() => {
+                                setSelectedLot(lot);
+                                setSelectedSourceItemKeys(new Set());
+                                setIsDetailModalOpen(true);
+                              }}
                               className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all border ${
                                 isDarkMode
                                   ? 'bg-indigo-950/40 border-indigo-700/50 text-indigo-400 hover:bg-indigo-900/50'
@@ -1774,43 +1909,101 @@ export default function PCPView({
                           </div>
                         )}
 
-                        {/* Linha 2: Imprimir A4 + Etiqueta Térmica — sempre disponíveis */}
-                        <div className="flex gap-2">
+                        {/* Linha 2: Compartilhar — popup PDF/JPG */}
+                        <div className="relative">
                           <button
                             type="button"
-                            onClick={() => printLotSheet({
-                              lot,
-                              product,
-                              variationName: variation?.colorName,
-                              sectorName: sectors.find(s => s.id === selectedSectorId)?.name,
-                              os: cardOS || serviceOrders.find(so =>
-                                (so.lotId === lot.id || (so.lotIds && so.lotIds.includes(lot.id))) &&
-                                so.sectorId === selectedSectorId
-                              ) || null,
-                              productionConfigs,
-                            })}
-                            className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all border ${
+                            disabled={isShareExporting}
+                            onClick={() => setSharePopupLotId(sharePopupLotId === lot.id ? null : lot.id)}
+                            className={`w-full flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all border disabled:opacity-50 ${
                               isDarkMode
                                 ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
                                 : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                             }`}
                           >
-                            <Printer size={11}/> Imprimir A4
+                            {isShareExporting && sharePopupLotId === lot.id
+                              ? <span className="animate-spin text-sm leading-none">⏳</span>
+                              : <Share2 size={11}/>
+                            } Compartilhar
                           </button>
-                          {product && (
-                            <button
-                              type="button"
-                              onClick={() => setLabelModalProduct(product)}
-                              className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all border ${
-                                isDarkMode
-                                  ? 'bg-amber-950/30 border-amber-700/40 text-amber-400 hover:bg-amber-900/40'
-                                  : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
-                              }`}
-                            >
-                              <Tag size={11}/> Etiqueta
-                            </button>
+
+                          {sharePopupLotId === lot.id && (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={() => setSharePopupLotId(null)} />
+                              <div className={`absolute bottom-full left-0 mb-1.5 rounded-2xl shadow-2xl border z-50 p-2 flex flex-col gap-1 min-w-[190px] ${
+                                isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
+                              }`}>
+                                <p className={`text-[8px] font-black uppercase tracking-widest px-2 pb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Ficha Técnica</p>
+                                <button type="button" onClick={() => { setSharePopupLotId(null); handleShareLotSheet(lot, product, variation, cardOS, 'pdf', false); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'}`}>
+                                  <Share2 size={11} className="shrink-0" /> PDF — Impressão
+                                </button>
+                                <button type="button" onClick={() => { setSharePopupLotId(null); handleShareLotSheet(lot, product, variation, cardOS, 'jpg', false); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'}`}>
+                                  <Share2 size={11} className="shrink-0" /> JPG — Imagem
+                                </button>
+                                {cardOS && (
+                                  <>
+                                    <div className={`my-1 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`} />
+                                    <p className={`text-[8px] font-black uppercase tracking-widest px-2 pb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Ficha + OS</p>
+                                    <button type="button" onClick={() => { setSharePopupLotId(null); handleShareLotSheet(lot, product, variation, cardOS, 'pdf', true); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-emerald-400 hover:bg-slate-800' : 'text-emerald-600 hover:bg-emerald-50'}`}>
+                                      <Share2 size={11} className="shrink-0" /> PDF — Com OS
+                                    </button>
+                                    <button type="button" onClick={() => { setSharePopupLotId(null); handleShareLotSheet(lot, product, variation, cardOS, 'jpg', true); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-emerald-400 hover:bg-slate-800' : 'text-emerald-600 hover:bg-emerald-50'}`}>
+                                      <Share2 size={11} className="shrink-0" /> JPG — Com OS
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </>
                           )}
                         </div>
+
+                        {/* Linha 3: Baixar etiqueta */}
+                        {product && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setLabelModalProduct(product);
+                              setLabelModalLot(lot);
+                              // Build sizeGrid: lot.pairs first, then production order totals as fallback
+                              let sg = '';
+                              const pairsEntries = Object.entries(lot.pairs || {}).filter(([, q]) => q > 0);
+                              if (pairsEntries.length > 0) {
+                                sg = pairsEntries
+                                  .sort(([a], [b]) => Number(a) - Number(b))
+                                  .map(([sz, q]) => `${sz}x${q}`)
+                                  .join('-');
+                              } else {
+                                const sourceItems = (lot as any).metadata?.sourceItems ||
+                                  (lot.productionOrderId ? [{ orderId: lot.productionOrderId, itemIdx: 0 }] : []);
+                                const fallback: Record<string, number> = {};
+                                sourceItems.forEach((si: any) => {
+                                  const order = productionOrders.find(o => o.id === si.orderId);
+                                  if (!order) return;
+                                  const item = order.items[si.itemIdx ?? 0];
+                                  if (!item?.sizes) return;
+                                  Object.entries(item.sizes).forEach(([size, sd]: any) => {
+                                    const qty = sd.toProduction || sd.total || 0;
+                                    if (qty > 0) fallback[size] = (fallback[size] || 0) + qty;
+                                  });
+                                });
+                                if (Object.keys(fallback).length > 0) {
+                                  sg = Object.entries(fallback)
+                                    .sort(([a], [b]) => Number(a) - Number(b))
+                                    .map(([sz, q]) => `${sz}x${q}`)
+                                    .join('-');
+                                }
+                              }
+                              setLabelModalSizeGrid(sg);
+                            }}
+                            className={`w-full flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all border ${
+                              isDarkMode
+                                ? 'bg-amber-950/30 border-amber-700/40 text-amber-400 hover:bg-amber-900/40'
+                                : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
+                            }`}
+                          >
+                            <Tag size={11}/> Baixar Etiqueta
+                          </button>
+                        )}
                       </div>
                     </motion.div>
                   );
@@ -2594,7 +2787,7 @@ export default function PCPView({
       {/* Modal Detalhe / Apontamento */}
       <Modal
         isOpen={isDetailModalOpen}
-        onClose={() => setIsDetailModalOpen(false)}
+        onClose={() => { setIsDetailModalOpen(false); setSelectedSourceItemKeys(new Set()); }}
         title={selectedLot?.orderNumber || 'Detalhes do MAPA'}
         maxWidth="max-w-3xl"
       >
@@ -2677,149 +2870,316 @@ export default function PCPView({
               </div>
 
               {/* Linked Orders Section */}
-              {((selectedLot as any).metadata?.sourceItems?.length > 0 || selectedLot.productionOrderId) && (
-                <div className="flex flex-col gap-4">
-                  <div className="flex items-center justify-between px-1">
-                    <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Pedidos Vinculados</h4>
-                    <span className="text-[10px] font-black text-indigo-500 uppercase">{(selectedLot as any).metadata?.sourceItems?.length || 1} Pedidos</span>
-                  </div>
-                  
-                  <div className="flex flex-col gap-2">
-                    {(() => {
-                      const items = (selectedLot as any).metadata?.sourceItems || [
-                        { orderId: selectedLot.productionOrderId, qty: selectedLot.quantity }
-                      ];
-                      
-                      return items.map((si: any, idx: number) => {
+              {((selectedLot as any).metadata?.sourceItems?.length > 0 || selectedLot.productionOrderId) && (() => {
+                const sourceItems: any[] = (selectedLot as any).metadata?.sourceItems || [
+                  { orderId: selectedLot.productionOrderId, itemIdx: 0, qty: selectedLot.quantity }
+                ];
+
+                // OS ativas do lote no setor atual
+                const currentSectorId = selectedLot.route && selectedLot.route[selectedLot.currentSectorIndex];
+                const lotOSList = serviceOrders.filter(so =>
+                  (so.lotId === selectedLot.id || (so.lotIds && so.lotIds.includes(selectedLot.id))) &&
+                  so.sectorId === currentSectorId &&
+                  so.status === 'PENDING'
+                );
+                // Apenas OS com sourceOrderIds explícitos marcam o pedido como coberto
+                // OS sem sourceOrderIds (lote inteiro) não bloqueia seleção individual
+                const getOrderOS = (orderId: string) => lotOSList.find(so =>
+                  so.sourceOrderIds && so.sourceOrderIds.length > 0 && so.sourceOrderIds.includes(orderId)
+                );
+
+                // Apenas pedidos SEM OS podem ser selecionados ou contabilizados
+                const selectableItems = sourceItems.filter((si: any) => !getOrderOS(si.orderId));
+                const selectedItemsList = sourceItems.filter((si: any, idx: number) =>
+                  selectedSourceItemKeys.has(`${si.orderId}-${idx}`) && !getOrderOS(si.orderId)
+                );
+                const selectedQty = selectedItemsList.reduce((acc: number, si: any) => acc + (si.qty || 0), 0);
+                const allSelected = selectableItems.length > 0 && selectableItems.every((si: any) => {
+                  const idx = sourceItems.indexOf(si);
+                  return selectedSourceItemKeys.has(`${si.orderId}-${idx}`);
+                });
+
+                const computeSizeGrid = () => {
+                  const hasItemIdx = sourceItems[0]?.itemIdx !== undefined;
+                  if (!hasItemIdx || selectedItemsList[0]?.itemIdx === undefined) {
+                    if (!selectedLot.pairs) return '';
+                    return Object.entries(selectedLot.pairs)
+                      .filter(([, q]) => (q as number) > 0)
+                      .sort(([a], [b]) => Number(a) - Number(b))
+                      .map(([sz, q]) => `${sz}x${q}`)
+                      .join('-');
+                  }
+                  const sizeTotals: Record<string, number> = {};
+                  selectedItemsList.forEach((si: any) => {
+                    const order = productionOrders.find(o => o.id === si.orderId);
+                    if (!order) return;
+                    const item = order.items[si.itemIdx];
+                    if (!item?.sizes) return;
+                    Object.entries(item.sizes).forEach(([size, data]: [string, any]) => {
+                      sizeTotals[size] = (sizeTotals[size] || 0) + (data.toProduction || 0);
+                    });
+                  });
+                  return Object.entries(sizeTotals)
+                    .filter(([, q]) => q > 0)
+                    .sort(([a], [b]) => Number(a) - Number(b))
+                    .map(([sz, q]) => `${sz}x${q}`)
+                    .join('-');
+                };
+
+                return (
+                  <div className="flex flex-col gap-4">
+                    {/* Header with select-all (only selectable items) */}
+                    <div className="flex items-center justify-between px-1">
+                      <div className="flex items-center gap-2">
+                        {selectableItems.length > 0 && (
+                          <input
+                            type="checkbox"
+                            title="Selecionar todos os pedidos sem OS"
+                            checked={allSelected}
+                            onChange={() => {
+                              if (allSelected) {
+                                setSelectedSourceItemKeys(new Set());
+                              } else {
+                                const keys = new Set<string>();
+                                sourceItems.forEach((si: any, idx: number) => {
+                                  if (!getOrderOS(si.orderId)) keys.add(`${si.orderId}-${idx}`);
+                                });
+                                setSelectedSourceItemKeys(keys);
+                              }
+                            }}
+                            className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                          />
+                        )}
+                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Pedidos Vinculados</h4>
+                      </div>
+                      <span className="text-[10px] font-black text-indigo-500 uppercase">{sourceItems.length} Pedidos</span>
+                    </div>
+
+                    {/* Order cards */}
+                    <div className="flex flex-col gap-2">
+                      {sourceItems.map((si: any, idx: number) => {
                         const order = productionOrders.find(o => o.id === si.orderId);
+                        const key = `${si.orderId}-${idx}`;
+                        const isChecked = selectedSourceItemKeys.has(key);
+                        const orderOS = getOrderOS(si.orderId);
+                        const hasOS = !!orderOS;
                         return (
-                          <div key={idx} className={`p-4 rounded-2xl border flex items-center justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-                            <div className="min-w-0 pr-2">
+                          <div key={idx} className={`p-4 rounded-2xl border flex items-center gap-3 transition-all ${
+                            hasOS
+                              ? (isDarkMode ? 'bg-emerald-950/30 border-emerald-700/50' : 'bg-emerald-50 border-emerald-200')
+                              : isChecked
+                                ? (isDarkMode ? 'bg-indigo-950/30 border-indigo-700' : 'bg-indigo-50 border-indigo-200')
+                                : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm')
+                          }`}>
+                            {hasOS ? (
+                              <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
+                                <div className="w-2 h-2 rounded-full bg-white" />
+                              </div>
+                            ) : (
+                              <input
+                                type="checkbox"
+                                title="Selecionar pedido"
+                                checked={isChecked}
+                                onChange={() => {
+                                  const next = new Set(selectedSourceItemKeys);
+                                  if (isChecked) next.delete(key); else next.add(key);
+                                  setSelectedSourceItemKeys(next);
+                                }}
+                                className="w-4 h-4 accent-indigo-600 cursor-pointer shrink-0"
+                              />
+                            )}
+                            <div className="min-w-0 flex-1">
                               <p className="text-[11px] font-black uppercase truncate text-slate-800 dark:text-slate-200 leading-none mb-1">
                                 {order?.customerName || selectedLot.customerName || '---'}
                               </p>
                               <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Pedido {order?.saleOrderNumber || selectedLot.saleOrderNumber}</p>
+                              {hasOS && (
+                                <p className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mt-0.5">
+                                  {orderOS!.osNumber} • {orderOS!.providerName}
+                                </p>
+                              )}
                             </div>
-                            <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-2">
                               <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">{si.qty} P</span>
-                              {selectedLot.currentSectorIndex === 0 && !selectedLot.finishedAt && (
-                                <button 
-                                  onClick={() => handleRemoveItemFromLot(selectedLot, si.orderId)}
-                                  className="p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-300 hover:text-rose-500 transition-all"
-                                  title="Retirar do Mapa"
-                                >
-                                  <MinusCircle size={16} />
-                                </button>
-
-
+                              {hasOS ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleEditOS(orderOS!)}
+                                    className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-slate-400 hover:text-indigo-600 transition-all"
+                                    title="Editar OS"
+                                  >
+                                    <Edit2 size={13} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteOS(orderOS!)}
+                                    className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-300 hover:text-rose-500 transition-all"
+                                    title="Excluir OS"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </>
+                              ) : (
+                                selectedLot.currentSectorIndex === 0 && !selectedLot.finishedAt && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveItemFromLot(selectedLot, si.orderId)}
+                                    className="p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-300 hover:text-rose-500 transition-all"
+                                    title="Retirar do Mapa"
+                                  >
+                                    <MinusCircle size={16} />
+                                  </button>
+                                )
                               )}
                             </div>
                           </div>
                         );
-                      });
-                    })()}
-                  </div>
-                </div>
-              )}
+                      })}
+                    </div>
 
-              {!isFinished && (() => {
-                const currentSectorId = selectedLot.route && selectedLot.route[selectedLot.currentSectorIndex];
-                const activeOS = serviceOrders.find(so => 
-                  (so.lotId === selectedLot.id || (so.lotIds && so.lotIds.includes(selectedLot.id))) && 
-                  so.sectorId === currentSectorId && 
-                  so.status === 'PENDING'
-                );
-
-                return (
-                  <div className="flex flex-col gap-6">
-                    {/* OS Section */}
-                    {activeOS ? (
-                      <div className="p-6 rounded-[2rem] bg-indigo-50/50 dark:bg-indigo-950/20 border-2 border-indigo-500/20 flex flex-col gap-4">
-                        {/* OS header: icon + info */}
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25 shrink-0">
-                            <Hammer size={18} />
+                    {/* Action bar — shown when ≥1 order is selected */}
+                    {selectedQty > 0 && (
+                      <div className={`p-4 rounded-2xl border-2 flex flex-col sm:flex-row items-center gap-3 ${isDarkMode ? 'bg-indigo-950/20 border-indigo-700/50' : 'bg-indigo-50 border-indigo-200'}`}>
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                            <Tag size={13} />
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <h5 className="text-xs font-black text-indigo-950 dark:text-indigo-200 leading-none mb-1">
-                              OS Ativa: {activeOS.osNumber}
-                            </h5>
-                            <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest leading-none truncate">
-                              {activeOS.type === 'INTERNAL' ? 'Interna' : 'Terceirizada'} • {activeOS.providerName}
+                          <div>
+                            <p className="text-[10px] font-black text-indigo-700 dark:text-indigo-300 uppercase leading-none">
+                              {selectedItemsList.length} {selectedItemsList.length === 1 ? 'pedido' : 'pedidos'} selecionado{selectedItemsList.length > 1 ? 's' : ''}
                             </p>
+                            <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">{selectedQty} pares</p>
                           </div>
                         </div>
-
-                        {/* Action buttons — own row so never overflow on mobile */}
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
                           <button
                             type="button"
                             onClick={() => {
-                              const lot = selectedLot || (lots || []).find(l => l.id === activeOS.lotId);
-                              const nextSectorId = lot?.route && lot.route[(lot.currentSectorIndex ?? 0) + 1];
-                              const nextSec = (sectors || []).find(s => s.id === nextSectorId);
-                              setPrintOSData({ os: activeOS, nextSectorName: nextSec?.name || 'CONCLUÍDO' });
-                              setIsPrintOSModalOpen(true);
+                              if (!product) return;
+                              setLabelModalProduct(product);
+                              setLabelModalLot(null);
+                              setLabelModalSizeGrid(computeSizeGrid());
                             }}
-                            className="flex-1 text-[11px] font-black uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 py-2.5 rounded-xl transition-all text-center"
+                            className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
                           >
-                            Imprimir
+                            <Tag size={12} strokeWidth={3} /> Etiqueta
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleEditOS(activeOS)}
-                            className="flex-1 text-[11px] font-black uppercase text-indigo-600 bg-indigo-50 dark:bg-indigo-950/20 hover:bg-indigo-100 py-2.5 rounded-xl transition-all text-center"
+                            onClick={() => {
+                              setPendingOsSourceOrderIds(selectedItemsList.map((si: any) => si.orderId));
+                              handleOpenOSModal({ ...selectedLot, quantity: selectedQty } as any);
+                            }}
+                            className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-slate-600 hover:bg-slate-500' : 'bg-slate-700 hover:bg-slate-800'}`}
                           >
-                            Editar
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteOS(activeOS)}
-                            className="flex-1 text-[11px] font-black uppercase text-rose-500 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 py-2.5 rounded-xl transition-all text-center"
-                          >
-                            Excluir
+                            <Hammer size={12} strokeWidth={3} /> Emitir OS
                           </button>
                         </div>
-
-                        {/* Baixa Direta — acesso rápido sem abrir o modal de detalhe */}
-                        <button
-                          type="button"
-                          onClick={() => handleCompleteOS(activeOS)}
-                          className="w-full py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-[0.15em] shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-3 transition-all active:scale-95"
-                        >
-                          <CheckSquare size={16} /> Dar Baixa Direta
-                        </button>
-                        
-                        <div className="grid grid-cols-3 gap-3 bg-white dark:bg-slate-900/50 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-950 shadow-sm">
-                          <div className="flex flex-col">
-                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Pares</span>
-                            <span className="text-xs font-black text-slate-800 dark:text-slate-200">{activeOS.quantity} prs</span>
-                          </div>
-                          <div className="flex flex-col">
-                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Vlr / Par</span>
-                            <span className="text-xs font-black text-slate-800 dark:text-slate-200">R$ {activeOS.valuePerPair.toFixed(2)}</span>
-                          </div>
-                          <div className="flex flex-col">
-                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Total OS</span>
-                            <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">R$ {activeOS.totalValue.toFixed(2)}</span>
-                          </div>
-                        </div>
-
-                        {activeOS.notes && (
-                          <div className="p-3 bg-indigo-50/30 dark:bg-indigo-950/10 rounded-xl border border-indigo-100/50 dark:border-indigo-950/50 text-[10px] font-medium italic text-indigo-900/80 dark:text-indigo-300">
-                            Obs: {activeOS.notes}
-                          </div>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => handleCompleteOS(activeOS)}
-                          className="w-full py-5 rounded-[2rem] bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-600/25 flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-95"
-                        >
-                          <CheckSquare size={18} /> Concluir OS & Baixar Setor
-                        </button>
                       </div>
-                    ) : (
+                    )}
+                  </div>
+                );
+              })()}
+
+              {!isFinished && (() => {
+                const currentSectorId = selectedLot.route && selectedLot.route[selectedLot.currentSectorIndex];
+                const activeOSList = serviceOrders.filter(so =>
+                  (so.lotId === selectedLot.id || (so.lotIds && so.lotIds.includes(selectedLot.id))) &&
+                  so.sectorId === currentSectorId &&
+                  so.status === 'PENDING'
+                );
+                const hasActiveOS = activeOSList.length > 0;
+
+                return (
+                  <div className="flex flex-col gap-6">
+                    {/* Lista de OS ativas */}
+                    {hasActiveOS && (
+                      <div className="flex flex-col gap-4">
+                        <div className="flex items-center justify-between px-1">
+                          <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Ordens de Serviço Ativas</h4>
+                          <span className="text-[10px] font-black text-indigo-500 uppercase">{activeOSList.length} {activeOSList.length === 1 ? 'OS' : 'OS'}</span>
+                        </div>
+                        {activeOSList.map((os) => (
+                          <div key={os.id} className="p-6 rounded-[2rem] bg-indigo-50/50 dark:bg-indigo-950/20 border-2 border-indigo-500/20 flex flex-col gap-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25 shrink-0">
+                                <Hammer size={18} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h5 className="text-xs font-black text-indigo-950 dark:text-indigo-200 leading-none mb-1">
+                                  {os.osNumber}
+                                </h5>
+                                <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest leading-none truncate">
+                                  {os.type === 'INTERNAL' ? 'Interna' : 'Terceirizada'} • {os.providerName}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const nextSectorId = selectedLot?.route && selectedLot.route[(selectedLot.currentSectorIndex ?? 0) + 1];
+                                  const nextSec = (sectors || []).find(s => s.id === nextSectorId);
+                                  setPrintOSData({ os, nextSectorName: nextSec?.name || 'CONCLUÍDO' });
+                                  setIsPrintOSModalOpen(true);
+                                }}
+                                className="flex-1 text-[11px] font-black uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 py-2.5 rounded-xl transition-all text-center"
+                              >
+                                Imprimir
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleEditOS(os)}
+                                className="flex-1 text-[11px] font-black uppercase text-indigo-600 bg-indigo-50 dark:bg-indigo-950/20 hover:bg-indigo-100 py-2.5 rounded-xl transition-all text-center"
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteOS(os)}
+                                className="flex-1 text-[11px] font-black uppercase text-rose-500 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 py-2.5 rounded-xl transition-all text-center"
+                              >
+                                Excluir
+                              </button>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-3 bg-white dark:bg-slate-900/50 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-950 shadow-sm">
+                              <div className="flex flex-col">
+                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Pares</span>
+                                <span className="text-xs font-black text-slate-800 dark:text-slate-200">{os.quantity} prs</span>
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Vlr / Par</span>
+                                <span className="text-xs font-black text-slate-800 dark:text-slate-200">R$ {os.valuePerPair.toFixed(2)}</span>
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Total OS</span>
+                                <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">R$ {os.totalValue.toFixed(2)}</span>
+                              </div>
+                            </div>
+
+                            {os.notes && (
+                              <div className="p-3 bg-indigo-50/30 dark:bg-indigo-950/10 rounded-xl border border-indigo-100/50 dark:border-indigo-950/50 text-[10px] font-medium italic text-indigo-900/80 dark:text-indigo-300">
+                                Obs: {os.notes}
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => handleCompleteOS(os)}
+                              className="w-full py-5 rounded-[2rem] bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-600/25 flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-95"
+                            >
+                              <CheckSquare size={18} /> Concluir OS & Baixar Setor
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Sem OS — mostrar opção de emitir + apontamento */}
+                    {!hasActiveOS && (
                       <>
                         <div className="p-5 rounded-[2rem] bg-slate-50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
                           <div className="flex items-center gap-3">
@@ -2844,7 +3204,6 @@ export default function PCPView({
                           </button>
                         </div>
 
-                        {/* Standard Apontamento de Produção */}
                         <div className="flex flex-col gap-4">
                           <div className="flex items-center justify-between px-1">
                             <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Apontamento de Produção</h4>
@@ -2854,7 +3213,6 @@ export default function PCPView({
                               <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">{nextSector?.name || 'CONCLUÍDO'}</span>
                             </div>
                           </div>
-                          
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="flex flex-col gap-2">
                               <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Status / Operação</label>
@@ -3230,7 +3588,7 @@ export default function PCPView({
       {/* Service Order (OS) Creation Modal */}
       <Modal
         isOpen={isOSModalOpen}
-        onClose={() => { setIsOSModalOpen(false); setEditingOS(null); }}
+        onClose={() => { setIsOSModalOpen(false); setEditingOS(null); setPendingOsSourceOrderIds([]); }}
         title={editingOS ? `Editar OS ${editingOS.osNumber}` : "Emitir Ordem de Serviço (OS)"}
         maxWidth="max-w-2xl"
       >
@@ -3457,9 +3815,12 @@ export default function PCPView({
       {labelModalProduct && (
         <PrintLabelEditorModal
           isOpen={!!labelModalProduct}
-          onClose={() => setLabelModalProduct(null)}
+          onClose={() => { setLabelModalProduct(null); setLabelModalLot(null); setLabelModalSizeGrid(''); }}
           product={labelModalProduct}
           isDarkMode={isDarkMode}
+          grids={grids || []}
+          lot={labelModalLot ?? undefined}
+          sizeGridOverride={labelModalSizeGrid || undefined}
         />
       )}
 

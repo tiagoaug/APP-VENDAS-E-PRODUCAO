@@ -35,7 +35,41 @@ export const labelService = {
     }
   },
 
-  async printProductLabels(product: Product, variation?: Variation, sizes?: string[], quantities?: Record<string, number>, dimensions: [number, number] = [40, 30], layout?: LabelLayout, photoUrl?: string) {
+  renderGradePills(doc: jsPDF, sizeGrid: string, layout: LabelLayout) {
+    if (!layout.showGrade || layout.gradeX === undefined || layout.gradeY === undefined || layout.gradeW === undefined || layout.gradeH === undefined) return;
+    const entries = sizeGrid.split('-').map(tok => {
+      const [sz, qtyStr] = tok.split('x');
+      return { sz: sz || tok, qty: qtyStr ? parseInt(qtyStr) : null };
+    }).filter(e => e.sz);
+    if (entries.length === 0) return;
+    const hasQty  = entries.some(e => e.qty !== null);
+    const gX = layout.gradeX, gY = layout.gradeY, gW = layout.gradeW, gH = layout.gradeH;
+    const cellW = gW / entries.length;
+    const szFontSz  = Math.min(10, Math.max(3, gH * (hasQty ? 0.42 : 0.62) * 2.8346));
+    const qtyFontSz = Math.min(9,  Math.max(2, szFontSz * 0.90));
+    const szH = hasQty ? gH * 0.48 : gH * 0.70;
+    const pad = 0.4;
+    entries.forEach(({ sz, qty }, i) => {
+      const cellX = gX + cellW * i;
+      const cx = cellX + cellW / 2;
+      // Numeração: fundo preto + texto branco
+      doc.setFillColor(0, 0, 0);
+      doc.roundedRect(cellX + pad, gY + pad, cellW - pad * 2, szH, 0.5, 0.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(szFontSz);
+      doc.setTextColor(255, 255, 255);
+      doc.text(sz, cx, gY + szH * 0.72, { align: 'center' });
+      // Valor: texto preto simples
+      if (qty !== null) {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(qtyFontSz);
+        doc.setTextColor(0, 0, 0);
+        doc.text(`${qty}`, cx, gY + szH + (gH - szH) * 0.72, { align: 'center' });
+      }
+    });
+  },
+
+  async printProductLabels(product: Product, variation?: Variation, sizes?: string[], quantities?: Record<string, number>, dimensions: [number, number] = [40, 30], layout?: LabelLayout, photoUrl?: string, sizeGrid?: string) {
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -91,6 +125,18 @@ export const labelService = {
             try {
               doc.addImage(photoUrl, 'JPEG', activeLayout.photoX ?? 0, activeLayout.photoY ?? 0, activeLayout.photoW, activeLayout.photoH);
             } catch { /* foto inválida, ignora */ }
+          }
+
+          // Grade pills
+          if (sizeGrid) this.renderGradePills(doc, sizeGrid, activeLayout);
+
+          // OS Data
+          if (activeLayout.showOsData && activeLayout.osDataText && activeLayout.osDataX !== undefined && activeLayout.osDataY !== undefined) {
+            doc.setFontSize(activeLayout.osDataSize ?? 4);
+            doc.setFont('helvetica', 'normal');
+            doc.setTextColor(99, 102, 241);
+            doc.text(activeLayout.osDataText, activeLayout.osDataX, activeLayout.osDataY, { align: 'center' });
+            doc.setTextColor(0, 0, 0);
           }
         }
       }
@@ -173,7 +219,7 @@ export const labelService = {
     await sharePDF(doc, `Etiquetas_Solado_${mold.metadata?.moldReference || mold.id}.pdf`);
   },
 
-  async printWholesaleLabel(product: Product, variation: Variation, quantity: number = 1, dimensions: [number, number] = [40, 30], layout?: LabelLayout, photoUrl?: string) {
+  async printWholesaleLabel(product: Product, variation: Variation, quantity: number = 1, dimensions: [number, number] = [40, 30], layout?: LabelLayout, photoUrl?: string, sizeGrid?: string) {
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -216,6 +262,18 @@ export const labelService = {
         try {
           doc.addImage(photoUrl, 'JPEG', activeLayout.photoX ?? 0, activeLayout.photoY ?? 0, activeLayout.photoW, activeLayout.photoH);
         } catch { /* foto inválida, ignora */ }
+      }
+
+      // Grade pills
+      if (sizeGrid) this.renderGradePills(doc, sizeGrid, activeLayout);
+
+      // OS Data
+      if (activeLayout.showOsData && activeLayout.osDataText && activeLayout.osDataX !== undefined && activeLayout.osDataY !== undefined) {
+        doc.setFontSize(activeLayout.osDataSize ?? 4);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(99, 102, 241);
+        doc.text(activeLayout.osDataText, activeLayout.osDataX, activeLayout.osDataY, { align: 'center' });
+        doc.setTextColor(0, 0, 0);
       }
     }
 

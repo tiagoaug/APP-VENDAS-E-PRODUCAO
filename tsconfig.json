@@ -25,5 +25,5 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "exclude": ["fix_form.js"]
+  "exclude": ["node_modules", "brain", "scratch", "dist", "fix_form.js"]
 }

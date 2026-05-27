@@ -3436,7 +3436,7 @@ export default function App() {
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 1.02 }}
             transition={{ duration: 0.15 }}
-            className="p-6 min-h-full"
+            className="px-3 py-5 min-h-full"
           >
             {renderView(lastNonModalView)}
           </motion.div>

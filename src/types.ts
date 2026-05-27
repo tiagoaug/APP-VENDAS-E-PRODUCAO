@@ -20,6 +20,18 @@ export interface LabelLayout {
   photoY?: number;
   photoW?: number;
   photoH?: number;
+  showGrade?: boolean;
+  gradeX?: number;
+  gradeY?: number;
+  gradeW?: number;
+  gradeH?: number;
+  showOsData?: boolean;
+  osDataX?: number;
+  osDataY?: number;
+  osDataW?: number;
+  osDataH?: number;
+  osDataSize?: number;
+  osDataText?: string;
 }
 
 export enum SaleType {
@@ -676,6 +688,7 @@ export interface ServiceOrder {
   transactionId?: string; // Reference to financial transaction
   createdAt: number;
   finishedAt?: number;
+  sourceOrderIds?: string[]; // Order IDs covered by this OS (for per-order OS tracking)
   // Print extras
   productPhotoUrl?: string; // URL of the product/variation photo for label printing
   sizeGrid?: string;        // Human-readable size range, e.g. "37-38-39-40-41"

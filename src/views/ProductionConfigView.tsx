@@ -936,6 +936,7 @@ export default function ProductionConfigView({
         isOpen={currentScreen === 'INSUMOS'}
         onClose={() => setCurrentScreen('MENU')}
         title="Catálogo de Insumos"
+        icon={<Package size={20} />}
         zIndex={60000}
       >
         <GenericConfigList
@@ -1531,26 +1532,17 @@ function GenericConfigList({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className={`p-6 rounded-[3rem] shadow-xl flex flex-col gap-5 relative overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
-        <div className="flex items-center gap-4">
-          {onBack && (
-            <button
-              onClick={onBack}
-              title="Voltar"
-              aria-label="Voltar para a tela anterior"
-              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 border border-slate-100 hover:text-slate-700'}`}
-            >
-              <ChevronLeft size={18} />
-            </button>
-          )}
-          <div className="flex items-center gap-3">
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
-              {icon}
-            </div>
-            <span className={`text-sm font-black uppercase tracking-[0.15em] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{label}</span>
-          </div>
-        </div>
-
+      <div className={`p-6 rounded-[3rem] shadow-xl flex items-center gap-3 relative overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+        {onBack && (
+          <button
+            onClick={onBack}
+            title="Voltar"
+            aria-label="Voltar para a tela anterior"
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-white' : 'bg-slate-50 text-slate-400 border border-slate-100 hover:text-slate-700'}`}
+          >
+            <ChevronLeft size={18} />
+          </button>
+        )}
         <button
           onClick={() => {
             setEditingItem({
@@ -1570,8 +1562,7 @@ function GenericConfigList({
           }}
           title={`Adicionar Novo Registro em ${label}`}
           aria-label={`Adicionar novo registro na categoria ${label}`}
-          className={`w-full py-4 px-6 rounded-[2rem] flex items-center gap-4 transition-all shadow-lg active:scale-[0.98] ${isDarkMode ? 'bg-indigo-600 text-white shadow-indigo-900/40' : 'bg-indigo-600 text-white shadow-indigo-200/80'
-            }`}
+          className={`flex-1 py-4 px-6 rounded-[2rem] flex items-center gap-4 transition-all shadow-lg active:scale-[0.98] ${isDarkMode ? 'bg-indigo-600 text-white shadow-indigo-900/40' : 'bg-indigo-600 text-white shadow-indigo-200/80'}`}
         >
           <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center shrink-0">
             <Plus size={20} strokeWidth={3} />
@@ -1599,18 +1590,41 @@ function GenericConfigList({
 
       <div className="flex flex-col gap-8">
         {type === 'MATERIAL' ? (
-          Object.entries(groupedItems || {}).map(([category, catItems]: [string, ProductionConfigItem[]]) => (
-            <div key={category} className="flex flex-col gap-4">
-              <div className="flex items-center gap-3 px-2">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white border border-slate-100 shadow-sm text-slate-500'}`}>
-                  <Tags size={18} />
+          Object.entries(groupedItems || {}).map(([category, catItems]: [string, ProductionConfigItem[]], catIdx) => {
+            const catPalette = [
+              { bg: '#6366f1', light: '#eef2ff', border: '#c7d2fe' },
+              { bg: '#8b5cf6', light: '#f5f3ff', border: '#ddd6fe' },
+              { bg: '#10b981', light: '#ecfdf5', border: '#a7f3d0' },
+              { bg: '#f59e0b', light: '#fffbeb', border: '#fde68a' },
+              { bg: '#ef4444', light: '#fef2f2', border: '#fecaca' },
+              { bg: '#0ea5e9', light: '#f0f9ff', border: '#bae6fd' },
+            ];
+            const pal = catPalette[catIdx % catPalette.length];
+            const alertCount = catItems.filter(i => {
+              const stock = i.metadata?.currentStock ?? 0;
+              const minStock = i.metadata?.minStock ?? 0;
+              return stock < minStock;
+            }).length;
+            return (
+            <div key={category} className="flex flex-col gap-3">
+              <div
+                className="flex items-center gap-4 px-4 py-3 rounded-2xl border"
+                style={{ backgroundColor: isDarkMode ? `${pal.bg}18` : pal.light, borderColor: isDarkMode ? `${pal.bg}40` : pal.border }}
+              >
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: pal.bg }}>
+                  <Tags size={16} color="#fff" />
                 </div>
-                <div>
-                  <h4 className={`text-[10px] font-black uppercase tracking-[0.2em] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{category}</h4>
-                  <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest leading-none mt-1">{catItems.length} ITENS CADASTRADOS</p>
+                <div className="flex-1">
+                  <h4 className={`text-xs font-black uppercase tracking-[0.2em] leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{category}</h4>
+                  <p className="text-[9px] font-bold uppercase tracking-widest leading-none mt-0.5" style={{ color: `${pal.bg}99` }}>{catItems.length} {catItems.length === 1 ? 'ITEM' : 'ITENS'} CADASTRADO{catItems.length !== 1 ? 'S' : ''}</p>
                 </div>
+                {alertCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest text-white" style={{ backgroundColor: '#ef4444' }}>
+                    {alertCount} ALERTA{alertCount > 1 ? 'S' : ''}
+                  </span>
+                )}
               </div>
-              <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3 pl-2 border-l-2" style={{ borderColor: `${pal.bg}40` }}>
                 {catItems.map(item => (
                   <MaterialCard
                     key={item.id}
@@ -1625,7 +1639,8 @@ function GenericConfigList({
                 ))}
               </div>
             </div>
-          ))
+            );
+          })
         ) : (
           filteredItems.map((item) => (
             type === 'MOLD' ? (
@@ -2863,102 +2878,146 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ne
   need?: number,
   key?: React.Key
 }) {
+  const [expanded, setExpanded] = useState(false);
   const flowTag = flowTags.find(t => t.id === item.metadata?.flowTagId);
   const supplier = people.find(p => p.id === item.metadata?.supplierId);
 
-  const { totalWeight, yieldVal } = useMemo(() => {
+  const { yieldVal } = useMemo(() => {
     const weights = Object.values(item.metadata?.sizeWeights || {}) as number[];
     const activeWeights = weights.filter(w => w > 0);
     const total = activeWeights.reduce((a, b) => a + b, 0);
     return { totalWeight: total, yieldVal: total > 0 ? 1000 / total : 0 };
   }, [item.metadata]);
 
+  const stock = item.metadata?.stock || 0;
+  const minStock = item.metadata?.minStock || 0;
+  const isLowStock = stock < minStock;
+  const hasPendingNeed = need > 0;
+  const hasAlert = isLowStock || hasPendingNeed;
+
   return (
-    <div className={`p-6 rounded-[2rem] border flex flex-col gap-6 relative transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-      <div className="flex items-start justify-between">
-        <div className="flex flex-col gap-1">
-          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{item.metadata?.reference || 'S/ REF'}</span>
-          <h5 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.name}</h5>
-          <div className="flex flex-col gap-1 mt-1">
-            <div className="flex items-center gap-2">
-              <PackageOpen size={12} className="text-slate-400" />
-              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{flowTag?.name || 'ESTÁGIO NÃO DEF.'}</span>
+    <div className={`rounded-2xl border overflow-hidden transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+
+      {/* ── Row (always visible) ── */}
+      <button
+        type="button"
+        onClick={() => setExpanded(e => !e)}
+        className={`w-full flex items-center gap-3 px-4 py-3.5 text-left transition-colors ${isDarkMode ? 'hover:bg-slate-800/60' : 'hover:bg-slate-50'}`}
+      >
+        {/* Icon */}
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+          <PackageOpen size={16} className={hasAlert ? 'text-rose-400' : 'text-slate-400'} />
+        </div>
+
+        {/* Name + ref */}
+        <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+          <span className={`text-[11px] font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.name}</span>
+          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{item.metadata?.reference || 'S/ REF'} · {item.metadata?.masterCategory || 'GERAL'}</span>
+        </div>
+
+        {/* Stock value */}
+        <div className="flex flex-col items-end shrink-0 mr-1">
+          <span className={`text-sm font-black ${isLowStock ? 'text-rose-500' : isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+            {stock.toLocaleString('pt-BR')}
+          </span>
+          <span className="text-[8px] font-bold text-slate-400 uppercase">{item.metadata?.unit || 'UN'}</span>
+        </div>
+
+        {/* Alert badges */}
+        <div className="flex flex-col gap-1 shrink-0">
+          {isLowStock && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-500 text-white text-[8px] font-black uppercase">
+              <AlertTriangle size={8} strokeWidth={3} /> Baixo
+            </span>
+          )}
+          {hasPendingNeed && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-400 text-white text-[8px] font-black uppercase">
+              <Sparkles size={8} /> Prod.
+            </span>
+          )}
+        </div>
+
+        {/* Chevron */}
+        <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      </button>
+
+      {/* ── Expanded details ── */}
+      {expanded && (
+        <div className={`px-4 pb-4 flex flex-col gap-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+
+          {/* Stage + supplier */}
+          <div className="flex items-center gap-4 pt-3">
+            <div className="flex items-center gap-1.5">
+              <PackageOpen size={11} className="text-slate-400" />
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{flowTag?.name || 'Estágio não def.'}</span>
             </div>
             {supplier && (
-              <div className="flex items-center gap-2">
-                <Users size={12} className="text-slate-400" />
-                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{supplier.name}</span>
+              <div className="flex items-center gap-1.5">
+                <Users size={11} className="text-slate-400" />
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{supplier.name}</span>
               </div>
             )}
           </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <button onClick={onEdit} title="Editar Material" aria-label={`Editar material ${item.name}`} className="p-2 text-slate-300 hover:text-indigo-500 transition-colors"><Edit3 size={16} /></button>
-          <button onClick={onDelete} title="Excluir Material" aria-label={`Excluir material ${item.name}`} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
-        </div>
-      </div>
 
-      <div className="flex flex-col gap-1">
-        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Custo Base</span>
-        <div className="flex items-baseline gap-1">
-          <span className="text-sm font-black text-emerald-500">R$</span>
-          <span className="text-xl font-black text-emerald-500">{(item.metadata?.baseCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div className={`p-4 rounded-2xl flex flex-col gap-1 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50'}`}>
-          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Estoque Atual</span>
-          <div className="flex items-baseline gap-1">
-            <span className={`text-lg font-black ${(item.metadata?.stock || 0) < (item.metadata?.minStock || 0) ? 'text-red-500' : 'text-slate-600 dark:text-slate-300'}`}>
-              {(item.metadata?.stock || 0).toLocaleString('pt-BR')}
-            </span>
-            <span className="text-[9px] font-black text-slate-400 uppercase">{item.metadata?.unit || 'UN'}</span>
-          </div>
-          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-1">MÍNIMO: {item.metadata?.minStock || 0}</p>
-        </div>
-
-        <div className={`p-4 rounded-2xl flex flex-col gap-1 ${need > 0 ? (isDarkMode ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-amber-50 border border-amber-100') : (isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50')}`}>
-          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Necessidade Prod.</span>
-          <div className="flex items-baseline gap-1">
-            <span className={`text-lg font-black ${need > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
-              {need.toLocaleString('pt-BR')}
-            </span>
-            <span className="text-[9px] font-black text-slate-400 uppercase">{item.metadata?.unit || 'UN'}</span>
-          </div>
-          {need > 0 && (
-            <div className="flex items-center gap-1 mt-1">
-              <Sparkles size={10} className="text-amber-500" />
-              <span className="text-[8px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest">Aguardando Produção</span>
+          {/* Custo + rendimento */}
+          <div className="flex items-center gap-4">
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Custo Base</span>
+              <div className="flex items-baseline gap-0.5">
+                <span className="text-xs font-black text-emerald-500">R$</span>
+                <span className="text-lg font-black text-emerald-500">{(item.metadata?.baseCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+              </div>
             </div>
-          )}
-        </div>
-      </div>
+            {yieldVal > 0 && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                <Hash size={10} className="text-emerald-500" />
+                <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase">{yieldVal.toFixed(2)} prs / {item.metadata?.unit || 'UN'}</span>
+              </div>
+            )}
+          </div>
 
-      <div className="flex items-center justify-between mt-2 pt-4 border-t border-slate-100 dark:border-slate-800/50">
-        <div className="flex flex-col gap-2">
-          <div className="flex gap-2">
-            <div className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[8px] font-black uppercase tracking-widest">
-              {item.metadata?.masterCategory || 'GERAL'}
+          {/* Stock + need */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className={`p-3 rounded-xl flex flex-col gap-0.5 ${isLowStock ? (isDarkMode ? 'bg-rose-500/10 border border-rose-500/20' : 'bg-rose-50 border border-rose-100') : (isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50')}`}>
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Estoque Atual</span>
+              <div className="flex items-baseline gap-1">
+                <span className={`text-base font-black ${isLowStock ? 'text-rose-500' : isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{stock.toLocaleString('pt-BR')}</span>
+                <span className="text-[8px] font-bold text-slate-400 uppercase">{item.metadata?.unit || 'UN'}</span>
+              </div>
+              <span className="text-[8px] font-bold text-slate-400 uppercase">Mín: {minStock}</span>
+              {isLowStock && <span className="text-[8px] font-black text-rose-500 uppercase mt-0.5">⚠ Estoque Baixo</span>}
+            </div>
+
+            <div className={`p-3 rounded-xl flex flex-col gap-0.5 ${hasPendingNeed ? (isDarkMode ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-amber-50 border border-amber-100') : (isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50')}`}>
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Necessidade Prod.</span>
+              <div className="flex items-baseline gap-1">
+                <span className={`text-base font-black ${hasPendingNeed ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>{need.toLocaleString('pt-BR')}</span>
+                <span className="text-[8px] font-bold text-slate-400 uppercase">{item.metadata?.unit || 'UN'}</span>
+              </div>
+              {hasPendingNeed && (
+                <div className="flex items-center gap-1 mt-0.5">
+                  <Sparkles size={9} className="text-amber-500" />
+                  <span className="text-[8px] font-black text-amber-600 dark:text-amber-400 uppercase">Aguardando Prod.</span>
+                </div>
+              )}
             </div>
           </div>
-          {yieldVal > 0 && (
-            <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-              <Hash size={10} className="text-emerald-500" />
-              <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase">
-                {yieldVal.toFixed(2)} PRS / {item.metadata?.unit || 'UN'}
-              </span>
+
+          {/* Cores + actions */}
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-[9px] font-bold text-slate-400 uppercase">Cores: {item.metadata?.colorIds?.length || 0}</span>
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 dark:text-indigo-400 hover:bg-indigo-100 transition-colors">
+                <Edit3 size={11} /> Editar
+              </button>
+              <button type="button" onClick={(e) => { e.stopPropagation(); onDelete(); }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide text-rose-500 bg-rose-50 dark:bg-rose-900/20 hover:bg-rose-100 transition-colors">
+                <Trash2 size={11} /> Excluir
+              </button>
             </div>
-          )}
-        </div>
-        <div className="flex flex-col items-end gap-1">
-          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Cores: {item.metadata?.colorIds?.length || 0}</span>
-          <div className="flex items-baseline gap-1">
-            <span className="text-[8px] font-black text-emerald-500">R$</span>
-            <span className="text-sm font-black text-emerald-500">{(item.metadata?.baseCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
           </div>
+
         </div>
-      </div>
+      )}
     </div>
   );
 }
