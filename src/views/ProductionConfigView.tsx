@@ -76,7 +76,8 @@ import {
   Sparkles,
   RefreshCw,
   Settings,
-  Percent
+  Percent,
+  AlertTriangle
 } from 'lucide-react';
 import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, ProductionScreenType, ViewType, Product, SoleStockEntry, ProductionLot } from '../types';
 import Modal from '../components/Modal';
@@ -194,6 +195,8 @@ function PecasConfig({
   const [pecas, setPecas] = useState<ProductionConfigItem[]>(pecasExistentes);
   const [novoNome, setNovoNome] = useState('');
   const [tipoSelecionado, setTipoSelecionado] = useState<'ENTRADA' | 'PECA'>('PECA');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
 
   useEffect(() => {
     setPecas(productionConfigs.filter(c => c.type === 'PIECE'));
@@ -219,6 +222,14 @@ function PecasConfig({
     setPecas(pecas.filter(p => p.id !== id));
   };
 
+  const salvarEdicao = async (p: ProductionConfigItem) => {
+    if (!editingName.trim()) return;
+    const updated = { ...p, name: editingName.trim() };
+    await onSave(updated);
+    setPecas(pecas.map(x => x.id === p.id ? updated : x));
+    setEditingId(null);
+  };
+
   const entradas = pecas.filter(p => p.metadata?.pieceType === 'ENTRADA');
   const pecasLista = pecas.filter(p => p.metadata?.pieceType === 'PECA');
 
@@ -234,75 +245,102 @@ function PecasConfig({
       </div>
 
       <div className={`rounded-2xl border-2 p-4 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-        <div className="flex gap-3 mb-4">
-          <select
-            value={tipoSelecionado}
-            onChange={(e) => setTipoSelecionado(e.target.value as 'ENTRADA' | 'PECA')}
-            className={`px-4 py-3 rounded-xl border-2 text-sm font-bold outline-none ${isDarkMode ? 'bg-slate-900 border-slate-600 text-white' : 'bg-white border-slate-300 text-slate-900'}`}
-          >
-            <option value="ENTRADA">Entrada</option>
-            <option value="PECA">Peça</option>
-          </select>
-          <input
-            type="text"
-            value={novoNome}
-            onChange={(e) => setNovoNome(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && adicionarPeca()}
-            placeholder="Nome da peça..."
-            className={`flex-1 px-4 py-3 rounded-xl border-2 text-sm font-bold outline-none ${isDarkMode ? 'bg-slate-900 border-slate-600 text-white placeholder-slate-500' : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'}`}
-          />
+        <div className="flex flex-col gap-2 mb-4">
+          {/* Linha 1: tipo + nome */}
+          <div className="flex gap-2">
+            <select
+              value={tipoSelecionado}
+              onChange={(e) => setTipoSelecionado(e.target.value as 'ENTRADA' | 'PECA')}
+              title="Tipo de item"
+              aria-label="Tipo de item"
+              className={`px-3 py-3 rounded-xl border-2 text-sm font-bold outline-none shrink-0 ${isDarkMode ? 'bg-slate-900 border-slate-600 text-white' : 'bg-white border-slate-300 text-slate-900'}`}
+            >
+              <option value="ENTRADA">Entrada</option>
+              <option value="PECA">Peça</option>
+            </select>
+            <input
+              type="text"
+              value={novoNome}
+              onChange={(e) => setNovoNome(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && adicionarPeca()}
+              placeholder="Nome da peça..."
+              className={`flex-1 min-w-0 px-4 py-3 rounded-xl border-2 text-sm font-bold outline-none ${isDarkMode ? 'bg-slate-900 border-slate-600 text-white placeholder-slate-500' : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400'}`}
+            />
+          </div>
+          {/* Linha 2: botão adicionar */}
           <button
+            type="button"
             onClick={adicionarPeca}
-            className="px-6 py-3 bg-emerald-500 text-white rounded-xl font-bold text-sm hover:bg-emerald-600 transition-colors"
+            className="w-full py-3 bg-emerald-500 text-white rounded-xl font-bold text-sm hover:bg-emerald-600 active:scale-95 transition-all flex items-center justify-center gap-2"
           >
-            <Plus size={20} />
+            <Plus size={18} />
+            Adicionar
           </button>
         </div>
       </div>
 
-      {entradas.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <h3 className={`text-xs font-black tracking-[0.2em] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Entradas</h3>
-          <div className="flex flex-wrap gap-2">
-            {entradas.map(p => (
+      {[
+        { label: 'Entradas', list: entradas, color: 'indigo' },
+        { label: 'Peças', list: pecasLista, color: 'violet' },
+      ].map(({ label, list, color }) => list.length > 0 && (
+        <div key={label} className="flex flex-col gap-2">
+          <h3 className={`text-[10px] font-black tracking-[0.2em] uppercase px-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{label}</h3>
+          <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+            {list.map((p, idx) => (
               <div
                 key={p.id}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
+                className={`flex items-center gap-3 px-4 py-3 transition-colors ${
+                  idx !== list.length - 1 ? (isDarkMode ? 'border-b border-slate-700/60' : 'border-b border-slate-100') : ''
+                } ${isDarkMode ? 'bg-slate-800/60' : 'bg-white'}`}
               >
-                <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{p.name}</span>
-                <button
-                  onClick={() => removerPeca(p.id)}
-                  className="text-rose-500 hover:text-rose-600"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+                <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-lg shrink-0 ${
+                  color === 'indigo'
+                    ? 'bg-indigo-50 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400'
+                    : 'bg-violet-50 text-violet-500 dark:bg-violet-900/30 dark:text-violet-400'
+                }`}>{label.slice(0, -1)}</span>
 
-      {pecasLista.length > 0 && (
-        <div className="flex flex-col gap-3">
-          <h3 className={`text-xs font-black tracking-[0.2em] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Peças</h3>
-          <div className="flex flex-wrap gap-2">
-            {pecasLista.map(p => (
-              <div
-                key={p.id}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}
-              >
-                <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{p.name}</span>
-                <button
-                  onClick={() => removerPeca(p.id)}
-                  className="text-rose-500 hover:text-rose-600"
-                >
-                  <X size={16} />
-                </button>
+                {editingId === p.id ? (
+                  <input
+                    autoFocus
+                    type="text"
+                    title="Editar nome"
+                    aria-label="Editar nome"
+                    placeholder="Nome..."
+                    value={editingName}
+                    onChange={e => setEditingName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') salvarEdicao(p); if (e.key === 'Escape') setEditingId(null); }}
+                    className={`flex-1 min-w-0 px-2 py-1 rounded-lg border text-sm font-bold outline-none ${isDarkMode ? 'bg-slate-900 border-slate-600 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'}`}
+                  />
+                ) : (
+                  <span className={`flex-1 min-w-0 text-sm font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{p.name}</span>
+                )}
+
+                <div className="flex items-center gap-1 shrink-0">
+                  {editingId === p.id ? (
+                    <>
+                      <button type="button" onClick={() => salvarEdicao(p)} className="w-8 h-8 rounded-lg flex items-center justify-center bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 hover:bg-emerald-100 transition-colors" title="Salvar">
+                        <Check size={15} strokeWidth={3} />
+                      </button>
+                      <button type="button" onClick={() => setEditingId(null)} className="w-8 h-8 rounded-lg flex items-center justify-center bg-slate-100 dark:bg-slate-700 text-slate-400 hover:bg-slate-200 transition-colors" title="Cancelar">
+                        <X size={15} strokeWidth={2.5} />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button type="button" onClick={() => { setEditingId(p.id); setEditingName(p.name); }} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:bg-indigo-50 hover:text-indigo-500 dark:hover:bg-indigo-900/20 transition-colors" title="Editar">
+                        <Edit3 size={14} />
+                      </button>
+                      <button type="button" onClick={() => removerPeca(p.id)} className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-300 dark:text-slate-600 hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-900/20 transition-colors" title="Excluir">
+                        <Trash2 size={14} />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             ))}
           </div>
         </div>
-      )}
+      ))}
 
       {pecas.length === 0 && (
         <div className={`text-center py-8 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>

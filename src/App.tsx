@@ -5,11 +5,8 @@ import {
   ShoppingCart,
   ShoppingBag,
   ArrowLeft,
-  Plus,
   Settings,
   DollarSign,
-  LogOut,
-  LogIn,
   Shield,
   Moon,
   Users,
@@ -34,7 +31,7 @@ import {
   Printer
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { auth, db, signInWithGoogle, logout } from "./lib/firebase";
+import { auth, db, logout } from "./lib/firebase";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { doc, collection, query, where, getDocs } from "firebase/firestore";
 import { firebaseService } from "./services/firebaseService";
@@ -49,8 +46,6 @@ import {
   Grid,
   Person,
   Category,
-  CategoryType,
-  ProductStatus,
   ColorValue,
   PaymentMethod,
   SaleStatus,
@@ -64,7 +59,6 @@ import {
   FamilyMember,
   Budget,
   DashboardConfig,
-  DashboardCardConfig,
   FlowTag,
   Sector,
   ProductionConfigItem,
@@ -79,18 +73,6 @@ import {
   PurchaseRequest,
   ServiceOrder,
 } from "./types";
-import {
-  MOCK_PRODUCTS,
-  MOCK_PURCHASES,
-  MOCK_SALES,
-  MOCK_TRANSACTIONS,
-  MOCK_ACCOUNTS,
-  MOCK_GRIDS,
-  MOCK_PEOPLE,
-  MOCK_CATEGORIES,
-  MOCK_COLORS,
-  MOCK_PAYMENT_METHODS,
-} from "./constants";
 
 // Views
 import DashboardView from "./views/DashboardView";
@@ -118,7 +100,6 @@ import PersonDetailView from "./views/PersonDetailView";
 import LoginView from "./views/LoginView";
 import DashboardConfigView from "./views/DashboardConfigView";
 import ProductionConfigView from "./views/ProductionConfigView";
-import ProductSheetMenuView from "./views/ProductSheetMenuView";
 import PersonalFinancialView from "./views/PersonalFinancialView";
 import ModuleConfigView from "./views/ModuleConfigView";
 import ManualView from "./views/ManualView";
@@ -256,7 +237,7 @@ export default function App() {
   const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
   
   const suppliers = useMemo(() => people.filter(p => p.isSupplier), [people]);
-  const buyers = useMemo(() => people.filter(p => p.isBuyer || p.isPersonal), [people]);
+
 
   const defaultDashboardConfig: DashboardConfig = {
     cards: [
@@ -702,35 +683,77 @@ export default function App() {
   };
 
   const handleResetDatabase = async () => {
-    // Apaga todas as coleções do App (produtos, vendas, transações, etc)
     try {
       const collectionsToClear = [
         { name: "transactions", items: transactions },
         { name: "purchases", items: purchases },
         { name: "sales", items: sales },
         { name: "products", items: products },
-        { name: "grds", items: grids }, // Note: the collection is "grids", wait, let me check the array... items: grids -> so maybe "grids". 
+        { name: "productionLots", items: productionLots },
+        { name: "grids", items: grids },
         { name: "people", items: people },
         { name: "categories", items: categories },
         { name: "colors", items: colors },
         { name: "accounts", items: accounts },
         { name: "paymentMethods", items: paymentMethods },
       ];
-
       for (const col of collectionsToClear) {
-        // We use the actual collection name expected by firebaseService
-        let colName = col.name; 
-        if (colName === "grds") colName = "grids";
-
         for (const item of col.items) {
-          if (item.id) {
-            await firebaseService.deleteDocument(colName, item.id);
-          }
+          if (item.id) await firebaseService.deleteDocument(col.name, item.id);
         }
       }
     } catch (e) {
       console.error("Error resetting database:", e);
       throw e;
+    }
+  };
+
+  const handleSelectiveDelete = async (categories: string[]) => {
+    for (const cat of categories) {
+      switch (cat) {
+        case 'GRADES':
+          for (const item of grids) await firebaseService.deleteDocument('grids', item.id);
+          break;
+        case 'CORES':
+          for (const item of colors) await firebaseService.deleteDocument('colors', item.id);
+          break;
+        case 'SETORES':
+          for (const item of sectors) await firebaseService.deleteDocument('sectors', item.id);
+          break;
+        case 'ETAPAS':
+          for (const item of flowTags) await firebaseService.deleteDocument('flowTags', item.id);
+          break;
+        case 'UNIDADES':
+          for (const item of productionConfigs.filter(c => c.type === 'UNIT'))
+            await firebaseService.deleteDocument('productionConfigs', item.id);
+          break;
+        case 'PRAZOS':
+          for (const item of productionConfigs.filter(c => c.type === 'DEADLINE'))
+            await firebaseService.deleteDocument('productionConfigs', item.id);
+          break;
+        case 'INFESTO':
+          for (const item of productionConfigs.filter(c => c.type === 'INFESTO'))
+            await firebaseService.deleteDocument('productionConfigs', item.id);
+          break;
+        case 'EMBALAGENS':
+          for (const item of productionConfigs.filter(c => c.type === 'PACKAGING'))
+            await firebaseService.deleteDocument('productionConfigs', item.id);
+          break;
+        case 'SOLADOS':
+          for (const item of productionConfigs.filter(c => c.type === 'MOLD'))
+            await firebaseService.deleteDocument('productionConfigs', item.id);
+          for (const item of soleStockEntries)
+            await firebaseService.deleteDocument('soleStock', item.id);
+          break;
+        case 'PECAS':
+          for (const item of productionConfigs.filter(c => c.type === 'PIECE'))
+            await firebaseService.deleteDocument('productionConfigs', item.id);
+          break;
+        case 'INSUMOS':
+          for (const item of productionConfigs.filter(c => c.type === 'MATERIAL'))
+            await firebaseService.deleteDocument('productionConfigs', item.id);
+          break;
+      }
     }
   };
 
@@ -811,48 +834,50 @@ export default function App() {
       const finalPurchaseId = (savedResult as any)?.id || purchase.id;
       console.log('[handleSaveSolePurchase] Purchase saved. ID:', finalPurchaseId);
 
-      // 2. Atualizar Estoque de Solados (soleStock)
-      let itemIndex = 0;
-      for (const item of soleItems) {
-        console.log(`[handleSaveSolePurchase] Processing item ${itemIndex}...`, item);
-        // Tenta encontrar entrada existente para este molde/cor
-        const existingEntry = soleStockEntries.find(
-          s => s.moldId === item.moldId && s.colorId === item.colorId
-        );
+      if (purchase.registerAsReceived === true) {
+        // 2. Atualizar Estoque de Solados (soleStock)
+        let itemIndex = 0;
+        for (const item of soleItems) {
+          console.log(`[handleSaveSolePurchase] Processing item ${itemIndex}...`, item);
+          // Tenta encontrar entrada existente para este molde/cor
+          const existingEntry = soleStockEntries.find(
+            s => s.moldId === item.moldId && s.colorId === item.colorId
+          );
 
-        if (existingEntry) {
-          const updatedStock = { ...existingEntry.stock };
-          Object.entries(item.quantities).forEach(([size, qty]) => {
-            updatedStock[size] = (updatedStock[size] || 0) + qty;
-          });
+          if (existingEntry) {
+            const updatedStock = { ...existingEntry.stock };
+            Object.entries(item.quantities).forEach(([size, qty]) => {
+              updatedStock[size] = (updatedStock[size] || 0) + qty;
+            });
 
-          const totalPairs = Object.values(updatedStock).reduce((acc, curr) => acc + (Number(curr) || 0), 0);
+            const totalPairs = Object.values(updatedStock).reduce((acc, curr) => acc + (Number(curr) || 0), 0);
 
-          await firebaseService.updateDocument("soleStock", existingEntry.id, {
-            stock: updatedStock,
-            totalPairs,
-            unitCost: item.unitCost,
-            totalCost: totalPairs * parseLocaleNumber(item.unitCost),
-            purchaseDate: purchase.date,
-            updatedAt: Date.now()
-          });
-        } else {
-          const totalPairs = Object.values(item.quantities).reduce((acc, curr) => acc + (Number(curr) || 0), 0);
-          const newEntry: Omit<SoleStockEntry, 'id'> = {
-            moldId: item.moldId,
-            moldName: item.moldName,
-            colorId: item.colorId,
-            colorName: item.colorName,
-            supplierId: purchase.supplierId,
-            supplierName: people.find(p => p.id === purchase.supplierId)?.name || 'Fornecedor',
-            stock: item.quantities,
-            totalPairs,
-            unitCost: parseLocaleNumber(item.unitCost),
-            totalCost: parseLocaleNumber(item.totalCost),
-            purchaseDate: purchase.date,
-            updatedAt: Date.now()
-          };
-          await firebaseService.saveDocument("soleStock", newEntry);
+            await firebaseService.updateDocument("soleStock", existingEntry.id, {
+              stock: updatedStock,
+              totalPairs,
+              unitCost: item.unitCost,
+              totalCost: totalPairs * parseLocaleNumber(item.unitCost),
+              purchaseDate: purchase.date,
+              updatedAt: Date.now()
+            });
+          } else {
+            const totalPairs = Object.values(item.quantities).reduce((acc, curr) => acc + (Number(curr) || 0), 0);
+            const newEntry: Omit<SoleStockEntry, 'id'> = {
+              moldId: item.moldId,
+              moldName: item.moldName,
+              colorId: item.colorId,
+              colorName: item.colorName,
+              supplierId: purchase.supplierId,
+              supplierName: people.find(p => p.id === purchase.supplierId)?.name || 'Fornecedor',
+              stock: item.quantities,
+              totalPairs,
+              unitCost: parseLocaleNumber(item.unitCost),
+              totalCost: parseLocaleNumber(item.totalCost),
+              purchaseDate: purchase.date,
+              updatedAt: Date.now()
+            };
+            await firebaseService.saveDocument("soleStock", newEntry);
+          }
         }
       }
 
@@ -1694,15 +1719,22 @@ export default function App() {
         );
       case ViewType.BACKUP:
         return (
-          <BackupView 
-            isDarkMode={isDarkMode} 
+          <BackupView
+            isDarkMode={isDarkMode}
             transactions={transactions}
             purchases={purchases}
             sales={sales}
+            productionConfigs={productionConfigs}
+            gridsCount={grids.length}
+            colorsCount={colors.length}
+            sectorsCount={sectors.length}
+            flowTagsCount={flowTags.length}
+            soleStockEntries={soleStockEntries}
             onDeleteTransaction={(id) => firebaseService.deleteDocument("transactions", id)}
             onDeletePurchase={(id) => firebaseService.deleteDocument("purchases", id)}
             onDeleteSale={(id) => firebaseService.deleteDocument("sales", id)}
             onResetDatabase={handleResetDatabase}
+            onSelectiveDelete={handleSelectiveDelete}
           />
         );
       case ViewType.PRODUCT_FORM:
@@ -2977,6 +3009,7 @@ export default function App() {
             soleStock={soleStockEntries}
           />
         );
+      case ViewType.PRODUCT_SHEET:
       case ViewType.PRODUCTION_ENGINEERING:
         return (
           <ProductionEngineeringView
@@ -3158,6 +3191,8 @@ export default function App() {
             purchaseRequests={purchaseRequests}
             onBack={goBack}
             isDarkMode={isDarkMode}
+            soleStockEntries={soleStockEntries}
+            onEditPurchase={(id) => navigateTo(ViewType.PURCHASE_FORM, id)}
           />
         );
       case ViewType.MODULES_CONFIG:

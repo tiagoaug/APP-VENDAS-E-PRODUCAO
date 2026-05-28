@@ -60,7 +60,7 @@ export default function SolePurchaseModal({
   // Sole Items State
   const [items, setItems] = useState<SolePurchaseItem[]>([]);
   const [isSaving, setIsSaving] = useState(false);
-  const [registerAsReceived, setRegisterAsReceived] = useState(true);
+  const [registerAsReceived, setRegisterAsReceived] = useState(false);
 
   const molds = useMemo(() => productionConfigs.filter(c => c.type === 'MOLD'), [productionConfigs]);
   const buyers = useMemo(() => people.filter(p => p.isBuyer || p.isPersonal), [people]);
@@ -436,27 +436,39 @@ export default function SolePurchaseModal({
                   <div key={index} className={`p-6 rounded-[2rem] border-2 transition-all ${
                     isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'
                   }`}>
-                    <div className="flex gap-4 mb-4">
-                      <div className="flex-1 space-y-1">
-                        <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Matriz / Modelo</label>
-                        <select
-                          value={item.moldId}
-                          onChange={(e) => {
-                            const m = molds.find(mod => mod.id === e.target.value);
-                            updateItem(index, { moldId: e.target.value, moldName: m?.name || '' });
-                          }}
-                          title="Selecionar Matriz"
-                          className={`w-full px-4 py-3 rounded-xl text-xs font-black border-2 outline-none ${
-                            isDarkMode ? 'bg-slate-900 border-slate-800 focus:border-cyan-500' : 'bg-white border-slate-200 focus:border-cyan-600'
-                          }`}
+                    <div className="flex flex-col gap-3 mb-4">
+                      {/* Linha 1: Nome do Solado + botão remover */}
+                      <div className="flex items-end gap-3">
+                        <div className="flex-1 space-y-1">
+                          <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome do Solado</label>
+                          <select
+                            value={item.moldId}
+                            onChange={(e) => {
+                              const m = molds.find(mod => mod.id === e.target.value);
+                              updateItem(index, { moldId: e.target.value, moldName: m?.name || '' });
+                            }}
+                            title="Selecionar Matriz"
+                            className={`w-full px-4 py-3 rounded-xl text-xs font-black border-2 outline-none ${
+                              isDarkMode ? 'bg-slate-900 border-slate-800 focus:border-cyan-500' : 'bg-white border-slate-200 focus:border-cyan-600'
+                            }`}
+                          >
+                            {molds.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                          </select>
+                        </div>
+                        <button
+                          onClick={() => removeItem(index)}
+                          title="Remover Item"
+                          aria-label="Remover Item"
+                          className="mb-0.5 p-3 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20"
                         >
-                          {molds.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-                        </select>
+                          <Trash2 size={18} />
+                        </button>
                       </div>
-                      <div className="flex-1 space-y-1">
+                      {/* Linha 2: Cor */}
+                      <div className="space-y-1">
                         <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Cor</label>
                         <div className="flex items-center gap-2">
-                          <Palette size={14} className="text-violet-500" />
+                          <Palette size={14} className="text-violet-500 shrink-0" />
                           <select
                             value={item.colorId}
                             onChange={(e) => {
@@ -472,14 +484,6 @@ export default function SolePurchaseModal({
                           </select>
                         </div>
                       </div>
-                      <button 
-                        onClick={() => removeItem(index)}
-                        title="Remover Item"
-                        aria-label="Remover Item"
-                        className="self-end p-3 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20"
-                      >
-                        <Trash2 size={18} />
-                      </button>
                     </div>
 
                     <div className="grid grid-cols-4 sm:grid-cols-6 gap-2 mb-4">

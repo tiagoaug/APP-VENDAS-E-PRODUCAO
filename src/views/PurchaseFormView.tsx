@@ -15,6 +15,8 @@ import {
   Grid,
   PaymentStatus,
   ProductionConfigItem,
+  ColorValue,
+  SolePurchaseItem,
 } from "../types";
 import {
   Save,
@@ -48,6 +50,7 @@ interface PurchaseFormViewProps {
   grids: Grid[];
   people: Person[];
   productionConfigs?: ProductionConfigItem[];
+  colors?: ColorValue[];
   onSave: (purchase: Purchase) => void;
   onCancel: () => void;
   isDarkMode: boolean;
@@ -64,6 +67,7 @@ export default function PurchaseFormView({
   grids,
   people,
   productionConfigs = [],
+  colors = [],
   onSave,
   onCancel,
   isDarkMode,
@@ -117,6 +121,9 @@ export default function PurchaseFormView({
   
   const [generalItems, setGeneralItems] = useState<GeneralPurchaseItem[]>(
     existing?.generalItems || initialParams?.initialGeneralItems || [],
+  );
+  const [soleItems, setSoleItems] = useState<SolePurchaseItem[]>(
+    existing?.soleItems || []
   );
   const [notes, setNotes] = useState(existing?.notes || initialParams?.initialDescription || "");
   const [batchNumber, setBatchNumber] = useState(
@@ -220,11 +227,14 @@ export default function PurchaseFormView({
     if (type === PurchaseType.GENERAL) {
       return generalItems.reduce((acc, item) => acc + itemTotal(item), 0);
     }
+    if (type === PurchaseType.SOLE) {
+      return soleItems.reduce((acc, item) => acc + (Number(item.totalCost) || 0), 0);
+    }
     return blocks.reduce((acc, block) => {
       const qtySum = Object.values(block.variations).reduce((sum: number, v: any) => sum + Number(v.quantity || 0), 0) as number;
       return acc + block.cost * qtySum;
     }, 0);
-  }, [blocks, type, generalItems]);
+  }, [blocks, type, generalItems, soleItems]);
 
   const addBlock = (pId: string) => {
     const p = products.find(prod => prod.id === pId);
@@ -318,6 +328,39 @@ export default function PurchaseFormView({
     setGeneralItems(newItems);
   };
 
+  const addSoleItem = () => {
+    const molds = productionConfigs.filter(c => c.type === 'MOLD');
+    const firstMold = molds[0];
+    if (!firstMold) { alert('Nenhuma matriz de solado cadastrada.'); return; }
+    const sizes = firstMold.metadata?.sizes || [];
+    const quantities: Record<string, number> = {};
+    sizes.forEach((s: string) => { quantities[s] = 0; });
+    setSoleItems(prev => [...prev, {
+      moldId: firstMold.id,
+      moldName: firstMold.name,
+      colorId: colors[0]?.id || '',
+      colorName: colors[0]?.name || '',
+      quantities,
+      unitCost: firstMold.metadata?.unitCost || 0,
+      totalCost: 0,
+    }]);
+  };
+
+  const removeSoleItem = (index: number) => {
+    setSoleItems(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateSoleItem = (index: number, updates: Partial<SolePurchaseItem>) => {
+    setSoleItems(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], ...updates };
+      const item = next[index];
+      const pairs = Object.values(item.quantities || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+      next[index].totalCost = pairs * (Number(item.unitCost) || 0);
+      return next;
+    });
+  };
+
   const handleSave = () => {
     const finalItems: PurchaseItem[] = [];
     if (type === PurchaseType.REPLENISHMENT) {
@@ -340,12 +383,20 @@ export default function PurchaseFormView({
         alert("Adicione pelo menos um item para compra de estoque.");
         return;
       }
+    } else if (type === PurchaseType.SOLE) {
+      if (soleItems.length === 0) {
+        alert("Adicione pelo menos um item de solado.");
+        return;
+      }
     } else {
       if (generalItems.length === 0) {
         alert("Adicione pelo menos um item para a compra geral.");
         return;
       }
     }
+
+    // For SOLE purchases, never immediately update stock — receipt happens in Recebimento de Compras
+    const finalRegisterAsReceived = type === PurchaseType.SOLE ? false : registerAsReceived;
 
     onSave({
       id: purchaseId || Math.random().toString(36).substr(2, 9),
@@ -356,6 +407,7 @@ export default function PurchaseFormView({
       type,
       items: finalItems,
       generalItems: type === PurchaseType.GENERAL ? generalItems : [],
+      soleItems: type === PurchaseType.SOLE ? soleItems : [],
       categoryId,
       accountId,
       total,
@@ -363,7 +415,7 @@ export default function PurchaseFormView({
       batchNumber,
       checks,
       generateTransaction,
-      registerAsReceived,
+      registerAsReceived: finalRegisterAsReceived,
       sellerId,
       sellerName: people.find(p => p.id === sellerId)?.name || sellerId || '',
       paymentStatus: paymentTerm === PaymentTerm.INSTALLMENTS ? PaymentStatus.PENDING : PaymentStatus.PAID,
@@ -418,6 +470,15 @@ export default function PurchaseFormView({
             title="Geral"
           >
             <ShoppingCart size={14} strokeWidth={2.5} className={type === PurchaseType.GENERAL ? "text-amber-500" : ""} /> Geral
+          </button>
+          <button
+            type="button"
+            onClick={() => setType(PurchaseType.SOLE)}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${type === PurchaseType.SOLE ? "bg-white dark:bg-slate-700 shadow-lg text-cyan-600 dark:text-cyan-400" : "text-slate-400 dark:text-slate-500"}`}
+            aria-label="Compra de solados"
+            title="Solados"
+          >
+            <ShoppingCart size={14} strokeWidth={2.5} className={type === PurchaseType.SOLE ? "text-cyan-500" : ""} /> Solados
           </button>
         </div>
 
@@ -733,7 +794,7 @@ export default function PurchaseFormView({
                     </button>
                   </div>
 
-                  {/* Campos 2 e 3: Quantidade + Valor Unitário */}
+                  {/* Linha 1: Quantidade + Valor Unitário */}
                   <div className="flex gap-2 items-end">
                     {/* Quantidade */}
                     <div className="flex flex-col gap-1 w-28">
@@ -780,14 +841,14 @@ export default function PurchaseFormView({
                         </button>
                       </div>
                     </div>
+                  </div>
 
-                    {/* Total do item */}
-                    <div className="flex flex-col gap-1 w-24 text-right">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total</p>
-                      <p className={`py-3 text-[13px] font-black ${total > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-300'}`}>
-                        R$ {total.toFixed(2)}
-                      </p>
-                    </div>
+                  {/* Linha 2: Total do item */}
+                  <div className={`flex items-center justify-between px-4 py-3 rounded-2xl ${total > 0 ? 'bg-indigo-50 dark:bg-indigo-950/30' : 'bg-slate-50 dark:bg-slate-800/40'}`}>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total do Item</p>
+                    <p className={`text-sm font-black ${total > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-300 dark:text-slate-600'}`}>
+                      R$ {total.toFixed(2)}
+                    </p>
                   </div>
                 </div>
               );
@@ -802,6 +863,124 @@ export default function PurchaseFormView({
             )}
           </div>
         </section>
+      )}
+
+      {/* SOLE ITEMS SECTION */}
+      {type === PurchaseType.SOLE && (
+        <div className={`p-6 rounded-[2rem] border flex flex-col gap-4 shadow-sm ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+          <div className="flex items-center justify-between">
+            <p className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              Itens / Grade de Solados
+            </p>
+            <button
+              type="button"
+              onClick={addSoleItem}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-600 text-white text-[10px] font-black uppercase tracking-widest"
+            >
+              <Plus size={14} /> Adicionar Item
+            </button>
+          </div>
+
+          {soleItems.map((item, index) => {
+            const molds = productionConfigs.filter(c => c.type === 'MOLD');
+            const mold = molds.find(m => m.id === item.moldId);
+            const sizes = mold?.metadata?.sizes || [];
+            const totalPairs = Object.values(item.quantities || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+
+            return (
+              <div key={index} className={`p-4 rounded-2xl border-2 flex flex-col gap-3 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                {/* Linha 1: Nome do Solado + remover */}
+                <div className="flex items-end gap-3">
+                  <div className="flex-1 flex flex-col gap-1">
+                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome do Solado</label>
+                    <select
+                      value={item.moldId}
+                      aria-label="Selecionar modelo de solado"
+                      title="Modelo de Solado"
+                      onChange={(e) => {
+                        const m = molds.find(mod => mod.id === e.target.value);
+                        const newSizes = m?.metadata?.sizes || [];
+                        const newQtys: Record<string, number> = {};
+                        newSizes.forEach((s: string) => { newQtys[s] = 0; });
+                        updateSoleItem(index, { moldId: e.target.value, moldName: m?.name || '', quantities: newQtys });
+                      }}
+                      className={`w-full px-4 py-3 rounded-xl text-xs font-black border-2 outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 focus:border-cyan-500' : 'bg-white border-slate-200 focus:border-cyan-600'}`}
+                    >
+                      {molds.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                  </div>
+                  <button type="button" onClick={() => removeSoleItem(index)} aria-label="Remover item de solado" title="Remover" className="mb-0.5 p-3 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20">
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+
+                {/* Linha 2: Cor */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Cor</label>
+                  <select
+                    value={item.colorId}
+                    aria-label="Selecionar cor do solado"
+                    title="Cor do Solado"
+                    onChange={(e) => {
+                      const c = colors.find(col => col.id === e.target.value);
+                      updateSoleItem(index, { colorId: e.target.value, colorName: c?.name || '' });
+                    }}
+                    className={`w-full px-4 py-3 rounded-xl text-xs font-black border-2 outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 focus:border-cyan-500' : 'bg-white border-slate-200 focus:border-cyan-600'}`}
+                  >
+                    {colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+
+                {/* Grade de tamanhos */}
+                {sizes.length > 0 && (
+                  <div className="grid grid-cols-4 gap-2">
+                    {sizes.map((size: string) => (
+                      <div key={size} className="flex flex-col gap-1">
+                        <label className="text-[8px] font-black text-slate-400 uppercase text-center">{size}</label>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          value={item.quantities[size] === 0 ? '' : (item.quantities[size] || '')}
+                          onFocus={e => e.target.select()}
+                          onChange={(e) => updateSoleItem(index, { quantities: { ...item.quantities, [size]: parseInt(e.target.value) || 0 } })}
+                          placeholder="0"
+                          className={`w-full px-1 py-2 rounded-lg text-[11px] font-black text-center border-2 outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 focus:border-cyan-500' : 'bg-white border-slate-200 focus:border-cyan-600'}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Custo e total */}
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Custo Un. (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={item.unitCost}
+                      onChange={(e) => updateSoleItem(index, { unitCost: parseFloat(e.target.value) || 0 })}
+                      placeholder="0,00"
+                      className={`w-24 px-3 py-2 rounded-xl text-xs font-black border-2 outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}
+                    />
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Total do Item</p>
+                    <p className="text-sm font-black text-cyan-600 dark:text-cyan-400">R$ {Number(item.totalCost || 0).toFixed(2)}</p>
+                  </div>
+                  <div className={`px-3 py-1.5 rounded-full ${isDarkMode ? 'bg-slate-800' : 'bg-slate-200'}`}>
+                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">{totalPairs} pares</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {soleItems.length === 0 && (
+            <p className="text-center text-xs text-slate-400 py-6">Nenhum item adicionado. Clique em "Adicionar Item".</p>
+          )}
+        </div>
       )}
 
       {/* Items List (only for Replenishment) */}

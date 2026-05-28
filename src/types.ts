@@ -42,6 +42,7 @@ export enum SaleType {
 export enum PurchaseType {
   REPLENISHMENT = 'REPLENISHMENT', // Abastecimento de estoque
   GENERAL = 'GENERAL', // Compras gerais
+  SOLE = 'SOLE', // Compra de solados
 }
 
 export enum ProductStatus {

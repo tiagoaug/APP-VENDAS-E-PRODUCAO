@@ -47,54 +47,57 @@ export default function GradesView({ grids, onAdd, onEdit, onDelete, isDarkMode 
 
       <div className="flex flex-col gap-4">
         {/* Filters */}
-        <div className={`p-2 rounded-2xl border flex items-center gap-3 overflow-x-auto no-scrollbar ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-          <div className={`p-2.5 rounded-xl shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-500'}`}>
-            <Filter size={19} />
+        <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <Filter size={13} className="text-slate-400 shrink-0" />
+            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Filtrar por tipo</span>
           </div>
-          <div className="flex items-center gap-1 pr-4">
-            {[
-              { id: 'ALL', label: 'TODAS', color: 'indigo', icon: LayoutGrid },
-              { id: GridType.FORMA, label: 'FOR.', color: 'indigo', icon: Footprints },
-              { id: GridType.SOLADO, label: 'SOL.', color: 'emerald', icon: Zap },
-              { id: GridType.FACA, label: 'FACA', color: 'rose', icon: Scissors },
-              { id: GridType.EMBALAGEM, label: 'EMB.', color: 'amber', icon: Box }
-            ].map(filter => {
-              const isActive = activeFilter === filter.id;
-              const Icon = filter.icon;
-              let activeClasses = '';
-              let iconClasses = '';
-              
-              // Always set icon color for better identification
-              if (filter.color === 'indigo') iconClasses = 'text-indigo-500';
-              if (filter.color === 'emerald') iconClasses = 'text-emerald-500';
-              if (filter.color === 'rose') iconClasses = 'text-rose-500';
-              if (filter.color === 'amber') iconClasses = 'text-amber-500';
+          {(() => {
+            const filters = [
+              { id: 'ALL',                label: 'Todas',      color: 'indigo',  icon: LayoutGrid },
+              { id: GridType.FORMA,       label: 'Formas',     color: 'indigo',  icon: Footprints },
+              { id: GridType.SOLADO,      label: 'Solados',    color: 'emerald', icon: Zap        },
+              { id: GridType.FACA,        label: 'Facas',      color: 'rose',    icon: Scissors   },
+              { id: GridType.EMBALAGEM,   label: 'Embalagens', color: 'amber',   icon: Box        },
+            ];
+            const colorActive: Record<string, string> = {
+              indigo:  isDarkMode ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30'   : 'bg-indigo-50 text-indigo-600 border-indigo-200',
+              emerald: isDarkMode ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30': 'bg-emerald-50 text-emerald-600 border-emerald-200',
+              rose:    isDarkMode ? 'bg-rose-500/20 text-rose-400 border-rose-500/30'         : 'bg-rose-50 text-rose-600 border-rose-200',
+              amber:   isDarkMode ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'      : 'bg-amber-50 text-amber-600 border-amber-200',
+            };
+            const colorIcon: Record<string, string> = {
+              indigo: 'text-indigo-500', emerald: 'text-emerald-500', rose: 'text-rose-500', amber: 'text-amber-500',
+            };
+            const inactiveCls = isDarkMode
+              ? 'bg-transparent border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'
+              : 'bg-transparent border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50';
 
-              if (isActive) {
-                if (filter.color === 'indigo') activeClasses = isDarkMode ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' : 'bg-indigo-50 text-indigo-600 border-indigo-200';
-                if (filter.color === 'emerald') activeClasses = isDarkMode ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-emerald-50 text-emerald-600 border-emerald-200';
-                if (filter.color === 'rose') activeClasses = isDarkMode ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' : 'bg-rose-50 text-rose-600 border-rose-200';
-                if (filter.color === 'amber') activeClasses = isDarkMode ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-amber-50 text-amber-600 border-amber-200';
-              }
-
+            const renderBtn = (f: typeof filters[0]) => {
+              const isActive = activeFilter === f.id;
+              const Icon = f.icon;
               return (
                 <button
-                  key={filter.id}
-                  onClick={() => setActiveFilter(filter.id as any)}
-                  className={`px-3 py-2 rounded-xl text-[8px] font-black uppercase tracking-tight transition-all whitespace-nowrap border-2 flex items-center gap-1.5 ${
-                    isActive
-                      ? `${activeClasses} shadow-lg shadow-black/5 scale-105 z-10`
-                      : isDarkMode
-                        ? 'bg-transparent border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'
-                        : 'bg-transparent border-transparent text-slate-400 hover:text-slate-600 hover:bg-slate-50'
+                  key={f.id}
+                  type="button"
+                  onClick={() => setActiveFilter(f.id as any)}
+                  className={`flex-1 py-2.5 px-2 rounded-xl text-[9px] font-black uppercase tracking-tight transition-all border-2 flex items-center justify-center gap-1.5 ${
+                    isActive ? `${colorActive[f.color]} shadow-sm scale-[1.02]` : inactiveCls
                   }`}
                 >
-                  <Icon size={14} className={iconClasses} />
-                  {filter.label}
+                  <Icon size={13} className={colorIcon[f.color]} />
+                  {f.label}
                 </button>
               );
-            })}
-          </div>
+            };
+
+            return (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex gap-1.5">{filters.slice(0, 3).map(renderBtn)}</div>
+                <div className="flex gap-1.5">{filters.slice(3).map(renderBtn)}</div>
+              </div>
+            );
+          })()}
         </div>
 
         {filteredGrids.map((grid) => (

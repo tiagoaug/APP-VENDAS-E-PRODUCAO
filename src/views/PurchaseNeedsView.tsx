@@ -95,7 +95,7 @@ export default function PurchaseNeedsView({
     if (!next) return;
 
     if (req.status === 'ORDERED') {
-      openReceive(req);
+      // Receipt happens in "Recebimento de Compras" screen
       return;
     }
 
@@ -557,7 +557,7 @@ export default function PurchaseNeedsView({
                       </button>
                     </div>
                   )}
-                  {req.status === 'ORDERED' && (
+                  {false && req.status === 'ORDERED' && (
                     <button
                       type="button"
                       onClick={() => openReceive(req)}
@@ -693,160 +693,10 @@ export default function PurchaseNeedsView({
         )}
       </AnimatePresence>
 
-      {/* ── Modal: Registrar Recebimento ── */}
+      {/* ── Modal: Registrar Recebimento ── (disabled — receipt handled in GeneralReceiptsView) */}
+      {/* State declarations for receivingReq, receiveQty, receiveBreakdown, isSavingReceive are kept above to avoid compile errors */}
       <AnimatePresence>
-        {receivingReq && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center px-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
-              onClick={() => setReceivingReq(null)}
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className={`relative w-full max-w-lg rounded-[3rem] p-8 pb-10 flex flex-col gap-6 shadow-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Registrar Recebimento</p>
-                  <h3 className="text-lg font-black tracking-tight">{receivingReq.name}</h3>
-                </div>
-                <button type="button" title="Fechar" onClick={() => setReceivingReq(null)}
-                  className={`w-10 h-10 flex items-center justify-center rounded-2xl ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-400'}`}>
-                  <X size={18} strokeWidth={2.5} />
-                </button>
-              </div>
-
-              {/* Resumo do pedido */}
-              {(() => {
-                const r2 = (n: number) => parseFloat(n.toFixed(2));
-                const solicitado = r2(receivingReq.requiredQty);
-                const jaRecebido = r2(receivingReq.receivedQty || 0);
-                const faltando   = r2(Math.max(0, solicitado - jaRecebido));
-                return (
-                  <div className={`flex items-center justify-between p-5 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-                    <div className="text-center">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Solicitado</p>
-                      <p className="text-2xl font-black text-slate-700 dark:text-white">{solicitado}</p>
-                      <p className="text-[9px] text-slate-400 font-bold">{receivingReq.unit}</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Já Recebido</p>
-                      <p className="text-2xl font-black text-indigo-500">{jaRecebido}</p>
-                      <p className="text-[9px] text-slate-400 font-bold">{receivingReq.unit}</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Faltando</p>
-                      <p className="text-2xl font-black text-rose-500">{faltando}</p>
-                      <p className="text-[9px] text-slate-400 font-bold">{receivingReq.unit}</p>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Entrada de quantidade (MATERIAL) */}
-              {receivingReq.type === 'MATERIAL' && (() => {
-                const remaining = parseFloat(Math.max(0, receivingReq.requiredQty - (receivingReq.receivedQty || 0)).toFixed(2));
-                return (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        Quantidade Recebida Agora ({receivingReq.unit})
-                      </label>
-                      {remaining > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setReceiveQty(remaining)}
-                          className="text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-200 transition-colors"
-                        >
-                          Baixar restante ({remaining})
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button type="button" title="Diminuir"
-                        onClick={() => setReceiveQty(q => parseFloat(Math.max(0, q - 1).toFixed(2)))}
-                        className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
-                        <Minus size={18} strokeWidth={2.5} />
-                      </button>
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        title="Quantidade recebida"
-                        placeholder="0"
-                        value={receiveQty === 0 ? '' : receiveQty}
-                        onChange={e => setReceiveQty(e.target.value === '' ? 0 : parseFloat(Number(e.target.value).toFixed(2)))}
-                        className={`flex-1 px-5 py-4 rounded-2xl border-2 text-xl font-black text-center outline-none transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-200 focus:border-emerald-500'}`}
-                      />
-                      <button type="button" title="Aumentar"
-                        onClick={() => setReceiveQty(q => parseFloat((q + 1).toFixed(2)))}
-                        className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
-                        <Plus size={18} strokeWidth={2.5} />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Entrada por grade (SOLE) */}
-              {receivingReq.type === 'SOLE' && Object.keys(receiveBreakdown).length > 0 && (
-                <div className="flex flex-col gap-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Quantidade Recebida por Grade (PAR)</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {Object.entries(receiveBreakdown).sort(([a], [b]) => parseFloat(a) - parseFloat(b)).map(([grade, qty]) => {
-                      const needed = (receivingReq.sizeBreakdown || {})[grade] || 0;
-                      const alreadyReceived = (receivingReq.receivedBreakdown || {})[grade] || 0;
-                      const remaining = Math.max(0, needed - alreadyReceived);
-                      return (
-                        <div key={grade} className="flex flex-col gap-1">
-                          <span className="text-[9px] font-black text-slate-400 text-center">{grade}</span>
-                          <span className="text-[8px] text-slate-300 text-center">falta {remaining}</span>
-                          <input
-                            type="number"
-                            min={0}
-                            max={remaining}
-                            title={`Recebido grade ${grade}`}
-                            placeholder="0"
-                            value={qty}
-                            onChange={e => setReceiveBreakdown(prev => ({ ...prev, [grade]: Number(e.target.value) }))}
-                            className={`w-full px-2 py-2 rounded-xl border-2 text-[12px] font-black text-center outline-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-200 focus:border-emerald-500'}`}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <p className="text-[10px] font-black text-slate-400 text-right mt-1">
-                    Total nesta entrega: <span className="text-emerald-500">{Object.values(receiveBreakdown).reduce((s, v) => s + v, 0)} PAR</span>
-                  </p>
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={handleSaveReceive}
-                disabled={isSavingReceive || (receivingReq.type === 'MATERIAL' ? receiveQty <= 0 : Object.values(receiveBreakdown).every(v => v === 0))}
-                className={`w-full h-14 rounded-2xl text-[12px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
-                  isSavingReceive
-                    ? 'bg-slate-300 text-slate-400'
-                    : (receivingReq.type === 'MATERIAL' ? receiveQty > 0 : Object.values(receiveBreakdown).some(v => v > 0))
-                      ? 'bg-emerald-600 text-white shadow-xl shadow-emerald-600/20 hover:bg-emerald-700'
-                      : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                }`}
-              >
-                {isSavingReceive
-                  ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  : <><PackageCheck size={18} strokeWidth={2.5} /> Confirmar Recebimento</>
-                }
-              </button>
-            </motion.div>
-          </div>
-        )}
+        {receivingReq && null}
       </AnimatePresence>
     </div>
   );

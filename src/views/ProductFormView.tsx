@@ -1,19 +1,17 @@
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { createPortal } from 'react-dom';
-import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, TechSheetItem, ComponentConsumption, ComponentCategory, FlowTag, Sector, AppModulesConfig } from '../types';
+import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, ComponentConsumption, ComponentCategory, FlowTag, Sector, AppModulesConfig } from '../types';
 import {
   Save, Plus, Trash2, Camera, ChevronRight, ChevronLeft, Package, User,
   ToggleLeft as Toggle, Calendar, DollarSign, Tag, Calculator, Info,
-  FileText, PlusCircle, Layers, Ruler, ExternalLink, ArrowUpDown,
+  Layers, ArrowUpDown,
   Footprints, Scissors, Box, Droplets, Sparkles, Settings, CheckCircle2,
-  AlertCircle, ChevronDown, ListFilter, Search, X, Copy, Factory
+  ChevronDown, X, Copy, Factory
 } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import EngineeringEditor from '../components/EngineeringEditor';
 import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
-import { SIZES } from '../constants';
 
 interface ProductFormViewProps {
   productId: string | null;
@@ -384,7 +382,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       onClick={() => setVarView('consumo')}
                       className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${varView === 'consumo' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}
                     >
-                      Engenharia / Consumos
+                      Ficha Técnica
                     </button>
                   )}
                 </div>

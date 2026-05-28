@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Purchase, Person, ProductionConfigItem, PurchaseRequest, PurchaseType, PaymentTerm, PaymentStatus } from '../types';
+import { Purchase, Person, ProductionConfigItem, PurchaseRequest, PurchaseType, PaymentTerm, PaymentStatus, SoleStockEntry } from '../types';
 import {
   Package,
   Calendar,
@@ -17,6 +17,10 @@ import {
   Check,
   ClipboardList,
   RefreshCw,
+  Trash2,
+  X,
+  Pencil,
+  History as HistoryIcon,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -29,6 +33,8 @@ interface GeneralReceiptsViewProps {
   purchaseRequests: PurchaseRequest[];
   onBack: () => void;
   isDarkMode: boolean;
+  soleStockEntries?: SoleStockEntry[];
+  onEditPurchase?: (id: string) => void;
 }
 
 export default function GeneralReceiptsView({
@@ -38,6 +44,8 @@ export default function GeneralReceiptsView({
   purchaseRequests,
   onBack,
   isDarkMode,
+  soleStockEntries,
+  onEditPurchase,
 }: GeneralReceiptsViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [supplierFilter, setSupplierFilter] = useState('ALL');
@@ -47,15 +55,80 @@ export default function GeneralReceiptsView({
   const [receivedQuantities, setReceivedQuantities] = useState<Record<string, number>>({});
   
   const [loadingPurchaseId, setLoadingPurchaseId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [showReceived, setShowReceived] = useState(false);
+  const [revertingId, setRevertingId] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<{ message: string; details?: string[] } | null>(null);
   const [errorToast, setErrorToast] = useState<string | null>(null);
 
-  // Filter purchases: General, not received yet
+  const handleDelete = async (purchaseId: string) => {
+    try {
+      await firebaseService.deleteDocument('purchases', purchaseId);
+      setConfirmDeleteId(null);
+    } catch {
+      setErrorToast('Erro ao excluir compra.');
+    }
+  };
+
+  const handleRevertReceipt = async (purchase: Purchase) => {
+    setRevertingId(purchase.id);
+    try {
+      // Reverse stock for GENERAL purchases
+      for (const item of purchase.generalItems || []) {
+        if (item.materialId && (item.quantity || 0) > 0) {
+          const material = productionConfigs.find(c => c.id === item.materialId);
+          if (material) {
+            const currentStock = material.metadata?.stock || 0;
+            await firebaseService.saveDocument('productionConfigs', {
+              ...material,
+              metadata: { ...material.metadata, stock: Math.max(0, currentStock - (item.quantity || 0)) }
+            });
+          }
+        }
+      }
+      // Reverse stock for sole purchases
+      const soleItems: any[] = (purchase as any).soleItems || (purchase as any).items?.filter((i: any) => i.moldId) || [];
+      for (const item of soleItems) {
+        const existing = (soleStockEntries || []).find((s: any) => s.moldId === item.moldId && s.colorId === item.colorId);
+        if (existing) {
+          const updatedStock = { ...existing.stock };
+          Object.entries(item.quantities || {}).forEach(([size, qty]: [string, any]) => {
+            updatedStock[size] = Math.max(0, (updatedStock[size] || 0) - (Number(qty) || 0));
+          });
+          const totalPairs = Object.values(updatedStock).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+          await firebaseService.updateDocument('soleStock', existing.id, { stock: updatedStock, totalPairs, updatedAt: Date.now() });
+        }
+      }
+      // Mark purchase as not received
+      await firebaseService.saveDocument('purchases', { ...purchase, registerAsReceived: false });
+      setSuccessToast({ message: 'Recebimento revertido. Compra volta para pendentes.', details: ['Estoque ajustado.'] });
+      setTimeout(() => setSuccessToast(null), 5000);
+    } catch (err) {
+      setErrorToast('Erro ao reverter recebimento.');
+    } finally {
+      setRevertingId(null);
+    }
+  };
+
+  const receivedCount = useMemo(() => purchases.filter(p => p.registerAsReceived === true).length, [purchases]);
+
+  // Filter purchases: General / Sole pending receipt
   const pendingPurchases = useMemo(() => {
     return purchases
       .filter((p) => {
-        // Must be GENERAL type
-        if (p.type !== PurchaseType.GENERAL) return false;
+        // GENERAL: always eligible for receiving
+        if (p.type === PurchaseType.GENERAL) { /* continue */ }
+        // SOLE (new tab in PurchaseFormView): always eligible
+        else if (p.type === PurchaseType.SOLE) { /* continue */ }
+        // REPLENISHMENT: only if it contains sole items (moldId), not product items
+        else if (p.type === PurchaseType.REPLENISHMENT) {
+          const rawItems: any[] = (p as any).items || [];
+          const hasSoleItems = rawItems.some((i: any) => i.moldId);
+          const hasSoleItemsField = ((p as any).soleItems || []).length > 0;
+          if (!hasSoleItems && !hasSoleItemsField) return false;
+        } else {
+          return false; // exclude all other types
+        }
         // Must NOT be registered as received yet
         if (p.registerAsReceived === true) return false;
         
@@ -166,6 +239,45 @@ export default function GeneralReceiptsView({
             
             stockSuccessList.push(`${material.name}: +${receivedQty} ${material.metadata?.unitId || 'UN'}`);
           }
+        }
+      }
+
+      // Handle sole (REPLENISHMENT) purchases — update soleStock
+      if (purchase.type === PurchaseType.REPLENISHMENT) {
+        const soleItems = (purchase as any).items || [];
+        for (const item of soleItems) {
+          if (!item.moldId) continue;
+          const existingEntry = (soleStockEntries || []).find(
+            (s: any) => s.moldId === item.moldId && s.colorId === item.colorId
+          );
+          if (existingEntry) {
+            const updatedStock = { ...existingEntry.stock };
+            Object.entries(item.quantities || {}).forEach(([size, qty]: [string, any]) => {
+              updatedStock[size] = (updatedStock[size] || 0) + (Number(qty) || 0);
+            });
+            const totalPairs = Object.values(updatedStock).reduce((acc: number, curr: any) => acc + (Number(curr) || 0), 0);
+            await firebaseService.updateDocument('soleStock', existingEntry.id, {
+              stock: updatedStock,
+              totalPairs,
+              unitCost: item.unitCost,
+              totalCost: totalPairs * (Number(item.unitCost) || 0),
+              updatedAt: Date.now()
+            });
+          } else {
+            const totalPairs = Object.values(item.quantities || {}).reduce((acc: number, curr: any) => acc + (Number(curr) || 0), 0);
+            await firebaseService.saveDocument('soleStock', {
+              moldId: item.moldId,
+              moldName: item.moldName || '',
+              colorId: item.colorId || '',
+              colorName: item.colorName || '',
+              stock: item.quantities || {},
+              totalPairs,
+              unitCost: Number(item.unitCost) || 0,
+              totalCost: Number(item.totalCost) || 0,
+              updatedAt: Date.now()
+            });
+          }
+          stockSuccessList.push(`${item.moldName || 'Solado'} ${item.colorName || ''}: +${Object.values(item.quantities || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0)} PAR`);
         }
       }
 
@@ -314,9 +426,9 @@ export default function GeneralReceiptsView({
         )}
 
         {/* Filters Panel */}
-        <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          
-          {/* Search Box */}
+        <section className="flex flex-col gap-3">
+
+          {/* Search Box — full width */}
           <div className="relative">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-400 dark:text-indigo-500" size={18} strokeWidth={3} />
             <input
@@ -330,27 +442,109 @@ export default function GeneralReceiptsView({
             />
           </div>
 
-          {/* Supplier Dropdown */}
-          <div className="relative">
-            <select
-              className="w-full bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/60 rounded-2xl px-5 py-4 text-xs font-black placeholder:text-slate-300 focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 transition-all text-slate-800 dark:text-white uppercase tracking-widest cursor-pointer appearance-none"
-              value={supplierFilter}
-              onChange={(e) => setSupplierFilter(e.target.value)}
-              aria-label="Filtrar por fornecedor"
-              title="Fornecedor"
-            >
-              <option value="ALL">TODOS OS FORNECEDORES</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-            <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2">
-              <ChevronDown size={16} className="text-indigo-400" strokeWidth={3} />
+          {/* Supplier Dropdown + Histórico — supplier takes all remaining space */}
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1 min-w-0">
+              <select
+                className="w-full bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/60 rounded-2xl pl-5 pr-10 py-4 text-xs font-black focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 transition-all text-slate-800 dark:text-white uppercase tracking-widest cursor-pointer appearance-none truncate"
+                value={supplierFilter}
+                onChange={(e) => setSupplierFilter(e.target.value)}
+                aria-label="Filtrar por fornecedor"
+                title="Fornecedor"
+              >
+                <option value="ALL">TODOS OS FORNECEDORES</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2">
+                <ChevronDown size={16} className="text-indigo-400" strokeWidth={3} />
+              </div>
             </div>
+
+            {/* Histórico: colorido com badge de contagem */}
+            <button
+              type="button"
+              onClick={() => setShowReceived(true)}
+              className="relative shrink-0 w-14 h-14 sm:w-auto sm:px-5 sm:h-auto sm:py-4 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:from-indigo-400 hover:to-violet-500 active:scale-95 transition-all duration-200 flex items-center justify-center gap-2"
+              title="Ver histórico de recebimentos"
+              aria-label="Abrir histórico de recebimentos"
+            >
+              <HistoryIcon size={18} strokeWidth={2.5} />
+              <span className="hidden sm:inline text-[10px] font-black uppercase tracking-widest">Histórico</span>
+              {receivedCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full bg-amber-400 shadow-md shadow-amber-400/40 border-2 border-white dark:border-slate-900" />
+              )}
+            </button>
           </div>
         </section>
+
+        {/* HISTÓRICO POPUP */}
+        {showReceived && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowReceived(false)} />
+            <div className={`relative w-full max-w-lg max-h-[80vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 dark:border-slate-800 shrink-0">
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-white">Histórico de Recebimentos</h3>
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">Clique em Reverter para desfazer uma baixa</p>
+                </div>
+                <button type="button" onClick={() => setShowReceived(false)} className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all" aria-label="Fechar histórico">
+                  <X size={18} />
+                </button>
+              </div>
+              {/* List */}
+              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+                {purchases
+                  .filter(p => p.registerAsReceived === true)
+                  .sort((a, b) => b.date - a.date)
+                  .map(p => {
+                    const sup = suppliers.find(s => s.id === p.supplierId);
+                    const itemCount = (p.generalItems?.length || 0) + ((p as any).soleItems?.length || 0) + ((p as any).items?.filter((i: any) => i.moldId)?.length || 0);
+                    return (
+                      <div key={p.id} className={`p-4 rounded-2xl border flex items-center gap-3 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-black uppercase tracking-wide text-slate-800 dark:text-white truncate">{sup?.name || 'Fornecedor'}</p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                            {p.batchNumber} · {itemCount} {itemCount === 1 ? 'ITEM' : 'ITENS'} · R$ {p.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {onEditPurchase && (
+                            <button
+                              type="button"
+                              onClick={() => { setShowReceived(false); onEditPurchase(p.id); }}
+                              className="px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 border border-indigo-100 dark:border-indigo-800/40 hover:bg-indigo-100 active:scale-95 transition-all flex items-center gap-1.5"
+                              title="Editar esta compra"
+                              aria-label="Editar compra"
+                            >
+                              <Pencil size={12} />
+                              Editar
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={revertingId === p.id}
+                            onClick={() => handleRevertReceipt(p)}
+                            className="px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 text-rose-500 border border-rose-100 dark:border-rose-800/40 hover:bg-rose-100 active:scale-95 transition-all disabled:opacity-50 flex items-center gap-1.5"
+                            title="Reverter este recebimento"
+                            aria-label="Reverter recebimento"
+                          >
+                            {revertingId === p.id ? <RefreshCw size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                            Reverter
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                {purchases.filter(p => p.registerAsReceived === true).length === 0 && (
+                  <p className="text-center text-xs text-slate-400 py-10">Nenhum recebimento registrado ainda.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Purchases List */}
         <section className="flex flex-col gap-4">
@@ -364,7 +558,9 @@ export default function GeneralReceiptsView({
             pendingPurchases.map((purchase) => {
               const supplier = suppliers.find((s) => s.id === purchase.supplierId);
               const isExpanded = expandedPurchaseId === purchase.id;
-              const hasItems = purchase.generalItems && purchase.generalItems.length > 0;
+              const soleItemsList: any[] = (purchase as any).soleItems || (purchase as any).items?.filter((i: any) => i.moldId) || [];
+              const generalItemsList = purchase.generalItems || [];
+              const hasItems = generalItemsList.length > 0 || soleItemsList.length > 0;
               const formattedDate = purchase.date
                 ? format(new Date(purchase.date), 'dd/MM/yyyy', { locale: ptBR })
                 : '---';
@@ -410,7 +606,7 @@ export default function GeneralReceiptsView({
                             </span>
                           )}
                           <span>
-                            {purchase.generalItems?.length || 0} ITENS
+                            {generalItemsList.length + soleItemsList.length} ITENS
                           </span>
                         </div>
                       </div>
@@ -426,8 +622,40 @@ export default function GeneralReceiptsView({
                         </p>
                       </div>
                       
-                      <div className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800/60 flex items-center justify-center text-indigo-400 dark:text-indigo-500">
-                        {isExpanded ? <ChevronUp size={18} strokeWidth={3} /> : <ChevronDown size={18} strokeWidth={3} />}
+                      <div className="flex items-center gap-2">
+                        {confirmDeleteId === purchase.id ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(null)}
+                              className="px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest bg-slate-100 dark:bg-slate-800 text-slate-400"
+                              title="Cancelar exclusão"
+                            >
+                              Não
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(purchase.id)}
+                              className="px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest bg-rose-500 text-white"
+                              title="Confirmar exclusão"
+                            >
+                              Excluir
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(purchase.id); }}
+                            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-300 dark:text-slate-600 hover:bg-rose-50 hover:text-rose-400 dark:hover:bg-rose-900/20 dark:hover:text-rose-400 transition-all"
+                            title="Excluir compra"
+                            aria-label="Excluir esta compra"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                        <div className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-slate-800/60 flex items-center justify-center text-indigo-400 dark:text-indigo-500">
+                          {isExpanded ? <ChevronUp size={18} strokeWidth={3} /> : <ChevronDown size={18} strokeWidth={3} />}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -451,26 +679,26 @@ export default function GeneralReceiptsView({
                               const key = `${purchase.id}-${idx}`;
                               const receivedQty = receivedQuantities[key] ?? (item.quantity || 0);
                               
-                              const unitName = configMaterial?.metadata?.unitId || item.unit || 'UN';
-                              
+                              const rawUnit = item.unit || '';
+                              const unitName = rawUnit.length > 0 && rawUnit.length <= 6 ? rawUnit.toUpperCase() : 'UN';
+                              const itemName = configMaterial?.name || item.description || 'Item Sem Descrição';
+
                               return (
                                 <div
                                   key={idx}
-                                  className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-800/20 flex flex-col md:flex-row md:items-center justify-between gap-4"
+                                  className="p-4 rounded-2xl border border-slate-100 dark:border-slate-800/60 bg-slate-50/50 dark:bg-slate-800/20 flex flex-col gap-3"
                                 >
-                                  
                                   {/* Item Meta info */}
                                   <div className="flex items-center gap-3">
                                     <div className="w-10 h-10 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/10 text-indigo-400 flex items-center justify-center shrink-0 border border-indigo-100/30">
                                       <ClipboardList size={18} />
                                     </div>
-                                    <div>
-                                      <h5 className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-wide">
-                                        {item.description || configMaterial?.name || 'Item Sem Descrição'}
+                                    <div className="flex-1 min-w-0">
+                                      <h5 className="text-xs font-black text-slate-800 dark:text-slate-100 uppercase tracking-wide truncate">
+                                        {itemName}
                                       </h5>
-                                      <div className="flex items-center gap-2 mt-0.5 text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 text-[9px] font-bold text-slate-400 uppercase tracking-widest">
                                         <span>COMPRADO: {item.quantity} {unitName}</span>
-                                        <span>•</span>
                                         <span className="text-indigo-400 dark:text-indigo-500">
                                           ESTOQUE ATUAL: {configMaterial?.metadata?.stock || 0} {unitName}
                                         </span>
@@ -478,14 +706,12 @@ export default function GeneralReceiptsView({
                                     </div>
                                   </div>
 
-                                  {/* Quantity Receivers Controls */}
-                                  <div className="flex items-center gap-3 self-end md:self-center">
-                                    
-                                    {/* Fast Receive Button */}
+                                  {/* Quantity Controls - full width row */}
+                                  <div className="flex items-center gap-2 w-full">
                                     <button
                                       type="button"
                                       onClick={() => handleReceiveAll(purchase, idx)}
-                                      className={`px-3 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all ${
+                                      className={`px-3 py-2 rounded-xl text-[8px] font-black uppercase tracking-widest transition-all shrink-0 ${
                                         receivedQty === item.quantity
                                           ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/10'
                                           : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:text-indigo-400'
@@ -496,45 +722,64 @@ export default function GeneralReceiptsView({
                                       Receber Tudo
                                     </button>
 
-                                    {/* Stepper controls */}
-                                    <div className="flex items-center bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-1 shadow-sm">
+                                    <div className="flex items-center flex-1 justify-end bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-1 shadow-sm">
                                       <button
                                         type="button"
                                         onClick={() => handleAdjustQty(purchase.id, idx, -1)}
-                                        className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 active:scale-90 transition-all"
+                                        className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400 active:scale-90 transition-all shrink-0"
                                         aria-label="Diminuir quantidade"
                                         title="Diminuir 1"
                                       >
                                         <Minus size={14} strokeWidth={3} />
                                       </button>
-                                      
+
                                       <input
                                         type="number"
-                                        className="w-12 text-center border-none p-0 text-xs font-black text-slate-800 dark:text-white focus:ring-0 appearance-none bg-transparent"
-                                        value={receivedQty}
+                                        inputMode="numeric"
+                                        className="w-14 text-center border-none p-0 text-sm font-black text-slate-800 dark:text-white focus:ring-0 appearance-none bg-transparent"
+                                        value={receivedQty === 0 ? '' : receivedQty}
+                                        onFocus={e => e.target.select()}
                                         onChange={(e) => handleSetQty(purchase.id, idx, parseFloat(e.target.value) || 0)}
                                         aria-label="Quantidade recebida"
                                         title="Quantidade"
                                       />
-                                      
+
                                       <button
                                         type="button"
                                         onClick={() => handleAdjustQty(purchase.id, idx, 1)}
-                                        className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center hover:bg-indigo-100 dark:hover:bg-indigo-900/40 active:scale-90 transition-all"
+                                        className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center active:scale-90 transition-all shrink-0"
                                         aria-label="Aumentar quantidade"
                                         title="Aumentar 1"
                                       >
                                         <Plus size={14} strokeWidth={3} />
                                       </button>
                                     </div>
-                                    
-                                    <span className="text-[10px] font-black uppercase text-slate-400 w-6">
+
+                                    <span className="text-[10px] font-black uppercase text-slate-400 shrink-0 w-8 text-center">
                                       {unitName}
                                     </span>
                                   </div>
                                 </div>
                               );
                             })}
+
+                            {(purchase.type === PurchaseType.REPLENISHMENT || purchase.type === PurchaseType.SOLE) && soleItemsList.map((item: any, idx: number) => (
+                              <div key={idx} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                                <div className="flex items-center justify-between mb-2">
+                                  <p className="text-xs font-black text-slate-700 dark:text-slate-200">{item.moldName}</p>
+                                  <span className="text-[9px] font-bold text-violet-500 uppercase">{item.colorName}</span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  {Object.entries(item.quantities || {}).map(([size, qty]: [string, any]) => (
+                                    <div key={size} className="flex flex-col items-center bg-white dark:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-600">
+                                      <span className="text-[8px] text-slate-400 font-bold">{size}</span>
+                                      <span className="text-sm font-black text-slate-800 dark:text-white">{qty}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                                <p className="text-[9px] text-slate-400 mt-1.5 text-right">Custo un.: R$ {Number(item.unitCost || 0).toFixed(2)}</p>
+                              </div>
+                            ))}
                           </div>
 
                           {/* Form Footer Action */}
@@ -547,7 +792,6 @@ export default function GeneralReceiptsView({
                             >
                               Cancelar
                             </button>
-                            
                             <button
                               type="button"
                               disabled={loadingPurchaseId === purchase.id}
@@ -557,15 +801,9 @@ export default function GeneralReceiptsView({
                               title="Registrar recebimento no estoque"
                             >
                               {loadingPurchaseId === purchase.id ? (
-                                <>
-                                  <RefreshCw size={14} className="animate-spin" />
-                                  REGISTRANDO...
-                                </>
+                                <><RefreshCw size={14} className="animate-spin" /> REGISTRANDO...</>
                               ) : (
-                                <>
-                                  <Check size={14} strokeWidth={3} />
-                                  Confirmar Recebimento
-                                </>
+                                <><Check size={14} strokeWidth={3} /> Confirmar Recebimento</>
                               )}
                             </button>
                           </div>
@@ -573,7 +811,7 @@ export default function GeneralReceiptsView({
                       ) : (
                         <div className="text-center py-6">
                           <p className="text-[10px] font-black uppercase text-slate-300 dark:text-slate-700 tracking-[0.2em] italic">
-                            Esta compra não possui itens cadastrados.
+                            Esta compra não possui itens detalhados.
                           </p>
                         </div>
                       )}
