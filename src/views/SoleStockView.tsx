@@ -26,6 +26,7 @@ export default function SoleStockView({
   const [editingEntry, setEditingEntry] = useState<SoleStockEntry | null>(null);
   const [isBalanceMode, setIsBalanceMode] = useState(false);
   const [balanceData, setBalanceData] = useState<Record<string, Record<string, number>>>({});
+  const [showClearConfirm, setShowClearConfirm] = useState(false);;
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
   const [selectedStockItem, setSelectedStockItem] = useState<any>(null);
 
@@ -91,8 +92,44 @@ export default function SoleStockView({
 
 
 
+  const handleClearAllStock = async () => {
+    for (const entry of stockEntries) {
+      await firebaseService.deleteDocument('soleStock', entry.id);
+    }
+    setShowClearConfirm(false);
+  };
+
   return (
     <div className="flex flex-col h-full pb-44 px-1 overflow-y-auto overflow-x-hidden force-scrollbar">
+
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-[200] flex">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowClearConfirm(false)} />
+          <div className="relative m-auto w-[90%] max-w-sm bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-2xl">
+            <h3 className="font-black text-slate-800 dark:text-white text-base mb-2 uppercase tracking-tight">Zerar Estoque?</h3>
+            <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+              Todos os registros de estoque de solados serão excluídos permanentemente. Esta ação não pode ser desfeita.
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowClearConfirm(false)}
+                className="flex-1 py-3 rounded-xl font-bold text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleClearAllStock}
+                className="flex-1 py-3 rounded-xl font-bold text-sm bg-rose-500 text-white hover:bg-rose-600 active:scale-95 transition-all shadow-sm"
+              >
+                Zerar Tudo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center gap-4 mb-6">
         <button 
           onClick={onBack}
@@ -159,11 +196,22 @@ export default function SoleStockView({
 
       <div className="flex gap-2 mb-4">
         <button
+          type="button"
           onClick={() => onNavigateToWeighing ? onNavigateToWeighing() : onBack()}
           className="flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white flex items-center justify-center gap-2"
         >
           <Scale size={14} /> Pesagem e Contagem
         </button>
+        {stockEntries.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowClearConfirm(true)}
+            className="py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 text-rose-500 hover:bg-rose-500 hover:text-white active:scale-95 transition-all flex items-center gap-1.5"
+            title="Zerar todo o estoque de solados"
+          >
+            <Trash2 size={14} strokeWidth={2.5} /> Zerar
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col gap-3 mb-6">

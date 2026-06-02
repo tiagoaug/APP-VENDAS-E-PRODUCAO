@@ -33,7 +33,7 @@ export default function CategoryModal({ isOpen, onClose, onSave, category, categ
       setType(defaultType);
       
       let suggestedModule: keyof AppModulesConfig = 'sales';
-      if (defaultType === CategoryType.PRODUCTION || defaultType === CategoryType.SUPPLY) suggestedModule = 'production';
+      if (defaultType === CategoryType.PRODUCTION || defaultType === CategoryType.SUPPLY || defaultType === CategoryType.CUTTING_TOOL) suggestedModule = 'production';
       if (defaultType === CategoryType.OTHER) suggestedModule = 'personal';
       
       setModule(suggestedModule);
@@ -59,7 +59,7 @@ export default function CategoryModal({ isOpen, onClose, onSave, category, categ
 
   const handleTypeChange = (newType: CategoryType) => {
     setType(newType);
-    if (newType === CategoryType.PRODUCTION || newType === CategoryType.SUPPLY) setModule('production');
+    if (newType === CategoryType.PRODUCTION || newType === CategoryType.SUPPLY || newType === CategoryType.CUTTING_TOOL) setModule('production');
     else if (newType === CategoryType.OTHER) {
       setModule('personal');
       setIsPersonal(true);
@@ -132,6 +132,7 @@ export default function CategoryModal({ isOpen, onClose, onSave, category, categ
             <option value={CategoryType.PRODUCTION}>PRODUÇÃO</option>
             <option value={CategoryType.GENERAL}>GERAIS</option>
             <option value={CategoryType.SUPPLY}>INSUMOS</option>
+            <option value={CategoryType.CUTTING_TOOL}>FACAS DE CORTE</option>
             <option value={CategoryType.OTHER}>PESSOAIS (OUTRAS)</option>
           </select>
         </div>

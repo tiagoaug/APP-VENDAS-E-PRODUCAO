@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Category, CategoryType, AppModulesConfig, ViewType } from '../types';
-import { Search, Plus, Tags, Trash2, Edit, ShoppingBag, TrendingDown, TrendingUp, Factory, LayoutGrid, User, Package, PlusCircle, Settings, ChevronRight } from 'lucide-react';
+import { Search, Plus, Tags, Trash2, Edit, ShoppingBag, TrendingDown, TrendingUp, Factory, LayoutGrid, User, Package, PlusCircle, Settings, ChevronRight, ChevronDown, Scissors } from 'lucide-react';
 
 import CategoryModal from '../components/CategoryModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -17,6 +17,7 @@ interface CategoriesViewProps {
 
 export default function CategoriesView({ categories, onAdd, onEdit, onDelete, isDarkMode, modulesConfig, onNavigate }: CategoriesViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   
   const allTabs = [
     { id: CategoryType.PRODUCT, label: 'Produtos', icon: <ShoppingBag size={14} />, color: 'bg-indigo-500', text: 'text-indigo-600', module: 'sales' },
@@ -24,6 +25,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
     { id: CategoryType.REVENUE, label: 'Receitas', icon: <TrendingUp size={14} />, color: 'bg-emerald-500', text: 'text-emerald-600', module: 'sales' },
     { id: CategoryType.PRODUCTION, label: 'Produção', icon: <Factory size={14} />, color: 'bg-orange-500', text: 'text-orange-600', module: 'production' },
     { id: CategoryType.SUPPLY, label: 'Insumos', icon: <Package size={14} />, color: 'bg-emerald-500', text: 'text-emerald-600', module: 'production' },
+    { id: CategoryType.CUTTING_TOOL, label: 'Facas', icon: <Scissors size={14} />, color: 'bg-orange-500', text: 'text-orange-600', module: 'production' },
     { id: CategoryType.GENERAL, label: 'Gerais', icon: <LayoutGrid size={14} />, color: 'bg-blue-500', text: 'text-blue-600', module: 'sales' },
     { id: CategoryType.OTHER, label: 'Pessoais', icon: <User size={14} />, color: 'bg-indigo-500', text: 'text-indigo-600', module: 'personal' },
   ];
@@ -46,14 +48,14 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
 
   const rootCategories = categories.filter(c => 
     c.isRoot && 
-    modulesConfig[ (c.module || (c.type === CategoryType.PRODUCTION || c.type === CategoryType.SUPPLY ? 'production' : c.isPersonal ? 'personal' : 'sales')) as keyof AppModulesConfig ]
+    modulesConfig[ (c.module || (c.type === CategoryType.PRODUCTION || c.type === CategoryType.SUPPLY || c.type === CategoryType.CUTTING_TOOL ? 'production' : c.isPersonal ? 'personal' : 'sales')) as keyof AppModulesConfig ]
   );
 
   const filtered = categories.filter(c => {
     if (c.isRoot) return false; // Don't show in the bottom list if it's a root card
 
     const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const categoryModule = c.module || (c.type === CategoryType.PRODUCTION || c.type === CategoryType.SUPPLY ? 'production' : c.isPersonal ? 'personal' : 'sales');
+    const categoryModule = c.module || (c.type === CategoryType.PRODUCTION || c.type === CategoryType.SUPPLY || c.type === CategoryType.CUTTING_TOOL ? 'production' : c.isPersonal ? 'personal' : 'sales');
     if (!modulesConfig[categoryModule as keyof AppModulesConfig]) return false;
 
     if (activeTab === CategoryType.OTHER) {
@@ -63,11 +65,19 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
   });
 
   const suggestedSupplies = ['SOLADOS', 'PALMILHAS', 'COURO/SINTÉTICO', 'FORROS', 'ADESIVOS', 'LINHAS', 'EMBALAGENS', 'MATERIAIS'];
+  const suggestedTools = ['LATERAL', 'FRENTE', 'TRASEIRA', 'BIQUEIRA', 'CONTRAFORTE', 'PALMILHA', 'VIRA', 'OUTROS'];
 
   const handleAddSuggested = (name: string) => {
     const exists = categories.some(c => c.name.toUpperCase() === name.toUpperCase() && c.type === CategoryType.SUPPLY);
     if (!exists) {
       onAdd({ name, type: CategoryType.SUPPLY, color: 'bg-emerald-500' });
+    }
+  };
+
+  const handleAddSuggestedTool = (name: string) => {
+    const exists = categories.some(c => c.name.toUpperCase() === name.toUpperCase() && c.type === CategoryType.CUTTING_TOOL);
+    if (!exists) {
+      onAdd({ name, type: CategoryType.CUTTING_TOOL, color: 'bg-orange-500' });
     }
   };
 
@@ -205,34 +215,61 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
           </div>
         </div>
 
-        {activeTab === CategoryType.SUPPLY && (
-          <div className="flex flex-col gap-2 p-4 rounded-[2rem] bg-emerald-50/30 dark:bg-emerald-950/20 border-2 border-emerald-100/50 dark:border-emerald-900/30">
-            <div className="flex items-center gap-2 mb-1">
-              <PlusCircle size={14} className="text-emerald-500" />
-              <span className="text-[11px] font-black uppercase tracking-widest text-emerald-600/70">Sugestões de Insumos</span>
+        {(activeTab === CategoryType.SUPPLY || activeTab === CategoryType.CUTTING_TOOL) && (() => {
+          const isSupply = activeTab === CategoryType.SUPPLY;
+          const suggestions = isSupply ? suggestedSupplies : suggestedTools;
+          const handleAdd = isSupply ? handleAddSuggested : handleAddSuggestedTool;
+          const catType = isSupply ? CategoryType.SUPPLY : CategoryType.CUTTING_TOOL;
+          const label = isSupply ? 'Sugestões de Insumos' : 'Sugestões de Categorias';
+          const wrapCls = isSupply
+            ? 'bg-emerald-50/30 dark:bg-emerald-950/20 border-emerald-100/50 dark:border-emerald-900/30'
+            : 'bg-orange-50/30 dark:bg-orange-950/20 border-orange-100/50 dark:border-orange-900/30';
+          const headerCls = isSupply
+            ? 'text-emerald-600 dark:text-emerald-400'
+            : 'text-orange-600 dark:text-orange-400';
+          const activeBtnCls = isSupply
+            ? 'text-emerald-600 border-emerald-100 hover:border-emerald-500 dark:text-emerald-400 dark:border-emerald-900'
+            : 'text-orange-600 border-orange-100 hover:border-orange-500 dark:text-orange-400 dark:border-orange-900';
+
+          return (
+            <div className={`rounded-[2rem] border-2 overflow-hidden ${wrapCls}`}>
+              <button
+                type="button"
+                onClick={() => setSuggestionsOpen(o => !o)}
+                className={`w-full flex items-center justify-between px-4 py-3 ${headerCls}`}
+              >
+                <div className="flex items-center gap-2">
+                  <PlusCircle size={14} />
+                  <span className="text-[11px] font-black uppercase tracking-widest">{label}</span>
+                </div>
+                <ChevronDown size={16} className={`transition-transform duration-200 ${suggestionsOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {suggestionsOpen && (
+                <div className="px-4 pb-4 flex flex-wrap gap-2">
+                  {suggestions.map(name => {
+                    const exists = categories.some(c => c.name.toUpperCase() === name.toUpperCase() && c.type === catType);
+                    return (
+                      <button
+                        type="button"
+                        key={name}
+                        onClick={() => handleAdd(name)}
+                        disabled={exists}
+                        title={`Adicionar sugestão: ${name}`}
+                        className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all border-2 ${
+                          exists
+                            ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600 border-transparent'
+                            : `bg-white dark:bg-slate-900 ${activeBtnCls} shadow-sm active:scale-95`
+                        }`}
+                      >
+                        {name} {exists && '✓'}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
-            <div className="flex flex-wrap gap-2">
-              {suggestedSupplies.map(name => {
-                const exists = categories.some(c => c.name.toUpperCase() === name.toUpperCase() && c.type === CategoryType.SUPPLY);
-                return (
-                  <button
-                    key={name}
-                    onClick={() => handleAddSuggested(name)}
-                    disabled={exists}
-                    title={`Adicionar sugestão: ${name}`}
-                    className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
-                      exists 
-                        ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600 border-2 border-transparent' 
-                        : 'bg-white text-emerald-600 border-2 border-emerald-100 hover:border-emerald-500 dark:bg-slate-900 dark:text-emerald-400 dark:border-emerald-900 shadow-sm active:scale-95'
-                    }`}
-                  >
-                    {name} {exists && '✓'}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
 
       <div className="flex flex-col gap-3">

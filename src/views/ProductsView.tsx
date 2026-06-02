@@ -3,15 +3,12 @@ import { Product, ProductStatus, SaleType, AppModulesConfig } from "../types";
 import {
   Search,
   Plus,
-  MoreHorizontal,
   Edit,
   Trash2,
-  ShoppingBag,
   Package,
   Filter,
   ChevronDown,
-  Copy,
-  Tag
+  Copy
 } from "lucide-react";
 import PrintLabelEditorModal from "../components/PrintLabelEditorModal";
 
@@ -142,7 +139,6 @@ export default function ProductsView({
               onDelete={() => setItemToDelete(product.id)}
               onToggleStatus={() => onToggleStatus(product.id, product.status === ProductStatus.ACTIVE ? ProductStatus.INACTIVE : ProductStatus.ACTIVE)}
               onDuplicate={() => onDuplicate(product)}
-              onPrint={() => setProductForLabels(product)}
               isDarkMode={isDarkMode}
             />
           ))}
@@ -167,7 +163,6 @@ interface ProductCardProps {
   onDelete: () => void;
   onToggleStatus: () => void;
   onDuplicate: () => void;
-  onPrint: () => void;
   isDarkMode: boolean;
   key?: string;
 }
@@ -178,80 +173,86 @@ function ProductCard({
   onDelete,
   onToggleStatus,
   onDuplicate,
-  onPrint,
   isDarkMode,
 }: ProductCardProps) {
   return (
     <div
-      className={`rounded-3xl border shadow-sm dark:shadow-none relative group flex flex-col ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
+      className={`rounded-3xl border shadow-sm dark:shadow-none relative flex flex-col ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
     >
-      <div className="p-4 flex flex-col sm:flex-row sm:items-center gap-4">
-        <div className="flex items-start justify-between flex-1">
-          <div className="flex items-center gap-4">
-             <div className="w-12 h-12 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-800 flex-shrink-0">
-                <Package size={24} className="text-indigo-500" />
-             </div>
-             <div className="flex flex-col mt-1">
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1 block">
-                  {product.reference}
-                </span>
-                <h3 className="font-bold text-base text-slate-800 dark:text-slate-100 uppercase tracking-tight leading-tight line-clamp-1 mb-2">
-                  {product.name}
-                </h3>
-                <div className="flex gap-2 items-center flex-wrap">
-                  {product.type === SaleType.WHOLESALE && (
-                    <div className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 rounded-md">
-                       <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">Atacado</span>
-                    </div>
-                  )}
-                  {product.type === SaleType.RETAIL && (
-                    <div className="px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/40 rounded-md">
-                       <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Varejo</span>
-                    </div>
-                  )}
-                  <button 
-                    onClick={onToggleStatus}
-                    className={`px-2 py-0.5 rounded-md cursor-pointer transition-colors ${product.status === ProductStatus.ACTIVE ? 'bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200'}`}
-                  >
-                     <span className="text-[9px] font-black shadow-sm uppercase tracking-widest">
-                       {product.status === ProductStatus.ACTIVE ? 'Ativo' : 'Inativo'}
-                     </span>
-                  </button>
-                </div>
-             </div>
-          </div>
-
-          <div className="flex items-center gap-1">
-            <button
-              onClick={onPrint}
-              className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 text-slate-400 dark:text-slate-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:text-indigo-600 dark:hover:text-indigo-400 transition-all shadow-sm border border-slate-100 dark:border-slate-700/50"
-              title="Imprimir Etiquetas"
-            >
-              <Tag size={16} strokeWidth={2.5} />
-            </button>
-            <button
-              onClick={onDuplicate}
-              className="p-2 text-slate-300 dark:text-slate-600 hover:text-emerald-500 transition-colors transform active:scale-90"
-              title="Duplicar Modelo"
-            >
-              <Copy size={16} />
-            </button>
-            <button
-              onClick={onEdit}
-              className="p-2 text-slate-300 dark:text-slate-600 hover:text-indigo-500 transition-colors transform active:scale-90"
-              title="Editar"
-            >
-              <Edit size={16} />
-            </button>
-            <button
-              onClick={onDelete}
-              className="p-2 text-slate-300 dark:text-slate-600 hover:text-rose-500 transition-colors transform active:scale-90"
-              title="Excluir"
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
+      {/* Linha 1: info */}
+      <div className="px-4 pt-4 flex items-center gap-3">
+        <div className="w-11 h-11 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700 flex-shrink-0">
+          <Package size={22} className="text-indigo-500" />
         </div>
+        <div className="flex flex-col min-w-0">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
+            {product.reference}
+          </span>
+          <h3 className="font-bold text-base text-slate-800 dark:text-slate-100 uppercase tracking-tight leading-tight truncate">
+            {product.name}
+          </h3>
+        </div>
+      </div>
+
+      {/* Linha 2: ações */}
+      <div className={`mx-4 mt-3 flex items-center gap-2 pb-3 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+        <button
+          type="button"
+          onClick={onDuplicate}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 active:scale-95 transition-all"
+          title="Duplicar Modelo"
+        >
+          <Copy size={14} strokeWidth={2.5} /> Duplicar
+        </button>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 active:scale-95 transition-all"
+          title="Editar"
+        >
+          <Edit size={14} strokeWidth={2.5} /> Editar
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="w-10 h-10 flex items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-500 hover:bg-rose-500 hover:text-white active:scale-95 transition-all"
+          title="Excluir"
+        >
+          <Trash2 size={16} strokeWidth={2.5} />
+        </button>
+      </div>
+
+      {/* Badges */}
+      <div className="px-4 py-2.5 flex gap-2 items-center flex-wrap">
+        {product.saleTypes?.includes(SaleType.WHOLESALE) && (
+          <div className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 rounded-md">
+            <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">Atacado</span>
+          </div>
+        )}
+        {product.saleTypes?.includes(SaleType.RETAIL) && (
+          <div className="px-2 py-0.5 bg-violet-50 dark:bg-violet-900/40 rounded-md">
+            <span className="text-[9px] font-black text-violet-500 uppercase tracking-widest">Varejo</span>
+          </div>
+        )}
+        {!product.saleTypes?.length && product.type === SaleType.WHOLESALE && (
+          <div className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 rounded-md">
+            <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">Atacado</span>
+          </div>
+        )}
+        {!product.saleTypes?.length && product.type === SaleType.RETAIL && (
+          <div className="px-2 py-0.5 bg-violet-50 dark:bg-violet-900/40 rounded-md">
+            <span className="text-[9px] font-black text-violet-500 uppercase tracking-widest">Varejo</span>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={onToggleStatus}
+          className={`px-2 py-0.5 rounded-md cursor-pointer transition-colors ${product.status === ProductStatus.ACTIVE ? 'bg-emerald-50 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200'}`}
+        >
+          <span className="text-[9px] font-black uppercase tracking-widest">
+            {product.status === ProductStatus.ACTIVE ? 'Ativo' : 'Inativo'}
+          </span>
+        </button>
       </div>
     </div>
   );

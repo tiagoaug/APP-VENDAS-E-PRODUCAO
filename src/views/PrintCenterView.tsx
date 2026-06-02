@@ -4,15 +4,16 @@ import {
   Factory, ClipboardList, Check, X,
   AlertCircle, Settings2, BookOpen, Truck,
   ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
-  RotateCcw, Eye, EyeOff, Plus, Minus, Tag, ExternalLink
+  RotateCcw, Eye, EyeOff, Plus, Minus, Tag, Image, Thermometer
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import {
   Product, Sale, Purchase, ProductionLot, ServiceOrder, Person,
   SaleStatus, PaymentStatus, PurchaseType, SaleType
 } from '../types';
-import { sharePDF } from '../utils/pdfExport';
+import { sharePDF, shareImage } from '../utils/pdfExport';
 import PrintLabelEditorModal from '../components/PrintLabelEditorModal';
+import PrintOSModal from '../components/PrintOSModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,7 +69,8 @@ interface Props {
   productionLots: ProductionLot[];
   serviceOrders: ServiceOrder[];
   people: Person[];
-  sectors: { id: string; name: string; color: string }[];
+  sectors: any[];
+  onDeleteItems?: (section: Section, ids: string[]) => void;
 }
 
 // ─── Section config ───────────────────────────────────────────────────────────
@@ -81,7 +83,7 @@ const SECTIONS: {
   { id: 'lots',      label: 'Mapa de Produção',  shortLabel: 'Mapa',     icon: <Factory size={20}/>,       accent: 'text-violet-600', accentBg: 'bg-violet-600', accentBorder: 'border-violet-400' },
   { id: 'sales',     label: 'Pedidos de Venda',  shortLabel: 'Vendas',   icon: <ShoppingBag size={20}/>,   accent: 'text-indigo-600', accentBg: 'bg-indigo-600', accentBorder: 'border-indigo-400' },
   { id: 'purchases', label: 'Pedidos de Compra', shortLabel: 'Compras',  icon: <Truck size={20}/>,         accent: 'text-teal-600',   accentBg: 'bg-teal-600',   accentBorder: 'border-teal-400' },
-  { id: 'products',  label: 'Fichas de Produto', shortLabel: 'Fichas',   icon: <BookOpen size={20}/>,      accent: 'text-amber-600',  accentBg: 'bg-amber-500',  accentBorder: 'border-amber-400' },
+  { id: 'products',  label: 'Produtos',           shortLabel: 'Produtos', icon: <BookOpen size={20}/>,      accent: 'text-amber-600',  accentBg: 'bg-amber-500',  accentBorder: 'border-amber-400' },
   { id: 'labels',    label: 'Etiquetas',          shortLabel: 'Etiquetas',icon: <Tag size={20}/>,           accent: 'text-pink-600',   accentBg: 'bg-pink-600',   accentBorder: 'border-pink-400' },
 ];
 
@@ -536,6 +538,262 @@ async function renderProductsPDF(items: Product[], layout: PrintLayout) {
   await sharePDF(doc, `Fichas_Produto_${fmt(Date.now()).replace(/\//g, '-')}.pdf`);
 }
 
+// ─── JPG Canvas renderer ─────────────────────────────────────────────────────
+
+type CardDef = { color: string; num: string; title: string; subtitle: string; rows: { label: string; value: string }[] };
+
+function buildCards(
+  section: Section,
+  osItems: ServiceOrder[], lotItems: ProductionLot[],
+  saleItems: Sale[], purchaseItems: Purchase[], productItems: Product[],
+  allProducts: Product[], people: Person[], allSectors: { id: string; name: string }[]
+): CardDef[] {
+  const cards: CardDef[] = [];
+  if (section === 'os') {
+    for (const os of osItems) {
+      cards.push({
+        color: '#dc2626', num: os.osNumber, title: os.productName, subtitle: os.variationName || '',
+        rows: [
+          { label: 'Setor', value: allSectors.find(s => s.id === os.sectorId)?.name || os.sectorName || '—' },
+          { label: 'Prestador', value: os.providerName || '—' },
+          { label: 'Quantidade', value: `${os.quantity} pares` },
+          { label: 'Valor/par', value: `R$ ${os.valuePerPair.toFixed(2)}` },
+          { label: 'Total', value: fmtMoney(os.totalValue) },
+          { label: 'Status', value: os.finishedAt ? 'Concluída' : 'Em aberto' },
+        ],
+      });
+    }
+  } else if (section === 'lots') {
+    for (const lot of lotItems) {
+      const product = allProducts.find(p => p.id === lot.productId);
+      const variation = product?.variations.find(v => v.id === lot.variationId);
+      const curSector = allSectors.find(s => s.id === lot.route?.[lot.currentSectorIndex]);
+      cards.push({
+        color: '#7c3aed', num: lot.orderNumber, title: product?.name || '—', subtitle: variation?.colorName || '',
+        rows: [
+          { label: 'Referência', value: product?.reference || '—' },
+          { label: 'Setor atual', value: curSector?.name || '—' },
+          { label: 'Quantidade', value: `${lot.quantity} pares` },
+          { label: 'Status', value: lot.finishedAt ? 'Finalizado' : 'Em produção' },
+          { label: 'Criado em', value: fmt(lot.createdAt) },
+        ],
+      });
+    }
+  } else if (section === 'sales') {
+    for (const sale of saleItems) {
+      const customer = people.find(p => p.id === sale.customerId);
+      cards.push({
+        color: '#4338ca', num: sale.orderNumber,
+        title: customer?.name || sale.customerName || 'Sem cliente',
+        subtitle: sale.status === SaleStatus.QUOTE ? 'Orçamento' : sale.status === SaleStatus.SALE ? 'Venda' : 'Cancelado',
+        rows: [
+          { label: 'Data', value: fmt(sale.date) },
+          { label: 'Entrega', value: sale.deliveryDate ? fmt(sale.deliveryDate) : '—' },
+          { label: 'Itens', value: `${sale.items.length} produto(s)` },
+          { label: 'Total', value: fmtMoney(sale.total) },
+          { label: 'Pagamento', value: sale.paymentStatus === PaymentStatus.PAID ? 'Quitado' : 'Pendente' },
+        ],
+      });
+    }
+  } else if (section === 'purchases') {
+    for (const purchase of purchaseItems) {
+      const supplier = people.find(p => p.id === purchase.supplierId);
+      cards.push({
+        color: '#0f766e', num: purchase.batchNumber || purchase.id.slice(0, 8).toUpperCase(),
+        title: supplier?.name || '—',
+        subtitle: purchase.type === PurchaseType.REPLENISHMENT ? 'Reposição' : 'Geral',
+        rows: [
+          { label: 'Data', value: fmt(purchase.date) },
+          { label: 'Tipo', value: purchase.type === PurchaseType.REPLENISHMENT ? 'Reposição' : 'Geral' },
+          { label: 'Total', value: fmtMoney(purchase.total) },
+        ],
+      });
+    }
+  } else {
+    for (const product of productItems) {
+      cards.push({
+        color: '#d97706', num: product.reference, title: product.name,
+        subtitle: `${product.variations.length} variação(ões)`,
+        rows: [
+          { label: 'Tipo', value: product.type === SaleType.RETAIL ? 'Varejo' : 'Atacado' },
+          { label: 'Custo', value: fmtMoney(product.costPrice) },
+          { label: 'Preço de venda', value: fmtMoney(product.salePrice) },
+          { label: 'Cores', value: product.variations.map(v => v.colorName).join(', ') || '—' },
+        ],
+      });
+    }
+  }
+  return cards;
+}
+
+function drawRR(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h); ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function drawRRTop(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h); ctx.lineTo(x, y + h);
+  ctx.lineTo(x, y + r); ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+async function renderSectionJPG(
+  section: Section, filename: string,
+  osItems: ServiceOrder[], lotItems: ProductionLot[],
+  saleItems: Sale[], purchaseItems: Purchase[], productItems: Product[],
+  allProducts: Product[], people: Person[], allSectors: { id: string; name: string }[]
+) {
+  const cards = buildCards(section, osItems, lotItems, saleItems, purchaseItems, productItems, allProducts, people, allSectors);
+  if (cards.length === 0) return;
+
+  const CW = 800, PAD = 14, CPAD = 24, HEADERH = 70, ROWH = 42, GAP = 14, RADIUS = 16;
+  const cardH = (c: CardDef) => HEADERH + CPAD + c.rows.length * ROWH + CPAD;
+  const totalH = 64 + cards.reduce((s, c) => s + cardH(c) + GAP, 0) + GAP;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = CW; canvas.height = totalH;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = '#f1f5f9';
+  ctx.fillRect(0, 0, CW, totalH);
+
+  // Top bar
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(0, 0, CW, 50);
+  ctx.fillStyle = '#ffffff'; ctx.font = 'bold 15px Arial'; ctx.textAlign = 'left';
+  ctx.fillText('ANTIGRAVITY SYSTEM', PAD + 6, 32);
+  ctx.fillStyle = '#64748b'; ctx.font = '12px Arial'; ctx.textAlign = 'right';
+  ctx.fillText(`${cards.length} registro(s)  •  ${new Date().toLocaleDateString('pt-BR')}`, CW - PAD - 6, 32);
+
+  let y = 64;
+  for (const card of cards) {
+    const CH = cardH(card);
+    const cx = PAD, cw = CW - PAD * 2;
+
+    // shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.07)';
+    drawRR(ctx, cx + 2, y + 3, cw, CH, RADIUS); ctx.fill();
+
+    // card bg
+    ctx.fillStyle = '#ffffff';
+    drawRR(ctx, cx, y, cw, CH, RADIUS); ctx.fill();
+
+    // header
+    ctx.fillStyle = card.color;
+    drawRRTop(ctx, cx, y, cw, HEADERH, RADIUS); ctx.fill();
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255,255,255,0.65)'; ctx.font = 'bold 12px Arial';
+    ctx.fillText(card.num, cx + CPAD, y + 22);
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 21px Arial';
+    const titleMax = 38;
+    ctx.fillText(card.title.length > titleMax ? card.title.slice(0, titleMax) + '…' : card.title, cx + CPAD, y + 50);
+    if (card.subtitle) {
+      ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.font = '12px Arial'; ctx.textAlign = 'right';
+      ctx.fillText(card.subtitle, cx + cw - CPAD, y + 22);
+    }
+
+    // rows
+    ctx.textAlign = 'left';
+    let fy = y + HEADERH + CPAD;
+    const half = Math.ceil(card.rows.length / 2);
+    const colW = (cw - CPAD * 2) / 2;
+    card.rows.forEach((row, i) => {
+      const col = i < half ? 0 : 1;
+      const row_i = i < half ? i : i - half;
+      const fx = cx + CPAD + col * (colW + 8);
+      const fy2 = y + HEADERH + CPAD + row_i * ROWH;
+      ctx.fillStyle = '#94a3b8'; ctx.font = '10px Arial';
+      ctx.fillText(row.label.toUpperCase(), fx, fy2 + 10);
+      ctx.fillStyle = '#1e293b'; ctx.font = 'bold 14px Arial';
+      const valMax = 22;
+      ctx.fillText(row.value.length > valMax ? row.value.slice(0, valMax) + '…' : row.value, fx, fy2 + 28);
+    });
+    // use fy properly
+    fy = fy; // already set above
+
+    y += CH + GAP;
+  }
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.93);
+  await shareImage(dataUrl, filename);
+}
+
+async function renderThermalCanvas(
+  section: Section,
+  osItems: ServiceOrder[], lotItems: ProductionLot[],
+  saleItems: Sale[], purchaseItems: Purchase[], productItems: Product[],
+  allProducts: Product[], people: Person[], allSectors: { id: string; name: string }[]
+) {
+  const cards = buildCards(section, osItems, lotItems, saleItems, purchaseItems, productItems, allProducts, people, allSectors);
+  if (cards.length === 0) return;
+
+  // 80x40mm at ~12px/mm → 960x480px per label
+  const LW = 960, LH = 480, PAD = 32;
+  const canvas = document.createElement('canvas');
+  canvas.width = LW; canvas.height = LH * cards.length;
+  const ctx = canvas.getContext('2d')!;
+
+  cards.forEach((card, idx) => {
+    const oy = idx * LH;
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, oy, LW, LH);
+    if (idx > 0) { ctx.strokeStyle = '#cccccc'; ctx.setLineDash([8, 4]); ctx.beginPath(); ctx.moveTo(0, oy); ctx.lineTo(LW, oy); ctx.stroke(); ctx.setLineDash([]); }
+
+    // Left accent strip
+    ctx.fillStyle = card.color; ctx.fillRect(0, oy, 16, LH);
+
+    // Number
+    ctx.fillStyle = card.color; ctx.font = 'bold 28px Arial'; ctx.textAlign = 'left';
+    ctx.fillText(card.num, PAD + 16, oy + 52);
+
+    // Date
+    ctx.fillStyle = '#94a3b8'; ctx.font = '20px Arial'; ctx.textAlign = 'right';
+    ctx.fillText(new Date().toLocaleDateString('pt-BR'), LW - PAD, oy + 52);
+
+    // Divider
+    ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1; ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(PAD + 16, oy + 66); ctx.lineTo(LW - PAD, oy + 66); ctx.stroke();
+
+    // Title
+    ctx.fillStyle = '#0f172a'; ctx.font = 'bold 42px Arial'; ctx.textAlign = 'left';
+    const t = card.title.length > 24 ? card.title.slice(0, 24) + '…' : card.title;
+    ctx.fillText(t, PAD + 16, oy + 128);
+
+    // Subtitle
+    ctx.fillStyle = '#64748b'; ctx.font = '26px Arial';
+    ctx.fillText(card.subtitle || '', PAD + 16, oy + 168);
+
+    // Key rows (first 4 only for thermal)
+    const maxRows = Math.min(card.rows.length, 4);
+    const colW = (LW - PAD * 2 - 16) / 2;
+    for (let i = 0; i < maxRows; i++) {
+      const col = i % 2, row = Math.floor(i / 2);
+      const fx = PAD + 16 + col * (colW + 8);
+      const fy = oy + 220 + row * 100;
+      ctx.fillStyle = '#94a3b8'; ctx.font = '18px Arial';
+      ctx.fillText(card.rows[i].label.toUpperCase(), fx, fy);
+      ctx.fillStyle = '#1e293b'; ctx.font = 'bold 30px Arial';
+      const v = card.rows[i].value.length > 18 ? card.rows[i].value.slice(0, 18) + '…' : card.rows[i].value;
+      ctx.fillText(v, fx, fy + 38);
+    }
+
+    // Footer
+    ctx.fillStyle = '#cbd5e1'; ctx.font = '16px Arial'; ctx.textAlign = 'center';
+    ctx.fillText('ANTIGRAVITY SYSTEM', LW / 2, oy + LH - 16);
+  });
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.93);
+  await shareImage(dataUrl, `Etiqueta_${section}_${fmt(Date.now()).replace(/\//g, '-')}.jpg`);
+}
+
 // ─── Ruler ────────────────────────────────────────────────────────────────────
 
 function Ruler({ axis, totalMm, scale, isDark }: { axis: 'h'|'v'; totalMm: number; scale: number; isDark: boolean }) {
@@ -578,11 +836,13 @@ function Badge({ label, color }: { label: string; color: string }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function PrintCenterView({ isDarkMode, products, sales, purchases, productionLots, serviceOrders, people, sectors }: Props) {
+export default function PrintCenterView({ isDarkMode, products, sales, purchases, productionLots, serviceOrders, people, sectors, onDeleteItems }: Props) {
   const [activeSection, setActiveSection] = useState<Section>('os');
   const [view, setView] = useState<'list' | 'editor'>('list');
   const [search, setSearch] = useState('');
   const [printing, setPrinting] = useState(false);
+  const [osModalOpen, setOsModalOpen] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   // Selections
   const [selOS,        setSelOS]        = useState<Set<string>>(new Set());
@@ -672,12 +932,20 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
   function toggle<T>(set: Set<T>, item: T): Set<T> { const n = new Set(set); n.has(item) ? n.delete(item) : n.add(item); return n; }
 
   function selCount() {
-    if (activeSection === 'labels')    return labelProductId ? 1 : 0; // label uses modal, count just for button state
+    if (activeSection === 'labels')    return labelProductId ? 1 : 0;
     if (activeSection === 'os')        return selOS.size;
     if (activeSection === 'lots')      return selLots.size;
     if (activeSection === 'sales')     return selSales.size;
     if (activeSection === 'purchases') return selPurchases.size;
     return selProducts.size;
+  }
+
+  function getSelIds() {
+    if (activeSection === 'os') return Array.from(selOS);
+    if (activeSection === 'lots') return Array.from(selLots);
+    if (activeSection === 'sales') return Array.from(selSales);
+    if (activeSection === 'purchases') return Array.from(selPurchases);
+    return Array.from(selProducts);
   }
 
   function selectAll() {
@@ -695,10 +963,8 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
     else setSelProducts(new Set());
   }
 
-  // Change paper size for current section's layout
   const changePaper = (preset: PaperPreset) => {
     const def = defaultLayout(activeSection);
-    // Scale elements proportionally to new paper
     const [oldW, oldH] = layout.paper;
     const [newW, newH] = preset.dims;
     const sx = newW / oldW, sy = newH / oldH;
@@ -716,25 +982,56 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
     setSelectedElem(null);
   };
 
-  const handlePrint = async () => {
-    if (activeSection === 'labels') {
-      // Labels use the full PrintLabelEditorModal — open it
-      setLabelModalOpen(true);
-      return;
+  const handlePrint = () => {
+    if (selCount() === 0) return;
+    setShowExportModal(true);
+  };
+
+  const doExport = async (format: 'pdf' | 'jpg' | 'thermal') => {
+    setShowExportModal(false);
+    const selOS_items    = filteredOS.filter(o => selOS.has(o.id));
+    const selLots_items  = filteredLots.filter(l => selLots.has(l.id));
+    const selSales_items = filteredSales.filter(s => selSales.has(s.id));
+    const selPurch_items = filteredPurchases.filter(p => selPurchases.has(p.id));
+    const selProd_items  = filteredProducts.filter(p => selProducts.has(p.id));
+
+    if (format === 'pdf') {
+      if (activeSection === 'labels') { setLabelModalOpen(true); return; }
+      if (activeSection === 'os' && selOS_items.length === 1) { setOsModalOpen(true); return; }
+      setPrinting(true);
+      try {
+        if (activeSection === 'os')        await renderOSPDF(selOS_items, products, sectors, layout);
+        else if (activeSection === 'lots') await renderLotsPDF(selLots_items, products, sectors, layout);
+        else if (activeSection === 'sales') await renderSalesPDF(selSales_items, products, people, layout);
+        else if (activeSection === 'purchases') await renderPurchasesPDF(selPurch_items, people, layout);
+        else await renderProductsPDF(selProd_items, layout);
+      } finally { setPrinting(false); }
+
+    } else if (format === 'jpg') {
+      if (activeSection === 'labels') { setLabelModalOpen(true); return; }
+      setPrinting(true);
+      try {
+        const fname = `Exportacao_${activeSection}_${fmt(Date.now()).replace(/\//g, '-')}.jpg`;
+        await renderSectionJPG(activeSection, fname,
+          selOS_items, selLots_items, selSales_items, selPurch_items, selProd_items,
+          products, people, sectors);
+      } finally { setPrinting(false); }
+
+    } else {
+      // thermal
+      if (activeSection === 'labels' || activeSection === 'products') {
+        setLabelModalOpen(true);
+      } else if (activeSection === 'os' && selOS_items.length === 1) {
+        setOsModalOpen(true);
+      } else {
+        setPrinting(true);
+        try {
+          await renderThermalCanvas(activeSection,
+            selOS_items, selLots_items, selSales_items, selPurch_items, selProd_items,
+            products, people, sectors);
+        } finally { setPrinting(false); }
+      }
     }
-    setPrinting(true);
-    try {
-      if (activeSection === 'os')
-        await renderOSPDF(filteredOS.filter(o => selOS.has(o.id)), products, sectors, layout);
-      else if (activeSection === 'lots')
-        await renderLotsPDF(filteredLots.filter(l => selLots.has(l.id)), products, sectors, layout);
-      else if (activeSection === 'sales')
-        await renderSalesPDF(filteredSales.filter(s => selSales.has(s.id)), products, people, layout);
-      else if (activeSection === 'purchases')
-        await renderPurchasesPDF(filteredPurchases.filter(p => selPurchases.has(p.id)), people, layout);
-      else
-        await renderProductsPDF(filteredProducts.filter(p => selProducts.has(p.id)), layout);
-    } finally { setPrinting(false); }
   };
 
   const sec = SECTIONS.find(s => s.id === activeSection)!;
@@ -1165,6 +1462,24 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
             <div className="flex items-center gap-2">
               <button type="button" onClick={selectAll} className={`text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl border ${sec.accent} ${dk?'border-slate-700':'border-slate-200'}`}>Todos</button>
               {cnt > 0 && <button type="button" onClick={clearSel} className="text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl border text-slate-400 border-slate-200 dark:border-slate-700">Limpar</button>}
+              {cnt > 0 && onDeleteItems && (
+                <button type="button" onClick={() => {
+                  if (confirm(`Deseja apagar ${cnt} item(ns) selecionado(s)?`)) {
+                    let ids: string[] = [];
+                    if (activeSection === 'os') ids = Array.from(selOS);
+                    else if (activeSection === 'lots') ids = Array.from(selLots);
+                    else if (activeSection === 'sales') ids = Array.from(selSales);
+                    else if (activeSection === 'purchases') ids = Array.from(selPurchases);
+                    else if (activeSection === 'products') ids = Array.from(selProducts);
+                    if (ids.length > 0) {
+                      onDeleteItems(activeSection, ids);
+                      clearSel();
+                    }
+                  }
+                }} className="text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-xl border border-red-200 text-red-500 hover:bg-red-50 dark:border-red-900/30 dark:text-red-400 dark:hover:bg-red-900/20">
+                  Apagar
+                </button>
+              )}
             </div>
             <span className={`text-[9px] font-black uppercase ${cnt>0?sec.accent:'text-slate-400'}`}>
               {cnt > 0 ? `${cnt} sel.` : `${rows.length} reg.`}
@@ -1189,13 +1504,68 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
         <button type="button" onClick={handlePrint} disabled={printing || cnt === 0}
           className={`w-full py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-3 transition-all shadow-lg active:scale-95 disabled:opacity-40 ${cnt>0?'bg-indigo-600 text-white shadow-indigo-500/20':dk?'bg-slate-800 text-slate-500':'bg-slate-100 text-slate-400'}`}>
           <Printer size={18}/>
-          {printing ? 'Gerando PDF…'
-            : activeSection === 'labels' && cnt > 0 ? 'Abrir Editor de Etiquetas'
-            : cnt > 0 ? `Imprimir ${cnt} ${sec.shortLabel}`
+          {printing ? 'Exportando…'
+            : cnt > 0 ? `Exportar ${cnt} ${sec.shortLabel}`
             : activeSection === 'labels' ? 'Selecione um produto acima'
-            : 'Selecione itens para imprimir'}
+            : 'Selecione itens para exportar'}
         </button>
       </div>
+
+      {/* ── Export modal ── */}
+      {showExportModal && (
+        <div className="fixed inset-0 z-[300] flex items-end justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-sm rounded-[2rem] p-6 flex flex-col gap-3 shadow-2xl animate-in slide-in-from-bottom-4 duration-300 ${dk ? 'bg-slate-900' : 'bg-white'}`}>
+            <div className="flex items-center justify-between mb-1">
+              <div>
+                <h3 className={`text-base font-black uppercase tracking-tight ${dk?'text-white':'text-slate-900'}`}>Exportar</h3>
+                <p className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 ${sec.accent}`}>{cnt} {sec.label} selecionado(s)</p>
+              </div>
+              <button type="button" title="Fechar" aria-label="Fechar modal de exportação" onClick={() => setShowExportModal(false)} className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"><X size={18}/></button>
+            </div>
+
+            {/* PDF */}
+            <button type="button" onClick={() => doExport('pdf')}
+              className={`flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all active:scale-95 ${dk?'border-indigo-700/50 bg-indigo-900/20 hover:bg-indigo-900/40':'border-indigo-100 bg-indigo-50 hover:bg-indigo-100'}`}>
+              <div className="w-11 h-11 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
+                <FileText size={20} className="text-white"/>
+              </div>
+              <div>
+                <p className={`text-sm font-black ${dk?'text-white':'text-slate-900'}`}>Documento PDF</p>
+                <p className="text-[10px] text-slate-400 font-bold mt-0.5">Gerar e compartilhar PDF formatado</p>
+              </div>
+            </button>
+
+            {/* JPG */}
+            <button type="button" onClick={() => doExport('jpg')}
+              className={`flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all active:scale-95 ${dk?'border-emerald-700/50 bg-emerald-900/20 hover:bg-emerald-900/40':'border-emerald-100 bg-emerald-50 hover:bg-emerald-100'}`}>
+              <div className="w-11 h-11 rounded-xl bg-emerald-600 flex items-center justify-center shrink-0">
+                <Image size={20} className="text-white"/>
+              </div>
+              <div>
+                <p className={`text-sm font-black ${dk?'text-white':'text-slate-900'}`}>Imagem JPG</p>
+                <p className="text-[10px] text-slate-400 font-bold mt-0.5">Exportar como cards visuais em imagem</p>
+              </div>
+            </button>
+
+            {/* Etiqueta Térmica */}
+            <button type="button" onClick={() => doExport('thermal')}
+              className={`flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all active:scale-95 ${dk?'border-amber-700/50 bg-amber-900/20 hover:bg-amber-900/40':'border-amber-100 bg-amber-50 hover:bg-amber-100'}`}>
+              <div className="w-11 h-11 rounded-xl bg-amber-500 flex items-center justify-center shrink-0">
+                <Thermometer size={20} className="text-white"/>
+              </div>
+              <div>
+                <p className={`text-sm font-black ${dk?'text-white':'text-slate-900'}`}>Etiqueta Térmica</p>
+                <p className="text-[10px] text-slate-400 font-bold mt-0.5">Imprimir em impressora térmica</p>
+              </div>
+            </button>
+
+            <button type="button" onClick={() => setShowExportModal(false)}
+              className={`w-full py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 ${dk?'bg-slate-800 text-slate-400':'bg-slate-100 text-slate-500'}`}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── PrintLabelEditorModal — abre quando produto selecionado em Etiquetas ── */}
       {labelModalOpen && labelProductId && (() => {
@@ -1207,6 +1577,26 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
             onClose={() => setLabelModalOpen(false)}
             product={prod}
             isDarkMode={isDarkMode}
+          />
+        );
+      })()}
+
+      {/* ── PrintOSModal — abre quando 1 OS é selecionada em OS ── */}
+      {osModalOpen && selOS.size === 1 && (() => {
+        const osId = Array.from(selOS)[0];
+        const os = serviceOrders.find(o => o.id === osId);
+        if (!os) return null;
+        const curSectorIdx = os.currentSectorIndex || 0;
+        const nextSectorId = os.route?.[curSectorIdx + 1];
+        const nextSectorName = sectors.find(s => s.id === nextSectorId)?.name || 'Fim';
+        return (
+          <PrintOSModal
+            isOpen={osModalOpen}
+            onClose={() => setOsModalOpen(false)}
+            os={os}
+            nextSectorName={nextSectorName}
+            isDarkMode={isDarkMode}
+            product={products.find(p => p.id === os.productId)}
           />
         );
       })()}

@@ -1715,6 +1715,26 @@ export default function App() {
             serviceOrders={serviceOrders}
             people={people}
             sectors={sectors}
+            onDeleteItems={async (section, ids) => {
+              try {
+                let collection = '';
+                if (section === 'os') collection = 'serviceOrders';
+                else if (section === 'lots') collection = 'productionLots';
+                else if (section === 'sales') collection = 'sales';
+                else if (section === 'purchases') collection = 'purchases';
+                else if (section === 'products') collection = 'products';
+                
+                if (collection) {
+                  for (const id of ids) {
+                    await firebaseService.deleteDocument(collection, id);
+                  }
+                  alert(`${ids.length} item(ns) apagado(s) com sucesso!`);
+                }
+              } catch (err: any) {
+                console.error("Erro ao apagar itens", err);
+                alert("Erro ao apagar itens: " + (err.message || err));
+              }
+            }}
           />
         );
       case ViewType.BACKUP:
@@ -1751,6 +1771,14 @@ export default function App() {
             colors={colors}
             productionConfigs={productionConfigs}
             flowTags={flowTags}
+            onSaveOnly={async (product) => {
+              try {
+                await firebaseService.saveDocument("products", product);
+              } catch (err: any) {
+                console.error("Erro ao salvar produto:", err);
+                alert("Erro ao salvar produto: " + (err.message || err));
+              }
+            }}
             onSave={async (product) => {
               try {
                 await firebaseService.saveDocument("products", product);
@@ -2993,7 +3021,11 @@ export default function App() {
               }
             }}
             onDeleteConfigItem={(id: string) => firebaseService.deleteDocument("productionConfigs", id)}
-            onUpdateSectorsOrder={(updatedSectors: any[]) => Promise.all(updatedSectors.map(s => firebaseService.saveDocument('sectors', s))).then(() => {})}
+            onUpdateSectorsOrder={(updatedSectors: any[]) => {
+              const withOrder = updatedSectors.map((s, i) => ({ ...s, order: i }));
+              setSectors(withOrder);
+              Promise.all(withOrder.map(s => firebaseService.saveDocument('sectors', s)));
+            }}
             onBack={goBack}
             isDarkMode={isDarkMode}
             people={people}
@@ -3083,7 +3115,11 @@ export default function App() {
               }
             }}
             onDeleteConfigItem={(id: string) => firebaseService.deleteDocument("productionConfigs", id)}
-            onUpdateSectorsOrder={(updatedSectors: any[]) => Promise.all(updatedSectors.map(s => firebaseService.saveDocument('sectors', s))).then(() => {})}
+            onUpdateSectorsOrder={(updatedSectors: any[]) => {
+              const withOrder = updatedSectors.map((s, i) => ({ ...s, order: i }));
+              setSectors(withOrder);
+              Promise.all(withOrder.map(s => firebaseService.saveDocument('sectors', s)));
+            }}
             onBack={goBack}
             isDarkMode={isDarkMode}
             people={people}

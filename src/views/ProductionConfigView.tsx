@@ -460,6 +460,15 @@ export default function ProductionConfigView({
     return ['SOLADOS', 'PALMILHAS', 'COURO/SINTÉTICO', 'FORROS', 'ADESIVOS', 'LINHAS', 'EMBALAGENS', 'OUTROS'];
   }, [categories]);
 
+  const toolCategoryNames = useMemo(() => {
+    const fromSystem = categories
+      .filter(c => c.type === CategoryType.CUTTING_TOOL)
+      .map(c => c.name.toUpperCase());
+
+    if (fromSystem.length > 0) return fromSystem;
+    return ['LATERAL', 'FRENTE', 'TRASEIRA', 'BIQUEIRA', 'CONTRAFORTE', 'PALMILHA', 'VIRA', 'OUTROS'];
+  }, [categories]);
+
   const purchaseNeeds = useMemo(() => {
     const materialReqs: Record<string, number> = {};
     const activeLots = lots.filter(l => !l.finishedAt);
@@ -1369,7 +1378,7 @@ function GenericConfigList({
     const activeWeights = weights.filter(w => w > 0);
     const total = activeWeights.reduce((a, b) => a + b, 0);
     const avg = activeWeights.length > 0 ? total / activeWeights.length : 0;
-    const yld = avg > 0 ? 1000 / avg : 0;
+    const yld = avg > 0 ? 1 / avg : 0;
     return { totalWeightLive: total, averageWeightLive: avg, yieldLive: yld };
   }, [editingItem?.metadata?.sizeWeights]);
 
@@ -1589,7 +1598,7 @@ function GenericConfigList({
               description: '',
               type,
               createdAt: Date.now(),
-              metadata: type === 'TOOL' ? { conjugation: 1, sizes: [], sizeAreas: {} } :
+              metadata: type === 'TOOL' ? { conjugation: 1, sizes: [], sizeAreas: {}, category: '' } :
                 type === 'MOLD' ? { moldReference: '', sizes: [], sizeWeights: {}, sizeAreas: {}, composition: [], colorVariations: [], extraServices: [] } :
                   type === 'MATERIAL' ? { masterCategory: '', reference: '', unitId: '', baseCost: 0, width: 0, colorIds: [], flowTagId: '', supplierId: '' } :
                     type === 'PACKAGING' ? { mode: 'FIXED', capacity: 0, sizes: [], sizeQuantities: {} } :
@@ -1706,7 +1715,14 @@ function GenericConfigList({
                   <div className="flex-1">
                     <p className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.name}</p>
                     {type === 'TOOL' ? (
-                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">CONSUMO P/ ÁREA • {item.metadata?.conjugation || 1} PR/BAT</p>
+                      <div className="flex flex-col gap-1 mt-0.5">
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">CONSUMO P/ ÁREA • {item.metadata?.conjugation || 1} PR/BAT</p>
+                        {item.metadata?.category && (
+                          <span className="inline-flex self-start px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-900/40 text-[8px] font-black text-indigo-500 uppercase tracking-widest">
+                            {item.metadata.category}
+                          </span>
+                        )}
+                      </div>
                     ) : type === 'INFESTO' ? (
                       <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{item.metadata?.layers || 0} CAMADAS</p>
                     ) : type === 'DEADLINE' ? (
@@ -1772,7 +1788,7 @@ function GenericConfigList({
         <form onSubmit={handleSave} className="flex flex-col gap-6">
           {type === 'MOLD' ? (
             <div className="flex flex-col gap-6">
-              <div className="grid grid-cols-3 gap-4">
+              <div className="flex flex-col gap-6">
                 <div className="flex flex-col gap-2">
                   <label htmlFor="mold-reference" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Referência *</label>
                   <div className="relative group">
@@ -1787,12 +1803,12 @@ function GenericConfigList({
                     </button>
                   </div>
                 </div>
-                <div className="col-span-2 flex flex-col gap-2">
+                <div className="flex flex-col gap-2">
                   <label htmlFor="mold-name" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Nome da Matriz *</label>
                   <input id="mold-name" type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value.toUpperCase() } : null)} required title="Nome da Matriz" placeholder="NOME DA MATRIZ" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-6">
                 <div className="flex flex-col gap-2">
                   {renderLabelWithShortcut('mold-category', 'Categoria', ViewType.CATEGORIES)}
                   <select id="mold-category" value={editingItem?.metadata?.category || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, category: e.target.value } } : null)} title="Selecionar Categoria" className={`w-full px-4 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">GERAL</option><option value="SOLADO">SOLADO</option><option value="SALTO">SALTO</option><option value="PALMILHA">PALMILHA</option></select>
@@ -1846,7 +1862,7 @@ function GenericConfigList({
                   ))}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-6">
                 <div className="flex flex-col gap-2">
                   <label htmlFor="mold-price" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Preço do Material / KG (R$)</label>
                   <div className="relative group">
@@ -2015,7 +2031,7 @@ function GenericConfigList({
                 <Modal
                   isOpen={isWeightsModalOpen}
                   onClose={() => setIsWeightsModalOpen(false)}
-                  title="Pesos por Tamanho (GR)"
+                  title="Pesos por Tamanho (KG)"
                   zIndex={75000}
                 >
                   <div className="flex flex-col gap-6">
@@ -2026,16 +2042,17 @@ function GenericConfigList({
                           <div className="relative flex-1 max-w-[150px] group">
                             <input
                               id={`weight-${size}`}
-                              type="number"
-                              value={weight as number || ''}
+                              type="text"
+                              inputMode="decimal"
+                              value={weight !== undefined && weight !== null && weight !== 0 ? String(weight as number).replace('.', ',') : weight === 0 ? '0' : ''}
                               title={`Peso para tamanho ${size}`}
                               placeholder="0"
                               onChange={(e) => {
-                                const val = parseFloat(e.target.value);
+                                const val = parseFloat(e.target.value.replace(',', '.'));
                                 setEditingItem(prev => {
                                   if (!prev) return null;
                                   const newWeights = { ...(prev.metadata?.sizeWeights || {}) };
-                                  newWeights[size] = val;
+                                  newWeights[size] = isNaN(val) ? 0 : val;
                                   return { ...prev, metadata: { ...prev.metadata, sizeWeights: newWeights } };
                                 });
                               }}
@@ -2223,10 +2240,10 @@ function GenericConfigList({
                     {totalWeightLive > 0 && (
                       <div className="flex flex-col gap-0.5 mt-1 ml-1">
                         <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest">
-                          Soma Calculada: {totalWeightLive.toFixed(2)}g
+                          Soma Calculada: {totalWeightLive.toFixed(4)} kg
                         </span>
                         <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest">
-                          Média Calculada: {averageWeightLive.toFixed(2)}g
+                          Média Calculada: {averageWeightLive.toFixed(4)} kg
                         </span>
                       </div>
                     )}
@@ -2235,12 +2252,12 @@ function GenericConfigList({
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Rendimento por KG</p>
                     <div className="flex items-baseline gap-2">
                       <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
-                        {averageWeightLive > 0 ? (1000 / averageWeightLive).toFixed(2) : '0.00'}
+                        {averageWeightLive > 0 ? (1 / averageWeightLive).toFixed(2) : '0.00'}
                       </span>
                       <span className="text-xs font-black text-slate-400 uppercase">PRS / KG</span>
                     </div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                      1.000g ÷ Média ({averageWeightLive.toFixed(2)}g)
+                      1 kg ÷ Média ({averageWeightLive.toFixed(4)} kg)
                     </p>
                   </div>
                 </div>
@@ -2494,8 +2511,26 @@ function GenericConfigList({
                 />
               </div>
               <div className="flex flex-col gap-2">
+                {renderLabelWithShortcut('tool-category', 'Categoria da Faca', ViewType.CATEGORIES)}
+                <select
+                  id="tool-category"
+                  value={editingItem?.metadata?.category || ''}
+                  title="Categoria da Faca"
+                  onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, category: e.target.value } } : null)}
+                  className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                >
+                  <option value="">SEM CATEGORIA</option>
+                  {toolCategoryNames.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </select>
+                {toolCategoryNames.length === 0 && (
+                  <p className="text-[9px] text-amber-500 font-bold uppercase tracking-widest ml-2">
+                    Nenhuma categoria de faca cadastrada. Clique no ícone acima para criar.
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
                 <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">QUANTAS SÃO NECESSÁRIOS PARA FAZER 1 PAR</label>
-                <input 
+                <input
                   type="number" 
                   value={editingItem?.metadata?.conjugation || ''} 
                   onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, conjugation: Number(e.target.value) } } : null)} 
@@ -2924,7 +2959,7 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ne
     const weights = Object.values(item.metadata?.sizeWeights || {}) as number[];
     const activeWeights = weights.filter(w => w > 0);
     const total = activeWeights.reduce((a, b) => a + b, 0);
-    return { totalWeight: total, yieldVal: total > 0 ? 1000 / total : 0 };
+    return { totalWeight: total, yieldVal: activeWeights.length > 0 ? activeWeights.length / total : 0 };
   }, [item.metadata]);
 
   const stock = item.metadata?.stock || 0;
@@ -3125,19 +3160,17 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
         <div className={`p-4 rounded-2xl flex flex-col gap-3 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50/50'}`}>
           <div className="flex items-center gap-2 text-slate-400">
             <Package size={14} />
-            <span className="text-[9px] font-black uppercase tracking-widest">Pesos por Tamanho (GR)</span>
+            <span className="text-[9px] font-black uppercase tracking-widest">Pesos por Tamanho (KG)</span>
           </div>
-          <div className="flex flex-wrap gap-x-4 gap-y-2">
+          <div className="flex flex-wrap gap-2">
             {Object.entries(safeSizeWeights).map(([size, weight]) => {
               const stock = getStockForSize(size);
               return (
-                <div key={size} className="flex flex-col gap-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-black text-slate-400">{size}</span>
-                    <span className={`text-[10px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{Number(weight) || 0}g</span>
-                  </div>
+                <div key={size} className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-white border border-slate-100'}`}>
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{size}</span>
+                  <span className={`text-[11px] font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{Number(weight) || 0} kg</span>
                   {stock > 0 && (
-                    <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Estoque: {stock}</span>
+                    <span className="text-[7px] font-black text-emerald-500 uppercase tracking-widest">Est: {stock}</span>
                   )}
                 </div>
               );
@@ -3219,26 +3252,26 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
                   const activeWeights = weights.filter(w => Number(w) > 0);
                   const total = activeWeights.reduce((a, b) => a + b, 0);
                   const avg = activeWeights.length > 0 ? total / activeWeights.length : 0;
-                  return avg > 0 ? (1000 / avg).toFixed(2) : '0.00';
+                  return avg > 0 ? (1 / avg).toFixed(2) : '0.00';
                 })()} PRS/KG
               </span>
             </div>
           </div>
           {Object.keys(safeSizeWeights).length > 0 && (
             <span className="text-[7px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-              Soma: {Object.values(safeSizeWeights).reduce((a, b) => Number(a) + Number(b), 0).toFixed(1)}g
+              Soma: {Object.values(safeSizeWeights).reduce((a, b) => Number(a) + Number(b), 0).toFixed(3)} kg
             </span>
           )}
         </div>
         <div className="flex flex-col items-end">
-          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Custo Total</p>
+          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Custo por Par</p>
           <div className="flex items-baseline gap-1">
             <span className="text-[10px] font-black text-emerald-500">R$</span>
             <span className="text-xl font-black text-emerald-500">
               {(() => {
-                const basePrice = Number(item.metadata?.price) || 0;
+                const unitCost = Number(item.metadata?.unitCost) || 0;
                 const servicesCost = safeExtraServices.reduce((acc: number, s: any) => acc + (Number(s?.cost) || 0), 0);
-                return (basePrice + servicesCost).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+                return (unitCost + servicesCost).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
               })()}
             </span>
           </div>

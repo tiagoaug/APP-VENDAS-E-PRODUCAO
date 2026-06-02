@@ -331,6 +331,7 @@ export enum CategoryType {
   PRODUCTION = 'PRODUCTION',
   GENERAL = 'GENERAL',
   SUPPLY = 'SUPPLY',
+  CUTTING_TOOL = 'CUTTING_TOOL',
   OTHER = 'OTHER',
 }
 

@@ -1411,30 +1411,30 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
 
                 {isExpanded && (
                   <div className="p-5 pt-0 border-t border-slate-50 dark:border-slate-800 mt-2">
-                    <div className="grid grid-cols-2 gap-3 mt-4 mb-5">
-                      <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-3 mt-4 mb-5">
+                      {/* Modalidade */}
+                      <div className="flex flex-col gap-1.5">
                         <label className="text-[8px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest px-1">Modalidade</label>
                         {product.type === SaleType.RETAIL ? (
-                          <button 
+                          <button
                             onClick={() => {
                               const newType = block.saleType === SaleType.RETAIL ? SaleType.WHOLESALE : SaleType.RETAIL;
-                              // When changing type, we might want to update all current variation prices
                               const p = products.find(prod => prod.id === block.productId);
                               const newPrice = p?.salePrice || 0;
-                              
+
                               const newVariations = { ...block.variations };
                               Object.keys(newVariations).forEach(k => {
                                 newVariations[k].price = newPrice;
                                 if (newType === SaleType.WHOLESALE) newVariations[k].size = undefined;
                               });
 
-                              updateBlock(index, { 
+                              updateBlock(index, {
                                 saleType: newType,
                                 price: newPrice,
                                 variations: newVariations
                               });
                             }}
-                            className={`text-[9px] font-black py-3 rounded-2xl border-2 uppercase tracking-widest transition-all ${block.saleType === SaleType.WHOLESALE ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-slate-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/50'}`}
+                            className={`w-full text-[9px] font-black py-3 rounded-2xl border-2 uppercase tracking-widest transition-all ${block.saleType === SaleType.WHOLESALE ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-slate-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/50'}`}
                             aria-label="Mudar modalidade de venda"
                             title="Modalidade"
                           >
@@ -1446,37 +1446,41 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                           </div>
                         )}
                       </div>
-                      
+
+                      {/* Preço Grade */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[8px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest px-1">
+                          Preço Grade (R$)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-xl py-2.5 text-right pr-3 text-[12px] font-black text-indigo-600 dark:text-indigo-400 focus:ring-2 focus:ring-indigo-500/10 transition-all"
+                          value={block.price}
+                          aria-label="Preço por grade"
+                          title="Preço por Grade"
+                          onChange={(e) => updateBlock(index, { price: parseFloat(e.target.value) || 0 })}
+                        />
+                      </div>
+
+                      {/* Preço Unitário */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[8px] uppercase font-black text-sky-400 tracking-widest px-1">
+                          Preço Unitário (R$/par)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="w-full bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-xl py-2.5 text-right pr-3 text-[12px] font-black text-sky-600 dark:text-sky-400 focus:ring-2 focus:ring-sky-500/10 transition-all"
+                          value={block.unitPrice ?? ''}
+                          placeholder="0,00"
+                          aria-label="Preço por par"
+                          title="Preço Unitário por Par"
+                          onChange={(e) => updateBlock(index, { unitPrice: parseFloat(e.target.value) || 0 })}
+                        />
+                      </div>
+
                       <div className="flex flex-col gap-2">
-                        <div className="flex flex-col gap-1.5">
-                          <label className="text-[8px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest px-1">
-                            Preço Grade (R$)
-                          </label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-xl py-2.5 text-right pr-3 text-[12px] font-black text-indigo-600 dark:text-indigo-400 focus:ring-2 focus:ring-indigo-500/10 transition-all"
-                            value={block.price}
-                            aria-label="Preço por grade"
-                            title="Preço por Grade"
-                            onChange={(e) => updateBlock(index, { price: parseFloat(e.target.value) || 0 })}
-                          />
-                        </div>
-                        <div className="flex flex-col gap-1.5">
-                          <label className="text-[8px] uppercase font-black text-sky-400 tracking-widest px-1">
-                            Preço Unitário (R$/par)
-                          </label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            className="w-full bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-xl py-2.5 text-right pr-3 text-[12px] font-black text-sky-600 dark:text-sky-400 focus:ring-2 focus:ring-sky-500/10 transition-all"
-                            value={block.unitPrice ?? ''}
-                            placeholder="0,00"
-                            aria-label="Preço por par"
-                            title="Preço Unitário por Par"
-                            onChange={(e) => updateBlock(index, { unitPrice: parseFloat(e.target.value) || 0 })}
-                          />
-                        </div>
                         {/* Aviso quando produto não tem unitSalePrice cadastrado */}
                         {hasProduction && isProductionOrder && !products.find(p => p.id === block.productId)?.unitSalePrice && (
                           <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
