@@ -575,6 +575,16 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     }
     if (isProductionOrder) {
       saleToSave.isProductionOrder = true;
+
+      // Valida que todos os blocos têm padrão de embalagem selecionado
+      const blocksWithoutPkg = blocks.filter(b => b.productId && !b.blockPkgId);
+      if (blocksWithoutPkg.length > 0) {
+        const names = blocksWithoutPkg
+          .map(b => products.find(p => p.id === b.productId)?.name || 'Modelo')
+          .join(', ');
+        alert(`Padrão de embalagem obrigatório!\n\nSelecione o padrão de embalagem para: ${names}\n\nConfigure a "Caixa Coletiva" em cada item antes de salvar.`);
+        return;
+      }
     }
     if (saleDestination === 'STOCK') {
       saleToSave.saleDestination = 'STOCK';

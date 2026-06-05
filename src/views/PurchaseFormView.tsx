@@ -17,6 +17,7 @@ import {
   ProductionConfigItem,
   ColorValue,
   SolePurchaseItem,
+  CategoryType,
 } from "../types";
 import {
   Save,
@@ -34,7 +35,10 @@ import {
   Search,
   X,
   CheckCircle2,
-  Users
+  Users,
+  Clock,
+  Truck,
+  AlertCircle
 } from "lucide-react";
 import { format } from "date-fns";
 import CalculatorModal from '../components/CalculatorModal';
@@ -69,10 +73,40 @@ export default function PurchaseFormView({
   productionConfigs = [],
   colors = [],
   onSave,
+  // colors fallback handled below
+
   onCancel,
   isDarkMode,
   initialParams,
 }: PurchaseFormViewProps) {
+  const DEFAULT_COLORS: ColorValue[] = [
+    { id: 'BRANCO', name: 'BRANCO', hex: '#FFFFFF' } as ColorValue,
+    { id: 'PRETO', name: 'PRETO', hex: '#000000' } as ColorValue,
+    { id: 'CARAMELO', name: 'CARAMELO', hex: '#C68642' } as ColorValue,
+    { id: 'MARROM', name: 'MARROM', hex: '#8B4513' } as ColorValue,
+    { id: 'VERMELHO', name: 'VERMELHO', hex: '#FF0000' } as ColorValue,
+    { id: 'AZUL', name: 'AZUL', hex: '#0000FF' } as ColorValue,
+    { id: 'CINZA', name: 'CINZA', hex: '#808080' } as ColorValue,
+    { id: 'NUDE', name: 'NUDE', hex: '#D4A987' } as ColorValue,
+    { id: 'OFF WHITE', name: 'OFF WHITE', hex: '#F5F0E8' } as ColorValue,
+    { id: 'GELO', name: 'GELO', hex: '#E8F4F8' } as ColorValue,
+  ];
+  const allColors: ColorValue[] = colors.length > 0 ? colors : DEFAULT_COLORS;
+
+  const getMoldColorOptions = (mold: any): { id: string; label: string }[] => {
+    const variations: any[] = Array.isArray(mold?.metadata?.colorVariations) ? mold.metadata.colorVariations : [];
+    if (variations.length > 0) {
+      const opts = variations
+        .filter((cv: any) => cv?.colorId)
+        .map((cv: any) => {
+          const g = allColors.find(c => c.id === cv.colorId);
+          return { id: cv.colorId, label: g?.name || cv.colorName || cv.subRef || cv.colorId };
+        });
+      if (opts.length > 0) return opts;
+    }
+    return allColors.map(c => ({ id: c.id, label: c.name }));
+  };
+
   const existing = purchaseId
     ? purchases.find((p) => p.id === purchaseId)
     : null;
@@ -335,11 +369,12 @@ export default function PurchaseFormView({
     const sizes = firstMold.metadata?.sizes || [];
     const quantities: Record<string, number> = {};
     sizes.forEach((s: string) => { quantities[s] = 0; });
+    const firstColor = getMoldColorOptions(firstMold)[0];
     setSoleItems(prev => [...prev, {
       moldId: firstMold.id,
       moldName: firstMold.name,
-      colorId: colors[0]?.id || '',
-      colorName: colors[0]?.name || '',
+      colorId: firstColor?.id || '',
+      colorName: firstColor?.label || '',
       quantities,
       unitCost: firstMold.metadata?.unitCost || 0,
       totalCost: 0,
@@ -395,8 +430,7 @@ export default function PurchaseFormView({
       }
     }
 
-    // For SOLE purchases, never immediately update stock — receipt happens in Recebimento de Compras
-    const finalRegisterAsReceived = type === PurchaseType.SOLE ? false : registerAsReceived;
+    const finalRegisterAsReceived = registerAsReceived;
 
     onSave({
       id: purchaseId || Math.random().toString(36).substr(2, 9),
@@ -688,7 +722,9 @@ export default function PurchaseFormView({
               Categoria Financeira
             </label>
             <ComboBox
-              options={categories}
+              options={type === PurchaseType.SOLE
+                ? categories.filter(c => c.type === CategoryType.EXPENSE)
+                : categories}
               value={categoryId}
               onChange={setCategoryId}
               isDarkMode={isDarkMode}
@@ -885,6 +921,7 @@ export default function PurchaseFormView({
             const molds = productionConfigs.filter(c => c.type === 'MOLD');
             const mold = molds.find(m => m.id === item.moldId);
             const sizes = mold?.metadata?.sizes || [];
+            const colorOpts = getMoldColorOptions(mold);
             const totalPairs = Object.values(item.quantities || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
 
             return (
@@ -922,12 +959,13 @@ export default function PurchaseFormView({
                     aria-label="Selecionar cor do solado"
                     title="Cor do Solado"
                     onChange={(e) => {
-                      const c = colors.find(col => col.id === e.target.value);
-                      updateSoleItem(index, { colorId: e.target.value, colorName: c?.name || '' });
+                      const found = colorOpts.find(c => c.id === e.target.value);
+                      updateSoleItem(index, { colorId: e.target.value, colorName: found?.label || e.target.value });
                     }}
                     className={`w-full px-4 py-3 rounded-xl text-xs font-black border-2 outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 focus:border-cyan-500' : 'bg-white border-slate-200 focus:border-cyan-600'}`}
                   >
-                    {colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    <option value="">SELECIONAR COR...</option>
+                    {colorOpts.map((c, i) => <option key={`${c.id}-${i}`} value={c.id}>{c.label}</option>)}
                   </select>
                 </div>
 
@@ -980,6 +1018,60 @@ export default function PurchaseFormView({
           {soleItems.length === 0 && (
             <p className="text-center text-xs text-slate-400 py-6">Nenhum item adicionado. Clique em "Adicionar Item".</p>
           )}
+
+          {/* Toggle: Já foi entregue? */}
+          <div className={`mt-4 rounded-2xl border-2 overflow-hidden transition-all ${
+            registerAsReceived
+              ? isDarkMode ? 'border-emerald-800 bg-emerald-950/20' : 'border-emerald-200 bg-emerald-50'
+              : isDarkMode ? 'border-amber-700/60 bg-amber-950/20' : 'border-amber-300 bg-amber-50'
+          }`}>
+            {/* Banner de status */}
+            {!registerAsReceived && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-amber-400/20 border-b border-amber-300/50 dark:border-amber-700/40">
+                <AlertCircle size={13} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                <p className="text-[9px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400">
+                  Pendente de recebimento — será enviado para Recebimento de Estoques Gerais
+                </p>
+              </div>
+            )}
+            <div className="p-4 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 flex-1">
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 transition-all ${
+                  registerAsReceived
+                    ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400'
+                }`}>
+                  {registerAsReceived ? <Truck size={22} strokeWidth={2} /> : <Clock size={22} strokeWidth={2} />}
+                </div>
+                <div className="flex-1">
+                  <p className={`text-sm font-black uppercase tracking-tight ${
+                    registerAsReceived ? 'text-emerald-700 dark:text-emerald-400' : 'text-amber-700 dark:text-amber-400'
+                  }`}>
+                    {registerAsReceived ? 'Já foi entregue' : 'Aguardando entrega'}
+                  </p>
+                  <p className={`text-[9px] font-bold uppercase tracking-widest mt-0.5 ${
+                    registerAsReceived ? 'text-emerald-600/70 dark:text-emerald-500' : 'text-amber-600/80 dark:text-amber-500'
+                  }`}>
+                    {registerAsReceived
+                      ? 'Estoque atualizado ao salvar'
+                      : 'Entrada no estoque via recebimento'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRegisterAsReceived(v => !v)}
+                aria-label="Marcar como já entregue"
+                className={`relative shrink-0 w-14 h-8 rounded-full border-2 transition-colors duration-200 flex items-center px-1 ${
+                  registerAsReceived
+                    ? 'bg-emerald-500 border-emerald-400 justify-end'
+                    : 'bg-amber-200 dark:bg-amber-900/60 border-amber-300 dark:border-amber-700 justify-start'
+                }`}
+              >
+                <span className="w-6 h-6 bg-white rounded-full shadow-md block transition-all duration-200" />
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

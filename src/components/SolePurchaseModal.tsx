@@ -66,6 +66,21 @@ export default function SolePurchaseModal({
   const buyers = useMemo(() => people.filter(p => p.isBuyer || p.isPersonal), [people]);
   const purchaseCategories = useMemo(() => categories.filter(c => c.type === 'EXPENSE'), [categories]);
 
+  const DEFAULT_COLORS: ColorValue[] = [
+    { id: 'BRANCO', name: 'BRANCO', hex: '#FFFFFF' } as ColorValue,
+    { id: 'PRETO', name: 'PRETO', hex: '#000000' } as ColorValue,
+    { id: 'CARAMELO', name: 'CARAMELO', hex: '#C68642' } as ColorValue,
+    { id: 'MARROM', name: 'MARROM', hex: '#8B4513' } as ColorValue,
+    { id: 'VERMELHO', name: 'VERMELHO', hex: '#FF0000' } as ColorValue,
+    { id: 'AZUL', name: 'AZUL', hex: '#0000FF' } as ColorValue,
+    { id: 'CINZA', name: 'CINZA', hex: '#808080' } as ColorValue,
+    { id: 'NUDE', name: 'NUDE', hex: '#D4A987' } as ColorValue,
+    { id: 'OFF WHITE', name: 'OFF WHITE', hex: '#F5F0E8' } as ColorValue,
+    { id: 'BEGE', name: 'BEGE', hex: '#F5F5DC' } as ColorValue,
+  ];
+  const colorOptions: ColorValue[] = colors.length > 0 ? colors : DEFAULT_COLORS;
+
+
   // Set initial category (Solados)
   useEffect(() => {
     const soleCat = categories.find(c => c.name.toLowerCase().includes('solado'));
@@ -92,19 +107,14 @@ export default function SolePurchaseModal({
           setSupplierId('');
         }
         
-        // Reset and add the requested item
-        const resolvedColor = initialParams.colorId 
-          ? (colors.find(c => c.id === initialParams.colorId || c.name.toLowerCase() === String(initialParams.colorId).toLowerCase()) || colors[0])
-          : colors[0];
-
         const initialQuantities = initialParams.initialGrid || {};
         const unitCost = mold.metadata?.unitCost || 0;
 
         const newItem: SolePurchaseItem = {
           moldId: mold.id,
           moldName: mold.name,
-          colorId: resolvedColor?.id || '',
-          colorName: resolvedColor?.name || '',
+          colorId: initialParams.colorId || '',
+          colorName: '',
           quantities: initialQuantities,
           unitCost: unitCost,
           totalCost: Object.values(initialQuantities).reduce((a: number, b: any) => a + (Number(b) || 0), 0) * unitCost
@@ -125,18 +135,14 @@ export default function SolePurchaseModal({
     const mold = molds.find(m => m.id === moldId);
     if (!mold) return;
 
-    const resolvedColor = colorId 
-      ? (colors.find(c => c.id === colorId || c.name.toLowerCase() === String(colorId).toLowerCase()) || colors[0])
-      : colors[0];
-
     const initialQuantities = quantities || {};
     const unitCost = mold.metadata?.unitCost || 0;
 
     const newItem: SolePurchaseItem = {
       moldId: mold.id,
       moldName: mold.name,
-      colorId: resolvedColor?.id || '',
-      colorName: resolvedColor?.name || '',
+      colorId: colorId || '',
+      colorName: colorId ? (colors.find((c: ColorValue) => c.id === colorId)?.name || '') : '',
       quantities: initialQuantities,
       unitCost: Number(unitCost) || 0,
       totalCost: Object.values(initialQuantities).reduce((a: number, b: any) => a + (Number(b) || 0), 0) * (Number(unitCost) || 0)
@@ -389,6 +395,7 @@ export default function SolePurchaseModal({
                   isDarkMode ? 'bg-slate-950 border-slate-800 focus:border-indigo-500' : 'bg-slate-50 border-slate-100 focus:border-indigo-600'
                 }`}
               >
+                <option value="">SELECIONAR CATEGORIA...</option>
                 {purchaseCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </div>
@@ -431,6 +438,16 @@ export default function SolePurchaseModal({
                 const mold = molds.find(m => m.id === item.moldId);
                 const sizes = mold?.metadata?.sizes || [];
                 const totalPairs = Object.values(item.quantities || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+                const moldVariations: any[] = Array.isArray(mold?.metadata?.colorVariations)
+                  ? mold!.metadata!.colorVariations
+                  : [];
+                // Build color options: prefer mold's colorVariations, fall back to global colors
+                const moldColorOptions: { id: string; label: string }[] = moldVariations.length > 0
+                  ? moldVariations.map((cv: any) => ({
+                      id: String(cv?.colorId || cv?.id || ''),
+                      label: String(cv?.colorName || cv?.name || cv?.subRef || cv?.colorId || cv?.id || '')
+                    })).filter(c => c.id)
+                  : colorOptions.map((c: ColorValue) => ({ id: c.id, label: c.name }));
 
                 return (
                   <div key={index} className={`p-6 rounded-[2rem] border-2 transition-all ${
@@ -472,15 +489,18 @@ export default function SolePurchaseModal({
                           <select
                             value={item.colorId}
                             onChange={(e) => {
-                              const c = colors.find(col => col.id === e.target.value);
-                              updateItem(index, { colorId: e.target.value, colorName: c?.name || '' });
+                              const found = moldColorOptions.find(c => c.id === e.target.value);
+                              updateItem(index, { colorId: e.target.value, colorName: found?.label || e.target.value });
                             }}
                             title="Selecionar Cor"
                             className={`flex-1 px-4 py-3 rounded-xl text-xs font-black border-2 outline-none ${
                               isDarkMode ? 'bg-slate-900 border-slate-800 focus:border-cyan-500' : 'bg-white border-slate-200 focus:border-cyan-600'
                             }`}
                           >
-                            {colors.slice(0, 15).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            <option value="">SELECIONAR COR...</option>
+                            {moldColorOptions.map((c, i) => (
+                              <option key={`${c.id}-${i}`} value={c.id}>{c.label || c.id}</option>
+                            ))}
                           </select>
                         </div>
                       </div>

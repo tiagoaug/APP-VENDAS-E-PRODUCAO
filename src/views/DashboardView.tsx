@@ -18,6 +18,9 @@ interface DashboardViewProps {
   accounts: Account[];
   people: Person[];
   categories: Category[];
+  productionLots?: any[];
+  sectors?: any[];
+  purchaseRequests?: any[];
   onAddSale: () => void;
   onUpdateCheckStatus: (
     purchaseId: string,
@@ -42,6 +45,9 @@ export default function DashboardView({
   accounts,
   people,
   categories,
+  productionLots = [],
+  sectors = [],
+  purchaseRequests = [],
   onAddSale,
   onUpdateCheckStatus,
   onNavigate,
@@ -1614,6 +1620,118 @@ export default function DashboardView({
                 </button>
               </div>
             );
+
+          case "pcp_sector_map": {
+            if (!modulesConfig.production) return null;
+            const activeLots = productionLots.filter((l: any) => !l.finishedAt);
+            // Agrupa lotes por setor atual
+            const sectorMap: Record<string, { sector: any; lots: any[] }> = {};
+            activeLots.forEach((lot: any) => {
+              const sid = lot.route?.[lot.currentSectorIndex];
+              if (!sid) return;
+              if (!sectorMap[sid]) {
+                const sec = sectors.find((s: any) => s.id === sid);
+                sectorMap[sid] = { sector: sec, lots: [] };
+              }
+              sectorMap[sid].lots.push(lot);
+            });
+            const sectorEntries = Object.values(sectorMap).sort((a, b) => (a.sector?.name || '').localeCompare(b.sector?.name || ''));
+            return (
+              <div key="pcp_sector_map" className={`p-5 rounded-[1.5rem] border flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Mapas por Setor</p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">PCP — Produção em andamento</p>
+                  </div>
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-violet-900/30 text-violet-400' : 'bg-violet-50 text-violet-600'}`}>
+                    <Factory size={18} />
+                  </div>
+                </div>
+                {sectorEntries.length === 0 ? (
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-4">Nenhum mapa em produção</p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {sectorEntries.map(({ sector, lots }) => (
+                      <button
+                        key={sector?.id || 'sem-setor'}
+                        type="button"
+                        title={`Ver setor ${sector?.name}`}
+                        onClick={() => onNavigateProduction('PCP')}
+                        className={`flex items-center justify-between px-4 py-3 rounded-2xl border transition-all active:scale-95 text-left ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-indigo-50 hover:border-indigo-100'}`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: sector?.color || '#6366f1' }} />
+                          <span className={`text-[10px] font-black uppercase truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{sector?.name || 'Sem Setor'}</span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-violet-900/40 text-violet-400' : 'bg-violet-100 text-violet-700'}`}>
+                            {lots.length} {lots.length === 1 ? 'mapa' : 'mapas'}
+                          </span>
+                          <ChevronRight size={12} className="text-slate-400" />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onNavigateProduction('PCP')}
+                  className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-indigo-900/30 hover:text-indigo-400' : 'bg-slate-50 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600'}`}
+                >
+                  <Factory size={13} /> Abrir PCP Central
+                </button>
+              </div>
+            );
+          }
+
+          case "pcp_purchase_needs": {
+            if (!modulesConfig.production) return null;
+            const pendingReqs = purchaseRequests.filter((r: any) => r.status === 'PENDING' || r.status === 'IN_PROGRESS');
+            const activeLotCount = productionLots.filter((l: any) => !l.finishedAt).length;
+            return (
+              <div key="pcp_purchase_needs" className={`p-5 rounded-[1.5rem] border flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Necessidades de Compras</p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">PCP — Materiais e Solados</p>
+                  </div>
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-amber-900/30 text-amber-400' : 'bg-amber-50 text-amber-600'}`}>
+                    <ShoppingCart size={18} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className={`p-3 rounded-2xl border flex flex-col gap-1 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Mapas Ativos</p>
+                    <p className={`text-2xl font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{activeLotCount}</p>
+                  </div>
+                  <div className={`p-3 rounded-2xl border flex flex-col gap-1 ${pendingReqs.length > 0 ? (isDarkMode ? 'bg-rose-900/20 border-rose-700/40' : 'bg-rose-50 border-rose-100') : (isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-emerald-50 border-emerald-100')}`}>
+                    <p className={`text-[8px] font-black uppercase tracking-widest ${pendingReqs.length > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>Solicitações</p>
+                    <p className={`text-2xl font-black leading-none ${pendingReqs.length > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>{pendingReqs.length}</p>
+                  </div>
+                </div>
+                {pendingReqs.length > 0 && (
+                  <div className="flex flex-col gap-1.5 max-h-32 overflow-y-auto">
+                    {pendingReqs.slice(0, 4).map((r: any) => (
+                      <div key={r.id} className={`flex items-center justify-between px-3 py-2 rounded-xl ${isDarkMode ? 'bg-rose-900/20' : 'bg-rose-50'}`}>
+                        <span className="text-[9px] font-black text-rose-700 dark:text-rose-400 uppercase truncate max-w-[140px]">{r.name}</span>
+                        <span className="text-[8px] font-bold text-rose-500 uppercase shrink-0">{r.requiredQty} {r.unit}</span>
+                      </div>
+                    ))}
+                    {pendingReqs.length > 4 && (
+                      <p className="text-[8px] font-bold text-slate-400 text-center">+{pendingReqs.length - 4} mais</p>
+                    )}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onNavigateProduction('NECESSIDADES')}
+                  className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-amber-900/30 text-amber-400 hover:bg-amber-900/50' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
+                >
+                  <ClipboardList size={13} /> Ver Necessidades de Compra
+                </button>
+              </div>
+            );
+          }
 
           default:
             return null;

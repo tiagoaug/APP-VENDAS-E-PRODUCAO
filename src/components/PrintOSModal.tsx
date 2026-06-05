@@ -274,32 +274,149 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
   };
 
   const handleExportJPG = async () => {
-    // Garante que a aba de visualização está ativa (onde o ref está montado)
-    if (tab !== 'view') {
-      setTab('view');
-      // Aguarda o React re-renderizar e o DOM atualizar
-      await new Promise(r => setTimeout(r, 350));
-    }
-    const el = previewRef.current;
-    if (!el) {
-      console.warn('Preview não encontrado para captura JPG');
-      return;
-    }
     setPrinting(true);
     try {
-      const html2canvas = (await import('html2canvas')).default;
-      const shortSide = Math.min(previewW, previewH);
-      // Mínimo 4× de escala para imagens nítidas em etiquetas pequenas
-      const captureScale = Math.max(4, 400 / shortSide);
-      const canvas = await html2canvas(el, {
-        scale: captureScale,
-        backgroundColor: '#ffffff',
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        imageTimeout: 5000,
-      });
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+      const [W, H] = paperDims;
+      const thermal = isThermal(paperDims);
+      // Alta resolução: 8px/mm térmica, 3.78px/mm documento × 3 para qualidade
+      const pxMm = thermal ? 8 : 3.78;
+      const S = 3;
+      const sc = pxMm * S; // px por mm no canvas
+      const CW = Math.round(W * sc);
+      const CH = Math.round(H * sc);
+
+      const cvs = document.createElement('canvas');
+      cvs.width = CW; cvs.height = CH;
+      const ctx = cvs.getContext('2d')!;
+      const e = layout.elems;
+
+      const ptToPx = (pt: number) => pt * 0.353 * sc;
+      const tx = (t: string, x: number, y: number, font: string, color: string, align: CanvasTextAlign = 'left', maxW?: number) => {
+        ctx.font = font; ctx.fillStyle = color; ctx.textAlign = align;
+        maxW ? ctx.fillText(t, x, y, maxW) : ctx.fillText(t, x, y);
+      };
+
+      // Fundo branco
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, CW, CH);
+
+      // ── Header ──────────────────────────────────────────────
+      if (e.header.visible) {
+        const hx = e.header.x*sc, hy = e.header.y*sc, hw = e.header.w*sc, hh = e.header.h*sc;
+        const fs = ptToPx(e.header.fontSize ?? (thermal ? 14 : 10));
+        if (!thermal) {
+          ctx.fillStyle = '#4338ca'; ctx.fillRect(hx, hy, hw, hh);
+          tx('ORDEM DE SERVIÇO', hx + hw/2, hy + hh*0.42, `${fs*0.7}px Arial`, '#ffffff', 'center');
+          tx(os.osNumber, hx + hw/2, hy + hh*0.85, `bold ${fs*1.5}px Arial`, '#ffffff', 'center');
+        } else {
+          tx(os.osNumber, hx + 2*sc, hy + hh*0.5, `bold ${fs}px Arial`, '#000000');
+          tx(os.productName, hx + 2*sc, hy + hh*0.85, `${fs*0.7}px Arial`, '#000000', 'left', hw - 4*sc);
+        }
+      }
+
+      // ── Info ──────────────────────────────────────────────
+      if (e.info.visible) {
+        const fs = ptToPx(e.info.fontSize ?? 10);
+        if (thermal) {
+          tx(`${os.sectorName} → ${nextSectorName}`, e.info.x*sc + 2*sc, e.info.y*sc + e.info.h*sc*0.4, `${fs*0.8}px Arial`, '#000000', 'left', e.info.w*sc - 4*sc);
+          tx(`R$ ${os.totalValue.toFixed(2)} • ${os.quantity}prs`, e.info.x*sc + 2*sc, e.info.y*sc + e.info.h*sc*0.8, `bold ${fs}px Arial`, '#000000');
+        } else {
+          const lh = (e.info.h/4)*sc;
+          const col2x = (e.info.x + e.info.w/2)*sc;
+          [['Produto',os.productName,'Variação',os.variationName||'—'],
+           ['Setor',os.sectorName,'Próximo',nextSectorName],
+           ['Prestador',os.providerName,'Tipo',os.type==='INTERNAL'?'Int':'Terc'],
+           ['Qtd',`${os.quantity}prs`,'R$/par',`R$${os.valuePerPair.toFixed(2)}`]
+          ].forEach(([l1,v1,l2,v2], i) => {
+            const ry = e.info.y*sc + i*lh;
+            [[e.info.x*sc,l1,v1],[col2x,l2,v2]].forEach(([x,lbl,val]) => {
+              tx(String(lbl).toUpperCase(), x as number, ry + lh*0.3, `${fs*0.7}px Arial`, '#94a3b8');
+              tx(String(val), x as number, ry + lh*0.7, `bold ${fs}px Arial`, '#1e293b', 'left', e.info.w/2*sc - 4*sc);
+            });
+          });
+        }
+      }
+
+      // ── Total ──────────────────────────────────────────────
+      if (e.total.visible && !thermal) {
+        const tx2 = e.total.x*sc, ty2 = e.total.y*sc, tw = e.total.w*sc, th = e.total.h*sc;
+        const fs = ptToPx(e.total.fontSize ?? 10);
+        ctx.fillStyle = '#f8fafc'; ctx.fillRect(tx2, ty2, tw, th);
+        ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1; ctx.strokeRect(tx2, ty2, tw, th);
+        tx('TOTAL', tx2 + 2*sc, ty2 + th*0.65, `${fs*0.8}px Arial`, '#000000');
+        tx(`R$ ${os.totalValue.toFixed(2)}`, tx2 + tw - 2*sc, ty2 + th*0.75, `bold ${fs*1.2}px Arial`, '#000000', 'right');
+      }
+
+      // ── Notes ─────────────────────────────────────────────
+      if (e.notes.visible && os.notes) {
+        tx(`Obs: ${os.notes}`, e.notes.x*sc, e.notes.y*sc + e.notes.h*sc*0.6, `${ptToPx(e.notes.fontSize ?? 8)}px Arial`, '#78716c', 'left', e.notes.w*sc);
+      }
+
+      // ── QR Code ───────────────────────────────────────────
+      if (e.qr.visible && qrPreview) {
+        const qrImg = new Image();
+        await new Promise<void>(res => { qrImg.onload = () => res(); qrImg.onerror = () => res(); qrImg.src = qrPreview; });
+        ctx.drawImage(qrImg, e.qr.x*sc, e.qr.y*sc, e.qr.w*sc, e.qr.h*sc);
+      }
+
+      // ── Photo ─────────────────────────────────────────────
+      if (e.photo.visible && photoUrl) {
+        try {
+          const pImg = new Image(); pImg.crossOrigin = 'anonymous';
+          await new Promise<void>(res => { pImg.onload = () => res(); pImg.onerror = () => res(); pImg.src = photoUrl; });
+          ctx.drawImage(pImg, e.photo.x*sc, e.photo.y*sc, e.photo.w*sc, e.photo.h*sc);
+        } catch { /* sem foto */ }
+      }
+
+      // ── Grade ─────────────────────────────────────────────
+      if (e.grade.visible && sizeGrid) {
+        const entries = sizeGrid.split('-').map(tok => {
+          const [sz, q] = tok.split('x');
+          return { sz: sz || tok, qty: q ? parseInt(q) : null };
+        }).filter(en => en.sz);
+
+        const szFs = ptToPx(e.grade.fontSize ?? 10);
+        const qFs = szFs * 0.7;
+        const cellW = (e.grade.w * sc) / entries.length;
+        const cellH = e.grade.h * sc;
+        const gx = e.grade.x * sc, gy = e.grade.y * sc;
+
+        entries.forEach(({ sz, qty }, i) => {
+          const cx = gx + i * cellW + cellW / 2;
+          const bw = cellW * 0.82, bh = cellH * (qty !== null ? 0.55 : 0.82);
+          const bx = cx - bw/2, by = gy + (qty !== null ? cellH*0.04 : cellH*0.09);
+          const r = Math.min(bw, bh) * 0.18;
+          // Rounded black rect
+          ctx.fillStyle = '#000000';
+          ctx.beginPath();
+          ctx.moveTo(bx+r,by); ctx.lineTo(bx+bw-r,by);
+          ctx.quadraticCurveTo(bx+bw,by,bx+bw,by+r);
+          ctx.lineTo(bx+bw,by+bh-r); ctx.quadraticCurveTo(bx+bw,by+bh,bx+bw-r,by+bh);
+          ctx.lineTo(bx+r,by+bh); ctx.quadraticCurveTo(bx,by+bh,bx,by+bh-r);
+          ctx.lineTo(bx,by+r); ctx.quadraticCurveTo(bx,by,bx+r,by); ctx.closePath();
+          ctx.fill();
+          // Size text in white
+          tx(sz, cx, by + bh*0.72, `bold ${szFs}px Arial`, '#ffffff', 'center');
+          // Qty below in black
+          if (qty !== null) tx(String(qty), cx, gy + cellH*0.92, `${qFs}px Arial`, '#000000', 'center');
+        });
+      }
+
+      // ── Instruction ───────────────────────────────────────
+      if (e.instruction.visible && !thermal) {
+        const fs = ptToPx(e.instruction.fontSize ?? 10);
+        const cx2 = (e.instruction.x + e.instruction.w/2)*sc;
+        tx('ESCANEIE PARA DAR BAIXA', cx2, e.instruction.y*sc + e.instruction.h*sc*0.4, `bold ${fs}px Arial`, '#4338ca', 'center');
+        tx(`→ ${nextSectorName}`, cx2, e.instruction.y*sc + e.instruction.h*sc*0.75, `${fs*0.8}px Arial`, '#94a3b8', 'center');
+      }
+
+      // ── Footer ────────────────────────────────────────────
+      if (e.footer.visible) {
+        const dateStr = os.createdAt ? new Date(os.createdAt).toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
+        tx(dateStr, (e.footer.x + e.footer.w/2)*sc, e.footer.y*sc + e.footer.h*sc*0.7, `${ptToPx(e.footer.fontSize ?? 8)}px Arial`, '#cbd5e1', 'center');
+      }
+
+      const dataUrl = cvs.toDataURL('image/jpeg', 0.95);
       await shareImage(dataUrl, `OS_${os.osNumber}.jpg`);
       onClose();
     } catch (err) {
@@ -559,7 +676,13 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
         {/* ── Preview with rulers ── */}
         <div className={`rounded-2xl border-2 overflow-x-auto overflow-y-hidden ${dk?'border-slate-700 bg-slate-900':'border-slate-200 bg-slate-100'}`}>
           <div style={{ minWidth: 'max-content' }}>
-            {tab === 'edit' ? (
+            {/* Preview sempre montado — oculto no modo edição para html2canvas capturar sem trocar de aba */}
+            <div className="flex justify-center p-3" style={{ display: tab === 'edit' ? 'none' : 'flex' }}>
+              <div ref={previewRef} style={{ boxShadow:'0 4px 24px rgba(0,0,0,0.12)', borderRadius:2, overflow:'hidden', flexShrink:0 }}>
+                <ContentPreview/>
+              </div>
+            </div>
+            {tab === 'edit' && (
               <>
                 <div style={{ display:'flex' }}>
                   <div style={{ width:RULER, height:RULER, flexShrink:0, backgroundColor:dk?'#1e293b':'#f1f5f9', borderBottom:`1px solid ${dk?'#334155':'#cbd5e1'}`, borderRight:`1px solid ${dk?'#334155':'#cbd5e1'}` }}/>
@@ -570,12 +693,6 @@ export default function PrintOSModal({ isOpen, onClose, os, nextSectorName, isDa
                   <EditPreview/>
                 </div>
               </>
-            ) : (
-              <div className="flex justify-center p-3">
-                <div ref={previewRef} style={{ boxShadow:'0 4px 24px rgba(0,0,0,0.12)', borderRadius:2, overflow:'hidden', flexShrink:0 }}>
-                  <ContentPreview/>
-                </div>
-              </div>
             )}
           </div>
         </div>

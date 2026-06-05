@@ -238,7 +238,7 @@ export default function EngineeringEditor({
       }
     }
 
-    setEditing({ ...editing, materialId, quantity: newQuantity });
+    setEditing({ ...editing, materialId, quantity: newQuantity, colorId: '' });
   };
 
   const handleToolChange = (toolId: string) => {
@@ -1095,7 +1095,14 @@ export default function EngineeringEditor({
                   title="Selecionar Cor"
                 >
                   <option value="">{editing.ignoreColor ? 'N/A' : 'Cor Obrigatória...'}</option>
-                  {colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {(() => {
+                    const selMat = productionConfigs.find(m => m.id === editing.materialId);
+                    const matColorIds = selMat?.metadata?.colorIds;
+                    const filtered = matColorIds?.length
+                      ? colors.filter(c => matColorIds.includes(c.id))
+                      : colors;
+                    return filtered.map(c => <option key={c.id} value={c.id}>{c.name}</option>);
+                  })()}
                 </select>
                 {!editing.colorId && !editing.ignoreColor && (
                   <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest mt-1 ml-2">Campo Obrigatório</span>

@@ -261,6 +261,8 @@ export default function App() {
       { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 17, module: 'production' },
       { id: 'personal_balance', label: 'Saldo Pessoal', visible: true, order: 18, module: 'personal' },
       { id: 'print_center', label: 'Central de Impressões', visible: true, order: 19, module: 'any' },
+      { id: 'pcp_sector_map', label: 'Mapas por Setor (PCP)', visible: true, order: 20, module: 'production' },
+      { id: 'pcp_purchase_needs', label: 'Necessidades de Compras (PCP)', visible: true, order: 21, module: 'production' },
     ]
   };
 
@@ -295,6 +297,12 @@ export default function App() {
     // Migration: ensure print_center is present
     if (config.cards && !config.cards.find((c: any) => c.id === 'print_center')) {
       config.cards.push({ id: 'print_center', label: 'Central de Impressões', visible: true, order: 19, module: 'any' });
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+    // Migration: ensure PCP cards are present
+    if (config.cards && !config.cards.find((c: any) => c.id === 'pcp_sector_map')) {
+      config.cards.push({ id: 'pcp_sector_map', label: 'Mapas por Setor (PCP)', visible: true, order: 20, module: 'production' });
+      config.cards.push({ id: 'pcp_purchase_needs', label: 'Necessidades de Compras (PCP)', visible: true, order: 21, module: 'production' });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
 
@@ -1375,6 +1383,9 @@ export default function App() {
             transactions={transactions}
             accounts={accounts}
             people={people}
+            productionLots={productionLots}
+            sectors={sectors}
+            purchaseRequests={purchaseRequests}
             onAddSale={() => resetTo(ViewType.SALE_FORM)}
             onUpdateCheckStatus={handleCheckStatusChange}
             isDarkMode={isDarkMode}
@@ -3094,6 +3105,8 @@ export default function App() {
             accounts={accounts}
             categories={categories}
             serviceOrders={serviceOrders}
+            purchases={purchases}
+            sales={sales}
           />
         );
       case ViewType.PRODUCTION_STOCK:

@@ -83,12 +83,12 @@ export default function EngineeringModal({
   const handleMaterialChange = (materialId: string) => {
     const material = productionConfigs.find(m => m.id === materialId);
     const tool = productionConfigs.find(t => t.id === editing.toolId);
-    
+
     if (material && tool) {
       const qty = calculateConsumption(tool, material, editing.piecesPerPair || 2, editing.toolMapping);
-      setEditing({ ...editing, materialId, quantity: qty });
+      setEditing({ ...editing, materialId, quantity: qty, colorId: '' });
     } else {
-      setEditing({ ...editing, materialId });
+      setEditing({ ...editing, materialId, colorId: '' });
     }
   };
 
@@ -181,7 +181,14 @@ export default function EngineeringModal({
                 onChange={(e) => setEditing({ ...editing, colorId: e.target.value })}
               >
                 <option value="">Cor Obrigatória...</option>
-                {colors.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {(() => {
+                  const selectedMaterial = productionConfigs.find(m => m.id === editing.materialId);
+                  const materialColorIds = selectedMaterial?.metadata?.colorIds;
+                  const filtered = materialColorIds?.length
+                    ? colors.filter(c => materialColorIds.includes(c.id))
+                    : colors;
+                  return filtered.map(c => <option key={c.id} value={c.id}>{c.name}</option>);
+                })()}
               </select>
               <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none flex items-center gap-2">
                  {!editing.colorId && <span className="text-[7px] font-black text-rose-500 uppercase bg-rose-50 px-1.5 py-0.5 rounded-md border border-rose-100">Falta Selecionar</span>}

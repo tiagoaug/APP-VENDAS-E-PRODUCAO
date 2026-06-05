@@ -59,14 +59,17 @@ export default function ConfirmDialog({
             >
               {confirmLabel}
             </button>
-            <button
-              onClick={onCancel}
-              title={cancelLabel}
-              aria-label={cancelLabel}
-              className="w-full py-4 rounded-2xl font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"
-            >
-              {cancelLabel}
-            </button>
+            {cancelLabel && (
+              <button
+                type="button"
+                onClick={onCancel}
+                title={cancelLabel}
+                aria-label={cancelLabel}
+                className="w-full py-4 rounded-2xl font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"
+              >
+                {cancelLabel}
+              </button>
+            )}
           </div>
         </motion.div>
       </div>

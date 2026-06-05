@@ -3,13 +3,14 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Layers, Hammer, Scissors, Check,
-  ChevronRight, ArrowLeft, Plus, Minus,
+  ChevronRight, ChevronDown, ArrowLeft, Plus, Minus,
   Play, User, DollarSign, FileText, CheckCircle2,
   AlertCircle, Info, Hash, Clock, Settings, HelpCircle,
   Sparkles, List, Printer, Eye, Settings2, X, Tag,
-  QrCode, ScanLine, CheckSquare, Edit2, Trash2, Share2
+  QrCode, ScanLine, CheckSquare, Edit2, Trash2, Share2, Filter
 } from 'lucide-react';
 import PrintLabelEditorModal from './PrintLabelEditorModal';
+import ConfirmDialog from './ConfirmDialog';
 import { scannerService } from '../services/scannerService';
 import WebCameraScanner from './WebCameraScanner';
 import { Capacitor } from '@capacitor/core';
@@ -60,11 +61,14 @@ export default function CuttingProjectionPanel({
 }: CuttingProjectionPanelProps) {
   // Filter active lots in the cutting sector
   const cuttingLots = useMemo(() => {
-    return lots.filter(l => 
-      !l.finishedAt && 
-      l.route && 
-      l.route[l.currentSectorIndex] === selectedSectorId
-    );
+    return lots.filter(l => {
+      if (l.finishedAt || !l.route) return false;
+      // Lote cujo setor atual É o corte
+      if (l.route[l.currentSectorIndex] === selectedSectorId) return true;
+      // Lote com pedidos adiantados para o corte via orderSectors
+      const orderSectors: Record<string, string> = (l as any).metadata?.orderSectors || {};
+      return Object.values(orderSectors).some(sid => sid === selectedSectorId);
+    });
   }, [lots, selectedSectorId]);
 
   // Local state
@@ -118,6 +122,9 @@ export default function CuttingProjectionPanel({
   const [selectedOrderKeys, setSelectedOrderKeys] = useState<Set<string>>(new Set());
   const [pendingOsSourceOrderIds, setPendingOsSourceOrderIds] = useState<string[]>([]);
   const [pendingOsQuantityOverride, setPendingOsQuantityOverride] = useState<number | null>(null);
+  const [expandedCuttingItems, setExpandedCuttingItems] = useState<Set<string>>(new Set());
+  const [orderFilterModel, setOrderFilterModel] = useState<string>('');
+  const [orderFilterColor, setOrderFilterColor] = useState<string>('');
 
   // Print states
   const [printModalData, setPrintModalData] = useState<{
@@ -133,6 +140,14 @@ export default function CuttingProjectionPanel({
   const [sharePopupOpen, setSharePopupOpen] = useState(false);
   const sharePopupRef = useRef<HTMLDivElement>(null);
   const [osSharePopupId, setOsSharePopupId] = useState<string | null>(null);
+
+  // Custom confirm / info dialogs
+  const [confirmState, setConfirmState] = useState<{
+    title: string; message: string; confirmLabel?: string; isDanger?: boolean; onConfirm: () => void;
+  } | null>(null);
+  const openConfirm = (opts: typeof confirmState) => setConfirmState(opts);
+  const [infoState, setInfoState] = useState<{ title: string; message: string; isDanger?: boolean } | null>(null);
+  const showInfo = (title: string, message: string, isDanger = false) => setInfoState({ title, message, isDanger });
 
   // Active selected lot object
   const selectedLot = useMemo(() => {
@@ -152,13 +167,39 @@ export default function CuttingProjectionPanel({
     return sectors.find(s => s.id === selectedSectorId);
   }, [sectors, selectedSectorId]);
 
-  // Cutting pieces/consumptions from engineering sheet
-  const cuttingPieces = useMemo(() => {
-    if (!lotProductDetails?.variation) return [];
-    return (lotProductDetails.variation.consumptions || []).filter(
-      c => c.category === 'CUTTING_PIECE'
-    );
-  }, [lotProductDetails]);
+  // Cutting pieces/consumptions from engineering sheet — with source variation tracking
+  const cuttingPieces = useMemo<{ piece: ComponentConsumption; sourceVariationId: string; sourceProductId: string }[]>(() => {
+    // Single-variation lot
+    if (lotProductDetails?.variation) {
+      return (lotProductDetails.variation.consumptions || [])
+        .filter(c => c.category === 'CUTTING_PIECE')
+        .map(c => ({
+          piece: c,
+          sourceVariationId: selectedLot?.variationId || '',
+          sourceProductId: lotProductDetails.product?.id || '',
+        }));
+    }
+
+    // Multi-group lot (variationId === ''): aggregate from metadata.groups
+    const groups: { productId: string; variationId: string }[] =
+      (selectedLot as any)?.metadata?.groups || [];
+    if (groups.length === 0) return [];
+
+    const seen = new Set<string>();
+    const result: { piece: ComponentConsumption; sourceVariationId: string; sourceProductId: string }[] = [];
+    groups.forEach(g => {
+      const key = `${g.productId}-${g.variationId}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const prod = products.find(p => p.id === g.productId);
+      const vari = prod?.variations.find(v => v.id === g.variationId);
+      if (!vari) return;
+      (vari.consumptions || [])
+        .filter(c => c.category === 'CUTTING_PIECE')
+        .forEach(c => result.push({ piece: c, sourceVariationId: g.variationId, sourceProductId: g.productId }));
+    });
+    return result;
+  }, [lotProductDetails, selectedLot, products]);
 
   // Preset Infesto configs from Production configs
   const infestoPresets = useMemo(() => {
@@ -178,19 +219,19 @@ export default function CuttingProjectionPanel({
     return [1, 2, 4, 6, 8, 12, 16];
   }, [infestoPresets]);
 
-  // Resolve material and tool details
+  // Resolve material and tool details (piecePairs computed in render to avoid hook ordering issues)
   const resolvedPieces = useMemo(() => {
-    return cuttingPieces.map(piece => {
+    return cuttingPieces.map(({ piece, sourceVariationId, sourceProductId }) => {
       const material = productionConfigs.find(
         c => c.id === piece.materialId && c.type === 'MATERIAL'
       );
       const tool = productionConfigs.find(
         c => c.id === piece.toolId && c.type === 'TOOL'
       );
-      
-      const layers = manualLayers[piece.id] !== undefined 
-        ? manualLayers[piece.id] 
-        : (registeredLayers.includes(4) ? 4 : (registeredLayers[0] || 4)); // Try 4 first, fallback to first registered
+
+      const layers = manualLayers[piece.id] !== undefined
+        ? manualLayers[piece.id]
+        : (registeredLayers.includes(4) ? 4 : (registeredLayers[0] || 4));
 
       const foldConfig = foldConfigs[piece.id] || {
         dobraType: 'Sem Dobra',
@@ -199,13 +240,7 @@ export default function CuttingProjectionPanel({
         observacao: ''
       };
 
-      return {
-        piece,
-        material,
-        tool,
-        layers,
-        foldConfig
-      };
+      return { piece, material, tool, layers, foldConfig, sourceVariationId, sourceProductId };
     });
   }, [cuttingPieces, productionConfigs, manualLayers, foldConfigs, registeredLayers]);
 
@@ -395,8 +430,10 @@ export default function CuttingProjectionPanel({
       await firebaseService.saveDocument("serviceOrders", newOS);
 
       if (osDirectComplete) {
-        // Move lot silent
-        const nextSectorIndex = selectedLot.currentSectorIndex + 1;
+        // Move lot usando posição do setor atual no roteiro
+        const curSectorPos = (selectedLot.route || []).indexOf(selectedSectorId);
+        const effectiveSectorPos = curSectorPos >= 0 ? curSectorPos : selectedLot.currentSectorIndex;
+        const nextSectorIndex = effectiveSectorPos + 1;
         const nextRouteId = selectedLot.route[nextSectorIndex] || '';
         await firebaseService.updateDocument("productionLots", selectedLot.id, {
           currentSectorIndex: Math.min(nextSectorIndex, selectedLot.route.length - 1),
@@ -472,16 +509,31 @@ export default function CuttingProjectionPanel({
     );
   }, [serviceOrders, selectedLot, selectedSectorId]);
 
+  // Completed OS for the selected lot in this sector (for Desfazer option)
+  const lotCompletedOSList = useMemo(() => {
+    if (!selectedLot) return [];
+    return serviceOrders.filter(os =>
+      (os.lotId === selectedLot.id || (os.lotIds && os.lotIds.includes(selectedLot.id))) &&
+      os.sectorId === selectedSectorId &&
+      os.status === 'COMPLETED'
+    );
+  }, [serviceOrders, selectedLot, selectedSectorId]);
+
   // Source order items (pedidos vinculados) for selected lot
   const lotSourceItems = useMemo(() => {
     if (!selectedLot) return [];
-    const items = (selectedLot as any).metadata?.sourceItems;
-    if (items && items.length > 0) return items;
-    if (selectedLot.productionOrderId) {
-      return [{ orderId: selectedLot.productionOrderId, itemIdx: 0, qty: selectedLot.quantity }];
-    }
-    return [];
-  }, [selectedLot]);
+    const allItems: any[] = (selectedLot as any).metadata?.sourceItems ||
+      (selectedLot.productionOrderId ? [{ orderId: selectedLot.productionOrderId, itemIdx: 0, qty: selectedLot.quantity }] : []);
+    if (!allItems.length) return [];
+    // Filtra apenas os pedidos que estão neste setor (por orderSectors ou pelo setor atual do lote)
+    const orderSectors: Record<string, string> = (selectedLot as any).metadata?.orderSectors || {};
+    const lotCurrentSector = selectedLot.route?.[selectedLot.currentSectorIndex];
+    return allItems.filter((si: any) => {
+      const dest = orderSectors[si.orderId];
+      const effective = dest || lotCurrentSector;
+      return effective === selectedSectorId;
+    });
+  }, [selectedLot, selectedSectorId]);
 
   // True when every source order already has an active OS in this sector
   const allSourceOrdersCovered = useMemo(() => {
@@ -492,26 +544,37 @@ export default function CuttingProjectionPanel({
     return lotSourceItems.every((si: any) => coveredIds.has(si.orderId));
   }, [lotSourceItems, lotActiveOSListFull]);
 
-  // Effective size grade — prefers lot.pairs but falls back to aggregating from production order items
+  // Effective size grade — para pedidos adiantados, calcula apenas as quantidades no setor atual
   const effectivePairs = useMemo<Record<string, number>>(() => {
-    const direct = selectedLot?.pairs;
-    if (direct && Object.values(direct).some(v => (v || 0) > 0)) return direct;
-    // Build from linked production order items
+    // Se o lote está neste setor (não adiantado), usa lot.pairs diretamente
+    const lotCurrentSector = selectedLot?.route?.[selectedLot.currentSectorIndex];
+    const isAdvancedToSector = lotCurrentSector !== selectedSectorId;
+
+    if (!isAdvancedToSector) {
+      // Lote físico neste setor — usa lot.pairs se disponível
+      const direct = selectedLot?.pairs;
+      if (direct && Object.values(direct).some(v => (v || 0) > 0)) return direct;
+    }
+
+    // Calcula grade a partir dos itens filtrados (só os do setor atual)
     const result: Record<string, number> = {};
     lotSourceItems.forEach((si: any) => {
       const order = productionOrders.find((o: ProductionOrder) => o.id === si.orderId);
       if (!order) return;
-      const item = order.items[si.itemIdx ?? 0];
+      const item = si.itemIdx !== undefined ? order.items[si.itemIdx] : order.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
       if (!item?.sizes) return;
       Object.entries(item.sizes).forEach(([size, sizeData]) => {
         const qty = typeof sizeData === 'object'
           ? ((sizeData as any).toProduction || (sizeData as any).total || 0)
           : (Number(sizeData) || 0);
-        result[size] = (result[size] || 0) + qty;
+        if (qty > 0) result[size] = (result[size] || 0) + qty;
       });
     });
-    return Object.keys(result).length > 0 ? result : (direct || {});
-  }, [selectedLot, lotSourceItems, productionOrders]);
+
+    if (Object.keys(result).length > 0) return result;
+    // Último fallback: lot.pairs completo
+    return selectedLot?.pairs || {};
+  }, [selectedLot, lotSourceItems, productionOrders, selectedSectorId]);
 
   // Reset order selection when the selected lot changes
   useEffect(() => {
@@ -532,65 +595,124 @@ export default function CuttingProjectionPanel({
     return () => document.removeEventListener('mousedown', handler);
   }, [sharePopupOpen]);
 
-  // Complete an OS from cutting sector (baixa)
+  // Complete an OS — advances lot if this is the last pending OS
   const handleCompleteOSCutting = async (os: ServiceOrder) => {
     try {
+      const lotObj = cuttingLots.find(l =>
+        l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id))
+      );
+      if (!lotObj) {
+        showInfo('OS Concluída', `${os.osNumber} concluída. Lote não encontrado no corte.`);
+        return;
+      }
+
+      // Usa posição da OS no roteiro (não do lote) — evita pular setores em movimentos parciais
+      const osSectorIdx = lotObj.route?.indexOf(os.sectorId ?? '') ?? lotObj.currentSectorIndex;
+      const effectiveSectorIdx = osSectorIdx >= 0 ? osSectorIdx : lotObj.currentSectorIndex;
+      const nextIdx = effectiveSectorIdx + 1;
+      const nextSectorId = lotObj.route[nextIdx] || '';
+      const nextSectorName = sectors.find(s => s.id === nextSectorId)?.name || 'CONCLUÍDO';
+
+      // Mark OS completed, storing prev sector index for potential undo
       await firebaseService.updateDocument('serviceOrders', os.id, {
         status: 'COMPLETED',
         finishedAt: Date.now(),
+        _prevSectorIndex: lotObj.currentSectorIndex,
       });
       if (os.transactionId) {
         try {
           const { financeService } = await import('../services/financeService');
           await financeService.settleTransaction(os.transactionId);
-        } catch (txErr) {
-          console.error("Erro ao liquidar transação financeira da OS:", txErr);
-        }
+        } catch { /* ignore */ }
       }
-      // Advance lot to next sector
-      const lotObj = cuttingLots.find(l =>
-        l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id))
-      );
-      if (lotObj) {
-        const nextIdx = lotObj.currentSectorIndex + 1;
-        const nextRouteId = lotObj.route[nextIdx] || '';
+
+      // Check if this was the last pending OS for the lot
+      const remainingPending = lotActiveOSListFull.filter(o => o.id !== os.id);
+      const isLastOS = remainingPending.length === 0;
+
+      if (isLastOS) {
+        // All OS done → advance lot
         await firebaseService.updateDocument('productionLots', lotObj.id, {
           currentSectorIndex: Math.min(nextIdx, lotObj.route.length - 1),
           currentStatusId: '',
-          finishedAt: nextRouteId ? undefined : Date.now(),
-          history: [
-            ...(lotObj.history || []),
-            {
-              sectorId: selectedSectorId,
-              statusId: 'CONCLUÍDO',
-              timestamp: Date.now(),
-              userName: userName,
-              notes: `Baixa via QR — OS ${os.osNumber} concluída.`,
-            },
-          ],
+          finishedAt: nextSectorId ? undefined : Date.now(),
+          history: [...(lotObj.history || []), {
+            sectorId: selectedSectorId, statusId: 'CONCLUÍDO',
+            timestamp: Date.now(), userName: userName,
+            notes: `Mapa avançado — última OS ${os.osNumber} concluída.`,
+          }],
         });
+        showInfo(
+          `Mapa #${lotObj.orderNumber} → ${nextSectorName}`,
+          `Todas as OS concluídas. Lote avançado para "${nextSectorName}" com sucesso.`
+        );
+        const remaining = cuttingLots.filter(l => l.id !== lotObj.id);
+        setSelectedLotId(remaining.length > 0 ? remaining[0].id : null);
+      } else {
+        // Still has pending OS → lot stays in cutting
+        showInfo(
+          `OS ${os.osNumber} Concluída`,
+          `Mapa #${lotObj.orderNumber} aguarda ${remainingPending.length} OS pendente(s) antes de avançar para "${nextSectorName}".`
+        );
       }
-      alert(`OS ${os.osNumber} concluída com sucesso!`);
-      const remaining = cuttingLots.filter(l => l.id !== lotObj?.id);
-      if (remaining.length > 0) setSelectedLotId(remaining[0].id);
-      else setSelectedLotId(null);
     } catch (e) {
-      alert('Erro ao concluir OS: ' + (e instanceof Error ? e.message : String(e)));
+      showInfo('Erro', (e instanceof Error ? e.message : String(e)), true);
     }
   };
 
-  const handleDeleteOS = async (os: ServiceOrder) => {
-    if (!confirm(`Excluir a OS ${os.osNumber}? Esta ação não pode ser desfeita.`)) return;
+  // Undo a completed OS — deletes OS, all related OS, and the lot (frees production orders)
+  const handleUndoOS = async (os: ServiceOrder) => {
     try {
-      await firebaseService.deleteDocument('serviceOrders', os.id);
-      if (os.transactionId) {
-        try { await firebaseService.deleteDocument('transactions', os.transactionId); } catch { /* ignore */ }
+      const lotObj = lots.find(l =>
+        l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id))
+      );
+
+      // 1. Delete all OS related to this lot in this sector (including this one)
+      const allRelatedOS = serviceOrders.filter(o =>
+        (o.lotId === (lotObj?.id || os.lotId) ||
+         (o.lotIds && o.lotIds.includes(lotObj?.id || os.lotId))) &&
+        o.sectorId === selectedSectorId
+      );
+      for (const relOS of allRelatedOS) {
+        if (relOS.transactionId) {
+          try { await firebaseService.deleteDocument('transactions', relOS.transactionId); } catch { /* ignore */ }
+        }
+        await firebaseService.deleteDocument('serviceOrders', relOS.id);
       }
+
+      // 2. Delete the lot itself → this frees all linked production orders
+      if (lotObj) {
+        await firebaseService.deleteDocument('productionLots', lotObj.id);
+      }
+
+      showInfo(
+        'Revertido com Sucesso',
+        'Mapa e OS excluídos. Os pedidos estão desvinculados e disponíveis novamente.'
+      );
+      setSelectedLotId(null);
     } catch (e) {
-      alert('Erro ao excluir OS: ' + (e instanceof Error ? e.message : String(e)));
+      showInfo('Erro ao Reverter', (e instanceof Error ? e.message : String(e)), true);
     }
   };
 
+  const handleDeleteOS = (os: ServiceOrder) => {
+    openConfirm({
+      title: `Excluir ${os.osNumber}`,
+      message: 'Esta ação não pode ser desfeita. A OS e sua transação financeira serão removidas permanentemente.',
+      confirmLabel: 'Excluir',
+      isDanger: true,
+      onConfirm: async () => {
+        try {
+          await firebaseService.deleteDocument('serviceOrders', os.id);
+          if (os.transactionId) {
+            try { await firebaseService.deleteDocument('transactions', os.transactionId); } catch { /* ignore */ }
+          }
+        } catch (e) {
+          alert('Erro ao excluir OS: ' + (e instanceof Error ? e.message : String(e)));
+        }
+      },
+    });
+  };
   const handleEditOS = (os: ServiceOrder) => {
     setEditingOsId(os.id);
     setEditingOsOriginal(os);
@@ -810,7 +932,10 @@ export default function CuttingProjectionPanel({
     const lotObj = cuttingLots.find(l =>
       l.id === os!.lotId || (os!.lotIds && os!.lotIds.includes(l.id))
     );
-    const nextIdx = (lotObj?.currentSectorIndex ?? 0) + 1;
+    // Usa posição da OS no roteiro
+    const osPos = lotObj?.route?.indexOf(os!.sectorId ?? '') ?? -1;
+    const effectiveOsPos = osPos >= 0 ? osPos : (lotObj?.currentSectorIndex ?? 0);
+    const nextIdx = effectiveOsPos + 1;
     const nextSectorId = lotObj?.route?.[nextIdx] || '';
     const nextSec = sectors.find(s => s.id === nextSectorId);
     setQrBaixaConfirm({ os, nextSectorName: nextSec?.name || 'CONCLUÍDO' });
@@ -1339,7 +1464,7 @@ export default function CuttingProjectionPanel({
                   const product = products.find(p => p.id === lot.productId);
                   const variation = product?.variations.find(v => v.id === lot.variationId);
                   const isSelected = selectedLotId === lot.id;
-                  const lotOS = serviceOrders.find(os =>
+                  const lotOSList = serviceOrders.filter(os =>
                     (os.lotId === lot.id || (os.lotIds && os.lotIds.includes(lot.id))) &&
                     os.sectorId === selectedSectorId &&
                     os.status === 'PENDING'
@@ -1369,18 +1494,40 @@ export default function CuttingProjectionPanel({
                           }`}>
                             {lot.prioridade}
                           </span>
-                          <span className={`text-[10px] font-black ${isSelected ? 'text-sky-600 dark:text-sky-400' : 'text-sky-500'}`}>#{lot.orderNumber}</span>
-                          {/* Badge OS já emitida */}
-                          {lotOS && (
-                            <span className="px-2 py-0.5 rounded-lg text-[8px] font-black uppercase bg-emerald-500 text-white flex items-center gap-1">
-                              ✓ {lotOS.osNumber}
+                          {/* Badges de todas as OS ativas */}
+                          {lotOSList.map(os => (
+                            <span key={os.id} className="px-2 py-0.5 rounded-lg text-[8px] font-black uppercase bg-emerald-500 text-white flex items-center gap-1">
+                              ✓ {os.osNumber}
                             </span>
-                          )}
+                          ))}
+                          <span className="text-[7px] font-black px-2 py-0.5 rounded-full uppercase bg-violet-600 text-white tracking-widest shadow-sm shadow-violet-500/30">
+                            MAPA{lot.orderNumber}
+                          </span>
                         </div>
-                        <h4 className={`text-xs font-black uppercase truncate ${isSelected ? 'text-indigo-950 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>{product?.name || 'Sem nome'}</h4>
-                        <p className={`text-[9px] font-bold uppercase tracking-wider mt-0.5 ${isSelected ? 'text-indigo-750 dark:text-slate-400' : 'text-slate-500 dark:text-slate-400'}`}>
-                          Ref: {product?.reference} • Cor: {variation?.colorName}
-                        </p>
+                        {(() => {
+                          const groups: any[] = (lot as any).metadata?.groups || [];
+                          const uniqueProds = Array.from(new Map(groups.map((g: any) => [g.productId, g])).values()) as any[];
+                          if (uniqueProds.length > 1) {
+                            return (
+                              <>
+                                <h4 className={`text-xs font-black uppercase truncate ${isSelected ? 'text-indigo-950 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>
+                                  {uniqueProds.map((g: any) => products.find(p => p.id === g.productId)?.name || g.productName).join(' · ')}
+                                </h4>
+                                <p className={`text-[9px] font-bold uppercase tracking-wider mt-0.5 ${isSelected ? 'text-indigo-750 dark:text-slate-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                                  {uniqueProds.length} Modelos
+                                </p>
+                              </>
+                            );
+                          }
+                          return (
+                            <>
+                              <h4 className={`text-xs font-black uppercase truncate ${isSelected ? 'text-indigo-950 dark:text-white' : 'text-slate-800 dark:text-slate-200'}`}>{product?.name || 'Sem nome'}</h4>
+                              <p className={`text-[9px] font-bold uppercase tracking-wider mt-0.5 ${isSelected ? 'text-indigo-750 dark:text-slate-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                                Ref: {product?.reference} • Cor: {variation?.colorName}
+                              </p>
+                            </>
+                          );
+                        })()}
                       </div>
 
                       <div className="text-right shrink-0 ml-3">
@@ -1406,10 +1553,28 @@ export default function CuttingProjectionPanel({
                   </div>
                 )}
                 <div>
-                  <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">{lotProductDetails.product.name}</h3>
-                  <p className="text-[10px] font-bold text-slate-600 dark:text-slate-350 uppercase tracking-widest mt-1">
-                    Ref: {lotProductDetails.product.reference} • Cor: {lotProductDetails.variation?.colorName}
-                  </p>
+                  {(() => {
+                    const groups: any[] = (selectedLot as any).metadata?.groups || [];
+                    const uniqueProds = Array.from(new Map(groups.map((g: any) => [g.productId, g])).values()) as any[];
+                    if (uniqueProds.length > 1) {
+                      return (
+                        <>
+                          <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">{uniqueProds.length} Modelos</p>
+                          <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">
+                            {uniqueProds.map((g: any) => products.find(p => p.id === g.productId)?.name || g.productName).join(' · ')}
+                          </h3>
+                        </>
+                      );
+                    }
+                    return (
+                      <>
+                        <h3 className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-white">{lotProductDetails.product.name}</h3>
+                        <p className="text-[10px] font-bold text-slate-600 dark:text-slate-350 uppercase tracking-widest mt-1">
+                          Ref: {lotProductDetails.product.reference} • Cor: {lotProductDetails.variation?.colorName}
+                        </p>
+                      </>
+                    );
+                  })()}
                   <p className="text-[11px] font-black text-sky-600 dark:text-sky-400 uppercase mt-1">
                     TOTAL MAPA: {selectedLot.quantity} PARES
                   </p>
@@ -1458,10 +1623,52 @@ export default function CuttingProjectionPanel({
                 return selectedOrderKeys.has(`${si.orderId}-${idx}`);
               });
 
+            const pedidosOpen = expandedCuttingItems.has('__pedidos__');
             return (
-              <div className={`p-5 rounded-3xl flex flex-col gap-3 border ${isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-sky-100 shadow-sm'}`}>
-                {/* Header */}
-                <div className="flex items-center justify-between">
+              <div className={`rounded-3xl border overflow-hidden ${isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-sky-100 shadow-sm'}`}>
+                {/* ── Cabeçalho acordeão ── */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = new Set(expandedCuttingItems);
+                    pedidosOpen ? next.delete('__pedidos__') : next.add('__pedidos__');
+                    setExpandedCuttingItems(next);
+                  }}
+                  className={`w-full flex items-center justify-between p-4 transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-sky-50/50'}`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Hash size={13} className="text-indigo-500" />
+                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">
+                      Pedidos Vinculados
+                    </h3>
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}>
+                      {lotSourceItems.length}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {selectedOrderKeys.size > 0 && (
+                      <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-emerald-500 text-white">
+                        {selectedOrderKeys.size} sel.
+                      </span>
+                    )}
+                    <ChevronDown size={15} className={`text-slate-400 transition-transform duration-200 ${pedidosOpen ? 'rotate-180' : ''}`} />
+                  </div>
+                </button>
+
+                {/* Mensagem quando fechado */}
+                {!pedidosOpen && (
+                  <div className={`px-4 pb-3 flex items-center gap-2 ${isDarkMode ? 'border-t border-slate-800' : 'border-t border-sky-50'}`}>
+                    <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest leading-relaxed">
+                      Expandir para selecionar pedidos e criar ordens de serviço
+                    </span>
+                  </div>
+                )}
+
+                {/* Conteúdo expandido */}
+                {pedidosOpen && (
+                <div className="p-4 pt-0 flex flex-col gap-3">
+                {/* Header com select-all */}
+                <div className="flex items-center justify-between pt-1">
                   <div className="flex items-center gap-2">
                     {selectableItems.length > 0 && (
                       <input
@@ -1482,64 +1689,195 @@ export default function CuttingProjectionPanel({
                         className="w-4 h-4 accent-indigo-600 cursor-pointer"
                       />
                     )}
-                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                      <Hash size={13} /> Pedidos Vinculados
-                    </h3>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                      {selectableItems.length} disponíve{selectableItems.length === 1 ? 'l' : 'is'}
+                    </span>
                   </div>
-                  <span className="text-[9px] font-black text-indigo-500 uppercase">{lotSourceItems.length} {lotSourceItems.length === 1 ? 'Pedido' : 'Pedidos'}</span>
                 </div>
 
-                {/* Order cards */}
-                <div className="flex flex-col gap-2">
-                  {lotSourceItems.map((si: any, idx: number) => {
+                {/* ── Filtros em acordeão ── */}
+                {(() => {
+                  const uniqueModels = Array.from(new Set(lotSourceItems.map((si: any) => {
+                    const ord = productionOrders.find((o: ProductionOrder) => o.id === si.orderId);
+                    const ordItem: any = si.itemIdx !== undefined ? ord?.items[si.itemIdx] : ord?.items.find((i: any) => i.productId === si.productId);
+                    const prod = products.find((p: any) => p.id === (si.productId || ordItem?.productId));
+                    return prod?.name || ordItem?.productName || '';
+                  }).filter(Boolean)));
+                  const uniqueColors = Array.from(new Set(lotSourceItems.map((si: any) => {
+                    const ord = productionOrders.find((o: ProductionOrder) => o.id === si.orderId);
+                    const ordItem: any = si.itemIdx !== undefined ? ord?.items[si.itemIdx] : ord?.items.find((i: any) => i.productId === si.productId);
+                    const prod = products.find((p: any) => p.id === (si.productId || ordItem?.productId));
+                    const vari = prod?.variations.find((v: any) => v.id === (si.variationId || ordItem?.variationId));
+                    return vari?.colorName || ordItem?.variationName || '';
+                  }).filter(Boolean)));
+                  if (uniqueModels.length <= 1 && uniqueColors.length <= 1) return null;
+                  const hasFilter = !!orderFilterModel || !!orderFilterColor;
+                  const filterOpen = expandedCuttingItems.has('__filter__');
+                  return (
+                    <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                      <button type="button"
+                        onClick={() => {
+                          const next = new Set(expandedCuttingItems);
+                          filterOpen ? next.delete('__filter__') : next.add('__filter__');
+                          setExpandedCuttingItems(next);
+                        }}
+                        className={`w-full flex items-center justify-between px-3 py-2.5 transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-50 hover:bg-slate-100'}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Filter size={12} className={hasFilter ? 'text-violet-600' : 'text-violet-500'} />
+                          <span className={`text-[9px] font-black uppercase tracking-widest ${hasFilter ? 'text-violet-600' : 'text-violet-500'}`}>Filtrar</span>
+                          {hasFilter && (
+                            <span className="flex items-center gap-1">
+                              {orderFilterModel && <span className="text-[7px] font-black px-1.5 py-0.5 rounded-full bg-indigo-600 text-white">{orderFilterModel}</span>}
+                              {orderFilterColor && <span className="text-[7px] font-black px-1.5 py-0.5 rounded-full bg-violet-600 text-white">{orderFilterColor}</span>}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {hasFilter && (
+                            <button type="button" onClick={e => { e.stopPropagation(); setOrderFilterModel(''); setOrderFilterColor(''); }}
+                              className="text-[7px] font-black text-rose-500 px-1.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-900/20 uppercase">
+                              Limpar
+                            </button>
+                          )}
+                          <ChevronDown size={13} className={`text-slate-400 transition-transform duration-200 ${filterOpen ? 'rotate-180' : ''}`} />
+                        </div>
+                      </button>
+                      {filterOpen && (
+                        <div className={`px-3 pb-3 pt-2 flex flex-col gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50/80'}`}>
+                          {uniqueModels.length > 1 && (
+                            <div>
+                              <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Modelo</p>
+                              <div className="flex flex-wrap gap-1">
+                                <button type="button" onClick={() => setOrderFilterModel('')}
+                                  className={`text-[8px] font-black px-2 py-1 rounded-full uppercase transition-all ${!orderFilterModel ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                                  Todos
+                                </button>
+                                {uniqueModels.map(m => (
+                                  <button key={m} type="button" onClick={() => setOrderFilterModel(orderFilterModel === m ? '' : m)}
+                                    className={`text-[8px] font-black px-2 py-1 rounded-full uppercase transition-all ${orderFilterModel === m ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                                    {m}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {uniqueColors.length > 1 && (
+                            <div>
+                              <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Cor</p>
+                              <div className="flex flex-wrap gap-1">
+                                <button type="button" onClick={() => setOrderFilterColor('')}
+                                  className={`text-[8px] font-black px-2 py-1 rounded-full uppercase transition-all ${!orderFilterColor ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                                  Todas
+                                </button>
+                                {uniqueColors.map(c => (
+                                  <button key={c} type="button" onClick={() => setOrderFilterColor(orderFilterColor === c ? '' : c)}
+                                    className={`text-[8px] font-black px-2 py-1 rounded-full uppercase transition-all ${orderFilterColor === c ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                                    {c}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Order cards — acordeão: referência + cor + badge mapa / grade expandida */}
+                <div className="flex flex-col gap-1.5">
+                  {lotSourceItems.filter((si: any) => {
+                    if (!orderFilterModel && !orderFilterColor) return true;
+                    const ord = productionOrders.find((o: ProductionOrder) => o.id === si.orderId);
+                    const ordItem: any = si.itemIdx !== undefined ? ord?.items[si.itemIdx] : ord?.items.find((i: any) => i.productId === si.productId);
+                    const prod = products.find((p: any) => p.id === (si.productId || ordItem?.productId));
+                    const vari = prod?.variations.find((v: any) => v.id === (si.variationId || ordItem?.variationId));
+                    const prodName = prod?.name || ordItem?.productName || '';
+                    const colorName = vari?.colorName || ordItem?.variationName || '';
+                    if (orderFilterModel && prodName !== orderFilterModel) return false;
+                    if (orderFilterColor && colorName !== orderFilterColor) return false;
+                    return true;
+                  }).map((si: any, idx: number) => {
                     const order = productionOrders.find((o: ProductionOrder) => o.id === si.orderId);
-                    const key = `${si.orderId}-${idx}`;
+                    const orderItem: any = si.itemIdx !== undefined
+                      ? order?.items[si.itemIdx]
+                      : order?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+                    const resolvedProductId = si.productId || orderItem?.productId;
+                    const resolvedVariationId = si.variationId || orderItem?.variationId;
+                    const prod = products.find((p: any) => p.id === resolvedProductId);
+                    const vari = prod?.variations.find((v: any) => v.id === resolvedVariationId);
+                    const prodName = prod?.name || orderItem?.productName || '—';
+                    const prodRef = prod?.reference || '';
+                    const colorName = vari?.colorName || orderItem?.variationName || '';
+                    const key = `${si.orderId}-${lotSourceItems.indexOf(si)}`;
                     const isChecked = selectedOrderKeys.has(key);
                     const orderOS = getOrderOS(si.orderId);
                     const hasOS = !!orderOS;
+                    const isExpanded = expandedCuttingItems.has(key);
+
+                    const szEntries = orderItem
+                      ? Object.entries(orderItem.sizes as Record<string, { toProduction: number }>)
+                          .filter(([, s]) => s.toProduction > 0)
+                          .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
+                      : [];
 
                     return (
-                      <div
-                        key={key}
-                        className={`p-3 rounded-2xl border flex items-center gap-3 transition-all ${
-                          hasOS
-                            ? isDarkMode ? 'bg-emerald-950/30 border-emerald-700/50' : 'bg-emerald-50 border-emerald-200'
-                            : isChecked
-                              ? isDarkMode ? 'bg-indigo-950/30 border-indigo-700' : 'bg-indigo-50 border-indigo-200'
-                              : isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50 border-slate-100'
-                        }`}
-                      >
-                        {hasOS ? (
-                          <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
-                            <div className="w-2 h-2 rounded-full bg-white" />
-                          </div>
-                        ) : (
-                          <input
-                            type="checkbox"
-                            title="Selecionar pedido"
-                            checked={isChecked}
-                            onChange={() => {
-                              const next = new Set(selectedOrderKeys);
-                              if (isChecked) next.delete(key); else next.add(key);
-                              setSelectedOrderKeys(next);
-                            }}
-                            className="w-4 h-4 accent-indigo-600 cursor-pointer shrink-0"
-                          />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[11px] font-black uppercase truncate text-slate-800 dark:text-slate-200 leading-none mb-0.5">
-                            {order?.customerName || si.customerName || selectedLot.customerName || '---'}
-                          </p>
-                          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
-                            Pedido {order?.saleOrderNumber || si.saleOrderNumber || order?.orderNumber || '---'}
-                          </p>
-                          {hasOS && (
-                            <p className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mt-0.5">
-                              {orderOS!.osNumber}
-                            </p>
+                      <div key={key} className={`rounded-2xl border overflow-hidden transition-all ${
+                        hasOS
+                          ? isDarkMode ? 'bg-emerald-950/30 border-emerald-700/50' : 'bg-emerald-50 border-emerald-200'
+                          : isChecked
+                            ? isDarkMode ? 'bg-indigo-950/30 border-indigo-700' : 'bg-indigo-50 border-indigo-200'
+                            : isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50 border-slate-100'
+                      }`}>
+                        {/* Minimizado */}
+                        <div className="flex items-center gap-2 px-3 py-2.5">
+                          {hasOS ? (
+                            <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
+                              <div className="w-2 h-2 rounded-full bg-white" />
+                            </div>
+                          ) : (
+                            <input type="checkbox" title="Selecionar pedido" checked={isChecked}
+                              onChange={() => { const next = new Set(selectedOrderKeys); if (isChecked) next.delete(key); else next.add(key); setSelectedOrderKeys(next); }}
+                              className="w-4 h-4 accent-indigo-600 cursor-pointer shrink-0" />
                           )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-black uppercase truncate text-slate-800 dark:text-slate-200 leading-none">
+                              {prodName}
+                            </p>
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              {colorName && <span className="text-[8px] font-bold text-slate-400 uppercase">{colorName}</span>}
+                              <span className="text-[7px] text-slate-400 uppercase">Ped. {order?.saleOrderNumber || '—'}</span>
+                              {hasOS && <span className="text-[7px] font-black text-emerald-600 dark:text-emerald-400 uppercase">{orderOS!.osNumber}</span>}
+                            </div>
+                          </div>
+                          <div className="flex flex-col items-end gap-0.5 shrink-0">
+                            <span className="text-[7px] font-black px-2 py-0.5 rounded-full uppercase bg-violet-600 text-white tracking-widest shadow-sm shadow-violet-500/30">
+                              MAPA{selectedLot.orderNumber}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">{si.qty}P</span>
+                              {szEntries.length > 0 && (
+                                <button type="button" title={isExpanded ? 'Recolher' : 'Ver grade'} aria-label="Expandir grade"
+                                  onClick={() => { const next = new Set(expandedCuttingItems); isExpanded ? next.delete(key) : next.add(key); setExpandedCuttingItems(next); }}
+                                  className="p-0.5 rounded-lg text-slate-400 hover:text-slate-600 transition-all">
+                                  <ChevronDown size={12} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                                </button>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 shrink-0">{si.qty}P</span>
+                        {/* Grade expandida */}
+                        {isExpanded && szEntries.length > 0 && (
+                          <div className={`px-3 pb-2.5 pt-1 border-t flex flex-wrap gap-1.5 ${isDarkMode ? 'border-slate-800 bg-slate-950/50' : 'border-slate-100 bg-white/60'}`}>
+                            {szEntries.map(([sz, s]) => (
+                              <div key={sz} className={`px-2.5 py-1.5 rounded-xl border-2 text-center min-w-[36px] ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-100'}`}>
+                                <p className="text-[7px] font-bold text-slate-400 leading-none">{sz}</p>
+                                <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 leading-none mt-0.5">{s.toProduction}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1558,6 +1896,8 @@ export default function CuttingProjectionPanel({
                   >
                     <Hammer size={13} /> Emitir OS — {selectedItems.length} {selectedItems.length === 1 ? 'Pedido' : 'Pedidos'} ({selectedQty}P)
                   </button>
+                )}
+                </div>
                 )}
               </div>
             );
@@ -1684,161 +2024,182 @@ export default function CuttingProjectionPanel({
                     <div className="flex flex-col gap-2">
                       {lotActiveOSListFull.length > 0 ? (
                         <>
-                          {lotActiveOSListFull.map(os => (
-                            <div key={os.id} className={`rounded-2xl border overflow-hidden shadow-sm ${
-                              isDarkMode ? 'bg-slate-900 border-emerald-800/50 shadow-emerald-950/30' : 'bg-white border-emerald-200 shadow-emerald-100/60'
+                          {lotActiveOSListFull.map(os => {
+                            const osLot = cuttingLots.find(l => l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id)));
+                            // Usa posição da OS no roteiro para evitar pular setores
+                            const osSectorPos = osLot?.route?.indexOf(os.sectorId ?? '') ?? -1;
+                            const effectivePos = osSectorPos >= 0 ? osSectorPos : (osLot?.currentSectorIndex ?? 0);
+                            const nextSectorIdx = effectivePos + 1;
+                            const nextSectorId = osLot?.route?.[nextSectorIdx] || '';
+                            const nextSectorName = sectors.find(s => s.id === nextSectorId)?.name || 'CONCLUÍDO';
+                            return (
+                            <div key={os.id} className={`rounded-2xl border overflow-hidden ${
+                              isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'
                             }`}>
                               {/* OS info header */}
-                              <div className={`px-4 py-3 ${isDarkMode ? 'bg-gradient-to-r from-emerald-950/40 to-slate-900' : 'bg-gradient-to-r from-emerald-50 to-sky-50'}`}>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-emerald-900/50 text-emerald-400 border border-emerald-700/40' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'}`}>
-                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
-                                    {os.osNumber}
-                                  </span>
-                                  {currentSector && (
-                                    <span
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border"
-                                      style={{ backgroundColor: `${currentSector.color}18`, color: currentSector.color, borderColor: `${currentSector.color}40` }}
-                                    >
-                                      {currentSector.name}
-                                    </span>
+                              <div className="flex items-center gap-2 px-3 py-2.5">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className={`text-[10px] font-black uppercase ${isDarkMode ? 'text-emerald-400' : 'text-emerald-700'}`}>{os.osNumber}</span>
+                                    {currentSector && (
+                                      <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 uppercase">
+                                        {currentSector.name}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {os.providerName && (
+                                    <p className="text-[9px] text-slate-400 mt-0.5 truncate">{os.providerName} · R$ {os.totalValue.toFixed(2)}</p>
                                   )}
                                 </div>
-                                {os.providerName && (
-                                  <div className={`text-[11px] font-bold mt-1.5 flex items-center gap-2 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                                    <span className={`font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{os.providerName}</span>
-                                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-md ${isDarkMode ? 'bg-sky-950/60 text-sky-400' : 'bg-sky-50 text-sky-700 border border-sky-100'}`}>R$ {os.totalValue.toFixed(2)}</span>
-                                  </div>
+                                {/* Mapa badge */}
+                                {(os.lotNumber || (os.lotNumbers && os.lotNumbers.length > 0)) && (
+                                  <span className="shrink-0 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest bg-violet-600 text-white shadow-sm">
+                                    MAPA{(os.lotNumbers?.[0] || os.lotNumber || '').padStart(3, '0')}
+                                  </span>
                                 )}
                               </div>
 
-                              {/* Baixa QR — específica desta OS */}
-                              <div className={`border-t ${isDarkMode ? 'border-slate-800' : 'border-sky-100'}`}>
+                              {/* 2x2 action grid */}
+                              <div className={`grid grid-cols-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                                {/* QR Baixa */}
                                 <button
                                   type="button"
+                                  title="Baixa via QR Code"
                                   onClick={async () => {
-                                    const lotObj = cuttingLots.find(l =>
-                                      l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id))
-                                    );
-                                    const nextIdx = (lotObj?.currentSectorIndex ?? 0) + 1;
-                                    const nextSectorId = lotObj?.route?.[nextIdx] || '';
-                                    const nextSec = sectors.find(s => s.id === nextSectorId);
-                                    const confirmData = { os, nextSectorName: nextSec?.name || 'CONCLUÍDO' };
-                                    if (!isWebPlatform) {
-                                      // Android: abre câmera primeiro como verificação física
-                                      try { await scannerService.scan(); } catch (_) { /* ignore */ }
-                                    }
+                                    if (!isWebPlatform) { try { await scannerService.scan(); } catch (_) { /* ignore */ } }
                                     setQrBaixaOpen(true);
                                     setQrBaixaManualCode('');
-                                    setQrBaixaConfirm(confirmData);
+                                    setQrBaixaConfirm({ os, nextSectorName });
                                   }}
-                                  className={`w-full py-3 flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${
-                                    isDarkMode
-                                      ? 'bg-gradient-to-r from-violet-950/40 to-sky-950/30 text-violet-400 hover:from-violet-900/50'
-                                      : 'bg-gradient-to-r from-violet-50 to-sky-50 text-violet-700 hover:from-violet-100 hover:to-sky-100'
-                                  }`}
+                                  className={`flex items-center justify-center gap-2 py-2.5 border-r transition-all active:scale-95 ${isDarkMode ? 'border-slate-800 text-violet-400 hover:bg-violet-900/20' : 'border-slate-100 text-violet-600 hover:bg-violet-50'}`}
                                 >
-                                  <QrCode size={12} /> Baixa QR desta OS
+                                  <QrCode size={14} />
+                                  <span className="text-[9px] font-black uppercase tracking-wide">QR Baixa</span>
                                 </button>
-                              </div>
 
-                              {/* Action buttons */}
-                              <div className={`flex border-t ${isDarkMode ? 'border-slate-800' : 'border-sky-100'}`}>
                                 {/* Compartilhar */}
-                                <div className="relative flex-1">
+                                <div className="relative">
                                   <button
                                     type="button"
+                                    title="Compartilhar"
                                     disabled={isShareExporting}
                                     onClick={() => setOsSharePopupId(p => p === os.id ? null : os.id)}
-                                    className={`w-full py-2.5 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-wide border-r transition-all active:scale-95 ${
-                                      isDarkMode
-                                        ? 'border-slate-700 text-sky-400 hover:bg-sky-950/20'
-                                        : 'border-sky-100 text-sky-600 hover:bg-sky-50'
-                                    }`}
+                                    className={`w-full flex items-center justify-center gap-2 py-2.5 transition-all active:scale-95 ${isDarkMode ? 'text-sky-400 hover:bg-sky-900/20' : 'text-sky-600 hover:bg-sky-50'}`}
                                   >
-                                    <Share2 size={11} /> Compartilhar
+                                    <Share2 size={14} />
+                                    <span className="text-[9px] font-black uppercase tracking-wide">Compartilhar</span>
                                   </button>
                                   {osSharePopupId === os.id && (
-                                    <>
-                                      <div className="fixed inset-0 z-40" onClick={() => setOsSharePopupId(null)} />
-                                      <div className={`absolute bottom-full left-0 mb-2 rounded-2xl shadow-2xl border z-50 p-2 min-w-[190px] ${
+                                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                                      <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" onClick={() => setOsSharePopupId(null)} />
+                                      <div className={`relative w-full max-w-[280px] rounded-3xl shadow-2xl border p-4 flex flex-col gap-1.5 animate-in fade-in zoom-in-95 duration-200 ${
                                         isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
                                       }`}>
-                                        <p className={`text-[8px] font-black uppercase tracking-widest px-2 pb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                                          Ficha Técnica
-                                        </p>
-                                        <button
-                                          type="button"
-                                          onClick={() => { handleShareDoc('ficha', 'pdf', null); setOsSharePopupId(null); }}
-                                          className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${
-                                            isDarkMode ? 'text-sky-400 hover:bg-slate-800' : 'text-sky-600 hover:bg-sky-50'
-                                          }`}
-                                        >
-                                          <Share2 size={11} /> PDF — Impressão
+                                        <h3 className={`text-center text-xs font-black uppercase tracking-widest mb-3 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                                          Compartilhar
+                                        </h3>
+                                        <button type="button" onClick={() => { handleShareDoc('ficha', 'pdf', null); setOsSharePopupId(null); }}
+                                          className={`w-full flex items-center gap-2 px-3 py-3 rounded-2xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-sky-400 bg-slate-800 hover:bg-slate-700' : 'text-sky-700 bg-sky-50 hover:bg-sky-100'}`}>
+                                          <Share2 size={14} /> Ficha Técnica (PDF)
                                         </button>
-                                        <div className={`my-1 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`} />
-                                        <p className={`text-[8px] font-black uppercase tracking-widest px-2 pb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                                          Ficha + {os.osNumber}
-                                        </p>
-                                        <button
-                                          type="button"
-                                          onClick={() => { handleShareDoc('os', 'pdf', os); setOsSharePopupId(null); }}
-                                          className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${
-                                            isDarkMode ? 'text-emerald-400 hover:bg-slate-800' : 'text-emerald-600 hover:bg-emerald-50'
-                                          }`}
-                                        >
-                                          <Share2 size={11} /> PDF — Com OS
+                                        <button type="button" onClick={() => { handleShareDoc('os', 'pdf', os); setOsSharePopupId(null); }}
+                                          className={`w-full flex items-center gap-2 px-3 py-3 rounded-2xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-emerald-400 bg-emerald-950/40 hover:bg-emerald-900/60' : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100'}`}>
+                                          <Share2 size={14} /> Ficha + OS (PDF)
                                         </button>
                                         {lotProductDetails?.product && (
-                                          <>
-                                            <div className={`my-1 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`} />
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                setLabelSizeGridOverride(computeOSSizeGrid(os) || undefined);
-                                                setLabelOsOverride(os);
-                                                setLabelModalOpen(true);
-                                                setOsSharePopupId(null);
-                                              }}
-                                              className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${
-                                                isDarkMode ? 'text-amber-400 hover:bg-slate-800' : 'text-amber-600 hover:bg-amber-50'
-                                              }`}
-                                            >
-                                              <Tag size={11} /> Etiqueta desta OS
-                                            </button>
-                                          </>
+                                          <button type="button" onClick={() => { setLabelSizeGridOverride(computeOSSizeGrid(os) || undefined); setLabelOsOverride(os); setLabelModalOpen(true); setOsSharePopupId(null); }}
+                                            className={`w-full flex items-center gap-2 px-3 py-3 rounded-2xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 text-left mt-1 ${isDarkMode ? 'text-amber-400 bg-amber-950/40 hover:bg-amber-900/60' : 'text-amber-700 bg-amber-50 hover:bg-amber-100'}`}>
+                                            <Tag size={14} /> Etiqueta desta OS
+                                          </button>
                                         )}
                                       </div>
-                                    </>
+                                    </div>
                                   )}
                                 </div>
 
                                 {/* Editar */}
                                 <button
                                   type="button"
+                                  title="Editar OS"
                                   onClick={() => handleEditOS(os)}
-                                  className={`flex-1 py-2.5 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-wide border-r transition-all active:scale-95 ${
-                                    isDarkMode
-                                      ? 'border-slate-700 text-blue-400 hover:bg-blue-950/20'
-                                      : 'border-sky-100 text-blue-600 hover:bg-blue-50'
-                                  }`}
+                                  className={`flex items-center justify-center gap-2 py-2.5 border-t border-r transition-all active:scale-95 ${isDarkMode ? 'border-slate-800 text-slate-400 hover:text-blue-400 hover:bg-blue-900/20' : 'border-slate-100 text-slate-500 hover:text-blue-600 hover:bg-blue-50'}`}
                                 >
-                                  <Edit2 size={11} /> Editar
+                                  <Edit2 size={14} />
+                                  <span className="text-[9px] font-black uppercase tracking-wide">Editar</span>
                                 </button>
 
                                 {/* Excluir */}
                                 <button
                                   type="button"
+                                  title="Excluir OS"
                                   onClick={() => handleDeleteOS(os)}
-                                  className={`flex-1 py-2.5 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 ${
-                                    isDarkMode ? 'text-rose-400 hover:bg-white/5' : 'text-rose-500 hover:bg-white/70'
-                                  }`}
+                                  className={`flex items-center justify-center gap-2 py-2.5 border-t transition-all active:scale-95 ${isDarkMode ? 'border-slate-800 text-slate-600 hover:text-rose-400 hover:bg-rose-900/20' : 'border-slate-100 text-slate-400 hover:text-rose-500 hover:bg-rose-50'}`}
                                 >
-                                  <Trash2 size={11} /> Excluir
+                                  <Trash2 size={14} />
+                                  <span className="text-[9px] font-black uppercase tracking-wide">Excluir</span>
                                 </button>
                               </div>
+
+                              {/* Mover Setor — full-width line */}
+                              <button
+                                type="button"
+                                title={`Concluir OS e mover para ${nextSectorName}`}
+                                onClick={() => openConfirm({
+                                  title: `Mover para ${nextSectorName}`,
+                                  message: `Concluir ${os.osNumber} e avançar o lote para o setor "${nextSectorName}"?`,
+                                  confirmLabel: 'Confirmar',
+                                  isDanger: false,
+                                  onConfirm: () => handleCompleteOSCutting(os),
+                                })}
+                                className={`w-full flex items-center justify-center gap-2 py-3 border-t text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] ${
+                                  isDarkMode
+                                    ? 'border-slate-800 bg-emerald-950/30 text-emerald-400 hover:bg-emerald-900/40'
+                                    : 'border-slate-100 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                }`}
+                              >
+                                <CheckCircle2 size={14} />
+                                Mover Setor → {nextSectorName}
+                              </button>
                             </div>
-                          ))}
+                            );
+                          })}
+
+                          {/* OS concluídas — com opção de Desfazer */}
+                          {lotCompletedOSList.length > 0 && (
+                            <div className="flex flex-col gap-2 mt-1">
+                              <p className={`text-[8px] font-black uppercase tracking-widest px-1 ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
+                                Concluídas neste setor
+                              </p>
+                              {lotCompletedOSList.map(os => (
+                                <div key={os.id} className={`rounded-2xl border overflow-hidden opacity-60 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                                  <div className="flex items-center gap-2 px-3 py-2">
+                                    <CheckCircle2 size={12} className="text-emerald-500 shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                      <span className={`text-[10px] font-black uppercase line-through ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{os.osNumber}</span>
+                                      {os.providerName && (
+                                        <p className="text-[9px] text-slate-400 truncate">{os.providerName}</p>
+                                      )}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      title="Reverter esta OS para pendente"
+                                      onClick={() => openConfirm({
+                                        title: `Reverter ${os.osNumber}`,
+                                        message: `Reabrir a OS e reverter o lote para o setor de corte, se ele já tiver avançado?`,
+                                        confirmLabel: 'Reverter',
+                                        isDanger: true,
+                                        onConfirm: () => handleUndoOS(os),
+                                      })}
+                                      className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all active:scale-95 ${isDarkMode ? 'text-amber-400 hover:bg-amber-900/30' : 'text-amber-600 hover:bg-amber-50'}`}
+                                    >
+                                      <ArrowLeft size={11} /> Desfazer
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
 
                           {/* Nova OS — bloqueada quando todos os pedidos já têm OS */}
                           {!allSourceOrdersCovered && (
@@ -1869,46 +2230,95 @@ export default function CuttingProjectionPanel({
                 </div>
               </div>
 
-              {/* ── Legenda do setor de corte ─────────────────────────────── */}
-              <div className={`flex flex-wrap gap-3 px-3 py-2.5 rounded-2xl border text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-sky-100 bg-sky-50/60'}`}>
-                <span className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Legenda:</span>
-                {[
-                  { dot: 'bg-sky-500',   label: 'Mapa de Produção', desc: 'Agrupamento de pares em rota de produção — o que está sendo cortado' },
-                  { dot: 'bg-violet-500',   label: 'Ficha Técnica',    desc: 'Especificação de corte: peças, facas, materiais e infestos — clique em "Imprimir Ficha"' },
-                  { dot: 'bg-emerald-500',  label: 'OS de Corte',      desc: 'Ordem de Serviço emitida para o cortador — gera registro financeiro' },
-                  { dot: 'bg-amber-500',    label: 'Batidas/Facadas',  desc: 'Quantidade de golpes por tamanho com base nas camadas de infesto e conjugação da faca' },
-                ].map(item => (
-                  <div key={item.label} className="flex items-center gap-1.5 group relative">
-                    <div className={`w-2 h-2 rounded-full shrink-0 ${item.dot}`}/>
-                    <span className={`${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{item.label}</span>
-                    <div className={`absolute bottom-full left-0 mb-1 px-2.5 py-1.5 rounded-xl text-[9px] font-bold normal-case tracking-normal whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-lg ${isDarkMode ? 'bg-slate-700 text-white' : 'bg-slate-800 text-white'}`}>
-                      {item.desc}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Cutting pieces detail cards / panels */}
-              {resolvedPieces.length === 0 ? (
-                <div className={`py-16 rounded-[2rem] border-2 border-dashed flex flex-col items-center justify-center text-center p-6 ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
-                  <HelpCircle size={32} className="text-slate-600 mb-2" />
-                  <p className="text-xs font-black uppercase tracking-widest text-slate-400">Sem peças de corte configuradas</p>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                    Esta variação do produto não tem peças categorizadas como "CUTTING_PIECE" na Ficha Técnica
-                  </p>
+              {/* ── Área de Corte ─────────────────────────────── */}
+              <div className={`rounded-[2rem] border overflow-hidden ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                {/* Header */}
+                <div className={`flex items-center gap-3 px-5 py-3 border-b ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-indigo-50 border-indigo-100'}`}>
+                  <Scissors size={15} className="text-indigo-500 shrink-0" />
+                  <span className={`text-[10px] font-black uppercase tracking-[0.2em] ${isDarkMode ? 'text-indigo-400' : 'text-indigo-700'}`}>Área de Corte</span>
+                  <span className={`ml-auto text-[9px] font-black px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-white text-slate-500 border border-slate-200'}`}>
+                    {resolvedPieces.length} {resolvedPieces.length === 1 ? 'peça' : 'peças'}
+                  </span>
                 </div>
-              ) : (
-                <div className="flex flex-col gap-6">
-                  {resolvedPieces.map(({ piece, material, tool, layers, foldConfig }, index) => {
+
+                {resolvedPieces.length === 0 ? (
+                  <div className={`py-12 flex flex-col items-center justify-center text-center p-6 ${isDarkMode ? 'bg-slate-900/50' : 'bg-white'}`}>
+                    <HelpCircle size={28} className="text-slate-400 mb-2" />
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-400">Sem peças de corte configuradas</p>
+                    <p className="text-[9px] font-bold text-slate-400 mt-1">
+                      {!lotProductDetails?.variation && !((selectedLot as any)?.metadata?.groups?.length)
+                        ? 'Variação do produto não encontrada para este mapa'
+                        : 'Cadastro do Produto → variação → "Componentes do Cabedal"'}
+                    </p>
+                  </div>
+                ) : (
+                <div className={`flex flex-col divide-y ${isDarkMode ? 'divide-slate-800' : 'divide-slate-100'}`}>
+                  {/* Group pieces by source product */}
+                  {(() => {
+                    const groups: { productId: string; variationId: string; label: string; ref: string; colorName: string; pieces: typeof resolvedPieces }[] = [];
+                    resolvedPieces.forEach(rp => {
+                      const key = `${rp.sourceProductId}-${rp.sourceVariationId}`;
+                      let g = groups.find(x => `${x.productId}-${x.variationId}` === key);
+                      if (!g) {
+                        const prod = products.find(p => p.id === rp.sourceProductId);
+                        const vari = prod?.variations.find(v => v.id === rp.sourceVariationId);
+                        g = {
+                          productId: rp.sourceProductId,
+                          variationId: rp.sourceVariationId,
+                          label: prod?.name || lotProductDetails?.product?.name || 'Modelo',
+                          ref: prod?.reference || lotProductDetails?.product?.reference || '',
+                          colorName: vari?.colorName || lotProductDetails?.variation?.colorName || '',
+                          pieces: [],
+                        };
+                        groups.push(g);
+                      }
+                      g.pieces.push(rp);
+                    });
+                    return groups.map((group, gIdx) => (
+                      <div key={`${group.productId}-${group.variationId}`}>
+                        {/* Model separator header */}
+                        <div className={`flex items-center gap-3 px-5 py-2.5 ${isDarkMode ? 'bg-slate-950/60' : 'bg-slate-50'}`}>
+                          <div className={`w-1.5 h-1.5 rounded-full ${['bg-indigo-500','bg-emerald-500','bg-amber-500','bg-violet-500'][gIdx % 4]}`} />
+                          <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{group.label}</span>
+                          {group.ref && <span className="text-[9px] font-bold text-slate-400 uppercase">REF: {group.ref}</span>}
+                          {group.colorName && (
+                            <span className={`ml-auto text-[9px] font-black px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-white border border-slate-200 text-slate-600'}`}>
+                              {group.colorName}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-6 p-4">
+                  {group.pieces.map(({ piece, material, tool, layers, foldConfig, sourceVariationId, sourceProductId }, index) => {
+                    // Compute per-piece pairs filtered by this piece's source variation
+                    const isMultiGroupLot = !selectedLot?.variationId;
+                    const piecePairsMap: Record<string, number> = {};
+                    const relevantItems = (isMultiGroupLot && sourceVariationId)
+                      ? lotSourceItems.filter((si: any) => si.variationId === sourceVariationId)
+                      : lotSourceItems;
+                    relevantItems.forEach((si: any) => {
+                      const order = (productionOrders as any[]).find((o: any) => o.id === si.orderId);
+                      if (!order) return;
+                      const orderItem = order.items?.[si.itemIdx ?? 0];
+                      if (!orderItem?.sizes) return;
+                      Object.entries(orderItem.sizes).forEach(([size, sizeData]) => {
+                        const qty = typeof sizeData === 'object'
+                          ? ((sizeData as any).toProduction || (sizeData as any).total || 0)
+                          : (Number(sizeData) || 0);
+                        piecePairsMap[size] = (piecePairsMap[size] || 0) + qty;
+                      });
+                    });
+                    // Use per-piece pairs when available, otherwise fall back to full lot pairs
+                    const piecePairs = Object.values(piecePairsMap).some(v => v > 0) ? piecePairsMap : effectivePairs;
+                    const pieceTotalPairs = Object.values(piecePairs).reduce((s, v) => s + (v || 0), 0);
                     const conjugation = tool?.metadata?.conjugation || 1;
-                    
+
                     // Total strokes for this specific piece
-                    const totalFacadas = Object.entries(effectivePairs).reduce((sum, [size, qty]) => {
+                    const totalFacadas = Object.entries(piecePairs).reduce((sum, [size, qty]) => {
                       return sum + Math.ceil(qty / (conjugation * layers));
                     }, 0);
 
-                    // Material consumption total
-                    const totalConsumo = selectedLot.quantity * piece.quantity;
+                    // Material consumption total (only for this piece's variation pairs)
+                    const totalConsumo = pieceTotalPairs * piece.quantity;
 
                     // Dynamic premium color configurations for different pieces to identify at a glance
                     const pieceColors = [
@@ -2042,13 +2452,13 @@ export default function CuttingProjectionPanel({
                                   <span className="text-[10px] font-black">Grade a Cortar:</span>
                                 </div>
                                 <div className="flex flex-wrap gap-2">
-                                  {Object.entries(effectivePairs).map(([size, qty]) => {
+                                  {Object.entries(piecePairs).map(([size, qty]) => {
                                     if (qty === 0) return null;
                                     return (
-                                      <div 
+                                      <div
                                         key={size}
                                         className={`px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-2 border transition-all ${
-                                          isDarkMode 
+                                          isDarkMode
                                             ? 'bg-slate-955 border-slate-800 text-indigo-400 shadow-sm' 
                                             : 'bg-indigo-50/60 border-indigo-100 text-indigo-900 shadow-xs'
                                         }`}
@@ -2229,13 +2639,13 @@ export default function CuttingProjectionPanel({
 
                         {/* Intelligent Infesto & Folding Assistant */}
                         {(() => {
-                          const totalParesLote = selectedLot.quantity;
+                          const totalParesLote = pieceTotalPairs;
                           const materialUnit = productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'M';
 
                           // 1. Calculate surplus (sobra) for a given layer option
                           const calculateSobraForLayers = (layerOption: number) => {
                             let totalParesCortados = 0;
-                            Object.entries(effectivePairs).forEach(([size, qty]) => {
+                            Object.entries(piecePairs).forEach(([size, qty]) => {
                               const strokesForSize = Math.ceil(qty / (conjugation * layerOption));
                               totalParesCortados += strokesForSize * conjugation * layerOption;
                             });
@@ -2245,7 +2655,7 @@ export default function CuttingProjectionPanel({
                           // 2. Map all registered layer options to their sobra and strokes
                           const optionsMetrics = registeredLayers.map(l => {
                             const sobra = calculateSobraForLayers(l);
-                            const strokes = Object.entries(effectivePairs).reduce((sum, [size, qty]) => {
+                            const strokes = Object.entries(piecePairs).reduce((sum, [size, qty]) => {
                               return sum + Math.ceil(qty / (conjugation * l));
                             }, 0);
                             return { layers: l, sobra, strokes };
@@ -2269,7 +2679,7 @@ export default function CuttingProjectionPanel({
                           const singleLayerLength = totalConsumoMetros / layers;
 
                           // 5. Two-Fold (Dobra Dupla) Calculation
-                          const splitData = Object.entries(effectivePairs).map(([size, qty]) => {
+                          const splitData = Object.entries(piecePairs).map(([size, qty]) => {
                             const exactStrokes = Math.floor(qty / (conjugation * layers));
                             const cutQty1 = exactStrokes * conjugation * layers;
                             const remQty = qty - cutQty1;
@@ -2503,9 +2913,9 @@ export default function CuttingProjectionPanel({
                           </div>
 
                           <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
-                            {Object.entries(effectivePairs).map(([size, qty]) => {
+                            {Object.entries(piecePairs).map(([size, qty]) => {
                               if (qty === 0) return null;
-                              
+
                               // Calculate strokes needed for this size
                               // Strokes = Ceil( Required Pairs / (Layers * Conjugation) )
                               const strokesNeeded = Math.ceil(qty / (conjugation * layers));
@@ -2563,7 +2973,12 @@ export default function CuttingProjectionPanel({
                     );
                   })}
                 </div>
-              )}
+              </div>
+            ));
+          })()}
+        </div>
+      )}
+      </div>
 
             </div>
           )}
@@ -3429,6 +3844,28 @@ export default function CuttingProjectionPanel({
         </div>,
         document.body
       )}
+      {/* Custom confirm dialog */}
+      <ConfirmDialog
+        isOpen={!!confirmState}
+        title={confirmState?.title || ''}
+        message={confirmState?.message || ''}
+        confirmLabel={confirmState?.confirmLabel || 'Confirmar'}
+        cancelLabel="Cancelar"
+        isDanger={confirmState?.isDanger !== false}
+        onConfirm={() => { confirmState?.onConfirm(); setConfirmState(null); }}
+        onCancel={() => setConfirmState(null)}
+      />
+      {/* Info dialog (single button — no cancel) */}
+      <ConfirmDialog
+        isOpen={!!infoState}
+        title={infoState?.title || ''}
+        message={infoState?.message || ''}
+        confirmLabel="OK"
+        cancelLabel=""
+        isDanger={infoState?.isDanger || false}
+        onConfirm={() => setInfoState(null)}
+        onCancel={() => setInfoState(null)}
+      />
     </div>
   );
 }

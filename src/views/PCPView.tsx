@@ -10,13 +10,13 @@ import {
   Settings2, Trash2, Edit3, Edit2, ClipboardList,
   Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart,
   DollarSign, Hammer, FileText, CheckSquare, Scissors, Printer, Share2,
-  QrCode, ScanLine, Hash, Lock
+  QrCode, ScanLine, Hash, Lock, ChevronDown, List
 } from 'lucide-react';
 import {
   ProductionLot, Product, Sector,
   FlowTag, Variation, ColorValue, ProductionOrder,
   ProductionConfigItem, SoleStockEntry, ViewType, PurchaseRequest, Grid,
-  ServiceOrder, Person, Account, Category, Transaction
+  ServiceOrder, Person, Account, Category, Transaction, Purchase, PurchaseType
 } from '../types';
 import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
@@ -56,6 +56,8 @@ interface PCPViewProps {
   accounts?: Account[];
   categories?: Category[];
   serviceOrders?: ServiceOrder[];
+  purchases?: Purchase[];
+  sales?: import('../types').Sale[];
 }
 
 export default function PCPView({
@@ -81,9 +83,18 @@ export default function PCPView({
   accounts = [],
   categories = [],
   serviceOrders = [],
+  purchases = [],
+  sales = [],
 }: PCPViewProps) {
   const [activeTab, setActiveTab] = useState<'monitor' | 'lots' | 'orders' | 'needs'>(initialTab);
   const [requestingId, setRequestingId] = useState<string | null>(null);
+  const [inTransitPopupItem, setInTransitPopupItem] = useState<any | null>(null);
+  const [expandedNeedIds, setExpandedNeedIds] = useState<Set<string>>(new Set());
+  const toggleNeedExpand = (id: string) => setExpandedNeedIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'finished' | 'urgent'>('active');
   const [isFilterPopupOpen, setIsFilterPopupOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -119,7 +130,17 @@ export default function PCPView({
   const [labelModalLot, setLabelModalLot] = useState<import('../types').ProductionLot | null>(null);
   const [labelModalSizeGrid, setLabelModalSizeGrid] = useState<string>('');
   const [selectedSourceItemKeys, setSelectedSourceItemKeys] = useState<Set<string>>(new Set());
+  const [expandedSourceItems, setExpandedSourceItems] = useState<Set<string>>(new Set());
+  const [sourceFilterModel, setSourceFilterModel] = useState<string>('');
+  const [sourceFilterColor, setSourceFilterColor] = useState<string>('');
+  const [osFeedback, setOsFeedback] = useState<{ osNumber: string; nextSector: string; action?: string } | null>(null);
+  const [moveSectorModal, setMoveSectorModal] = useState<{ lotId: string; orderIds: string[]; qty: number; fromSectorId?: string } | null>(null);
+  const [moveSectorTarget, setMoveSectorTarget] = useState<string>('');
+  const [expandedOSIds, setExpandedOSIds] = useState<Set<string>>(new Set());
+  const [expandedOSItemKeys, setExpandedOSItemKeys] = useState<Set<string>>(new Set());
   const [pendingOsSourceOrderIds, setPendingOsSourceOrderIds] = useState<string[]>([]);
+  const [pendingOsSectorOverride, setPendingOsSectorOverride] = useState<string>('');
+  const [pendingOsQuantityOverride, setPendingOsQuantityOverride] = useState<number | null>(null);
 
   // QR Baixa modal state
   const [qrBaixaModal, setQrBaixaModal] = useState<{
@@ -150,7 +171,8 @@ export default function PCPView({
       const q = searchTerm.toLowerCase();
       list = list.filter(l => {
         const product = products.find(p => p.id === l.productId);
-        const searchStr = `${l.orderNumber} ${product?.name} ${product?.reference}`.toLowerCase();
+        const groupsStr = ((l as any).metadata?.groups || []).map((g: any) => g.productName).join(' ');
+        const searchStr = `${l.orderNumber} ${product?.name} ${product?.reference} ${groupsStr}`.toLowerCase();
         return searchStr.includes(q);
       });
     }
@@ -173,35 +195,54 @@ export default function PCPView({
 
   // Sector Metrics for Dashboard
   const sectorMetrics = useMemo(() => {
-    const metrics: Record<string, { 
-      totalPares: number; 
-      lotsCount: number; 
-      delayedCount: number; 
+    const metrics: Record<string, {
+      totalPares: number;     // pares do lote no setor (desconta movidos)
+      lotsCount: number;
+      delayedCount: number;
       urgentCount: number;
+      movedOutPairs: number;  // pares que saíram deste setor via orderSectors
+      arrivedPairs: number;   // pares que chegaram de outro setor via orderSectors
+      arrivedOrders: number;  // número de pedidos vindos de outro setor
     }> = {};
-    
+
     sectors.forEach(s => {
-      metrics[s.id] = { totalPares: 0, lotsCount: 0, delayedCount: 0, urgentCount: 0 };
+      metrics[s.id] = { totalPares: 0, lotsCount: 0, delayedCount: 0, urgentCount: 0, movedOutPairs: 0, arrivedPairs: 0, arrivedOrders: 0 };
     });
 
     filteredActiveLots.forEach(lot => {
       const sectorId = (lot.route && lot.route[lot.currentSectorIndex]);
-      if (sectorId && metrics[sectorId]) {
-        metrics[sectorId].totalPares += lot.quantity;
-        metrics[sectorId].lotsCount += 1;
-        
-        // Delay check: > 24h
-        const lastMove = (lot.history && lot.history.length > 0) 
-          ? lot.history[lot.history.length - 1]?.timestamp || lot.createdAt 
-          : lot.createdAt;
-        if (Date.now() - lastMove > 24 * 60 * 60 * 1000) {
-          metrics[sectorId].delayedCount += 1;
-        }
+      const orderSectors: Record<string, string> = (lot as any).metadata?.orderSectors || {};
+      const lotSI: any[] = (lot as any).metadata?.sourceItems || [];
 
-        if (lot.prioridade === 'URGENTE' || lot.prioridade === 'ALTA') {
-          metrics[sectorId].urgentCount += 1;
-        }
+      if (sectorId && metrics[sectorId]) {
+        // Pares movidos para fora — descontar do setor atual do lote
+        let movedOut = 0;
+        lotSI.forEach((si: any) => {
+          if (orderSectors[si.orderId] && orderSectors[si.orderId] !== sectorId) {
+            movedOut += si.qty || 0;
+          }
+        });
+        metrics[sectorId].movedOutPairs += movedOut;
+        metrics[sectorId].totalPares += Math.max(0, lot.quantity - movedOut);
+        metrics[sectorId].lotsCount += 1;
+
+        const lastMove = (lot.history && lot.history.length > 0)
+          ? lot.history[lot.history.length - 1]?.timestamp || lot.createdAt
+          : lot.createdAt;
+        if (Date.now() - lastMove > 24 * 60 * 60 * 1000) metrics[sectorId].delayedCount += 1;
+        if (lot.prioridade === 'URGENTE' || lot.prioridade === 'ALTA') metrics[sectorId].urgentCount += 1;
       }
+
+      // Pedidos adiantados para outro setor — contam como JÁ PRESENTES naquele setor
+      lotSI.forEach((si: any) => {
+        const destSector = orderSectors[si.orderId];
+        if (destSector && destSector !== sectorId && metrics[destSector]) {
+          metrics[destSector].arrivedPairs += si.qty || 0;
+          metrics[destSector].arrivedOrders += 1;
+          // Já estão no setor destino — somam ao total de pares
+          metrics[destSector].totalPares += si.qty || 0;
+        }
+      });
     });
 
     return metrics;
@@ -266,26 +307,61 @@ export default function PCPView({
 
     activeLots.forEach(lot => {
       const product = products.find(p => p.id === lot.productId);
-      const variation = product?.variations.find(v => v.id === lot.variationId);
-      
+
+      // Para mapas multi-variação (variationId vazio), expande os grupos via metadata
+      const lotGroups: { productId: string; variationId: string; pairs: Record<string, number> }[] = [];
+
+      if (!lot.variationId && (lot as any).metadata?.groups?.length > 0) {
+        const groupsMeta: any[] = (lot as any).metadata.groups;
+        const totalGroupQty = groupsMeta.reduce((s: number, g: any) => s + (g.quantity || 0), 0);
+        groupsMeta.forEach((g: any) => {
+          let gPairs: Record<string, number>;
+          if (g.pairs && Object.keys(g.pairs).length > 0) {
+            // Novo: pares por grupo salvos corretamente
+            gPairs = g.pairs;
+          } else {
+            // Legado: distribui lot.pairs proporcionalmente pelo peso do grupo
+            const ratio = totalGroupQty > 0 ? (g.quantity || 0) / totalGroupQty : 0;
+            gPairs = {};
+            Object.entries(lot.pairs || {}).forEach(([size, qty]) => {
+              const v = Math.round(Number(qty) * ratio);
+              if (v > 0) gPairs[size] = v;
+            });
+          }
+          lotGroups.push({ productId: g.productId, variationId: g.variationId, pairs: gPairs });
+        });
+      } else {
+        lotGroups.push({ productId: lot.productId, variationId: lot.variationId, pairs: lot.pairs || {} });
+      }
+
+      lotGroups.forEach(({ productId, variationId, pairs: groupPairs }) => {
+      const groupProduct = products.find(p => p.id === productId) || product;
+      const variation = groupProduct?.variations.find(v => v.id === variationId);
+
       if (!variation) return;
 
       // 1. Regular Materials from ComponentConsumption
       variation.consumptions?.forEach(cons => {
         if (!cons.materialId) return;
+        if (cons.ignoreColor && cons.colorId) {
+          // ignoreColor means the piece is color-agnostic — keep single entry per material
+        }
         const config = productionConfigs.find(c => c.id === cons.materialId);
-        const key = String(cons.materialId || '').trim();
+        const colorKey = cons.ignoreColor ? '' : (String(cons.colorId || '').trim());
+        const key = colorKey ? `${String(cons.materialId).trim()}_${colorKey}` : String(cons.materialId || '').trim();
         if (!key) return;
         if (!materialReqs[key]) {
+          const colorName = colorKey ? (colors.find(c => c.id === cons.colorId)?.name || '') : '';
           materialReqs[key] = {
-            id: cons.materialId,
+            id: key,
             materialId: cons.materialId,
-            name: config?.name || cons.name,
+            name: colorName ? `${config?.name || cons.name} — ${colorName}` : (config?.name || cons.name),
             required: 0,
             stock: config?.metadata?.stock || 0,
             minStock: config?.metadata?.minStock || 0,
             unit: productionConfigs.find(c => c.id === config?.metadata?.unitId)?.name || 'UN',
             type: 'MATERIAL',
+            colorId: colorKey || undefined,
             contributingLots: []
           };
         }
@@ -347,7 +423,7 @@ export default function PCPView({
         // Usa tamanhos válidos do estoque; se não houver estoque ainda, usa tamanhos do lote
         const sizesToMap = validSizes.size > 0
           ? Array.from(validSizes)
-          : (lot.pairs && Object.keys(lot.pairs).length > 0 ? Object.keys(lot.pairs) : []);
+          : (groupPairs && Object.keys(groupPairs).length > 0 ? Object.keys(groupPairs) : []);
 
         if (sizesToMap.length > 0) {
           mapping = {};
@@ -357,7 +433,7 @@ export default function PCPView({
 
       if (mapping) {
         // Monta pares efetivos por tamanho
-        const effectivePairs: Record<string, number> = { ...(lot.pairs || {}) };
+        const effectivePairs: Record<string, number> = { ...(groupPairs || {}) };
         if (Object.keys(effectivePairs).length === 0 && lot.quantity > 0) {
           const mappingSizes = Object.keys(mapping);
           if (mappingSizes.length > 0) {
@@ -393,9 +469,9 @@ export default function PCPView({
           const mold = productionConfigs.find(c => c.id === resolvedMoldId);
           const color = colors.find(c => c.id === colorId);
           
-          // Calcula estoque consolidado para esta grade e cor usando o resolvedMoldId
+          // Calcula estoque EXCLUSIVAMENTE para este molde + cor (sem fallback para outras cores)
           const currentGradeStock = soleStock
-            .filter(s => String(s.moldId).trim() === resolvedMoldId && (String(s.colorId || '').trim() === colorId || (!s.colorId && !colorId)))
+            .filter(s => String(s.moldId).trim() === resolvedMoldId && String(s.colorId || '').trim() === colorId)
             .reduce((sum, s) => sum + (Number(s.stock[gradeKey]) || 0), 0);
 
           if (!materialReqs[key]) {
@@ -425,7 +501,8 @@ export default function PCPView({
           materialReqs[key].sizeShortages![gradeKey].required += qty;
         });
       }
-    });
+      }); // end lotGroups.forEach
+    }); // end activeLots.forEach
 
     // Finalize sole stock totals
     Object.values(materialReqs).forEach(item => {
@@ -453,6 +530,12 @@ export default function PCPView({
 
   // State para seleção de itens de pedidos para formar um mapa (carrinho)
   const [selectedOrderItems, setSelectedOrderItems] = useState<{orderId: string, itemIdx: number}[]>([]);
+
+  // Seleção de fichas individuais para emissão de OS (key = `${lotId}::${orderId}::${idx}`)
+  const [fichaSelection, setFichaSelection] = useState<Set<string>>(new Set());
+  const [fichaListOpen, setFichaListOpen] = useState<Set<string>>(new Set()); // expanded lot keys
+  const [fichaItemExpanded, setFichaItemExpanded] = useState<Set<string>>(new Set()); // expanded grade keys
+  const [fichaFilters, setFichaFilters] = useState<Record<string, { model: string; color: string }>>({});
 
   // Itens de pedidos pendentes decupados
   const pendingItems = useMemo(() => {
@@ -644,16 +727,57 @@ export default function PCPView({
     setNewLot({ prioridade: 'NORMAL', quantity: 0 });
   };
 
+  // Bloqueia avanço do mapa inteiro se houver OS pendente
+  const hasPendingOS = (lot: ProductionLot): boolean => {
+    const currentSectorId = lot.route?.[lot.currentSectorIndex];
+    return serviceOrders.some(so =>
+      (so.lotId === lot.id || so.lotIds?.includes(lot.id)) &&
+      so.sectorId === currentSectorId &&
+      so.status === 'PENDING'
+    );
+  };
+
+  // Move pedidos individuais para um setor específico (apenas para OS já concluídas)
+  const handleMoveOrdersToSector = async (lotId: string, orderIds: string[], targetSectorId: string) => {
+    const lot = lots.find(l => l.id === lotId);
+    if (!lot) return;
+    const currentOrderSectors: Record<string, string> = (lot as any).metadata?.orderSectors || {};
+    const updatedOrderSectors = { ...currentOrderSectors };
+    orderIds.forEach(oid => { updatedOrderSectors[oid] = targetSectorId; });
+    const allSI: any[] = (lot as any).metadata?.sourceItems || [];
+    const allAdvanced = allSI.length > 0 && allSI.every((si: any) => updatedOrderSectors[si.orderId]);
+    if (allAdvanced) {
+      const nextIdx = lot.currentSectorIndex + 1;
+      if (nextIdx < (lot.route?.length || 0)) {
+        await onSaveLot({
+          ...lot,
+          currentSectorIndex: nextIdx,
+          currentStatusId: undefined,
+          metadata: { ...(lot as any).metadata, orderSectors: updatedOrderSectors },
+          history: [...(lot.history || []), { sectorId: lot.route?.[lot.currentSectorIndex] || '', statusId: '', timestamp: Date.now(), userName: userName || 'Usuário', notes: 'Todos os pedidos movidos manualmente.' }],
+        });
+      }
+    } else {
+      await firebaseService.updateDocument('productionLots', lotId, {
+        metadata: { ...(lot as any).metadata, orderSectors: updatedOrderSectors }
+      });
+    }
+    setMoveSectorModal(null);
+    setMoveSectorTarget('');
+    setSelectedSourceItemKeys(new Set());
+    setOsFeedback({ osNumber: `${orderIds.length} pedido(s)`, nextSector: sectors.find(s => s.id === targetSectorId)?.name || targetSectorId, action: 'Movidos para o setor com sucesso.' });
+  };
+
   const handleMoveLotSilent = async (lot: ProductionLot, nextStatusId: string, notes: string) => {
     const isLastSector = lot.route && lot.currentSectorIndex === lot.route.length - 1;
-    
+
     const updatedLot: ProductionLot = {
       ...lot,
       currentStatusId: nextStatusId,
       history: [
-        ...lot.history,
+        ...(lot.history || []),
         {
-          sectorId: lot.route[lot.currentSectorIndex],
+          sectorId: lot.route?.[lot.currentSectorIndex] || '',
           statusId: nextStatusId,
           timestamp: Date.now(),
           userName: userName,
@@ -666,7 +790,7 @@ export default function PCPView({
       updatedLot.finishedAt = Date.now();
     } else {
       updatedLot.currentSectorIndex += 1;
-      updatedLot.currentStatusId = undefined; // Reset status for next sector
+      updatedLot.currentStatusId = undefined;
     }
 
     await onSaveLot(updatedLot);
@@ -699,21 +823,22 @@ export default function PCPView({
     setSelectedLot(revertedLot);
   };
 
-  const handleOpenOSModal = (lotsToProcess: ProductionLot | ProductionLot[]) => {
+  const handleOpenOSModal = (lotsToProcess: ProductionLot | ProductionLot[], _sectorOverride?: string, _qtyOverride?: number) => {
     const list = Array.isArray(lotsToProcess) ? lotsToProcess : [lotsToProcess];
 
     // Guard: block duplicate whole-lot OS creation
     const firstLot = list[0];
-    const sectorId = firstLot.route && firstLot.route[firstLot.currentSectorIndex];
-    if (sectorId) {
+    // Usa setor efetivo: override para pedidos adiantados, senão setor atual do lote
+    const effectiveCheckSectorId = _sectorOverride || pendingOsSectorOverride || (firstLot.route && firstLot.route[firstLot.currentSectorIndex]);
+    if (effectiveCheckSectorId) {
       const blockingOS = serviceOrders.find(so =>
         list.some(l => so.lotId === l.id || (so.lotIds && so.lotIds.includes(l.id))) &&
-        so.sectorId === sectorId &&
+        so.sectorId === effectiveCheckSectorId &&
         so.status === 'PENDING' &&
         (!so.sourceOrderIds || so.sourceOrderIds.length === 0)
       );
       if (blockingOS) {
-        const sectorName = sectors.find(s => s.id === sectorId)?.name || 'este setor';
+        const sectorName = sectors.find(s => s.id === effectiveCheckSectorId)?.name || 'este setor';
         alert(`Já existe a OS ${blockingOS.osNumber} em aberto para este lote em "${sectorName}". Conclua ou exclua-a antes de emitir uma nova.`);
         return;
       }
@@ -743,9 +868,12 @@ export default function PCPView({
     setOsNumber(formattedOSNum);
 
     setOsType('OUTSOURCED');
-    
+
     const lot = list[0];
-    const currentSector = sectors.find(s => s.id === (lot.route && lot.route[lot.currentSectorIndex]));
+    // Usa setor override quando os pedidos foram adiantados para outro setor
+    // _sectorOverride tem prioridade pois é passado diretamente (evita problema de timing do state)
+    const effectiveSectorId = _sectorOverride || pendingOsSectorOverride || (lot.route && lot.route[lot.currentSectorIndex]);
+    const currentSector = sectors.find(s => s.id === effectiveSectorId);
     
     if (currentSector && currentSector.defaultServiceProviderId) {
       setOsProviderId(currentSector.defaultServiceProviderId);
@@ -764,8 +892,16 @@ export default function PCPView({
       }
     }
 
-    const lotProduct = products.find(p => p.id === lot.productId);
-    const productSectorPrice = lotProduct?.sectorPrices?.[currentSector?.id || ''];
+    // Para pedidos adiantados, usa o produto do primeiro pedido selecionado
+    const resolvedProductId = (() => {
+      if ((_sectorOverride || pendingOsSectorOverride) && pendingOsSourceOrderIds.length > 0) {
+        const si = ((lot as any).metadata?.sourceItems || []).find((s: any) => s.orderId === pendingOsSourceOrderIds[0]);
+        return si?.productId || lot.productId;
+      }
+      return lot.productId;
+    })();
+    const lotProduct = products.find(p => p.id === resolvedProductId);
+    const productSectorPrice = lotProduct?.sectorPrices?.[(currentSector?.id || '')];
     if (productSectorPrice !== undefined) {
       setOsValuePerPair(productSectorPrice);
     } else if (currentSector && currentSector.defaultServiceValue !== undefined) {
@@ -798,7 +934,9 @@ export default function PCPView({
     }
 
     const firstLot = targetLots[0];
-    const currentSector = sectors.find(s => s.id === (firstLot.route && firstLot.route[firstLot.currentSectorIndex]));
+    // Usa setor override (pedidos adiantados) ou setor do lote
+    const resolvedSectorId = pendingOsSectorOverride || (firstLot.route && firstLot.route[firstLot.currentSectorIndex]);
+    const currentSector = sectors.find(s => s.id === resolvedSectorId);
     if (!currentSector) {
       alert("Setor atual inválido.");
       return;
@@ -840,7 +978,8 @@ export default function PCPView({
 
     setIsSavingOS(true);
     try {
-      const quantity = targetLots.reduce((acc, l) => acc + (l.quantity || 0), 0);
+      // Usa quantidade override para pedidos adiantados, senão soma do lote
+      const quantity = pendingOsQuantityOverride ?? targetLots.reduce((acc, l) => acc + (l.quantity || 0), 0);
       const totalValue = quantity * osValuePerPair;
 
       // --- MODO EDIÇÃO ---
@@ -916,8 +1055,8 @@ export default function PCPView({
         productName: product?.name || '',
         variationId: firstLot.variationId,
         variationName: variation?.colorName || '',
-        sectorId: currentSector.id,
-        sectorName: currentSector.name,
+        sectorId: pendingOsSectorOverride || currentSector.id,
+        sectorName: (pendingOsSectorOverride ? sectors.find(s => s.id === pendingOsSectorOverride)?.name : undefined) || currentSector.name,
         type: osType,
         providerId: osProviderId || undefined,
         providerName: providerName,
@@ -934,6 +1073,8 @@ export default function PCPView({
 
       await firebaseService.saveDocument("serviceOrders", newOS);
       setPendingOsSourceOrderIds([]);
+      setPendingOsSectorOverride('');
+      setPendingOsQuantityOverride(null);
 
       if (osDirectComplete) {
         for (const lot of targetLots) {
@@ -1039,36 +1180,138 @@ export default function PCPView({
   };
 
   const handleCompleteOS = async (os: ServiceOrder) => {
-    if (confirm(`Deseja concluir a Ordem de Serviço ${os.osNumber} e realizar a baixa de todos os lotes vinculados?`)) {
-      try {
-        await firebaseService.updateDocument("serviceOrders", os.id, {
-          status: 'COMPLETED',
-          finishedAt: Date.now()
-        });
+    if (!confirm(`Deseja concluir a Ordem de Serviço ${os.osNumber}?`)) return;
+    try {
+      const lotId = os.lotId || os.lotIds?.[0] || '';
+      if (!lotId) { alert('OS sem lote vinculado.'); return; }
 
-        if (os.transactionId) {
-          try {
-            await financeService.settleTransaction(os.transactionId);
-          } catch (txErr) {
-            console.error("Erro ao conciliar transação financeira da OS:", txErr);
-          }
-        }
+      const lotObj = lots.find(l => l.id === lotId || (os.lotIds && os.lotIds.includes(l.id)));
+      if (!lotObj) { alert('Lote não encontrado.'); return; }
 
-        const targetLotIds = os.lotIds || [os.lotId];
-        for (const lotId of targetLotIds) {
-          const lotObj = activeLots.find(l => l.id === lotId) || lots.find(l => l.id === lotId);
-          if (lotObj) {
-            await handleMoveLotSilent(lotObj, lotObj.currentStatusId || '', `Baixa via conclusão de OS ${os.osNumber}.`);
-          }
-        }
-        
-        setIsDetailModalOpen(false);
-        setSelectedLot(null);
-        alert(`Ordem de Serviço ${os.osNumber} concluída e lotes baixados com sucesso!`);
-      } catch (e) {
-        console.error(e);
-        alert("Erro ao concluir Ordem de Serviço: " + (e instanceof Error ? e.message : String(e)));
+      const sectorId = os.sectorId || (lotObj.route?.[lotObj.currentSectorIndex] ?? '');
+      // Calcula próximo setor a partir da posição da OS no roteiro (não do lote)
+      // Isso garante que pedidos adiantados avancem corretamente sem pular setores
+      const osSectorIdx = lotObj.route?.indexOf(sectorId) ?? lotObj.currentSectorIndex ?? 0;
+      const nextSectorIdx = osSectorIdx + 1;
+      const nextSectorId = lotObj.route?.[nextSectorIdx] ?? '';
+      const nextSectorName = sectors.find(s => s.id === nextSectorId)?.name || 'CONCLUÍDO';
+
+      // 1. Mark OS as completed
+      await firebaseService.updateDocument('serviceOrders', os.id, {
+        status: 'COMPLETED',
+        finishedAt: Date.now(),
+      });
+
+      // 2. Settle transaction if present
+      if (os.transactionId) {
+        try { await financeService.settleTransaction(os.transactionId); } catch { /* ignore */ }
       }
+
+      // 2b. Se setor atual é Expedição → baixa automática (entrega ou estoque)
+      const currentSectorObj = sectors.find(s => s.id === sectorId);
+      const isExpedicao = currentSectorObj?.name?.toLowerCase().includes('expedi');
+      if (isExpedicao && os.sourceOrderIds && os.sourceOrderIds.length > 0) {
+        const uniqueOrderIds = Array.from(new Set(os.sourceOrderIds));
+        const customerItems: string[] = [];
+        const stockItems: string[] = [];
+
+        for (const oid of uniqueOrderIds) {
+          const prodOrder = productionOrders.find(o => o.id === oid);
+          if (!prodOrder) continue;
+          const sale = sales?.find(s => s.id === prodOrder.saleId);
+          if (sale?.saleDestination === 'STOCK') {
+            stockItems.push(oid);
+          } else {
+            customerItems.push(oid);
+          }
+        }
+
+        // Monta mensagem de confirmação
+        const lines: string[] = [`Setor de Expedição — ${os.osNumber}`];
+        if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → ENTREGA AO CLIENTE`);
+        if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} pedido(s) → ENTRADA EM ESTOQUE`);
+        lines.push('\nConfirmar baixa de expedição?');
+
+        if (!confirm(lines.join('\n'))) return;
+
+        // Executa entrada em estoque para pedidos de estoque
+        if (stockItems.length > 0) {
+          const lotSI: any[] = (lotObj as any).metadata?.sourceItems || [];
+          const stockSI = lotSI.filter((si: any) => stockItems.includes(si.orderId));
+          for (const si of stockSI) {
+            const prodOrder = productionOrders.find(o => o.id === si.orderId);
+            if (!prodOrder) continue;
+            const ordItem: any = si.itemIdx !== undefined ? prodOrder.items[si.itemIdx] : prodOrder.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+            if (!ordItem) continue;
+            const prod = products.find(p => p.id === (si.productId || ordItem.productId));
+            if (!prod) continue;
+            const variIdx = prod.variations.findIndex(v => v.id === (si.variationId || ordItem.variationId));
+            if (variIdx === -1) continue;
+            const updVars = prod.variations.map((v, idx) => {
+              if (idx !== variIdx) return v;
+              const newStock = { ...v.stock };
+              Object.entries(ordItem.sizes || {}).forEach(([size, sData]: any) => {
+                const qty = Number(sData.toProduction) || 0;
+                if (qty > 0) newStock[size] = (newStock[size] || 0) + qty;
+              });
+              return { ...v, stock: newStock };
+            });
+            await firebaseService.updateDocument('products', prod.id, { variations: updVars });
+          }
+        }
+
+        // Para pedidos de cliente — registra entrega (sem ação de estoque)
+        // Futuramente: atualizar status da venda para "entregue"
+      }
+
+      // 3. Count remaining PENDING OS for this lot in this sector
+      //    (exclude the current OS by id — state may not have updated yet)
+      const otherPendingOS = serviceOrders.filter(o =>
+        o.id !== os.id &&
+        o.status === 'PENDING' &&
+        o.sectorId === sectorId &&
+        (o.lotId === lotId || (o.lotIds?.includes(lotId) ?? false))
+      );
+
+      if (otherPendingOS.length > 0) {
+        // Still has pending OS — lot stays
+        setOsFeedback({
+          osNumber: os.osNumber,
+          nextSector: nextSectorName,
+          action: `Ainda ${otherPendingOS.length} OS pendente(s) neste setor.`,
+        });
+      } else {
+        // Last pending OS — advance lot to next sector
+        const isLast = nextSectorIdx >= (lotObj.route?.length ?? 0);
+        const updatedLot: ProductionLot = {
+          ...lotObj,
+          currentSectorIndex: isLast ? lotObj.currentSectorIndex : nextSectorIdx,
+          currentStatusId: undefined,
+          finishedAt: isLast ? Date.now() : undefined,
+          history: [
+            ...(lotObj.history || []),
+            {
+              sectorId: sectorId,
+              statusId: '',
+              timestamp: Date.now(),
+              userName: userName || 'Usuário',
+              notes: `Mapa avançado para "${nextSectorName}" — última OS ${os.osNumber} concluída.`,
+            },
+          ],
+        };
+        await onSaveLot(updatedLot);
+        setOsFeedback({
+          osNumber: os.osNumber,
+          nextSector: isLast ? 'FINALIZADO' : nextSectorName,
+          action: isLast ? 'Mapa de produção finalizado!' : `Mapa #${lotObj.orderNumber} avançado com sucesso.`,
+        });
+      }
+
+      setIsDetailModalOpen(false);
+      setSelectedLot(null);
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao concluir OS: ' + (e instanceof Error ? e.message : String(e)));
     }
   };
 
@@ -1111,7 +1354,10 @@ export default function PCPView({
     const lot = (lots || []).find(l =>
       l.id === os!.lotId || (os!.lotIds && os!.lotIds.includes(l.id))
     ) || null;
-    const nextSectorId = lot?.route?.[( lot?.currentSectorIndex ?? 0) + 1] || '';
+    // Usa posição da OS no roteiro para calcular próximo setor correto
+    const osSectorPos = lot?.route?.indexOf(os!.sectorId ?? '') ?? -1;
+    const effectivePos = osSectorPos >= 0 ? osSectorPos : (lot?.currentSectorIndex ?? 0);
+    const nextSectorId = lot?.route?.[effectivePos + 1] || '';
     const nextSec = (sectors || []).find(s => s.id === nextSectorId);
     setQrBaixaConfirm({ os, lot, nextSectorName: nextSec?.name || 'CONCLUÍDO' });
   };
@@ -1131,6 +1377,48 @@ export default function PCPView({
     }
   };
 
+
+  // Open OS modal pre-configured for a specific order (per-ficha creation)
+  const handleOpenOSModalForOrder = (lot: ProductionLot, orderIds: string[], preNote?: string, sectorOverride?: string, qtyOverride?: number) => {
+    setPendingOsSourceOrderIds(orderIds);
+    if (preNote) setOsNotes(preNote);
+    if (sectorOverride) setPendingOsSectorOverride(sectorOverride);
+    if (qtyOverride !== undefined) setPendingOsQuantityOverride(qtyOverride);
+    // Passa valores diretamente para evitar problema de timing do React state
+    handleOpenOSModal(lot, sectorOverride, qtyOverride);
+  };
+
+  // Desfazer OS in PCPView — deletes OS + all sibling OS + the lot (frees orders)
+  const handleUndoOSPCPView = async (os: ServiceOrder) => {
+    if (!confirm(`Reverter a OS ${os.osNumber}? O mapa e todas as OS vinculadas serão excluídos e os pedidos ficarão disponíveis novamente.`)) return;
+    try {
+      const lotId = os.lotId || (os.lotIds?.[0] ?? '');
+      const lotObj = lots.find(l => l.id === lotId || (os.lotIds && os.lotIds.includes(l.id)));
+
+      // Delete all OS for this lot in this sector
+      const relatedOS = serviceOrders.filter(o =>
+        (o.lotId === lotId || (o.lotIds && o.lotIds.includes(lotId))) &&
+        o.sectorId === os.sectorId
+      );
+      for (const relOS of relatedOS) {
+        if (relOS.transactionId) {
+          try { await financeService.deleteTransaction(relOS.transactionId); } catch { /* ignore */ }
+        }
+        await firebaseService.deleteDocument('serviceOrders', relOS.id);
+      }
+
+      // Delete the lot itself (frees production orders)
+      if (lotObj) {
+        await firebaseService.deleteDocument('productionLots', lotObj.id);
+      }
+
+      setSelectedLot(null);
+      setIsDetailModalOpen(false);
+      alert('Revertido com sucesso. Pedidos disponíveis novamente.');
+    } catch (e) {
+      alert('Erro ao reverter: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
 
   const handleEditOS = (os: ServiceOrder) => {
     setEditingOS(os);
@@ -1160,84 +1448,86 @@ export default function PCPView({
       .map(s => pendingItems.find(p => p.orderId === s.orderId && p.itemIdx === s.itemIdx))
       .filter((i): i is any => !!i);
 
-    const groups: Record<string, {
-      productId: string;
-      variationId: string;
-      quantity: number;
-      items: any[];
-    }> = {};
-
+    // Agrupa por produto/variação para metadados
+    const groups: Record<string, { productId: string; variationId: string; productName: string; variationName: string; quantity: number; items: any[] }> = {};
     selectedData.forEach(item => {
       const key = `${item.productId}-${item.variationId}`;
       if (!groups[key]) {
-        groups[key] = {
-          productId: item.productId,
-          variationId: item.variationId,
-          quantity: 0,
-          items: []
-        };
+        groups[key] = { productId: item.productId, variationId: item.variationId, productName: item.productName, variationName: item.variationName, quantity: 0, items: [] };
       }
       groups[key].quantity += item.toProductionQty;
       groups[key].items.push(item);
     });
 
-    const lotsToCreate: ProductionLot[] = [];
     const groupEntries = Object.values(groups);
+    // Usa o produto do grupo com maior quantidade como referência principal
+    const mainGroup = groupEntries.sort((a, b) => b.quantity - a.quantity)[0];
+    const mainProduct = products.find(p => p.id === mainGroup.productId);
+    const route = mainProduct?.productionRoute || sectors.map(s => s.id);
 
-    for (const group of groupEntries) {
-      const product = products.find(p => p.id === group.productId);
-      const route = product?.productionRoute || sectors.map(s => s.id);
-      
-      const lotId = Math.random().toString(36).substr(2, 9);
-      const lotNumber = `${String(lots.length + lotsToCreate.length + 1).padStart(3, '0')}`;
+    // Mescla todos os pares de todos os grupos em um único objeto
+    const mergedPairs: Record<string, number> = {};
+    selectedData.forEach(item => {
+      Object.entries(item.sizes || {}).forEach(([size, s]: any) => {
+        if (s.toProduction > 0) mergedPairs[size] = (mergedPairs[size] || 0) + s.toProduction;
+      });
+    });
 
-      const newLot: ProductionLot = {
-        id: lotId,
-        orderNumber: lotNumber,
-        productId: group.productId,
-        variationId: group.variationId,
-        quantity: group.quantity,
-        route,
-        currentSectorIndex: 0,
-        prioridade: 'NORMAL',
-        history: [{
-          sectorId: route[0] || '',
-          statusId: '',
-          timestamp: Date.now(),
-          userName: userName || 'Usuário',
-          notes: `Mapa criado via agrupamento de ${group.items.length} pedidos.`
-        }],
-        createdAt: Date.now(),
-        customerName: group.items.length > 1 ? `${group.items.length} Pedidos Agrupados` : group.items[0].customerName,
-        saleId: group.items[0].saleId,
-        productionOrderId: group.items[0].orderId,
-        saleOrderNumber: group.items[0].saleOrderNumber,
-        metadata: {
-          sourceItems: group.items.map(i => ({ orderId: i.orderId, itemIdx: i.itemIdx, qty: i.toProductionQty }))
-        },
-        pairs: group.items.reduce((acc: any, item) => {
-          Object.entries(item.sizes || {}).forEach(([size, s]: any) => {
-            if (s.toProduction > 0) {
-              acc[size] = (acc[size] || 0) + s.toProduction;
-            }
-          });
-          return acc;
-        }, {})
-      } as any;
+    const totalQty = groupEntries.reduce((s, g) => s + g.quantity, 0);
+    const lotNumber = `${String(lots.length + 1).padStart(3, '0')}`;
+    const isMultiGroup = groupEntries.length > 1;
 
-      lotsToCreate.push(newLot);
-    }
+    const singleLot: ProductionLot = {
+      id: Math.random().toString(36).substr(2, 9),
+      orderNumber: lotNumber,
+      productId: mainGroup.productId,
+      variationId: isMultiGroup ? '' : mainGroup.variationId,
+      quantity: totalQty,
+      route,
+      currentSectorIndex: 0,
+      prioridade: 'NORMAL',
+      history: [{
+        sectorId: route[0] || '',
+        statusId: '',
+        timestamp: Date.now(),
+        userName: userName || 'Usuário',
+        notes: `Mapa criado com ${groupEntries.length} grupo(s) e ${selectedData.length} pedido(s). ${isMultiGroup ? 'Produto principal: ' + mainGroup.productName : ''}`
+      }],
+      createdAt: Date.now(),
+      customerName: isMultiGroup
+        ? `${groupEntries.length} Grupos · ${selectedData.length} Pedidos`
+        : (selectedData.length > 1 ? `${selectedData.length} Pedidos Agrupados` : selectedData[0].customerName),
+      saleId: selectedData[0].saleId,
+      productionOrderId: selectedData[0].orderId,
+      saleOrderNumber: selectedData[0].saleOrderNumber,
+      metadata: {
+        sourceItems: selectedData.map(i => ({ orderId: i.orderId, itemIdx: i.itemIdx, qty: i.toProductionQty, productId: i.productId, variationId: i.variationId })),
+        groups: groupEntries.map(g => ({
+          productId: g.productId,
+          variationId: g.variationId,
+          productName: g.productName,
+          variationName: g.variationName,
+          quantity: g.quantity,
+          orderCount: g.items.length,
+          pairs: g.items.reduce((acc: any, item: any) => {
+            Object.entries(item.sizes || {}).forEach(([size, s]: any) => {
+              if (s.toProduction > 0) acc[size] = (acc[size] || 0) + s.toProduction;
+            });
+            return acc;
+          }, {} as Record<string, number>)
+        }))
+      },
+      pairs: mergedPairs,
+    } as any;
 
     try {
-      for (const lot of lotsToCreate) {
-        await onSaveLot(lot);
-      }
+      await onSaveLot(singleLot);
       setSelectedOrderItems([]);
-      alert(`${lotsToCreate.length} Mapa(s) criado(s) com sucesso!`);
+      alert(`Mapa ${lotNumber} criado com ${groupEntries.length} grupo(s) e ${totalQty} pares!`);
       setActiveTab('monitor');
     } catch (err) {
       console.error(err);
-      alert('Erro ao criar mapas.');
+      alert('Erro ao criar mapa.');
     }
   };
 
@@ -1520,15 +1810,25 @@ export default function PCPView({
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 mt-auto">
+                    <div className={`grid gap-4 mt-auto ${(metric?.arrivedPairs || 0) > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}>
                       <div className="flex flex-col gap-1">
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Pares</span>
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Pares no Setor</span>
                         <span className={`text-xl font-black ${isDarkMode ? 'text-slate-200' : 'text-slate-900'}`}>{metric?.totalPares || 0}</span>
+                        {(metric?.movedOutPairs || 0) > 0 && (
+                          <span className="text-[8px] font-bold text-emerald-500">↗ {metric!.movedOutPairs} saíram</span>
+                        )}
                       </div>
                       <div className="flex flex-col gap-1">
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">MAPAS WIP</span>
                         <span className={`text-xl font-black ${isDarkMode ? 'text-slate-200' : 'text-slate-900'}`}>{metric?.lotsCount || 0}</span>
                       </div>
+                      {(metric?.arrivedPairs || 0) > 0 && (
+                        <div className="flex flex-col gap-1">
+                          <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Adiantados</span>
+                          <span className="text-xl font-black text-amber-600 dark:text-amber-400">{metric!.arrivedPairs}</span>
+                          <span className="text-[8px] font-bold text-amber-400">{metric!.arrivedOrders} pedido(s)</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
@@ -1624,7 +1924,7 @@ export default function PCPView({
 
               {isCuttingSector && isProjectionMode ? (
                 <CuttingProjectionPanel
-                  lots={filteredActiveLots.filter(l => l.route && l.route[l.currentSectorIndex] === selectedSectorId)}
+                  lots={filteredActiveLots}
                   products={products}
                   sectors={sectors}
                   flowTags={flowTags}
@@ -1674,9 +1974,14 @@ export default function PCPView({
                     
                     <button
                       onClick={async () => {
+                        const lotsToAdvance = filteredActiveLots.filter(l => selectedLotIds.includes(l.id));
+                        const blockedLots = lotsToAdvance.filter(l => hasPendingOS(l));
+                        if (blockedLots.length > 0) {
+                          alert(`${blockedLots.length} mapa(s) têm OS pendentes e não podem ser avançados:\n${blockedLots.map(l => `• Mapa #${l.orderNumber}`).join('\n')}\n\nConclua as OS antes de avançar.`);
+                          return;
+                        }
                         if (confirm(`Deseja avançar os ${selectedLotIds.length} lotes selecionados de uma vez?`)) {
                           try {
-                            const lotsToAdvance = filteredActiveLots.filter(l => selectedLotIds.includes(l.id));
                             for (const lot of lotsToAdvance) {
                               await handleMoveLotSilent(lot, lot.currentStatusId || '', 'Avanço em lote (Massa).');
                             }
@@ -1730,11 +2035,12 @@ export default function PCPView({
                     : lot.createdAt;
                   const isDelayed = Date.now() - lastMove > 24 * 60 * 60 * 1000;
                   const isSelected = selectedLotIds.includes(lot.id);
-                  const cardOS = serviceOrders.find(so =>
+                  const cardOSList = serviceOrders.filter(so =>
                     (so.lotId === lot.id || (so.lotIds && so.lotIds.includes(lot.id))) &&
                     so.sectorId === selectedSectorId &&
                     so.status === 'PENDING'
                   );
+                  const cardOS = cardOSList[0] ?? null;
 
                   return (
                     <motion.div
@@ -1782,10 +2088,14 @@ export default function PCPView({
                         </div>
                         <div className="flex flex-col items-end gap-1.5">
                           <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-xl">{lot.orderNumber}</span>
-                          {cardOS ? (
-                            <span className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest">
-                              <Hammer size={9}/> {cardOS.osNumber}
-                            </span>
+                          {cardOSList.length > 0 ? (
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {cardOSList.map(os => (
+                                <span key={os.id} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest">
+                                  <Hammer size={9}/> {os.osNumber}
+                                </span>
+                              ))}
+                            </div>
                           ) : (
                             <span className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-slate-100 text-slate-400'}`}>
                               Sem OS
@@ -1794,19 +2104,43 @@ export default function PCPView({
                         </div>
                       </div>
                       
-                      <div className="flex items-center gap-4 mb-5">
-                        <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/20 transition-colors">
-                          {(variation?.photoUrl || product?.photoUrl) ? (
-                            <img src={variation?.photoUrl || product?.photoUrl} alt="" className="w-full h-full object-cover" />
-                          ) : (
-                            <Package size={24} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
-                          )}
-                        </div>
-                        <div className="flex flex-col min-w-0">
-                          <p className="text-sm font-black truncate text-slate-900 dark:text-white uppercase leading-tight">{product?.name || '---'}</p>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">{product?.reference} • {variation?.colorName}</p>
-                        </div>
-                      </div>
+                      {(() => {
+                        const lotGroups = (lot as any).metadata?.groups;
+                        const isMultiProduct = lotGroups?.length > 1 && !lot.variationId;
+                        if (isMultiProduct) {
+                          const uniqueProds = Array.from(
+                            new Map(lotGroups.map((g: any) => [g.productId, g])).values()
+                          ) as any[];
+                          return (
+                            <div className="flex items-center gap-3 mb-5">
+                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-indigo-900/30' : 'bg-indigo-50'}`}>
+                                <Layers size={20} className="text-indigo-500"/>
+                              </div>
+                              <div className="flex flex-col min-w-0">
+                                <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">{uniqueProds.length} Modelos</p>
+                                <p className="text-sm font-black text-slate-900 dark:text-white uppercase leading-tight truncate">
+                                  {uniqueProds.map((g: any) => products.find(p => p.id === g.productId)?.name || g.productName).join(' · ')}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="flex items-center gap-4 mb-5">
+                            <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/20 transition-colors">
+                              {(variation?.photoUrl || product?.photoUrl) ? (
+                                <img src={variation?.photoUrl || product?.photoUrl} alt="" className="w-full h-full object-cover" />
+                              ) : (
+                                <Package size={24} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                              )}
+                            </div>
+                            <div className="flex flex-col min-w-0">
+                              <p className="text-sm font-black truncate text-slate-900 dark:text-white uppercase leading-tight">{product?.name || '---'}</p>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">{product?.reference} • {variation?.colorName}</p>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       <div className="flex items-center justify-between pt-4 border-t border-slate-50 dark:border-slate-800">
                         <div className="flex items-center gap-2">
@@ -2008,7 +2342,105 @@ export default function PCPView({
                     </motion.div>
                   );
                 })}
-                {filteredActiveLots.filter(l => l.route && l.route[l.currentSectorIndex] === selectedSectorId).length === 0 && (
+                {/* Cards de lotes com pedidos adiantados para este setor */}
+                {filteredActiveLots
+                  .filter(l => {
+                    if (l.route && l.route[l.currentSectorIndex] === selectedSectorId) return false; // já aparece acima
+                    const os: Record<string, string> = (l as any).metadata?.orderSectors || {};
+                    return Object.values(os).some(sid => sid === selectedSectorId);
+                  })
+                  .map(lot => {
+                    const orderSectorsMap: Record<string, string> = (lot as any).metadata?.orderSectors || {};
+                    const lotSI: any[] = (lot as any).metadata?.sourceItems || [];
+                    const advancedSI = lotSI.filter((si: any) => orderSectorsMap[si.orderId] === selectedSectorId);
+                    const totalAdvancedQty = advancedSI.reduce((acc, si: any) => acc + (si.qty || 0), 0);
+
+                    // Calcula grade dos pedidos adiantados
+                    const advancedGrade: Record<string, number> = {};
+                    advancedSI.forEach((si: any) => {
+                      const ord = productionOrders.find(o => o.id === si.orderId);
+                      if (!ord) return;
+                      const ordItem: any = si.itemIdx !== undefined ? ord.items[si.itemIdx] : ord.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+                      if (!ordItem?.sizes) return;
+                      Object.entries(ordItem.sizes).forEach(([sz, sd]: any) => {
+                        const q = Number(sd.toProduction) || 0;
+                        if (q > 0) advancedGrade[sz] = (advancedGrade[sz] || 0) + q;
+                      });
+                    });
+
+                    // Produtos únicos nos pedidos adiantados
+                    const advancedProducts = Array.from(new Map(
+                      advancedSI.map((si: any) => [si.productId, products.find(p => p.id === si.productId)])
+                    ).values()).filter(Boolean) as any[];
+
+                    const lotCurrentSector = sectors.find(s => s.id === lot.route?.[lot.currentSectorIndex]);
+
+                    return (
+                      <motion.div
+                        key={`adv-${lot.id}`}
+                        layoutId={`adv-${lot.id}`}
+                        className={`p-5 rounded-[2.5rem] border-2 border-dashed flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-amber-700/40' : 'bg-amber-50/40 border-amber-200'}`}
+                      >
+                        {/* Header */}
+                        <div className="flex items-start justify-between">
+                          <div className="flex flex-col gap-1.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white uppercase tracking-widest">
+                                Pedidos Adiantados
+                              </span>
+                              <span className="text-[9px] font-black text-amber-600 dark:text-amber-400">#{lot.orderNumber}</span>
+                            </div>
+                            <p className={`text-xs font-black uppercase truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                              {advancedProducts.map(p => p?.name).join(' · ') || lot.customerName}
+                            </p>
+                            {lotCurrentSector && (
+                              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
+                                Mapa em: {lotCurrentSector.name}
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-right shrink-0 ml-3">
+                            <span className="text-lg font-black text-amber-600 dark:text-amber-400">{totalAdvancedQty}</span>
+                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Pares</p>
+                          </div>
+                        </div>
+
+                        {/* Grade dos pedidos adiantados */}
+                        {Object.keys(advancedGrade).length > 0 && (
+                          <div className="flex flex-col gap-2">
+                            <p className="text-[8px] font-black text-amber-500 uppercase tracking-widest">Grade neste Setor</p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {Object.entries(advancedGrade)
+                                .sort(([a], [b]) => Number(a) - Number(b))
+                                .map(([sz, qty]) => (
+                                  <div key={sz} className={`flex flex-col items-center min-w-[36px] px-2 py-1.5 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-amber-700/40 text-amber-400' : 'bg-white border-amber-200 text-amber-700'}`}>
+                                    <span className="text-[9px] font-black leading-none">{sz}</span>
+                                    <span className="text-xs font-black leading-none mt-0.5">{qty}</span>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Botão ver detalhe */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedLot(lot);
+                            setIsDetailModalOpen(true);
+                          }}
+                          className={`w-full flex items-center justify-between py-2.5 px-4 rounded-2xl border transition-all active:scale-95 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'border-amber-700/40 text-amber-400 hover:bg-amber-900/20' : 'border-amber-200 text-amber-700 hover:bg-amber-100/50'}`}
+                        >
+                          <span>{advancedSI.length} pedido(s) aguardando OS</span>
+                          <ChevronRight size={14} />
+                        </button>
+                      </motion.div>
+                    );
+                  })
+                }
+
+                {filteredActiveLots.filter(l => l.route && l.route[l.currentSectorIndex] === selectedSectorId).length === 0 &&
+                  !filteredActiveLots.some(l => Object.values((l as any).metadata?.orderSectors || {}).some((sid: any) => sid === selectedSectorId)) && (
                   <div className="col-span-full py-20 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[3rem] flex flex-col items-center justify-center text-slate-300 dark:text-slate-700">
                     <div className="w-20 h-20 rounded-[2.5rem] bg-slate-50 dark:bg-slate-800/50 flex items-center justify-center mb-4">
                       <Clock size={40} className="opacity-20" />
@@ -2018,6 +2450,356 @@ export default function PCPView({
                   </div>
                 )}
               </div>
+
+              {/* ── Pedidos Vinculados — padrão idêntico ao setor de Corte ── */}
+              {(() => {
+                type FichaItem = { lot: ProductionLot; si: any; siIdx: number; product: any; variation: any; orderItem: any; order: any; coveringOS?: ServiceOrder };
+                const allFichas: FichaItem[] = [];
+                filteredActiveLots.forEach(lot => {
+                  const orderSectors: Record<string, string> = (lot as any).metadata?.orderSectors || {};
+                  const lotCurrentSector = lot.route && lot.route[lot.currentSectorIndex];
+                  const lotSI: any[] = (lot as any).metadata?.sourceItems || [];
+
+                  lotSI.forEach((si: any) => {
+                    const orderSector = orderSectors[si.orderId];
+                    const effectiveSector = orderSector || lotCurrentSector;
+                    if (effectiveSector !== selectedSectorId) return;
+
+                    const prod = products.find(p => p.id === si.productId);
+                    const vari = prod?.variations.find((v: any) => v.id === si.variationId);
+                    const ord = productionOrders.find(o => o.id === si.orderId);
+                    const ordItem: any = si.itemIdx !== undefined ? ord?.items[si.itemIdx] : ord?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+                    const coveringOS = serviceOrders.find(os =>
+                      (os.lotId === lot.id || (os.lotIds && os.lotIds.includes(lot.id))) &&
+                      os.sectorId === selectedSectorId &&
+                      os.sourceOrderIds && os.sourceOrderIds.includes(si.orderId)
+                    ) || serviceOrders.find(os =>
+                      (os.lotId === lot.id || (os.lotIds && os.lotIds.includes(lot.id))) &&
+                      os.sectorId === selectedSectorId &&
+                      (!os.sourceOrderIds || os.sourceOrderIds.length === 0)
+                    );
+                    const siIdx = lotSI.indexOf(si);
+                    allFichas.push({ lot, si, siIdx, product: prod, variation: vari, orderItem: ordItem, order: ord, coveringOS });
+                  });
+                });
+                if (allFichas.length === 0) return null;
+
+                // ── State helpers (using fichaListOpen / fichaFilters keyed by '__pedidos__')
+                const mainKey = `__pedidos__${selectedSectorId}`;
+                const filterKey = `__filter__${selectedSectorId}`;
+                const isMainOpen = fichaListOpen.has(mainKey);
+                const isFilterOpen = fichaListOpen.has(filterKey);
+                const activeFilt = fichaFilters[mainKey] || { model: '', color: '' };
+
+                // Unique models and colors across all fichas
+                const uniqueModels = Array.from(new Set(allFichas.map(f => f.product?.name || f.orderItem?.productName || '').filter(Boolean)));
+                const uniqueColors = Array.from(new Set(allFichas.map(f => f.variation?.colorName || f.orderItem?.variationName || '').filter(Boolean)));
+
+                // Filtered fichas
+                const filteredFichas = allFichas.filter(f => {
+                  const m = f.product?.name || f.orderItem?.productName || '';
+                  const c = f.variation?.colorName || f.orderItem?.variationName || '';
+                  if (activeFilt.model && m !== activeFilt.model) return false;
+                  if (activeFilt.color && c !== activeFilt.color) return false;
+                  return true;
+                });
+
+                // Selectable = fichas with no pending OS
+                const selectable = filteredFichas.filter(f => !f.coveringOS || f.coveringOS.status !== 'PENDING');
+                const selected = selectable.filter(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
+                const allSelected = selectable.length > 0 && selectable.every(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
+                const selectedQty = selected.reduce((s, f) => s + (f.si.qty || 0), 0);
+
+                // Group selected fichas by lot for multi-lot OS emission
+                const selByLot = new Map<string, FichaItem[]>();
+                selected.forEach(f => {
+                  if (!selByLot.has(f.lot.id)) selByLot.set(f.lot.id, []);
+                  selByLot.get(f.lot.id)!.push(f);
+                });
+
+                {/* Grupos de mapas que têm pedidos neste setor */}
+                const lotGroups = Array.from(new Map(allFichas.map(f => [f.lot.id, f.lot])).values()) as ProductionLot[];
+                const awaitingLots = lotGroups.filter(lot => {
+                  const lotCurrentSector = lot.route?.[lot.currentSectorIndex];
+                  return lotCurrentSector !== selectedSectorId; // mapa em outro setor
+                });
+
+                return (
+                  <div className={`mt-4 rounded-3xl border overflow-hidden ${isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-sky-100 shadow-sm'}`}>
+
+                    {/* ── Cabeçalho acordeão ── */}
+                    <button type="button"
+                      onClick={() => { const n = new Set(fichaListOpen); isMainOpen ? n.delete(mainKey) : n.add(mainKey); setFichaListOpen(n); }}
+                      className={`w-full flex items-center justify-between p-4 transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-sky-50/50'}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <Hash size={13} className="text-indigo-500 shrink-0" />
+                        <div className="min-w-0">
+                          <h3 className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Pedidos Vinculados</h3>
+                          {awaitingLots.length > 0 && (
+                            <p className="text-[8px] font-bold text-amber-500 uppercase tracking-widest mt-0.5 truncate">
+                              {awaitingLots.map(l => {
+                                const sec = sectors.find(s => s.id === l.route?.[l.currentSectorIndex]);
+                                return `Mapa #${l.orderNumber} em ${sec?.name || 'outro setor'}`;
+                              }).join(' · ')}
+                            </p>
+                          )}
+                        </div>
+                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 ${isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}>
+                          {allFichas.length}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {fichaSelection.size > 0 && (
+                          <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-emerald-500 text-white">
+                            {fichaSelection.size} sel.
+                          </span>
+                        )}
+                        <ChevronDown size={15} className={`text-slate-400 transition-transform duration-200 ${isMainOpen ? 'rotate-180' : ''}`} />
+                      </div>
+                    </button>
+
+                    {/* Hint when closed */}
+                    {!isMainOpen && (
+                      <div className={`px-4 pb-3 flex flex-col gap-1.5 border-t ${isDarkMode ? 'border-slate-800' : 'border-sky-50'}`}>
+                        {awaitingLots.length > 0 && (
+                          <div className={`flex items-start gap-2 mt-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-amber-900/20' : 'bg-amber-50'}`}>
+                            <Clock size={11} className="text-amber-500 mt-0.5 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-[8px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest">Aguardando conclusão em outro setor</p>
+                              {awaitingLots.map(l => {
+                                const sec = sectors.find(s => s.id === l.route?.[l.currentSectorIndex]);
+                                const count = allFichas.filter(f => f.lot.id === l.id).length;
+                                return (
+                                  <p key={l.id} className="text-[8px] font-bold text-amber-500 mt-0.5">
+                                    Mapa <span className="font-black">#{l.orderNumber}</span> — atualmente em <span className="font-black">{sec?.name || 'outro setor'}</span> · {count} pedido(s) adiantados aqui
+                                  </p>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest leading-relaxed mt-1">
+                          Expandir para selecionar pedidos e criar ordens de serviço
+                        </span>
+                      </div>
+                    )}
+
+                    {isMainOpen && (
+                      <div className="p-4 pt-0 flex flex-col gap-3">
+                        <p className="text-[9px] text-slate-400 uppercase font-bold">{filteredFichas.length} fichas · {selectable.length} disponíveis</p>
+
+                        {/* Select-all row */}
+                        <div className="flex items-center justify-between pt-1">
+                          <div className="flex items-center gap-2">
+                            {selectable.length > 0 && (
+                              <input type="checkbox"
+                                title="Selecionar todos os pedidos disponíveis"
+                                checked={allSelected}
+                                onChange={() => {
+                                  const n = new Set(fichaSelection);
+                                  if (allSelected) {
+                                    selectable.forEach(f => n.delete(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
+                                  } else {
+                                    selectable.forEach(f => n.add(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
+                                  }
+                                  setFichaSelection(n);
+                                }}
+                                className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                              />
+                            )}
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                              {selectable.length} disponíve{selectable.length === 1 ? 'l' : 'is'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* FILTRAR accordion */}
+                        <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                          <button type="button"
+                            onClick={() => { const n = new Set(fichaListOpen); isFilterOpen ? n.delete(filterKey) : n.add(filterKey); setFichaListOpen(n); }}
+                            className={`w-full flex items-center gap-2 px-4 py-2.5 transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}`}
+                          >
+                            <Filter size={12} className="text-slate-400" />
+                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex-1 text-left">Filtrar</span>
+                            {(activeFilt.model || activeFilt.color) && (
+                              <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-indigo-500 text-white">Ativo</span>
+                            )}
+                            <ChevronDown size={13} className={`text-slate-400 transition-transform duration-200 ${isFilterOpen ? 'rotate-180' : ''}`} />
+                          </button>
+                          {isFilterOpen && (
+                            <div className={`px-4 pb-3 pt-2 border-t flex flex-wrap gap-1.5 ${isDarkMode ? 'border-slate-800 bg-slate-950/30' : 'border-slate-100 bg-slate-50/60'}`}>
+                              {uniqueModels.map(m => (
+                                <button type="button" key={m}
+                                  onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, model: activeFilt.model === m ? '' : m } }))}
+                                  className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all border ${activeFilt.model === m ? 'bg-indigo-600 text-white border-indigo-600' : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-600 border-slate-200'}`}
+                                >{m}</button>
+                              ))}
+                              {uniqueColors.map(c => (
+                                <button type="button" key={c}
+                                  onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, color: activeFilt.color === c ? '' : c } }))}
+                                  className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all border ${activeFilt.color === c ? 'bg-amber-500 text-white border-amber-500' : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-600 border-slate-200'}`}
+                                >{c}</button>
+                              ))}
+                              {(activeFilt.model || activeFilt.color) && (
+                                <button type="button" title="Limpar filtros"
+                                  onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { model: '', color: '' } }))}
+                                  className="text-[9px] font-black uppercase text-slate-400 hover:text-slate-700 px-2"
+                                >✕ Limpar</button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Ficha cards — flat list */}
+                        <div className="flex flex-col gap-1.5">
+                          {filteredFichas.map((f) => {
+                            const itemKey = `${f.lot.id}::${f.si.orderId}::${f.siIdx}`;
+                            const hasOS = !!f.coveringOS && f.coveringOS.status === 'PENDING';
+                            const isChecked = fichaSelection.has(itemKey);
+                            const gradeKey = `grade-${itemKey}`;
+                            const gradeOpen = fichaItemExpanded.has(gradeKey);
+                            const szEntries = (f.orderItem?.sizes)
+                              ? Object.entries(f.orderItem.sizes as Record<string, any>)
+                                  .filter(([, s]) => (s?.toProduction || 0) > 0)
+                                  .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
+                              : [];
+                            return (
+                              <div key={itemKey} className={`rounded-2xl border overflow-hidden transition-all ${
+                                hasOS
+                                  ? isDarkMode ? 'bg-emerald-950/30 border-emerald-700/50' : 'bg-emerald-50 border-emerald-200'
+                                  : isChecked
+                                    ? isDarkMode ? 'bg-indigo-950/30 border-indigo-700' : 'bg-indigo-50 border-indigo-200'
+                                    : isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50 border-slate-100'
+                              }`}>
+                                <div className="flex items-center gap-2 px-3 py-2.5">
+                                  {hasOS ? (
+                                    <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
+                                      <div className="w-2 h-2 rounded-full bg-white" />
+                                    </div>
+                                  ) : (
+                                    <input type="checkbox"
+                                      title="Selecionar este pedido"
+                                      checked={isChecked}
+                                      onChange={() => { const n = new Set(fichaSelection); isChecked ? n.delete(itemKey) : n.add(itemKey); setFichaSelection(n); }}
+                                      className="w-4 h-4 accent-indigo-600 cursor-pointer shrink-0"
+                                    />
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-[10px] font-black uppercase truncate text-slate-800 dark:text-slate-200 leading-none">
+                                      {f.product?.name || f.orderItem?.productName || '—'}
+                                    </p>
+                                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                      {(f.variation?.colorName || f.orderItem?.variationName) && (
+                                        <span className="text-[8px] font-bold text-slate-400 uppercase">{f.variation?.colorName || f.orderItem?.variationName}</span>
+                                      )}
+                                      <span className="text-[7px] text-slate-400 uppercase">· Ped. {f.order?.saleOrderNumber || '—'}</span>
+                                      {f.coveringOS && (
+                                        <span className={`text-[7px] font-black uppercase ${f.coveringOS.status === 'COMPLETED' ? 'text-emerald-500' : 'text-sky-500'}`}>
+                                          {f.coveringOS.osNumber}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-0.5 shrink-0">
+                                    <span className="text-[7px] font-black px-2 py-0.5 rounded-full uppercase bg-violet-600 text-white tracking-widest">
+                                      MAPA{f.lot.orderNumber}
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">{f.si.qty}P</span>
+                                      {szEntries.length > 0 && (
+                                        <button type="button"
+                                          title={gradeOpen ? 'Recolher grade' : 'Ver grade'}
+                                          onClick={() => { const n = new Set(fichaItemExpanded); gradeOpen ? n.delete(gradeKey) : n.add(gradeKey); setFichaItemExpanded(n); }}
+                                          className="p-0.5 rounded-lg text-slate-400 hover:text-slate-600 transition-all"
+                                        >
+                                          <ChevronDown size={12} className={`transition-transform duration-200 ${gradeOpen ? 'rotate-180' : ''}`} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                                {gradeOpen && szEntries.length > 0 && (
+                                  <div className={`px-3 pb-2.5 pt-1 border-t flex flex-wrap gap-1.5 ${isDarkMode ? 'border-slate-800 bg-slate-950/50' : 'border-slate-100 bg-white/60'}`}>
+                                    {szEntries.map(([sz, s]) => (
+                                      <div key={sz} className={`px-2.5 py-1.5 rounded-xl border-2 text-center min-w-[36px] ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-100'}`}>
+                                        <p className="text-[7px] font-bold text-slate-400 leading-none">{sz}</p>
+                                        <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 leading-none mt-0.5">{s?.toProduction ?? s}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Emitir OS — grouped by lot */}
+                        {selected.length > 0 && (
+                          <div className="flex flex-col gap-2">
+                            {Array.from(selByLot.entries()).map(([lotId, lotSelected]) => {
+                              const lot = allFichas.find(f => f.lot.id === lotId)?.lot;
+                              if (!lot) return null;
+                              const nextSId = lot.route?.[lot.currentSectorIndex + 1] || '';
+                              const nextSName = sectors.find(s => s.id === nextSId)?.name || 'CONCLUÍDO';
+                              const qty = lotSelected.reduce((s, f) => s + (f.si.qty || 0), 0);
+                              return (
+                                <button type="button" key={lotId}
+                                  onClick={() => {
+                                    const orderIds = lotSelected.map(f => f.si.orderId);
+                                    const n = new Set(fichaSelection);
+                                    lotSelected.forEach(f => n.delete(`${lotId}::${f.si.orderId}::${f.siIdx}`));
+                                    setFichaSelection(n);
+                                    // Verifica se são pedidos adiantados (mapa em outro setor)
+                                    const lotCurrentSector = lot.route?.[lot.currentSectorIndex];
+                                    const isAdvanced = lotCurrentSector !== selectedSectorId;
+                                    const preNote = isAdvanced
+                                      ? `Pedidos adiantados do Mapa #${lot.orderNumber} (mapa atualmente em: ${sectors.find(s => s.id === lotCurrentSector)?.name || 'outro setor'})`
+                                      : undefined;
+                                    const sectorOvr = isAdvanced ? selectedSectorId : undefined;
+                                    const qtyOvr = isAdvanced ? qty : undefined;
+                                    handleOpenOSModalForOrder(lot, orderIds, preNote, sectorOvr, qtyOvr);
+                                  }}
+                                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm shadow-sky-500/30"
+                                >
+                                  <Hammer size={13} /> Emitir OS — {lotSelected.length} {lotSelected.length === 1 ? 'Pedido' : 'Pedidos'} ({qty}P) · MAPA{lot.orderNumber}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* OS emitidas neste setor */}
+                        {serviceOrders
+                          .filter(os => os.sectorId === selectedSectorId && os.status === 'PENDING' &&
+                            filteredActiveLots.some(l => os.lotId === l.id))
+                          .map(os => {
+                            const lot = filteredActiveLots.find(l => os.lotId === l.id) ?? null;
+                            const nextSId = (lot?.route?.length ?? 0) > (lot?.currentSectorIndex ?? 0) + 1
+                              ? (lot?.route?.[(lot?.currentSectorIndex ?? 0) + 1] ?? '')
+                              : '';
+                            const nextSName = sectors.find(s => s.id === nextSId)?.name ?? 'CONCLUÍDO';
+                            return (
+                              <div key={os.id} className={`rounded-2xl border flex items-center gap-2 px-3 py-2.5 ${isDarkMode ? 'bg-sky-950/20 border-sky-700/40' : 'bg-sky-50 border-sky-200'}`}>
+                                {lot && <span className="text-[7px] font-black px-1.5 py-0.5 rounded bg-violet-600 text-white uppercase shrink-0">MAPA{lot.orderNumber}</span>}
+                                <div className="flex-1 min-w-0">
+                                  <span className={`text-[10px] font-black uppercase ${isDarkMode ? 'text-sky-400' : 'text-sky-700'}`}>{os.osNumber}</span>
+                                  {os.providerName ? <p className="text-[9px] text-slate-400 truncate">{os.providerName}</p> : null}
+                                </div>
+                                <button type="button" onClick={() => handleCompleteOS(os)}
+                                  className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-[9px] font-black uppercase transition-all active:scale-95 shrink-0 ${isDarkMode ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-50 text-emerald-700'}`}>
+                                  <CheckCircle2 size={11} /> Baixa → {nextSName}
+                                </button>
+                              </div>
+                            );
+                          })
+                        }
+
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </>
           )}
             </div>
@@ -2243,7 +3025,7 @@ export default function PCPView({
                             onClick={handleBatchCreateLots}
                             className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] text-[11px] font-black uppercase tracking-[0.25em] shadow-2xl shadow-indigo-600/30 hover:scale-[1.02] active:scale-95 transition-all"
                         >
-                            Criar Mapas Agrupados
+                            Criar 1 Mapa com Selecionados
                         </button>
 
                     </div>
@@ -2308,30 +3090,212 @@ export default function PCPView({
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-3">
-                    {purchaseNeeds.sort((a, b) => (b.required - b.stock) - (a.required - a.stock)).map((item) => {
-                      const fmtQty = (val: number) => /m[²2]/i.test(item.unit || '') ? Number(val).toFixed(2) : String(Math.round(val));
-                      return (
-                        <div
-                          key={item.id}
-                          className={`p-6 rounded-[2rem] border-2 transition-all flex flex-col gap-4 relative ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-white shadow-sm'}`}
-                        >
-                          {/* Ícone no canto superior direito */}
-                          <div className={`absolute top-5 right-5 w-9 h-9 rounded-xl flex items-center justify-center ${item.type === 'SOLE' ? 'bg-indigo-100 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'}`}>
-                            {item.type === 'SOLE' ? <Layers size={17} /> : <Package size={17} />}
+                    {(() => {
+                      // Group same materialId/moldId items together, sorted by group total shortage
+                      const groupMap = new Map<string, typeof purchaseNeeds>();
+                      purchaseNeeds.forEach(item => {
+                        const gk = item.type === 'MATERIAL'
+                          ? (item.materialId || item.id)
+                          : `SOLE_${item.moldId || item.id}`;
+                        if (!groupMap.has(gk)) groupMap.set(gk, []);
+                        groupMap.get(gk)!.push(item);
+                      });
+                      const sortedGroups = Array.from(groupMap.entries()).sort(([, ai], [, bi]) => {
+                        const as_ = ai.reduce((s, i) => s + Math.max(0, i.required - i.stock), 0);
+                        const bs_ = bi.reduce((s, i) => s + Math.max(0, i.required - i.stock), 0);
+                        return bs_ - as_;
+                      });
+                      // Build flat list enriched with group metadata
+                      type Enriched = typeof purchaseNeeds[0] & {
+                        _gk: string; _idx: number; _size: number;
+                        _gTotal: number; _gShortage: number; _gBaseName: string;
+                      };
+                      const flat: Enriched[] = [];
+                      sortedGroups.forEach(([gk, items]) => {
+                        const sorted = [...items].sort((a, b) => (b.required - b.stock) - (a.required - a.stock));
+                        const gTotal = sorted.reduce((s, i) => s + i.required, 0);
+                        const gShortage = sorted.reduce((s, i) => s + Math.max(0, i.required - i.stock), 0);
+                        const gBase = sorted[0].type === 'MATERIAL'
+                          ? (sorted[0].name || '').replace(/ — .*$/, '')
+                          : (sorted[0].name || '').split(' - ')[0];
+                        sorted.forEach((item, idx) => flat.push({ ...item, _gk: gk, _idx: idx, _size: sorted.length, _gTotal: gTotal, _gShortage: gShortage, _gBaseName: gBase }));
+                      });
+                      return flat;
+                    })().map((item) => {
+                      const isGrouped = item._size > 1;
+                      const isFirst  = item._idx === 0;
+                      const groupHeader = (isGrouped && isFirst) ? (
+                        <div key={`gh_${item._gk}`} className={`flex items-center justify-between px-4 py-2.5 rounded-2xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{item._gBaseName}</span>
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white text-slate-500 border border-slate-200'}`}>{item._size} {item.type === 'MATERIAL' ? 'cores' : 'variações'}</span>
                           </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-right">
+                              <p className="text-[8px] font-black uppercase text-slate-400">Total necessário</p>
+                              <p className={`text-[11px] font-black ${item._gShortage > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{/m[²2]/i.test(item.unit || '') ? item._gTotal.toFixed(2) : Math.round(item._gTotal)} {item.unit}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null;
+                      const fmtQty = (val: number) => /m[²2]/i.test(item.unit || '') ? Number(val).toFixed(2) : String(Math.round(val));
+                      const isExpanded = expandedNeedIds.has(item.id);
 
-                          {/* Cabeçalho: nome + badges */}
-                          <div className="flex flex-col min-w-0 pr-12">
-                            <div className="flex flex-col min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <p className="text-sm font-black text-slate-900 dark:text-white uppercase leading-tight truncate">{item.name}</p>
-                                {item.moldId && (
-                                  <span className="text-[8px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded uppercase">
-                                    ID: {item.moldId.slice(-6)}
-                                  </span>
+                      // Existing purchase request
+                      const existingReqOuter = purchaseRequests.find(r => r.requestKey === item.id && r.status !== 'RECEIVED');
+
+                      // Quick shortage (real stock, no color fallback)
+                      const realGradeStockOuter: Record<string, number> = {};
+                      if (item.type === 'SOLE') {
+                        soleStock
+                          .filter(s => s.moldId === item.moldId && String(s.colorId || '').trim() === String(item.colorId || '').trim())
+                          .forEach(e => {
+                            Object.entries(e.stock).forEach(([k, v]) => {
+                              const key = String(k).trim();
+                              if (key === 'pesagem' || key === 'total') return;
+                              realGradeStockOuter[key] = (realGradeStockOuter[key] || 0) + (Number(v) || 0);
+                            });
+                          });
+                      }
+                      const quickShortage = item.type === 'SOLE' && item.sizeShortages
+                        ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
+                            const req = (item.sizeShortages as any)[grade].required;
+                            const stk = realGradeStockOuter[grade] || 0;
+                            return s + Math.max(0, req - stk);
+                          }, 0)
+                        : Math.max(0, item.required - item.stock);
+
+                      // In-transit quantities for this mold
+                      const inTransitOuter: Record<string, number> = {};
+                      if (item.type === 'SOLE') {
+                        purchases.filter(p => {
+                          if (p.registerAsReceived === true) return false;
+                          const si: any[] = (p as any).soleItems || (p as any).items || [];
+                          return si.some((s: any) => s.moldId);
+                        }).forEach(p => {
+                          const allItems: any[] = (p as any).soleItems || (p as any).items || [];
+                          allItems
+                            .filter((si: any) =>
+                              si.moldId &&
+                              String(si.moldId).trim() === String(item.moldId).trim() &&
+                              String(si.colorId || '').trim() === String(item.colorId || '').trim()
+                            )
+                            .forEach((si: any) => {
+                              Object.entries(si.quantities || {}).forEach(([size, qty]: [string, any]) => {
+                                const q = Number(qty) || 0;
+                                if (q > 0) inTransitOuter[size] = (inTransitOuter[size] || 0) + q;
+                              });
+                            });
+                        });
+                      }
+                      const totalInTransitOuter = Object.values(inTransitOuter).reduce((a, b) => a + b, 0);
+                      const realToComprarOuter = item.type === 'SOLE' && item.sizeShortages
+                        ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
+                            const req = (item.sizeShortages as any)[grade].required;
+                            const stk = realGradeStockOuter[grade] || 0;
+                            const transit = inTransitOuter[grade] || 0;
+                            return s + Math.max(0, req - stk - transit);
+                          }, 0)
+                        : Math.max(0, quickShortage - totalInTransitOuter);
+
+                      return (
+                        <React.Fragment key={item.id}>
+                          {groupHeader}
+                        <div
+                          className={`rounded-[2rem] border-2 transition-all overflow-hidden ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-white shadow-sm'} ${isExpanded ? 'border-indigo-300 dark:border-indigo-700' : ''}`}
+                        >
+                          {/* ── Acordeão Header (clicável) ── */}
+                          <button
+                            type="button"
+                            onClick={() => toggleNeedExpand(item.id)}
+                            className={`w-full flex items-center justify-between gap-3 px-5 py-4 transition-colors ${isExpanded ? isDarkMode ? 'bg-indigo-950/30' : 'bg-indigo-50/60' : ''}`}
+                          >
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${item.type === 'SOLE' ? 'bg-indigo-100 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+                                {item.type === 'SOLE' ? <Layers size={16} /> : <Package size={16} />}
+                              </div>
+                              <div className="flex-1 min-w-0 text-left">
+                                {item.type === 'SOLE' ? (() => {
+                                  const [moldName, ...colorParts] = item.name.split(' - ');
+                                  const colorName = colorParts.join(' - ');
+                                  return (
+                                    <>
+                                      <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest leading-none mb-0.5">Solado</p>
+                                      <p className="text-sm font-black text-slate-900 dark:text-white uppercase leading-tight truncate">{moldName}</p>
+                                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                        {colorName && (
+                                          <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest">{colorName}</span>
+                                        )}
+                                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                          {item.contributingLots.length} {item.contributingLots.length === 1 ? 'Mapa' : 'Mapas'}: {item.contributingLots.join(', ')}
+                                        </span>
+                                        <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest">⚠ Falta</span>
+                                      </div>
+                                    </>
+                                  );
+                                })() : (
+                                  <>
+                                    <p className="text-sm font-black text-slate-900 dark:text-white uppercase leading-tight truncate">{item.name}</p>
+                                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                        {item.contributingLots.length} {item.contributingLots.length === 1 ? 'Mapa' : 'Mapas'}: {item.contributingLots.join(', ')}
+                                      </span>
+                                    </div>
+                                  </>
                                 )}
                               </div>
-                              <div className="flex flex-wrap items-center gap-2">
+                            </div>
+                            <div className="flex flex-col items-end gap-1.5 shrink-0">
+                              {/* Linha 1: Falta + chevron */}
+                              <div className="flex items-center gap-2">
+                                <div className="text-right">
+                                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Falta</p>
+                                  <p className="text-xl font-black text-rose-600 leading-none">{fmtQty(quickShortage)} <span className="text-[9px] text-slate-400">{item.unit}</span></p>
+                                </div>
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center transition-transform duration-200 ${isExpanded ? 'rotate-180 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                                  <ChevronDown size={16} strokeWidth={2.5} />
+                                </div>
+                              </div>
+                              {/* Linha 2: Ação */}
+                              {existingReqOuter ? (
+                                <span className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
+                                  <CheckCircle2 size={10} strokeWidth={3} /> Solicitado
+                                </span>
+                              ) : totalInTransitOuter > 0 && realToComprarOuter === 0 ? (
+                                <span className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-amber-950/30 border-amber-700/50 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+                                  <ShoppingCart size={10} /> Em Trânsito
+                                </span>
+                              ) : quickShortage > 0 ? (
+                                <button
+                                  type="button"
+                                  disabled={requestingId === item.id}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (!onRequestPurchase || requestingId) return;
+                                    if (item.type === 'SOLE') {
+                                      setSelectedSoleNeed(item);
+                                      setExtraSoleQty({});
+                                      setIsSoleOrderModalOpen(true);
+                                    }
+                                  }}
+                                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${
+                                    requestingId === item.id
+                                      ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-wait'
+                                      : 'bg-indigo-600 text-white shadow-sm shadow-indigo-500/30'
+                                  }`}
+                                >
+                                  {requestingId === item.id ? <Loader2 size={10} className="animate-spin" /> : <ArrowUpRight size={10} strokeWidth={3} />}
+                                  Solicitar
+                                </button>
+                              ) : null}
+                            </div>
+                          </button>
+
+                          {/* ── Conteúdo expansível ── */}
+                          {isExpanded && (
+                          <div className={`px-6 pb-6 pt-2 flex flex-col gap-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                          {/* Badges */}
+                          <div className="flex flex-wrap items-center gap-2">
                               {item.type !== 'SOLE' && (
                                 <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-600'}`}>
                                   Estoque: {fmtQty(item.stock)} {item.unit}
@@ -2355,8 +3319,6 @@ export default function PCPView({
                                 {item.contributingLots.length} {item.contributingLots.length === 1 ? 'Mapa' : 'Mapas'}: {item.contributingLots.join(', ')}
                               </span>
                           </div>
-                        </div>
-                      </div>
 
                           {/* Tabela de grades de solado */}
                           {item.type === 'SOLE' && item.sizeShortages && (() => {
@@ -2364,23 +3326,17 @@ export default function PCPView({
                             const totReq = Object.values(item.sizeShortages as any)
                               .reduce((s: number, v: any) => s + v.required, 0) as number;
 
-                            // Estratégia duas etapas para buscar estoque: cor exata → qualquer cor do molde
-                            const exactEntries = item.colorId
-                              ? soleStock.filter(s => s.moldId === item.moldId && s.colorId === item.colorId)
-                              : [];
-                            const entries = exactEntries.length > 0
-                              ? exactEntries
-                              : soleStock.filter(s => s.moldId === item.moldId);
-
-                            // Estoque por grade de sola (chaves do soleStock, ex: "38-39", "43-44")
+                            // Estoque EXCLUSIVO por moldId + colorId (sem fallback para outras cores)
                             const gradeStock: Record<string, number> = {};
-                            entries.forEach(e => {
-                              Object.entries(e.stock).forEach(([k, v]) => {
-                                const key = String(k).trim();
-                                if (key === 'pesagem' || key === 'total') return;
-                                gradeStock[key] = (gradeStock[key] || 0) + (Number(v) || 0);
+                            soleStock
+                              .filter(s => s.moldId === item.moldId && String(s.colorId || '').trim() === String(item.colorId || '').trim())
+                              .forEach(e => {
+                                Object.entries(e.stock).forEach(([k, v]) => {
+                                  const key = String(k).trim();
+                                  if (key === 'pesagem' || key === 'total') return;
+                                  gradeStock[key] = (gradeStock[key] || 0) + (Number(v) || 0);
+                                });
                               });
-                            });
 
                             const totEst = Object.values(gradeStock).reduce((s, v) => s + v, 0);
                             const totFalta = Math.max(0, totReq - totEst);
@@ -2442,11 +3398,72 @@ export default function PCPView({
                           {/* Rodapé: a comprar + botão solicitar */}
                           {(() => {
                             const existingReq = purchaseRequests.find(r => r.requestKey === item.id && r.status !== 'RECEIVED');
+
+                            // Estoque real EXCLUSIVO por moldId + colorId (sem fallback para outras cores)
+                            let realGradeStock: Record<string, number> = {};
+                            if (item.type === 'SOLE') {
+                              soleStock
+                                .filter(s => s.moldId === item.moldId && String(s.colorId || '').trim() === String(item.colorId || '').trim())
+                                .forEach(e => {
+                                  Object.entries(e.stock).forEach(([k, v]) => {
+                                    const key = String(k).trim();
+                                    if (key === 'pesagem' || key === 'total') return;
+                                    realGradeStock[key] = (realGradeStock[key] || 0) + (Number(v) || 0);
+                                  });
+                                });
+                            }
+
+                            // Falta real usando estoque do soleStock (corrige o bug dos 60 → 7)
                             const totalFaltaSole = item.type === 'SOLE' && item.sizeShortages
-                              ? Object.values(item.sizeShortages).reduce((s: number, v: any) => s + Math.max(0, v.required - v.stock), 0)
+                              ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
+                                  const req = (item.sizeShortages as any)[grade].required;
+                                  const stock = realGradeStock[grade] || 0;
+                                  return s + Math.max(0, req - stock);
+                                }, 0)
                               : Math.max(0, item.required - item.stock);
+
                             const displayQty = item.type === 'SOLE' ? totalFaltaSole : item.required;
                             const displayLabel = item.type === 'SOLE' ? 'A Comprar' : 'Necessário';
+
+                            // Verifica compras de solado pendentes para este molde (qualquer cor ou cor específica)
+                            const inTransitQtys: Record<string, number> = {};
+                            const inTransitByColor: Record<string, { colorName: string; qtys: Record<string, number> }> = {};
+                            if (item.type === 'SOLE') {
+                              purchases
+                                .filter(p => {
+                                  if (p.registerAsReceived === true) return false;
+                                  // Aceita qualquer tipo de compra que tenha itens de solado
+                                  const si: any[] = (p as any).soleItems || (p as any).items || [];
+                                  return si.some((s: any) => s.moldId);
+                                })
+                                .forEach(p => {
+                                  const allItems: any[] = (p as any).soleItems || (p as any).items || [];
+                                  allItems
+                                    .filter((si: any) => {
+                                      if (!si.moldId) return false;
+                                      if (String(si.moldId).trim() !== String(item.moldId).trim()) return false;
+                                      if (!item.colorId) return true;
+                                      if (si.colorId && String(si.colorId).trim() === String(item.colorId).trim()) return true;
+                                      const needColor = item.name?.split(' - ')[1]?.toUpperCase().trim() || '';
+                                      if (needColor && si.colorName?.toUpperCase().trim() === needColor) return true;
+                                      return false;
+                                    })
+                                    .forEach((si: any) => {
+                                      const colorKey = si.colorName || si.colorId || 'Padrão';
+                                      if (!inTransitByColor[colorKey]) {
+                                        inTransitByColor[colorKey] = { colorName: colorKey, qtys: {} };
+                                      }
+                                      Object.entries(si.quantities || {}).forEach(([size, qty]: [string, any]) => {
+                                        const qtyNum = Number(qty) || 0;
+                                        if (qtyNum > 0) {
+                                          inTransitQtys[size] = (inTransitQtys[size] || 0) + qtyNum;
+                                          inTransitByColor[colorKey].qtys[size] = (inTransitByColor[colorKey].qtys[size] || 0) + qtyNum;
+                                        }
+                                      });
+                                    });
+                                });
+                            }
+                            const totalInTransit = Object.values(inTransitQtys).reduce((a, b) => a + b, 0);
 
                             const STATUS_LABEL: Record<string, string> = {
                               PENDING: 'Solicitado',
@@ -2459,31 +3476,103 @@ export default function PCPView({
                               ORDERED: 'bg-indigo-100 text-indigo-700 border-indigo-300 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-700',
                             };
 
+                            // Cruzamento: saldo real a comprar descontando o que está em trânsito
+                            const realToComprar = item.type === 'SOLE' && item.sizeShortages
+                              ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
+                                  const req = (item.sizeShortages as any)[grade].required;
+                                  const stock = realGradeStock[grade] || 0;
+                                  const transit = inTransitQtys[grade] || 0;
+                                  return s + Math.max(0, req - stock - transit);
+                                }, 0)
+                              : Math.max(0, displayQty - totalInTransit);
+
                             return (
-                              <div className={`flex items-center justify-between pt-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                              <div className={`pt-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+
+                                {/* Tabela inline de cruzamento — só para SOLE com trânsito */}
+                                {totalInTransit > 0 && item.type === 'SOLE' && item.sizeShortages && (
+                                  <div className={`mb-3 rounded-xl overflow-hidden border ${isDarkMode ? 'border-amber-800/50 bg-amber-950/20' : 'border-amber-200 bg-amber-50/60'}`}>
+                                    {/* Header aviso */}
+                                    <div className={`flex items-center gap-2 px-3 py-2 border-b ${isDarkMode ? 'border-amber-800/40' : 'border-amber-200'}`}>
+                                      <ShoppingCart size={12} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                                      <span className="text-[9px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400">
+                                        {totalInTransit} par(es) em trânsito — aguardando recebimento
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setInTransitPopupItem({ item, inTransitQtys, inTransitByColor, realGradeStock, totalFaltaSole, totalInTransit })}
+                                        className="ml-auto text-[9px] font-black text-amber-600 dark:text-amber-400 underline hover:no-underline"
+                                        title="Ver detalhes"
+                                      >
+                                        Detalhes
+                                      </button>
+                                    </div>
+                                    {/* Mini tabela cruzada */}
+                                    <div className={`grid grid-cols-4 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                                      <span>Grade</span>
+                                      <span className="text-center text-rose-500">Falta</span>
+                                      <span className="text-center text-amber-500">Trânsito</span>
+                                      <span className="text-right text-emerald-500">Saldo</span>
+                                    </div>
+                                    {Object.keys(item.sizeShortages).sort((a, b) => parseFloat(a) - parseFloat(b)).map(grade => {
+                                      const req = (item.sizeShortages as any)[grade].required;
+                                      const stock = realGradeStock[grade] || 0;
+                                      const falta = Math.max(0, req - stock);
+                                      const transit = inTransitQtys[grade] || 0;
+                                      const saldo = Math.max(0, falta - transit);
+                                      if (falta === 0 && transit === 0) return null;
+                                      return (
+                                        <div key={grade} className={`grid grid-cols-4 px-3 py-2 border-t text-xs font-black ${isDarkMode ? 'border-amber-900/40 bg-slate-900/40' : 'border-amber-100 bg-white/60'}`}>
+                                          <span className={isDarkMode ? 'text-white' : 'text-slate-700'}>{grade}</span>
+                                          <span className={`text-center ${falta > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{falta > 0 ? `-${falta}` : '✓'}</span>
+                                          <span className={`text-center ${transit > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>{transit > 0 ? `+${transit}` : '—'}</span>
+                                          <span className={`text-right ${saldo > 0 ? 'text-rose-600 font-black' : 'text-emerald-500'}`}>{saldo > 0 ? `-${saldo}` : '✓'}</span>
+                                        </div>
+                                      );
+                                    })}
+                                    {realToComprar === 0 && (
+                                      <div className={`px-3 py-2 border-t text-[9px] font-black text-emerald-600 dark:text-emerald-400 ${isDarkMode ? 'border-amber-900/40 bg-emerald-950/20' : 'border-amber-100 bg-emerald-50/60'}`}>
+                                        ✓ As compras em trânsito cobrem toda a necessidade. Aguarde o recebimento.
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                <div className="flex items-center justify-between">
                                 <div>
-                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{displayLabel}</p>
-                                  <p className="text-2xl font-black text-rose-600 leading-none">{fmtQty(displayQty)} <span className="text-[11px] text-slate-400">{item.unit}</span></p>
+                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">
+                                    {totalInTransit > 0 ? 'Saldo Real a Comprar' : displayLabel}
+                                  </p>
+                                  <p className={`text-2xl font-black leading-none ${realToComprar > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
+                                    {fmtQty(totalInTransit > 0 ? realToComprar : displayQty)}
+                                    <span className="text-[11px] text-slate-400 ml-1">{item.unit}</span>
+                                  </p>
                                 </div>
                                 {existingReq ? (
                                   <span className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest border ${STATUS_COLOR[existingReq.status] || ''}`}>
                                     <CheckCircle2 size={13} strokeWidth={3} />
                                     {STATUS_LABEL[existingReq.status] || existingReq.status}
                                   </span>
+                                ) : totalInTransit > 0 && realToComprar === 0 ? (
+                                  <div className="flex flex-col items-end gap-1">
+                                    <span className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-amber-950/30 border-amber-700/50 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+                                      <ShoppingCart size={12} />
+                                      Em Trânsito
+                                    </span>
+                                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Aguarde o recebimento</span>
+                                  </div>
                                 ) : (
                                   <button
                                     type="button"
                                     disabled={requestingId === item.id}
                                     onClick={async () => {
                                       if (!onRequestPurchase || requestingId) return;
-
                                       if (item.type === 'SOLE') {
                                         setSelectedSoleNeed(item);
                                         setExtraSoleQty({});
                                         setIsSoleOrderModalOpen(true);
                                         return;
                                       }
-
                                       setRequestingId(item.id);
                                       try {
                                         await onRequestPurchase({
@@ -2498,33 +3587,31 @@ export default function PCPView({
                                           contributingLots: item.contributingLots,
                                           materialId: item.materialId,
                                         });
-                                        console.log('[PCPView] Material request sent:', item.name);
                                         alert(`Solicitação de ${item.name} enviada com sucesso!`);
                                       } catch (err) {
-                                        console.error('[PCPView] Error sending material request:', err);
                                         alert('Erro ao enviar solicitação.');
                                       } finally {
                                         setRequestingId(null);
                                       }
                                     }}
                                     className={`px-5 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg transition-all flex items-center gap-2 ${
-                                      requestingId === item.id 
-                                        ? 'bg-slate-200 text-slate-400 cursor-wait' 
+                                      requestingId === item.id
+                                        ? 'bg-slate-200 text-slate-400 cursor-wait'
                                         : 'bg-indigo-600 text-white shadow-indigo-500/20 hover:scale-105 active:scale-95'
                                     }`}
                                   >
-                                    {requestingId === item.id ? (
-                                      <Loader2 size={14} className="animate-spin" />
-                                    ) : (
-                                      <ArrowUpRight size={14} strokeWidth={3} />
-                                    )}
+                                    {requestingId === item.id ? <Loader2 size={14} className="animate-spin" /> : <ArrowUpRight size={14} strokeWidth={3} />}
                                     {requestingId === item.id ? 'Enviando...' : 'Solicitar'}
                                   </button>
                                 )}
+                                </div>
                               </div>
                             );
                           })()}
                         </div>
+                          )}
+                        </div>
+                        </React.Fragment>
                       );
                     })}
                   </div>
@@ -2566,7 +3653,7 @@ export default function PCPView({
             </div>
 
             <div className="grid grid-cols-1 gap-3">
-              {filteredLots.sort((a, b) => (b.finishedAt || 0) - (a.finishedAt || 0) || b.createdAt - a.createdAt).map(lot => {
+              {[...filteredLots].sort((a, b) => (b.finishedAt || 0) - (a.finishedAt || 0) || b.createdAt - a.createdAt).map(lot => {
                 const product = products.find(p => p.id === lot.productId);
                 const variation = product?.variations.find(v => v.id === lot.variationId);
                 const sector = sectors.find(s => s.id === (lot.route && lot.route[lot.currentSectorIndex]));
@@ -2738,9 +3825,11 @@ export default function PCPView({
                 <CalendarClock size={18} className="absolute left-4 text-slate-400" />
                 <input
                   type="date"
+                  title="Prazo de Entrega"
+                  aria-label="Prazo de Entrega Personalizado"
                   className={`w-full pl-12 pr-6 py-4 rounded-2xl border-2 font-black text-sm outline-none transition-all ${
-                    isDarkMode 
-                      ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500 [color-scheme:dark]' 
+                    isDarkMode
+                      ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500 [color-scheme:dark]'
                       : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'
                   }`}
                   value={formatDateForInput(newLot.deliveryDate)}
@@ -2849,50 +3938,141 @@ export default function PCPView({
                     )}
                   </div>
 
-                  {/* Total em linha única acima da grade */}
-                  <div className="flex items-center justify-center sm:justify-start gap-2 mt-3">
-                    <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400 leading-none">{selectedLot.quantity}</span>
-                    <span className="text-sm font-black text-slate-400 uppercase tracking-widest leading-none">Pares</span>
-                  </div>
+                  {/* Total em linha única acima da grade — deduz pedidos movidos para outros setores */}
+                  {(() => {
+                    const orderSectorsMap: Record<string, string> = (selectedLot as any).metadata?.orderSectors || {};
+                    const currentSectorId = selectedLot.route?.[selectedLot.currentSectorIndex];
+                    const lotSI: any[] = (selectedLot as any).metadata?.sourceItems || [];
+                    const movedOutQty = lotSI.reduce((acc, si: any) => {
+                      const dest = orderSectorsMap[si.orderId];
+                      return dest && dest !== currentSectorId ? acc + (si.qty || 0) : acc;
+                    }, 0);
+                    const currentQty = selectedLot.quantity - movedOutQty;
+                    return (
+                      <div className="flex items-center justify-center sm:justify-start gap-2 mt-3 flex-wrap">
+                        <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400 leading-none">{currentQty}</span>
+                        <span className="text-sm font-black text-slate-400 uppercase tracking-widest leading-none">Pares</span>
+                        {movedOutQty > 0 && (
+                          <span className="text-[9px] font-black text-emerald-500 uppercase">↗ {movedOutQty} em outros setores</span>
+                        )}
+                      </div>
+                    );
+                  })()}
 
-                  {/* Chips de grade */}
-                  {selectedLot.pairs && (
-                    <div className="flex flex-wrap gap-1.5 mt-2 justify-center sm:justify-start">
-                      {Object.entries(selectedLot.pairs).map(([size, qty]) => (
-                        <div key={size} className="flex flex-col items-center min-w-[36px] px-2 py-2 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
-                          <span className="text-[10px] font-black text-slate-400 leading-none mb-1">{size}</span>
-                          <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 leading-none">{qty as number}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {/* Chips de grade — deduz pares dos pedidos movidos */}
+                  {selectedLot.pairs && (() => {
+                    const orderSectorsMap: Record<string, string> = (selectedLot as any).metadata?.orderSectors || {};
+                    const lotCurrentSectorId = selectedLot.route?.[selectedLot.currentSectorIndex];
+                    const lotSI: any[] = (selectedLot as any).metadata?.sourceItems || [];
+                    // Calcula pares a subtrair por tamanho (pedidos movidos para outro setor)
+                    const deductBySize: Record<string, number> = {};
+                    lotSI.forEach((si: any) => {
+                      const destSector = orderSectorsMap[si.orderId];
+                      if (!destSector || destSector === lotCurrentSectorId) return;
+                      const ord = productionOrders.find(o => o.id === si.orderId);
+                      if (!ord) return;
+                      const ordItem: any = si.itemIdx !== undefined ? ord.items[si.itemIdx] : ord.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+                      if (!ordItem?.sizes) return;
+                      Object.entries(ordItem.sizes).forEach(([sz, sData]: any) => {
+                        const qty = Number(sData.toProduction) || 0;
+                        if (qty > 0) deductBySize[sz] = (deductBySize[sz] || 0) + qty;
+                      });
+                    });
+                    const adjustedPairs = Object.fromEntries(
+                      Object.entries(selectedLot.pairs as Record<string, number>)
+                        .map(([sz, q]) => [sz, Math.max(0, q - (deductBySize[sz] || 0))])
+                        .filter(([, q]) => q > 0)
+                    );
+                    const hasDeductions = Object.keys(deductBySize).length > 0;
+                    return (
+                      <div className="flex flex-wrap gap-1.5 mt-2 justify-center sm:justify-start">
+                        {Object.entries(adjustedPairs).sort(([a], [b]) => Number(a) - Number(b)).map(([size, qty]) => (
+                          <div key={size} className={`flex flex-col items-center min-w-[36px] px-2 py-2 rounded-2xl border shadow-sm ${hasDeductions ? 'bg-indigo-50 dark:bg-indigo-950/20 border-indigo-100 dark:border-indigo-800' : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-700'}`}>
+                            <span className="text-[10px] font-black text-slate-400 leading-none mb-1">{size}</span>
+                            <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 leading-none">{qty as number}</span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
               {/* Linked Orders Section */}
               {((selectedLot as any).metadata?.sourceItems?.length > 0 || selectedLot.productionOrderId) && (() => {
-                const sourceItems: any[] = (selectedLot as any).metadata?.sourceItems || [
+                const allSourceItems: any[] = (selectedLot as any).metadata?.sourceItems || [
                   { orderId: selectedLot.productionOrderId, itemIdx: 0, qty: selectedLot.quantity }
                 ];
 
                 // OS ativas do lote no setor atual
                 const currentSectorId = selectedLot.route && selectedLot.route[selectedLot.currentSectorIndex];
+
+                // Filtra: oculta pedidos já movidos para outro setor
+                const orderSectorsMap: Record<string, string> = (selectedLot as any).metadata?.orderSectors || {};
+                const sourceItems = allSourceItems.filter((si: any) => {
+                  const destSector = orderSectorsMap[si.orderId];
+                  // Mostrar apenas pedidos SEM setor atribuído OU no setor atual do lote
+                  return !destSector || destSector === currentSectorId;
+                });
+
+                // Pedidos que foram movidos para outros setores (para info)
+                const movedOutItems = allSourceItems.filter((si: any) => {
+                  const destSector = orderSectorsMap[si.orderId];
+                  return destSector && destSector !== currentSectorId;
+                });
                 const lotOSList = serviceOrders.filter(so =>
                   (so.lotId === selectedLot.id || (so.lotIds && so.lotIds.includes(selectedLot.id))) &&
                   so.sectorId === currentSectorId &&
                   so.status === 'PENDING'
                 );
-                // Apenas OS com sourceOrderIds explícitos marcam o pedido como coberto
-                // OS sem sourceOrderIds (lote inteiro) não bloqueia seleção individual
+                // OS pendentes (bloqueiam criação de nova OS)
                 const getOrderOS = (orderId: string) => lotOSList.find(so =>
                   so.sourceOrderIds && so.sourceOrderIds.length > 0 && so.sourceOrderIds.includes(orderId)
                 );
 
-                // Apenas pedidos SEM OS podem ser selecionados ou contabilizados
+                // OS concluída NO SETOR ATUAL, com o pedido explicitamente listado
+                const completedOSForOrder = (orderId: string) => serviceOrders.find(so =>
+                  so.sourceOrderIds &&
+                  so.sourceOrderIds.length > 0 &&
+                  so.sourceOrderIds.includes(orderId) &&
+                  (so.lotId === selectedLot.id || so.lotIds?.includes(selectedLot.id)) &&
+                  so.sectorId === currentSectorId &&
+                  so.status === 'COMPLETED'
+                );
+
+                // Pedidos SEM OS pendente → podem criar nova OS
                 const selectableItems = sourceItems.filter((si: any) => !getOrderOS(si.orderId));
                 const selectedItemsList = sourceItems.filter((si: any, idx: number) =>
                   selectedSourceItemKeys.has(`${si.orderId}-${idx}`) && !getOrderOS(si.orderId)
                 );
+
+                // Pedidos COM OS concluída → podem ser movidos para outro setor
+                const moveableItems = sourceItems.filter((si: any) => !!completedOSForOrder(si.orderId));
+                const selectedMoveableItems = sourceItems.filter((si: any, idx: number) =>
+                  selectedSourceItemKeys.has(`${si.orderId}-${idx}`) && !!completedOSForOrder(si.orderId)
+                );
+                const selectedMoveQty = selectedMoveableItems.reduce((acc: number, si: any) => acc + (si.qty || 0), 0);
+
+                // Setores disponíveis: calcula a partir do setor atual dos pedidos (via orderSectors ou setor do lote)
+                const getEffectiveFromSector = () => {
+                  // Para pedidos adiantados, usa o setor onde os pedidos estão (via completedOSForOrder)
+                  const completedOs = selectedMoveableItems.length > 0
+                    ? serviceOrders.find(so =>
+                        so.sourceOrderIds?.includes(selectedMoveableItems[0]?.si?.orderId) &&
+                        (so.lotId === selectedLot.id || so.lotIds?.includes(selectedLot.id)) &&
+                        so.status === 'COMPLETED'
+                      )
+                    : null;
+                  if (completedOs?.sectorId) return completedOs.sectorId;
+                  return currentSectorId || selectedLot.route?.[selectedLot.currentSectorIndex] || '';
+                };
+                const fromSectorId = getEffectiveFromSector();
+                const fromSectorIdx = (selectedLot.route || []).indexOf(fromSectorId);
+                // Só mostra o próximo setor imediato (não permite pular setores)
+                const nextOnlySector = fromSectorIdx >= 0 && fromSectorIdx + 1 < (selectedLot.route || []).length
+                  ? sectors.find(s => s.id === selectedLot.route![fromSectorIdx + 1])
+                  : null;
+                const availableSectors = nextOnlySector ? [nextOnlySector] : [];
                 const selectedQty = selectedItemsList.reduce((acc: number, si: any) => acc + (si.qty || 0), 0);
                 const allSelected = selectableItems.length > 0 && selectableItems.every((si: any) => {
                   const idx = sourceItems.indexOf(si);
@@ -2952,87 +4132,280 @@ export default function PCPView({
                         )}
                         <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Pedidos Vinculados</h4>
                       </div>
-                      <span className="text-[10px] font-black text-indigo-500 uppercase">{sourceItems.length} Pedidos</span>
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-[10px] font-black text-indigo-500 uppercase">{sourceItems.length} Pedidos</span>
+                        {movedOutItems.length > 0 && (
+                          <span className="text-[8px] font-black text-emerald-500 uppercase">
+                            ↗ {movedOutItems.length} em outros setores
+                          </span>
+                        )}
+                      </div>
                     </div>
+
+                    {/* ── Filtros em acordeão ── */}
+                    {(() => {
+                      const uniqueModels = Array.from(new Set(sourceItems.map((si: any) => {
+                        const ord = productionOrders.find(o => o.id === si.orderId);
+                        const ordItem: any = si.itemIdx !== undefined ? ord?.items[si.itemIdx] : ord?.items.find((i: any) => i.productId === si.productId);
+                        const prod = products.find(p => p.id === (si.productId || ordItem?.productId));
+                        return prod?.name || ordItem?.productName || '';
+                      }).filter(Boolean)));
+                      const uniqueColors = Array.from(new Set(sourceItems.map((si: any) => {
+                        const ord = productionOrders.find(o => o.id === si.orderId);
+                        const ordItem: any = si.itemIdx !== undefined ? ord?.items[si.itemIdx] : ord?.items.find((i: any) => i.productId === si.productId);
+                        const prod = products.find(p => p.id === (si.productId || ordItem?.productId));
+                        const vari = prod?.variations.find(v => v.id === (si.variationId || ordItem?.variationId));
+                        return vari?.colorName || ordItem?.variationName || '';
+                      }).filter(Boolean)));
+                      if (uniqueModels.length <= 1 && uniqueColors.length <= 1) return null;
+                      const hasFilter = !!sourceFilterModel || !!sourceFilterColor;
+                      const filterOpen = expandedSourceItems.has('__filter__');
+                      return (
+                        <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                          <button type="button"
+                            onClick={() => {
+                              const next = new Set(expandedSourceItems);
+                              filterOpen ? next.delete('__filter__') : next.add('__filter__');
+                              setExpandedSourceItems(next);
+                            }}
+                            className={`w-full flex items-center justify-between px-3 py-2.5 transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-50 hover:bg-slate-100'}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Filter size={12} className={hasFilter ? 'text-violet-600' : 'text-violet-500'} />
+                              <span className={`text-[9px] font-black uppercase tracking-widest ${hasFilter ? 'text-violet-600' : 'text-violet-500'}`}>
+                                Filtrar
+                              </span>
+                              {hasFilter && (
+                                <span className="flex items-center gap-1">
+                                  {sourceFilterModel && <span className="text-[7px] font-black px-1.5 py-0.5 rounded-full bg-indigo-600 text-white">{sourceFilterModel}</span>}
+                                  {sourceFilterColor && <span className="text-[7px] font-black px-1.5 py-0.5 rounded-full bg-violet-600 text-white">{sourceFilterColor}</span>}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {hasFilter && (
+                                <button type="button" onClick={e => { e.stopPropagation(); setSourceFilterModel(''); setSourceFilterColor(''); }}
+                                  className="text-[7px] font-black text-rose-500 px-1.5 py-0.5 rounded-full bg-rose-50 dark:bg-rose-900/20 uppercase">
+                                  Limpar
+                                </button>
+                              )}
+                              <ChevronDown size={13} className={`text-slate-400 transition-transform duration-200 ${filterOpen ? 'rotate-180' : ''}`} />
+                            </div>
+                          </button>
+                          {filterOpen && (
+                            <div className={`px-3 pb-3 pt-2 flex flex-col gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50/80'}`}>
+                              {uniqueModels.length > 1 && (
+                                <div>
+                                  <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Modelo</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    <button type="button" onClick={() => setSourceFilterModel('')}
+                                      className={`text-[8px] font-black px-2 py-1 rounded-full uppercase transition-all ${!sourceFilterModel ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                                      Todos
+                                    </button>
+                                    {uniqueModels.map(m => (
+                                      <button key={m} type="button" onClick={() => setSourceFilterModel(sourceFilterModel === m ? '' : m)}
+                                        className={`text-[8px] font-black px-2 py-1 rounded-full uppercase transition-all ${sourceFilterModel === m ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                                        {m}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              {uniqueColors.length > 1 && (
+                                <div>
+                                  <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Cor</p>
+                                  <div className="flex flex-wrap gap-1">
+                                    <button type="button" onClick={() => setSourceFilterColor('')}
+                                      className={`text-[8px] font-black px-2 py-1 rounded-full uppercase transition-all ${!sourceFilterColor ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                                      Todas
+                                    </button>
+                                    {uniqueColors.map(c => (
+                                      <button key={c} type="button" onClick={() => setSourceFilterColor(sourceFilterColor === c ? '' : c)}
+                                        className={`text-[8px] font-black px-2 py-1 rounded-full uppercase transition-all ${sourceFilterColor === c ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-white border border-slate-200 text-slate-500'}`}>
+                                        {c}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* Order cards */}
                     <div className="flex flex-col gap-2">
-                      {sourceItems.map((si: any, idx: number) => {
+                      {sourceItems.filter((si: any) => {
+                        if (!sourceFilterModel && !sourceFilterColor) return true;
+                        const ord = productionOrders.find(o => o.id === si.orderId);
+                        const ordItem: any = si.itemIdx !== undefined ? ord?.items[si.itemIdx] : ord?.items.find((i: any) => i.productId === si.productId);
+                        const prod = products.find(p => p.id === (si.productId || ordItem?.productId));
+                        const vari = prod?.variations.find(v => v.id === (si.variationId || ordItem?.variationId));
+                        const pName = prod?.name || ordItem?.productName || '';
+                        const cName = vari?.colorName || ordItem?.variationName || '';
+                        if (sourceFilterModel && pName !== sourceFilterModel) return false;
+                        if (sourceFilterColor && cName !== sourceFilterColor) return false;
+                        return true;
+                      }).map((si: any) => {
+                        const idx = sourceItems.indexOf(si);
                         const order = productionOrders.find(o => o.id === si.orderId);
+                        const orderItem: any = si.itemIdx !== undefined
+                          ? order?.items[si.itemIdx]
+                          : order?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+                        // Usa productId do si ou do orderItem como fallback
+                        const resolvedProductId = si.productId || orderItem?.productId;
+                        const resolvedVariationId = si.variationId || orderItem?.variationId;
+                        const product = products.find(p => p.id === resolvedProductId);
+                        const variation = product?.variations.find(v => v.id === resolvedVariationId);
+                        const productName = product?.name || orderItem?.productName || '—';
+                        const colorName = variation?.colorName || orderItem?.variationName || '';
                         const key = `${si.orderId}-${idx}`;
                         const isChecked = selectedSourceItemKeys.has(key);
                         const orderOS = getOrderOS(si.orderId);
                         const hasOS = !!orderOS;
+                        const completedOS = completedOSForOrder(si.orderId);
+                        const hasCompletedOS = !!completedOS;
+                        const isExpanded = expandedSourceItems.has(key);
+
+                        const sizeEntries = orderItem
+                          ? Object.entries(orderItem.sizes as Record<string, { toProduction: number }>)
+                              .filter(([, s]) => s.toProduction > 0)
+                              .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
+                          : [];
+
                         return (
-                          <div key={idx} className={`p-4 rounded-2xl border flex items-center gap-3 transition-all ${
+                          <div key={idx} className={`rounded-2xl border overflow-hidden transition-all ${
                             hasOS
-                              ? (isDarkMode ? 'bg-emerald-950/30 border-emerald-700/50' : 'bg-emerald-50 border-emerald-200')
-                              : isChecked
-                                ? (isDarkMode ? 'bg-indigo-950/30 border-indigo-700' : 'bg-indigo-50 border-indigo-200')
-                                : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm')
+                              ? (isDarkMode ? 'bg-amber-950/20 border-amber-700/40' : 'bg-amber-50 border-amber-200')
+                              : hasCompletedOS
+                                ? (isDarkMode ? 'bg-emerald-950/20 border-emerald-700/40' : 'bg-emerald-50/60 border-emerald-200')
+                                : isChecked
+                                  ? (isDarkMode ? 'bg-indigo-950/30 border-indigo-700' : 'bg-indigo-50 border-indigo-200')
+                                  : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm')
                           }`}>
-                            {hasOS ? (
-                              <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
-                                <div className="w-2 h-2 rounded-full bg-white" />
-                              </div>
-                            ) : (
-                              <input
-                                type="checkbox"
-                                title="Selecionar pedido"
-                                checked={isChecked}
-                                onChange={() => {
-                                  const next = new Set(selectedSourceItemKeys);
-                                  if (isChecked) next.delete(key); else next.add(key);
-                                  setSelectedSourceItemKeys(next);
-                                }}
-                                className="w-4 h-4 accent-indigo-600 cursor-pointer shrink-0"
-                              />
-                            )}
-                            <div className="min-w-0 flex-1">
-                              <p className="text-[11px] font-black uppercase truncate text-slate-800 dark:text-slate-200 leading-none mb-1">
-                                {order?.customerName || selectedLot.customerName || '---'}
-                              </p>
-                              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Pedido {order?.saleOrderNumber || selectedLot.saleOrderNumber}</p>
-                              {hasOS && (
-                                <p className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest mt-0.5">
-                                  {orderOS!.osNumber} • {orderOS!.providerName}
-                                </p>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-black text-indigo-600 dark:text-indigo-400">{si.qty} P</span>
+                            {/* ── Cabeçalho (sempre visível) ── */}
+                            <div className="p-3 flex items-center gap-3">
                               {hasOS ? (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleEditOS(orderOS!)}
-                                    className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-slate-400 hover:text-indigo-600 transition-all"
-                                    title="Editar OS"
-                                  >
-                                    <Edit2 size={13} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteOS(orderOS!)}
-                                    className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-300 hover:text-rose-500 transition-all"
-                                    title="Excluir OS"
-                                  >
-                                    <Trash2 size={13} />
-                                  </button>
-                                </>
+                                <div className="w-4 h-4 rounded-full bg-amber-400 flex items-center justify-center shrink-0" title="OS pendente">
+                                  <div className="w-2 h-2 rounded-full bg-white" />
+                                </div>
+                              ) : hasCompletedOS ? (
+                                <input
+                                  type="checkbox"
+                                  title="Selecionar para mover de setor"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    const next = new Set(selectedSourceItemKeys);
+                                    if (isChecked) next.delete(key); else next.add(key);
+                                    setSelectedSourceItemKeys(next);
+                                  }}
+                                  className="w-4 h-4 accent-emerald-600 cursor-pointer shrink-0"
+                                />
                               ) : (
-                                selectedLot.currentSectorIndex === 0 && !selectedLot.finishedAt && (
+                                <input
+                                  type="checkbox"
+                                  title="Selecionar pedido"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    const next = new Set(selectedSourceItemKeys);
+                                    if (isChecked) next.delete(key); else next.add(key);
+                                    setSelectedSourceItemKeys(next);
+                                  }}
+                                  className="w-4 h-4 accent-indigo-600 cursor-pointer shrink-0"
+                                />
+                              )}
+                              <div className="min-w-0 flex-1">
+                                {/* Linha 1: Nome */}
+                                <p className="text-[11px] font-black uppercase truncate text-slate-800 dark:text-slate-200 leading-none">
+                                  {productName}
+                                </p>
+                                {/* Linha 2: Cor + Pedido */}
+                                <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                  {colorName && (
+                                    <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wide">{colorName}</span>
+                                  )}
+                                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Ped. {order?.saleOrderNumber || selectedLot.saleOrderNumber}</span>
+                                  {hasOS && (
+                                    <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">· {orderOS!.osNumber}</span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex flex-col items-end gap-0.5 shrink-0">
+                                <span className="text-[8px] font-black px-2 py-0.5 rounded-full uppercase bg-violet-600 text-white tracking-widest shadow-sm shadow-violet-500/30">
+                                  MAPA{selectedLot.orderNumber}
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">{si.qty}P</span>
                                   <button
                                     type="button"
-                                    onClick={() => handleRemoveItemFromLot(selectedLot, si.orderId)}
-                                    className="p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-300 hover:text-rose-500 transition-all"
-                                    title="Retirar do Mapa"
+                                    title={isExpanded ? 'Recolher' : 'Expandir grade'}
+                                    aria-label={isExpanded ? 'Recolher pedido' : 'Expandir pedido'}
+                                    onClick={() => {
+                                      const next = new Set(expandedSourceItems);
+                                      isExpanded ? next.delete(key) : next.add(key);
+                                      setExpandedSourceItems(next);
+                                    }}
+                                    className={`p-1 rounded-lg transition-all ${isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-300 hover:text-slate-600'}`}
                                   >
-                                    <MinusCircle size={16} />
+                                    <ChevronDown size={13} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
                                   </button>
-                                )
-                              )}
+                                </div>
+                                {hasOS ? (
+                                  <>
+                                    <button type="button" onClick={() => handleEditOS(orderOS!)} className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-slate-400 hover:text-indigo-600 transition-all" title="Editar OS"><Edit2 size={13} /></button>
+                                    <button type="button" onClick={() => handleDeleteOS(orderOS!)} className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-300 hover:text-rose-500 transition-all" title="Excluir OS"><Trash2 size={13} /></button>
+                                  </>
+                                ) : (
+                                  selectedLot.currentSectorIndex === 0 && !selectedLot.finishedAt && (
+                                    <button type="button" onClick={() => handleRemoveItemFromLot(selectedLot, si.orderId)} className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-300 hover:text-rose-500 transition-all" title="Retirar do Mapa"><MinusCircle size={14} /></button>
+                                  )
+                                )}
+                              </div>
                             </div>
+
+                            {/* ── Expanded: grade + info completa ── */}
+                            {isExpanded && (
+                              <div className={`px-3 pb-3 pt-1 border-t flex flex-col gap-3 ${isDarkMode ? 'border-slate-800 bg-slate-950/50' : 'border-slate-100 bg-slate-50/60'}`}>
+                                {sizeEntries.length > 0 && (
+                                  <div>
+                                    <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Grade de Produção</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {sizeEntries.map(([size, s]) => (
+                                        <div key={size} className={`px-2.5 py-1.5 rounded-xl border-2 text-center ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-100'}`}>
+                                          <p className="text-[8px] font-bold text-slate-400 leading-none">{size}</p>
+                                          <p className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 leading-none mt-0.5">{s.toProduction}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                  {order?.customerName && (
+                                    <div>
+                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Cliente</p>
+                                      <p className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase">{order.customerName}</p>
+                                    </div>
+                                  )}
+                                  {order?.deliveryDate && (
+                                    <div>
+                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Entrega</p>
+                                      <p className="text-[10px] font-black text-slate-700 dark:text-slate-300">{new Date(order.deliveryDate).toLocaleDateString('pt-BR')}</p>
+                                    </div>
+                                  )}
+                                  <div>
+                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Total</p>
+                                    <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">{si.qty} pares</p>
+                                  </div>
+                                  {hasOS && (
+                                    <div>
+                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">OS</p>
+                                      <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-400">{orderOS!.osNumber} · {orderOS!.providerName}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -3052,7 +4425,7 @@ export default function PCPView({
                             <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">{selectedQty} pares</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                        <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
                           <button
                             type="button"
                             onClick={() => {
@@ -3078,6 +4451,38 @@ export default function PCPView({
                         </div>
                       </div>
                     )}
+
+                    {/* Botão Mover para Setor — apenas pedidos com OS concluída */}
+                    {selectedMoveQty > 0 && availableSectors.length > 0 && (
+                      <div className={`p-4 rounded-2xl border-2 flex flex-col gap-3 ${isDarkMode ? 'bg-emerald-950/20 border-emerald-700/50' : 'bg-emerald-50 border-emerald-200'}`}>
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+                            <ChevronRight size={14} strokeWidth={3} />
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-black text-emerald-700 dark:text-emerald-300 uppercase">
+                              {selectedMoveableItems.length} pedido(s) com OS concluída — {selectedMoveQty} pares
+                            </p>
+                            <p className="text-[8px] font-bold text-emerald-500 uppercase tracking-widest">Prontos para avançar de setor</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMoveSectorModal({
+                              lotId: selectedLot.id,
+                              orderIds: selectedMoveableItems.map((si: any) => si.orderId),
+                              qty: selectedMoveQty,
+                              fromSectorId,
+                            });
+                            setMoveSectorTarget(availableSectors[0]?.id || '');
+                          }}
+                          className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+                        >
+                          <ChevronRight size={13} strokeWidth={3} /> Mover para Próximo Setor
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -3100,81 +4505,218 @@ export default function PCPView({
                           <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Ordens de Serviço Ativas</h4>
                           <span className="text-[10px] font-black text-indigo-500 uppercase">{activeOSList.length} {activeOSList.length === 1 ? 'OS' : 'OS'}</span>
                         </div>
-                        {activeOSList.map((os) => (
-                          <div key={os.id} className="p-6 rounded-[2rem] bg-indigo-50/50 dark:bg-indigo-950/20 border-2 border-indigo-500/20 flex flex-col gap-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25 shrink-0">
-                                <Hammer size={18} />
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <h5 className="text-xs font-black text-indigo-950 dark:text-indigo-200 leading-none mb-1">
-                                  {os.osNumber}
-                                </h5>
-                                <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest leading-none truncate">
-                                  {os.type === 'INTERNAL' ? 'Interna' : 'Terceirizada'} • {os.providerName}
-                                </p>
-                              </div>
-                            </div>
+                        {activeOSList.map((os) => {
+                          const osExpanded = expandedOSIds.has(os.id);
+                          // Parse size grid: "38x22-39x44-40x66" → [{sz,qty}]
+                          const sizeEntries = os.sizeGrid
+                            ? os.sizeGrid.split('-').map(tok => {
+                                const [sz, q] = tok.split('x');
+                                return { sz: sz || tok, qty: q ? parseInt(q) : null };
+                              }).filter(e => e.sz)
+                            : [];
+                          // Source orders for this OS
+                          const osSourceOrders = (os.sourceOrderIds || [])
+                            .map(oid => productionOrders.find(o => o.id === oid))
+                            .filter(Boolean) as any[];
+                          // Lots covered
+                          const osLots = (os.lotIds || [os.lotId])
+                            .map(lid => lots.find(l => l.id === lid))
+                            .filter(Boolean) as any[];
 
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => {
+                          return (
+                          <div key={os.id} className="rounded-[2rem] bg-indigo-50/50 dark:bg-indigo-950/20 border-2 border-indigo-500/20 overflow-hidden flex flex-col">
+                            <div className="p-6 flex flex-col gap-4">
+                              {/* Header */}
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25 shrink-0">
+                                  <Hammer size={18} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <h5 className="text-xs font-black text-indigo-950 dark:text-indigo-200 leading-none mb-1">{os.osNumber}</h5>
+                                  <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest leading-none truncate">
+                                    {os.type === 'INTERNAL' ? 'Interna' : 'Terceirizada'} • {os.providerName}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Actions */}
+                              <div className="flex items-center gap-2">
+                                <button type="button" onClick={() => {
                                   const nextSectorId = selectedLot?.route && selectedLot.route[(selectedLot.currentSectorIndex ?? 0) + 1];
                                   const nextSec = (sectors || []).find(s => s.id === nextSectorId);
                                   setPrintOSData({ os, nextSectorName: nextSec?.name || 'CONCLUÍDO' });
                                   setIsPrintOSModalOpen(true);
+                                }} className="flex-1 text-[11px] font-black uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 py-2.5 rounded-xl transition-all text-center">Imprimir</button>
+                                <button type="button" onClick={() => handleEditOS(os)} className="flex-1 text-[11px] font-black uppercase text-indigo-600 bg-indigo-50 dark:bg-indigo-950/20 hover:bg-indigo-100 py-2.5 rounded-xl transition-all text-center">Editar</button>
+                                <button type="button" onClick={() => handleDeleteOS(os)} className="flex-1 text-[11px] font-black uppercase text-rose-500 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 py-2.5 rounded-xl transition-all text-center">Excluir</button>
+                              </div>
+
+                              {/* Stats */}
+                              <div className="grid grid-cols-3 gap-3 bg-white dark:bg-slate-900/50 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-950 shadow-sm">
+                                <div className="flex flex-col">
+                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Pares</span>
+                                  <span className="text-xs font-black text-slate-800 dark:text-slate-200">{os.quantity} prs</span>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Vlr / Par</span>
+                                  <span className="text-xs font-black text-slate-800 dark:text-slate-200">R$ {os.valuePerPair.toFixed(2)}</span>
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Total OS</span>
+                                  <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">R$ {os.totalValue.toFixed(2)}</span>
+                                </div>
+                              </div>
+
+                              {os.notes && (
+                                <div className="p-3 bg-indigo-50/30 dark:bg-indigo-950/10 rounded-xl border border-indigo-100/50 dark:border-indigo-950/50 text-[10px] font-medium italic text-indigo-900/80 dark:text-indigo-300">
+                                  Obs: {os.notes}
+                                </div>
+                              )}
+
+                              {/* Ver Itens toggle */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = new Set(expandedOSIds);
+                                  osExpanded ? next.delete(os.id) : next.add(os.id);
+                                  setExpandedOSIds(next);
                                 }}
-                                className="flex-1 text-[11px] font-black uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 py-2.5 rounded-xl transition-all text-center"
+                                className={`w-full py-3 rounded-2xl border-2 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${
+                                  osExpanded
+                                    ? (isDarkMode ? 'border-violet-700/50 bg-violet-900/20 text-violet-400' : 'border-violet-200 bg-violet-50 text-violet-600')
+                                    : (isDarkMode ? 'border-slate-700 bg-slate-800/50 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500')
+                                }`}
                               >
-                                Imprimir
+                                <List size={13} />
+                                {osExpanded ? 'Ocultar Itens' : 'Ver Itens da O.S'}
+                                <ChevronDown size={13} className={`transition-transform duration-200 ${osExpanded ? 'rotate-180' : ''}`} />
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => handleEditOS(os)}
-                                className="flex-1 text-[11px] font-black uppercase text-indigo-600 bg-indigo-50 dark:bg-indigo-950/20 hover:bg-indigo-100 py-2.5 rounded-xl transition-all text-center"
-                              >
-                                Editar
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteOS(os)}
-                                className="flex-1 text-[11px] font-black uppercase text-rose-500 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 py-2.5 rounded-xl transition-all text-center"
-                              >
-                                Excluir
+
+                              <button type="button" onClick={() => handleCompleteOS(os)}
+                                className="w-full py-5 rounded-[2rem] bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-600/25 flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-95">
+                                <CheckSquare size={18} /> Concluir OS & Baixar Setor
                               </button>
                             </div>
 
-                            <div className="grid grid-cols-3 gap-3 bg-white dark:bg-slate-900/50 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-950 shadow-sm">
-                              <div className="flex flex-col">
-                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Pares</span>
-                                <span className="text-xs font-black text-slate-800 dark:text-slate-200">{os.quantity} prs</span>
-                              </div>
-                              <div className="flex flex-col">
-                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Vlr / Par</span>
-                                <span className="text-xs font-black text-slate-800 dark:text-slate-200">R$ {os.valuePerPair.toFixed(2)}</span>
-                              </div>
-                              <div className="flex flex-col">
-                                <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Total OS</span>
-                                <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">R$ {os.totalValue.toFixed(2)}</span>
-                              </div>
-                            </div>
+                            {/* ── Painel expandido: fichas + grade ── */}
+                            {osExpanded && (
+                              <div className={`px-4 pb-5 pt-3 border-t flex flex-col gap-3 ${isDarkMode ? 'border-indigo-900/50 bg-indigo-950/30' : 'border-indigo-100 bg-white/60'}`}>
+                                {/* Mapas cobertos */}
+                                {osLots.length > 0 && (
+                                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                                    <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Mapa:</span>
+                                    {osLots.map((l: any) => (
+                                      <span key={l.id} className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>{l.orderNumber}</span>
+                                    ))}
+                                  </div>
+                                )}
 
-                            {os.notes && (
-                              <div className="p-3 bg-indigo-50/30 dark:bg-indigo-950/10 rounded-xl border border-indigo-100/50 dark:border-indigo-950/50 text-[10px] font-medium italic text-indigo-900/80 dark:text-indigo-300">
-                                Obs: {os.notes}
+                                {/* Fichas selecionadas — uma linha por produto+variação */}
+                                {(() => {
+                                  const itemMap: Record<string, { productId: string; variationId: string; sizeQtys: Record<string, number>; totalQty: number; orderNums: string[] }> = {};
+
+                                  // Usa metadata.sourceItems do lote para iterar exatamente os itens incluídos (sem duplicatas)
+                                  const lotSI: any[] = (selectedLot as any).metadata?.sourceItems || [];
+                                  // Filtra pelos orderIds desta OS (set para lookup rápido)
+                                  const osOrderIdSet = new Set(os.sourceOrderIds || []);
+                                  const relevantSI = osOrderIdSet.size > 0
+                                    ? lotSI.filter((si: any) => osOrderIdSet.has(si.orderId))
+                                    : lotSI;
+
+                                  if (relevantSI.length > 0) {
+                                    relevantSI.forEach((si: any) => {
+                                      const ord = productionOrders.find(o => o.id === si.orderId);
+                                      if (!ord) return;
+                                      const ordItem: any = si.itemIdx !== undefined
+                                        ? ord.items[si.itemIdx]
+                                        : ord.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+                                      if (!ordItem) return;
+                                      const k = `${si.productId}-${si.variationId}`;
+                                      if (!itemMap[k]) itemMap[k] = { productId: si.productId, variationId: si.variationId, sizeQtys: {}, totalQty: 0, orderNums: [] };
+                                      Object.entries(ordItem.sizes || {}).forEach(([sz, s]: any) => {
+                                        const qty = Number(s.toProduction) || 0;
+                                        if (qty > 0) {
+                                          itemMap[k].sizeQtys[sz] = (itemMap[k].sizeQtys[sz] || 0) + qty;
+                                          itemMap[k].totalQty += qty;
+                                        }
+                                      });
+                                      if (!itemMap[k].orderNums.includes(ord.saleOrderNumber)) itemMap[k].orderNums.push(ord.saleOrderNumber);
+                                    });
+                                  } else {
+                                    // Fallback: sizeGrid do próprio OS
+                                    const k = `${os.productId}-${os.variationId}`;
+                                    const sizes: Record<string, number> = {};
+                                    sizeEntries.forEach(({ sz, qty }) => { if (qty) sizes[sz] = qty; });
+                                    itemMap[k] = { productId: os.productId, variationId: os.variationId, sizeQtys: sizes, totalQty: os.quantity, orderNums: [] };
+                                  }
+
+                                  const entries = Object.entries(itemMap);
+                                  if (entries.length === 0) return null;
+                                  return (
+                                    <div className="flex flex-col gap-2">
+                                      <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 px-1">Fichas Selecionadas · {entries.length} item(s)</p>
+                                      {entries.map(([k, item]) => {
+                                        const prod = products.find(p => p.id === item.productId);
+                                        const vari = prod?.variations.find(v => v.id === item.variationId);
+                                        const colorName = vari?.colorName || '';
+                                        const isItemExp = expandedOSItemKeys.has(`${os.id}-${k}`);
+                                        const szEntries = Object.entries(item.sizeQtys).sort(([a], [b]) => parseFloat(a) - parseFloat(b));
+                                        return (
+                                          <div key={k} className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+                                            {/* Minimizado: referência + cor + total */}
+                                            <button
+                                              type="button"
+                                              title="Expandir grade"
+                                              aria-label="Expandir grade de tamanhos"
+                                              onClick={() => {
+                                                const next = new Set(expandedOSItemKeys);
+                                                isItemExp ? next.delete(`${os.id}-${k}`) : next.add(`${os.id}-${k}`);
+                                                setExpandedOSItemKeys(next);
+                                              }}
+                                              className="w-full flex items-center gap-3 px-3 py-2.5 text-left"
+                                            >
+                                              <div className="w-8 h-8 rounded-xl overflow-hidden shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                                                {(vari?.photoUrl || prod?.photoUrl)
+                                                  ? <img src={vari?.photoUrl || prod?.photoUrl} alt="" className="w-full h-full object-cover"/>
+                                                  : <Package size={14} className="text-slate-400"/>}
+                                              </div>
+                                              <div className="flex-1 min-w-0">
+                                                <p className="text-[10px] font-black uppercase text-slate-800 dark:text-white leading-none truncate">
+                                                  {prod?.reference && <span className="text-indigo-500 mr-1">{prod.reference}</span>}
+                                                  {prod?.name || os.productName}
+                                                </p>
+                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide mt-0.5">
+                                                  {colorName || '—'} · {item.totalQty}p
+                                                  {item.orderNums.length > 0 && <span className="ml-1 text-slate-300">· Ped. {item.orderNums.join(', ')}</span>}
+                                                </p>
+                                              </div>
+                                              <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform duration-200 ${isItemExp ? 'rotate-180' : ''}`} />
+                                            </button>
+                                            {/* Expandido: grade de tamanhos */}
+                                            {isItemExp && szEntries.length > 0 && (
+                                              <div className={`px-3 pb-3 pt-1 border-t ${isDarkMode ? 'border-slate-800 bg-slate-950/50' : 'border-slate-100 bg-slate-50/60'}`}>
+                                                <p className="text-[7px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Grade de Tamanhos</p>
+                                                <div className="flex flex-wrap gap-1.5">
+                                                  {szEntries.map(([sz, qty]) => (
+                                                    <div key={sz} className={`px-2.5 py-1.5 rounded-xl border-2 text-center min-w-[38px] ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                                      <p className="text-[7px] font-bold text-slate-400 leading-none">{sz}</p>
+                                                      <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 leading-none mt-0.5">{qty}p</p>
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             )}
-
-                            <button
-                              type="button"
-                              onClick={() => handleCompleteOS(os)}
-                              className="w-full py-5 rounded-[2rem] bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-600/25 flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-95"
-                            >
-                              <CheckSquare size={18} /> Concluir OS & Baixar Setor
-                            </button>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
 
@@ -3263,10 +4805,10 @@ export default function PCPView({
               <div className="flex flex-col gap-4">
                 <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">Histórico de Movimentação</h4>
                 <div className="flex flex-col gap-3">
-                  {selectedLot.history.sort((a, b) => b.timestamp - a.timestamp).map((h, i) => {
+                  {(selectedLot.history || []).slice().sort((a, b) => b.timestamp - a.timestamp).map((h, i) => {
                     const sector = sectors.find(s => s.id === h.sectorId);
                     const tag = flowTags.find(t => t.id === h.statusId);
-                    const canRevert = i === 0 && selectedLot.history.length > 0;
+                    const canRevert = i === 0 && (selectedLot.history?.length || 0) > 0;
                     return (
                       <div key={i} className={`p-4 rounded-2xl border flex items-center gap-4 ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
                         <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${i === 0 ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-400'}`}>
@@ -3327,6 +4869,99 @@ export default function PCPView({
         onScan={handleScanLotResult}
         title="Escanear MAPA"
       />
+      {/* ── Popup: Comparação Em Trânsito vs Necessidade ─────────────────── */}
+      {inTransitPopupItem && (
+        <div className="fixed inset-0 z-[180] flex items-end sm:items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setInTransitPopupItem(null)} />
+          <div className={`relative w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+            {/* Header */}
+            <div className={`px-5 py-4 border-b ${isDarkMode ? 'border-slate-800 bg-amber-950/20' : 'border-amber-100 bg-amber-50'}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShoppingCart size={16} className="text-amber-600 dark:text-amber-400" />
+                  <h3 className="text-sm font-black uppercase tracking-wider text-amber-700 dark:text-amber-400">Compras em Trânsito</h3>
+                </div>
+                <button type="button" title="Fechar" aria-label="Fechar popup" onClick={() => setInTransitPopupItem(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600 transition-all">
+                  <X size={16} />
+                </button>
+              </div>
+              <p className="text-[9px] font-bold uppercase tracking-widest text-amber-600/70 dark:text-amber-500 mt-1">
+                {inTransitPopupItem.item.name} · Verifique antes de solicitar novo pedido
+              </p>
+            </div>
+
+            {/* Table: Necessidade vs Em Trânsito vs Saldo */}
+            <div className="p-4 flex flex-col gap-3">
+              <div className={`rounded-xl overflow-hidden border ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                <div className={`grid grid-cols-4 px-3 py-2 text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                  <span>Tamanho</span>
+                  <span className="text-center text-rose-500">Falta</span>
+                  <span className="text-center text-amber-500">Trânsito</span>
+                  <span className="text-right text-emerald-500">Saldo</span>
+                </div>
+                {(() => {
+                  const { inTransitQtys, realGradeStock, item: need } = inTransitPopupItem;
+                  const allSizes = new Set([
+                    ...Object.keys(need.sizeShortages || {}),
+                    ...Object.keys(inTransitQtys),
+                  ]);
+                  const sorted = Array.from(allSizes).sort((a, b) => parseFloat(a) - parseFloat(b));
+                  let totalFalta = 0, totalTransito = 0, totalSaldo = 0;
+                  const rows = sorted.map(size => {
+                    const req = (need.sizeShortages?.[size]?.required || 0);
+                    const stock = realGradeStock[size] || 0;
+                    const falta = Math.max(0, req - stock);
+                    const transito = inTransitQtys[size] || 0;
+                    const saldo = Math.max(0, falta - transito);
+                    totalFalta += falta; totalTransito += transito; totalSaldo += saldo;
+                    return { size, falta, transito, saldo };
+                  });
+                  return (
+                    <>
+                      {rows.map(r => (
+                        <div key={r.size} className={`grid grid-cols-4 px-3 py-2.5 border-t text-sm font-black ${isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-100 bg-white'}`}>
+                          <span className={isDarkMode ? 'text-white' : 'text-slate-700'}>{r.size}</span>
+                          <span className={`text-center ${r.falta > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{r.falta > 0 ? `-${r.falta}` : '✓'}</span>
+                          <span className={`text-center ${r.transito > 0 ? 'text-amber-500' : 'text-slate-400'}`}>{r.transito > 0 ? `+${r.transito}` : '—'}</span>
+                          <span className={`text-right ${r.saldo > 0 ? 'text-rose-600 font-black' : 'text-emerald-500'}`}>{r.saldo > 0 ? `-${r.saldo}` : '✓'}</span>
+                        </div>
+                      ))}
+                      <div className={`grid grid-cols-4 px-3 py-2.5 border-t-2 text-sm font-black ${isDarkMode ? 'border-slate-600 bg-slate-800' : 'border-slate-300 bg-slate-50'}`}>
+                        <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Total</span>
+                        <span className={`text-center ${totalFalta > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{totalFalta > 0 ? `-${totalFalta}` : '✓'}</span>
+                        <span className={`text-center ${totalTransito > 0 ? 'text-amber-500' : 'text-slate-400'}`}>{totalTransito > 0 ? `+${totalTransito}` : '—'}</span>
+                        <span className={`text-right text-base ${totalSaldo > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>{totalSaldo > 0 ? `-${totalSaldo}` : '✓'}</span>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Summary message */}
+              {(() => {
+                const { totalFaltaSole, totalInTransit } = inTransitPopupItem;
+                const saldoReal = Math.max(0, totalFaltaSole - totalInTransit);
+                return saldoReal > 0 ? (
+                  <div className={`p-3 rounded-xl text-xs font-bold ${isDarkMode ? 'bg-rose-950/30 text-rose-400 border border-rose-800' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                    Ainda faltam <span className="font-black">{saldoReal} par(es)</span> após o recebimento das compras em trânsito.
+                  </div>
+                ) : (
+                  <div className={`p-3 rounded-xl text-xs font-bold ${isDarkMode ? 'bg-emerald-950/30 text-emerald-400 border border-emerald-800' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                    As compras em trânsito cobrem toda a necessidade. Aguarde o recebimento antes de fazer novo pedido.
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="px-4 pb-4">
+              <button type="button" onClick={() => setInTransitPopupItem(null)} className="w-full py-3 rounded-2xl font-black text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all">
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal para Pedido de Solas com Grade */}
       <Modal
         isOpen={isSoleOrderModalOpen}
@@ -3596,18 +5231,58 @@ export default function PCPView({
           {/* OS Header Info */}
           {selectedLot && (
             <div className={`p-4 rounded-2xl flex flex-col gap-2 ${isDarkMode ? 'bg-slate-900' : 'bg-slate-50'}`}>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Mapa de Produção</span>
-                <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">
-                  Qtd: {selectedLot.quantity} Pares
-                </span>
-              </div>
-              <h4 className="text-sm font-black text-slate-800 dark:text-slate-200">
-                {selectedLot.customerName || 'Lote sem cliente'} - OS: {selectedLot.saleOrderNumber || '---'}
-              </h4>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                Referência: {products.find(p => p.id === selectedLot.productId)?.reference || '---'} • Setor Atual: {sectors.find(s => s.id === (selectedLot.route && selectedLot.route[selectedLot.currentSectorIndex]))?.name || '---'}
-              </p>
+              {(() => {
+                const hasSelectedOrders = pendingOsSourceOrderIds.length > 0;
+                const isAdvancedOS = !!pendingOsSectorOverride && hasSelectedOrders;
+                const effectiveQty = pendingOsQuantityOverride ?? selectedLot.quantity;
+                const effectiveSector = pendingOsSectorOverride
+                  ? sectors.find(s => s.id === pendingOsSectorOverride)?.name
+                  : sectors.find(s => s.id === (selectedLot.route && selectedLot.route[selectedLot.currentSectorIndex]))?.name;
+
+                // Produtos e cores dos pedidos selecionados
+                const selectedOrderProducts = hasSelectedOrders ? Array.from(new Set(
+                  pendingOsSourceOrderIds.map(oid => {
+                    const si = ((selectedLot as any).metadata?.sourceItems || []).find((s: any) => s.orderId === oid);
+                    const prod = si ? products.find(p => p.id === si.productId) : null;
+                    const vari = prod?.variations.find((v: any) => v.id === si?.variationId);
+                    return prod ? `${prod.name}${vari?.colorName ? ' · ' + vari.colorName : ''}` : null;
+                  }).filter(Boolean)
+                )) : [];
+
+                // Quantidade total dos pedidos selecionados
+                const selectedOrderQty = hasSelectedOrders
+                  ? ((selectedLot as any).metadata?.sourceItems || [])
+                      .filter((si: any) => pendingOsSourceOrderIds.includes(si.orderId))
+                      .reduce((acc: number, si: any) => acc + (si.qty || 0), 0)
+                  : effectiveQty;
+
+                return (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        {isAdvancedOS ? 'Pedidos Adiantados — Mapa' : 'Mapa de Produção'}
+                      </span>
+                      <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">
+                        Qtd: {hasSelectedOrders ? selectedOrderQty : effectiveQty} Pares
+                      </span>
+                    </div>
+                    <h4 className="text-sm font-black text-slate-800 dark:text-slate-200">
+                      {selectedOrderProducts.length > 0
+                        ? selectedOrderProducts.slice(0, 3).join(', ') + (selectedOrderProducts.length > 3 ? ` +${selectedOrderProducts.length - 3}` : '')
+                        : (selectedLot.customerName || 'Lote sem cliente')
+                      } — #{selectedLot.orderNumber}
+                    </h4>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                      {hasSelectedOrders ? `${pendingOsSourceOrderIds.length} pedido(s)` : `Ref: ${products.find(p => p.id === selectedLot.productId)?.reference || '---'}`} • Setor: {effectiveSector || '---'}
+                    </p>
+                    {isAdvancedOS && (
+                      <p className="text-[9px] font-bold text-amber-500 uppercase tracking-widest">
+                        Mapa atualmente em: {sectors.find(s => s.id === (selectedLot.route && selectedLot.route[selectedLot.currentSectorIndex]))?.name || '---'}
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
 
@@ -3729,7 +5404,15 @@ export default function PCPView({
             <div className="flex flex-col gap-2 justify-center">
               <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Valor Total Estimado</label>
               <div className={`px-5 py-4 rounded-xl border border-dashed text-sm font-black text-emerald-600 dark:text-emerald-400 ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-                R$ {((selectedLot?.quantity || 0) * osValuePerPair).toFixed(2)}
+                {(() => {
+                  const displayQty = pendingOsQuantityOverride ??
+                    (pendingOsSourceOrderIds.length > 0
+                      ? ((selectedLot as any).metadata?.sourceItems || [])
+                          .filter((si: any) => pendingOsSourceOrderIds.includes(si.orderId))
+                          .reduce((acc: number, si: any) => acc + (si.qty || 0), 0)
+                      : (selectedLot?.quantity ?? 0));
+                  return `R$ ${(displayQty * osValuePerPair).toFixed(2)}`;
+                })()}
               </div>
             </div>
 
@@ -4034,6 +5717,118 @@ export default function PCPView({
           </div>
         </div>,
         document.body
+      )}
+
+      {/* ── Modal: Mover Pedidos para Setor ── */}
+      {moveSectorModal && (
+        <div className="fixed inset-0 z-[400] flex items-end justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className={`w-full max-w-sm rounded-[2rem] p-6 flex flex-col gap-4 shadow-2xl animate-in slide-in-from-bottom-4 duration-300 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+            <div>
+              <h3 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Mover para Setor</h3>
+              <p className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 text-emerald-500`}>
+                {moveSectorModal.orderIds.length} pedido(s) · {moveSectorModal.qty} pares
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Selecione o Setor de Destino</p>
+              {(() => {
+                const lot = lots.find(l => l.id === moveSectorModal.lotId);
+                // Calcula próximo setor a partir do setor de origem (não do índice atual do lote)
+                const fromSec = moveSectorModal.fromSectorId;
+                const fromIdx = fromSec ? (lot?.route || []).indexOf(fromSec) : (lot?.currentSectorIndex ?? 0);
+                const effectiveFrom = fromIdx >= 0 ? fromIdx : (lot?.currentSectorIndex ?? 0);
+                // Apenas o próximo setor imediato (sem pular setores)
+                const nextSecId = (lot?.route || [])[effectiveFrom + 1];
+                const nextSec = nextSecId ? sectors.find(s => s.id === nextSecId) : null;
+                const availSectors = nextSec ? [nextSec] : [];
+                return availSectors.map((sec: any) => (
+                  <button
+                    key={sec.id}
+                    type="button"
+                    onClick={() => setMoveSectorTarget(sec.id)}
+                    className={`flex items-center gap-3 p-3.5 rounded-2xl border-2 text-left transition-all active:scale-95 ${
+                      moveSectorTarget === sec.id
+                        ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                        : isDarkMode ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
+                    }`}
+                  >
+                    <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: sec.color || '#6366f1' }} />
+                    <span className={`text-[11px] font-black uppercase ${moveSectorTarget === sec.id ? 'text-emerald-600 dark:text-emerald-400' : isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                      {sec.name}
+                    </span>
+                    {moveSectorTarget === sec.id && <CheckSquare size={14} className="text-emerald-500 ml-auto" />}
+                  </button>
+                ));
+              })()}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => { setMoveSectorModal(null); setMoveSectorTarget(''); }}
+                className={`flex-1 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={!moveSectorTarget}
+                onClick={() => handleMoveOrdersToSector(moveSectorModal.lotId, moveSectorModal.orderIds, moveSectorTarget)}
+                className="flex-1 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 disabled:opacity-40 active:scale-95 transition-all"
+              >
+                Confirmar →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── OS Completion Feedback Modal ── */}
+      {osFeedback && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-200">
+          <div className={`w-full max-w-xs rounded-[2.5rem] p-8 shadow-2xl flex flex-col items-center text-center gap-5 animate-in zoom-in-95 duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+            <div className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl animate-bounce ${
+              osFeedback.nextSector === 'FINALIZADO'
+                ? 'bg-violet-500 shadow-violet-500/30'
+                : 'bg-emerald-500 shadow-emerald-500/30'
+            }`}>
+              <CheckSquare size={38} className="text-white" strokeWidth={2.5} />
+            </div>
+
+            <div>
+              <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                Ordem de Serviço
+              </p>
+              <h2 className={`text-xl font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                OS Concluída!
+              </h2>
+              <p className={`text-sm font-black mt-1 ${osFeedback.nextSector === 'FINALIZADO' ? 'text-violet-500' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                {osFeedback.osNumber}
+              </p>
+            </div>
+
+            <div className={`w-full px-4 py-3 rounded-2xl flex flex-col gap-1 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+              <p className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                {osFeedback.nextSector === 'FINALIZADO' ? 'Status' : 'Próximo Setor'}
+              </p>
+              <p className={`text-sm font-black uppercase ${osFeedback.nextSector === 'FINALIZADO' ? 'text-violet-500' : isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                {osFeedback.nextSector}
+              </p>
+              {osFeedback.action && (
+                <p className="text-[9px] font-bold text-slate-400 mt-0.5">{osFeedback.action}</p>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setOsFeedback(null)}
+              className="w-full py-4 rounded-2xl bg-slate-900 dark:bg-indigo-600 text-white font-black uppercase tracking-[0.2em] text-[10px] shadow-lg active:scale-95 transition-all"
+            >
+              Continuar
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

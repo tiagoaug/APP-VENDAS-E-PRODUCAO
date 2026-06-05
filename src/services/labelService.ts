@@ -321,7 +321,7 @@ export const labelService = {
     // ── Header ──────────────────────────────────────────────────────────────
     if (header.visible !== false) {
       if (!thermal) {
-        doc.setFillColor(67, 56, 202);
+        doc.setFillColor(0, 0, 0);
         doc.rect(header.x, header.y, header.w, header.h, 'F');
         doc.setTextColor(255, 255, 255);
         applyFont(header, fitFont(header.h, header.w, 0.30, 14), false);
@@ -330,17 +330,17 @@ export const labelService = {
         doc.text(os.osNumber, header.x + header.w / 2, header.y + header.h * 0.85, { align: 'center' });
       } else {
         applyFont(header, fitFont(header.h * 0.55, header.w, 0.55, 18, 4), true);
-        doc.setTextColor(67, 56, 202);
+        doc.setTextColor(0, 0, 0);
         doc.text(os.osNumber, header.x + 1, header.y + header.h * 0.45, { align: 'left' });
         doc.setFont(header.fontFamily || 'helvetica', 'normal');
         doc.setFontSize((header.fontSize ?? fitFont(header.h * 0.35, header.w, 0.40, 12, 3)) * 0.8);
-        doc.setTextColor(80, 80, 80);
+        doc.setTextColor(0, 0, 0);
         const prodTrunc = doc.splitTextToSize(os.productName, header.w - 2);
         doc.text(prodTrunc[0] || os.productName, header.x + 1, header.y + header.h * 0.85);
       }
     }
 
-    doc.setTextColor(30, 30, 30);
+    doc.setTextColor(0, 0, 0);
 
     // ── Info grid ───────────────────────────────────────────────────────────
     if (info.visible !== false) {
@@ -356,11 +356,11 @@ export const labelService = {
         const drawRow = (lbl: string, val: string, x: number, yPos: number) => {
           doc.setFont(ff, 'normal');
           doc.setFontSize(labelFontSz);
-          doc.setTextColor(120, 120, 120);
+          doc.setTextColor(100, 100, 100);
           doc.text(lbl.toUpperCase(), x, yPos);
-          doc.setFont(ff, info.bold ? 'bold' : 'bold');
+          doc.setFont(ff, 'bold');
           doc.setFontSize(valueFontSz);
-          doc.setTextColor(30, 30, 30);
+          doc.setTextColor(0, 0, 0);
           const wrapped = doc.splitTextToSize(val, info.w / 2 - 2);
           doc.text(wrapped[0] || val, x, yPos + lineH * 0.45);
         };
@@ -375,31 +375,31 @@ export const labelService = {
         drawRow('Quantidade', `${os.quantity} pares`,                            col1, iy);
         drawRow('Vlr/par',    `R$ ${os.valuePerPair.toFixed(2)}`,                col2, iy);
       } else {
-        // Thermal info: compact, 2 lines
+        // Thermal info: compact, 2 lines — preto
         const lineH = info.h / 2;
         const lbl1Sz = fitFont(lineH * 0.40, info.w, 0.40, 10, 3);
         const val1Sz = fitFont(lineH * 0.55, info.w, 0.55, 12, 3);
 
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(lbl1Sz);
-        doc.setTextColor(100, 100, 100);
+        doc.setTextColor(0, 0, 0);
         const routeText = doc.splitTextToSize(`${os.sectorName} -> ${nextSectorName}`, info.w - 1);
         doc.text(routeText[0] || '', info.x + 1, info.y + lineH * 0.50);
 
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(val1Sz);
-        doc.setTextColor(21, 128, 61);
+        doc.setTextColor(0, 0, 0);
         doc.text(`R$ ${os.totalValue.toFixed(2)}  ${os.quantity}prs`, info.x + 1, info.y + lineH * 1.15);
       }
     }
 
     // ── Total box (document only) ────────────────────────────────────────────
     if (!thermal && total.visible !== false) {
-      doc.setFillColor(240, 253, 244);
-      doc.setDrawColor(134, 239, 172);
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(0, 0, 0);
       doc.roundedRect(total.x, total.y, total.w, total.h, 2, 2, 'FD');
       applyFont(total, fitFont(total.h, total.w * 0.35, 0.45, 10, 4), true);
-      doc.setTextColor(21, 128, 61);
+      doc.setTextColor(0, 0, 0);
       doc.text('TOTAL OS', total.x + 4, total.y + total.h * 0.65);
       doc.setFontSize((total.fontSize ?? fitFont(total.h, total.w * 0.35, 0.45, 10, 4)) * 1.4);
       doc.text(`R$ ${os.totalValue.toFixed(2)}`, total.x + total.w - 4, total.y + total.h * 0.75, { align: 'right' });
@@ -441,12 +441,12 @@ export const labelService = {
         doc.addImage(imgBase64, 'JPEG', photo.x, photo.y, photo.w, photo.h);
       } catch {
         // If photo fails to load, draw a placeholder rectangle
-        doc.setFillColor(254, 242, 242);
-        doc.setDrawColor(252, 165, 165);
+        doc.setFillColor(240, 240, 240);
+        doc.setDrawColor(0, 0, 0);
         doc.roundedRect(photo.x, photo.y, photo.w, photo.h, 1, 1, 'FD');
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(fitFont(photo.h, photo.w, 0.30, 8, 3));
-        doc.setTextColor(225, 29, 72);
+        doc.setTextColor(0, 0, 0);
         doc.text('FOTO', photo.x + photo.w / 2, photo.y + photo.h / 2, { align: 'center' });
       }
     }
@@ -465,22 +465,17 @@ export const labelService = {
       entries.forEach(({ sz, qty }, i) => {
         const cellX = grade.x + cellW * i;
         const cx    = cellX + cellW / 2;
-        // Amber pill background
-        doc.setFillColor(254, 243, 199); // amber-100
-        doc.setDrawColor(251, 191, 36);  // amber-400
-        doc.roundedRect(cellX + 0.3, grade.y + 0.3, cellW - 0.6, grade.h - 0.6, 0.8, 0.8, 'FD');
-        // Size number (top half)
-        doc.setFont(grade.fontFamily || 'helvetica', grade.bold !== false ? 'bold' : 'normal');
+        // Sem fundo, sem borda — texto puro em preto
+        doc.setFont(grade.fontFamily || 'helvetica', 'bold');
         doc.setFontSize(szFontSz);
-        doc.setTextColor(146, 64, 14);  // amber-800
+        doc.setTextColor(0, 0, 0);
         const szY = hasQty ? grade.y + grade.h * 0.48 : grade.y + grade.h * 0.72;
         doc.text(sz, cx, szY, { align: 'center' });
-        // Quantity (bottom half, only if present)
         if (qty !== null) {
-          doc.setFont('helvetica', 'bold');
+          doc.setFont('helvetica', 'normal');
           doc.setFontSize(qtyFontSz);
-          doc.setTextColor(180, 83, 9);   // amber-700
-          doc.text(`${qty}p`, cx, grade.y + grade.h * 0.88, { align: 'center' });
+          doc.setTextColor(0, 0, 0);
+          doc.text(`${qty}`, cx, grade.y + grade.h * 0.88, { align: 'center' });
         }
       });
     }
@@ -489,18 +484,18 @@ export const labelService = {
     if (!thermal && instruction.visible !== false) {
       const cy = instruction.y + instruction.h / 2;
       applyFont(instruction, fitFont(instruction.h, instruction.w, 0.35, 10, 4), true);
-      doc.setTextColor(67, 56, 202);
+      doc.setTextColor(0, 0, 0);
       doc.text('ESCANEIE PARA DAR BAIXA E AVANÇAR O LOTE', instruction.x + instruction.w / 2, cy - instruction.h * 0.15, { align: 'center' });
       doc.setFont(instruction.fontFamily || 'helvetica', 'normal');
       doc.setFontSize((instruction.fontSize ?? fitFont(instruction.h, instruction.w, 0.35, 10, 4)) * 0.8);
-      doc.setTextColor(120, 120, 120);
+      doc.setTextColor(80, 80, 80);
       doc.text(`Proximo setor: ${nextSectorName}`, instruction.x + instruction.w / 2, cy + instruction.h * 0.25, { align: 'center' });
     }
 
     // ── Footer ──────────────────────────────────────────────────────────────
     if (footer.visible !== false) {
       applyFont(footer, fitFont(footer.h, footer.w, 0.45, 7, 2), false);
-      doc.setTextColor(180, 180, 180);
+      doc.setTextColor(80, 80, 80);
       doc.text(`Emitida em: ${new Date(os.createdAt).toLocaleString('pt-BR')}`, footer.x + footer.w / 2, footer.y + footer.h / 2, { align: 'center' });
     }
 

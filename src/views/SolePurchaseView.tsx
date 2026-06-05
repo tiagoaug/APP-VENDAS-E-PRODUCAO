@@ -20,6 +20,20 @@ interface SolePurchaseViewProps {
 export default function SolePurchaseView(props: SolePurchaseViewProps) {
   const { productionConfigs, colors, people, accounts, onBack, onNavigateToStock, isDarkMode, initialParams } = props;
   const molds = useMemo(() => productionConfigs.filter(c => c.type === 'MOLD'), [productionConfigs]);
+
+  const DEFAULT_COLORS: ColorValue[] = [
+    { id: 'BRANCO', name: 'BRANCO', hex: '#FFFFFF' } as ColorValue,
+    { id: 'PRETO', name: 'PRETO', hex: '#000000' } as ColorValue,
+    { id: 'CARAMELO', name: 'CARAMELO', hex: '#C68642' } as ColorValue,
+    { id: 'MARROM', name: 'MARROM', hex: '#8B4513' } as ColorValue,
+    { id: 'VERMELHO', name: 'VERMELHO', hex: '#FF0000' } as ColorValue,
+    { id: 'AZUL', name: 'AZUL', hex: '#0000FF' } as ColorValue,
+    { id: 'CINZA', name: 'CINZA', hex: '#808080' } as ColorValue,
+    { id: 'NUDE', name: 'NUDE', hex: '#D4A987' } as ColorValue,
+    { id: 'OFF WHITE', name: 'OFF WHITE', hex: '#F5F0E8' } as ColorValue,
+    { id: 'BEGE', name: 'BEGE', hex: '#F5F5DC' } as ColorValue,
+  ];
+  const allColors: ColorValue[] = colors.length > 0 ? colors : DEFAULT_COLORS;
   
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('');
   const [items, setItems] = useState<SolePurchaseItem[]>([]);
@@ -50,10 +64,19 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
     const mold = molds.find(m => m.id === moldId);
     if (!mold) return;
     
-    const availableColors = colors.slice(0, 10).map(c => ({
+    const moldVars: any[] = mold.metadata?.colorVariations || [];
+    const fromVars = moldVars
+      .map((cv: any) => {
+        const g = allColors.find(c => c.id === cv?.colorId);
+        return { id: cv?.colorId || '', name: g?.name || cv?.colorName || cv?.subRef || '', hex: g?.hex || '#888' };
+      })
+      .filter(c => c.id && c.name);
+    const moldColorList = fromVars.length > 0 ? fromVars : allColors;
+
+    const availableColors = moldColorList.map(c => ({
       colorId: c.id,
       colorName: c.name,
-      colorHex: c.hex
+      colorHex: (c as any).hex || '#888'
     }));
 
     const usedColorIds = items.filter(i => i.moldId === moldId).map(i => i.colorId);
@@ -61,9 +84,9 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
 
     const defaultUnitCost = mold.metadata?.unitCost || 0;
 
-    const resolvedColor = existingColorId 
-      ? (colors.find(c => c.id === existingColorId || c.name.toLowerCase() === String(existingColorId).toLowerCase()) || colors[0])
-      : (nextAvailableColor ? colors.find(c => c.id === nextAvailableColor.colorId) : colors[0]);
+    const resolvedColor = existingColorId
+      ? (moldColorList.find(c => c.id === existingColorId || c.name.toLowerCase() === String(existingColorId).toLowerCase()) || moldColorList[0])
+      : (nextAvailableColor ? moldColorList.find(c => c.id === nextAvailableColor.colorId) : moldColorList[0]);
 
     // Pre-fill quantities if this matches the initial request (checking both ID and Name)
     const isRequestedMold = initialParams?.moldId && 
@@ -318,7 +341,7 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
                 onClick={() => {
                   const usedMoldColorCombos = items.map(i => `${i.moldId}-${i.colorId}`);
                   for (const mold of availableMolds) {
-                    const availableColors = colors.slice(0, 10);
+                    const availableColors = allColors.slice(0, 10);
                     for (const color of availableColors) {
                       const combo = `${mold.id}-${color.id}`;
                       if (!usedMoldColorCombos.includes(combo)) {
@@ -352,12 +375,21 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
                   const mold = molds.find(m => m.id === item.moldId);
                   const sizes = mold?.metadata?.sizes || [];
                   const totalPairs = Object.values(item.quantities || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+                  const moldVariations: any[] = mold?.metadata?.colorVariations || [];
+                  const fromVariations = moldVariations
+                    .map((cv: any) => {
+                      const g = allColors.find(c => c.id === cv?.colorId);
+                      return { id: cv?.colorId || '', name: g?.name || cv?.colorName || cv?.subRef || '', hex: g?.hex || '#888' };
+                    })
+                    .filter(c => c.id && c.name);
+                  const moldColors = fromVariations.length > 0 ? fromVariations : allColors;
 
                   return (
                     <div key={index} className={`p-5 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                       <div className="flex justify-between items-start mb-4">
                         <div className="flex-1">
                           <select
+                            title="Selecionar Solado"
                             value={item.moldId}
                             onChange={(e) => updateItem(index, { moldId: e.target.value, moldName: molds.find(m => m.id === e.target.value)?.name || '' })}
                             className={`w-full appearance-none border-2 rounded-xl px-4 py-2 text-xs font-black transition-all outline-none mb-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
@@ -366,18 +398,20 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
                               <option key={m.id} value={m.id}>{m.name}</option>
                             ))}
                           </select>
-                          
+
                           <div className="flex items-center gap-2">
                             <Palette size={14} className="text-violet-500" />
                             <select
+                              title="Selecionar Cor"
                               value={item.colorId}
                               onChange={(e) => {
-                                const color = colors.find(c => c.id === e.target.value);
-                                updateItem(index, { colorId: e.target.value, colorName: color?.name || '' });
+                                const color = moldColors.find((c: any) => c.id === e.target.value);
+                                updateItem(index, { colorId: e.target.value, colorName: (color as any)?.name || e.target.value });
                               }}
                               className={`flex-1 appearance-none border-2 rounded-xl px-3 py-2 text-xs font-black transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
                             >
-                              {colors.slice(0, 10).map(c => (
+                              <option value="">COR...</option>
+                              {moldColors.map((c: any) => (
                                 <option key={c.id} value={c.id}>{c.name}</option>
                               ))}
                             </select>
@@ -385,6 +419,7 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
                         </div>
                         <div className="flex items-center gap-1">
                           <button
+                            type="button"
                             onClick={() => addColorToMold(item.moldId)}
                             title="Adicionar outra cor"
                             className="p-2 rounded-xl text-cyan-500 hover:text-cyan-400 transition-colors"
@@ -392,6 +427,8 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
                             <Plus size={18} />
                           </button>
                           <button
+                            type="button"
+                            title="Remover item"
                             onClick={() => removeItem(index)}
                             className="p-2 rounded-xl text-slate-400 hover:text-red-500 transition-colors"
                           >

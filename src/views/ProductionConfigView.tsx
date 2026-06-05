@@ -906,6 +906,8 @@ export default function ProductionConfigView({
           productionConfigs={productionConfigs}
           people={people}
           grids={grids}
+          toolCategoryNames={toolCategoryNames}
+          products={products}
           onNavigateToScreen={handleNavigateShortcut}
         />
       </Modal>
@@ -1245,6 +1247,8 @@ function GenericConfigList({
   productionConfigs = [],
   grids = [],
   supplyCategoryNames = [],
+  toolCategoryNames = [],
+  products = [],
   onNavigateToScreen,
   zIndex = 60000,
   soleStock = [],
@@ -1267,6 +1271,8 @@ function GenericConfigList({
   productionConfigs?: ProductionConfigItem[];
   grids?: Grid[];
   supplyCategoryNames?: string[];
+  toolCategoryNames?: string[];
+  products?: Product[];
   onNavigateToScreen?: (screen: ProductionScreenType | ViewType) => void;
   zIndex?: number;
   soleStock?: SoleStockEntry[];
@@ -1277,6 +1283,7 @@ function GenericConfigList({
   const [search, setSearch] = useState('');
   const [newSize, setNewSize] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [selectedProductFilter, setSelectedProductFilter] = useState('');
   const [isWeightsModalOpen, setIsWeightsModalOpen] = useState(false);
   const [isColorWeightsModalOpen, setIsColorWeightsModalOpen] = useState(false);
   const [gridSuccess, setGridSuccess] = useState(false);
@@ -1406,6 +1413,20 @@ function GenericConfigList({
     });
     return groups;
   }, [filteredItems, type]);
+
+  const groupedTools = useMemo<Record<string, ProductionConfigItem[]> | null>(() => {
+    if (type !== 'TOOL') return null;
+    const groups: Record<string, ProductionConfigItem[]> = {};
+    const baseItems = selectedProductFilter
+      ? filteredItems.filter(item => (item.metadata?.productIds || []).includes(selectedProductFilter))
+      : filteredItems;
+    baseItems.forEach(item => {
+      const cat = (item.metadata?.category || 'SEM CATEGORIA').trim().toUpperCase();
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(item);
+    });
+    return groups;
+  }, [filteredItems, type, selectedProductFilter]);
 
   const handleSave = async (e: FormEvent) => {
     e.preventDefault();
@@ -1598,7 +1619,7 @@ function GenericConfigList({
               description: '',
               type,
               createdAt: Date.now(),
-              metadata: type === 'TOOL' ? { conjugation: 1, sizes: [], sizeAreas: {}, category: '' } :
+              metadata: type === 'TOOL' ? { conjugation: 1, sizes: [], sizeAreas: {}, category: '', productIds: [] } :
                 type === 'MOLD' ? { moldReference: '', sizes: [], sizeWeights: {}, sizeAreas: {}, composition: [], colorVariations: [], extraServices: [] } :
                   type === 'MATERIAL' ? { masterCategory: '', reference: '', unitId: '', baseCost: 0, width: 0, colorIds: [], flowTagId: '', supplierId: '' } :
                     type === 'PACKAGING' ? { mode: 'FIXED', capacity: 0, sizes: [], sizeQuantities: {} } :
@@ -1635,8 +1656,79 @@ function GenericConfigList({
         />
       </div>
 
+      {type === 'TOOL' && products.length > 0 && (
+        <div className="relative">
+          <Package size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <select
+            value={selectedProductFilter}
+            onChange={(e) => setSelectedProductFilter(e.target.value)}
+            className={`w-full pl-12 pr-6 py-4 rounded-2xl font-black text-xs uppercase tracking-widest outline-none transition-all border-2 appearance-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-700'} ${selectedProductFilter ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400' : ''}`}
+          >
+            <option value="">TODOS OS MODELOS</option>
+            {products.map(p => (
+              <option key={p.id} value={p.id}>{p.name} ({p.reference})</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       <div className="flex flex-col gap-8">
-        {type === 'MATERIAL' ? (
+        {type === 'TOOL' ? (
+          Object.entries(groupedTools || {}).map(([category, catItems], catIdx) => {
+            const toolPalette = [
+              { bg: '#f97316', light: '#fff7ed', border: '#fed7aa' },
+              { bg: '#ef4444', light: '#fef2f2', border: '#fecaca' },
+              { bg: '#8b5cf6', light: '#f5f3ff', border: '#ddd6fe' },
+              { bg: '#0ea5e9', light: '#f0f9ff', border: '#bae6fd' },
+              { bg: '#10b981', light: '#ecfdf5', border: '#a7f3d0' },
+              { bg: '#f59e0b', light: '#fffbeb', border: '#fde68a' },
+            ];
+            const pal = toolPalette[catIdx % toolPalette.length];
+            return (
+              <div key={category} className="flex flex-col gap-3">
+                <div
+                  className="flex items-center gap-3 px-4 py-3 rounded-2xl border"
+                  style={{ backgroundColor: isDarkMode ? `${pal.bg}18` : pal.light, borderColor: isDarkMode ? `${pal.bg}40` : pal.border }}
+                >
+                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: pal.bg }}>
+                    <Scissors size={14} color="#fff" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className={`text-xs font-black uppercase tracking-[0.2em] leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{category}</h4>
+                    <p className="text-[9px] font-bold uppercase tracking-widest leading-none mt-0.5" style={{ color: `${pal.bg}99` }}>
+                      {catItems.length} {catItems.length === 1 ? 'FACA' : 'FACAS'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-3 pl-2 border-l-2" style={{ borderColor: `${pal.bg}40` }}>
+                  {catItems.map(item => (
+                    <motion.div
+                      key={item.id}
+                      layout
+                      className={`p-4 rounded-[1.5rem] border flex items-center justify-between group transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-50 shadow-sm'}`}
+                    >
+                      <div className="flex items-center gap-4 flex-1">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-slate-50 text-slate-400'}`}>
+                          {item.imageUrl ? <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" /> : icon}
+                        </div>
+                        <div className="flex-1">
+                          <p className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.name}</p>
+                          <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                            CONSUMO P/ ÁREA • {item.metadata?.conjugation || 1} PR/BAT
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 pr-2">
+                        <button type="button" onClick={() => { setEditingItem({ ...item }); setIsModalOpen(true); }} className="p-2 text-slate-300 hover:text-indigo-500 transition-colors"><Edit3 size={18} /></button>
+                        <button type="button" onClick={() => { if (confirm(`Deseja excluir ${item.name}?`)) onDelete(item.id); }} className="p-2 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={18} /></button>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            );
+          })
+        ) : type === 'MATERIAL' ? (
           Object.entries(groupedItems || {}).map(([category, catItems]: [string, ProductionConfigItem[]], catIdx) => {
             const catPalette = [
               { bg: '#6366f1', light: '#eef2ff', border: '#c7d2fe' },
@@ -2318,7 +2410,7 @@ function GenericConfigList({
                     return (
                       <div key={color.id} className={`p-3 rounded-2xl border-2 flex items-center justify-between transition-all ${isSelected ? 'border-indigo-500/30 bg-indigo-500/5' : isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-50 bg-slate-50/50'}`}>
                         <div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl shadow-sm border border-black/10" style={{ backgroundColor: color.hex }} /><span className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{color.name}</span></div>
-                        <div className="flex items-center gap-2">{isSelected && (<input type="text" placeholder="SUB-REF" value={variation.subRef || ''} onChange={(e) => { const subRef = e.target.value.toUpperCase(); setEditingItem(prev => { if (!prev) return null; const variations = [...(prev.metadata?.colorVariations || [])]; const idx = variations.findIndex((cv: any) => cv.colorId === color.id); variations[idx] = { ...variations[idx], subRef }; return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } }; }); }} className={`w-24 px-3 py-2 rounded-xl font-black text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100'}`} />)}<button type="button" onClick={() => { setEditingItem(prev => { if (!prev) return null; const variations = [...(prev.metadata?.colorVariations || [])]; const idx = variations.findIndex((cv: any) => cv.colorId === color.id); if (idx >= 0) variations.splice(idx, 1); else variations.push({ colorId: color.id, subRef: '' }); return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } }; }); }} className={`p-2 rounded-xl transition-all ${isSelected ? 'text-indigo-500' : 'text-slate-300'}`}>{isSelected ? <CheckCircle2 size={20} /> : <Circle size={20} />}</button></div>
+                        <div className="flex items-center gap-2">{isSelected && (<input type="text" placeholder="SUB-REF" value={variation.subRef || ''} onChange={(e) => { const subRef = e.target.value.toUpperCase(); setEditingItem(prev => { if (!prev) return null; const variations = [...(prev.metadata?.colorVariations || [])]; const idx = variations.findIndex((cv: any) => cv.colorId === color.id); variations[idx] = { ...variations[idx], subRef }; return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } }; }); }} className={`w-24 px-3 py-2 rounded-xl font-black text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100'}`} />)}<button type="button" onClick={() => { setEditingItem(prev => { if (!prev) return null; const variations = [...(prev.metadata?.colorVariations || [])]; const idx = variations.findIndex((cv: any) => cv.colorId === color.id); if (idx >= 0) variations.splice(idx, 1); else variations.push({ colorId: color.id, colorName: color.name, subRef: '' }); return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } }; }); }} className={`p-2 rounded-xl transition-all ${isSelected ? 'text-indigo-500' : 'text-slate-300'}`}>{isSelected ? <CheckCircle2 size={20} /> : <Circle size={20} />}</button></div>
                       </div>
                     );
                   })}
@@ -2622,6 +2714,53 @@ function GenericConfigList({
                         isDarkMode={isDarkMode}
                       />
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {products.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2 ml-2">
+                    <Package size={14} className="text-indigo-500" />
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200">
+                      Modelos que usam esta faca
+                    </label>
+                  </div>
+                  <div className={`rounded-2xl border-2 overflow-hidden ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                    <div className="flex flex-col divide-y divide-slate-100 dark:divide-slate-800 max-h-64 overflow-y-auto">
+                      {products.map(product => {
+                        const selected = (editingItem?.metadata?.productIds || []).includes(product.id);
+                        return (
+                          <button
+                            key={product.id}
+                            type="button"
+                            onClick={() => {
+                              const current: string[] = editingItem?.metadata?.productIds || [];
+                              const updated = selected
+                                ? current.filter(id => id !== product.id)
+                                : [...current, product.id];
+                              setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, productIds: updated } } : null);
+                            }}
+                            className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all active:scale-[0.99] ${selected ? (isDarkMode ? 'bg-indigo-900/30' : 'bg-indigo-50') : 'hover:bg-slate-100 dark:hover:bg-slate-900'}`}
+                          >
+                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${selected ? 'bg-indigo-600 border-indigo-600' : isDarkMode ? 'border-slate-700' : 'border-slate-300'}`}>
+                              {selected && <Check size={12} strokeWidth={3} className="text-white" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-xs font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{product.name}</p>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{product.reference}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {(editingItem?.metadata?.productIds || []).length > 0 && (
+                      <div className="px-4 py-2 border-t border-slate-100 dark:border-slate-800 bg-indigo-50 dark:bg-indigo-900/20">
+                        <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">
+                          {(editingItem?.metadata?.productIds || []).length} modelo(s) selecionado(s)
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
