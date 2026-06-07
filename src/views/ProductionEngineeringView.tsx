@@ -215,7 +215,7 @@ function EngineeringCard({
           <button
             onClick={onEdit}
             title="Editar Engenharia"
-            className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white py-4 rounded-2xl font-black uppercase tracking-widest text-[11px] hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 active:scale-95 transition-all"
+            className="flex-1 flex items-center justify-center gap-2 bg-amber-300 text-amber-900 py-4 rounded-2xl font-black uppercase tracking-widest text-[11px] hover:bg-amber-400 hover:text-white shadow-lg shadow-amber-300/20 active:scale-95 transition-all"
           >
             Editar Engenharia <ChevronRight size={16} />
           </button>

@@ -1,7 +1,7 @@
 import { useState, useMemo, ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Sale, Purchase, Product, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig } from "../types";
-import { Share2, TrendingUp, TrendingDown, Package, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen } from "lucide-react";
+import { Share2, TrendingUp, TrendingDown, Package, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { jsPDF } from 'jspdf';
@@ -28,7 +28,7 @@ interface DashboardViewProps {
     newStatus: "PENDING" | "CLEARED" | "OVERDUE",
   ) => void;
   onNavigate: (view: ViewType, id?: string | null, search?: string) => void;
-  onNavigateProduction: (subScreen: ProductionScreenType) => void;
+  onNavigateProduction: (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES') => void;
   onNavigateGrids: () => void;
   onAddProduct: () => void;
   onAddTransaction: (type: TransactionType) => void;
@@ -481,9 +481,11 @@ export default function DashboardView({
   }, [purchases, people, categories, debtSupplierFilter, debtCategoryFilter, debtStatusFilter, debtStartDate, debtEndDate]);
 
   const topRankings = useMemo(() => {
+    const accountableSales = sales.filter(s => s.status === SaleStatus.SALE && s.isAccounting !== false);
+
     // Top Customers
     const customerTotals: Record<string, { name: string, total: number }> = {};
-    sales.filter(s => s.status === SaleStatus.SALE).forEach(s => {
+    accountableSales.forEach(s => {
       const key = s.customerId || 'anon';
       if (!customerTotals[key]) customerTotals[key] = { name: s.customerName || 'Consumidor', total: 0 };
       customerTotals[key].total += s.total;
@@ -494,7 +496,7 @@ export default function DashboardView({
 
     // Top Products
     const productQty: Record<string, { name: string, qty: number }> = {};
-    sales.filter(s => s.status === SaleStatus.SALE).forEach(s => {
+    accountableSales.forEach(s => {
       (s.items || []).forEach(item => {
         const product = products.find(p => p.id === item.productId);
         const name = product ? product.name : 'Produto';
@@ -1729,6 +1731,54 @@ export default function DashboardView({
                 >
                   <ClipboardList size={13} /> Ver Necessidades de Compra
                 </button>
+              </div>
+            );
+          }
+
+          case "factory_config": {
+            if (!modulesConfig.production) return null;
+            const factoryItems = [
+              { label: 'Setores de Produção',   desc: 'Fluxo da fábrica',           screen: 'SECTORS'    as const, color: 'text-indigo-600',  bg: 'bg-indigo-50 dark:bg-indigo-950/20'  },
+              { label: 'Etapas e Processos',    desc: 'Serviços e Flow Tags',        screen: 'FLOW_TAGS'  as const, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/20' },
+              { label: 'Prazos de Entrega',     desc: 'SLA por processo',            screen: 'PRAZOS'     as const, color: 'text-teal-600',    bg: 'bg-teal-50 dark:bg-teal-950/20'      },
+              { label: 'Matrizes de Solados',   desc: 'Catálogo e moldes',           screen: 'MATRIZES'   as const, color: 'text-orange-600',  bg: 'bg-orange-50 dark:bg-orange-950/20'  },
+              { label: 'Materiais e Insumos',   desc: 'Componentes de produção',     screen: 'INSUMOS'    as const, color: 'text-blue-600',    bg: 'bg-blue-50 dark:bg-blue-950/20'      },
+              { label: 'Unidades de Medida',    desc: 'KG, MT, UN, PR...',           screen: 'UNIDADES'   as const, color: 'text-slate-600',   bg: 'bg-slate-100 dark:bg-slate-800'      },
+              { label: 'Facas de Corte',        desc: 'Matrizes de corte',           screen: 'FACAS'      as const, color: 'text-rose-600',    bg: 'bg-rose-50 dark:bg-rose-950/20'      },
+              { label: 'Infesto',               desc: 'Camadas empilhadas',          screen: 'INFESTO'    as const, color: 'text-sky-600',     bg: 'bg-sky-50 dark:bg-sky-950/20'        },
+              { label: 'Peças',                 desc: 'Entradas e peças',            screen: 'PECAS'      as const, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/20' },
+              { label: 'Padrão Embalagens',     desc: 'Caixas e grades',             screen: 'EMBALAGENS' as const, color: 'text-amber-600',   bg: 'bg-amber-50 dark:bg-amber-950/20'    },
+            ];
+            return (
+              <div key="factory_config" className={`p-5 rounded-[1.5rem] border flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Configurações de Fábrica</p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Produção — Setores, Processos e Insumos</p>
+                  </div>
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-500'}`}>
+                    <Settings size={18} />
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto pr-0.5 custom-scrollbar">
+                  {factoryItems.map((item) => (
+                    <button
+                      key={item.screen}
+                      type="button"
+                      onClick={() => onNavigateProduction(item.screen)}
+                      className={`flex items-center justify-between px-3 py-2.5 rounded-2xl border transition-all active:scale-95 text-left ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-indigo-50 hover:border-indigo-100'}`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.color.replace('text-', 'bg-')}`} />
+                        <div className="min-w-0">
+                          <p className={`text-[10px] font-black uppercase truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{item.label}</p>
+                          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-0.5">{item.desc}</p>
+                        </div>
+                      </div>
+                      <ChevronRight size={12} className="text-slate-400 shrink-0" />
+                    </button>
+                  ))}
+                </div>
               </div>
             );
           }

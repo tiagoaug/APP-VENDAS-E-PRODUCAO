@@ -985,76 +985,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         {/* Basic Info */}
         <div className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-5 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
 
-          {/* Toggle Destino: Cliente / Estoque */}
-          <div>
-            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 mb-2 block tracking-widest leading-none">Destino da Venda</label>
-            <div className={`p-1 rounded-2xl border flex gap-1 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'}`}>
-              <button
-                type="button"
-                onClick={() => setSaleDestination('CUSTOMER')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                  saleDestination === 'CUSTOMER'
-                    ? isDarkMode ? 'bg-indigo-600 text-white shadow-lg' : 'bg-indigo-600 text-white shadow-lg'
-                    : 'text-slate-400'
-                }`}
-                aria-label="Venda para cliente"
-                title="Venda Cliente"
-              >
-                <User size={13} />
-                Cliente
-              </button>
-              <button
-                type="button"
-                onClick={() => setSaleDestination('STOCK')}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                  saleDestination === 'STOCK'
-                    ? isDarkMode ? 'bg-amber-600 text-white shadow-lg' : 'bg-amber-500 text-white shadow-lg'
-                    : 'text-slate-400'
-                }`}
-                aria-label="Produção para estoque"
-                title="Estoque"
-              >
-                <Box size={13} />
-                Estoque
-              </button>
-            </div>
-          </div>
-
-          {/* Toggle Não Contábil (visível apenas no destino STOCK) */}
-          {saleDestination === 'STOCK' && (
-            <button
-              type="button"
-              onClick={() => setIsAccounting(prev => !prev)}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-all ${
-                !isAccounting
-                  ? isDarkMode ? 'bg-rose-900/20 border-rose-700/50' : 'bg-rose-50 border-rose-200'
-                  : isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'
-              }`}
-              aria-label="Alternar não contábil"
-              title="Não Contábil"
-            >
-              <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${!isAccounting ? 'bg-rose-500' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
-                  <Ban size={16} className={!isAccounting ? 'text-white' : 'text-slate-400'} />
-                </div>
-                <div className="text-left">
-                  <p className={`text-[11px] font-black uppercase tracking-widest leading-none ${!isAccounting ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}`}>
-                    Não Contábil
-                  </p>
-                  <p className="text-[9px] font-bold text-slate-400 mt-0.5">
-                    {!isAccounting ? 'Sem lançamento financeiro' : 'Gera lançamento financeiro'}
-                  </p>
-                </div>
-              </div>
-              {/* Toggle visual */}
-              <div className={`w-11 h-6 rounded-full transition-colors relative ${!isAccounting ? 'bg-rose-500' : isDarkMode ? 'bg-slate-600' : 'bg-slate-300'}`}>
-                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${!isAccounting ? 'translate-x-5' : 'translate-x-0.5'}`} />
-              </div>
-            </button>
-          )}
-
-          {/* Campo de cliente (visível apenas no destino CUSTOMER) */}
-          {saleDestination === 'CUSTOMER' && (
+          {/* Cliente */}
           <div className="relative">
             <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Cliente</label>
             <ComboBox
@@ -1065,7 +996,6 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               isDarkMode={isDarkMode}
             />
           </div>
-          )}
 
           <div className="relative">
             <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Vendedor / Responsável</label>
@@ -1082,7 +1012,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             />
 
             {/* Badges de Sugestão do Cliente */}
-            {customerId && saleDestination === 'CUSTOMER' && (
+            {customerId && (
               <div className="mt-3 flex flex-wrap gap-2 px-1">
                 {(() => {
                   const c = people.find(p => p.id === customerId);
@@ -1121,108 +1051,6 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                 })()}
               </div>
             )}
-          </div>
-
-          {/* SLA Timeline and Prioridade Section */}
-          <div className="flex flex-col gap-3 p-4 rounded-3xl border border-dashed border-indigo-500/30 dark:border-indigo-500/20 bg-indigo-50/10 dark:bg-indigo-950/10">
-            <div className="flex items-center justify-between">
-              <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 tracking-widest leading-none">Prazo e Prioridade</label>
-              
-              {/* Active SLA Badge Info */}
-              {prioridade && (
-                <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-full border border-slate-200/50 dark:border-slate-700/50">
-                  <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${
-                    prioridade === 'URGENTE' ? 'bg-rose-500' : prioridade === 'ALTA' ? 'bg-amber-500' : 'bg-emerald-500'
-                  }`} />
-                  <span className="text-[8px] font-black uppercase tracking-wider text-slate-500">
-                    SLA: {getDefaultDaysForDeadline(prioridade)} dias
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {/* Quick SLA Selector Buttons */}
-            <div className="flex flex-wrap gap-2">
-              {priorityOptions.map(p => {
-                const label = p.charAt(0) + p.slice(1).toLowerCase();
-                const days = getDefaultDaysForDeadline(p);
-                const isActive = prioridade === p;
-                
-                let activeStyles = '';
-                
-                if (isActive) {
-                  if (p === 'URGENTE') {
-                    activeStyles = 'bg-rose-500 text-white shadow-lg shadow-rose-500/20 scale-[1.02] border-rose-500';
-                  } else if (p === 'ALTA') {
-                    activeStyles = 'bg-amber-500 text-white shadow-lg shadow-amber-500/20 scale-[1.02] border-amber-500';
-                  } else {
-                    activeStyles = 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 scale-[1.02] border-emerald-600';
-                  }
-                } else {
-                  activeStyles = isDarkMode 
-                    ? 'bg-slate-800/40 text-slate-400 hover:text-slate-200 border-slate-700/50 hover:bg-slate-800/80' 
-                    : 'bg-white text-slate-600 hover:text-slate-900 border-slate-200 hover:bg-slate-50';
-                }
-
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => handlePriorityChange(p)}
-                    className={`flex-1 min-w-[85px] flex flex-col items-center justify-center py-2 px-1 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all duration-300 relative ${activeStyles}`}
-                  >
-                    <span>{label}</span>
-                    <span className={`text-[8px] font-bold mt-0.5 opacity-80`}>
-                      {days} {days === 1 ? 'dia' : 'dias'}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Manual Date Selection & Production Toggle */}
-            <div className="flex gap-2 mt-1">
-              <div className="flex flex-col gap-1 flex-1">
-                <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${
-                  isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
-                }`}>
-                  <Calendar size={13} className="text-indigo-400 shrink-0" />
-                  <input
-                    type="date"
-                    value={deliveryDate}
-                    onChange={e => {
-                      setDeliveryDate(e.target.value);
-                    }}
-                    title="Data de entrega combinada"
-                    aria-label="Data de entrega"
-                    className={`flex-1 bg-transparent font-black text-xs outline-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
-                  />
-                </div>
-              </div>
-
-              {hasProduction && (
-                <div className="relative">
-                  {!isProductionOrder && (
-                    <span className="absolute inset-0 rounded-xl bg-sky-400 animate-ping opacity-25 pointer-events-none" />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setIsProductionOrder(v => !v)}
-                    title={isProductionOrder ? 'Desativar pedido de produção' : 'Ativar pedido de produção'}
-                    className={`relative h-[38px] px-3.5 rounded-xl flex items-center gap-1.5 font-black text-[9px] uppercase tracking-widest border-2 transition-all ${
-                      isProductionOrder
-                        ? 'bg-sky-500 border-sky-400 text-white shadow-lg shadow-sky-400/30 border-none'
-                        : isDarkMode
-                          ? 'bg-sky-900/30 border-sky-700 text-sky-400'
-                          : 'bg-sky-50 border-sky-300 text-sky-600'
-                    }`}
-                  >
-                    <Factory size={12} strokeWidth={2.5} />
-                    OP
-                  </button>
-                </div>
-              )}
-            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -1308,7 +1136,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                 <Wallet size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
              </div>
           </div>
-          
+
           <div className="mt-4">
               <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Observações</label>
               <textarea 
@@ -1320,26 +1148,76 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                 placeholder="Adicione observações sobre a venda..."
               />
           </div>
+
+          {/* SLA + Prazo + OP */}
+          <div className="flex flex-col gap-3 p-4 rounded-3xl border border-dashed border-indigo-500/30 dark:border-indigo-500/20 bg-indigo-50/10 dark:bg-indigo-950/10 mt-4">
+            <div className="flex items-center justify-between">
+              <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 tracking-widest leading-none">Prazo e Prioridade</label>
+              {prioridade && (
+                <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-full border border-slate-200/50 dark:border-slate-700/50">
+                  <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${prioridade === 'URGENTE' ? 'bg-rose-500' : prioridade === 'ALTA' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                  <span className="text-[8px] font-black uppercase tracking-wider text-slate-500">SLA: {getDefaultDaysForDeadline(prioridade)} dias</span>
+                </div>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {priorityOptions.map(p => {
+                const isActive = prioridade === p;
+                const days = getDefaultDaysForDeadline(p);
+                const activeStyles = isActive
+                  ? p === 'URGENTE' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20 scale-[1.02] border-rose-500'
+                  : p === 'ALTA' ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20 scale-[1.02] border-amber-500'
+                  : 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 scale-[1.02] border-emerald-600'
+                  : isDarkMode ? 'bg-slate-800/40 text-slate-400 hover:text-slate-200 border-slate-700/50 hover:bg-slate-800/80' : 'bg-white text-slate-600 hover:text-slate-900 border-slate-200 hover:bg-slate-50';
+                return (
+                  <button key={p} type="button" onClick={() => handlePriorityChange(p)}
+                    className={`flex-1 min-w-[85px] flex flex-col items-center justify-center py-2 px-1 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all duration-300 ${activeStyles}`}>
+                    <span>{p.charAt(0) + p.slice(1).toLowerCase()}</span>
+                    <span className="text-[8px] font-bold mt-0.5 opacity-80">{days} {days === 1 ? 'dia' : 'dias'}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <Calendar size={13} className="text-indigo-400 shrink-0" />
+              <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)}
+                title="Data de entrega" aria-label="Data de entrega"
+                className={`flex-1 bg-transparent font-black text-xs outline-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`} />
+            </div>
+            {hasProduction && (
+              <button type="button"
+                onClick={() => setIsProductionOrder(v => !v)}
+                title={isProductionOrder ? 'Desativar OP' : 'Ativar pedido de produção'}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all ${isProductionOrder ? 'bg-sky-500 border-sky-400 text-white shadow-lg shadow-sky-400/20' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400 hover:border-sky-700 hover:text-sky-400' : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-sky-300 hover:text-sky-600'}`}>
+                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isProductionOrder ? 'bg-white/20' : isDarkMode ? 'bg-slate-700' : 'bg-white'}`}>
+                  <Factory size={14} strokeWidth={2.5} className={isProductionOrder ? 'text-white' : 'text-sky-500'} />
+                </div>
+                <div className="text-left flex-1">
+                  <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${isProductionOrder ? 'text-white' : ''}`}>Pedido de Produção (OP)</p>
+                  <p className={`text-[9px] font-bold mt-0.5 leading-none ${isProductionOrder ? 'text-sky-100' : 'text-slate-400'}`}>
+                    {isProductionOrder ? `${blocks.length} produto(s) selecionado(s)` : 'Gera mapa de produção e roteiro de fabricação'}
+                  </p>
+                </div>
+                <div className={`w-8 h-4 rounded-full relative shrink-0 transition-all ${isProductionOrder ? 'bg-white/30' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
+                  <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${isProductionOrder ? 'left-4' : 'left-0.5'}`} />
+                </div>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Items List */}
       <section>
         {hasProduction && isProductionOrder && (
-          <div className={`mb-4 flex items-start gap-3 p-4 rounded-2xl border-2 ${
-            saleDestination === 'STOCK'
-              ? isDarkMode ? 'bg-amber-900/20 border-amber-800/40' : 'bg-amber-50 border-amber-200'
-              : isDarkMode ? 'bg-violet-900/20 border-violet-800/40' : 'bg-violet-50 border-violet-200'
-          }`}>
-            <Factory size={16} className={`${saleDestination === 'STOCK' ? 'text-amber-500' : 'text-violet-500'} shrink-0 mt-0.5`} />
+          <div className={`mb-4 flex items-start gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-violet-900/20 border-violet-800/40' : 'bg-violet-50 border-violet-200'}`}>
+            <Factory size={16} className="text-violet-500 shrink-0 mt-0.5" />
             <div>
-              <p className={`text-[10px] font-black uppercase tracking-widest leading-none mb-1 ${saleDestination === 'STOCK' ? 'text-amber-600 dark:text-amber-400' : 'text-violet-600 dark:text-violet-400'}`}>
-                {saleDestination === 'STOCK' ? 'Pedido de Produção — Estoque' : 'Pedido de Produção — Cliente'}
+              <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1 text-violet-600 dark:text-violet-400">
+                Pedido de Produção — Cliente
               </p>
-              <p className={`text-[9px] font-bold leading-relaxed ${saleDestination === 'STOCK' ? 'text-amber-500' : 'text-violet-500'}`}>
-                {saleDestination === 'STOCK'
-                  ? 'Produção para estoque. Configure o padrão de embalagem e salve — o pedido entra na fila de espera do PCP. Os mapas são criados manualmente lá.'
-                  : 'Configure o padrão de embalagem e salve — o pedido entra na fila de espera do PCP. Os mapas de produção são criados manualmente no PCP.'}
+              <p className="text-[9px] font-bold leading-relaxed text-violet-500">
+                Configure o padrão de embalagem e salve — o pedido entra na fila de espera do PCP. Os mapas de produção são criados manualmente no PCP.
               </p>
             </div>
           </div>
@@ -1357,14 +1235,6 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                 title="Adicionar Modelo"
               >
                 <Plus size={14} strokeWidth={3} /> Modelo
-              </button>
-              <button 
-                onClick={() => setIsScannerOpen(true)} 
-                className={`flex items-center gap-2 font-black text-[10px] uppercase tracking-widest bg-indigo-500 text-white px-5 py-3 rounded-2xl shadow-xl active:scale-95 transition-all`}
-                aria-label="Escanear QR Code"
-                title="Escanear QR"
-              >
-                <Camera size={14} strokeWidth={3} /> Escanear
               </button>
             </div>
         </div>

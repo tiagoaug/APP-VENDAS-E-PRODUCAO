@@ -259,6 +259,7 @@ export default function App() {
       { id: 'activity', label: 'Atividade Recente', visible: true, order: 15, module: 'any' },
       { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 16, module: 'sales' },
       { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 17, module: 'production' },
+      { id: 'factory_config', label: 'Configurações de Fábrica', visible: true, order: 22, module: 'production' },
       { id: 'personal_balance', label: 'Saldo Pessoal', visible: true, order: 18, module: 'personal' },
       { id: 'print_center', label: 'Central de Impressões', visible: true, order: 19, module: 'any' },
       { id: 'pcp_sector_map', label: 'Mapas por Setor (PCP)', visible: true, order: 20, module: 'production' },
@@ -297,6 +298,11 @@ export default function App() {
     // Migration: ensure print_center is present
     if (config.cards && !config.cards.find((c: any) => c.id === 'print_center')) {
       config.cards.push({ id: 'print_center', label: 'Central de Impressões', visible: true, order: 19, module: 'any' });
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+    // Migration: ensure factory_config card is present
+    if (config.cards && !config.cards.find((c: any) => c.id === 'factory_config')) {
+      config.cards.push({ id: 'factory_config', label: 'Configurações de Fábrica', visible: true, order: 22, module: 'production' });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
     // Migration: ensure PCP cards are present
@@ -605,9 +611,15 @@ export default function App() {
     }
   };
 
-  const navigateToProduction = (subScreen: ProductionScreenType) => {
-    setProductionSubScreen(subScreen);
-    navigateTo(ViewType.PRODUCTION_CONFIG);
+  const navigateToProduction = (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES') => {
+    if (subScreen === 'PCP') {
+      navigateTo(ViewType.PRODUCTION_PCP);
+    } else if (subScreen === 'NECESSIDADES') {
+      navigateTo(ViewType.PRODUCTION_PCP, { initialTab: 'needs' });
+    } else {
+      setProductionSubScreen(subScreen);
+      navigateTo(ViewType.PRODUCTION_CONFIG);
+    }
   };
 
   const goBack = () => {

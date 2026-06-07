@@ -98,6 +98,7 @@ export default function CuttingProjectionPanel({
   const [osAccountId, setOsAccountId] = useState('');
   const [osCategoryId, setOsCategoryId] = useState('');
   const [osDirectComplete, setOsDirectComplete] = useState(false);
+  const [osNaoContabil, setOsNaoContabil] = useState(false);
   const [isSavingOS, setIsSavingOS] = useState(false);
   const [editingOsId, setEditingOsId] = useState<string | null>(null);
   const [editingOsOriginal, setEditingOsOriginal] = useState<ServiceOrder | null>(null);
@@ -307,11 +308,12 @@ export default function CuttingProjectionPanel({
 
       // Default OS value per pair from sector or default
       if (lotProductDetails?.product) {
-        const sectorPrice = lotProductDetails.product.sectorPrices?.[selectedSectorId] || 
-                            currentSector?.defaultServiceValue || 
+        const sectorPrice = lotProductDetails.product.sectorPrices?.[selectedSectorId] ||
+                            currentSector?.defaultServiceValue ||
                             0;
         setOsValuePerPair(sectorPrice);
       }
+      setOsNaoContabil(false);
     }
   }, [isOSPanelOpen, lotProductDetails, selectedSectorId, currentSector, accounts, categories]);
 
@@ -372,7 +374,7 @@ export default function CuttingProjectionPanel({
       const osNumberStr = `OS-C-${Date.now().toString().slice(-4)}`;
 
       let transactionId = '';
-      if (osAccountId && osCategoryId && totalValue > 0) {
+      if (!osNaoContabil && osAccountId && osCategoryId && totalValue > 0) {
         const txId = `tx_os_${uniqueId}`;
         const txData = {
           id: txId,
@@ -595,68 +597,119 @@ export default function CuttingProjectionPanel({
     return () => document.removeEventListener('mousedown', handler);
   }, [sharePopupOpen]);
 
-  // Complete an OS — advances lot if this is the last pending OS
+  // Complete an OS — advances lot OR clears orderSectors (advanced-orders scenario)
   const handleCompleteOSCutting = async (os: ServiceOrder) => {
     try {
-      const lotObj = cuttingLots.find(l =>
+      const lotObj = lots.find(l =>
         l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id))
       );
       if (!lotObj) {
-        showInfo('OS Concluída', `${os.osNumber} concluída. Lote não encontrado no corte.`);
+        alert(`OS ${os.osNumber}: lote não encontrado. Verifique se o mapa foi removido.`);
         return;
       }
 
-      // Usa posição da OS no roteiro (não do lote) — evita pular setores em movimentos parciais
-      const osSectorIdx = lotObj.route?.indexOf(os.sectorId ?? '') ?? lotObj.currentSectorIndex;
+      // Position of the OS's sector in the lot route
+      const osSectorIdx = (lotObj.route || []).indexOf(os.sectorId ?? '');
       const effectiveSectorIdx = osSectorIdx >= 0 ? osSectorIdx : lotObj.currentSectorIndex;
       const nextIdx = effectiveSectorIdx + 1;
-      const nextSectorId = lotObj.route[nextIdx] || '';
+      const nextSectorId = (lotObj.route || [])[nextIdx] || '';
       const nextSectorName = sectors.find(s => s.id === nextSectorId)?.name || 'CONCLUÍDO';
 
-      // Mark OS completed, storing prev sector index for potential undo
+      // 1. Mark OS as COMPLETED
       await firebaseService.updateDocument('serviceOrders', os.id, {
         status: 'COMPLETED',
         finishedAt: Date.now(),
-        _prevSectorIndex: lotObj.currentSectorIndex,
       });
+
+      // 2. Settle financial transaction if present
       if (os.transactionId) {
         try {
-          const { financeService } = await import('../services/financeService');
-          await financeService.settleTransaction(os.transactionId);
+          const { financeService: fs } = await import('../services/financeService');
+          await fs.settleTransaction(os.transactionId);
         } catch { /* ignore */ }
       }
 
-      // Check if this was the last pending OS for the lot
-      const remainingPending = lotActiveOSListFull.filter(o => o.id !== os.id);
-      const isLastOS = remainingPending.length === 0;
+      // 3. Check remaining PENDING OSes for this lot in this sector
+      const remainingPending = serviceOrders.filter(o =>
+        o.id !== os.id &&
+        (o.lotId === lotObj.id || (o.lotIds?.includes(lotObj.id) ?? false)) &&
+        o.sectorId === (os.sectorId || selectedSectorId) &&
+        o.status === 'PENDING'
+      );
 
-      if (isLastOS) {
-        // All OS done → advance lot
-        await firebaseService.updateDocument('productionLots', lotObj.id, {
-          currentSectorIndex: Math.min(nextIdx, lotObj.route.length - 1),
-          currentStatusId: '',
-          finishedAt: nextSectorId ? undefined : Date.now(),
-          history: [...(lotObj.history || []), {
-            sectorId: selectedSectorId, statusId: 'CONCLUÍDO',
-            timestamp: Date.now(), userName: userName,
-            notes: `Mapa avançado — última OS ${os.osNumber} concluída.`,
-          }],
-        });
-        showInfo(
-          `Mapa #${lotObj.orderNumber} → ${nextSectorName}`,
-          `Todas as OS concluídas. Lote avançado para "${nextSectorName}" com sucesso.`
-        );
-        const remaining = cuttingLots.filter(l => l.id !== lotObj.id);
-        setSelectedLotId(remaining.length > 0 ? remaining[0].id : null);
-      } else {
-        // Still has pending OS → lot stays in cutting
+      if (remainingPending.length > 0) {
         showInfo(
           `OS ${os.osNumber} Concluída`,
-          `Mapa #${lotObj.orderNumber} aguarda ${remainingPending.length} OS pendente(s) antes de avançar para "${nextSectorName}".`
+          `Mapa #${lotObj.orderNumber} aguarda ${remainingPending.length} OS pendente(s) para avançar para "${nextSectorName}".`
+        );
+        return;
+      }
+
+      // 4. Decide: advance lot OR clear orderSectors
+      const lotIsAlreadyPast = lotObj.currentSectorIndex > effectiveSectorIdx;
+
+      if (lotIsAlreadyPast) {
+        // Advanced-orders scenario: lot is already past this sector.
+        // Clear all orderSectors entries pointing to this sector so the lot
+        // leaves the CORTE (or current) panel view.
+        const currentOrderSectors: Record<string, string> =
+          (lotObj as any).metadata?.orderSectors || {};
+        const osSectorId = os.sectorId || selectedSectorId;
+        const updatedOrderSectors: Record<string, string> = {};
+        Object.entries(currentOrderSectors).forEach(([oid, sid]) => {
+          if (sid !== osSectorId) updatedOrderSectors[oid] = sid;
+        });
+
+        // Update only metadata.orderSectors via dot-notation (preserves other metadata fields)
+        await firebaseService.updateDocument('productionLots', lotObj.id, {
+          'metadata.orderSectors': updatedOrderSectors,
+        });
+
+        const currentSectorName =
+          sectors.find(s => s.id === lotObj.route?.[lotObj.currentSectorIndex])?.name || 'setor atual';
+        showInfo(
+          `OS ${os.osNumber} Concluída`,
+          `Corte finalizado. Mapa #${lotObj.orderNumber} permanece em "${currentSectorName}".`
+        );
+      } else {
+        // Normal scenario: lot is in this sector, advance it to the next one.
+        const newSectorIndex = Math.min(nextIdx, (lotObj.route || []).length - 1);
+        const updatedLot: ProductionLot = {
+          ...lotObj,
+          currentSectorIndex: newSectorIndex,
+          currentStatusId: '',
+          history: [
+            ...(lotObj.history || []),
+            {
+              sectorId: os.sectorId || selectedSectorId,
+              statusId: 'CONCLUÍDO',
+              timestamp: Date.now(),
+              userName: userName,
+              notes: `Mapa avançado — OS ${os.osNumber} concluída.`,
+            },
+          ],
+        };
+        if (!nextSectorId) {
+          updatedLot.finishedAt = Date.now();
+        }
+        await onSaveLot(updatedLot);
+
+        showInfo(
+          `Mapa #${lotObj.orderNumber} → ${nextSectorName}`,
+          `Lote avançado para "${nextSectorName}" com sucesso.`
         );
       }
+
+      // Select next lot still in this sector
+      const remaining = lots.filter(l =>
+        l.id !== lotObj.id &&
+        !l.finishedAt &&
+        (l.route?.[l.currentSectorIndex] === selectedSectorId ||
+          Object.values((l as any).metadata?.orderSectors || {}).some((sid: any) => sid === selectedSectorId))
+      );
+      setSelectedLotId(remaining.length > 0 ? remaining[0].id : null);
     } catch (e) {
-      showInfo('Erro', (e instanceof Error ? e.message : String(e)), true);
+      alert('Erro ao concluir OS: ' + (e instanceof Error ? e.message : String(e)));
     }
   };
 
@@ -3601,6 +3654,18 @@ export default function CuttingProjectionPanel({
                 />
               </div>
 
+              {/* Não Contábil toggle */}
+              <label className="flex items-center gap-4 cursor-pointer select-none px-1">
+                <div className={`relative w-11 h-6 rounded-full transition-all duration-200 shrink-0 ${osNaoContabil ? 'bg-amber-500' : 'bg-slate-300 dark:bg-slate-700'}`}>
+                  <input type="checkbox" checked={osNaoContabil} onChange={(e) => setOsNaoContabil(e.target.checked)} className="sr-only" />
+                  <div className={`absolute top-0.5 left-0.5 bg-white w-5 h-5 rounded-full shadow-md transition-transform duration-200 ${osNaoContabil ? 'translate-x-5' : 'translate-x-0'}`} />
+                </div>
+                <div>
+                  <span className="text-[10px] font-black uppercase tracking-widest block text-slate-700 dark:text-slate-200">Não Contábil</span>
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Não gera lançamento financeiro</span>
+                </div>
+              </label>
+
               {/* Direct complete toggle */}
               <label className="flex items-center gap-4 cursor-pointer select-none px-1">
                 <div className={`relative w-11 h-6 rounded-full transition-all duration-200 shrink-0 ${osDirectComplete ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'}`}>
@@ -3844,28 +3909,34 @@ export default function CuttingProjectionPanel({
         </div>,
         document.body
       )}
-      {/* Custom confirm dialog */}
-      <ConfirmDialog
-        isOpen={!!confirmState}
-        title={confirmState?.title || ''}
-        message={confirmState?.message || ''}
-        confirmLabel={confirmState?.confirmLabel || 'Confirmar'}
-        cancelLabel="Cancelar"
-        isDanger={confirmState?.isDanger !== false}
-        onConfirm={() => { confirmState?.onConfirm(); setConfirmState(null); }}
-        onCancel={() => setConfirmState(null)}
-      />
-      {/* Info dialog (single button — no cancel) */}
-      <ConfirmDialog
-        isOpen={!!infoState}
-        title={infoState?.title || ''}
-        message={infoState?.message || ''}
-        confirmLabel="OK"
-        cancelLabel=""
-        isDanger={infoState?.isDanger || false}
-        onConfirm={() => setInfoState(null)}
-        onCancel={() => setInfoState(null)}
-      />
+      {/* Custom confirm dialog — rendered via portal to bypass motion.div CSS transform context */}
+      {createPortal(
+        <ConfirmDialog
+          isOpen={!!confirmState}
+          title={confirmState?.title || ''}
+          message={confirmState?.message || ''}
+          confirmLabel={confirmState?.confirmLabel || 'Confirmar'}
+          cancelLabel="Cancelar"
+          isDanger={confirmState?.isDanger !== false}
+          onConfirm={() => { confirmState?.onConfirm(); setConfirmState(null); }}
+          onCancel={() => setConfirmState(null)}
+        />,
+        document.body
+      )}
+      {/* Info dialog — rendered via portal for same reason */}
+      {createPortal(
+        <ConfirmDialog
+          isOpen={!!infoState}
+          title={infoState?.title || ''}
+          message={infoState?.message || ''}
+          confirmLabel="OK"
+          cancelLabel=""
+          isDanger={infoState?.isDanger || false}
+          onConfirm={() => setInfoState(null)}
+          onCancel={() => setInfoState(null)}
+        />,
+        document.body
+      )}
     </div>
   );
 }

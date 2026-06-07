@@ -123,6 +123,7 @@ export default function PCPView({
   const [osAccountId, setOsAccountId] = useState('');
   const [osCategoryId, setOsCategoryId] = useState('');
   const [osDirectComplete, setOsDirectComplete] = useState(false);
+  const [osNaoContabil, setOsNaoContabil] = useState(false);
   const [isSavingOS, setIsSavingOS] = useState(false);
   const [isPrintOSModalOpen, setIsPrintOSModalOpen] = useState(false);
   const [printOSData, setPrintOSData] = useState<{ os: ServiceOrder; nextSectorName: string } | null>(null);
@@ -922,6 +923,7 @@ export default function PCPView({
     setOsCategoryId(prodCategory?.id || '');
 
     setOsDirectComplete(false);
+    setOsNaoContabil(false);
     setIsOSModalOpen(true);
   };
 
@@ -989,7 +991,7 @@ export default function PCPView({
           await financeService.deleteTransaction(editingOS.transactionId);
           newTransactionId = undefined;
         }
-        if (osAccountId && osCategoryId && totalValue > 0) {
+        if (!osNaoContabil && osAccountId && osCategoryId && totalValue > 0) {
           const txId = `tx_os_${editingOS.id}`;
           await financeService.createTransaction({
             id: txId,
@@ -1025,7 +1027,7 @@ export default function PCPView({
       const uniqueId = `os_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
       let transactionId = '';
-      if (osAccountId && osCategoryId && totalValue > 0) {
+      if (!osNaoContabil && osAccountId && osCategoryId && totalValue > 0) {
         const txId = `tx_os_${uniqueId}`;
         const txData = {
           id: txId,
@@ -1115,7 +1117,6 @@ export default function PCPView({
 
     setIsShareExporting(true);
     try {
-      const h2c = (await import('html2canvas')).default;
       const pairs = lot.pairs || {};
       const sizes = Object.keys(pairs);
       const date = new Date().toLocaleDateString('pt-BR');
@@ -1164,8 +1165,8 @@ export default function PCPView({
       let dataUrl = '';
       try {
         void el.offsetHeight;
-        const canvas = await h2c(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, allowTaint: true, logging: false, width: 794 });
-        dataUrl = canvas.toDataURL('image/jpeg', 0.93);
+        const { toJpeg } = await import('html-to-image');
+        dataUrl = await toJpeg(el, { quality: 0.93, pixelRatio: 2, backgroundColor: '#ffffff' });
       } finally {
         if (document.body.contains(wrapper)) document.body.removeChild(wrapper);
       }
@@ -1902,25 +1903,6 @@ export default function PCPView({
                 </div>
               </div>
 
-              {/* ── Legenda do setor ───────────────────────────────────────── */}
-              <div className={`flex flex-wrap gap-3 px-1 py-3 rounded-2xl border text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-100 bg-slate-50'}`}>
-                <span className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Legenda:</span>
-                {[
-                  { dot: 'bg-indigo-500',  label: 'Mapa de Produção', desc: 'Agrupamento de pares de um pedido na rota de produção' },
-                  { dot: 'bg-emerald-500', label: 'OS (Ordem de Serviço)', desc: 'Ordem emitida para um prestador executar o trabalho no setor' },
-                  { dot: 'bg-amber-500',   label: 'Baixa de Setor', desc: 'Concluir a OS e avançar o Mapa para o próximo setor' },
-                  ...(isCuttingSector ? [{ dot: 'bg-violet-500', label: 'Ficha Técnica', desc: 'Especificação de corte: materiais, facas e infestos' }] : []),
-                ].map(item => (
-                  <div key={item.label} className="flex items-center gap-1.5 group relative">
-                    <div className={`w-2 h-2 rounded-full shrink-0 ${item.dot}`}/>
-                    <span className={`${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{item.label}</span>
-                    {/* Tooltip ao passar o mouse */}
-                    <div className={`absolute bottom-full left-0 mb-1 px-2.5 py-1.5 rounded-xl text-[9px] font-bold normal-case tracking-normal whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-lg ${isDarkMode ? 'bg-slate-700 text-white' : 'bg-slate-800 text-white'}`}>
-                      {item.desc}
-                    </div>
-                  </div>
-                ))}
-              </div>
 
               {isCuttingSector && isProjectionMode ? (
                 <CuttingProjectionPanel
@@ -3888,57 +3870,50 @@ export default function PCPView({
           const isFinished = !!selectedLot.finishedAt;
 
           return (
-            <div className="flex flex-col gap-8">
+            <div className="flex flex-col gap-6">
               {/* Header Info */}
-              <div className="flex flex-col sm:flex-row items-center gap-6 p-6 rounded-[2rem] bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                <div className="w-20 h-20 rounded-3xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-xl shadow-indigo-500/20">
-                  <Factory size={40} />
-                </div>
-                <div className="flex flex-col min-w-0 flex-1 text-center sm:text-left">
-                  <div className="flex items-center justify-center sm:justify-start gap-3 mb-1">
-                    <h4 className="text-lg font-black text-slate-900 dark:text-white uppercase leading-none">{selectedLot.orderNumber}</h4>
+              <div className={`rounded-[1.8rem] overflow-hidden border ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                {/* Top color bar */}
+                <div className="h-1.5 w-full bg-gradient-to-r from-indigo-500 via-violet-500 to-indigo-400" />
+
+                <div className={`p-5 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                  {/* Row 1: Lot# + actions */}
+                  <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                      <button 
-                        onClick={() => handlePrintLotLabel(selectedLot)}
-                        className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-all"
-                        title="Imprimir Etiqueta"
-                      >
-                        <Tag size={14} strokeWidth={3} />
-                      </button>
-                      <button 
-                        onClick={() => {
-                          setNewLot({
-                            id: selectedLot.id,
-                            productId: selectedLot.productId,
-                            variationId: selectedLot.variationId,
-                            quantity: selectedLot.quantity,
-                            prioridade: selectedLot.prioridade,
-                            productionOrderId: selectedLot.productionOrderId,
-                            customerName: selectedLot.customerName,
-                            deliveryDate: selectedLot.deliveryDate,
-                            saleId: selectedLot.saleId,
-                            saleOrderNumber: selectedLot.saleOrderNumber
-                          });
-                          setIsDetailModalOpen(false);
-                          setIsCreateModalOpen(true);
-                        }}
-                        className="p-2 rounded-lg bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 hover:bg-amber-100 transition-all"
-                        title="Editar MAPA"
-                      >
-                        <Edit2 size={14} strokeWidth={3} />
+                      <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
+                        <Factory size={16} className="text-white" />
+                      </div>
+                      <div>
+                        <p className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Mapa de Produção</p>
+                        <h4 className="text-base font-black text-slate-900 dark:text-white leading-tight">#{selectedLot.orderNumber}</h4>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {selectedLot.prioridade && (
+                        <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full ${
+                          selectedLot.prioridade === 'URGENTE' ? 'bg-rose-500 text-white' :
+                          selectedLot.prioridade === 'ALTA' ? 'bg-amber-400 text-white' :
+                          'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                        }`}>{selectedLot.prioridade}</span>
+                      )}
+                      <button onClick={() => {
+                        setNewLot({ id: selectedLot.id, productId: selectedLot.productId, variationId: selectedLot.variationId, quantity: selectedLot.quantity, prioridade: selectedLot.prioridade, productionOrderId: selectedLot.productionOrderId, customerName: selectedLot.customerName, deliveryDate: selectedLot.deliveryDate, saleId: selectedLot.saleId, saleOrderNumber: selectedLot.saleOrderNumber });
+                        setIsDetailModalOpen(false); setIsCreateModalOpen(true);
+                      }} title="Editar Mapa"
+                        className="p-2 rounded-xl transition-all bg-amber-400 hover:bg-amber-500 text-white active:scale-95">
+                        <Edit2 size={13} strokeWidth={3} />
                       </button>
                     </div>
                   </div>
-                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{product?.name} • {variation?.colorName}</p>
 
-                  <div className="flex items-center justify-center sm:justify-start gap-2 mt-1">
-                    <div className="w-3 h-3 rounded-full border border-black/10 shrink-0" style={{ backgroundColor: variation?.color }} />
-                    {selectedLot.prioridade && (
-                      <span className="text-[10px] font-black uppercase text-indigo-600 dark:text-indigo-400 tracking-widest">{selectedLot.prioridade}</span>
-                    )}
+                  {/* Row 2: Product + color */}
+                  <div className="flex items-center gap-2 mb-4">
+                    {variation?.color && <div className="w-3 h-3 rounded-full shrink-0 ring-1 ring-black/10" style={{ backgroundColor: variation.color }} />}
+                    <p className="text-sm font-black text-slate-800 dark:text-slate-100 uppercase leading-tight truncate">{product?.name || '—'}</p>
+                    {variation?.colorName && <span className="text-[10px] font-bold text-slate-400 shrink-0">· {variation.colorName}</span>}
                   </div>
 
-                  {/* Total em linha única acima da grade — deduz pedidos movidos para outros setores */}
+                  {/* Row 3: Stats */}
                   {(() => {
                     const orderSectorsMap: Record<string, string> = (selectedLot as any).metadata?.orderSectors || {};
                     const currentSectorId = selectedLot.route?.[selectedLot.currentSectorIndex];
@@ -3949,22 +3924,36 @@ export default function PCPView({
                     }, 0);
                     const currentQty = selectedLot.quantity - movedOutQty;
                     return (
-                      <div className="flex items-center justify-center sm:justify-start gap-2 mt-3 flex-wrap">
-                        <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400 leading-none">{currentQty}</span>
-                        <span className="text-sm font-black text-slate-400 uppercase tracking-widest leading-none">Pares</span>
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className={`flex-1 flex flex-col items-center py-2.5 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-indigo-50'}`}>
+                          <span className="text-xl font-black text-indigo-600 dark:text-indigo-400 leading-none">{currentQty}</span>
+                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Pares</span>
+                        </div>
+                        <div className={`flex-1 flex flex-col items-center py-2.5 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                          <span className="text-[11px] font-black text-slate-700 dark:text-slate-200 leading-none truncate max-w-full px-1">{currentSector?.name || '—'}</span>
+                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Setor Atual</span>
+                        </div>
+                        {nextSector && (
+                          <div className={`flex-1 flex flex-col items-center py-2.5 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                            <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400 leading-none truncate max-w-full px-1">{nextSector.name}</span>
+                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Próximo</span>
+                          </div>
+                        )}
                         {movedOutQty > 0 && (
-                          <span className="text-[9px] font-black text-emerald-500 uppercase">↗ {movedOutQty} em outros setores</span>
+                          <div className={`flex-1 flex flex-col items-center py-2.5 rounded-2xl ${isDarkMode ? 'bg-emerald-900/20' : 'bg-emerald-50'}`}>
+                            <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400 leading-none">+{movedOutQty}</span>
+                            <span className="text-[8px] font-black text-emerald-400 uppercase tracking-widest mt-0.5">Outros</span>
+                          </div>
                         )}
                       </div>
                     );
                   })()}
 
-                  {/* Chips de grade — deduz pares dos pedidos movidos */}
+                  {/* Row 4: Size grid */}
                   {selectedLot.pairs && (() => {
                     const orderSectorsMap: Record<string, string> = (selectedLot as any).metadata?.orderSectors || {};
                     const lotCurrentSectorId = selectedLot.route?.[selectedLot.currentSectorIndex];
                     const lotSI: any[] = (selectedLot as any).metadata?.sourceItems || [];
-                    // Calcula pares a subtrair por tamanho (pedidos movidos para outro setor)
                     const deductBySize: Record<string, number> = {};
                     lotSI.forEach((si: any) => {
                       const destSector = orderSectorsMap[si.orderId];
@@ -3983,11 +3972,10 @@ export default function PCPView({
                         .map(([sz, q]) => [sz, Math.max(0, q - (deductBySize[sz] || 0))])
                         .filter(([, q]) => q > 0)
                     );
-                    const hasDeductions = Object.keys(deductBySize).length > 0;
                     return (
-                      <div className="flex flex-wrap gap-1.5 mt-2 justify-center sm:justify-start">
+                      <div className="flex flex-wrap gap-1.5 justify-center">
                         {Object.entries(adjustedPairs).sort(([a], [b]) => Number(a) - Number(b)).map(([size, qty]) => (
-                          <div key={size} className={`flex flex-col items-center min-w-[36px] px-2 py-2 rounded-2xl border shadow-sm ${hasDeductions ? 'bg-indigo-50 dark:bg-indigo-950/20 border-indigo-100 dark:border-indigo-800' : 'bg-white dark:bg-slate-900 border-slate-100 dark:border-slate-700'}`}>
+                          <div key={size} className={`flex flex-col items-center min-w-[36px] px-2 py-2 rounded-2xl border shadow-sm ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}`}>
                             <span className="text-[10px] font-black text-slate-400 leading-none mb-1">{size}</span>
                             <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 leading-none">{qty as number}</span>
                           </div>
@@ -4107,10 +4095,10 @@ export default function PCPView({
                 };
 
                 return (
-                  <div className="flex flex-col gap-4">
-                    {/* Header with select-all (only selectable items) */}
-                    <div className="flex items-center justify-between px-1">
-                      <div className="flex items-center gap-2">
+                  <div className="flex flex-col gap-3">
+                    {/* Header with select-all */}
+                    <div className={`flex items-center justify-between px-4 py-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-50'}`}>
+                      <div className="flex items-center gap-2.5">
                         {selectableItems.length > 0 && (
                           <input
                             type="checkbox"
@@ -4127,18 +4115,16 @@ export default function PCPView({
                                 setSelectedSourceItemKeys(keys);
                               }
                             }}
-                            className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                            className="w-4 h-4 accent-indigo-600 cursor-pointer rounded"
                           />
                         )}
-                        <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Pedidos Vinculados</h4>
+                        <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Pedidos Vinculados</span>
                       </div>
-                      <div className="flex flex-col items-end gap-0.5">
-                        <span className="text-[10px] font-black text-indigo-500 uppercase">{sourceItems.length} Pedidos</span>
+                      <div className="flex items-center gap-2">
                         {movedOutItems.length > 0 && (
-                          <span className="text-[8px] font-black text-emerald-500 uppercase">
-                            ↗ {movedOutItems.length} em outros setores
-                          </span>
+                          <span className="text-[8px] font-black text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full uppercase">↗ {movedOutItems.length} em outros</span>
                         )}
+                        <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2.5 py-1 rounded-full uppercase">{sourceItems.length} {sourceItems.length === 1 ? 'pedido' : 'pedidos'}</span>
                       </div>
                     </div>
 
@@ -4353,7 +4339,7 @@ export default function PCPView({
                                 </div>
                                 {hasOS ? (
                                   <>
-                                    <button type="button" onClick={() => handleEditOS(orderOS!)} className="p-1.5 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 text-slate-400 hover:text-indigo-600 transition-all" title="Editar OS"><Edit2 size={13} /></button>
+                                    <button type="button" onClick={() => handleEditOS(orderOS!)} className="p-1.5 rounded-lg bg-amber-400 hover:bg-amber-500 text-white transition-all active:scale-95" title="Editar OS"><Edit2 size={13} /></button>
                                     <button type="button" onClick={() => handleDeleteOS(orderOS!)} className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-300 hover:text-rose-500 transition-all" title="Excluir OS"><Trash2 size={13} /></button>
                                   </>
                                 ) : (
@@ -4547,7 +4533,7 @@ export default function PCPView({
                                   setPrintOSData({ os, nextSectorName: nextSec?.name || 'CONCLUÍDO' });
                                   setIsPrintOSModalOpen(true);
                                 }} className="flex-1 text-[11px] font-black uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 py-2.5 rounded-xl transition-all text-center">Imprimir</button>
-                                <button type="button" onClick={() => handleEditOS(os)} className="flex-1 text-[11px] font-black uppercase text-indigo-600 bg-indigo-50 dark:bg-indigo-950/20 hover:bg-indigo-100 py-2.5 rounded-xl transition-all text-center">Editar</button>
+                                <button type="button" onClick={() => handleEditOS(os)} className="flex-1 text-[11px] font-black uppercase text-white bg-amber-400 hover:bg-amber-500 py-2.5 rounded-xl transition-all text-center active:scale-95">Editar</button>
                                 <button type="button" onClick={() => handleDeleteOS(os)} className="flex-1 text-[11px] font-black uppercase text-rose-500 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 py-2.5 rounded-xl transition-all text-center">Excluir</button>
                               </div>
 
@@ -5426,6 +5412,23 @@ export default function PCPView({
                 rows={2}
                 className={`w-full px-5 py-4 rounded-xl border-2 font-bold text-xs outline-none resize-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-500'}`}
               />
+            </div>
+
+            {/* Não Contábil */}
+            <div className="flex items-center gap-3 p-4 rounded-2xl bg-amber-50/20 dark:bg-amber-950/10 border border-amber-200/40 dark:border-amber-800/30 sm:col-span-2">
+              <input
+                type="checkbox"
+                id="os-nao-contabil"
+                checked={osNaoContabil}
+                onChange={e => setOsNaoContabil(e.target.checked)}
+                className="w-4 h-4 rounded text-amber-500 focus:ring-amber-400 border-slate-300"
+              />
+              <div>
+                <label htmlFor="os-nao-contabil" className="text-[11px] font-black uppercase tracking-wider text-slate-600 dark:text-slate-300 select-none cursor-pointer block">
+                  Não Contábil
+                </label>
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Não gera lançamento financeiro</span>
+              </div>
             </div>
 
             {/* Direct completion check */}

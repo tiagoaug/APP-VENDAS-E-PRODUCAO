@@ -193,6 +193,34 @@ export default function TransactionModal({
             </button>
           </div>
 
+          {/* Nº de Indicação + toggle Manual/Automático */}
+          <div className="flex flex-col gap-3">
+            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Nº de Indicação</label>
+            <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800 rounded-[1.8rem] pr-4">
+              <input
+                type="text"
+                className={`flex-1 bg-transparent border-none rounded-[1.8rem] py-5 px-7 text-sm font-bold focus:ring-0 outline-none dark:text-white placeholder:text-slate-300 ${!isManual ? 'opacity-40 cursor-not-allowed' : ''}`}
+                placeholder={isManual ? 'Ex: NF-001, REF-2024, #123...' : 'Gerado automaticamente'}
+                value={referenceNumber}
+                readOnly={!isManual}
+                onChange={(e) => setReferenceNumber(e.target.value)}
+              />
+              <button
+                type="button"
+                aria-label={isManual ? 'Lançamento manual — clique para automático' : 'Lançamento automático — clique para manual'}
+                onClick={() => setIsManual(v => !v)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-2xl shrink-0 transition-all ${isManual ? 'bg-indigo-100 dark:bg-indigo-900/30' : 'bg-slate-200 dark:bg-slate-700'}`}
+              >
+                <div className={`w-7 h-4 rounded-full relative transition-all ${isManual ? 'bg-indigo-500' : 'bg-slate-400'}`}>
+                  <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${isManual ? 'left-3.5' : 'left-0.5'}`} />
+                </div>
+                <span className={`text-[9px] font-black uppercase tracking-widest whitespace-nowrap ${isManual ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
+                  {isManual ? 'Manual' : 'Auto'}
+                </span>
+              </button>
+            </div>
+          </div>
+
           <div className="space-y-6">
             {/* Vínculo */}
             <div className="flex flex-col gap-3">
@@ -321,46 +349,6 @@ export default function TransactionModal({
                     onChange={(e) => setDate(e.target.value)}
                   />
                 </div>
-              </div>
-            </div>
-
-            {/* Descrição + Nº Indicação */}
-            <div className="flex flex-col gap-3">
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Descrição do Lançamento</label>
-              <input
-                type="text"
-                className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-[1.8rem] py-6 px-7 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 transition-all dark:text-white placeholder:text-slate-300"
-                placeholder="Ex: Recebimento de venda..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
-
-            {/* Nº de Indicação + toggle Manual/Automático */}
-            <div className="flex flex-col gap-3">
-              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Nº de Indicação</label>
-              <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800 rounded-[1.8rem] pr-4">
-                <input
-                  type="text"
-                  className={`flex-1 bg-transparent border-none rounded-[1.8rem] py-5 px-7 text-sm font-bold focus:ring-0 outline-none dark:text-white placeholder:text-slate-300 ${!isManual ? 'opacity-40 cursor-not-allowed' : ''}`}
-                  placeholder={isManual ? 'Ex: NF-001, REF-2024, #123...' : 'Gerado automaticamente'}
-                  value={referenceNumber}
-                  readOnly={!isManual}
-                  onChange={(e) => setReferenceNumber(e.target.value)}
-                />
-                <button
-                  type="button"
-                  aria-label={isManual ? 'Lançamento manual — clique para automático' : 'Lançamento automático — clique para manual'}
-                  onClick={() => setIsManual(v => !v)}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-2xl shrink-0 transition-all ${isManual ? 'bg-indigo-100 dark:bg-indigo-900/30' : 'bg-slate-200 dark:bg-slate-700'}`}
-                >
-                  <div className={`w-7 h-4 rounded-full relative transition-all ${isManual ? 'bg-indigo-500' : 'bg-slate-400'}`}>
-                    <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${isManual ? 'left-3.5' : 'left-0.5'}`} />
-                  </div>
-                  <span className={`text-[9px] font-black uppercase tracking-widest whitespace-nowrap ${isManual ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
-                    {isManual ? 'Manual' : 'Auto'}
-                  </span>
-                </button>
               </div>
             </div>
 

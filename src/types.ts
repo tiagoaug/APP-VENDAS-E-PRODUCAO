@@ -130,6 +130,7 @@ export type Product = {
   type: SaleType;
   status: ProductStatus;
   costPrice: number;
+  unitCostPrice?: number;
   salePrice: number;
   unitSalePrice?: number;
   minStockInBoxes: number;
@@ -156,6 +157,7 @@ export type PurchaseItem = {
   isBox: boolean;
   cost: number;
   note?: string;
+  unitCost?: number;
 };
 
 export type GeneralPurchaseItem = {
@@ -205,9 +207,12 @@ export type Purchase = {
   paymentStatus?: PaymentStatus;
   paymentHistory?: PaymentHistory[];
   isAccounting?: boolean;
+  isProductionOrder?: boolean;   // Se true, gera mapa de estoque no PCP
   sellerId?: string;
   sellerName?: string;
   requestId?: string;
+  prioridade?: string;
+  deliveryDate?: number;
 };
 
 export enum SaleStatus {

@@ -78,6 +78,7 @@ export default function SalesView({
   const [saleToDelete, setSaleToDelete] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
   const [productionOrderSale, setProductionOrderSale] = useState<Sale | null>(null);
+  const [itemsPopupSale, setItemsPopupSale] = useState<Sale | null>(null);
 
   const toggleExpand = (id: string) => {
     setExpandedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
@@ -464,10 +465,10 @@ export default function SalesView({
                 <div className={`flex ${sale.status === SaleStatus.QUOTE ? 'flex-col' : 'justify-between items-start'} z-10 gap-4`}>
                   {/* Items List (Left/Top) */}
                   {showProducts ? (
-                    <button 
-                      onClick={() => setSelectedSale(sale)}
-                      title="Ver Detalhes"
-                      aria-label="Ver detalhes dos itens do pedido"
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setItemsPopupSale(sale); }}
+                      title="Ver todos os itens"
+                      aria-label="Ver todos os itens da venda"
                       className="flex-1 flex flex-col gap-3 cursor-pointer min-w-0 text-left"
                     >
                       {sale.items.slice(0, 3).map((item, idx) => {
@@ -663,6 +664,88 @@ export default function SalesView({
         initialFormat={exportModal.format}
         title={exportModal.sale?.status === SaleStatus.QUOTE ? "Exportar Orçamento" : "Exportar Venda"}
       />
+
+      {/* Popup — Itens da Venda */}
+      {itemsPopupSale && (() => {
+        const s = itemsPopupSale;
+        const totalItems = s.items.reduce((acc, i) => acc + i.quantity, 0);
+        return (
+          <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/50 backdrop-blur-sm" onClick={() => setItemsPopupSale(null)}>
+            <div
+              onClick={e => e.stopPropagation()}
+              className={`w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] shadow-2xl flex flex-col overflow-hidden ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
+            >
+              {/* Header */}
+              <div className={`flex items-center justify-between px-6 py-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                <div>
+                  <p className="text-xs font-black uppercase tracking-widest text-slate-400">Itens da Venda</p>
+                  <p className={`text-base font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Pedido #{s.orderNumber}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`text-[10px] font-black px-3 py-1.5 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>{totalItems} {totalItems === 1 ? 'item' : 'itens'}</span>
+                  <button onClick={() => setItemsPopupSale(null)} title="Fechar" aria-label="Fechar popup de itens" className={`p-2 rounded-xl transition-all ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
+                    <X size={20} strokeWidth={2.5} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Items list */}
+              <div className="overflow-y-auto max-h-[60vh] flex flex-col divide-y divide-slate-100 dark:divide-slate-800">
+                {s.items.map((item, idx) => {
+                  const product = getProductInfo(item.productId);
+                  const variation = getVariationInfo(item.productId, item.variationId);
+                  const lineTotal = item.price * item.quantity;
+                  return (
+                    <div key={idx} className={`flex items-center gap-3 px-6 py-3.5 ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'} transition-colors`}>
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-indigo-50'}`}>
+                        <Tag size={13} className="text-indigo-500" strokeWidth={3} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-[12px] font-black uppercase leading-tight truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                          {product?.reference} {product?.name}
+                        </p>
+                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                          {variation?.colorName && (
+                            <span className="text-[10px] font-bold text-slate-400">{variation.colorName}</span>
+                          )}
+                          {item.size && (
+                            <span className="text-[10px] font-bold text-slate-400">• Nº {item.size}</span>
+                          )}
+                          <span className="text-[10px] font-black text-indigo-500">• {item.quantity} {item.saleType === SaleType.WHOLESALE ? 'grade(s)' : 'par(es)'}</span>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                          R$ {lineTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-[9px] font-bold text-slate-400">
+                          R$ {item.price.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} / {item.saleType === SaleType.WHOLESALE ? 'grade' : 'par'}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Footer — total */}
+              <div className={`px-6 py-4 border-t ${isDarkMode ? 'border-slate-800 bg-slate-900/80' : 'border-slate-100 bg-slate-50'}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total</span>
+                  <span className={`text-lg font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    R$ {s.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+                {s.discount > 0 && (
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase">Desconto aplicado</span>
+                    <span className="text-[11px] font-black text-rose-500">- R$ {s.discount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {productionOrderSale && (
         <ProductionOrderModal

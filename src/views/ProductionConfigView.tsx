@@ -1385,7 +1385,7 @@ function GenericConfigList({
     const activeWeights = weights.filter(w => w > 0);
     const total = activeWeights.reduce((a, b) => a + b, 0);
     const avg = activeWeights.length > 0 ? total / activeWeights.length : 0;
-    const yld = avg > 0 ? 1 / avg : 0;
+    const yld = avg > 0 ? 1000 / avg : 0;
     return { totalWeightLive: total, averageWeightLive: avg, yieldLive: yld };
   }, [editingItem?.metadata?.sizeWeights]);
 
@@ -2123,7 +2123,7 @@ function GenericConfigList({
                 <Modal
                   isOpen={isWeightsModalOpen}
                   onClose={() => setIsWeightsModalOpen(false)}
-                  title="Pesos por Tamanho (KG)"
+                  title="Pesos por Tamanho (g)"
                   zIndex={75000}
                 >
                   <div className="flex flex-col gap-6">
@@ -2332,10 +2332,10 @@ function GenericConfigList({
                     {totalWeightLive > 0 && (
                       <div className="flex flex-col gap-0.5 mt-1 ml-1">
                         <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest">
-                          Soma Calculada: {totalWeightLive.toFixed(4)} kg
+                          Soma Calculada: {totalWeightLive.toFixed(1)} g
                         </span>
                         <span className="text-[9px] font-bold text-emerald-500 uppercase tracking-widest">
-                          Média Calculada: {averageWeightLive.toFixed(4)} kg
+                          Média Calculada: {averageWeightLive.toFixed(1)} g
                         </span>
                       </div>
                     )}
@@ -2344,12 +2344,12 @@ function GenericConfigList({
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Rendimento por KG</p>
                     <div className="flex items-baseline gap-2">
                       <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
-                        {averageWeightLive > 0 ? (1 / averageWeightLive).toFixed(2) : '0.00'}
+                        {averageWeightLive > 0 ? (1000 / averageWeightLive).toFixed(2) : '0.00'}
                       </span>
                       <span className="text-xs font-black text-slate-400 uppercase">PRS / KG</span>
                     </div>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
-                      1 kg ÷ Média ({averageWeightLive.toFixed(4)} kg)
+                      1000 g ÷ Média ({averageWeightLive.toFixed(1)} g)
                     </p>
                   </div>
                 </div>
@@ -3299,18 +3299,22 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
         <div className={`p-4 rounded-2xl flex flex-col gap-3 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50/50'}`}>
           <div className="flex items-center gap-2 text-slate-400">
             <Package size={14} />
-            <span className="text-[9px] font-black uppercase tracking-widest">Pesos por Tamanho (KG)</span>
+            <span className="text-[9px] font-black uppercase tracking-widest">Pesos por Tamanho (g)</span>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap justify-center gap-3">
             {Object.entries(safeSizeWeights).map(([size, weight]) => {
               const stock = getStockForSize(size);
               return (
-                <div key={size} className={`flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-white border border-slate-100'}`}>
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{size}</span>
-                  <span className={`text-[11px] font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{Number(weight) || 0} kg</span>
-                  {stock > 0 && (
-                    <span className="text-[7px] font-black text-emerald-500 uppercase tracking-widest">Est: {stock}</span>
-                  )}
+                <div key={size} className="flex flex-col items-center rounded-xl overflow-hidden border border-slate-100 dark:border-slate-800 shadow-sm min-w-[72px]">
+                  <div className="w-full px-4 py-1.5 bg-black flex items-center justify-center">
+                    <span className="text-[10px] font-black text-white uppercase tracking-widest">{size}</span>
+                  </div>
+                  <div className="w-full px-4 py-2.5 bg-white flex flex-col items-center gap-0.5">
+                    <span className="text-sm font-black text-slate-800">{Number(weight) || 0} g</span>
+                    {stock > 0 && (
+                      <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Est: {stock}</span>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -3391,14 +3395,14 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
                   const activeWeights = weights.filter(w => Number(w) > 0);
                   const total = activeWeights.reduce((a, b) => a + b, 0);
                   const avg = activeWeights.length > 0 ? total / activeWeights.length : 0;
-                  return avg > 0 ? (1 / avg).toFixed(2) : '0.00';
+                  return avg > 0 ? (1000 / avg).toFixed(2) : '0.00';
                 })()} PRS/KG
               </span>
             </div>
           </div>
           {Object.keys(safeSizeWeights).length > 0 && (
             <span className="text-[7px] font-bold text-slate-400 uppercase tracking-widest ml-1">
-              Soma: {Object.values(safeSizeWeights).reduce((a, b) => Number(a) + Number(b), 0).toFixed(3)} kg
+              Soma: {Object.values(safeSizeWeights).reduce((a, b) => Number(a) + Number(b), 0).toFixed(1)} g
             </span>
           )}
         </div>

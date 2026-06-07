@@ -38,11 +38,17 @@ import {
   Users,
   Clock,
   Truck,
-  AlertCircle
+  AlertCircle,
+  Factory,
+  Layers,
+  ShoppingBag,
+  Box
 } from "lucide-react";
 import { format } from "date-fns";
 import CalculatorModal from '../components/CalculatorModal';
 import ComboBox from "../components/ComboBox";
+import PackagingBuilderModal from '../components/PackagingBuilderModal';
+import GradeBuilderModal from '../components/GradeBuilderModal';
 
 interface PurchaseFormViewProps {
   purchaseId: string | null;
@@ -123,7 +129,9 @@ export default function PurchaseFormView({
     productId: string;
     isBox: boolean;
     cost: number;
+    unitCost?: number;
     note?: string;
+    blockPkgId?: string;
     variations: Record<string, { quantity: number; size?: string }>;
   }
 
@@ -138,6 +146,7 @@ export default function PurchaseFormView({
           productId: item.productId,
           isBox: item.isBox,
           cost: item.cost,
+          unitCost: item.unitCost,
           variations: {},
         };
       }
@@ -186,16 +195,56 @@ export default function PurchaseFormView({
   const [registerAsReceived, setRegisterAsReceived] = useState(
     existing?.registerAsReceived !== undefined ? existing.registerAsReceived : true
   );
+  const [isProductionOrder, setIsProductionOrder] = useState(existing?.isProductionOrder ?? false);
+  const [packagingPerVar, setPackagingPerVar] = useState<Record<string, { pkgId: string; breakdown: Record<string, number>; fromStock: Record<string, number> }>>({});
+  const [packagingModalTarget, setPackagingModalTarget] = useState<{ blockId: string; variationId: string; variationName: string } | null>(null);
+  const [gradePerVar, setGradePerVar] = useState<Record<string, Record<string, number>>>({});
+  const [gradeModalTarget, setGradeModalTarget] = useState<{ blockId: string; variationId: string; variationName: string; productId: string } | null>(null);
+  const [deliveryDate, setDeliveryDate] = useState<string>(
+    existing?.deliveryDate ? new Date(existing.deliveryDate).toISOString().split('T')[0] : ''
+  );
+  const [prioridade, setPrioridade] = useState<string>(existing?.prioridade || 'NORMAL');
 
   const activeProducts = useMemo(
-    () =>
-      products.filter((p) => {
-        const isActive = !p.status || p.status === ProductStatus.ACTIVE;
-        const matchesSupplier = !p.supplierId || p.supplierId === supplierId;
-        return isActive && matchesSupplier;
-      }),
-    [products, supplierId],
+    () => products.filter((p) => !p.status || p.status === ProductStatus.ACTIVE),
+    [products],
   );
+
+  const calcUnitCost = (costPerGrade: number, prod: Product | undefined): number => {
+    if (!prod) return 0;
+    if (prod.unitCostPrice) return prod.unitCostPrice;
+    const grid = grids.find(g => g.id === prod.defaultGridId);
+    if (grid) {
+      const gradeSize = Object.values(grid.configuration).reduce((a: number, b: number) => a + b, 0);
+      if (gradeSize > 0) return Math.round((costPerGrade / gradeSize) * 100) / 100;
+    }
+    return 0;
+  };
+
+  // Auto-calcular unitCost para blocos sem custo unitário definido
+  useEffect(() => {
+    const updated = blocks.map(b => {
+      if (!b.unitCost) {
+        const prod = products.find(p => p.id === b.productId);
+        // 1) Packaging block-level
+        if (b.blockPkgId) {
+          const pkg = productionConfigs.find(c => c.id === b.blockPkgId && c.type === 'PACKAGING');
+          const capacity = pkg?.metadata?.capacity || 0;
+          if (capacity > 0) {
+            const val = (prod?.unitCostPrice) || Math.round((b.cost / capacity) * 100) / 100;
+            if (val) return { ...b, unitCost: val };
+          }
+        }
+        // 2) Grid padrão do produto
+        const computed = calcUnitCost(b.cost, prod);
+        if (computed) return { ...b, unitCost: computed };
+      }
+      return b;
+    });
+    if (updated.some((b, i) => b.unitCost !== blocks[i].unitCost)) {
+      setBlocks(updated);
+    }
+  }, [blocks, products, productionConfigs, grids]);
 
   // Auto-populate seller when supplier changes
   useEffect(() => {
@@ -254,6 +303,40 @@ export default function PurchaseFormView({
     return unitItem?.name || mat.metadata?.unit || '';
   };
 
+  const getDefaultDaysForDeadline = (deadlineName: string): number => {
+    const cleanName = (deadlineName || '').toUpperCase().trim();
+    const matchedConfig = (productionConfigs || []).find(c =>
+      c.type === 'DEADLINE' &&
+      (c.name.toUpperCase().trim() === cleanName ||
+       (cleanName === 'ALTA' && c.name.toUpperCase().trim() === 'PADRÃO') ||
+       (cleanName === 'URGENTE' && c.name.toUpperCase().trim() === 'URGENTE'))
+    );
+    if (matchedConfig && typeof matchedConfig.metadata?.days === 'number') {
+      return matchedConfig.metadata.days;
+    }
+    if (cleanName === 'URGENTE') return 3;
+    if (cleanName === 'ALTA') return 7;
+    return 15;
+  };
+
+  const deadlineConfigs = useMemo(() => {
+    return (productionConfigs || []).filter(c => c.type === 'DEADLINE');
+  }, [productionConfigs]);
+
+  const priorityOptions = useMemo(() => {
+    if (deadlineConfigs.length > 0) {
+      return deadlineConfigs.map(c => c.name.toUpperCase().trim());
+    }
+    return ['NORMAL', 'ALTA', 'URGENTE'];
+  }, [deadlineConfigs]);
+
+  const handlePriorityChange = (p: string) => {
+    setPrioridade(p);
+    const defaultDays = getDefaultDaysForDeadline(p);
+    const calculatedDate = new Date(Date.now() + defaultDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    setDeliveryDate(calculatedDate);
+  };
+
   const itemTotal = (item: GeneralPurchaseItem) =>
     (item.quantity ?? 1) * item.value;
 
@@ -273,7 +356,7 @@ export default function PurchaseFormView({
   const addBlock = (pId: string) => {
     const p = products.find(prod => prod.id === pId);
     if (!p) return;
-    
+
     const newId = Math.random().toString(36).substr(2, 9);
     setBlocks([
       ...blocks,
@@ -282,6 +365,7 @@ export default function PurchaseFormView({
         productId: p.id,
         isBox: type === PurchaseType.REPLENISHMENT,
         cost: p.costPrice || 0,
+        unitCost: calcUnitCost(p.costPrice || 0, p),
         variations: {},
       },
     ]);
@@ -410,6 +494,7 @@ export default function PurchaseFormView({
               size: typedData.size,
               isBox: b.isBox,
               cost: b.cost,
+              unitCost: b.unitCost,
             });
           }
         });
@@ -450,11 +535,78 @@ export default function PurchaseFormView({
       checks,
       generateTransaction,
       registerAsReceived: finalRegisterAsReceived,
+      isProductionOrder: type === PurchaseType.REPLENISHMENT ? isProductionOrder : undefined,
+      prioridade: type === PurchaseType.REPLENISHMENT ? prioridade : undefined,
+      deliveryDate: type === PurchaseType.REPLENISHMENT && deliveryDate ? new Date(deliveryDate).getTime() : undefined,
       sellerId,
       sellerName: people.find(p => p.id === sellerId)?.name || sellerId || '',
       paymentStatus: paymentTerm === PaymentTerm.INSTALLMENTS ? PaymentStatus.PENDING : PaymentStatus.PAID,
     });
   };
+
+  // Aplica embalagem a todas as variações do bloco
+  const applyBlockPackaging = (blockIndex: number, pkgId: string) => {
+    const block = blocks[blockIndex];
+    const product = products.find(p => p.id === block.productId);
+    if (!product) return;
+    if (!pkgId) {
+      updateBlock(blockIndex, { blockPkgId: undefined });
+      setPackagingPerVar(prev => {
+        const next = { ...prev };
+        product.variations.forEach(v => { delete next[`${block.id}-${v.id}`]; });
+        return next;
+      });
+      return;
+    }
+    const pkg = productionConfigs.find(c => c.id === pkgId && c.type === 'PACKAGING');
+    if (!pkg) return;
+    // Auto-calcular custo unitário por par se ainda não definido
+    const capacity = pkg.metadata?.capacity || 0;
+    const blockUpdates: Partial<PurchaseBlock> = { blockPkgId: pkgId };
+    if (capacity > 0 && !block.unitCost) {
+      const registeredUnitCost = product.unitCostPrice || 0;
+      const calculatedUnitCost = Math.round((block.cost / capacity) * 100) / 100;
+      blockUpdates.unitCost = registeredUnitCost || calculatedUnitCost;
+    }
+    updateBlock(blockIndex, blockUpdates);
+    const sizeQtys: Record<string, number> = pkg.metadata?.sizeQuantities || {};
+    const pkgSizes: string[] = pkg.metadata?.sizes?.length ? pkg.metadata.sizes as string[] : Object.keys(sizeQtys);
+    const breakdown: Record<string, number> = {};
+    pkgSizes.forEach(s => { breakdown[s] = sizeQtys[s] || 0; });
+    setPackagingPerVar(prev => {
+      const next = { ...prev };
+      product.variations.forEach(v => { next[`${block.id}-${v.id}`] = { pkgId, breakdown, fromStock: {} }; });
+      return next;
+    });
+  };
+
+  // Cesta de compras — itens configurados
+  const cartItems = useMemo(() => {
+    const items: { blockId: string; blockIndex: number; productId: string; productName: string; reference: string; variationId: string; variationName: string; quantity: number; cost: number; pkgConfig?: { pkgId: string; pkgName: string; breakdown: Record<string, number>; pairsPerEmb: number } }[] = [];
+    blocks.forEach((block, blockIndex) => {
+      const product = products.find(p => p.id === block.productId);
+      Object.entries(block.variations).forEach(([variationKey, varData]) => {
+        if (varData.quantity <= 0) return;
+        const variationId = variationKey.split('-')[0];
+        const variation = product?.variations.find(v => v.id === variationId);
+        const pkg = packagingPerVar[`${block.id}-${variationId}`];
+        const pkgConfig = pkg?.pkgId ? productionConfigs.find(c => c.id === pkg.pkgId) : undefined;
+        const pairsPerEmb = pkg ? Object.values(pkg.breakdown).reduce((a, b) => a + b, 0) : 0;
+        items.push({
+          blockId: block.id, blockIndex,
+          productId: block.productId,
+          productName: product?.name || '',
+          reference: product?.reference || '',
+          variationId,
+          variationName: variation?.colorName || '',
+          quantity: varData.quantity,
+          cost: block.cost,
+          ...(pkg?.pkgId ? { pkgConfig: { pkgId: pkg.pkgId, pkgName: pkgConfig?.name || '', breakdown: pkg.breakdown, pairsPerEmb } } : {})
+        });
+      });
+    });
+    return items;
+  }, [blocks, products, packagingPerVar, productionConfigs]);
 
   const openCalculator = (index: number, type: 'blocks' | 'generalItems') => {
     let value = 0;
@@ -488,32 +640,90 @@ export default function PurchaseFormView({
       <div
         className={`p-6 rounded-[2rem] border flex flex-col gap-5 shadow-sm relative overflow-hidden ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
       >
-        <div className="flex bg-slate-50 dark:bg-slate-800 p-1.5 rounded-2xl border border-slate-100 dark:border-slate-700">
+        <div className="flex bg-slate-50 dark:bg-slate-800 p-1.5 rounded-2xl border border-slate-100 dark:border-slate-700 gap-1">
           <button
             onClick={() => setType(PurchaseType.REPLENISHMENT)}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${type === PurchaseType.REPLENISHMENT ? "bg-white dark:bg-slate-700 shadow-lg text-indigo-600 dark:text-indigo-400" : "text-slate-400 dark:text-slate-500"}`}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+              type === PurchaseType.REPLENISHMENT
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25'
+                : 'text-slate-400 dark:text-slate-500 hover:text-indigo-500'
+            }`}
             aria-label="Tipo de compra estoque"
             title="Estoque"
           >
-            <Package size={14} strokeWidth={2.5} className={type === PurchaseType.REPLENISHMENT ? "text-indigo-500" : ""} /> Estoque
+            <Package size={14} strokeWidth={2.5} /> Estoque
           </button>
           <button
             onClick={() => setType(PurchaseType.GENERAL)}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${type === PurchaseType.GENERAL ? "bg-white dark:bg-slate-700 shadow-lg text-amber-600 dark:text-amber-400" : "text-slate-400 dark:text-slate-500"}`}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+              type === PurchaseType.GENERAL
+                ? 'bg-amber-500 text-white shadow-lg shadow-amber-400/25'
+                : 'text-slate-400 dark:text-slate-500 hover:text-amber-500'
+            }`}
             aria-label="Tipo de compra geral"
             title="Geral"
           >
-            <ShoppingCart size={14} strokeWidth={2.5} className={type === PurchaseType.GENERAL ? "text-amber-500" : ""} /> Geral
+            <ShoppingCart size={14} strokeWidth={2.5} /> Geral
           </button>
           <button
             type="button"
             onClick={() => setType(PurchaseType.SOLE)}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${type === PurchaseType.SOLE ? "bg-white dark:bg-slate-700 shadow-lg text-cyan-600 dark:text-cyan-400" : "text-slate-400 dark:text-slate-500"}`}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+              type === PurchaseType.SOLE
+                ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-400/25'
+                : 'text-slate-400 dark:text-slate-500 hover:text-cyan-500'
+            }`}
             aria-label="Compra de solados"
             title="Solados"
           >
-            <ShoppingCart size={14} strokeWidth={2.5} className={type === PurchaseType.SOLE ? "text-cyan-500" : ""} /> Solados
+            <ShoppingCart size={14} strokeWidth={2.5} /> Solados
           </button>
+        </div>
+
+        {/* Identificação da Compra/Lote — acima do fornecedor */}
+        <div className="relative">
+          <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">
+            Identificação da Compra/Lote
+          </label>
+          <div className={`flex items-center gap-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl pl-4 pr-5`}>
+            {/* Toggle AUTO */}
+            <label className="flex items-center gap-2 cursor-pointer shrink-0">
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  className="sr-only"
+                  checked={isAutoBatchNumber}
+                  aria-label="Gerar lote automático"
+                  onChange={() => {
+                    const newAuto = !isAutoBatchNumber;
+                    setIsAutoBatchNumber(newAuto);
+                    if (newAuto) {
+                      setBatchNumber(`LOT-${Date.now().toString().slice(-5).toUpperCase()}`);
+                    } else {
+                      setBatchNumber('');
+                    }
+                  }}
+                />
+                <div className={`w-8 h-4 rounded-full transition-colors ${isAutoBatchNumber ? 'bg-indigo-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
+                <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform shadow-sm ${isAutoBatchNumber ? 'translate-x-4' : 'translate-x-0'}`} />
+              </div>
+              <span className={`text-[8px] font-black uppercase tracking-widest transition-colors ${isAutoBatchNumber ? 'text-indigo-500' : 'text-slate-400'}`}>
+                Auto
+              </span>
+            </label>
+            {/* Input na mesma linha */}
+            <input
+              type="text"
+              className={`flex-1 bg-transparent border-none py-4 text-[12px] font-black uppercase tracking-widest focus:ring-0 outline-none ${isAutoBatchNumber ? 'text-slate-400' : 'text-indigo-500 dark:text-indigo-400'}`}
+              value={batchNumber}
+              onChange={(e) => { setBatchNumber(e.target.value); setIsAutoBatchNumber(false); }}
+              placeholder="Ex: Nota Fiscal 1234"
+              disabled={isAutoBatchNumber}
+              aria-label="Número do lote"
+              title="Número do Lote"
+            />
+            <Info size={14} className="text-cyan-400 shrink-0" />
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -604,92 +814,41 @@ export default function PurchaseFormView({
               <button
                 type="button"
                 onClick={() => setGenerateTransaction(false)}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${!generateTransaction ? "bg-white dark:bg-slate-700 shadow-lg text-slate-900 dark:text-white" : "text-slate-400 dark:text-slate-500"}`}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${!generateTransaction ? "bg-rose-500 shadow-lg shadow-rose-500/20 text-white" : "text-slate-400 dark:text-slate-500"}`}
                 aria-label="Não gerar transação contábil"
                 title="Não Contábil"
               >
-                <div className={`w-2 h-2 rounded-full ${!generateTransaction ? 'bg-rose-500' : 'bg-slate-300'}`} />
+                <div className={`w-2 h-2 rounded-full ${!generateTransaction ? 'bg-white' : 'bg-slate-300'}`} />
                 Não Contábil
               </button>
             </div>
-            <p className="text-[8px] text-slate-400 font-bold uppercase tracking-widest mt-2 px-3">
+            <p className={`text-[8px] font-bold uppercase tracking-widest mt-2 px-3 ${!generateTransaction ? 'text-rose-500 font-black' : 'text-slate-400'}`}>
               {generateTransaction ? "*GERARÁ UM TÍTULO NO FINANCEIRO PARA PAGAMENTO" : "*NÃO SERÁ TRACKEADO NO FLUXO DE CONTAS A PAGAR"}
             </p>
           </div>
 
-          <div className="relative col-span-2">
-            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">
-              Identificação da Compra/Lote
-            </label>
-            <div className="flex items-center gap-3 mb-2 px-3">
-              <label className="flex items-center gap-2 cursor-pointer group">
-                <div className="relative">
-                  <input 
-                    type="checkbox"
-                    className="sr-only"
-                    checked={isAutoBatchNumber}
-                    aria-label="Gerar lote automático"
-                    onChange={() => {
-                      const newAuto = !isAutoBatchNumber;
-                      setIsAutoBatchNumber(newAuto);
-                      if (newAuto) {
-                        setBatchNumber(`LOT-${Date.now().toString().slice(-5).toUpperCase()}`);
-                      } else {
-                        setBatchNumber('');
-                      }
-                    }}
-                  />
-                  <div className={`w-8 h-4 rounded-full transition-colors ${isAutoBatchNumber ? 'bg-indigo-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
-                  <div className={`absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform shadow-sm ${isAutoBatchNumber ? 'translate-x-4' : 'translate-x-0'}`} />
-                </div>
-                <span className={`text-[8px] font-black uppercase tracking-widest transition-colors ${isAutoBatchNumber ? 'text-indigo-500' : 'text-slate-400'}`}>
-                  Auto
-                </span>
-              </label>
-            </div>
-            <div className="relative">
-              <input
-                type="text"
-                className={`w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-5 py-4 text-[12px] font-black uppercase tracking-widest focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-indigo-500/10 transition-all ${isAutoBatchNumber ? 'text-slate-400' : 'text-indigo-500 dark:text-indigo-400'}`}
-                value={batchNumber}
-                onChange={(e) => {
-                  setBatchNumber(e.target.value);
-                  setIsAutoBatchNumber(false);
-                }}
-                placeholder="Ex: Nota Fiscal 1234"
-                disabled={isAutoBatchNumber}
-                aria-label="Número do lote"
-                title="Número do Lote"
-              />
-              <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none">
-                <Info size={14} className="text-cyan-400" />
-              </div>
-            </div>
-          </div>
-
+          {/* Campos fiscais — ocultos quando Não Contábil */}
+          {generateTransaction && (<>
           <div className="relative col-span-2">
             <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">
               Data de Vencimento
             </label>
-            <div className="relative">
-              <input
-                type="date"
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-5 py-4 text-[12px] font-black uppercase tracking-widest focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-indigo-500/10 transition-all text-slate-900 dark:text-slate-100"
-                value={(() => {
-                  try {
-                    return format(dueDate, "yyyy-MM-dd");
-                  } catch (e) {
-                    return format(new Date(), "yyyy-MM-dd");
-                  }
-                })()}
-                onChange={(e) =>
-                  setDueDate(new Date(e.target.value).getTime() || Date.now())
-                }
-                aria-label="Data de vencimento"
-                title="Vencimento"
-              />
-              <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none">
-                <CalendarIcon size={14} className="text-amber-400" />
+            <div className={`flex items-center gap-3 px-4 py-3 rounded-[1.5rem] border-2 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-amber-500/50' : 'bg-white border-slate-200 hover:border-amber-300'} shadow-sm`}>
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-900/30' : 'bg-amber-50'}`}>
+                <CalendarIcon size={17} className="text-amber-500" strokeWidth={2.5} />
+              </div>
+              <div className="flex flex-col flex-1 min-w-0">
+                <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 leading-none mb-0.5">Vencimento</span>
+                <input
+                  type="date"
+                  className={`w-full bg-transparent border-none p-0 text-[13px] font-black focus:ring-0 outline-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
+                  value={(() => {
+                    try { return format(dueDate, "yyyy-MM-dd"); } catch { return format(new Date(), "yyyy-MM-dd"); }
+                  })()}
+                  onChange={(e) => setDueDate(new Date(e.target.value).getTime() || Date.now())}
+                  aria-label="Data de vencimento"
+                  title="Vencimento"
+                />
               </div>
             </div>
           </div>
@@ -717,6 +876,7 @@ export default function PurchaseFormView({
               </button>
             </div>
           </div>
+
           <div className="relative col-span-2">
             <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">
               Categoria Financeira
@@ -754,6 +914,7 @@ export default function PurchaseFormView({
               </div>
             </div>
           </div>
+          </>)}
         </div>
       </div>
 
@@ -1078,6 +1239,85 @@ export default function PurchaseFormView({
       {/* Items List (only for Replenishment) */}
       {type === PurchaseType.REPLENISHMENT && (
         <section>
+          {/* Prazo e Prioridade */}
+          <div className="flex flex-col gap-3 p-4 rounded-3xl border border-dashed border-indigo-500/30 dark:border-indigo-500/20 bg-indigo-50/10 dark:bg-indigo-950/10 mb-4">
+            <div className="flex items-center justify-between">
+              <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 tracking-widest leading-none">Prazo e Prioridade</label>
+              {prioridade && (
+                <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-full border border-slate-200/50 dark:border-slate-700/50">
+                  <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${prioridade === 'URGENTE' ? 'bg-rose-500' : prioridade === 'ALTA' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                  <span className="text-[8px] font-black uppercase tracking-wider text-slate-500">SLA: {getDefaultDaysForDeadline(prioridade)} dias</span>
+                </div>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {priorityOptions.map(p => {
+                const isActive = prioridade === p;
+                const days = getDefaultDaysForDeadline(p);
+                const activeStyles = isActive
+                  ? p === 'URGENTE' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20 scale-[1.02] border-rose-500'
+                  : p === 'ALTA' ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20 scale-[1.02] border-amber-500'
+                  : 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 scale-[1.02] border-emerald-600'
+                  : isDarkMode ? 'bg-slate-800/40 text-slate-400 hover:text-slate-200 border-slate-700/50 hover:bg-slate-800/80' : 'bg-white text-slate-600 hover:text-slate-900 border-slate-200 hover:bg-slate-50';
+                return (
+                  <button key={p} type="button" onClick={() => handlePriorityChange(p)}
+                    className={`flex-1 min-w-[85px] flex flex-col items-center justify-center py-2 px-1 rounded-xl text-[9px] font-black uppercase tracking-wider border transition-all duration-300 ${activeStyles}`}>
+                    <span>{p.charAt(0) + p.slice(1).toLowerCase()}</span>
+                    <span className="text-[8px] font-bold mt-0.5 opacity-80">{days} {days === 1 ? 'dia' : 'dias'}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+              <CalendarIcon size={13} className="text-indigo-400 shrink-0" />
+              <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)}
+                title="Data de entrega para produção" aria-label="Data de entrega para produção"
+                className={`flex-1 bg-transparent font-black text-xs outline-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`} />
+            </div>
+          </div>
+
+          {/* OP Toggle — Ordem de Produção para Estoque */}
+          <button
+            type="button"
+            onClick={() => setIsProductionOrder(v => !v)}
+            title={isProductionOrder ? 'Desativar OP de Estoque' : 'Ativar Pedido de Produção para Estoque'}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all mb-4 ${
+              isProductionOrder
+                ? 'bg-sky-500 border-sky-400 text-white shadow-lg shadow-sky-400/20'
+                : isDarkMode
+                  ? 'bg-slate-800 border-slate-700 text-slate-400 hover:border-sky-700 hover:text-sky-400'
+                  : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-sky-300 hover:text-sky-600'
+            }`}
+          >
+            <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isProductionOrder ? 'bg-white/20' : isDarkMode ? 'bg-slate-700' : 'bg-white'}`}>
+              <Factory size={14} strokeWidth={2.5} className={isProductionOrder ? 'text-white' : 'text-sky-500'} />
+            </div>
+            <div className="text-left flex-1">
+              <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${isProductionOrder ? 'text-white' : ''}`}>Pedido de Produção (OP)</p>
+              <p className={`text-[9px] font-bold mt-0.5 leading-none ${isProductionOrder ? 'text-sky-100' : 'text-slate-400'}`}>
+                {isProductionOrder ? `${blocks.length} produto(s) selecionado(s)` : 'Gera mapa de produção para o estoque'}
+              </p>
+            </div>
+            <div className={`w-8 h-4 rounded-full relative shrink-0 transition-all ${isProductionOrder ? 'bg-white/30' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
+              <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${isProductionOrder ? 'left-4' : 'left-0.5'}`} />
+            </div>
+          </button>
+
+          {/* Info card quando OP ativa */}
+          {isProductionOrder && (
+            <div className={`mb-4 flex items-start gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-amber-900/20 border-amber-800/40' : 'bg-amber-50 border-amber-200'}`}>
+              <Factory size={16} className="text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1 text-amber-600 dark:text-amber-400">
+                  Pedido de Produção — Estoque
+                </p>
+                <p className="text-[9px] font-bold leading-relaxed text-amber-500">
+                  Produção para estoque. Configure o padrão de embalagem e salve — o pedido entra na fila de espera do PCP. Os mapas são criados manualmente lá.
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between mb-4 px-2">
             <div>
               <h3 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400 leading-none">
@@ -1103,55 +1343,36 @@ export default function PurchaseFormView({
               if (!product) return null;
               const isExpanded = expandedBlocks.includes(block.id);
 
+              const totalItemsInBlock = Object.values(block.variations).reduce<number>((sum, v) => sum + (v as { quantity: number }).quantity, 0);
+
               return (
                 <div
                   key={block.id}
                   className={`rounded-[2.5rem] border shadow-sm flex flex-col relative overflow-hidden ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
                 >
+                  {/* Header — igual ao de vendas */}
                   <div className="p-5 flex justify-between items-start gap-4">
                     <div className="flex gap-4 flex-1">
-                      <div className="w-14 h-14 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center border border-indigo-100 dark:border-indigo-800/30 shrink-0">
-                        <Package size={24} className="text-indigo-500" />
+                      <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700 shrink-0">
+                        <Package size={24} className="text-slate-400 dark:text-slate-600" />
                       </div>
-                      <div className="flex flex-col justify-center flex-1 relative">
-                        <select
-                          className="bg-transparent border-none p-0 text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-slate-100 focus:ring-0 w-full truncate cursor-pointer appearance-none pr-6"
-                          value={block.productId}
-                          onChange={(e) => {
-                            const pId = e.target.value;
-                            const p = activeProducts.find((prod) => prod.id === pId);
-                            updateBlock(index, {
-                              productId: pId,
-                              cost: p?.costPrice || 0,
-                              variations: {}
-                            });
-                          }}
-                          aria-label="Selecionar produto"
-                          title="Produto"
-                        >
-                          {activeProducts
-                            .filter(p => p.id === block.productId || !blocks.some((b, i) => i !== index && b.productId === p.id))
-                            .map((p) => (
-                              <option
-                                key={p.id}
-                                value={p.id}
-                                className="dark:bg-slate-900"
-                              >
-                                {p.name}
-                              </option>
-                            ))}
-                        </select>
-                        <div className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 mr-2">
-                           <ChevronDown size={14} className="text-indigo-400" strokeWidth={3} />
+                      <div className="flex flex-col justify-center relative flex-1 min-w-0">
+                        <h4 className="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-slate-100 truncate pr-4">
+                          {product.name}
+                        </h4>
+                        <div className="flex items-center gap-2 mt-1">
+                          <p className="text-[9px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest">REF: {product.reference || '---'}</p>
+                          {totalItemsInBlock > 0 && (
+                            <span className="text-[8px] font-black uppercase tracking-widest bg-indigo-500 text-white px-2 py-0.5 rounded-full">
+                              {totalItemsInBlock} {totalItemsInBlock === 1 ? 'Item' : 'Itens'}
+                            </span>
+                          )}
                         </div>
-                        <p className="text-[9px] text-slate-400 dark:text-slate-500 font-black uppercase tracking-widest mt-1">
-                          REF: {product?.reference || "---"}
-                        </p>
                       </div>
                     </div>
-                    
                     <div className="flex items-center gap-2">
                       <button
+                        type="button"
                         onClick={() => toggleBlockExpanded(block.id)}
                         className="p-2 text-slate-300 dark:text-slate-600 hover:text-indigo-500 transition-colors transform active:scale-90"
                         aria-label="Expandir/Recolher item"
@@ -1160,6 +1381,7 @@ export default function PurchaseFormView({
                         {isExpanded ? <ChevronUp size={20} strokeWidth={2.5} /> : <ChevronDown size={20} strokeWidth={2.5} />}
                       </button>
                       <button
+                        type="button"
                         onClick={() => removeBlock(index)}
                         className="p-2 text-slate-200 dark:text-slate-700 hover:text-rose-500 transition-colors transform active:scale-90"
                         aria-label="Remover item da lista"
@@ -1171,139 +1393,141 @@ export default function PurchaseFormView({
                   </div>
 
                   {isExpanded && (
-                    <div className="p-5 pt-0 border-t border-slate-50 dark:border-slate-800 mt-2">
-                       <div className="grid grid-cols-2 gap-3 mt-4 mb-5">
-                          <div className="flex flex-col gap-2">
-                            <label className="text-[8px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest px-1">
-                              Unidade
+                    <div className="px-5 pb-5 pt-3 border-t border-slate-50 dark:border-slate-800 flex flex-col gap-4">
+
+                      {/* Caixa Coletiva — quando OP ativo */}
+                      {isProductionOrder && (() => {
+                        const packagingConfigs = productionConfigs.filter(c => c.type === 'PACKAGING');
+                        const selectedPkg = block.blockPkgId ? packagingConfigs.find(c => c.id === block.blockPkgId) : null;
+                        const capacity = selectedPkg?.metadata?.capacity || 0;
+                        return (
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-[9px] font-black uppercase tracking-widest text-violet-500 flex items-center gap-1.5">
+                              <Layers size={11} /> Caixa Coletiva (Padrão de Embalagem)
                             </label>
-                            <button
-                              onClick={() => updateBlock(index, { isBox: !block.isBox })}
-                              className={`text-[9px] font-black py-3 rounded-2xl border-2 uppercase tracking-widest transition-all ${block.isBox ? "bg-slate-900 dark:bg-amber-600 text-white border-slate-900 dark:border-amber-600 shadow-lg" : "bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-100 dark:border-slate-700"}`}
-                              aria-label="Alternar unidade"
-                              title="Unidade"
-                            >
-                              {product.type === SaleType.WHOLESALE ? (block.isBox ? "Grade Fechada" : "Avulso") : (block.isBox ? "Caixa (12 Prs)" : "Par Individual")}
-                            </button>
-                          </div>
-                          
-                          <div className="flex flex-col gap-2">
-                            <label className="text-[8px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest px-1 text-right">
-                              Custo
-                            </label>
-                            <div className="flex gap-2">
-                              <input
-                                type="number"
-                                step="0.01"
-                                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl py-3 text-right pr-4 text-[13px] font-black text-slate-800 dark:text-slate-100 focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-amber-500/10 transition-all"
-                                value={block.cost}
-                                onChange={(e) => updateBlock(index, { cost: parseFloat(e.target.value) || 0 })}
-                                aria-label="Custo do item"
-                                title="Custo"
-                              />
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  openCalculator(index, 'blocks');
-                                }}
-                                className="w-[45px] shrink-0 flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-2xl hover:bg-indigo-100 transition-colors"
-                                aria-label="Abrir calculadora de custo"
-                                title="Calculadora"
-                              >
-                                <Calculator size={18} strokeWidth={2.5} />
-                              </button>
+                            <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border-2 transition-all ${selectedPkg ? isDarkMode ? 'bg-violet-900/20 border-violet-700' : 'bg-violet-50 border-violet-300' : isDarkMode ? 'bg-slate-800 border-slate-700 border-dashed' : 'bg-slate-50 border-dashed border-slate-300'}`}>
+                              <Package size={16} className={selectedPkg ? 'text-violet-500' : 'text-slate-400'} />
+                              <select value={block.blockPkgId || ''} onChange={e => applyBlockPackaging(index, e.target.value)}
+                                title="Padrão de embalagem" aria-label="Padrão de embalagem"
+                                className={`flex-1 bg-transparent font-black text-[11px] outline-none cursor-pointer ${selectedPkg ? 'text-violet-700 dark:text-violet-300' : 'text-slate-400'}`}>
+                                <option value="">Selecione o padrão de embalagem…</option>
+                                {packagingConfigs.map(pkg => (
+                                  <option key={pkg.id} value={pkg.id}>{pkg.name} — {pkg.metadata?.capacity || 0} pares</option>
+                                ))}
+                              </select>
                             </div>
+                            {selectedPkg && capacity > 0 && (
+                              <p className="text-[9px] text-violet-500 font-black px-1 flex items-center gap-1">
+                                <CheckCircle2 size={10} /> 1 grade = 1 caixa de {capacity} pares — aplicado a todas as variações
+                              </p>
+                            )}
                           </div>
-                       </div>
+                        );
+                      })()}
 
-                       <div className="flex flex-col gap-3">
-                         <h4 className="text-[10px] font-black uppercase text-slate-400 dark:text-slate-500 tracking-widest mb-1 flex justify-between items-end">
-                            <span>Variações</span>
-                         </h4>
-                         
-                         {product.variations.map((v) => {
-                            const variationState = block.variations[v.id] || { quantity: 0, size: "" };
-                            const quantity = variationState.quantity;
-                            const size = variationState.size;
-                            
-                            const variationKey = product.type === SaleType.RETAIL && size && !block.isBox ? size : 'WHOLESALE';
-                            const stock = v.stock?.[variationKey] || 0;
-                            const minStock = v.minStock || 0;
-                            
-                            let stockColor = "text-emerald-500"; // OK
-                            if (stock <= 0) stockColor = "text-rose-500"; // Vazio
-                            else if (stock <= minStock) stockColor = "text-amber-500"; // Perto do mínimo
+                      {/* Modalidade */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[8px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest px-1">Modalidade</label>
+                        <div className="text-[9px] font-black py-3 rounded-2xl border-2 uppercase tracking-widest bg-slate-50 dark:bg-slate-800 text-slate-400 border-slate-100 dark:border-slate-800 text-center flex items-center justify-center gap-2">
+                          <Box size={12} /> Somente Atacado
+                        </div>
+                      </div>
 
-                            return (
-                              <div key={v.id} className="flex items-center justify-between p-3 rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
-                                <div className="flex items-center gap-3">
-                                   <div className="flex flex-col">
-                                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
-                                        {v.colorName}
-                                      </span>
-                                      <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest mt-0.5">
-                                        Estoque: <span className={stockColor}>{stock}</span>
-                                      </span>
-                                   </div>
+                      {/* Custo Grade */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[8px] uppercase font-black text-slate-400 tracking-widest px-1">Custo Grade (R$)</label>
+                        <div className="flex gap-2">
+                          <input type="number" step="0.01"
+                            className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-xl py-2.5 text-right pr-3 text-[12px] font-black text-indigo-600 dark:text-indigo-400 focus:ring-2 focus:ring-indigo-500/10"
+                            value={block.cost} onChange={(e) => updateBlock(index, { cost: parseFloat(e.target.value) || 0 })}
+                            aria-label="Custo Grade" title="Custo Grade" />
+                          <button type="button" onClick={(e) => { e.preventDefault(); openCalculator(index, 'blocks'); }}
+                            className="w-10 flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 rounded-xl" title="Calculadora" aria-label="Calculadora">
+                            <Calculator size={16} strokeWidth={2.5} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Custo Unitário */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[8px] uppercase font-black text-sky-400 tracking-widest px-1">Custo Unitário (R$/par)</label>
+                        <input type="number" step="0.01"
+                          className="w-full bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-xl py-2.5 text-right pr-3 text-[12px] font-black text-sky-600 dark:text-sky-400 focus:ring-2 focus:ring-sky-500/10 transition-all"
+                          value={block.unitCost ?? ''}
+                          placeholder="0,00"
+                          aria-label="Custo por par"
+                          title="Custo Unitário por Par"
+                          onChange={(e) => updateBlock(index, { unitCost: parseFloat(e.target.value) || 0 })} />
+                      </div>
+
+                      {/* Variações */}
+                      <div className="flex flex-col gap-3">
+                        <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Variações Disponíveis</h4>
+                        {product.variations.map((v) => {
+                          const varState = block.variations[v.id] || { quantity: 0 };
+                          const qty = varState.quantity;
+                          const stock = Object.values(v.stock || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+                          const varPkgKey = `${block.id}-${v.id}`;
+                          const varPkg = packagingPerVar[varPkgKey];
+                          const varPkgConfig = varPkg?.pkgId ? productionConfigs.find(c => c.id === varPkg.pkgId) : null;
+                          const varPkgTotal = varPkg ? Object.values(varPkg.breakdown).reduce((a, b) => a + b, 0) : 0;
+
+                          return (
+                            <div key={v.id} className={`rounded-2xl border overflow-hidden ${qty > 0 ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800' : 'bg-slate-50/50 dark:bg-slate-800/30 border-transparent'}`}>
+                              <div className="p-4 flex items-center justify-between">
+                                <div className="flex-1">
+                                  <p className="text-[11px] font-black uppercase text-slate-700 dark:text-slate-200">{v.colorName}</p>
+                                  <p className={`text-[9px] font-bold uppercase tracking-widest mt-0.5 ${stock > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                    Estoque: {stock} grades
+                                  </p>
                                 </div>
-                                
-                                <div className="flex flex-col items-end gap-2">
-                                  {!block.isBox && product.type === SaleType.RETAIL && (
-                                    <select
-                                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl py-1 px-4 text-center text-[9px] font-black text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-amber-500/20 transition-all appearance-none outline-none"
-                                      value={size}
-                                      onChange={(e) => updateVariation(index, v.id, quantity, e.target.value)}
-                                      aria-label={`Selecionar tamanho para ${v.colorName}`}
-                                      title="Tamanho"
-                                    >
-                                      <option value="">TAM.</option>
-                                      {grids.find(g => g.id === product.defaultGridId)?.sizes.map(s => (
-                                        <option key={s} value={s}>{s}</option>
-                                      ))}
-                                    </select>
-                                  )}
-                                  
-                                  <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-1 shadow-sm">
-                                    <button
-                                      type="button"
-                                      onClick={() => updateVariation(index, v.id, Math.max(0, quantity - 1), size)}
-                                      className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
-                                      aria-label="Diminuir quantidade"
-                                      title="Diminuir"
-                                    >
-                                      <Minus size={14} strokeWidth={2.5} />
-                                    </button>
-                                    <span className="w-6 text-center font-black text-[11px] text-slate-800 dark:text-slate-100">
-                                      {quantity}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => updateVariation(index, v.id, quantity + 1, size)}
-                                      className="w-7 h-7 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 transition-colors"
-                                      aria-label="Aumentar quantidade"
-                                      title="Aumentar"
-                                    >
-                                      <Plus size={14} strokeWidth={2.5} />
-                                    </button>
-                                  </div>
+                                <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-1">
+                                  <button type="button" onClick={() => updateVariation(index, v.id, Math.max(0, qty - 1), undefined)}
+                                    className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-500" title="Diminuir" aria-label="Diminuir"><Minus size={14} /></button>
+                                  <input type="number" className="w-8 bg-transparent border-none p-0 text-center font-black text-xs text-slate-800 dark:text-white focus:ring-0"
+                                    value={qty} title="Quantidade" aria-label="Quantidade"
+                                    onChange={(e) => updateVariation(index, v.id, parseInt(e.target.value) || 0, undefined)} />
+                                  <button type="button" onClick={() => updateVariation(index, v.id, qty + 1, undefined)}
+                                    className="w-7 h-7 rounded-lg flex items-center justify-center text-indigo-500" title="Aumentar" aria-label="Aumentar"><Plus size={14} /></button>
                                 </div>
                               </div>
-                            );
-                         })}
-                       </div>
-
-                       <div className="mt-4">
-                         <input
-                           type="text"
-                           placeholder="Observações do item..."
-                           className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl py-3 px-4 text-[10px] font-bold text-slate-600 dark:text-slate-300 placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-900/5 dark:focus:ring-white/10 transition-all uppercase tracking-widest"
-                           value={block.note || ''}
-                           onChange={(e) => updateBlock(index, { note: e.target.value })}
-                           aria-label="Observações do item"
-                           title="Notas do Item"
-                         />
-                       </div>
+                              {/* Botões Embalagem / Grade — quando OP ativo */}
+                              {isProductionOrder && qty > 0 && (
+                                <div className={`px-4 pb-3 border-t ${isDarkMode ? 'border-indigo-800/40' : 'border-indigo-100'} flex flex-col gap-2`}>
+                                  <button type="button"
+                                    onClick={() => setPackagingModalTarget({ blockId: block.id, variationId: v.id, variationName: v.colorName })}
+                                    className={`mt-2 w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all ${varPkg?.pkgId ? isDarkMode ? 'bg-violet-900/30 border border-violet-700' : 'bg-violet-50 border border-violet-200' : isDarkMode ? 'bg-slate-800 border border-slate-700' : 'bg-white border border-dashed border-slate-300'}`}>
+                                    <div className="flex items-center gap-2">
+                                      <Layers size={13} className={varPkg?.pkgId ? 'text-violet-500' : 'text-slate-400'} />
+                                      <span className={`text-[11px] font-black uppercase tracking-widest ${varPkg?.pkgId ? 'text-violet-600 dark:text-violet-400' : 'text-slate-400'}`}>
+                                        {varPkgConfig ? varPkgConfig.name : 'Selecionar Embalagem'}
+                                      </span>
+                                    </div>
+                                    {varPkg?.pkgId
+                                      ? <span className="text-[11px] font-black text-violet-500">{varPkgTotal} pares/emb · <span className="underline">Editar</span></span>
+                                      : <span className="text-[11px] font-black text-slate-400">Toque para configurar ›</span>}
+                                  </button>
+                                  {!varPkg?.pkgId && (
+                                    <button type="button"
+                                      onClick={() => setGradeModalTarget({ blockId: block.id, variationId: v.id, variationName: v.colorName, productId: block.productId })}
+                                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all ${gradePerVar[varPkgKey] ? isDarkMode ? 'bg-emerald-900/30 border border-emerald-700' : 'bg-emerald-50 border border-emerald-200' : isDarkMode ? 'bg-slate-800 border border-dashed border-slate-600' : 'bg-white border border-dashed border-slate-200'}`}>
+                                      <div className="flex items-center gap-2">
+                                        <CheckCircle2 size={13} className={gradePerVar[varPkgKey] ? 'text-emerald-500' : 'text-slate-400'} />
+                                        <span className={`text-[11px] font-black uppercase tracking-widest ${gradePerVar[varPkgKey] ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
+                                          {gradePerVar[varPkgKey] ? `Grade: ${Object.values(gradePerVar[varPkgKey]).reduce((a,b)=>a+b,0)} pares` : 'Configurar Grade'}
+                                        </span>
+                                      </div>
+                                      <span className="text-[11px] font-black text-slate-400">
+                                        {gradePerVar[varPkgKey] ? <span className="text-emerald-500 underline">Editar</span> : 'Toque para configurar ›'}
+                                      </span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1594,6 +1818,95 @@ export default function PurchaseFormView({
         }}
       />
 
+      {/* Cesta de Compras */}
+      {type === PurchaseType.REPLENISHMENT && cartItems.length > 0 && (
+        <section className={`rounded-[2rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+          <div className={`flex items-center justify-between px-5 py-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center">
+                <ShoppingBag size={15} className="text-white" />
+              </div>
+              <div>
+                <h3 className="text-[11px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 leading-none">Cesta de Compras</h3>
+                <p className={`text-[8px] font-bold uppercase tracking-widest mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                  {cartItems.length} {cartItems.length === 1 ? 'item configurado' : 'itens configurados'}
+                </p>
+              </div>
+            </div>
+            {isProductionOrder && (
+              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-violet-900/30 text-violet-400' : 'bg-violet-50 text-violet-600'}`}>
+                <Factory size={11} /> Modo Produção
+              </div>
+            )}
+          </div>
+          <div className="divide-y divide-slate-50 dark:divide-slate-800">
+            {cartItems.map((item, i) => (
+              <div key={`${item.blockId}-${item.variationId}-${i}`} className={`px-5 py-3.5 flex gap-3 ${isDarkMode ? 'hover:bg-slate-800/30' : 'hover:bg-slate-50/70'} transition-colors`}>
+                <div className="w-1.5 self-stretch rounded-full bg-indigo-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className={`text-[11px] font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                        {item.productName}
+                        {item.reference && <span className="text-slate-400 font-bold ml-1 text-[9px]">#{item.reference}</span>}
+                      </p>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{item.variationName}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className={`text-sm font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{item.quantity}</p>
+                      <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">grades</p>
+                    </div>
+                  </div>
+                  {item.pkgConfig && (
+                    <div className={`mt-2 px-3 py-2 rounded-xl text-[9px] font-black ${isDarkMode ? 'bg-violet-900/20 text-violet-400' : 'bg-violet-50 text-violet-600'}`}>
+                      📦 {item.pkgConfig.pkgName} — {item.pkgConfig.pairsPerEmb} pares/emb × {item.quantity} = {item.pkgConfig.pairsPerEmb * item.quantity} pares
+                    </div>
+                  )}
+                  <p className={`text-[9px] font-black mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    R$ {item.cost.toFixed(2)}/grade · Total: R$ {(item.cost * item.quantity).toFixed(2)}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* PackagingBuilderModal */}
+      {packagingModalTarget && (() => {
+        const { blockId, variationId, variationName } = packagingModalTarget;
+        const block = blocks.find(b => b.id === blockId);
+        const product = block ? products.find(p => p.id === block.productId) : undefined;
+        const variation = product?.variations.find(v => v.id === variationId);
+        const productGrid = product?.defaultGridId ? (grids.find(g => g.id === product.defaultGridId) ?? null) : null;
+        const stockPerSize: Record<string, number> = {};
+        if (variation?.stock) Object.entries(variation.stock).forEach(([sz, q]) => { stockPerSize[sz] = Number(q) || 0; });
+        const existing = packagingPerVar[`${blockId}-${variationId}`];
+        return (
+          <PackagingBuilderModal isOpen onClose={() => setPackagingModalTarget(null)}
+            onConfirm={result => { setPackagingPerVar(prev => ({ ...prev, [`${blockId}-${variationId}`]: { pkgId: result.pkgId, breakdown: result.breakdown, fromStock: result.fromStock } })); setPackagingModalTarget(null); }}
+            productName={product?.name || ''} variationName={variationName}
+            packagingItems={productionConfigs.filter(c => c.type === 'PACKAGING')} productGrid={productGrid}
+            stockPerSize={stockPerSize} stockGrades={variation?.stock?.['WHOLESALE'] || 0}
+            orderQuantity={block?.variations[variationId]?.quantity}
+            initialPkgId={existing?.pkgId} initialBreakdown={existing?.breakdown} initialFromStock={existing?.fromStock}
+            isDarkMode={isDarkMode} />
+        );
+      })()}
+
+      {/* GradeBuilderModal */}
+      {gradeModalTarget && (() => {
+        const { blockId, variationId, variationName, productId } = gradeModalTarget;
+        const product = products.find(p => p.id === productId);
+        const existing = gradePerVar[`${blockId}-${variationId}`];
+        return (
+          <GradeBuilderModal isOpen onClose={() => setGradeModalTarget(null)}
+            onConfirm={breakdown => { setGradePerVar(prev => ({ ...prev, [`${blockId}-${variationId}`]: breakdown })); setGradeModalTarget(null); }}
+            productName={product?.name || ''} variationName={variationName}
+            grids={grids} defaultGridId={product?.defaultGridId} initialBreakdown={existing} isDarkMode={isDarkMode} />
+        );
+      })()}
+
       {showProductModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowProductModal(false)} />
@@ -1634,18 +1947,32 @@ export default function PurchaseFormView({
             {/* List */}
             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
               <div className="flex flex-col gap-2">
-                {activeProducts
-                  .filter(p => !productSearchQuery || p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) || p.reference?.toLowerCase().includes(productSearchQuery.toLowerCase()))
-                  .map(p => {
-                    const isAdded = blocks.some(b => b.productId === p.id);
+                {(() => {
+                  const filtered = activeProducts.filter(p =>
+                    !productSearchQuery ||
+                    p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) ||
+                    p.reference?.toLowerCase().includes(productSearchQuery.toLowerCase())
+                  );
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="text-center py-12">
+                        <Package size={32} className="text-slate-200 dark:text-slate-700 mx-auto mb-2" strokeWidth={1} />
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-300 dark:text-slate-600">
+                          {productSearchQuery ? 'Nenhum modelo encontrado' : 'Nenhum produto ativo cadastrado'}
+                        </p>
+                      </div>
+                    );
+                  }
+                  return filtered.map(p => {
+                    const isAdded = !isProductionOrder && blocks.some(b => b.productId === p.id);
                     return (
                       <button
                         key={p.id}
                         disabled={isAdded}
                         onClick={() => addBlock(p.id)}
                         className={`flex items-center justify-between p-4 rounded-3xl transition-all border text-left ${
-                          isAdded 
-                          ? "bg-slate-50/50 dark:bg-slate-800/30 border-transparent opacity-50 cursor-not-allowed" 
+                          isAdded
+                          ? "bg-slate-50/50 dark:bg-slate-800/30 border-transparent opacity-50 cursor-not-allowed"
                           : "hover:bg-slate-50 dark:hover:bg-slate-800/50 border-transparent hover:border-slate-200 dark:hover:border-slate-700 bg-transparent active:scale-[0.98]"
                         }`}
                         aria-label={`Selecionar produto ${p.name}`}
@@ -1667,13 +1994,15 @@ export default function PurchaseFormView({
                           </div>
                         )}
                       </button>
-                    )
-                  })}
+                    );
+                  });
+                })()}
               </div>
             </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }
