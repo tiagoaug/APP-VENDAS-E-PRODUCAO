@@ -35,6 +35,12 @@ export const labelService = {
     }
   },
 
+  // jsPDF só possui as fontes padrão helvetica/times/courier embutidas;
+  // 'arial' e 'avenir' (Century Gothic) caem em helvetica, a mais próxima visualmente.
+  toPdfFont(f?: string): 'helvetica' | 'times' | 'courier' {
+    return f === 'times' ? 'times' : f === 'courier' ? 'courier' : 'helvetica';
+  },
+
   renderGradePills(doc: jsPDF, sizeGrid: string, layout: LabelLayout) {
     if (!layout.showGrade || layout.gradeX === undefined || layout.gradeY === undefined || layout.gradeW === undefined || layout.gradeH === undefined) return;
     const entries = sizeGrid.split('-').map(tok => {
@@ -43,30 +49,75 @@ export const labelService = {
     }).filter(e => e.sz);
     if (entries.length === 0) return;
     const hasQty  = entries.some(e => e.qty !== null);
+    const totalQty = entries.reduce((s, e) => s + (e.qty || 0), 0);
+    const totalWidthFactor = 1.6;
+    const totalUnits = entries.length + (hasQty ? totalWidthFactor : 0);
     const gX = layout.gradeX, gY = layout.gradeY, gW = layout.gradeW, gH = layout.gradeH;
-    const cellW = gW / entries.length;
+    const cellW = gW / totalUnits;
+    const totalCellW = cellW * totalWidthFactor;
     const szFontSz  = Math.min(10, Math.max(3, gH * (hasQty ? 0.42 : 0.62) * 2.8346));
     const qtyFontSz = Math.min(9,  Math.max(2, szFontSz * 0.90));
     const szH = hasQty ? gH * 0.48 : gH * 0.70;
     const pad = 0.4;
+    const gradeFont = this.toPdfFont(layout.gradeFontFamily);
     entries.forEach(({ sz, qty }, i) => {
       const cellX = gX + cellW * i;
       const cx = cellX + cellW / 2;
       // Numeração: fundo preto + texto branco
       doc.setFillColor(0, 0, 0);
       doc.roundedRect(cellX + pad, gY + pad, cellW - pad * 2, szH, 0.5, 0.5, 'F');
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(gradeFont, 'bold');
       doc.setFontSize(szFontSz);
       doc.setTextColor(255, 255, 255);
       doc.text(sz, cx, gY + szH * 0.72, { align: 'center' });
       // Valor: texto preto simples
       if (qty !== null) {
-        doc.setFont('helvetica', 'bold');
+        doc.setFont(gradeFont, 'bold');
         doc.setFontSize(qtyFontSz);
         doc.setTextColor(0, 0, 0);
         doc.text(`${qty}`, cx, gY + szH + (gH - szH) * 0.72, { align: 'center' });
       }
     });
+
+    // Célula TOTAL: soma das quantidades, mesmas cores das demais
+    if (hasQty) {
+      const cellX = gX + cellW * entries.length;
+      const cx = cellX + totalCellW / 2;
+      doc.setFillColor(0, 0, 0);
+      doc.roundedRect(cellX + pad, gY + pad, totalCellW - pad * 2, szH, 0.5, 0.5, 'F');
+      doc.setFont(gradeFont, 'bold');
+      doc.setFontSize(szFontSz * 0.65);
+      doc.setTextColor(255, 255, 255);
+      doc.text('TOTAL', cx, gY + szH * 0.72, { align: 'center' });
+      doc.setFont(gradeFont, 'bold');
+      doc.setFontSize(qtyFontSz);
+      doc.setTextColor(0, 0, 0);
+      doc.text(`${totalQty}`, cx, gY + szH + (gH - szH) * 0.72, { align: 'center' });
+    }
+  },
+
+  renderSectorNotes(doc: jsPDF, layout: LabelLayout, text: string) {
+    if (layout.sectorNotesX === undefined || layout.sectorNotesY === undefined) return;
+    const fs = layout.sectorNotesSize ?? 3;
+    const lineH = fs * 0.353 * 1.4;
+    const font = this.toPdfFont(layout.sectorNotesFontFamily);
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(fs);
+    if (layout.sectorNotesHasHeader) {
+      const lines = text.split('\n');
+      lines.forEach((line, i) => {
+        const isHeader = i % 2 === 0;
+        doc.setFont(font, isHeader ? 'bold' : 'normal');
+        doc.text(line, layout.sectorNotesX! + 0.5, layout.sectorNotesY! + i * lineH);
+      });
+    } else {
+      doc.setFont(font, 'normal');
+      const maxW = (layout.sectorNotesW ?? 30) - 1;
+      const lines = doc.splitTextToSize(text, maxW) as string[];
+      lines.slice(0, 2).forEach((line, i) => {
+        doc.text(line, layout.sectorNotesX! + 0.5, layout.sectorNotesY! + i * lineH);
+      });
+    }
   },
 
   async printProductLabels(product: Product, variation?: Variation, sizes?: string[], quantities?: Record<string, number>, dimensions: [number, number] = [40, 30], layout?: LabelLayout, photoUrl?: string, sizeGrid?: string) {
@@ -95,29 +146,29 @@ export const labelService = {
 
           // Reference
           doc.setFontSize(activeLayout.refSize);
-          doc.setFont('helvetica', 'bold');
+          doc.setFont(this.toPdfFont(activeLayout.refFontFamily), 'bold');
           doc.text(product.reference || '---', activeLayout.refX, activeLayout.refY, { align: 'center' });
 
           // QR Code
           if (qrCode) {
             doc.addImage(qrCode, 'PNG', activeLayout.qrX, activeLayout.qrY, activeLayout.qrSize, activeLayout.qrSize);
           }
-          
+
           // Color below QR
           doc.setFontSize(activeLayout.colorSize);
-          doc.setFont('helvetica', 'bold');
+          doc.setFont(this.toPdfFont(activeLayout.colorFontFamily), 'bold');
           doc.text(v.colorName, activeLayout.colorX, activeLayout.colorY, { align: 'center' });
 
           // Size
           if (activeLayout.showSize) {
             doc.setFontSize(activeLayout.sizeSize);
-            doc.setFont('helvetica', 'bold');
+            doc.setFont(this.toPdfFont(activeLayout.sizeFontFamily), 'bold');
             doc.text(size, activeLayout.sizeX, activeLayout.sizeY);
           }
 
           // Footer info
           doc.setFontSize(activeLayout.footerSize);
-          doc.setFont('helvetica', 'normal');
+          doc.setFont(this.toPdfFont(activeLayout.footerFontFamily), 'normal');
           doc.text('ANTIGRAVITY SYSTEM', activeLayout.footerX, activeLayout.footerY);
 
           // Product photo
@@ -133,10 +184,15 @@ export const labelService = {
           // OS Data
           if (activeLayout.showOsData && activeLayout.osDataText && activeLayout.osDataX !== undefined && activeLayout.osDataY !== undefined) {
             doc.setFontSize(activeLayout.osDataSize ?? 4);
-            doc.setFont('helvetica', 'normal');
+            doc.setFont(this.toPdfFont(activeLayout.osDataFontFamily), 'normal');
             doc.setTextColor(99, 102, 241);
             doc.text(activeLayout.osDataText, activeLayout.osDataX, activeLayout.osDataY, { align: 'center' });
             doc.setTextColor(0, 0, 0);
+          }
+
+          // Sector Notes
+          if (activeLayout.showSectorNotes && activeLayout.sectorNotesText) {
+            this.renderSectorNotes(doc, activeLayout, activeLayout.sectorNotesText);
           }
         }
       }
@@ -144,6 +200,74 @@ export const labelService = {
 
     if (firstPage) return;
     await sharePDF(doc, `Etiquetas_${product.reference || product.name}.pdf`);
+  },
+
+  async printProductLabelsBatch(
+    items: { product: Product; variation: Variation; sizeGrid: string; sectorNotesText?: string; photoUrl?: string }[],
+    dimensions: [number, number] = [40, 30],
+    layout?: LabelLayout
+  ) {
+    if (items.length === 0) return;
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: dimensions,
+    });
+
+    const activeLayout = layout || this.getDefaultLayout(dimensions);
+
+    for (let idx = 0; idx < items.length; idx++) {
+      const { product, variation, sizeGrid, sectorNotesText, photoUrl } = items[idx];
+      if (idx > 0) doc.addPage(dimensions);
+
+      const qrCode = await this.generateQRCode(`PRD|${product.id}|${variation.id}|GRADE`);
+
+      // Reference
+      doc.setFontSize(activeLayout.refSize);
+      doc.setFont(this.toPdfFont(activeLayout.refFontFamily), 'bold');
+      doc.text(product.reference || '---', activeLayout.refX, activeLayout.refY, { align: 'center' });
+
+      // QR Code
+      if (qrCode) {
+        doc.addImage(qrCode, 'PNG', activeLayout.qrX, activeLayout.qrY, activeLayout.qrSize, activeLayout.qrSize);
+      }
+
+      // Color below QR
+      doc.setFontSize(activeLayout.colorSize);
+      doc.setFont(this.toPdfFont(activeLayout.colorFontFamily), 'bold');
+      doc.text(variation.colorName, activeLayout.colorX, activeLayout.colorY, { align: 'center' });
+
+      // Footer info
+      doc.setFontSize(activeLayout.footerSize);
+      doc.setFont(this.toPdfFont(activeLayout.footerFontFamily), 'normal');
+      doc.text('ANTIGRAVITY SYSTEM', activeLayout.footerX, activeLayout.footerY);
+
+      // Product photo
+      if (photoUrl && activeLayout.showPhoto && activeLayout.photoW && activeLayout.photoH) {
+        try {
+          doc.addImage(photoUrl, 'JPEG', activeLayout.photoX ?? 0, activeLayout.photoY ?? 0, activeLayout.photoW, activeLayout.photoH);
+        } catch { /* foto inválida, ignora */ }
+      }
+
+      // Grade pills
+      if (sizeGrid) this.renderGradePills(doc, sizeGrid, activeLayout);
+
+      // OS Data
+      if (activeLayout.showOsData && activeLayout.osDataText && activeLayout.osDataX !== undefined && activeLayout.osDataY !== undefined) {
+        doc.setFontSize(activeLayout.osDataSize ?? 4);
+        doc.setFont(this.toPdfFont(activeLayout.osDataFontFamily), 'normal');
+        doc.setTextColor(99, 102, 241);
+        doc.text(activeLayout.osDataText, activeLayout.osDataX, activeLayout.osDataY, { align: 'center' });
+        doc.setTextColor(0, 0, 0);
+      }
+
+      // Sector Notes (specific to this item's variation)
+      if (activeLayout.showSectorNotes && sectorNotesText) {
+        this.renderSectorNotes(doc, activeLayout, sectorNotesText);
+      }
+    }
+
+    await sharePDF(doc, `Etiquetas_Lote_${items.length}.pdf`);
   },
 
   async printLotLabel(lot: ProductionLot, productName: string, colorName: string) {
@@ -236,25 +360,25 @@ export const labelService = {
       const qrCode = await this.generateQRCode(`PRD|${product.id}|${variation.id}|WHOLESALE`);
 
       doc.setFontSize(activeLayout.refSize);
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(this.toPdfFont(activeLayout.refFontFamily), 'bold');
       doc.text(product.reference || '---', activeLayout.refX, activeLayout.refY, { align: 'center' });
 
       if (qrCode) {
         doc.addImage(qrCode, 'PNG', activeLayout.qrX, activeLayout.qrY, activeLayout.qrSize, activeLayout.qrSize);
       }
-      
+
       doc.setFontSize(activeLayout.colorSize);
-      doc.setFont('helvetica', 'bold');
+      doc.setFont(this.toPdfFont(activeLayout.colorFontFamily), 'bold');
       doc.text(variation.colorName, activeLayout.colorX, activeLayout.colorY, { align: 'center' });
 
       if (activeLayout.showSize) {
         doc.setFontSize(activeLayout.sizeSize);
-        doc.setFont('helvetica', 'bold');
+        doc.setFont(this.toPdfFont(activeLayout.sizeFontFamily), 'bold');
         doc.text('BOX', activeLayout.sizeX, activeLayout.sizeY);
       }
 
       doc.setFontSize(activeLayout.footerSize);
-      doc.setFont('helvetica', 'normal');
+      doc.setFont(this.toPdfFont(activeLayout.footerFontFamily), 'normal');
       doc.text('ATACADO / CAIXA', activeLayout.footerX, activeLayout.footerY);
 
       // Product photo
@@ -270,10 +394,15 @@ export const labelService = {
       // OS Data
       if (activeLayout.showOsData && activeLayout.osDataText && activeLayout.osDataX !== undefined && activeLayout.osDataY !== undefined) {
         doc.setFontSize(activeLayout.osDataSize ?? 4);
-        doc.setFont('helvetica', 'normal');
+        doc.setFont(this.toPdfFont(activeLayout.osDataFontFamily), 'normal');
         doc.setTextColor(99, 102, 241);
         doc.text(activeLayout.osDataText, activeLayout.osDataX, activeLayout.osDataY, { align: 'center' });
         doc.setTextColor(0, 0, 0);
+      }
+
+      // Sector Notes
+      if (activeLayout.showSectorNotes && activeLayout.sectorNotesText) {
+        this.renderSectorNotes(doc, activeLayout, activeLayout.sectorNotesText);
       }
     }
 
@@ -301,9 +430,10 @@ export const labelService = {
       if (e) return e as ElemData;
       return { x: defX, y: defY, w: defW, h: defH, visible: true };
     };
+    const toPdfFont = (f?: string) => (f === 'times' ? 'times' : f === 'courier' ? 'courier' : 'helvetica');
     // Apply element typography to doc
     const applyFont = (e: ElemData, fallbackSize: number, fallbackBold = false) => {
-      doc.setFont(e.fontFamily || 'helvetica', (e.bold ?? fallbackBold) ? 'bold' : 'normal');
+      doc.setFont(toPdfFont(e.fontFamily), (e.bold ?? fallbackBold) ? 'bold' : 'normal');
       doc.setFontSize(e.fontSize ?? fallbackSize);
     };
 

@@ -1,22 +1,24 @@
-import React, { useState, useEffect, useCallback } from 'react';
+﻿import React, { useState, useEffect, useCallback } from 'react';
 import {
   Printer, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
   RotateCcw, Eye, EyeOff, Plus, Minus, Settings2, FileText, Tag,
-  Image as ImageIcon, Layers, Check, X,
+  Image as ImageIcon, Layers, Check, X, Lock,
 } from 'lucide-react';
 import Modal from './Modal';
-import { Product, Variation, SaleType, LabelLayout, Grid, ProductionLot, ServiceOrder } from '../types';
+import { Product, Variation, SaleType, LabelLayout, Grid, ProductionLot, ServiceOrder, Sector, SectorNote } from '../types';
 import { labelService } from '../services/labelService';
 import { shareImage } from '../utils/pdfExport';
+import { toast } from '../utils/toast';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ElemKey    = 'reference' | 'name' | 'color' | 'size' | 'qr' | 'footer' | 'photo' | 'grade' | 'osdata';
-type FontFamily = 'helvetica' | 'times' | 'courier';
+type ElemKey    = 'reference' | 'name' | 'color' | 'size' | 'qr' | 'footer' | 'photo' | 'grade' | 'osdata' | 'sectornotes';
+type FontFamily = 'helvetica' | 'arial' | 'times' | 'courier' | 'avenir';
 type Elem = {
   x: number; y: number; w: number; h: number;
   label: string; color: string; visible: boolean;
   fontSize?: number; fontFamily?: FontFamily; bold?: boolean;
+  noteFilter?: { sectorId: string; noteName: string };
 };
 type Layout = { paper: [number, number]; elems: Record<ElemKey, Elem> };
 type PrintMode = 'document' | 'thermal';
@@ -40,7 +42,7 @@ const THERMAL_SIZES: { label: string; dims: [number, number]; star?: boolean }[]
   { label: '40 × 30 mm',  dims: [40, 30]  },
 ];
 
-const ELEM_KEYS: ElemKey[] = ['reference', 'name', 'color', 'size', 'qr', 'footer', 'photo', 'grade', 'osdata'];
+const ELEM_KEYS: ElemKey[] = ['reference', 'name', 'color', 'size', 'qr', 'footer', 'photo', 'grade', 'osdata', 'sectornotes'];
 const STEPS = [0.5, 1, 2, 5];
 const STORAGE_MODE    = 'lbl_print_mode';
 const STORAGE_SIZE    = 'lbl_print_size';
@@ -68,7 +70,8 @@ function defaultLayout([W, H]: [number, number]): Layout {
         footer:    { x: 0,   y: H - 2,      w: W,     h: 2,        label: 'Rodapé',     color: '#000000', visible: false, fontSize: 3,   fontFamily: 'helvetica', bold: false },
         photo:     { x: 0,   y: 0,          w: 0,     h: 0,        label: 'Foto',       color: '#000000', visible: false, fontSize: 6,   fontFamily: 'helvetica', bold: false },
         grade:     { x: 0,   y: H * 0.62,   w: textW, h: H * 0.38, label: 'Grade',      color: '#f59e0b', visible: false, fontSize: 5,   fontFamily: 'helvetica', bold: true  },
-        osdata:    { x: 0,   y: H - 3,      w: textW, h: 3,        label: 'Dados OS',   color: '#6366f1', visible: false, fontSize: 3.5, fontFamily: 'helvetica', bold: false },
+        osdata:      { x: 0,   y: H - 3,      w: textW, h: 3,        label: 'Dados OS',       color: '#6366f1', visible: false, fontSize: 3.5, fontFamily: 'helvetica', bold: false },
+        sectornotes: { x: 0,   y: H - 4,      w: textW, h: 4,        label: 'Obs. Variante',  color: '#f97316', visible: false, fontSize: 3,   fontFamily: 'helvetica', bold: false },
       },
     };
   }
@@ -77,15 +80,16 @@ function defaultLayout([W, H]: [number, number]): Layout {
   return {
     paper: [W, H],
     elems: {
-      reference: { x: 0,        y: 0,       w: W,     h: 6*s,     label: 'Referência', color: '#000000', visible: true,  fontSize: 8*s,  fontFamily: 'helvetica', bold: true  },
-      name:      { x: 2*s,      y: 7*s,     w: W-4*s, h: 5*s,     label: 'Nome',       color: '#000000', visible: true,  fontSize: 6*s,  fontFamily: 'helvetica', bold: false },
-      color:     { x: 0,        y: H-4*s,   w: W,     h: 4*s,     label: 'Cor',        color: '#000000', visible: true,  fontSize: 7*s,  fontFamily: 'helvetica', bold: true  },
-      size:      { x: W-9*s,    y: 5*s,     w: 8*s,   h: 8*s,     label: 'Tamanho',    color: '#000000', visible: true,  fontSize: 11*s, fontFamily: 'helvetica', bold: true  },
-      qr:        { x: (W-20*s)/2, y: 6*s,  w: 20*s,  h: 20*s,    label: 'QR Code',    color: '#000000', visible: true,  fontSize: 8,    fontFamily: 'helvetica', bold: false },
-      footer:    { x: 0,        y: H-2*s,   w: W,     h: 2*s,     label: 'Rodapé',     color: '#000000', visible: true,  fontSize: 4*s,  fontFamily: 'helvetica', bold: false },
-      photo:     { x: W-photoSz, y: H-4*s-photoSz, w: photoSz, h: photoSz, label: 'Foto', color: '#000000', visible: false, fontSize: 6, fontFamily: 'helvetica', bold: false },
-      grade:     { x: 2*s,      y: H-10*s,  w: W-4*s, h: 7*s,     label: 'Grade',      color: '#f59e0b', visible: false, fontSize: 6*s,  fontFamily: 'helvetica', bold: true  },
-      osdata:    { x: 2*s,      y: H-3.5*s, w: W-4*s, h: 3*s,     label: 'Dados OS',   color: '#6366f1', visible: false, fontSize: 4*s,  fontFamily: 'helvetica', bold: false },
+      reference:   { x: 0,        y: 0,       w: W,     h: 6*s,     label: 'Referência',    color: '#000000', visible: true,  fontSize: 8*s,  fontFamily: 'helvetica', bold: true  },
+      name:        { x: 2*s,      y: 7*s,     w: W-4*s, h: 5*s,     label: 'Nome',          color: '#000000', visible: true,  fontSize: 6*s,  fontFamily: 'helvetica', bold: false },
+      color:       { x: 0,        y: H-4*s,   w: W,     h: 4*s,     label: 'Cor',           color: '#000000', visible: true,  fontSize: 7*s,  fontFamily: 'helvetica', bold: true  },
+      size:        { x: W-9*s,    y: 5*s,     w: 8*s,   h: 8*s,     label: 'Tamanho',       color: '#000000', visible: true,  fontSize: 11*s, fontFamily: 'helvetica', bold: true  },
+      qr:          { x: (W-20*s)/2, y: 6*s,  w: 20*s,  h: 20*s,    label: 'QR Code',       color: '#000000', visible: true,  fontSize: 8,    fontFamily: 'helvetica', bold: false },
+      footer:      { x: 0,        y: H-2*s,   w: W,     h: 2*s,     label: 'Rodapé',        color: '#000000', visible: true,  fontSize: 4*s,  fontFamily: 'helvetica', bold: false },
+      photo:       { x: W-photoSz, y: H-4*s-photoSz, w: photoSz, h: photoSz, label: 'Foto', color: '#000000', visible: false, fontSize: 6,    fontFamily: 'helvetica', bold: false },
+      grade:       { x: 2*s,      y: H-10*s,  w: W-4*s, h: 7*s,     label: 'Grade',         color: '#f59e0b', visible: false, fontSize: 6*s,  fontFamily: 'helvetica', bold: true  },
+      osdata:      { x: 2*s,      y: H-3.5*s, w: W-4*s, h: 3*s,     label: 'Dados OS',      color: '#6366f1', visible: false, fontSize: 4*s,  fontFamily: 'helvetica', bold: false },
+      sectornotes: { x: 2*s,      y: H-7*s,   w: W-4*s, h: 4*s,     label: 'Obs. Variante', color: '#f97316', visible: false, fontSize: 3.5*s,fontFamily: 'helvetica', bold: false },
     },
   };
 }
@@ -129,6 +133,12 @@ function Ruler({ axis, totalMm, scale, isDark }: { axis: 'h'|'v'; totalMm: numbe
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
+interface BatchLabelItem {
+  product: Product;
+  variation: Variation;
+  sizeGrid: string;
+}
+
 interface Props {
   isOpen: boolean; onClose: () => void;
   product: Product; isDarkMode: boolean;
@@ -136,11 +146,13 @@ interface Props {
   lot?: ProductionLot;
   sizeGridOverride?: string;
   os?: ServiceOrder | null;
+  sectors?: Sector[];
+  batchItems?: BatchLabelItem[];
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function PrintLabelEditorModal({ isOpen, onClose, product, isDarkMode, grids = [], lot, sizeGridOverride, os }: Props) {
+export default function PrintLabelEditorModal({ isOpen, onClose, product, isDarkMode, grids = [], lot, sizeGridOverride, os, sectors = [], batchItems }: Props) {
   const [printMode, setPrintMode] = useState<PrintMode>(() => (localStorage.getItem(STORAGE_MODE) as PrintMode) || 'thermal');
   const [sizeKey, setSizeKey]     = useState<string>(() => localStorage.getItem(STORAGE_SIZE) || '75x24');
   const [layouts, setLayouts]     = useState<Record<string, Layout>>(loadLayouts);
@@ -152,11 +164,17 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   const [exportingJpg, setExportingJpg] = useState(false);
   const [qrPreview, setQrPreview] = useState('');
 
+  // Exportação JPG em lote (múltiplos pedidos selecionados)
+  const [jpgSpacing, setJpgSpacing]   = useState(2);
+  const [jpgBatchMode, setJpgBatchMode] = useState<'combined' | 'separate'>('combined');
+
   // Label options
-  const [selectedVariationId, setSelectedVariationId] = useState((product.variations || [])[0]?.id || '');
+  const [selectedVariationId, setSelectedVariationId] = useState(
+    batchItems?.[0]?.variation.id || lot?.variationId || (product.variations || [])[0]?.id || ''
+  );
   const [selectedSizes, setSelectedSizes]             = useState<string[]>([]);
   const [useStockQty, setUseStockQty]                 = useState(false);
-  const [isBoxLabel, setIsBoxLabel]                   = useState(product.type === SaleType.WHOLESALE);
+  const [isBoxLabel, setIsBoxLabel]                   = useState(!!sizeGridOverride || product.type === SaleType.WHOLESALE);
   const [customQty, setCustomQty]                     = useState(1);
 
   // Manual size
@@ -178,18 +196,58 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   const scale  = Math.min(scaleW, scaleH);
   const previewW = W * scale, previewH = H * scale;
 
+  // Lote "mapa" agrupando múltiplas variantes (sem variationId único) — instruções
+  // por setor são exclusivas de uma variante e não fazem sentido nesse contexto.
+  const isMultiVariantMap = !!lot && (!lot.variationId || (((lot as any).metadata?.groups?.length ?? 0) > 1));
+
   const rawLayout = layouts[sizeKey === 'manual' ? `${manualW}x${manualH}` : sizeKey] ?? defaultLayout(paperDims);
   const def = defaultLayout(paperDims);
   const layout: Layout = {
     ...rawLayout,
     elems: {
       ...def.elems,
-      ...(rawLayout.elems || {})
+      ...(rawLayout.elems || {}),
+      ...(isMultiVariantMap ? { sectornotes: { ...def.elems.sectornotes, ...(rawLayout.elems?.sectornotes || {}), visible: false } } : {})
     }
   };
 
   const variation = (product.variations || []).find(v => v.id === selectedVariationId) || (product.variations || [])[0];
   const availSizes = variation ? Object.keys(variation.stock).filter(s => s !== 'WHOLESALE') : [];
+
+  const getSectorNotesText = (v?: Variation, filter?: { sectorId: string; noteName: string }): string => {
+    if (!v?.sectorNotes) return '';
+    if (filter) {
+      const notes = (v.sectorNotes[filter.sectorId] || []) as SectorNote[];
+      const match = notes.find(n => (n.name || '').toUpperCase() === filter.noteName.toUpperCase()) || notes.find(n => n.text);
+      return match?.text || '';
+    }
+    return Object.entries(v.sectorNotes)
+      .flatMap(([sid, notes]) => {
+        const sector = sectors.find(s => s.id === sid);
+        const sectorName = (sector?.name || sid).toUpperCase();
+        return (notes as SectorNote[])
+          .filter(n => n.text)
+          .map(n => {
+            const header = n.name ? `${sectorName} — ${n.name.toUpperCase()}` : sectorName;
+            return `${header}\n${n.text}`;
+          });
+      })
+      .join('\n');
+  };
+  const sectorNotesText: string = getSectorNotesText(variation, layout.elems.sectornotes.noteFilter);
+
+  // Lista de descrições por setor cadastradas para a variante atual — usada para
+  // escolher qual instrução exibir em "Obs. Variante" (ver Configurar Elementos).
+  const availableSectorNotes: { sectorId: string; sectorName: string; noteName: string; text: string }[] =
+    variation?.sectorNotes
+      ? Object.entries(variation.sectorNotes).flatMap(([sid, notes]) => {
+          const sector = sectors.find(s => s.id === sid);
+          const sectorName = (sector?.name || sid).toUpperCase();
+          return (notes as SectorNote[])
+            .filter(n => n.text)
+            .map(n => ({ sectorId: sid, sectorName, noteName: n.name || '(sem nome)', text: n.text }));
+        })
+      : [];
   const previewSize = selectedSizes[0] || availSizes[0] || '38';
 
   const activeGrid = grids.find(g => g.id === product.defaultGridId);
@@ -213,9 +271,10 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
     if (nonZeroStock.length > 0) return nonZeroStock.map(s => `${s}x${variation!.stock[s]}`).join('-');
     return sizes.join('-');
   })();
-  const sizeGridEntries = sizeGrid
-    ? sizeGrid.split('-').map(tok => { const [sz, q] = tok.split('x'); return { sz, qty: q ? parseInt(q) : null }; })
+  const parseSizeGridEntries = (sg: string): { sz: string; qty: number | null }[] => sg
+    ? sg.split('-').map(tok => { const [sz, q] = tok.split('x'); return { sz, qty: q ? parseInt(q) : null }; })
     : [];
+  const sizeGridEntries = parseSizeGridEntries(sizeGrid);
 
   useEffect(() => {
     const qd = isBoxLabel
@@ -274,19 +333,23 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         refX:     layout.elems.reference.x + layout.elems.reference.w / 2,
         refY:     layout.elems.reference.y + (layout.elems.reference.fontSize ?? 8) * 0.353 + 1,
         refSize:  layout.elems.reference.fontSize ?? 8,
+        refFontFamily: layout.elems.reference.fontFamily,
         qrX:      layout.elems.qr.x,
         qrY:      layout.elems.qr.y,
         qrSize:   layout.elems.qr.w,
         colorX:   layout.elems.color.x + layout.elems.color.w / 2,
         colorY:   layout.elems.color.y + (layout.elems.color.fontSize ?? 7) * 0.353 + 1,
         colorSize: layout.elems.color.fontSize ?? 7,
+        colorFontFamily: layout.elems.color.fontFamily,
         footerX:  layout.elems.footer.x + 1,
         footerY:  layout.elems.footer.y + (layout.elems.footer.fontSize ?? 4) * 0.353 + 0.5,
         footerSize: layout.elems.footer.fontSize ?? 4,
+        footerFontFamily: layout.elems.footer.fontFamily,
         showSize: layout.elems.size.visible,
         sizeX:    layout.elems.size.x + layout.elems.size.w - 1,
         sizeY:    layout.elems.size.y + (layout.elems.size.fontSize ?? 11) * 0.353 + 1,
         sizeSize: layout.elems.size.fontSize ?? 11,
+        sizeFontFamily: layout.elems.size.fontFamily,
         photoX:   layout.elems.photo.x,
         photoY:   layout.elems.photo.y,
         photoW:   layout.elems.photo.w,
@@ -297,6 +360,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         gradeY:   layout.elems.grade.y,
         gradeW:   layout.elems.grade.w,
         gradeH:   layout.elems.grade.h,
+        gradeFontFamily: layout.elems.grade.fontFamily,
         showOsData: layout.elems.osdata.visible,
         osDataX:  layout.elems.osdata.x + layout.elems.osdata.w / 2,
         osDataY:  layout.elems.osdata.y + (layout.elems.osdata.fontSize ?? 3.5) * 0.353 + 1,
@@ -304,9 +368,30 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         osDataH:  layout.elems.osdata.h,
         osDataSize: layout.elems.osdata.fontSize ?? 3.5,
         osDataText: os ? `${os.osNumber} | ${os.providerName} | R$ ${os.totalValue.toFixed(2)}` : undefined,
+        osDataFontFamily: layout.elems.osdata.fontFamily,
+        showSectorNotes: layout.elems.sectornotes.visible,
+        sectorNotesX:    layout.elems.sectornotes.x,
+        sectorNotesY:    layout.elems.sectornotes.y + (layout.elems.sectornotes.fontSize ?? 3) * 0.353 + 0.5,
+        sectorNotesW:    layout.elems.sectornotes.w,
+        sectorNotesH:    layout.elems.sectornotes.h,
+        sectorNotesSize: layout.elems.sectornotes.fontSize ?? 3,
+        sectorNotesText: sectorNotesText || undefined,
+        sectorNotesHasHeader: !layout.elems.sectornotes.noteFilter,
+        sectorNotesFontFamily: layout.elems.sectornotes.fontFamily,
       };
       const photoUrl = product.photoUrl;
-      if (isBoxLabel) {
+      if (batchItems && batchItems.length > 1) {
+        await labelService.printProductLabelsBatch(
+          batchItems.map(item => ({
+            product: item.product,
+            variation: item.variation,
+            sizeGrid: item.sizeGrid,
+            sectorNotesText: getSectorNotesText(item.variation, layout.elems.sectornotes.noteFilter) || undefined,
+            photoUrl: item.product.photoUrl,
+          })),
+          paperDims, ll
+        );
+      } else if (isBoxLabel) {
         await labelService.printWholesaleLabel(product, variation!, customQty, paperDims, ll, photoUrl, sizeGrid);
       } else {
         await labelService.printProductLabels(product, variation, sizesToPrint, quantities, paperDims, ll, photoUrl, sizeGrid);
@@ -323,148 +408,275 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
       const ptToPxHigh = (pt: number) => pt * DPI / 72;
       const cW = mmToPx(W);
       const cH = mmToPx(H);
+      const e = layout.elems;
 
-      const sizesToPrint = isBoxLabel ? ['WHOLESALE'] : (selectedSizes.length > 0 ? selectedSizes : availSizes);
-      const quantities: Record<string, number> = {};
-      if (isBoxLabel) {
-        quantities['WHOLESALE'] = customQty;
-      } else if (useStockQty) {
-        sizesToPrint.forEach(s => { quantities[s] = variation?.stock[s] || 0; });
-      } else {
-        sizesToPrint.forEach(s => { quantities[s] = customQty; });
-      }
+      const drawFrame = async (opts: {
+        refText: string;
+        nameText?: string;
+        colorText: string;
+        sizeText?: string;
+        qrDataUrl?: string;
+        photoUrl?: string;
+        gridEntries: { sz: string; qty: number | null }[];
+        notesText: string;
+      }): Promise<HTMLCanvasElement> => {
+        const canvas = document.createElement('canvas');
+        canvas.width  = cW;
+        canvas.height = cH;
+        const ctx = canvas.getContext('2d')!;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, cW, cH);
+
+        const drawText = (el: Elem, text: string, fallbackPt: number) => {
+          if (!el.visible || !text) return;
+          const fsPx = ptToPxHigh(el.fontSize ?? fallbackPt);
+          const ff = el.fontFamily === 'times'   ? 'Georgia, serif'
+                   : el.fontFamily === 'courier' ? '"Courier New", monospace'
+                   : el.fontFamily === 'avenir'  ? '"Century Gothic","Trebuchet MS","Gill Sans MT",sans-serif'
+                   : el.fontFamily === 'arial'   ? 'Arial, sans-serif'
+                   : 'Helvetica, Arial, sans-serif';
+          ctx.font         = `${el.bold ? '900' : '400'} ${fsPx}px ${ff}`;
+          ctx.fillStyle    = '#000000';
+          ctx.textAlign    = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(text, mmToPx(el.x + el.w / 2), mmToPx(el.y + el.h / 2));
+        };
+
+        if (e.qr.visible && opts.qrDataUrl) {
+          await new Promise<void>(res => {
+            const img = new window.Image();
+            img.onload  = () => { ctx.drawImage(img, mmToPx(e.qr.x), mmToPx(e.qr.y), mmToPx(e.qr.w), mmToPx(e.qr.h)); res(); };
+            img.onerror = () => res();
+            img.src = opts.qrDataUrl!;
+          });
+        }
+
+        if (e.photo.visible && opts.photoUrl) {
+          await new Promise<void>(res => {
+            const img = new window.Image();
+            img.crossOrigin = 'anonymous';
+            img.onload  = () => { ctx.drawImage(img, mmToPx(e.photo.x), mmToPx(e.photo.y), mmToPx(e.photo.w), mmToPx(e.photo.h)); res(); };
+            img.onerror = () => res();
+            img.src = opts.photoUrl!;
+          });
+        }
+
+        drawText(e.reference, opts.refText, 8);
+        if (opts.nameText !== undefined) drawText(e.name, opts.nameText, 6);
+        drawText(e.color, opts.colorText, 7);
+        if (e.size.visible && opts.sizeText !== undefined) drawText(e.size, opts.sizeText, 11);
+        drawText(e.footer, 'ANTIGRAVITY SYSTEM', 4);
+
+        // Grade pills
+        const gridEntries = opts.gridEntries;
+        if (e.grade.visible && gridEntries.length > 0) {
+          const gX = mmToPx(e.grade.x), gY = mmToPx(e.grade.y);
+          const gW = mmToPx(e.grade.w), gH = mmToPx(e.grade.h);
+          const hasQty = gridEntries.some(en => en.qty !== null);
+          const totalQty = gridEntries.reduce((s, en) => s + (en.qty || 0), 0);
+          const totalWidthFactor = 1.6;
+          const totalUnits = gridEntries.length + (hasQty ? totalWidthFactor : 0);
+          const cellW  = gW / totalUnits;
+          const totalCellW = cellW * totalWidthFactor;
+          const szFsPx  = ptToPxHigh(e.grade.fontSize ?? 5);
+          const qtyFsPx = ptToPxHigh((e.grade.fontSize ?? 5) * 0.90);
+          const szH = hasQty ? gH * 0.48 : gH * 0.70;
+          const pad = mmToPx(0.4);
+
+          gridEntries.forEach(({ sz, qty }, idx) => {
+            const cellX = gX + cellW * idx;
+            const cx = cellX + cellW / 2;
+            // Numeração: fundo preto + texto branco
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            if (typeof (ctx as any).roundRect === 'function') {
+              (ctx as any).roundRect(cellX + pad, gY + pad, cellW - pad * 2, szH, mmToPx(0.5));
+            } else {
+              ctx.rect(cellX + pad, gY + pad, cellW - pad * 2, szH);
+            }
+            ctx.fill();
+            ctx.fillStyle    = '#ffffff';
+            ctx.font         = `900 ${szFsPx}px Arial`;
+            ctx.textAlign    = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(sz, cx, gY + szH * 0.52);
+            // Valor: texto preto simples
+            if (qty !== null) {
+              ctx.fillStyle = '#000000';
+              ctx.font      = `900 ${qtyFsPx}px Arial`;
+              ctx.fillText(`${qty}`, cx, gY + szH + (gH - szH) * 0.6);
+            }
+          });
+
+          if (hasQty) {
+            const cellX = gX + cellW * gridEntries.length;
+            const cx = cellX + totalCellW / 2;
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            if (typeof (ctx as any).roundRect === 'function') {
+              (ctx as any).roundRect(cellX + pad, gY + pad, totalCellW - pad * 2, szH, mmToPx(0.5));
+            } else {
+              ctx.rect(cellX + pad, gY + pad, totalCellW - pad * 2, szH);
+            }
+            ctx.fill();
+            ctx.fillStyle    = '#ffffff';
+            ctx.font         = `900 ${szFsPx * 0.65}px Arial`;
+            ctx.textAlign    = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('TOTAL', cx, gY + szH * 0.52);
+            ctx.fillStyle = '#000000';
+            ctx.font      = `900 ${qtyFsPx}px Arial`;
+            ctx.fillText(`${totalQty}`, cx, gY + szH + (gH - szH) * 0.6);
+          }
+        }
+
+        // OS Data
+        if (e.osdata.visible && os) {
+          const osText = `${os.osNumber} | ${os.providerName} | R$ ${os.totalValue.toFixed(2)}`;
+          const osFsPx = ptToPxHigh(e.osdata.fontSize ?? 3.5);
+          ctx.font         = `400 ${osFsPx}px Arial, Helvetica, sans-serif`;
+          ctx.fillStyle    = '#6366f1';
+          ctx.textAlign    = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(osText, mmToPx(e.osdata.x + e.osdata.w / 2), mmToPx(e.osdata.y + e.osdata.h / 2));
+          ctx.strokeStyle  = '#6366f1';
+          ctx.lineWidth    = mmToPx(0.15);
+          const pad = mmToPx(0.3);
+          ctx.strokeRect(mmToPx(e.osdata.x) + pad, mmToPx(e.osdata.y) + pad, mmToPx(e.osdata.w) - pad * 2, mmToPx(e.osdata.h) - pad * 2);
+        }
+
+        // Sector Notes
+        const notesText = opts.notesText;
+        if (e.sectornotes.visible && notesText) {
+          const snFsPx  = ptToPxHigh(e.sectornotes.fontSize ?? 3);
+          const snX     = mmToPx(e.sectornotes.x);
+          const snY     = mmToPx(e.sectornotes.y);
+          const snW     = mmToPx(e.sectornotes.w);
+          const snH     = mmToPx(e.sectornotes.h);
+          const pad     = mmToPx(0.4);
+          const lineH   = snFsPx * 1.35;
+          ctx.textAlign    = 'left';
+          ctx.textBaseline = 'top';
+          ctx.fillStyle = '#000000';
+          if (!e.sectornotes.noteFilter) {
+            notesText.split('\n').forEach((line, li) => {
+              const ty = snY + pad + li * lineH;
+              if (ty + lineH > snY + snH) return;
+              const isHeader = li % 2 === 0;
+              ctx.font = `${isHeader ? '700' : '400'} ${snFsPx}px "Century Gothic","Trebuchet MS","Gill Sans",Arial,sans-serif`;
+              ctx.fillText(line, snX + pad, ty);
+            });
+          } else {
+            ctx.font = `400 ${snFsPx}px "Century Gothic","Trebuchet MS","Gill Sans",Arial,sans-serif`;
+            const maxW = snW - pad * 2;
+            const words = notesText.split(/\s+/).filter(Boolean);
+            const lines: string[] = [];
+            let cur = '';
+            words.forEach(word => {
+              const test = cur ? `${cur} ${word}` : word;
+              if (cur && ctx.measureText(test).width > maxW) {
+                lines.push(cur);
+                cur = word;
+              } else {
+                cur = test;
+              }
+            });
+            if (cur) lines.push(cur);
+            lines.slice(0, 2).forEach((line, li) => {
+              const ty = snY + pad + li * lineH;
+              if (ty + lineH > snY + snH) return;
+              ctx.fillText(line, snX + pad, ty);
+            });
+          }
+        }
+
+        return canvas;
+      };
 
       const frames: HTMLCanvasElement[] = [];
+      let fileNames: string[] | null = null;
 
-      for (const size of sizesToPrint) {
-        const qty = quantities[size] || 1;
-        const qrData = isBoxLabel
-          ? `PRD|${product.id}|${variation?.id || ''}|WHOLESALE`
-          : `PRD|${product.id}|${variation?.id || ''}|${size}`;
-        const qrDataUrl = await labelService.generateQRCode(qrData);
-
-        for (let i = 0; i < qty; i++) {
-          const canvas = document.createElement('canvas');
-          canvas.width  = cW;
-          canvas.height = cH;
-          const ctx = canvas.getContext('2d')!;
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, cW, cH);
-
-          const e = layout.elems;
-
-          const drawText = (el: Elem, text: string, fallbackPt: number) => {
-            if (!el.visible || !text) return;
-            const fsPx = ptToPxHigh(el.fontSize ?? fallbackPt);
-            const ff = el.fontFamily === 'times'   ? 'Georgia, serif'
-                     : el.fontFamily === 'courier' ? '"Courier New", monospace'
-                     : 'Arial, Helvetica, sans-serif';
-            ctx.font         = `${el.bold ? '900' : '400'} ${fsPx}px ${ff}`;
-            ctx.fillStyle    = '#000000';
-            ctx.textAlign    = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(text, mmToPx(el.x + el.w / 2), mmToPx(el.y + el.h / 2));
-          };
-
-          if (e.qr.visible && qrDataUrl) {
-            await new Promise<void>(res => {
-              const img = new window.Image();
-              img.onload  = () => { ctx.drawImage(img, mmToPx(e.qr.x), mmToPx(e.qr.y), mmToPx(e.qr.w), mmToPx(e.qr.h)); res(); };
-              img.onerror = () => res();
-              img.src = qrDataUrl;
-            });
-          }
-
-          if (e.photo.visible && product.photoUrl) {
-            await new Promise<void>(res => {
-              const img = new window.Image();
-              img.crossOrigin = 'anonymous';
-              img.onload  = () => { ctx.drawImage(img, mmToPx(e.photo.x), mmToPx(e.photo.y), mmToPx(e.photo.w), mmToPx(e.photo.h)); res(); };
-              img.onerror = () => res();
-              img.src = product.photoUrl!;
-            });
-          }
-
-          drawText(e.reference, product.reference || product.name, 8);
-          drawText(e.name,      product.name,                       6);
-          drawText(e.color,     variation?.colorName || '---',      7);
-          if (e.size.visible) drawText(e.size, isBoxLabel ? 'BOX' : size, 11);
-          drawText(e.footer,    'ANTIGRAVITY SYSTEM',               4);
-
-          // Grade pills
-          if (e.grade.visible && sizeGridEntries.length > 0) {
-            const gX = mmToPx(e.grade.x), gY = mmToPx(e.grade.y);
-            const gW = mmToPx(e.grade.w), gH = mmToPx(e.grade.h);
-            const hasQty = sizeGridEntries.some(en => en.qty !== null);
-            const cellW  = gW / sizeGridEntries.length;
-            const szFsPx  = ptToPxHigh(e.grade.fontSize ?? 5);
-            const qtyFsPx = ptToPxHigh((e.grade.fontSize ?? 5) * 0.90);
-            const szH = hasQty ? gH * 0.48 : gH * 0.70;
-            const pad = mmToPx(0.4);
-            sizeGridEntries.forEach(({ sz, qty }, idx) => {
-              const cx = gX + cellW * idx;
-              // Numeração: fundo preto + texto branco
-              ctx.fillStyle = '#000000';
-              ctx.beginPath();
-              if (typeof (ctx as any).roundRect === 'function') {
-                (ctx as any).roundRect(cx + pad, gY + pad, cellW - pad * 2, szH, mmToPx(0.5));
-              } else {
-                ctx.rect(cx + pad, gY + pad, cellW - pad * 2, szH);
-              }
-              ctx.fill();
-              ctx.fillStyle    = '#ffffff';
-              ctx.font         = `900 ${szFsPx}px Arial`;
-              ctx.textAlign    = 'center';
-              ctx.textBaseline = 'middle';
-              ctx.fillText(sz, cx + cellW / 2, gY + szH * 0.52);
-              // Valor: texto preto simples
-              if (qty !== null) {
-                ctx.fillStyle = '#000000';
-                ctx.font      = `900 ${qtyFsPx}px Arial`;
-                ctx.fillText(`${qty}`, cx + cellW / 2, gY + szH + (gH - szH) * 0.6);
-              }
-            });
-          }
-
-          // OS Data
-          if (e.osdata.visible && os) {
-            const osText = `${os.osNumber} | ${os.providerName} | R$ ${os.totalValue.toFixed(2)}`;
-            const osFsPx = ptToPxHigh(e.osdata.fontSize ?? 3.5);
-            ctx.font         = `400 ${osFsPx}px Arial, Helvetica, sans-serif`;
-            ctx.fillStyle    = '#6366f1';
-            ctx.textAlign    = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(osText, mmToPx(e.osdata.x + e.osdata.w / 2), mmToPx(e.osdata.y + e.osdata.h / 2));
-            ctx.strokeStyle  = '#6366f1';
-            ctx.lineWidth    = mmToPx(0.15);
-            const pad = mmToPx(0.3);
-            ctx.strokeRect(mmToPx(e.osdata.x) + pad, mmToPx(e.osdata.y) + pad, mmToPx(e.osdata.w) - pad * 2, mmToPx(e.osdata.h) - pad * 2);
-          }
-
+      if (batchItems && batchItems.length > 1) {
+        fileNames = [];
+        for (const item of batchItems) {
+          const qrDataUrl = await labelService.generateQRCode(`PRD|${item.product.id}|${item.variation.id}|GRADE`);
+          const canvas = await drawFrame({
+            refText: item.product.reference || item.product.name,
+            colorText: item.variation.colorName || '---',
+            qrDataUrl,
+            photoUrl: item.product.photoUrl,
+            gridEntries: parseSizeGridEntries(item.sizeGrid),
+            notesText: getSectorNotesText(item.variation, e.sectornotes.noteFilter),
+          });
           frames.push(canvas);
+          const safeName = `Etiqueta_${item.product.reference || item.product.name}_${item.variation.colorName || 'cor'}`.replace(/[^\w\-]+/g, '_');
+          fileNames.push(safeName);
+        }
+      } else {
+        const sizesToPrint = isBoxLabel ? ['WHOLESALE'] : (selectedSizes.length > 0 ? selectedSizes : availSizes);
+        const quantities: Record<string, number> = {};
+        if (isBoxLabel) {
+          quantities['WHOLESALE'] = customQty;
+        } else if (useStockQty) {
+          sizesToPrint.forEach(s => { quantities[s] = variation?.stock[s] || 0; });
+        } else {
+          sizesToPrint.forEach(s => { quantities[s] = customQty; });
+        }
+
+        for (const size of sizesToPrint) {
+          const qty = quantities[size] || 1;
+          const qrData = isBoxLabel
+            ? `PRD|${product.id}|${variation?.id || ''}|WHOLESALE`
+            : `PRD|${product.id}|${variation?.id || ''}|${size}`;
+          const qrDataUrl = await labelService.generateQRCode(qrData);
+
+          for (let i = 0; i < qty; i++) {
+            const canvas = await drawFrame({
+              refText: product.reference || product.name,
+              nameText: product.name,
+              colorText: variation?.colorName || '---',
+              sizeText: isBoxLabel ? 'BOX' : size,
+              qrDataUrl,
+              photoUrl: product.photoUrl,
+              gridEntries: sizeGridEntries,
+              notesText: sectorNotesText,
+            });
+            frames.push(canvas);
+          }
         }
       }
 
       if (frames.length === 0) {
-        alert('Nenhuma etiqueta para gerar. Selecione ao menos um tamanho ou variação.');
+        toast.show('Nenhuma etiqueta para gerar. Selecione ao menos um tamanho ou variação.');
         return;
       }
 
-      // Stack all frames vertically into one image
+      // Lote: gerar um arquivo JPG separado por pedido selecionado
+      if (fileNames && jpgBatchMode === 'separate') {
+        for (let i = 0; i < frames.length; i++) {
+          await shareImage(frames[i].toDataURL('image/jpeg', 0.92), `${fileNames[i]}_${i + 1}.jpg`);
+        }
+        return;
+      }
+
+      // Empilha todos os quadros verticalmente em uma única imagem, com
+      // espaçamento configurável entre etiquetas no caso de lote.
+      const gapPx = fileNames ? mmToPx(jpgSpacing) : 0;
       const out = document.createElement('canvas');
       out.width  = cW;
-      out.height = cH * frames.length;
+      out.height = cH * frames.length + gapPx * Math.max(0, frames.length - 1);
       const oCtx = out.getContext('2d')!;
       oCtx.fillStyle = '#ffffff';
       oCtx.fillRect(0, 0, out.width, out.height);
       for (let i = 0; i < frames.length; i++) {
-        oCtx.drawImage(frames[i], 0, i * cH);
+        oCtx.drawImage(frames[i], 0, i * (cH + gapPx));
       }
 
-      await shareImage(out.toDataURL('image/jpeg', 0.92), `Etiquetas_${product.reference || product.name}.jpg`);
+      const fileName = fileNames ? `Etiquetas_Lote_${frames.length}.jpg` : `Etiquetas_${product.reference || product.name}.jpg`;
+      await shareImage(out.toDataURL('image/jpeg', 0.92), fileName);
     } catch (err) {
       console.error('Erro ao gerar JPG:', err);
-      alert('Erro ao gerar JPG: ' + (err instanceof Error ? err.message : String(err)));
+      toast.show('Erro ao gerar JPG: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setExportingJpg(false);
     }
@@ -475,8 +687,10 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   const cssFont = (el: Elem, fallbackPt: number) => ({
     fontSize:   ptToPx(el.fontSize ?? fallbackPt),
     fontFamily: el.fontFamily === 'times'   ? 'Georgia, Times, serif'
-              : el.fontFamily === 'courier' ? 'Courier New, monospace'
-              : 'Arial, Helvetica, sans-serif',
+              : el.fontFamily === 'courier' ? '"Courier New", monospace'
+              : el.fontFamily === 'avenir'  ? '"Century Gothic","Trebuchet MS","Gill Sans MT","Segoe UI",sans-serif'
+              : el.fontFamily === 'arial'   ? 'Arial, sans-serif'
+              : 'Helvetica, Arial, sans-serif',
     fontWeight: el.bold ? 900 : 400,
   });
   const pos = (el: Elem) => ({
@@ -543,16 +757,40 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
             </span>
           </div>
         )}
-        {e.grade.visible && sizeGridEntries.length > 0 && (
-          <div style={{ ...pos(e.grade), display:'flex', alignItems:'stretch', gap: scale * 0.5 }}>
-            {sizeGridEntries.map(({ sz, qty }, i) => (
-              <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
-                <span style={{ ...cssFont(e.grade, 5), color:'#ffffff', backgroundColor:'#000000', borderRadius: scale * 0.6, padding:`${scale * 0.3}px ${scale * 0.5}px`, lineHeight:1 }}>{sz}</span>
-                {qty !== null && <span style={{ fontSize: ptToPx((e.grade.fontSize ?? 5) * 0.90), fontFamily:'Arial,sans-serif', fontWeight:900, color:'#000000', lineHeight:1, marginTop: scale * 0.5 }}>{qty}</span>}
-              </div>
-            ))}
+        {e.sectornotes.visible && (
+          <div style={{ ...pos(e.sectornotes), display:'flex', alignItems:'flex-start', justifyContent:'flex-start', padding: `${scale*0.3}px ${scale*0.5}px`, overflow:'hidden' }}>
+            <span style={{
+              fontSize: ptToPx(e.sectornotes.fontSize ?? 3),
+              fontFamily: cssFont(e.sectornotes, 3).fontFamily,
+              fontWeight: sectorNotesText ? 400 : 400,
+              fontStyle: sectorNotesText ? 'normal' : 'italic',
+              color: sectorNotesText ? '#000000' : '#94a3b8',
+              lineHeight:1.35, whiteSpace:'pre-line', overflow:'hidden', width:'100%'
+            }}>
+              {sectorNotesText || 'Sem instruções de setor cadastradas para esta cor'}
+            </span>
           </div>
         )}
+        {e.grade.visible && sizeGridEntries.length > 0 && (() => {
+          const hasQty = sizeGridEntries.some(en => en.qty !== null);
+          const totalQty = sizeGridEntries.reduce((s, en) => s + (en.qty || 0), 0);
+          return (
+            <div style={{ ...pos(e.grade), display:'flex', alignItems:'stretch', gap: scale * 0.5 }}>
+              {sizeGridEntries.map(({ sz, qty }, i) => (
+                <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+                  <span style={{ ...cssFont(e.grade, 5), color:'#ffffff', backgroundColor:'#000000', borderRadius: scale * 0.6, padding:`${scale * 0.3}px ${scale * 0.5}px`, lineHeight:1 }}>{sz}</span>
+                  {qty !== null && <span style={{ fontSize: ptToPx((e.grade.fontSize ?? 5) * 0.90), fontFamily:'Arial,sans-serif', fontWeight:900, color:'#000000', lineHeight:1, marginTop: scale * 0.5 }}>{qty}</span>}
+                </div>
+              ))}
+              {hasQty && (
+                <div style={{ flex:1.6, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+                  <span style={{ ...cssFont(e.grade, 5), fontSize: ptToPx((e.grade.fontSize ?? 5) * 0.65), color:'#ffffff', backgroundColor:'#000000', borderRadius: scale * 0.6, padding:`${scale * 0.3}px ${scale * 0.5}px`, lineHeight:1, whiteSpace:'nowrap' }}>TOTAL</span>
+                  <span style={{ fontSize: ptToPx((e.grade.fontSize ?? 5) * 0.90), fontFamily:'Arial,sans-serif', fontWeight:900, color:'#000000', lineHeight:1, marginTop: scale * 0.5 }}>{totalQty}</span>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
     );
   };
@@ -594,7 +832,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         {/* Size selection */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between px-1">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tamanho da Etiqueta</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-100">Tamanho da Etiqueta</label>
             <button type="button" onClick={handleReset} className="text-[9px] font-black text-indigo-500 flex items-center gap-1 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 px-2 py-1 rounded-lg">
               <RotateCcw size={9}/> Resetar
             </button>
@@ -615,7 +853,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                   <button key={k} type="button" onClick={()=>handleSizeSelect(opt.dims)}
                     className={`py-2 px-3 rounded-xl border-2 font-black text-[9px] tracking-tight transition-all flex items-center justify-between ${sizeKey===k?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600':'border-slate-100 dark:border-slate-800 text-slate-400'}`}>
                     {opt.label}
-                    {opt.star && <span className="text-[7px] font-black text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded-full ml-1">minha</span>}
+                    {opt.star && <span className="text-[9px] font-black text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded-full ml-1">minha</span>}
                   </button>
                 );})}
               </div>
@@ -689,12 +927,12 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           </button>
         )}
 
-        {/* Element config panel — bottom sheet */}
+        {/* Element config panel — centered modal */}
         {elemConfigOpen && (
-          <div className="fixed inset-0 z-[70] flex flex-col" onClick={() => setElemConfigOpen(false)}>
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={() => setElemConfigOpen(false)}>
             <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
             <div
-              className={`relative mt-auto w-full max-h-[80vh] flex flex-col rounded-t-3xl shadow-2xl overflow-hidden ${dk ? 'bg-slate-900' : 'bg-white'}`}
+              className={`relative w-full max-w-sm max-h-[80vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden ${dk ? 'bg-slate-900' : 'bg-white'}`}
               onClick={e => e.stopPropagation()}
             >
               {/* Header */}
@@ -722,43 +960,81 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 {ELEM_KEYS.map(key => {
                   const el = layout.elems[key];
                   const isSel = selected === key;
+                  const isLocked = key === 'sectornotes' && isMultiVariantMap;
                   return (
                     <div
                       key={key}
-                      className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all ${
+                      className={`flex flex-col gap-3 p-4 rounded-2xl border-2 transition-all ${isLocked ? 'opacity-50' : ''} ${
                         isSel ? 'border-indigo-500 shadow-lg shadow-indigo-500/10' : dk ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
                       }`}
                       style={isSel ? { borderColor: el.color, backgroundColor: el.color + '15' } : {}}
                     >
-                      <div className="w-4 h-4 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: el.color }} />
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-black leading-none ${dk ? 'text-white' : 'text-slate-900'}`}>{el.label}</p>
-                        <p className="text-[10px] font-bold text-slate-400 mt-0.5">X:{el.x.toFixed(1)} Y:{el.y.toFixed(1)} • {el.w.toFixed(1)}×{el.h.toFixed(1)} mm</p>
+                      <div className="flex items-center gap-4">
+                        <div className="w-4 h-4 rounded-full shrink-0 shadow-sm" style={{ backgroundColor: el.color }} />
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-black leading-none ${dk ? 'text-white' : 'text-slate-900'}`}>{el.label}</p>
+                          {isLocked ? (
+                            <p className="text-[10px] font-bold text-amber-500 mt-0.5">Indisponível para mapa com várias variantes</p>
+                          ) : (
+                            <p className="text-[10px] font-bold text-slate-400 mt-0.5">X:{el.x.toFixed(1)} Y:{el.y.toFixed(1)} • {el.w.toFixed(1)}×{el.h.toFixed(1)} mm</p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isLocked}
+                          onClick={() => { setSelected(isSel ? null : key); setElemConfigOpen(false); }}
+                          className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${isLocked ? 'cursor-not-allowed' : ''} ${
+                            isSel
+                              ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-500/20'
+                              : dk
+                                ? 'bg-slate-700 border-slate-600 text-slate-300 hover:border-indigo-400 hover:text-indigo-300'
+                                : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-400 hover:text-indigo-600'
+                          }`}
+                        >
+                          {isSel ? <Check size={12} /> : 'Ajustar'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isLocked}
+                          aria-label={isLocked ? `${el.label} bloqueado` : el.visible ? `Ocultar ${el.label}` : `Mostrar ${el.label}`}
+                          title={isLocked ? 'Disponível apenas para etiqueta de uma única variante' : undefined}
+                          onClick={() => updateElem(key, { visible: !el.visible })}
+                          className={`w-12 h-7 rounded-full transition-all relative flex-shrink-0 ${isLocked ? 'cursor-not-allowed' : ''} ${el.visible ? 'shadow-inner' : dk ? 'bg-slate-700' : 'bg-slate-200'}`}
+                          style={el.visible ? { backgroundColor: el.color } : {}}
+                        >
+                          <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-sm transition-all duration-200 flex items-center justify-center ${el.visible ? 'left-5' : 'left-0.5'}`}>
+                            {isLocked ? <Lock size={10} className="text-amber-500" /> : el.visible ? <Eye size={10} style={{ color: el.color }} /> : <EyeOff size={10} className="text-slate-400" />}
+                          </span>
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => { setSelected(isSel ? null : key); setElemConfigOpen(false); }}
-                        className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
-                          isSel
-                            ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-500/20'
-                            : dk
-                              ? 'bg-slate-700 border-slate-600 text-slate-300 hover:border-indigo-400 hover:text-indigo-300'
-                              : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-400 hover:text-indigo-600'
-                        }`}
-                      >
-                        {isSel ? <Check size={12} /> : 'Ajustar'}
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={el.visible ? `Ocultar ${el.label}` : `Mostrar ${el.label}`}
-                        onClick={() => updateElem(key, { visible: !el.visible })}
-                        className={`w-12 h-7 rounded-full transition-all relative flex-shrink-0 ${el.visible ? 'shadow-inner' : dk ? 'bg-slate-700' : 'bg-slate-200'}`}
-                        style={el.visible ? { backgroundColor: el.color } : {}}
-                      >
-                        <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-sm transition-all duration-200 flex items-center justify-center ${el.visible ? 'left-5' : 'left-0.5'}`}>
-                          {el.visible ? <Eye size={10} style={{ color: el.color }} /> : <EyeOff size={10} className="text-slate-400" />}
-                        </span>
-                      </button>
+                      {key === 'sectornotes' && !isLocked && el.visible && (
+                        <div className="flex flex-col gap-1.5 pl-8">
+                          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Instrução a exibir</label>
+                          {availableSectorNotes.length > 0 ? (
+                            <select
+                              aria-label="Instrução a exibir"
+                              title="Instrução a exibir"
+                              value={el.noteFilter ? `${el.noteFilter.sectorId}::${el.noteFilter.noteName}` : ''}
+                              onChange={(ev) => {
+                                const val = ev.target.value;
+                                if (!val) { updateElem('sectornotes', { noteFilter: undefined }); return; }
+                                const [sectorId, ...rest] = val.split('::');
+                                updateElem('sectornotes', { noteFilter: { sectorId, noteName: rest.join('::') } });
+                              }}
+                              className={`w-full px-3 py-2 rounded-xl text-[10px] font-bold border outline-none ${dk ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-700'}`}
+                            >
+                              <option value="">Todas as instruções</option>
+                              {availableSectorNotes.map(n => (
+                                <option key={`${n.sectorId}::${n.noteName}`} value={`${n.sectorId}::${n.noteName}`}>
+                                  {n.sectorName} — {n.noteName}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <p className="text-[10px] font-bold text-slate-400">Nenhuma instrução por setor cadastrada para esta cor.</p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -768,19 +1044,19 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => { ELEM_KEYS.forEach(k => updateElem(k, { visible: true })); }}
-                    className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2 flex items-center justify-center gap-1.5 ${
-                      dk ? 'border-slate-700 text-slate-300 hover:border-emerald-500 hover:text-emerald-400' : 'border-slate-200 text-slate-500 hover:border-emerald-400 hover:text-emerald-600'
+                    onClick={() => { ELEM_KEYS.forEach(k => { if (k === 'sectornotes' && isMultiVariantMap) return; updateElem(k, { visible: true }); }); }}
+                    className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2 flex items-center justify-center gap-1.5 active:scale-95 ${
+                      dk ? 'border-slate-700 bg-slate-800 text-slate-300 hover:border-emerald-500 hover:text-emerald-400' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-emerald-400 hover:text-emerald-600'
                     }`}
                   >
-                    <Eye size={12} /> Mostrar Todos
+                    <Eye size={13} /> Mostrar Todos
                   </button>
                   <button
                     type="button"
                     onClick={() => setElemConfigOpen(false)}
-                    className="flex-[2] py-3 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+                    className="flex-1 py-3.5 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all flex items-center justify-center gap-1.5"
                   >
-                    Fechar
+                    <X size={13} /> Fechar
                   </button>
                 </div>
               </div>
@@ -790,80 +1066,118 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
 
         {/* Controls panel */}
         {tab === 'edit' && selected && sel && (
-          <div className={`p-4 rounded-2xl border-2 flex flex-col gap-3 ${dk?'bg-slate-900 border-slate-800':'bg-slate-50 border-slate-100'}`}>
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase" style={{color:sel.color}}>✎ {sel.label}</span>
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] font-black text-slate-400 mr-1">Passo:</span>
-                {STEPS.map(s=>(
-                  <button key={s} type="button" onClick={()=>setStep(s)}
-                    className={`px-2 py-0.5 rounded-lg border text-[9px] font-black transition-all ${step===s?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600':'border-slate-200 dark:border-slate-700 text-slate-400'}`}>
-                    {s}mm
+          <div className={`rounded-3xl border-2 overflow-hidden ${dk ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+
+            {/* ── Header: element name + step selector ── */}
+            <div className={`flex items-center justify-between px-4 py-3 border-b ${dk ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'}`}>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: sel.color }} />
+                <span className="text-[11px] font-black uppercase tracking-widest" style={{ color: sel.color }}>{sel.label}</span>
+              </div>
+              <div className={`flex items-center gap-1 p-1 rounded-xl ${dk ? 'bg-slate-900' : 'bg-white'}`}>
+                {STEPS.map(s => (
+                  <button key={s} type="button" onClick={() => setStep(s)}
+                    className={`px-2.5 py-1 rounded-lg text-[9px] font-black transition-all ${step === s ? 'bg-indigo-600 text-white shadow-sm' : `${dk ? 'text-slate-400' : 'text-slate-500'}`}`}>
+                    {s}
                   </button>
                 ))}
+                <span className={`text-[9px] font-bold pl-0.5 ${dk ? 'text-slate-500' : 'text-slate-400'}`}>mm</span>
               </div>
             </div>
-            <div className="grid grid-cols-4 gap-2 text-center">
-              {[['X',sel.x],['Y',sel.y],['L',sel.w],['A',sel.h]].map(([lbl,val])=>(
-                <div key={lbl as string} className={`p-2 rounded-xl border ${dk?'bg-slate-800 border-slate-700':'bg-white border-slate-100'}`}>
-                  <span className="block text-[8px] font-black text-slate-400 uppercase">{lbl}</span>
-                  <span className={`block text-[10px] font-black ${dk?'text-slate-200':'text-slate-700'}`}>{(val as number).toFixed(1)}</span>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-4 items-center justify-center">
-              <div className="grid grid-cols-3 gap-1.5">
-                <div/>
-                <button type="button" aria-label="Mover para cima" onClick={()=>moveElem(selected,0,-step)} className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md active:scale-90"><ChevronUp size={20}/></button>
-                <div/>
-                <button type="button" aria-label="Mover para esquerda" onClick={()=>moveElem(selected,-step,0)} className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md active:scale-90"><ChevronLeft size={20}/></button>
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${dk?'bg-slate-800':'bg-slate-200'}`}><div className="w-2.5 h-2.5 rounded-full bg-indigo-400"/></div>
-                <button type="button" aria-label="Mover para direita" onClick={()=>moveElem(selected,step,0)} className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md active:scale-90"><ChevronRight size={20}/></button>
-                <div/>
-                <button type="button" aria-label="Mover para baixo" onClick={()=>moveElem(selected,0,step)} className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md active:scale-90"><ChevronDown size={20}/></button>
-                <div/>
-              </div>
-              <div className="flex flex-col gap-2">
-                {([['Largura',sel.w,(d:number)=>resizeElem(selected,d,0)],['Altura',sel.h,(d:number)=>resizeElem(selected,0,d)]] as const).map(([lbl,val,fn])=>(
-                  <div key={lbl} className="flex items-center gap-1.5">
-                    <span className="text-[8px] font-black text-slate-400 w-11 uppercase">{lbl}</span>
-                    <button type="button" aria-label={`Diminuir ${lbl}`} onClick={()=>fn(-step)} className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Minus size={12}/></button>
-                    <span className={`w-14 text-center text-[10px] font-black ${dk?'text-slate-200':'text-slate-700'}`}>{(val as number).toFixed(1)} mm</span>
-                    <button type="button" aria-label={`Aumentar ${lbl}`} onClick={()=>fn(step)} className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Plus size={12}/></button>
+
+            <div className="p-4 flex flex-col gap-4">
+
+              {/* ── Position + Size pills ── */}
+              <div className={`flex rounded-2xl overflow-hidden border ${dk ? 'border-slate-700' : 'border-slate-200'}`}>
+                {([['X', sel.x], ['Y', sel.y], ['L', sel.w], ['A', sel.h]] as [string, number][]).map(([lbl, val], i) => (
+                  <div key={lbl} className={`flex-1 flex flex-col items-center py-2.5 ${i < 3 ? `border-r ${dk ? 'border-slate-700' : 'border-slate-200'}` : ''} ${dk ? 'bg-slate-800/60' : 'bg-slate-50'}`}>
+                    <span className={`text-[9px] font-black uppercase leading-none mb-1 ${dk ? 'text-slate-500' : 'text-slate-400'}`}>{lbl}</span>
+                    <span className={`text-[11px] font-black leading-none ${dk ? 'text-white' : 'text-slate-900'}`}>{val.toFixed(1)}</span>
                   </div>
                 ))}
               </div>
-            </div>
-            {/* Font controls */}
-            <div className={`pt-3 border-t flex flex-col gap-3 ${dk?'border-slate-800':'border-slate-100'}`}>
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Tipografia</span>
-              <div className="flex items-center gap-2">
-                <span className="text-[8px] font-black text-slate-400 w-11 uppercase shrink-0">Fonte</span>
-                <div className="flex gap-1.5 flex-1">
-                  {(['helvetica','times','courier'] as FontFamily[]).map(f=>(
-                    <button key={f} type="button" onClick={()=>updateElem(selected,{fontFamily:f})}
-                      className={`flex-1 py-1.5 rounded-xl border text-[9px] font-black transition-all ${(sel.fontFamily===f||(!sel.fontFamily&&f==='helvetica'))?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600':'border-slate-200 dark:border-slate-700 text-slate-400'}`}
-                      style={{fontFamily:f==='helvetica'?'Arial':f==='times'?'Georgia':'monospace'}}>
-                      {f==='helvetica'?'Sans':f==='times'?'Serif':'Mono'}
-                    </button>
+
+              {/* ── D-pad + resize capsules ── */}
+              <div className="flex items-center gap-4">
+
+                {/* D-pad */}
+                <div className="grid grid-cols-3 gap-1.5 shrink-0">
+                  <div/>
+                  <button type="button" aria-label="Mover para cima" onClick={() => moveElem(selected, 0, -step)}
+                    className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md active:scale-90 transition-transform"><ChevronUp size={20}/></button>
+                  <div/>
+                  <button type="button" aria-label="Mover para esquerda" onClick={() => moveElem(selected, -step, 0)}
+                    className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md active:scale-90 transition-transform"><ChevronLeft size={20}/></button>
+                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${dk ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                    <div className="w-2 h-2 rounded-full bg-indigo-400"/>
+                  </div>
+                  <button type="button" aria-label="Mover para direita" onClick={() => moveElem(selected, step, 0)}
+                    className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md active:scale-90 transition-transform"><ChevronRight size={20}/></button>
+                  <div/>
+                  <button type="button" aria-label="Mover para baixo" onClick={() => moveElem(selected, 0, step)}
+                    className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md active:scale-90 transition-transform"><ChevronDown size={20}/></button>
+                  <div/>
+                </div>
+
+                {/* Resize capsules */}
+                <div className="flex flex-col gap-2 flex-1">
+                  {([['Largura', sel.w, (d: number) => resizeElem(selected, d, 0)], ['Altura', sel.h, (d: number) => resizeElem(selected, 0, d)]] as const).map(([lbl, val, fn]) => (
+                    <div key={lbl} className={`flex items-center rounded-2xl border overflow-hidden ${dk ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
+                      <span className={`text-[9px] font-black uppercase px-3 py-2.5 border-r shrink-0 w-16 text-center ${dk ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>{lbl}</span>
+                      <button type="button" aria-label={`Diminuir ${lbl}`} onClick={() => fn(-step)}
+                        className={`w-9 h-9 flex items-center justify-center shrink-0 transition-colors active:scale-90 ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Minus size={13}/></button>
+                      <span className={`flex-1 text-center text-[11px] font-black ${dk ? 'text-white' : 'text-slate-900'}`}>{val.toFixed(1)}</span>
+                      <button type="button" aria-label={`Aumentar ${lbl}`} onClick={() => fn(step)}
+                        className={`w-9 h-9 flex items-center justify-center shrink-0 transition-colors active:scale-90 ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Plus size={13}/></button>
+                    </div>
                   ))}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[8px] font-black text-slate-400 w-11 uppercase shrink-0">Tamanho</span>
-                <button type="button" aria-label="Diminuir fonte" onClick={()=>updateElem(selected,{fontSize:Math.max(3,(sel.fontSize||8)-0.5)})} className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Minus size={12}/></button>
-                <span className={`w-14 text-center text-[10px] font-black ${dk?'text-slate-200':'text-slate-700'}`}>{(sel.fontSize||8).toFixed(1)} pt</span>
-                <button type="button" aria-label="Aumentar fonte" onClick={()=>updateElem(selected,{fontSize:(sel.fontSize||8)+0.5})} className={`w-7 h-7 rounded-lg flex items-center justify-center ${dk?'bg-slate-700 text-slate-300':'bg-slate-200 text-slate-600'} active:scale-90`}><Plus size={12}/></button>
-                <button type="button" aria-label="Negrito" onClick={()=>updateElem(selected,{bold:!sel.bold})}
-                  className={`w-9 h-7 rounded-xl border text-[11px] font-black transition-all ml-1 ${sel.bold?'border-indigo-500 bg-indigo-600 text-white':'border-slate-200 dark:border-slate-700 text-slate-400'}`}>B</button>
+
+              {/* ── Typography capsule ── */}
+              <div className={`rounded-2xl border overflow-hidden ${dk ? 'border-slate-700' : 'border-slate-200'}`}>
+                <div className={`px-4 py-2 border-b ${dk ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
+                  <span className={`text-[9px] font-black uppercase tracking-widest ${dk ? 'text-slate-400' : 'text-slate-500'}`}>Tipografia</span>
+                </div>
+                <div className={`p-3 flex flex-col gap-3 ${dk ? 'bg-slate-800/30' : 'bg-white'}`}>
+                  {/* Font family */}
+                  <div className="grid grid-cols-5 gap-1.5">
+                    {([
+                      ['helvetica', 'Sans',  'Helvetica, Arial, sans-serif'],
+                      ['arial',     'Arial', 'Arial, sans-serif'],
+                      ['times',     'Serif', 'Georgia, serif'],
+                      ['courier',   'Mono',  'monospace'],
+                      ['avenir',    'Geo',   '"Century Gothic","Trebuchet MS",sans-serif'],
+                    ] as [FontFamily, string, string][]).map(([f, label, ff]) => (
+                      <button key={f} type="button" onClick={() => updateElem(selected, { fontFamily: f })}
+                        className={`py-2 rounded-xl border text-[9px] font-black transition-all ${(sel.fontFamily === f || (!sel.fontFamily && f === 'helvetica')) ? 'border-indigo-500 bg-indigo-600 text-white shadow-sm' : `border-transparent ${dk ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'}`}`}
+                        style={{ fontFamily: ff }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Size + Bold */}
+                  <div className={`flex items-center rounded-2xl border overflow-hidden ${dk ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
+                    <span className={`text-[9px] font-black uppercase px-3 py-2.5 border-r shrink-0 w-16 text-center ${dk ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>Tamanho</span>
+                    <button type="button" aria-label="Diminuir fonte" onClick={() => updateElem(selected, { fontSize: Math.max(3, (sel.fontSize || 8) - 0.5) })}
+                      className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Minus size={13}/></button>
+                    <span className={`flex-1 text-center text-[11px] font-black ${dk ? 'text-white' : 'text-slate-900'}`}>{(sel.fontSize || 8).toFixed(1)} pt</span>
+                    <button type="button" aria-label="Aumentar fonte" onClick={() => updateElem(selected, { fontSize: (sel.fontSize || 8) + 0.5 })}
+                      className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Plus size={13}/></button>
+                    <button type="button" aria-label="Negrito" onClick={() => updateElem(selected, { bold: !sel.bold })}
+                      className={`w-10 h-9 border-l flex items-center justify-center text-[13px] font-black transition-all ${sel.bold ? `bg-indigo-600 text-white ${dk ? 'border-slate-700' : 'border-indigo-500'}` : `${dk ? 'border-slate-700 text-slate-400 hover:bg-slate-700' : 'border-slate-200 text-slate-500 hover:bg-slate-100'}`}`}>B</button>
+                  </div>
+                </div>
               </div>
+
             </div>
           </div>
         )}
 
-        {/* Label options */}
+        {/* Label options — desnecessárias quando a grade já vem definida pelo pedido/lote */}
+        {!sizeGridOverride && (
         <div className={`flex flex-col gap-3 p-4 rounded-2xl border ${dk?'bg-slate-900 border-slate-800':'bg-slate-50 border-slate-100'}`}>
-          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Opções de Impressão</label>
+          <label className="text-[10px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-100">Opções de Impressão</label>
 
           {/* Variation */}
           <div className="flex flex-wrap gap-1.5">
@@ -919,17 +1233,42 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
             </div>
           )}
         </div>
+        )}
+
+        {/* JPG do lote: imagem combinada x arquivos separados + espaçamento */}
+        {batchItems && batchItems.length > 1 && (
+          <div className={`flex flex-col gap-3 p-4 rounded-2xl border ${dk?'bg-slate-900 border-slate-800':'bg-slate-50 border-slate-100'}`}>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-100">Exportação JPG do Lote</label>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setJpgBatchMode('combined')}
+                className={`flex-1 py-2 rounded-xl border-2 text-[9px] font-black uppercase transition-all ${jpgBatchMode==='combined'?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600':'border-slate-100 dark:border-slate-800 text-slate-400'}`}>
+                1 imagem combinada
+              </button>
+              <button type="button" onClick={() => setJpgBatchMode('separate')}
+                className={`flex-1 py-2 rounded-xl border-2 text-[9px] font-black uppercase transition-all ${jpgBatchMode==='separate'?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600':'border-slate-100 dark:border-slate-800 text-slate-400'}`}>
+                {batchItems.length} arquivos separados
+              </button>
+            </div>
+            {jpgBatchMode === 'combined' && (
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-black text-slate-400 uppercase">Espaçamento entre etiquetas (mm):</span>
+                <input type="number" min={0} step={0.5} value={jpgSpacing} onChange={e=>setJpgSpacing(Math.max(0,+e.target.value))} title="Espaçamento entre etiquetas (mm)"
+                  className={`w-16 text-center px-2 py-2 rounded-xl border-2 text-[10px] font-black outline-none ${dk?'bg-slate-800 border-slate-700 text-white':'bg-white border-slate-200 text-slate-800'}`}/>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Actions */}
         <div className="flex flex-col gap-2">
           <div className="flex gap-2">
             <button type="button" onClick={handleExportJpg} disabled={printing || exportingJpg}
               className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
-              <ImageIcon size={16}/> {exportingJpg ? 'Gerando…' : 'Gerar JPG'}
+              <ImageIcon size={16}/> {exportingJpg ? 'Gerando…' : (batchItems && batchItems.length > 1 ? `Gerar JPG (${batchItems.length})` : 'Gerar JPG')}
             </button>
             <button type="button" onClick={handlePrint} disabled={printing || exportingJpg}
               className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
-              <Printer size={16}/> {printing ? 'Gerando…' : 'Gerar PDF'}
+              <Printer size={16}/> {printing ? 'Gerando…' : (batchItems && batchItems.length > 1 ? `Imprimir ${batchItems.length} Etiquetas` : 'Gerar PDF')}
             </button>
           </div>
           <button type="button" onClick={onClose} className={`w-full py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest ${dk?'bg-slate-800 text-slate-400':'bg-slate-100 text-slate-500'}`}>

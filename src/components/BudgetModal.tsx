@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { Budget, Category, FamilyMember } from '../types';
 import { X, DollarSign, Tag, Users, AlertCircle } from 'lucide-react';
+import { toast } from '../utils/toast';
 
 interface BudgetModalProps {
   isOpen: boolean;
@@ -35,7 +36,7 @@ export default function BudgetModal({ isOpen, onClose, onSave, categories, famil
 
   const handleSave = () => {
     if (!categoryId || !amount || amount === 0) {
-      alert('Preencha os campos obrigatórios');
+      toast.show('Preencha os campos obrigatórios');
       return;
     }
     onSave({ 

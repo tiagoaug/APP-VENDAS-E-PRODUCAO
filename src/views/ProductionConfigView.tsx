@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect, FormEvent, ChangeEvent, ReactNode, Component } from 'react';
+﻿import React, { useState, useMemo, useRef, useEffect, FormEvent, ChangeEvent, ReactNode, Component } from 'react';
 
 class ErrorBoundary extends Component<{ children: ReactNode; label?: string }, { hasError: boolean; error: Error | null }> {
   constructor(props: any) {
@@ -86,6 +86,7 @@ import ConfigMenuItem from '../components/ConfigMenuItem';
 import CalculatorModal from '../components/CalculatorModal';
 
 import ConsumptionCalculatorModal from '../components/ConsumptionCalculatorModal';
+import { toast } from '../utils/toast';
 
 const AreaInput = ({ size, value, onChange, isDarkMode, onShowCalc, onShowConsumptionCalc }: any) => {
   const [localValue, setLocalValue] = React.useState(
@@ -1314,7 +1315,7 @@ function GenericConfigList({
     }
     
     if (baseValue === 0) {
-      alert(`O valor base para o tamanho ${baseSize} é 0. Preencha um valor primeiro para poder escalonar.`);
+      toast.show(`O valor base para o tamanho ${baseSize} é 0. Preencha um valor primeiro para poder escalonar.`);
       return;
     }
 
@@ -1441,7 +1442,7 @@ function GenericConfigList({
         (item.metadata?.reference || '').toUpperCase().trim() === currentCode
       );
       if (isDuplicate) {
-        alert(`O código "${currentCode}" já está sendo usado em outro item deste tipo.`);
+        toast.show(`O código "${currentCode}" já está sendo usado em outro item deste tipo.`);
         return;
       }
     }
@@ -1450,7 +1451,7 @@ function GenericConfigList({
     if (type === 'TOOL') {
       const conjugation = editingItem.metadata?.conjugation || 1;
       if (conjugation < 1) {
-        alert('A conjugação deve ser pelo menos 1');
+        toast.show('A conjugação deve ser pelo menos 1');
         return;
       }
     }
@@ -1462,7 +1463,7 @@ function GenericConfigList({
       const capacity = Number((editingItem as any).metadata?.capacity || 0);
 
       if (totalDist !== capacity) {
-        alert(`A soma das quantidades (${totalDist}) deve ser exatamente igual à capacidade da embalagem (${capacity}).`);
+        toast.show(`A soma das quantidades (${totalDist}) deve ser exatamente igual à capacidade da embalagem (${capacity}).`);
         return;
       }
     }
@@ -1473,7 +1474,7 @@ function GenericConfigList({
       setIsModalOpen(false);
       setEditingItem(null);
     } catch (err: any) {
-      alert('Erro ao salvar: ' + (err.message || err));
+      toast.show('Erro ao salvar: ' + (err.message || err));
     } finally {
       setIsLoading(false);
     }
@@ -1806,7 +1807,7 @@ function GenericConfigList({
                   </div>
                   <div className="flex-1">
                     <p className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.name}</p>
-                    {type === 'TOOL' ? (
+                    {(type as string) === 'TOOL' ? (
                       <div className="flex flex-col gap-1 mt-0.5">
                         <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">CONSUMO P/ ÁREA • {item.metadata?.conjugation || 1} PR/BAT</p>
                         {item.metadata?.category && (
@@ -2205,21 +2206,31 @@ function GenericConfigList({
                       Cadastre o peso médio para cada cor. Se tiver pesos diferentes por tamanho, cadastre também os tamanhos.
                     </p>
                     <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto custom-scrollbar pr-2">
-                      {(colors || []).map((color) => {
+                      {(() => {
+                        const registeredColorIds = new Set((editingItem?.metadata?.colorVariations || []).map((cv: any) => cv.colorId));
+                        const registeredColors = (colors || []).filter(c => registeredColorIds.has(c.id));
+                        if (registeredColors.length === 0) {
+                          return (
+                            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest text-center py-8 px-4 leading-relaxed">
+                              Nenhuma cor cadastrada para esta matriz.<br />Selecione as cores em "Cores Disponíveis e Sub-Ref" antes de configurar os pesos.
+                            </p>
+                          );
+                        }
+                        return registeredColors.map((color) => {
                         const colorWeight = editingItem?.metadata?.colorWeights?.[color.id] || 0;
                         const colorSizeWeights = editingItem?.metadata?.colorSizeWeights?.[color.id] || {};
                         const sizes = editingItem?.metadata?.sizes || [];
                         const hasSizeWeights = sizes.length > 0 && Object.keys(colorSizeWeights).length > 0;
-                        
+
                         return (
                           <div key={color.id} className={`rounded-2xl border-2 overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                            <div className="flex items-center justify-between p-4 bg-violet-50 dark:bg-violet-900/20">
-                              <div className="flex items-center gap-3">
-                                <div className="w-6 h-6 rounded-full border border-black/10" style={{ backgroundColor: color.hex }} />
-                                <span className="text-xs font-black text-slate-700 dark:text-slate-200">{color.name}</span>
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 bg-violet-50 dark:bg-violet-900/20">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-6 h-6 rounded-full border border-black/10 shrink-0" style={{ backgroundColor: color.hex }} />
+                                <span className="text-xs font-black text-slate-700 dark:text-slate-200 break-words">{color.name}</span>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <div className="relative flex-1 max-w-[100px]">
+                              <div className="flex items-center gap-2 w-full sm:w-auto">
+                                <div className="relative flex-1 sm:max-w-[100px]">
                                   <input
                                     type="number"
                                     value={colorWeight || ''}
@@ -2244,7 +2255,7 @@ function GenericConfigList({
                                 </div>
                               </div>
                             </div>
-                            
+
                             {sizes.length > 0 && (
                               <div className="p-3 grid grid-cols-4 gap-2">
                                 {sizes.map(size => {
@@ -2282,7 +2293,8 @@ function GenericConfigList({
                             )}
                           </div>
                         );
-                      })}
+                        });
+                      })()}
                     </div>
                     <div className="flex gap-4 mt-2">
                       {(Object.keys(editingItem?.metadata?.colorWeights || {}).length > 0 || Object.keys(editingItem?.metadata?.colorSizeWeights || {}).length > 0) && (
@@ -2495,7 +2507,7 @@ function GenericConfigList({
             </div>
           ) : type === 'MATERIAL' ? (
             <div className="flex flex-col gap-6">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   {renderLabelWithShortcut('mat-master-category', 'Categoria Mestre', ViewType.CATEGORIES, true)}
                   <select id="mat-master-category" value={editingItem?.metadata?.masterCategory || ''} title="Categoria Mestre" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, masterCategory: e.target.value as any } } : null)} required className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">SELECIONAR...</option>{supplyCategoryNames.map(cat => <option key={cat} value={cat}>{cat}</option>)}</select>
@@ -2512,7 +2524,7 @@ function GenericConfigList({
                 <label htmlFor="mat-name" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Nome do Material *</label>
                 <input id="mat-name" type="text" value={editingItem?.name || ''} title="Nome do Material" placeholder="NOME DO MATERIAL" onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value.toUpperCase() } : null)} required className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   {renderLabelWithShortcut('mat-flowtag', 'Flow Tag (Estágio)', 'FLOW_TAGS')}
                   <select id="mat-flowtag" value={editingItem?.metadata?.flowTagId || ''} title="Flow Tag" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: e.target.value } } : null)} className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">NENHUMA...</option>{flowTags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select>
@@ -2522,7 +2534,7 @@ function GenericConfigList({
                   <select id="mat-supplier" value={editingItem?.metadata?.supplierId || ''} title="Fornecedor" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, supplierId: e.target.value } } : null)} className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">NENHUM...</option>{suppliers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   {renderLabelWithShortcut('mat-unit', 'Unidade', 'UNIDADES', true)}
                   <select id="mat-unit" value={editingItem?.metadata?.unitId || ''} title="Unidade" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitId: e.target.value } } : null)} required className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">SELECIONAR...</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
@@ -2530,7 +2542,7 @@ function GenericConfigList({
                 <div className="flex flex-col gap-2"><label htmlFor="mat-cost" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Custo Base</label><div className="relative group"><input id="mat-cost" type="number" step="0.01" value={editingItem?.metadata?.baseCost || ''} title="Custo Base" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir custo base" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.baseCost || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
                 <div className="flex flex-col gap-2"><label htmlFor="mat-width" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Largura (m)</label><div className="relative group"><input id="mat-width" type="number" step="0.01" value={editingItem?.metadata?.width || ''} title="Largura" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir largura" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.width || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   <label htmlFor="mat-stock" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Estoque Atual</label>
                   <div className="relative group">

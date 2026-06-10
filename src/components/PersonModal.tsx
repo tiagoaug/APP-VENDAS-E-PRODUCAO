@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { Person } from '../types';
 import { X, Plus, Trash2, ChevronDown } from 'lucide-react';
+import { toast } from '../utils/toast';
 
 interface PersonModalProps {
   isOpen: boolean;
@@ -64,13 +65,13 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
   const handleAddSeller = (sellerId: string) => {
     if (contactRole === 'Vendedor') {
       if (associatedSellerIds.includes(sellerId)) {
-        alert('Este vendedor já está associado.');
+        toast.show('Este vendedor já está associado.');
         return;
       }
       setAssociatedSellerIds([...associatedSellerIds, sellerId]);
     } else {
       if (associatedContactIds.includes(sellerId)) {
-        alert('Este comprador já está associado.');
+        toast.show('Este comprador já está associado.');
         return;
       }
       setAssociatedContactIds([...associatedContactIds, sellerId]);
@@ -100,7 +101,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
 
   const handleSave = () => {
     if (!name) {
-      alert('O nome é obrigatório');
+      toast.show('O nome é obrigatório');
       return;
     }
     onSave({ 
@@ -130,7 +131,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
       setIsBuyer(false);
       setAssociatedSellerIds([]);
       setAssociatedContactIds([]);
-      alert('Cadastro realizado com sucesso!');
+      toast.show('Cadastro realizado com sucesso!');
     } else {
       onClose();
     }

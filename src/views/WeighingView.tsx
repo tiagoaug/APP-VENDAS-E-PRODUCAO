@@ -1,12 +1,13 @@
-import { useState, useMemo } from 'react';
+﻿import { useState, useMemo, useEffect } from 'react';
 import { ProductionConfigItem, ColorValue, WeighingRecord, SoleStockEntry } from '../types';
-import { 
-  Scale, ChevronLeft, Package, Calculator, Weight, ArrowLeft, X, Info, Palette, 
-  ChevronDown, Save, Clock, Trash2, Warehouse, CheckCircle2, Plus, 
-  Calculator as CalcIcon, DollarSign, Replace, PlusCircle 
+import {
+  Scale, ChevronLeft, Package, Calculator, Weight, ArrowLeft, X, Info, Palette,
+  ChevronDown, Save, Clock, Trash2, Warehouse, CheckCircle2, Plus,
+  Calculator as CalcIcon, DollarSign, Replace, PlusCircle, Search
 } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import { firebaseService } from '../services/firebaseService';
+import { toast } from '../utils/toast';
 
 interface WeighingViewProps {
   productionConfigs: ProductionConfigItem[];
@@ -16,16 +17,17 @@ interface WeighingViewProps {
   onNavigateToStock?: () => void;
   isDarkMode: boolean;
   existingRecords?: WeighingRecord[];
+  initialTab?: 'new' | 'history';
 }
 
-export default function WeighingView({ productionConfigs, colors, stockEntries, onBack, onNavigateToStock, isDarkMode, existingRecords = [] }: WeighingViewProps) {
+export default function WeighingView({ productionConfigs, colors, stockEntries, onBack, onNavigateToStock, isDarkMode, existingRecords = [], initialTab }: WeighingViewProps) {
   const molds = useMemo(() => productionConfigs.filter(c => c.type === 'MOLD'), [productionConfigs]);
   const [selectedMoldId, setSelectedMoldId] = useState<string>('');
   const [weight, setWeight] = useState<string>('');
   const [selectedSize, setSelectedSize] = useState<string>('');
   const [selectedColorId, setSelectedColorId] = useState<string>('');
   const [showInfo, setShowInfo] = useState(false);
-  const [activeTab, setActiveTab] = useState<'new' | 'history'>('new');
+  const [activeTab, setActiveTab] = useState<'new' | 'history'>(initialTab || 'new');
   const [records, setRecords] = useState<WeighingRecord[]>(existingRecords);
   const [isSaving, setIsSaving] = useState(false);
   const [confirmStockRecord, setConfirmStockRecord] = useState<WeighingRecord | null>(null);
@@ -38,13 +40,28 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
   const [showCalculator, setShowCalculator] = useState(false);
   const [accumulationHistory, setAccumulationHistory] = useState<string[]>([]);
   const [customUnitWeight, setCustomUnitWeight] = useState<string>('');
+  const [weightSource, setWeightSource] = useState<'global' | 'color'>('color');
+  const [historySearch, setHistorySearch] = useState('');
+  const [showClearHistoryConfirm, setShowClearHistoryConfirm] = useState(false);
+  const [isClearingHistory, setIsClearingHistory] = useState(false);
 
   const selectedMold = molds.find(m => m.id === selectedMoldId);
   
   const availableColors = useMemo(() => {
-    if (!colors || colors.length === 0) return [];
-    return colors.slice(0, 20);
-  }, [colors]);
+    if (!colors || colors.length === 0 || !selectedMold) return [];
+    const registeredColorIds = new Set((selectedMold.metadata?.colorVariations || []).map((cv: any) => cv.colorId));
+    return colors.filter(c => registeredColorIds.has(c.id));
+  }, [colors, selectedMold]);
+
+  useEffect(() => {
+    if (availableColors.length === 0) {
+      if (selectedColorId) setSelectedColorId('');
+      return;
+    }
+    if (!availableColors.some(c => c.id === selectedColorId)) {
+      setSelectedColorId(availableColors[0].id);
+    }
+  }, [availableColors, selectedColorId]);
 
   const hasColorWeights = selectedMold && (Object.keys(selectedMold.metadata?.colorWeights || {}).length > 0 || Object.keys(selectedMold.metadata?.colorSizeWeights || {}).length > 0);
   const hasColorSizeWeights = selectedMold && selectedColorId && selectedMold.metadata?.colorSizeWeights?.[selectedColorId];
@@ -57,17 +74,47 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
     return 0;
   }, [selectedMold]);
 
+  const usingColorWeight = weightSource === 'color' && !!selectedColorId && !!hasColorWeights;
+
+  const effectiveSizeWeights: Record<string, number> = useMemo(() => {
+    if (usingColorWeight) {
+      const colorSizes = selectedMold?.metadata?.colorSizeWeights?.[selectedColorId];
+      if (colorSizes && Object.keys(colorSizes).length > 0) return colorSizes;
+    }
+    return selectedMold?.metadata?.sizeWeights || {};
+  }, [usingColorWeight, selectedColorId, selectedMold]);
+
+  const effectiveAverageWeight = useMemo(() => {
+    const weights = Object.values(effectiveSizeWeights).filter((w: any) => w > 0);
+    if (weights.length > 0) return weights.reduce((a: number, b: any) => a + b, 0) / weights.length;
+    if (usingColorWeight) {
+      const flatColorWeight = selectedMold?.metadata?.colorWeights?.[selectedColorId];
+      if (flatColorWeight) return flatColorWeight;
+    }
+    return gridAverageWeight;
+  }, [effectiveSizeWeights, usingColorWeight, selectedColorId, selectedMold, gridAverageWeight]);
+
   const getBaseUnitWeight = (): number => {
     if (!selectedMold) return 0;
-    
+
     let unitWeight = 0;
 
-    if (selectedColorId && selectedSize && selectedSize !== 'MIXED' && hasColorSizeWeights) {
-      unitWeight = selectedMold.metadata?.colorSizeWeights?.[selectedColorId]?.[selectedSize] || 0;
-    }
+    if (weightSource === 'color' && selectedColorId) {
+      if (selectedSize && selectedSize !== 'MIXED') {
+        unitWeight = selectedMold.metadata?.colorSizeWeights?.[selectedColorId]?.[selectedSize] || 0;
+      }
 
-    if (unitWeight <= 0 && selectedColorId && hasColorWeights) {
-      unitWeight = selectedMold.metadata?.colorWeights?.[selectedColorId] || 0;
+      if (unitWeight <= 0) {
+        unitWeight = selectedMold.metadata?.colorWeights?.[selectedColorId] || 0;
+      }
+
+      if (unitWeight <= 0) {
+        const colorSizes = selectedMold.metadata?.colorSizeWeights?.[selectedColorId] || {};
+        const weights = Object.values(colorSizes).filter((w: any) => w > 0);
+        if (weights.length > 0) {
+          unitWeight = weights.reduce((a: number, b: any) => a + b, 0) / weights.length;
+        }
+      }
     }
 
     if (unitWeight <= 0) {
@@ -198,10 +245,10 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
       
       setRecords(prev => [...savedRecords, ...prev]);
       setPendingRecords([]);
-      alert(`${savedRecords.length} pesagem(s) salva(s) com sucesso!`);
+      toast.show(`${savedRecords.length} pesagem(s) salva(s) com sucesso!`);
     } catch (err) {
       console.error('Erro ao salvar pesagens:', err);
-      alert('Erro ao salvar pesagens');
+      toast.show('Erro ao salvar pesagens');
     } finally {
       setIsSaving(false);
     }
@@ -213,12 +260,37 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
 
   const handleDeleteRecord = async (id: string) => {
     if (!confirm('Tem certeza que deseja excluir esta pesagem?')) return;
-    
+
     try {
       await firebaseService.deleteDocument('weighingRecords', id);
       setRecords(prev => prev.filter(r => r.id !== id));
     } catch (err) {
       console.error('Erro ao excluir:', err);
+    }
+  };
+
+  const filteredRecords = useMemo(() => {
+    const term = historySearch.trim().toLowerCase();
+    if (!term) return records;
+    return records.filter(r =>
+      (r.moldName || '').toLowerCase().includes(term) ||
+      (r.colorName || '').toLowerCase().includes(term)
+    );
+  }, [records, historySearch]);
+
+  const handleClearAllHistory = async () => {
+    setIsClearingHistory(true);
+    try {
+      for (const record of records) {
+        await firebaseService.deleteDocument('weighingRecords', record.id);
+      }
+      setRecords([]);
+      setShowClearHistoryConfirm(false);
+    } catch (err) {
+      console.error('Erro ao zerar histórico:', err);
+      toast.show('Erro ao zerar histórico de pesagens');
+    } finally {
+      setIsClearingHistory(false);
     }
   };
 
@@ -255,7 +327,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
       : record.quantity - currentStockValue;
 
     if (quantityToSave === 0 && updateMode === 'OVERWRITE') {
-      alert('O estoque já está com este valor.');
+      toast.show('O estoque já está com este valor.');
       setConfirmStockRecord(null);
       return;
     }
@@ -363,6 +435,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
               value={selectedMoldId}
               onChange={(e) => {
                 setSelectedMoldId(e.target.value);
+                setSelectedColorId('');
                 setSelectedSize('');
                 setWeight('');
               }}
@@ -406,7 +479,6 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                     onChange={(e) => setSelectedColorId(e.target.value)}
                     className={`w-full appearance-none border-2 rounded-2xl px-6 py-4 pl-12 text-sm font-black transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-violet-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-violet-600'}`}
                   >
-                    <option value="">Sem cor específica</option>
                     {availableColors.map(color => {
                       const colorSizeWeights = selectedMold?.metadata?.colorSizeWeights?.[color.id];
                       const hasSizeWeights = colorSizeWeights && Object.keys(colorSizeWeights).length > 0;
@@ -428,9 +500,37 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                 </div>
 
                 {selectedColorId && hasColorWeights && (
-                  <div className="mt-4 p-3 rounded-xl bg-violet-50 dark:bg-violet-900/20 border border-violet-100 dark:border-violet-500/30">
-                    <p className="text-[9px] font-black text-violet-600 dark:text-violet-400 tracking-widest text-center">
-                      ✓ Peso específico por cor será usado
+                  <div className="mt-4 flex items-center gap-2 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setWeightSource('global')}
+                      title="Usar o peso médio/geral cadastrado na matriz, ignorando o peso específico desta cor"
+                      className={`flex-1 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
+                        weightSource === 'global'
+                          ? 'bg-indigo-600 text-white shadow-md'
+                          : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      Usar Peso Global
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWeightSource('color')}
+                      title="Usar o peso específico cadastrado para esta cor"
+                      className={`flex-1 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
+                        weightSource === 'color'
+                          ? 'bg-violet-600 text-white shadow-md'
+                          : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      Usar Peso da Cor
+                    </button>
+                  </div>
+                )}
+                {selectedColorId && hasColorWeights && (
+                  <div className={`mt-3 p-3 rounded-xl border ${weightSource === 'color' ? 'bg-violet-50 dark:bg-violet-900/20 border-violet-100 dark:border-violet-500/30' : 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-500/30'}`}>
+                    <p className={`text-[9px] font-black tracking-widest text-center ${weightSource === 'color' ? 'text-violet-600 dark:text-violet-400' : 'text-indigo-600 dark:text-indigo-400'}`}>
+                      {weightSource === 'color' ? '✓ Peso específico por cor será usado' : '✓ Peso global/médio da matriz será usado'}
                     </p>
                   </div>
                 )}
@@ -453,24 +553,29 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                   </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-col gap-2">
                   {(!isAccumulating || selectedSize === '') && (
                     <button
                       onClick={() => setSelectedSize('')}
                       disabled={isAccumulating}
-                      className={`min-w-[70px] h-14 rounded-2xl flex flex-col items-center justify-center transition-all ${
-                        selectedSize === '' 
-                          ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-500/30' 
-                          : isDarkMode ? 'bg-slate-800 text-slate-400 border border-slate-700' : 'bg-white text-slate-500 border border-slate-200 shadow-sm'
+                      className={`w-full h-12 rounded-2xl flex items-center justify-center gap-2 transition-all ${
+                        selectedSize === ''
+                          ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-500/30'
+                          : isDarkMode ? 'bg-slate-800/30 text-slate-500 border border-slate-700/30' : 'bg-slate-50/60 text-slate-300 border border-slate-100/80'
                       } ${isAccumulating ? 'opacity-100' : ''}`}
                     >
-                      <span className="text-[10px] font-black tracking-widest">Média</span>
-                      {gridAverageWeight > 0 && <span className={`text-[8px] font-bold ${selectedSize === '' ? 'text-indigo-200' : 'text-slate-400'}`}>{gridAverageWeight.toFixed(1)}g</span>}
+                      <span className={`text-[10px] font-black tracking-widest ${selectedSize === '' ? 'text-white' : 'text-slate-900 dark:text-white'}`}>Média</span>
+                      {effectiveAverageWeight > 0 && (
+                        <span className={`text-[11px] font-bold ${selectedSize === '' ? 'text-indigo-200' : 'text-slate-900 dark:text-white'}`}>
+                          {effectiveAverageWeight.toFixed(1)}g
+                        </span>
+                      )}
                     </button>
                   )}
 
+                  <div className="flex flex-wrap gap-2 justify-center">
                   {availableSizes.map(size => {
-                    const sizeWeight = selectedMold.metadata?.sizeWeights?.[size];
+                    const sizeWeight = effectiveSizeWeights[size];
                     const isVisible = !isAccumulating || selectedSize === size;
                     if (!isVisible) return null;
 
@@ -488,10 +593,15 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                         } ${isAccumulating ? 'opacity-100' : ''}`}
                       >
                         <span className={`text-sm font-black ${selectedSize === size ? 'text-white' : isDarkMode ? 'text-slate-200' : 'text-slate-900'}`}>{size}</span>
-                        {sizeWeight && <span className={`text-[8px] font-bold ${selectedSize === size ? 'text-indigo-200' : 'text-slate-400'}`}>{sizeWeight}g</span>}
+                        {sizeWeight && (
+                          <span className={`text-[8px] font-bold ${selectedSize === size ? 'text-indigo-200' : usingColorWeight ? 'text-violet-500' : 'text-slate-400'}`}>
+                            {sizeWeight}g
+                          </span>
+                        )}
                       </button>
                     );
                   })}
+                  </div>
                 </div>
               </div>
             )}
@@ -568,24 +678,30 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                   )}
                   <div className="flex justify-between items-center text-[10px]">
                     <span className="text-slate-400 font-bold uppercase">Peso unitário:</span>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        value={customUnitWeight}
-                        placeholder={baseUnitWeight.toFixed(2)}
-                        onChange={(e) => setCustomUnitWeight(e.target.value)}
-                        className={`w-20 text-right font-black bg-transparent border-b ${isDarkMode ? 'border-emerald-500/30 text-emerald-400' : 'border-emerald-200 text-emerald-600'} outline-none focus:border-emerald-500 transition-colors`}
-                      />
-                      <span className="text-emerald-500 font-black">g</span>
-                      {customUnitWeight && (
-                        <button 
-                          onClick={() => setCustomUnitWeight('')}
-                          className="p-1.5 rounded-md hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors"
-                          title="Restaurar peso original"
-                        >
-                          <X size={14} />
-                        </button>
-                      )}
+                    <div className="flex flex-col items-end gap-1.5">
+                      <div className={`inline-flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full border ${isDarkMode ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-emerald-50 border-emerald-200'}`}>
+                        <input
+                          type="number"
+                          value={customUnitWeight}
+                          placeholder={baseUnitWeight.toFixed(2)}
+                          onChange={(e) => setCustomUnitWeight(e.target.value)}
+                          className={`w-16 text-right font-black bg-transparent border-none outline-none ${isDarkMode ? 'text-emerald-400 placeholder:text-emerald-400/60' : 'text-emerald-600 placeholder:text-emerald-600/50'}`}
+                        />
+                        <span className="text-emerald-500 font-black">g</span>
+                        {customUnitWeight && (
+                          <button
+                            type="button"
+                            onClick={() => setCustomUnitWeight('')}
+                            className="p-1 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500 transition-colors"
+                            title="Restaurar peso original"
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                      <span className="text-[8px] font-black text-rose-500 uppercase tracking-widest text-right leading-tight max-w-[160px]">
+                        Edite caso este solado tenha um peso diferente nesta cor
+                      </span>
                     </div>
                   </div>
                   {selectedSize === 'MIXED' && hasSizeWeights && !selectedColorId && (
@@ -747,10 +863,35 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
       {activeTab === 'history' && (
         <div className="flex flex-col gap-4">
           <div className={`p-4 rounded-2xl ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} border`}>
-            <h3 className={`text-[11px] font-black uppercase tracking-widest mb-4 ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-              Histórico de Pesagens
-            </h3>
-            
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <h3 className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                Histórico de Pesagens
+              </h3>
+              {records.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowClearHistoryConfirm(true)}
+                  title="Zerar todo o histórico de pesagens"
+                  className="px-3 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/20 text-rose-500 hover:bg-rose-500 hover:text-white active:scale-95 transition-all flex items-center gap-1.5 text-[8px] font-black uppercase tracking-widest shrink-0"
+                >
+                  <Trash2 size={11} strokeWidth={2.5} /> Zerar Histórico
+                </button>
+              )}
+            </div>
+
+            {records.length > 0 && (
+              <div className="relative mb-4">
+                <input
+                  type="text"
+                  value={historySearch}
+                  onChange={(e) => setHistorySearch(e.target.value)}
+                  placeholder="Buscar por referência (modelo) ou cor..."
+                  className={`w-full border-2 rounded-2xl px-4 py-3 pl-10 text-xs font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
+                />
+                <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+              </div>
+            )}
+
             {records.length === 0 ? (
               <div className="text-center py-8">
                 <Scale size={32} className="mx-auto text-slate-300 mb-2" />
@@ -758,9 +899,16 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                   Nenhuma pesagem registrada
                 </p>
               </div>
+            ) : filteredRecords.length === 0 ? (
+              <div className="text-center py-8">
+                <Search size={32} className="mx-auto text-slate-300 mb-2" />
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                  Nenhum resultado para esta busca
+                </p>
+              </div>
             ) : (
               <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto">
-                {records.map(record => (
+                {filteredRecords.map(record => (
                   <div key={record.id} className={`p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
                     <div className="flex justify-between items-start mb-2">
                       <div>
@@ -823,6 +971,36 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {showClearHistoryConfirm && (
+        <div className="fixed inset-0 z-[200] flex">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => !isClearingHistory && setShowClearHistoryConfirm(false)} />
+          <div className="relative m-auto w-[90%] max-w-sm bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-2xl">
+            <h3 className="font-black text-slate-800 dark:text-white text-base mb-2 uppercase tracking-tight">Zerar Histórico?</h3>
+            <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+              Todos os registros de pesagem serão excluídos permanentemente. Esta ação não pode ser desfeita.
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowClearHistoryConfirm(false)}
+                disabled={isClearingHistory}
+                className="flex-1 py-3 rounded-xl font-bold text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleClearAllHistory}
+                disabled={isClearingHistory}
+                className="flex-1 py-3 rounded-xl font-bold text-sm bg-rose-500 text-white hover:bg-rose-600 active:scale-95 transition-all shadow-sm disabled:opacity-50"
+              >
+                {isClearingHistory ? 'Zerando...' : 'Zerar Tudo'}
+              </button>
+            </div>
           </div>
         </div>
       )}

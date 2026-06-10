@@ -1,9 +1,10 @@
-import jsPDF from 'jspdf';
+﻿import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Sale, Product, Person, PaymentMethod } from '../types';
 import { sharePDF, shareImage } from './pdfExport';
+import { toast } from './toast';
 
 interface ExportData {
   sale: Sale;
@@ -31,7 +32,7 @@ export const exportSale = async (data: ExportData, formatType: 'pdf' | 'jpg') =>
     }
   } catch (error) {
     console.error('Export error:', error);
-    alert('Erro ao gerar arquivo. Por favor, tente novamente.');
+    toast.show('Erro ao gerar arquivo. Por favor, tente novamente.');
   }
 };
 
@@ -113,12 +114,19 @@ async function generatePDF(data: ExportData, filename: string) {
     const variationInfo = variation ? ` - ${variation.colorName}` : '';
     
     return [
-      { 
-        content: `${item.quantity}x ${prodRef} ${prodName}${variationInfo}`, 
-        styles: { textColor: labelColor } 
+      {
+        content: `${item.quantity}x ${prodRef} ${prodName}${variationInfo}`,
+        styles: { textColor: labelColor }
       },
       `R$ ${(item.quantity * item.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
     ];
+  });
+
+  (sale.extraItems || []).forEach(extra => {
+    tableData.push([
+      { content: extra.description, styles: { textColor: labelColor } },
+      `R$ ${extra.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+    ]);
   });
 
   autoTable(doc, {
@@ -217,6 +225,12 @@ async function generateJPG(data: ExportData, filename: string) {
     mx.font = '500 13px Arial';
     const lines = wrapText(mx, name, DESC_W - 12);
     return { lines, total, rowH: Math.max(46, lines.length * 19 + 24) };
+  });
+  (sale.extraItems || []).forEach(extra => {
+    const total = `R$ ${extra.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    mx.font = '500 13px Arial';
+    const lines = wrapText(mx, extra.description, DESC_W - 12);
+    itemData.push({ lines, total, rowH: Math.max(46, lines.length * 19 + 24) });
   });
 
   const noteLines: string[] = [];

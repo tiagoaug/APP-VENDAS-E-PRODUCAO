@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+﻿import { useState, useMemo, useEffect } from "react";
 import {
   Purchase,
   Product,
@@ -18,6 +18,9 @@ import {
   ColorValue,
   SolePurchaseItem,
   CategoryType,
+  ProductionOrder,
+  ProductionOrderItem,
+  ProductionLot,
 } from "../types";
 import {
   Save,
@@ -42,13 +45,17 @@ import {
   Factory,
   Layers,
   ShoppingBag,
-  Box
+  Box,
+  MessageSquare
 } from "lucide-react";
 import { format } from "date-fns";
 import CalculatorModal from '../components/CalculatorModal';
+import Modal from '../components/Modal';
 import ComboBox from "../components/ComboBox";
 import PackagingBuilderModal from '../components/PackagingBuilderModal';
 import GradeBuilderModal from '../components/GradeBuilderModal';
+import { toast } from '../utils/toast';
+import { generateId } from '../utils/id';
 
 interface PurchaseFormViewProps {
   purchaseId: string | null;
@@ -61,6 +68,8 @@ interface PurchaseFormViewProps {
   people: Person[];
   productionConfigs?: ProductionConfigItem[];
   colors?: ColorValue[];
+  productionOrders: ProductionOrder[];
+  onCreateProductionOrder: (order: ProductionOrder, lots: ProductionLot[], deductions: { productId: string; variationId: string; size?: string; quantity: number }[]) => Promise<void>;
   onSave: (purchase: Purchase) => void;
   onCancel: () => void;
   isDarkMode: boolean;
@@ -78,6 +87,8 @@ export default function PurchaseFormView({
   people,
   productionConfigs = [],
   colors = [],
+  productionOrders,
+  onCreateProductionOrder,
   onSave,
   // colors fallback handled below
 
@@ -130,9 +141,8 @@ export default function PurchaseFormView({
     isBox: boolean;
     cost: number;
     unitCost?: number;
-    note?: string;
     blockPkgId?: string;
-    variations: Record<string, { quantity: number; size?: string }>;
+    variations: Record<string, { quantity: number; size?: string; note?: string }>;
   }
 
   const [blocks, setBlocks] = useState<PurchaseBlock[]>(() => {
@@ -142,7 +152,7 @@ export default function PurchaseFormView({
       const key = `${item.productId}-${item.isBox}-${item.cost}`;
       if (!b[key]) {
         b[key] = {
-          id: Math.random().toString(36).substr(2, 9),
+          id: generateId(),
           productId: item.productId,
           isBox: item.isBox,
           cost: item.cost,
@@ -169,6 +179,10 @@ export default function PurchaseFormView({
     existing?.soleItems || []
   );
   const [notes, setNotes] = useState(existing?.notes || initialParams?.initialDescription || "");
+  const [productionGlobalNote, setProductionGlobalNote] = useState<string>(() => {
+    if (!existing?.productionOrderId) return '';
+    return productionOrders.find(o => o.id === existing.productionOrderId)?.notes || '';
+  });
   const [batchNumber, setBatchNumber] = useState(
     existing?.batchNumber ||
       `LOT-${Date.now().toString().slice(-5).toUpperCase()}`,
@@ -196,8 +210,10 @@ export default function PurchaseFormView({
     existing?.registerAsReceived !== undefined ? existing.registerAsReceived : true
   );
   const [isProductionOrder, setIsProductionOrder] = useState(existing?.isProductionOrder ?? false);
+  const [isSaving, setIsSaving] = useState(false);
   const [packagingPerVar, setPackagingPerVar] = useState<Record<string, { pkgId: string; breakdown: Record<string, number>; fromStock: Record<string, number> }>>({});
   const [packagingModalTarget, setPackagingModalTarget] = useState<{ blockId: string; variationId: string; variationName: string } | null>(null);
+  const [pkgPickerBlockIndex, setPkgPickerBlockIndex] = useState<number | null>(null);
   const [gradePerVar, setGradePerVar] = useState<Record<string, Record<string, number>>>({});
   const [gradeModalTarget, setGradeModalTarget] = useState<{ blockId: string; variationId: string; variationName: string; productId: string } | null>(null);
   const [deliveryDate, setDeliveryDate] = useState<string>(
@@ -357,7 +373,7 @@ export default function PurchaseFormView({
     const p = products.find(prod => prod.id === pId);
     if (!p) return;
 
-    const newId = Math.random().toString(36).substr(2, 9);
+    const newId = generateId();
     setBlocks([
       ...blocks,
       {
@@ -407,7 +423,7 @@ export default function PurchaseFormView({
     setChecks([
       ...checks,
       {
-        id: Math.random().toString(36).substr(2, 9),
+        id: generateId(),
         number: "",
         value: 0,
         dueDate: Date.now(),
@@ -426,7 +442,7 @@ export default function PurchaseFormView({
     setGeneralItems([
       ...generalItems,
       {
-        id: Math.random().toString(36).substr(2, 9),
+        id: generateId(),
         description: "",
         value: 0,
       },
@@ -449,7 +465,7 @@ export default function PurchaseFormView({
   const addSoleItem = () => {
     const molds = productionConfigs.filter(c => c.type === 'MOLD');
     const firstMold = molds[0];
-    if (!firstMold) { alert('Nenhuma matriz de solado cadastrada.'); return; }
+    if (!firstMold) { toast.show('Nenhuma matriz de solado cadastrada.'); return; }
     const sizes = firstMold.metadata?.sizes || [];
     const quantities: Record<string, number> = {};
     sizes.forEach((s: string) => { quantities[s] = 0; });
@@ -480,7 +496,10 @@ export default function PurchaseFormView({
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
     const finalItems: PurchaseItem[] = [];
     if (type === PurchaseType.REPLENISHMENT) {
       blocks.forEach((b) => {
@@ -500,25 +519,25 @@ export default function PurchaseFormView({
         });
       });
       if (finalItems.length === 0) {
-        alert("Adicione pelo menos um item para compra de estoque.");
+        toast.show("Adicione pelo menos um item para compra de estoque.");
         return;
       }
     } else if (type === PurchaseType.SOLE) {
       if (soleItems.length === 0) {
-        alert("Adicione pelo menos um item de solado.");
+        toast.show("Adicione pelo menos um item de solado.");
         return;
       }
     } else {
       if (generalItems.length === 0) {
-        alert("Adicione pelo menos um item para a compra geral.");
+        toast.show("Adicione pelo menos um item para a compra geral.");
         return;
       }
     }
 
     const finalRegisterAsReceived = registerAsReceived;
 
-    onSave({
-      id: purchaseId || Math.random().toString(36).substr(2, 9),
+    const purchaseToSave: Purchase = {
+      id: purchaseId || generateId(),
       supplierId,
       date: existing?.date || Date.now(),
       dueDate,
@@ -541,7 +560,109 @@ export default function PurchaseFormView({
       sellerId,
       sellerName: people.find(p => p.id === sellerId)?.name || sellerId || '',
       paymentStatus: paymentTerm === PaymentTerm.INSTALLMENTS ? PaymentStatus.PENDING : PaymentStatus.PAID,
-    });
+    };
+
+    // Cria (ou atualiza) o Pedido de Produção (OP) na fila de espera do PCP — mapas são criados manualmente lá
+    if (type === PurchaseType.REPLENISHMENT && isProductionOrder) {
+      // Validação: embalagem obrigatória para cada variação com quantidade > 0
+      const missingPkg: string[] = [];
+      blocks.forEach(block => {
+        const product = products.find(p => p.id === block.productId);
+        Object.entries(block.variations).forEach(([variationId, varData]) => {
+          const typedVarData = varData as { quantity: number; size?: string; note?: string };
+          if (typedVarData.quantity <= 0) return;
+          const varKey = `${block.id}-${variationId}`;
+          const pkg = packagingPerVar[varKey];
+          if (!pkg?.pkgId) {
+            const variation = product?.variations.find(v => v.id === variationId);
+            missingPkg.push(`• ${product?.name || 'Produto'} — ${variation?.colorName || variationId}`);
+          }
+        });
+      });
+      if (missingPkg.length > 0) {
+        toast.show(`Embalagem obrigatória para OP de produção.\nConfigure antes de salvar:\n${missingPkg.join('\n')}`);
+        return;
+      }
+
+      // Reutiliza o ID da OP existente ao editar — evita duplicação de OPs com quantidades acumuladas
+      const existingOrderId = existing?.productionOrderId;
+      const existingOrder = productionOrders.find(o => o.id === existingOrderId);
+      const orderId = existingOrderId || generateId();
+      const orderNum = existingOrder?.orderNumber || `OP #${String(productionOrders.length + 1).padStart(3, '0')}`;
+      const orderItems: ProductionOrderItem[] = [];
+
+      blocks.forEach(block => {
+        const product = products.find(p => p.id === block.productId);
+        Object.entries(block.variations).forEach(([variationId, varData]) => {
+          const typedVarData = varData as { quantity: number; size?: string; note?: string };
+          if (typedVarData.quantity <= 0) return;
+          const variation = product?.variations.find(v => v.id === variationId);
+          const varKey = `${block.id}-${variationId}`;
+          const pkg = packagingPerVar[varKey];
+          const breakdown: Record<string, number> = pkg?.pkgId ? pkg.breakdown : (gradePerVar[varKey] || {});
+          const pairsPerGrade = Object.values(breakdown).reduce((a, b) => a + b, 0);
+          if (pairsPerGrade === 0) return;
+
+          const totalPairsPerSize: Record<string, number> = {};
+          let totalPairs = 0;
+          Object.entries(breakdown).forEach(([size, ppg]) => {
+            if (ppg > 0) {
+              totalPairsPerSize[size] = ppg * typedVarData.quantity;
+              totalPairs += ppg * typedVarData.quantity;
+            }
+          });
+          if (totalPairs === 0) return;
+
+          const stockDeductPerSize = pkg?.fromStock || {};
+          const sizesResult: Record<string, { total: number; fromStock: number; toProduction: number }> = {};
+          let fromStockTotal = 0;
+          Object.entries(totalPairsPerSize).forEach(([size, total]) => {
+            const fs = Math.min(stockDeductPerSize[size] || 0, total);
+            sizesResult[size] = { total, fromStock: fs, toProduction: total - fs };
+            fromStockTotal += fs;
+          });
+          const combinedNote = [productionGlobalNote?.trim(), typedVarData.note?.trim()].filter(Boolean).join('\n') || undefined;
+          orderItems.push({
+            productId: block.productId,
+            productName: product?.name || '',
+            variationId,
+            variationName: variation?.colorName || '',
+            saleType: SaleType.WHOLESALE,
+            sizes: sizesResult,
+            totalQuantity: totalPairs,
+            fromStockQty: fromStockTotal,
+            toProductionQty: totalPairs - fromStockTotal,
+            ...(combinedNote ? { notes: combinedNote } : {}),
+          });
+        });
+      });
+
+      if (orderItems.length > 0) {
+        const order: ProductionOrder = {
+          id: orderId,
+          orderNumber: orderNum,
+          saleId: purchaseToSave.id,
+          saleOrderNumber: `Compra ${batchNumber}`,
+          customerName: 'Estoque',
+          orderDate: purchaseToSave.date,
+          deliveryDate: purchaseToSave.deliveryDate || Date.now(),
+          items: orderItems,
+          status: 'PENDING',
+          lotIds: [], // mapas criados manualmente no PCP
+          notes: productionGlobalNote?.trim() || undefined,
+          createdAt: Date.now(),
+        };
+        purchaseToSave.productionOrderId = orderId;
+        await onSave(purchaseToSave);
+        await onCreateProductionOrder(order, [], []); // sem lotes — fila de espera
+        return;
+      }
+    }
+
+    onSave(purchaseToSave);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Aplica embalagem a todas as variações do bloco
@@ -682,7 +803,7 @@ export default function PurchaseFormView({
 
         {/* Identificação da Compra/Lote — acima do fornecedor */}
         <div className="relative">
-          <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">
+          <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
             Identificação da Compra/Lote
           </label>
           <div className={`flex items-center gap-3 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl pl-4 pr-5`}>
@@ -728,7 +849,7 @@ export default function PurchaseFormView({
 
         <div className="grid grid-cols-2 gap-4">
           <div className="relative col-span-2">
-            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">
+            <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
               Fornecedor Selecionado
             </label>
             <ComboBox 
@@ -741,7 +862,7 @@ export default function PurchaseFormView({
           </div>
 
           <div className="relative col-span-2">
-            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Comprador / Representante</label>
+            <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">Comprador / Representante</label>
             <ComboBox 
               options={[
                 ...people.filter(p => p.isSeller || p.isBuyer).map(p => ({ id: p.id, name: p.name })),
@@ -797,7 +918,7 @@ export default function PurchaseFormView({
           </div>
 
           <div className="relative col-span-2">
-            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">
+            <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
               Lançamento Financeiro
             </label>
             <div className={`p-1.5 rounded-2xl border flex items-center gap-2 transition-all ${generateTransaction ? 'bg-indigo-50 border-indigo-100 dark:bg-indigo-950/30 dark:border-indigo-900/50' : 'bg-slate-50 border-slate-100 dark:bg-slate-800 dark:border-slate-700'}`}>
@@ -822,7 +943,7 @@ export default function PurchaseFormView({
                 Não Contábil
               </button>
             </div>
-            <p className={`text-[8px] font-bold uppercase tracking-widest mt-2 px-3 ${!generateTransaction ? 'text-rose-500 font-black' : 'text-slate-400'}`}>
+            <p className={`text-[8px] font-bold uppercase tracking-widest mt-2 px-3 ${generateTransaction ? 'text-emerald-500 font-black' : 'text-rose-500 font-black'}`}>
               {generateTransaction ? "*GERARÁ UM TÍTULO NO FINANCEIRO PARA PAGAMENTO" : "*NÃO SERÁ TRACKEADO NO FLUXO DE CONTAS A PAGAR"}
             </p>
           </div>
@@ -830,7 +951,7 @@ export default function PurchaseFormView({
           {/* Campos fiscais — ocultos quando Não Contábil */}
           {generateTransaction && (<>
           <div className="relative col-span-2">
-            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">
+            <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
               Data de Vencimento
             </label>
             <div className={`flex items-center gap-3 px-4 py-3 rounded-[1.5rem] border-2 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-amber-500/50' : 'bg-white border-slate-200 hover:border-amber-300'} shadow-sm`}>
@@ -838,7 +959,7 @@ export default function PurchaseFormView({
                 <CalendarIcon size={17} className="text-amber-500" strokeWidth={2.5} />
               </div>
               <div className="flex flex-col flex-1 min-w-0">
-                <span className="text-[8px] font-black uppercase tracking-widest text-slate-400 leading-none mb-0.5">Vencimento</span>
+                <span className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 leading-none mb-0.5">Vencimento</span>
                 <input
                   type="date"
                   className={`w-full bg-transparent border-none p-0 text-[13px] font-black focus:ring-0 outline-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
@@ -854,7 +975,7 @@ export default function PurchaseFormView({
           </div>
 
           <div className="relative col-span-2">
-            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">
+            <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
               Pagamento
             </label>
             <div className="flex bg-slate-50 dark:bg-slate-800 p-1.5 rounded-2xl border border-slate-100 dark:border-slate-700">
@@ -878,7 +999,7 @@ export default function PurchaseFormView({
           </div>
 
           <div className="relative col-span-2">
-            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">
+            <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
               Categoria Financeira
             </label>
             <ComboBox
@@ -892,7 +1013,7 @@ export default function PurchaseFormView({
           </div>
 
           <div className="relative col-span-2">
-            <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">
+            <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
               Conta para Pagamento
             </label>
             <div className="relative">
@@ -953,7 +1074,7 @@ export default function PurchaseFormView({
                   {/* Campo 1: Seleção do Material */}
                   <div className="flex gap-3 items-start">
                     <div className="flex-1 flex flex-col gap-1">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Material</p>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Material</p>
                       <ComboBox
                         options={availableMaterials.map(m => ({ id: m.id, name: m.name }))}
                         value={item.materialId || ''}
@@ -995,7 +1116,7 @@ export default function PurchaseFormView({
                   <div className="flex gap-2 items-end">
                     {/* Quantidade */}
                     <div className="flex flex-col gap-1 w-28">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">
                         Qtd{unitLabel ? ` (${unitLabel})` : ''}
                       </p>
                       <input
@@ -1012,7 +1133,7 @@ export default function PurchaseFormView({
 
                     {/* Valor Unitário */}
                     <div className="flex flex-col gap-1 flex-1">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Valor Unit. (R$)</p>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Valor Unit. (R$)</p>
                       <div className="flex gap-2">
                         <div className="relative flex-1">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-black text-slate-400">R$</span>
@@ -1042,7 +1163,7 @@ export default function PurchaseFormView({
 
                   {/* Linha 2: Total do item */}
                   <div className={`flex items-center justify-between px-4 py-3 rounded-2xl ${total > 0 ? 'bg-indigo-50 dark:bg-indigo-950/30' : 'bg-slate-50 dark:bg-slate-800/40'}`}>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total do Item</p>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Total do Item</p>
                     <p className={`text-sm font-black ${total > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-300 dark:text-slate-600'}`}>
                       R$ {total.toFixed(2)}
                     </p>
@@ -1090,7 +1211,7 @@ export default function PurchaseFormView({
                 {/* Linha 1: Nome do Solado + remover */}
                 <div className="flex items-end gap-3">
                   <div className="flex-1 flex flex-col gap-1">
-                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome do Solado</label>
+                    <label className="text-[8px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest ml-1">Nome do Solado</label>
                     <select
                       value={item.moldId}
                       aria-label="Selecionar modelo de solado"
@@ -1114,7 +1235,7 @@ export default function PurchaseFormView({
 
                 {/* Linha 2: Cor */}
                 <div className="flex flex-col gap-1">
-                  <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Cor</label>
+                  <label className="text-[8px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest ml-1">Cor</label>
                   <select
                     value={item.colorId}
                     aria-label="Selecionar cor do solado"
@@ -1154,12 +1275,13 @@ export default function PurchaseFormView({
                 {/* Custo e total */}
                 <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800">
                   <div className="flex flex-col gap-1">
-                    <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-1">Custo Un. (R$)</label>
+                    <label className="text-[8px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest ml-1">Custo Un. (R$)</label>
                     <input
                       type="number"
                       step="0.01"
-                      value={item.unitCost}
+                      value={item.unitCost || ''}
                       onChange={(e) => updateSoleItem(index, { unitCost: parseFloat(e.target.value) || 0 })}
+                      onFocus={(e) => e.target.select()}
                       placeholder="0,00"
                       className={`w-24 px-3 py-2 rounded-xl text-xs font-black border-2 outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}
                     />
@@ -1242,7 +1364,7 @@ export default function PurchaseFormView({
           {/* Prazo e Prioridade */}
           <div className="flex flex-col gap-3 p-4 rounded-3xl border border-dashed border-indigo-500/30 dark:border-indigo-500/20 bg-indigo-50/10 dark:bg-indigo-950/10 mb-4">
             <div className="flex items-center justify-between">
-              <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 tracking-widest leading-none">Prazo e Prioridade</label>
+              <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-1 tracking-widest leading-none">Prazo e Prioridade</label>
               {prioridade && (
                 <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-full border border-slate-200/50 dark:border-slate-700/50">
                   <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${prioridade === 'URGENTE' ? 'bg-rose-500' : prioridade === 'ALTA' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
@@ -1315,6 +1437,23 @@ export default function PurchaseFormView({
                   Produção para estoque. Configure o padrão de embalagem e salve — o pedido entra na fila de espera do PCP. Os mapas são criados manualmente lá.
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* Observação Geral da OP — aparece em TODOS os modelos */}
+          {isProductionOrder && (
+            <div className={`mb-4 rounded-2xl border-2 p-4 flex flex-col gap-2 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-amber-50 border-amber-200'}`}>
+              <label className="text-[9px] font-black uppercase tracking-widest text-amber-500 flex items-center gap-1.5">
+                <MessageSquare size={11} /> Observação Geral — todos os modelos
+              </label>
+              <textarea
+                className={`w-full rounded-xl border px-3 py-2.5 text-[11px] font-bold resize-none h-14 focus:ring-2 focus:ring-amber-400/20 transition-all placeholder:text-slate-300 dark:placeholder:text-slate-600 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-100' : 'bg-white border-amber-100 text-slate-800'}`}
+                value={productionGlobalNote}
+                onChange={(e) => setProductionGlobalNote(e.target.value)}
+                placeholder="Nota que aparecerá em TODOS os modelos deste pedido…"
+                aria-label="Observação geral da OP"
+                title="Observação geral"
+              />
             </div>
           )}
 
@@ -1405,17 +1544,18 @@ export default function PurchaseFormView({
                             <label className="text-[9px] font-black uppercase tracking-widest text-violet-500 flex items-center gap-1.5">
                               <Layers size={11} /> Caixa Coletiva (Padrão de Embalagem)
                             </label>
-                            <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border-2 transition-all ${selectedPkg ? isDarkMode ? 'bg-violet-900/20 border-violet-700' : 'bg-violet-50 border-violet-300' : isDarkMode ? 'bg-slate-800 border-slate-700 border-dashed' : 'bg-slate-50 border-dashed border-slate-300'}`}>
+                            <button
+                              type="button"
+                              onClick={() => setPkgPickerBlockIndex(index)}
+                              title="Escolher padrão de embalagem"
+                              aria-label="Escolher padrão de embalagem"
+                              className={`flex items-center gap-3 px-4 py-3 rounded-2xl border-2 transition-all text-left ${selectedPkg ? isDarkMode ? 'bg-violet-900/20 border-violet-700' : 'bg-violet-50 border-violet-300' : isDarkMode ? 'bg-slate-800 border-slate-700 border-dashed' : 'bg-slate-50 border-dashed border-slate-300'}`}>
                               <Package size={16} className={selectedPkg ? 'text-violet-500' : 'text-slate-400'} />
-                              <select value={block.blockPkgId || ''} onChange={e => applyBlockPackaging(index, e.target.value)}
-                                title="Padrão de embalagem" aria-label="Padrão de embalagem"
-                                className={`flex-1 bg-transparent font-black text-[11px] outline-none cursor-pointer ${selectedPkg ? 'text-violet-700 dark:text-violet-300' : 'text-slate-400'}`}>
-                                <option value="">Selecione o padrão de embalagem…</option>
-                                {packagingConfigs.map(pkg => (
-                                  <option key={pkg.id} value={pkg.id}>{pkg.name} — {pkg.metadata?.capacity || 0} pares</option>
-                                ))}
-                              </select>
-                            </div>
+                              <span className={`flex-1 font-black text-[11px] uppercase tracking-widest truncate ${selectedPkg ? 'text-violet-700 dark:text-violet-300' : 'text-slate-400'}`}>
+                                {selectedPkg ? `${selectedPkg.name} — ${selectedPkg.metadata?.capacity || 0} pares ${selectedPkg.metadata?.mode === 'FREE' ? '(Grade Livre)' : '(Grade Padrão)'}` : 'Selecione o padrão de embalagem…'}
+                              </span>
+                              <Info size={14} className={selectedPkg ? 'text-violet-400' : 'text-slate-300'} />
+                            </button>
                             {selectedPkg && capacity > 0 && (
                               <p className="text-[9px] text-violet-500 font-black px-1 flex items-center gap-1">
                                 <CheckCircle2 size={10} /> 1 grade = 1 caixa de {capacity} pares — aplicado a todas as variações
@@ -1453,10 +1593,11 @@ export default function PurchaseFormView({
                         <label className="text-[8px] uppercase font-black text-sky-400 tracking-widest px-1">Custo Unitário (R$/par)</label>
                         <input type="number" step="0.01"
                           className="w-full bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-xl py-2.5 text-right pr-3 text-[12px] font-black text-sky-600 dark:text-sky-400 focus:ring-2 focus:ring-sky-500/10 transition-all"
-                          value={block.unitCost ?? ''}
+                          value={block.unitCost || ''}
                           placeholder="0,00"
                           aria-label="Custo por par"
                           title="Custo Unitário por Par"
+                          onFocus={(e) => e.target.select()}
                           onChange={(e) => updateBlock(index, { unitCost: parseFloat(e.target.value) || 0 })} />
                       </div>
 
@@ -1522,6 +1663,27 @@ export default function PurchaseFormView({
                                       </span>
                                     </button>
                                   )}
+                                  {/* Nota exclusiva desta variação */}
+                                  <div className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-amber-50 border-amber-100'}`}>
+                                    <MessageSquare size={10} className="text-amber-500 shrink-0" />
+                                    <input
+                                      type="text"
+                                      className={`flex-1 bg-transparent text-[11px] font-bold outline-none placeholder:text-slate-300 dark:placeholder:text-slate-700 ${isDarkMode ? 'text-slate-100' : 'text-slate-800'}`}
+                                      value={block.variations[v.id]?.note || ''}
+                                      onChange={(e) => {
+                                        const current = block.variations[v.id] || { quantity: 0 };
+                                        updateBlock(index, {
+                                          variations: {
+                                            ...block.variations,
+                                            [v.id]: { ...current, note: e.target.value }
+                                          }
+                                        });
+                                      }}
+                                      placeholder="Obs. desta variação…"
+                                      aria-label={`Observação para ${v.colorName}`}
+                                      title={`Observação para ${v.colorName}`}
+                                    />
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -1796,12 +1958,14 @@ export default function PurchaseFormView({
             <Trash2 size={20} strokeWidth={2.5} />
           </button>
           <button
+            type="button"
             onClick={handleSave}
-            className="h-12 px-6 rounded-full bg-white text-slate-900 font-black uppercase tracking-widest text-[11px] flex items-center gap-2 hover:bg-emerald-400 hover:text-white transition-all"
+            disabled={isSaving}
+            className={`h-12 px-6 rounded-full font-black uppercase tracking-widest text-[11px] flex items-center gap-2 transition-all ${isSaving ? 'bg-slate-400 text-white cursor-wait' : 'bg-white text-slate-900 hover:bg-emerald-400 hover:text-white'}`}
             aria-label="Finalizar compra"
             title="Finalizar"
           >
-            <Save size={16} strokeWidth={3} /> Finalizar
+            <Save size={16} strokeWidth={3} className={isSaving ? 'animate-spin' : ''} /> {isSaving ? 'Salvando...' : 'Finalizar'}
           </button>
         </div>
       </div>
@@ -1904,6 +2068,93 @@ export default function PurchaseFormView({
             onConfirm={breakdown => { setGradePerVar(prev => ({ ...prev, [`${blockId}-${variationId}`]: breakdown })); setGradeModalTarget(null); }}
             productName={product?.name || ''} variationName={variationName}
             grids={grids} defaultGridId={product?.defaultGridId} initialBreakdown={existing} isDarkMode={isDarkMode} />
+        );
+      })()}
+
+      {/* Popup explicativo — escolha do Padrão de Embalagem (Caixa Coletiva) */}
+      {pkgPickerBlockIndex !== null && (() => {
+        const block = blocks[pkgPickerBlockIndex];
+        if (!block) return null;
+        const packagingConfigs = productionConfigs.filter(c => c.type === 'PACKAGING');
+        return (
+          <Modal isOpen onClose={() => setPkgPickerBlockIndex(null)} title="Padrão de Embalagem" icon={<Package size={20} />} maxWidth="max-w-xl">
+            <div className="flex flex-col gap-4">
+              <div className="p-4 rounded-2xl bg-violet-50 dark:bg-violet-950/30 border border-violet-100 dark:border-violet-900/50 flex flex-col gap-3">
+                <p className="text-[10px] font-bold text-violet-700 dark:text-violet-300 leading-relaxed">
+                  A <span className="font-black">Caixa Coletiva</span> define como os pares serão agrupados dentro de cada embalagem da OP — a quantidade escolhida aqui é replicada para todas as variações deste modelo.
+                </p>
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-start gap-2">
+                    <span className="shrink-0 mt-0.5 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">Grade Padrão</span>
+                    <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Numerações e quantidades por tamanho já vêm <span className="font-black">pré-definidas</span> no cadastro do padrão — ao selecionar, a distribuição é aplicada automaticamente, sem precisar preencher nada.
+                    </p>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <span className="shrink-0 mt-0.5 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Grade Livre</span>
+                    <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Não tem numerações fixas — apenas uma <span className="font-black">capacidade total</span> de pares. A distribuição por tamanho é preenchida manualmente no momento de montar cada caixa.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                {packagingConfigs.length === 0 && (
+                  <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                    <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                      Nenhum padrão de embalagem cadastrado. Acesse Produção → Configurações → Padrão Embalagens.
+                    </p>
+                  </div>
+                )}
+                {packagingConfigs.map(pkg => {
+                  const isFree = pkg.metadata?.mode === 'FREE';
+                  const capacity = pkg.metadata?.capacity || 0;
+                  const sizes: string[] = pkg.metadata?.sizes || [];
+                  const sizeQtys: Record<string, number> = pkg.metadata?.sizeQuantities || {};
+                  const isSelected = block.blockPkgId === pkg.id;
+                  return (
+                    <button
+                      key={pkg.id}
+                      type="button"
+                      onClick={() => { applyBlockPackaging(pkgPickerBlockIndex, pkg.id); setPkgPickerBlockIndex(null); }}
+                      className={`text-left p-4 rounded-2xl border-2 transition-all flex flex-col gap-2.5 ${isSelected ? isDarkMode ? 'bg-violet-900/20 border-violet-600' : 'bg-violet-50 border-violet-400' : isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-violet-700' : 'bg-slate-50 border-slate-100 hover:border-violet-200'}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Package size={15} className={isSelected ? 'text-violet-500' : 'text-slate-400'} />
+                          <span className={`font-black text-[12px] uppercase tracking-tight truncate ${isSelected ? 'text-violet-700 dark:text-violet-300' : isDarkMode ? 'text-white' : 'text-slate-800'}`}>{pkg.name}</span>
+                        </div>
+                        <span className={`shrink-0 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg ${isFree ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'}`}>
+                          {isFree ? 'Grade Livre' : 'Grade Padrão'}
+                        </span>
+                      </div>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Capacidade: {capacity} pares por caixa</p>
+                      {!isFree && sizes.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {sizes.map(sz => (
+                            <span key={sz} className={`text-[9px] font-black px-2 py-1 rounded-lg ${isDarkMode ? 'bg-slate-900 text-slate-300 border border-slate-700' : 'bg-white text-slate-600 border border-slate-200'}`}>
+                              {sz}: {sizeQtys[sz] || 0}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {isFree && (
+                        <p className="text-[9px] font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                          <AlertCircle size={11} /> Numerações preenchidas manualmente, até {capacity} pares
+                        </p>
+                      )}
+                      {isSelected && (
+                        <p className="text-[9px] font-black text-violet-500 flex items-center gap-1">
+                          <CheckCircle2 size={11} /> Selecionado para este modelo
+                        </p>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </Modal>
         );
       })()}
 

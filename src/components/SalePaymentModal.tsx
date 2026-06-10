@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+﻿import React, { useState, useMemo } from 'react';
 import { Sale, Account, PaymentMethod, SalePayment, TransactionType, PaymentStatus, Person } from '../types';
 import { X, DollarSign, Calendar, Wallet, History, Clipboard, CheckCircle2, ChevronRight, AlertCircle, Copy, CreditCard, Trash2, RotateCcw, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { toast } from '../utils/toast';
 
 interface SalePaymentModalProps {
   isOpen: boolean;
@@ -89,17 +90,17 @@ export default function SalePaymentModal({
     e.preventDefault();
     const val = parseFloat(amount);
     if (isNaN(val) || val <= 0) {
-      alert('Informe um valor válido');
+      toast.show('Informe um valor válido');
       return;
     }
 
     if (!accountId) {
-      alert('Selecione uma conta');
+      toast.show('Selecione uma conta');
       return;
     }
 
     if (!paymentMethodId) {
-      alert('Selecione um método de pagamento');
+      toast.show('Selecione um método de pagamento');
       return;
     }
 

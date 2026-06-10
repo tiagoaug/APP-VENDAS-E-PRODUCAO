@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
-import { X, Package, CheckCircle2, AlertCircle, Warehouse, Layers } from 'lucide-react';
+﻿import { useState, useMemo } from 'react';
+import { X, Package, CheckCircle2, AlertCircle, Warehouse, Layers, Factory } from 'lucide-react';
 import { ProductionConfigItem, Grid } from '../types';
+import { parseLocaleNumber } from '../utils/numbers';
 
 interface PackagingBuilderResult {
   pkgId: string;
@@ -19,6 +20,7 @@ interface PackagingBuilderModalProps {
   stockPerSize: Record<string, number>;   // estoque disponível por tamanho (varejo)
   stockGrades?: number;                  // estoque de grades completas (atacado)
   orderQuantity?: number;                // qtd de grades pedidas (para limitar abate)
+  inProductionGrades?: number;           // grades já em ordens de produção ativas
   initialPkgId?: string;
   initialBreakdown?: Record<string, number>;
   initialFromStock?: Record<string, number>;
@@ -32,6 +34,7 @@ export default function PackagingBuilderModal({
   stockPerSize,
   stockGrades = 0,
   orderQuantity,
+  inProductionGrades = 0,
   initialPkgId = '', initialBreakdown = {}, initialFromStock = {},
   isDarkMode
 }: PackagingBuilderModalProps) {
@@ -87,8 +90,8 @@ export default function PackagingBuilderModal({
       Object.keys(stockPerSize).forEach(sz => sSet.add(String(sz).trim()));
 
       return Array.from(sSet).sort((a, b) => {
-        const na = parseFloat(a.replace(',', '.'));
-        const nb = parseFloat(b.replace(',', '.'));
+        const na = parseLocaleNumber(a);
+        const nb = parseLocaleNumber(b);
         if (!isNaN(na) && !isNaN(nb)) return na - nb;
         return String(a).localeCompare(String(b), undefined, { numeric: true });
       });
@@ -213,6 +216,22 @@ export default function PackagingBuilderModal({
               ))}
             </select>
           </div>
+
+          {/* Aviso: grades já em produção ativa */}
+          {inProductionGrades > 0 && (
+            <div className={`flex items-start gap-3 px-4 py-3 rounded-xl ${isDarkMode ? 'bg-amber-900/20 border border-amber-700/40' : 'bg-amber-50 border border-amber-200'}`}>
+              <Factory size={16} className="text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-0.5">Atenção — Em produção</p>
+                <p className={`text-sm font-black ${isDarkMode ? 'text-amber-300' : 'text-amber-800'}`}>
+                  {inProductionGrades} {inProductionGrades === 1 ? 'grade já está' : 'grades já estão'} em ordem de produção ativa para esta cor.
+                </p>
+                <p className="text-[9px] font-bold text-amber-500 mt-0.5">
+                  Verifique antes de criar uma nova produção desnecessária.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Estoque de grades disponíveis (atacado) */}
           {isWholesaleStock && selectedPkg && (

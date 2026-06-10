@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
+﻿import { useState, useMemo } from 'react';
 import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig } from '../types';
-import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory } from 'lucide-react';
+import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck } from 'lucide-react';
 import ProductionOrderModal from '../components/ProductionOrderModal';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -8,6 +8,7 @@ import { exportSale } from '../utils/saleExport';
 import ExportNoteModal from '../components/ExportNoteModal';
 import SalePaymentModal from '../components/SalePaymentModal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { toast } from '../utils/toast';
 
 interface SalesViewProps {
   sales: Sale[];
@@ -62,7 +63,7 @@ export default function SalesView({
   const [filter, setFilter] = useState<'ALL' | 'RETAIL' | 'WHOLESALE'>('ALL');
   const [paymentFilter, setPaymentFilter] = useState<'ALL' | 'PENDING' | 'PAID'>('ALL');
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
-  const [selectedStatuses, setSelectedStatuses] = useState<SaleStatus[]>([SaleStatus.SALE, SaleStatus.QUOTE]);
+  const [selectedStatuses, setSelectedStatuses] = useState<SaleStatus[]>([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]);
   const [showFilters, setShowFilters] = useState(false);
   const [expandedCards, setExpandedCards] = useState(false);
   const [showProducts, setShowProducts] = useState(true);
@@ -104,7 +105,7 @@ export default function SalesView({
       setExportModal(prev => ({ ...prev, isOpen: false }));
     } catch (error) {
       console.error('Export error:', error);
-      alert('Erro ao exportar venda.');
+      toast.show('Erro ao exportar venda.');
     }
   };
 
@@ -112,12 +113,20 @@ export default function SalesView({
     let count = 0;
     if (filter !== 'ALL') count++;
     if (paymentFilter !== 'ALL') count++;
-    const defaultStatuses = [SaleStatus.SALE, SaleStatus.QUOTE];
-    const isDefaultStatuses = selectedStatuses.length === defaultStatuses.length && 
+    const defaultStatuses = [SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE];
+    const isDefaultStatuses = selectedStatuses.length === defaultStatuses.length &&
                               defaultStatuses.every(s => selectedStatuses.includes(s));
     if (!isDefaultStatuses) count++;
     return count;
   }, [filter, paymentFilter, selectedStatuses]);
+
+  // Métricas de entrega — fechadas pelo PCP ao concluir a expedição (ver SaleStatus.SALE não cancelados)
+  const deliveryStats = useMemo(() => {
+    const trackedSales = sales.filter(s => s.status === SaleStatus.SALE);
+    const delivered = trackedSales.filter(s => s.deliveryStatus === 'DELIVERED').length;
+    const pending = trackedSales.length - delivered;
+    return { delivered, pending };
+  }, [sales]);
 
   // Mapas para busca rápida O(1)
   const productMap = useMemo(() => {
@@ -184,7 +193,7 @@ export default function SalesView({
     const paymentMethod = paymentMethods.find(pm => pm.id === sale.paymentMethodId);
     const paymentInfo = paymentMethod?.value ? `\n\n💳 *Pagamento: ${paymentMethod.name}*\nchave pix: ${paymentMethod.value}` : `\n\n💳 *Pagamento: ${paymentMethod?.name || 'A definir'}*`;
 
-    const statusText = sale.status === SaleStatus.QUOTE ? 'Orçamento' : 'Pedido';
+    const statusText = sale.status === SaleStatus.QUOTE ? 'Orçamento' : sale.status === SaleStatus.CONFIRMED ? 'Pedido' : 'Venda';
     const discountText = sale.discount > 0 ? `\n📉 *Desconto:* R$ ${sale.discount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '';
 
     return `Olá ${customer?.name || sale.customerName || 'Cliente'}!\n\nSeu ${statusText} #${sale.orderNumber}.\n\n*ITENS:*\n${itemsText}\n\n------------------\n💰 *Subtotal:* R$ ${sale.subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}${discountText}\n💎 *TOTAL: R$ ${sale.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}*\n------------------\nStatus: ${statusText}${paymentInfo}\n\nAguardamos sua confirmação!`;
@@ -193,13 +202,13 @@ export default function SalesView({
   const handleCopyMessage = (sale: Sale) => {
     const message = generateMessage(sale);
     navigator.clipboard.writeText(message);
-    alert('Mensagem copiada!');
+    toast.show('Mensagem copiada!');
   };
 
   const handleShareWhatsApp = (sale: Sale, customMessage?: string) => {
     const customer = people.find(p => p.id === sale.customerId);
     if (!customer?.phone && !customMessage) {
-      alert('Cliente sem telefone cadastrado.');
+      toast.show('Cliente sem telefone cadastrado.');
     }
     
     if (whatsappMode === 'MANUAL' && !customMessage) {
@@ -212,7 +221,7 @@ export default function SalesView({
     const phone = customer?.phone?.replace(/\D/g, '') || '';
     
     if (!phone) {
-      alert('Não é possível abrir o WhatsApp: Cliente não possui telefone cadastrado.');
+      toast.show('Não é possível abrir o WhatsApp: Cliente não possui telefone cadastrado.');
       return;
     }
 
@@ -271,7 +280,7 @@ export default function SalesView({
             className={`w-full h-14 pl-12 pr-4 rounded-2xl border text-[12px] font-bold tracking-widest transition-all outline-none focus:ring-2 focus:ring-indigo-600/20 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white placeholder:text-slate-600' : 'bg-white border-slate-100 text-slate-800 placeholder:text-slate-300'}`}
           />
           {searchQuery && (
-            <button 
+            <button
               onClick={() => setSearchQuery('')}
               className="absolute right-4 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white"
             >
@@ -279,6 +288,30 @@ export default function SalesView({
             </button>
           )}
         </div>
+
+        {/* Métricas de Entrega — fechadas automaticamente quando o PCP conclui a expedição do pedido */}
+        {(deliveryStats.delivered > 0 || deliveryStats.pending > 0) && (
+          <div className="flex items-center gap-3">
+            <div className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+              <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                <Truck size={16} strokeWidth={2.5} />
+              </div>
+              <div className="leading-none">
+                <p className={`text-[14px] font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{deliveryStats.delivered}</p>
+                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mt-1">Entregues</p>
+              </div>
+            </div>
+            <div className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+              <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <Clock size={16} strokeWidth={2.5} />
+              </div>
+              <div className="leading-none">
+                <p className={`text-[14px] font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{deliveryStats.pending}</p>
+                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mt-1">Aguardando Entrega</p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Filter Popup */}
@@ -326,10 +359,10 @@ export default function SalesView({
             <div className="flex flex-col gap-2">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Status do Pedido</p>
               <div className="flex gap-2 flex-wrap">
-                {([SaleStatus.SALE, SaleStatus.QUOTE, SaleStatus.CANCELLED] as const).map((s) => {
+                {([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE, SaleStatus.CANCELLED] as const).map((s) => {
                   const active = selectedStatuses.includes(s);
-                  const label = s === SaleStatus.SALE ? 'Venda' : s === SaleStatus.QUOTE ? 'Orçamento' : 'Cancelado';
-                  const color = s === SaleStatus.SALE ? (active ? 'bg-indigo-600 text-white' : '') : s === SaleStatus.QUOTE ? (active ? 'bg-amber-500 text-white' : '') : (active ? 'bg-rose-500 text-white' : '');
+                  const label = s === SaleStatus.SALE ? 'Venda' : s === SaleStatus.CONFIRMED ? 'Pedido' : s === SaleStatus.QUOTE ? 'Orçamento' : 'Cancelado';
+                  const color = s === SaleStatus.SALE ? (active ? 'bg-indigo-600 text-white' : '') : s === SaleStatus.CONFIRMED ? (active ? 'bg-sky-500 text-white' : '') : s === SaleStatus.QUOTE ? (active ? 'bg-amber-500 text-white' : '') : (active ? 'bg-rose-500 text-white' : '');
                   return (
                     <button key={s}
                       onClick={() => setSelectedStatuses(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
@@ -357,7 +390,7 @@ export default function SalesView({
             </div>
 
             <button
-              onClick={() => { setFilter('ALL'); setPaymentFilter('ALL'); setSelectedStatuses([SaleStatus.SALE, SaleStatus.QUOTE]); setExpandedCards(false); setShowProducts(true); }}
+              onClick={() => { setFilter('ALL'); setPaymentFilter('ALL'); setSelectedStatuses([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]); setExpandedCards(false); setShowProducts(true); }}
               className="mt-1 w-full py-3 rounded-2xl text-[10px] font-black tracking-widest text-rose-500 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all"
             >
               Limpar Filtros
@@ -388,9 +421,11 @@ export default function SalesView({
                     title="Ver Detalhes do Pedido"
                     aria-label={`Ver detalhes do pedido de ${sale.customerName || 'Cliente'}`}
                     className={`w-14 h-14 rounded-2xl flex items-center justify-center cursor-pointer transition-all hover:scale-110 shrink-0 shadow-lg ${
-                      sale.status === SaleStatus.QUOTE 
-                        ? 'bg-amber-500 text-white shadow-amber-200' 
-                        : 'bg-indigo-600 text-white shadow-indigo-200'
+                      sale.status === SaleStatus.QUOTE
+                        ? 'bg-amber-500 text-white shadow-amber-200'
+                        : sale.status === SaleStatus.CONFIRMED
+                          ? 'bg-sky-500 text-white shadow-sky-200'
+                          : 'bg-indigo-600 text-white shadow-indigo-200'
                     }`}
                   >
                     <ShoppingBag size={28} strokeWidth={2.5} />
@@ -440,13 +475,31 @@ export default function SalesView({
                     <span className="text-[10px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-slate-900 text-rose-500 border border-rose-500/20 shadow-sm">
                       Cancelada
                     </span>
-                  ) : sale.status === 'QUOTE' ? (
+                  ) : sale.status === SaleStatus.QUOTE ? (
                     <span className="text-[10px] font-black px-2 py-1 rounded-lg leading-none tracking-widest shadow-sm bg-orange-500 text-white">
                       Orçamento
+                    </span>
+                  ) : sale.status === SaleStatus.CONFIRMED ? (
+                    <span className="text-[10px] font-black px-2 py-1 rounded-lg leading-none tracking-widest shadow-sm bg-sky-500 text-white">
+                      Pedido
                     </span>
                   ) : (
                     <span className="text-[10px] font-black px-2 py-1 rounded-lg leading-none tracking-widest shadow-sm bg-[#7c3aed] text-white">
                       Venda
+                    </span>
+                  )}
+
+                  {/* Badge Pedido Entregue — fechado ao concluir a expedição no PCP */}
+                  {sale.deliveryStatus === 'DELIVERED' && sale.status !== SaleStatus.CANCELLED && (
+                    <span className="text-[8px] font-black px-2 py-1 rounded-lg leading-none tracking-widest shadow-sm bg-emerald-500 text-white uppercase flex items-center gap-1">
+                      <Truck size={10} /> Pedido Entregue
+                    </span>
+                  )}
+
+                  {/* Badge Itens aguardando estoque */}
+                  {sale.status === SaleStatus.SALE && sale.items.some(it => it.fulfilled !== true) && (
+                    <span className="text-[8px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 flex items-center gap-1">
+                      <Clock size={9} /> Aguard. estoque
                     </span>
                   )}
 
@@ -662,7 +715,7 @@ export default function SalesView({
         onConfirm={handleConfirmExport}
         isDarkMode={isDarkMode}
         initialFormat={exportModal.format}
-        title={exportModal.sale?.status === SaleStatus.QUOTE ? "Exportar Orçamento" : "Exportar Venda"}
+        title={exportModal.sale?.status === SaleStatus.QUOTE ? "Exportar Orçamento" : exportModal.sale?.status === SaleStatus.CONFIRMED ? "Exportar Pedido" : "Exportar Venda"}
       />
 
       {/* Popup — Itens da Venda */}

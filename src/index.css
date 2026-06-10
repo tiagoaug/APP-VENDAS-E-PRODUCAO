@@ -67,6 +67,15 @@
   border-color: #d1d5db !important; /* gray-300 */
 }
 
+@keyframes filterPulse {
+  0%, 100% { background-color: #f59e0b; box-shadow: 0 0 0 0 rgba(245,158,11,0.5); }
+  50%       { background-color: #ef4444; box-shadow: 0 0 0 4px rgba(239,68,68,0); }
+}
+
+.filter-pulse-badge {
+  animation: filterPulse 1.2s ease-in-out infinite;
+}
+
 .industrial .text-slate-900,
 .industrial .text-slate-800,
 .industrial .text-indigo-600,
@@ -184,6 +193,20 @@
   }
   .animate-pulse-vencimento {
     animation: pulse-vencimento 2s infinite;
+  }
+
+  @keyframes pulse-orange-yellow {
+    0%, 100% {
+      background-color: #ffedd5;
+      color: #ea580c;
+    }
+    50% {
+      background-color: #fef9c3;
+      color: #ca8a04;
+    }
+  }
+  .animate-pulse-orange-yellow {
+    animation: pulse-orange-yellow 3.5s ease-in-out infinite;
   }
 
   @keyframes scan-line {

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+﻿import React, { useState, useMemo } from 'react';
 import { Download, ArrowLeft, Calendar, Filter, MessageCircle, Copy, Share2, Search } from 'lucide-react';
 import { Sale, Transaction, Product, Person, SaleStatus, TransactionType, Category } from '../types';
 import { format, startOfMonth, endOfMonth, parseISO, isWithinInterval } from 'date-fns';
@@ -7,6 +7,7 @@ import autoTable from 'jspdf-autotable';
 import ComboBox from '../components/ComboBox';
 import ConsolidatedMessageModal from '../components/ConsolidatedMessageModal';
 import { sharePDF } from '../utils/pdfExport';
+import { toast } from '../utils/toast';
 
 
 interface ReportDetailedViewProps {
@@ -293,7 +294,7 @@ export default function ReportDetailedView({
   const sendWhatsApp = (phone: string | undefined, text: string) => {
     const cleanPhone = (phone || '').replace(/\D/g, '');
     if (!cleanPhone) {
-      alert('Não é possível abrir o WhatsApp: Cliente não possui telefone cadastrado.');
+      toast.show('Não é possível abrir o WhatsApp: Cliente não possui telefone cadastrado.');
       return;
     }
     const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
@@ -319,7 +320,7 @@ export default function ReportDetailedView({
     if (customer?.phone) {
         sendWhatsApp(customer.phone, msg);
     } else {
-        alert("Mensagem copiada para a área de transferência!");
+        toast.show("Mensagem copiada para a área de transferência!");
     }
   };
 

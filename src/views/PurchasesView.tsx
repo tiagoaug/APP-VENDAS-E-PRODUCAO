@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { Purchase, Person, PurchaseType, PaymentStatus, PaymentTerm } from "../types";
+﻿import { useState, useMemo } from "react";
+import { Purchase, Person, Product, PurchaseType, PaymentStatus, PaymentTerm } from "../types";
 import {
   ShoppingCart,
   Plus,
@@ -7,25 +7,27 @@ import {
   Calendar,
   History,
   Trash2,
-  Edit2, // Added
-  MessageSquare,
-  X, // Added
+  Edit2,
+  X,
   Search,
-  Filter,
   Clipboard,
   Hash,
   Lightbulb,
   Tag,
 } from "lucide-react";
-import { format, isSameMonth } from "date-fns";
+import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ChecksModal from "../components/ChecksModal";
+import ExportNoteModal from "../components/ExportNoteModal";
+import { exportPurchase } from "../utils/purchaseExport";
+import { toast } from '../utils/toast';
 
 
 interface PurchasesViewProps {
   purchases: Purchase[];
   suppliers: Person[];
+  products: Product[];
   onAdd: () => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
@@ -37,6 +39,7 @@ interface PurchasesViewProps {
 export default function PurchasesView({
   purchases,
   suppliers,
+  products,
   onAdd,
   onEdit,
   onDelete,
@@ -52,7 +55,33 @@ export default function PurchasesView({
 
   const [selectedPurchaseForChecks, setSelectedPurchaseForChecks] = useState<Purchase | null>(null);
   const [isChecksModalOpen, setIsChecksModalOpen] = useState(false);
-  
+  const [selectedPurchaseForItems, setSelectedPurchaseForItems] = useState<Purchase | null>(null);
+  const [exportModal, setExportModal] = useState<{ isOpen: boolean; purchase?: Purchase; format: 'pdf' | 'jpg' }>({ isOpen: false, format: 'pdf' });
+
+  const handleOpenExport = (e: React.MouseEvent, purchase: Purchase, format: 'pdf' | 'jpg') => {
+    e.stopPropagation();
+    setExportModal({ isOpen: true, purchase, format });
+  };
+
+  const handleConfirmExport = async (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean) => {
+    if (!exportModal.purchase) return;
+
+    try {
+      await exportPurchase({
+        purchase: exportModal.purchase,
+        suppliers,
+        products,
+        additionalNote: note,
+        isDarkMode,
+        showFinancialValues
+      }, format);
+      setExportModal(prev => ({ ...prev, isOpen: false }));
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.show('Erro ao exportar compra.');
+    }
+  };
+
   const filteredPurchases = useMemo(() => {
     return purchases.filter(purchase => {
       // Filter by type
@@ -98,6 +127,107 @@ export default function PurchasesView({
     return Array.from(months).sort().reverse(); // newest first
   }, [purchases]);
 
+  // Soma do saldo pendente das compras a prazo (não quitadas), exibida no topo da página
+  const totalPendingTermPurchases = useMemo(() => {
+    return purchases.reduce((acc, p) => {
+      if (p.paymentStatus !== PaymentStatus.PENDING) return acc;
+      if (p.paymentTerm === PaymentTerm.CASH) return acc;
+      const totalPaid = (p.paymentHistory || []).reduce((a, h) => a + h.amount, 0);
+      return acc + Math.max(0, p.total - totalPaid);
+    }, 0);
+  }, [purchases]);
+
+  // Renderiza uma linha de item do carrinho (compartilhada entre o preview do card e o popup completo)
+  const renderPurchaseItemRow = (item: any, idx: number) => {
+    const isSole = 'moldId' in item;
+    const isStockItem = !isSole && 'productId' in item;
+    if (isStockItem) {
+      const stockItem = item as any;
+      const prod = products.find(p => p.id === stockItem.productId);
+      const vari = prod?.variations.find(v => v.id === stockItem.variationId);
+      return (
+        <div key={idx} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
+          <div className="flex items-center gap-2 min-w-0">
+            <Package size={12} className="text-indigo-500 shrink-0" />
+            <span className="text-[10px] font-black uppercase tracking-tight truncate">
+              {prod?.reference ? `${prod.reference} ` : ''}{prod?.name || 'Produto não encontrado'}
+            </span>
+            {vari && (
+              <>
+                <span className="text-[9px] text-slate-400 shrink-0">•</span>
+                <span className="text-[10px] font-bold text-slate-500 truncate">{vari.colorName}{stockItem.size ? ` / ${stockItem.size}` : ''}</span>
+              </>
+            )}
+          </div>
+          <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 shrink-0">{stockItem.quantity} {stockItem.isBox ? 'cx' : 'un'}</span>
+        </div>
+      );
+    }
+    if (isSole) {
+      const soleItem = item as any;
+      const totalPairs = Object.values(soleItem.quantities || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+      const sizeEntries = Object.entries(soleItem.quantities || {}).filter(([, q]) => (q as number) > 0);
+      return (
+        <div key={idx} className="flex flex-col gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
+          {/* Cabeçalho: modelo + cor */}
+          <div className="flex items-center gap-2">
+            <Package size={12} className="text-indigo-500 shrink-0" />
+            <span className="text-[11px] font-black uppercase tracking-tight text-slate-900 dark:text-white">{soleItem.moldName}</span>
+            <span className="text-[9px] text-slate-400">•</span>
+            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase">{soleItem.colorName}</span>
+          </div>
+          {/* Grade de tamanhos */}
+          <div className="flex flex-wrap gap-1.5">
+            {sizeEntries.map(([size, qty]) => (
+              <div key={size} className="flex flex-col items-center justify-center min-w-[36px] px-2 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-sm">
+                <span className="text-[8px] font-black text-slate-500 uppercase leading-none mb-0.5">{size}</span>
+                <span className="text-[13px] font-black text-slate-900 dark:text-white leading-none">{qty as number}</span>
+              </div>
+            ))}
+          </div>
+          {/* Total pares + valor */}
+          <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-700">
+            <span className="text-[10px] font-black text-slate-900 dark:text-white">{totalPairs} <span className="text-[9px] font-bold text-slate-400 uppercase">pares</span></span>
+            {soleItem.totalCost > 0 && (
+              <span className="text-[11px] font-black text-rose-500 dark:text-rose-400">
+                R$ {soleItem.totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    }
+    const genItem = item as any;
+    return (
+      <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
+        <div className="flex items-center gap-2">
+          <Tag size={12} className="text-slate-400" />
+          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 truncate">{genItem.description}</span>
+        </div>
+        <span className="text-[9px] font-black text-slate-400">{genItem.quantity} un</span>
+      </div>
+    );
+  };
+
+  // Renderiza uma linha de item de Compra Geral (descrição + qtd/unidade + valor)
+  const renderGeneralItemRow = (item: any, idx: number) => {
+    const lineTotal = (item.value || 0) * (item.quantity || 1);
+    return (
+      <div key={item.id || idx} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
+        <div className="flex items-center gap-2 min-w-0">
+          <Tag size={12} className="text-slate-400 shrink-0" />
+          <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 truncate">
+            {item.description}
+            {item.quantity ? <span className="text-slate-400"> · {item.quantity}{item.unit ? ` ${item.unit}` : ''}</span> : null}
+          </span>
+        </div>
+        <span className="text-[9px] font-black text-rose-500 dark:text-rose-400 shrink-0">
+          R$ {lineTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-4 pb-24 px-4 bg-[#fafafa] dark:bg-slate-950 min-h-screen">
       <ConfirmDialog
@@ -141,6 +271,58 @@ export default function PurchasesView({
           </div>
         </div>
       )}
+
+      {/* Carrinho Completo Modal */}
+      {selectedPurchaseForItems && (
+        <div className="fixed inset-0 z-[100] flex animate-in fade-in duration-300">
+          <div
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+            onClick={() => setSelectedPurchaseForItems(null)}
+          />
+          <div className="relative m-auto w-[90%] max-w-sm max-h-[80vh] flex flex-col bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-4 shrink-0">
+              <div>
+                <h3 className="font-bold text-slate-800 dark:text-white">Carrinho de Compras</h3>
+                {(() => {
+                  const count = selectedPurchaseForItems.type === PurchaseType.GENERAL
+                    ? (selectedPurchaseForItems.generalItems?.length || 0)
+                    : selectedPurchaseForItems.type === PurchaseType.SOLE
+                    ? (selectedPurchaseForItems.soleItems?.length || 0)
+                    : (selectedPurchaseForItems.items?.length || 0);
+                  return (
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                      {count} {count === 1 ? 'item' : 'itens'}
+                    </p>
+                  );
+                })()}
+              </div>
+              <button
+                type="button"
+                title="Fechar"
+                aria-label="Fechar carrinho de compras"
+                onClick={() => setSelectedPurchaseForItems(null)}
+                className="p-1 text-slate-400 hover:text-slate-600"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="flex flex-col gap-2 overflow-y-auto">
+              {selectedPurchaseForItems.type === PurchaseType.GENERAL
+                ? selectedPurchaseForItems.generalItems?.map((item, idx) => renderGeneralItemRow(item, idx))
+                : selectedPurchaseForItems.type === PurchaseType.SOLE
+                ? selectedPurchaseForItems.soleItems?.map((item: any, idx) => renderPurchaseItemRow(item, idx))
+                : selectedPurchaseForItems.items?.map((item: any, idx) => renderPurchaseItemRow(item, idx))}
+            </div>
+            <div className="flex items-center justify-between gap-2 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total</span>
+              <h3 className="font-black text-base tracking-tight text-rose-500 dark:text-rose-400">
+                R$ {selectedPurchaseForItems.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </h3>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between pt-4">
         <div>
           <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
@@ -149,6 +331,14 @@ export default function PurchasesView({
           <p className="text-xs text-slate-500 font-medium">
             Histórico de entradas
           </p>
+          {totalPendingTermPurchases > 0 && (
+            <div className="flex items-center gap-1.5 mt-2 px-2.5 py-1 rounded-lg w-fit bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <span className="text-[8px] font-black uppercase tracking-widest">Pendente a prazo</span>
+              <span className="text-[11px] font-black tracking-tight">
+                R$ {totalPendingTermPurchases.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          )}
         </div>
         <button
           onClick={onAdd}
@@ -224,8 +414,10 @@ export default function PurchasesView({
       <div className="flex flex-col gap-3 mt-2">
         {filteredPurchases.map((purchase) => {
           const supplier = suppliers.find((s) => s.id === purchase.supplierId);
-          const itemCount = purchase.type === PurchaseType.GENERAL 
+          const itemCount = purchase.type === PurchaseType.GENERAL
             ? (purchase.generalItems?.length || 0)
+            : purchase.type === PurchaseType.SOLE
+            ? (purchase.soleItems?.length || 0)
             : (purchase.items?.length || 0);
           
           const isLate = purchase.dueDate && new Date(purchase.dueDate) < new Date() && purchase.paymentStatus !== PaymentStatus.PAID;
@@ -236,152 +428,111 @@ export default function PurchasesView({
               onClick={() => onEdit(purchase.id)}
               className={`p-5 rounded-[1.5rem] border flex flex-col gap-4 relative overflow-hidden group cursor-pointer ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}
             >
-              <div className="flex justify-between items-start z-10 gap-4">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${purchase.type === PurchaseType.REPLENISHMENT ? "bg-indigo-600 text-white shadow-indigo-200" : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"}`}
-                  >
-                    {purchase.type === PurchaseType.REPLENISHMENT ? (
-                      <Package size={28} strokeWidth={2.5} />
-                    ) : (
-                      <ShoppingCart size={28} strokeWidth={2.5} />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <h3
-                      className={`font-black text-base tracking-tight leading-none truncate mb-1 ${isDarkMode ? "text-white" : "text-slate-900"}`}
-                    >
-                      {supplier?.name || "Fornecedor"}
-                    </h3>
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center gap-2">
-                        {purchase.sellerName && (
-                          <span className="text-[7px] font-bold px-2 py-0.5 rounded-md leading-none tracking-wider bg-indigo-600 text-white shadow-sm">
-                            {purchase.sellerName}
-                          </span>
-                        )}
-                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-bold text-slate-400 tracking-wider mt-0.5">
-                          <Calendar size={12} strokeWidth={3} />
-                          {purchase.date ? (
-                          (() => {
-                            const d = new Date(purchase.date);
-                            return isNaN(d.getTime()) ? "Data Inválida" : format(d, "dd MMM yyyy", { locale: ptBR });
-                          })()
-                        ) : "Sem Data"}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-[9px] text-indigo-500 dark:text-indigo-400 font-bold tracking-wider">
-                        <Hash size={12} strokeWidth={3} />
-                        #{purchase.batchNumber || purchase.id.slice(-6).toUpperCase()}
-                      </div>
-                    </div>
-                  </div>
+              {/* Linha 1: ícone + info + total/badges */}
+              <div className="flex items-start gap-3 z-10">
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${purchase.type === PurchaseType.REPLENISHMENT ? "bg-indigo-600 text-white shadow-indigo-200" : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"}`}>
+                  {purchase.type === PurchaseType.REPLENISHMENT ? (
+                    <Package size={28} strokeWidth={2.5} />
+                  ) : (
+                    <ShoppingCart size={28} strokeWidth={2.5} />
+                  )}
                 </div>
 
-                <div className="flex flex-col items-end gap-2 shrink-0">
-                  <div className="flex flex-col gap-1.5 items-end">
-                    {purchase.dueDate && purchase.paymentStatus === PaymentStatus.PENDING && (
-                      <span className={`px-2 py-0.5 rounded-lg text-[8px] font-bold tracking-wider ${isLate ? 'bg-rose-50 text-rose-500' : 'bg-amber-50 text-amber-500'}`}>
-                        Venc: {purchase.dueDate ? format(new Date(purchase.dueDate), "dd/MM/yyyy") : 'Inválida'}
-                      </span>
-                    )}
-                    {purchase.generateTransaction === false && <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-500 text-[8px] font-bold tracking-wider">Não Contábil</span>}
-                    {purchase.paymentTerm === PaymentTerm.CASH ? (
-                      <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-500 text-[8px] font-bold tracking-wider">Compra • Quitada</span>
-                    ) : (
-                      <span className={`px-2 py-0.5 rounded-lg text-[8px] font-bold tracking-wider ${purchase.paymentStatus === PaymentStatus.PAID ? 'bg-emerald-50 text-emerald-500' : 'bg-amber-50 text-amber-500'}`}>
-                        {purchase.paymentStatus === PaymentStatus.PAID ? 'Compra • Quitada' : 'Compra • Prazo'}
-                      </span>
-                    )}
+                {/* Centro: nome + data + lote */}
+                <div className="flex-1 min-w-0 flex flex-col gap-1">
+                  <h3 className={`font-black text-[15px] uppercase tracking-tight leading-snug ${isDarkMode ? "text-white" : "text-slate-900"}`}>
+                    {supplier?.name || "Fornecedor"}
+                  </h3>
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-400">
+                    <Calendar size={12} strokeWidth={3} />
+                    {purchase.date ? (
+                      (() => {
+                        const d = new Date(purchase.date);
+                        return isNaN(d.getTime()) ? "Data Inválida" : format(d, "dd MMM yyyy", { locale: ptBR }).toUpperCase();
+                      })()
+                    ) : "Sem Data"}
                   </div>
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                    <Hash size={12} strokeWidth={3} />
+                    #{purchase.batchNumber || purchase.id.slice(-6).toUpperCase()}
+                  </div>
+                  {purchase.sellerName && (
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-md leading-none tracking-wider bg-indigo-600 text-white shadow-sm w-fit mt-0.5">
+                      {purchase.sellerName}
+                    </span>
+                  )}
+                </div>
+
+                {/* Direita: total + tipo + status */}
+                <div className="flex flex-col items-end gap-1.5 shrink-0">
+                  <h3 className="font-black text-base text-rose-500 dark:text-rose-400 leading-none">
+                    R$ {purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </h3>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    {purchase.type === PurchaseType.REPLENISHMENT ? 'Reposição' : purchase.type === PurchaseType.SOLE ? 'Solados' : 'Geral'}
+                  </span>
+                  {purchase.dueDate && purchase.paymentStatus === PaymentStatus.PENDING && (
+                    <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold tracking-wider ${isLate ? 'bg-rose-50 text-rose-500' : 'animate-pulse-orange-yellow'}`}>
+                      Venc: {format(new Date(purchase.dueDate), "dd/MM/yy")}
+                    </span>
+                  )}
+                  {purchase.generateTransaction === false && (
+                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-500 text-[10px] font-bold tracking-wider">Não Contábil</span>
+                  )}
+                  {purchase.paymentTerm === PaymentTerm.CASH ? (
+                    <span className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-black tracking-wider">Quitada</span>
+                  ) : (
+                    <span className={`px-2 py-1 rounded-lg text-[10px] font-black tracking-wider ${purchase.paymentStatus === PaymentStatus.PAID ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : 'animate-pulse-orange-yellow'}`}>
+                      {purchase.paymentStatus === PaymentStatus.PAID ? 'Quitada' : 'Pendente'}
+                    </span>
+                  )}
                 </div>
               </div>
 
-              {/* Content Row: Summary & Large Price */}
-              <div className="flex justify-between items-end z-10 gap-6 mt-1">
-                <div className="flex-1 flex flex-col gap-2">
-                   {/* Checks Button (More visible highlight) */}
-                    {purchase.checks && purchase.checks.length > 0 && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedPurchaseForChecks(purchase);
-                            setIsChecksModalOpen(true);
-                          }}
-                          title="Ver Histórico de Cheques"
-                          aria-label="Ver Histórico de Cheques"
-                          className={`py-2 px-3 rounded-xl border flex items-center gap-2 text-[8px] font-black tracking-widest transition-all active:scale-[0.98] w-fit ${
-                            isDarkMode 
-                              ? 'bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/20' 
-                              : 'bg-blue-50 border-blue-100 text-blue-600 hover:bg-blue-100 shadow-sm'
-                          }`}
-                        >
-                          <Clipboard size={14} strokeWidth={3} />
-                          Histórico de Cheques
-                        </button>
-                    )}
-                    <span className="text-[10px] font-bold text-slate-400 tracking-widest leading-none">
-                       {itemCount} {itemCount === 1 ? 'Lançamento' : 'Lançamentos'}
-                    </span>
-                    
-                    {/* Items List Preview */}
-                    <div className="flex flex-col gap-2 mt-2">
-                      {purchase.items?.slice(0, 5).map((item: any, idx) => {
-                        const isSole = 'moldId' in item;
-                        if (isSole) {
-                          const soleItem = item as any;
-                          const totalPairs = Object.values(soleItem.quantities || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
-                          return (
-                            <div key={idx} className="flex flex-col gap-1 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <Package size={12} className="text-indigo-500" />
-                                  <span className="text-[10px] font-black uppercase tracking-tight">{soleItem.moldName}</span>
-                                  <span className="text-[9px] text-slate-400">•</span>
-                                  <span className="text-[10px] font-bold text-slate-500">{soleItem.colorName}</span>
-                                </div>
-                                <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400">{totalPairs} pares</span>
-                              </div>
-                              <div className="flex flex-wrap gap-x-2 gap-y-1 mt-0.5">
-                                {Object.entries(soleItem.quantities || {}).map(([size, qty]) => {
-                                  const q = qty as number;
-                                  return q > 0 && (
-                                    <div key={size} className="flex items-center gap-0.5 text-[8px] font-black uppercase">
-                                      <span className="text-slate-400">{size}:</span>
-                                      <span className="text-slate-600 dark:text-slate-300">{q}</span>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        } else {
-                          const genItem = item as any;
-                          return (
-                            <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
-                              <div className="flex items-center gap-2">
-                                <Tag size={12} className="text-slate-400" />
-                                <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 truncate">{genItem.description}</span>
-                              </div>
-                              <span className="text-[9px] font-black text-slate-400">{genItem.quantity} un</span>
-                            </div>
-                          );
-                        }
-                      })}
-                      {(purchase.items?.length || 0) > 5 && (
-                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest ml-2 italic">
-                          + {(purchase.items?.length || 0) - 5} outros itens
-                        </span>
-                      )}
-                    </div>
-                </div>
+              {/* Conteúdo: cheques + itens */}
+              <div className="flex flex-col z-10 gap-2">
+                {purchase.checks && purchase.checks.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedPurchaseForChecks(purchase);
+                      setIsChecksModalOpen(true);
+                    }}
+                    title="Ver Histórico de Cheques"
+                    aria-label="Ver Histórico de Cheques"
+                    className={`py-2 px-3 rounded-xl border flex items-center gap-2 text-xs font-black tracking-widest transition-all active:scale-[0.98] w-fit ${
+                      isDarkMode
+                        ? 'bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/20'
+                        : 'bg-blue-50 border-blue-100 text-blue-600 hover:bg-blue-100 shadow-sm'
+                    }`}
+                  >
+                    <Clipboard size={14} strokeWidth={3} />
+                    Histórico de Cheques
+                  </button>
+                )}
 
-                {/* Price Display (Right) */}
-                <div className="flex flex-col items-end shrink-0 justify-end min-w-fit">
-                   <h3 className={`font-black text-xs tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                      R$ {purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                   </h3>
-                </div>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedPurchaseForItems(purchase);
+                  }}
+                  title="Ver carrinho de compras completo"
+                  aria-label="Ver carrinho de compras completo"
+                  className="flex flex-col gap-1.5 text-left rounded-2xl -mx-1 px-1 py-1 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40 active:scale-[0.99]"
+                >
+                  {purchase.type === PurchaseType.GENERAL
+                    ? purchase.generalItems?.slice(0, 5).map((item, idx) => renderGeneralItemRow(item, idx))
+                    : purchase.type === PurchaseType.SOLE
+                    ? purchase.soleItems?.slice(0, 5).map((item: any, idx) => renderPurchaseItemRow(item, idx))
+                    : purchase.items?.slice(0, 5).map((item: any, idx) => renderPurchaseItemRow(item, idx))}
+                  {itemCount > 5 && (
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 italic">
+                      + {itemCount - 5} outros itens
+                    </span>
+                  )}
+                </button>
               </div>
 
               {/* Action Bar (Footer) */}
@@ -389,7 +540,8 @@ export default function PurchasesView({
                 <div className="flex items-center">
                   {/* Note Modal Toggle */}
                   {purchase.notes && (
-                    <button 
+                    <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedNote(purchase.notes || "");
@@ -406,8 +558,29 @@ export default function PurchasesView({
 
                 {/* Actions Group (Floating Island) */}
                 <div className="flex items-center gap-1.5 p-1.5 rounded-full bg-slate-50/80 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 shadow-sm backdrop-blur-md relative">
+                  {/* PDF Export Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => handleOpenExport(e, purchase, 'pdf')}
+                    className="w-10 h-10 flex items-center justify-center bg-rose-50 dark:bg-rose-500/10 text-rose-500 rounded-full font-black text-[10px] tracking-tighter active:scale-90 transition-all"
+                    title="Exportar PDF"
+                  >
+                    PDF
+                  </button>
+
+                  {/* JPG Export Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => handleOpenExport(e, purchase, 'jpg')}
+                    className="w-10 h-10 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 rounded-full font-black text-[10px] tracking-tighter active:scale-90 transition-all"
+                    title="Exportar JPG"
+                  >
+                    JPG
+                  </button>
+
                   {/* Edit Button */}
-                  <button 
+                  <button
+                    type="button"
                     onClick={(e) => { e.stopPropagation(); onEdit(purchase.id); }}
                     className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-blue-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
                     title="Editar"
@@ -416,7 +589,8 @@ export default function PurchasesView({
                   </button>
 
                   {/* Delete Button */}
-                  <button 
+                  <button
+                    type="button"
                     onClick={(e) => { e.stopPropagation(); setItemToDelete(purchase.id); }}
                     className="w-10 h-10 flex items-center justify-center bg-white dark:bg-slate-700 text-rose-500 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
                     title="Excluir"
@@ -478,6 +652,16 @@ export default function PurchasesView({
           />
         );
       })()}
+
+      <ExportNoteModal
+        isOpen={exportModal.isOpen}
+        onClose={() => setExportModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={handleConfirmExport}
+        isDarkMode={isDarkMode}
+        initialFormat={exportModal.format}
+        title="Exportar Compra"
+        showValuesToggle
+      />
     </div>
   );
 }

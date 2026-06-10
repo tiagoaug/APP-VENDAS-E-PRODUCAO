@@ -1,7 +1,8 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { PaymentMethod } from '../types';
 import { Plus, CreditCard, Trash2, Edit, DollarSign, Zap, Copy } from 'lucide-react';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { toast } from '../utils/toast';
 
 interface PaymentMethodsViewProps {
   methods: PaymentMethod[];
@@ -26,7 +27,7 @@ export default function PaymentMethodsView({ methods, onAdd, onEdit, onDelete, i
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    alert('Copiado!');
+    toast.show('Copiado!');
   };
 
   const handleDeleteClick = (id: string) => {

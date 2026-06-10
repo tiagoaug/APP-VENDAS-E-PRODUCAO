@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+﻿import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, ComponentConsumption, ComponentCategory, FlowTag, Sector, AppModulesConfig } from '../types';
 import {
@@ -12,6 +12,8 @@ import CalculatorModal from '../components/CalculatorModal';
 import EngineeringEditor from '../components/EngineeringEditor';
 import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
+import { toast } from '../utils/toast';
+import { generateId } from '../utils/id';
 
 interface ProductFormViewProps {
   productId: string | null;
@@ -35,6 +37,11 @@ interface ProductFormViewProps {
 
 export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, productionConfigs, flowTags, onSave, onSaveOnly, onCancel, onSaveConfigItem, isDarkMode, sectors, modulesConfig, restrictedProductMode = false, module = 'SALES' }: ProductFormViewProps) {
   const existingProduct = useMemo(() => products.find(p => p.id === productId), [productId, products]);
+  // Fixa o id do produto no momento em que o formulário é aberto: ao criar um modelo novo
+  // (productId nulo), o primeiro salvamento gera um id aleatório e os salvamentos
+  // seguintes (ex.: "Adicionar Próxima Cor", que salva a cada cor) precisam reaproveitar
+  // esse mesmo id — caso contrário cada save gera um novo documento duplicado no Firestore.
+  const productIdRef = useRef<string | null>(existingProduct?.id || null);
   const productCategories = useMemo(() => categories.filter(c => c.type === CategoryType.PRODUCT), [categories]);
   const molds = useMemo(() => productionConfigs.filter(c => c.type === 'MOLD'), [productionConfigs]);
   const materials = useMemo(() => productionConfigs.filter(c => c.type === 'MATERIAL'), [productionConfigs]);
@@ -187,7 +194,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       selectedColor = colors[0] || { id: 'default', name: 'Nova Cor', hex: '#000000' } as ColorValue;
     }
     const newVar: Variation = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: generateId(),
       color: selectedColor.hex,
       colorName: selectedColor.name,
       minStock: 5,
@@ -230,11 +237,13 @@ export default function ProductFormView({ productId, products, grids, suppliers,
 
   const buildProductData = (): Product | null => {
     if (!name || !reference) {
-      alert('Por favor preencha nome e referência.');
+      toast.show('Por favor preencha nome e referência.');
       return null;
     }
+    const id = existingProduct?.id || productIdRef.current || generateId();
+    productIdRef.current = id;
     return {
-      id: existingProduct?.id || Math.random().toString(36).substr(2, 9),
+      id,
       name,
       reference,
       supplierId,
@@ -287,7 +296,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
         const migrated: ComponentConsumption[] = v.techSheet.map(ts => {
           const material = productionConfigs.find(c => c.id === ts.configItemId);
           return {
-            id: ts.id || Math.random().toString(36).substr(2, 9),
+            id: ts.id || generateId(),
             category: 'TRIMMING', // Default to trimming for legacy
             name: material?.name || 'Item Migrado',
             materialId: ts.configItemId,
@@ -382,6 +391,19 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               exit={{ opacity: 0, x: 20 }}
               className="flex flex-col gap-6"
             >
+              {/* Product identity strip */}
+              {(reference || name) && (
+                <div className={`flex items-center gap-2.5 px-3 py-2 rounded-2xl ${isDarkMode ? 'bg-slate-800/60' : 'bg-slate-100/80'}`}>
+                  <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-indigo-900/50' : 'bg-indigo-100'}`}>
+                    <Package size={13} className="text-indigo-600 dark:text-indigo-400" />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    {reference && <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest leading-none">{reference}</span>}
+                    {name && <span className={`text-[11px] font-black uppercase tracking-tight leading-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{name}</span>}
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-between mb-2 px-2">
                 <button
                   onClick={() => setActiveVariationIndex(null)}
@@ -534,6 +556,98 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                             />
                           </div>
                         </div>
+
+                        {/* Observações por Setor */}
+                        {sectors.length > 0 && (
+                          <div className={`rounded-2xl border-2 overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                            {/* Header do card */}
+                            <div className={`flex items-center gap-2 px-4 py-3 border-b ${isDarkMode ? 'border-slate-800 bg-slate-800/40' : 'border-slate-100 bg-slate-50'}`}>
+                              <div className="w-6 h-6 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center">
+                                <Factory size={12} className="text-indigo-600 dark:text-indigo-400" />
+                              </div>
+                              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Instruções por Setor</span>
+                            </div>
+                            {/* Lista de setores */}
+                            <div className="flex flex-col divide-y divide-slate-100 dark:divide-slate-800">
+                              {sectors.map(sector => {
+                                const notes = v.sectorNotes?.[sector.id] || [];
+                                const addNote = () => {
+                                  const newMap = { ...(v.sectorNotes || {}) };
+                                  newMap[sector.id] = [...(newMap[sector.id] || []), { id: Math.random().toString(36).slice(2), name: '', text: '' }];
+                                  updateVariation(activeVariationIndex, { sectorNotes: newMap });
+                                };
+                                const removeNote = (noteId: string) => {
+                                  const newMap = { ...(v.sectorNotes || {}) };
+                                  newMap[sector.id] = (newMap[sector.id] || []).filter(n => n.id !== noteId);
+                                  if (newMap[sector.id].length === 0) delete newMap[sector.id];
+                                  updateVariation(activeVariationIndex, { sectorNotes: newMap });
+                                };
+                                const updateNote = (noteId: string, field: 'name' | 'text', val: string) => {
+                                  const newMap = { ...(v.sectorNotes || {}) };
+                                  newMap[sector.id] = (newMap[sector.id] || []).map(n => n.id === noteId ? { ...n, [field]: val.toUpperCase() } : n);
+                                  updateVariation(activeVariationIndex, { sectorNotes: newMap });
+                                };
+                                return (
+                                  <div key={sector.id}>
+                                    {/* Setor header row */}
+                                    <div className={`flex items-center justify-between px-4 py-2.5 ${notes.length > 0 ? isDarkMode ? 'bg-slate-800/30' : 'bg-slate-50/80' : ''}`} style={{ borderLeft: `3px solid ${sector.color || '#6366f1'}` }}>
+                                      <div className="flex items-center gap-2">
+                                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: sector.color || '#6366f1' }} />
+                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">{sector.name}</span>
+                                        {notes.length > 0 && (
+                                          <span className="text-[8px] font-black px-1.5 py-0.5 rounded-full text-white" style={{ backgroundColor: sector.color || '#6366f1' }}>{notes.length}</span>
+                                        )}
+                                      </div>
+                                      <button
+                                        type="button"
+                                        title={`Adicionar instrução para ${sector.name}`}
+                                        onClick={addNote}
+                                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all hover:opacity-80"
+                                        style={{ backgroundColor: `${sector.color || '#6366f1'}20`, color: sector.color || '#6366f1' }}
+                                      >
+                                        <Plus size={10} strokeWidth={3} /> Adicionar
+                                      </button>
+                                    </div>
+                                    {/* Notes list */}
+                                    {notes.length > 0 && (
+                                      <div className={`flex flex-col gap-2 px-4 py-3 ${isDarkMode ? 'bg-slate-950/60' : 'bg-slate-50'}`}>
+                                        {notes.map((note) => (
+                                          <div key={note.id} className={`flex items-start gap-2 p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+                                            <div className="flex flex-col gap-1 flex-1 min-w-0">
+                                              <input
+                                                type="text"
+                                                placeholder="IDENTIFICADOR (ex: BORDADO)"
+                                                className={`w-full bg-transparent border-none outline-none text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-indigo-400 placeholder:text-slate-700' : 'text-indigo-600 placeholder:text-slate-300'}`}
+                                                value={note.name}
+                                                onChange={(e) => updateNote(note.id, 'name', e.target.value)}
+                                              />
+                                              <div className={`w-full h-px ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                                              <input
+                                                type="text"
+                                                placeholder="Descrição da instrução..."
+                                                className={`w-full bg-transparent border-none outline-none text-[11px] font-bold ${isDarkMode ? 'text-white placeholder:text-slate-700' : 'text-slate-800 placeholder:text-slate-300'}`}
+                                                value={note.text}
+                                                onChange={(e) => updateNote(note.id, 'text', e.target.value)}
+                                              />
+                                            </div>
+                                            <button
+                                              type="button"
+                                              title="Remover instrução"
+                                              onClick={() => removeNote(note.id)}
+                                              className="shrink-0 p-1 rounded-lg text-slate-300 hover:text-rose-500 transition-colors mt-0.5"
+                                            >
+                                              <X size={12} />
+                                            </button>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -617,7 +731,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                           onClick={() => {
                             setConsumptionCategory('CUTTING_PIECE');
                             setEditingConsumption({
-                              id: Math.random().toString(36).substr(2, 9),
+                              id: generateId(),
                               category: 'CUTTING_PIECE',
                               name: '',
                               materialId: '',
@@ -778,7 +892,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                               onClick={() => {
                                 setConsumptionCategory(group.cat);
                                 setEditingConsumption({
-                                  id: Math.random().toString(36).substr(2, 9),
+                                  id: generateId(),
                                   category: group.cat,
                                   name: '',
                                   materialId: '',

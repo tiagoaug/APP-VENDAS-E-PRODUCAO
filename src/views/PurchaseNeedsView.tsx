@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+﻿import React, { useState, useMemo } from 'react';
 import {
   ShoppingCart, ChevronLeft, Package, Layers, Clock,
   CheckCircle, Truck, Circle, ArrowUpRight, ChevronDown, ChevronUp,
@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PurchaseRequest, PurchaseRequestStatus, ViewType } from '../types';
+import { generateId } from '../utils/id';
 
 interface PurchaseNeedsViewProps {
   purchaseRequests: PurchaseRequest[];
@@ -220,7 +221,7 @@ export default function PurchaseNeedsView({
         requestId: req.id,
         initialDescription: `Compra de ${req.name} para produção`,
         initialGeneralItems: [{
-          id: Math.random().toString(36).substr(2, 9),
+          id: generateId(),
           description: req.name,
           materialId: req.materialId,
           quantity: remainingQty,

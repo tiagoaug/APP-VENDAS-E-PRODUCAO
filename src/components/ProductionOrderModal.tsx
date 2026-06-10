@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+﻿import { useState, useMemo } from 'react';
 import {
   Sale, Product, ProductionOrder, ProductionOrderItem,
   ProductionLot, SaleType, Sector, Grid
@@ -7,6 +7,7 @@ import {
   X, Factory, Package, CheckCircle2, Layers,
   ArrowRight, Warehouse, Wrench, Calendar, User, AlertCircle
 } from 'lucide-react';
+import { generateId } from '../utils/id';
 
 interface StockDeduction {
   productId: string;
@@ -133,7 +134,7 @@ export default function ProductionOrderModal({
     setIsSaving(true);
     setError(null);
     try {
-      const orderId = Math.random().toString(36).substr(2, 9);
+      const orderId = generateId();
       const orderNum = `OP #${String(existingOrdersCount + 1).padStart(3, '0')}`;
 
       const items: ProductionOrderItem[] = computed.map(g => ({
@@ -182,7 +183,7 @@ export default function ProductionOrderModal({
         }
 
         const lot: ProductionLot = {
-          id: Math.random().toString(36).substr(2, 9),
+          id: generateId(),
           orderNumber: `Lote #${String(existingLotsCount + lots.length + 1).padStart(3, '0')}`,
           saleId: sale.id,
           productionOrderId: orderId,

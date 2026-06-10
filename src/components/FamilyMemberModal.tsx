@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { FamilyMember } from '../types';
 import { X, User } from 'lucide-react';
+import { toast } from '../utils/toast';
 
 interface FamilyMemberModalProps {
   isOpen: boolean;
@@ -24,7 +25,7 @@ export default function FamilyMemberModal({ isOpen, onClose, onSave, member }: F
 
   const handleSave = () => {
     if (!name) {
-      alert('Nome é obrigatório');
+      toast.show('Nome é obrigatório');
       return;
     }
     onSave({ name, isPersonal: true });

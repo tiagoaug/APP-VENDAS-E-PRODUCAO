@@ -45,7 +45,7 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
         )}
         <input
           type="text"
-          className="flex-1 bg-transparent border-none outline-none text-[12px] font-black uppercase tracking-widest placeholder:text-slate-400 dark:placeholder:text-slate-500 min-w-0"
+          className={`flex-1 bg-transparent border-none outline-none text-[12px] font-black uppercase tracking-widest min-w-0 ${selectedOption ? 'placeholder:text-slate-700 dark:placeholder:text-slate-200' : 'placeholder:text-slate-500 dark:placeholder:text-slate-400'}`}
           placeholder={selectedOption ? selectedOption.name : placeholder}
           value={isOpen ? search : ""}
           onChange={(e) => {

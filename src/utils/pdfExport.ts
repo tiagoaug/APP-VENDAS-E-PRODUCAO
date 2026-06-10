@@ -1,8 +1,9 @@
-import { Share } from '@capacitor/share';
+﻿import { Share } from '@capacitor/share';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
 import { jsPDF } from 'jspdf';
 import type { ProductionLot, Product, ProductionConfigItem, ServiceOrder } from '../types';
+import { toast } from './toast';
 
 // ─── Shared A4 Lot/Sector Sheet Printer ──────────────────────────────────────
 
@@ -196,7 +197,6 @@ export const sharePDF = async (doc: jsPDF, filename: string) => {
       // Share the file
       await Share.share({
         title: filename,
-        text: 'Arquivo PDF gerado pelo App Vendas e Produção',
         url: result.uri,
       });
     } catch (error) {
@@ -205,7 +205,7 @@ export const sharePDF = async (doc: jsPDF, filename: string) => {
       try {
         doc.save(filename);
       } catch (e) {
-        alert('Erro ao compartilhar PDF. Tente novamente.');
+        toast.show('Erro ao compartilhar PDF. Tente novamente.');
       }
     }
   }
@@ -249,7 +249,6 @@ export const shareImage = async (base64: string, filename: string) => {
 
       await Share.share({
         title: filename,
-        text: 'Imagem gerada pelo App Vendas e Produção',
         url: result.uri,
       });
     } catch (error) {
@@ -272,7 +271,7 @@ export const shareImage = async (base64: string, filename: string) => {
         document.body.removeChild(link);
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       } catch (fallbackError) {
-        alert('Erro ao compartilhar imagem. Tente novamente.');
+        toast.show('Erro ao compartilhar imagem. Tente novamente.');
       }
     }
   }

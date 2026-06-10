@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { Transaction, TransactionType, TransactionItem, Category, CategoryType, Account, Person, FamilyMember } from '../types';
 import { X, Calendar, DollarSign, Tag, Wallet, User, CheckCircle2, Clock, Users, Calculator as CalculatorIcon, Plus, ChevronDown, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import CalculatorPopover from './CalculatorPopover';
 import ComboBox from './ComboBox';
+import { toast } from '../utils/toast';
+import { generateId } from '../utils/id';
 
 interface TransactionModalProps {
   isOpen: boolean;
@@ -93,7 +95,7 @@ export default function TransactionModal({
 
   const addItem = () => {
     const newItem: TransactionItem = {
-      id: Math.random().toString(36).substr(2, 9),
+      id: generateId(),
       description: '',
       amount: 0
     };
@@ -120,7 +122,7 @@ export default function TransactionModal({
 
   const handleSave = () => {
     if (!description || !(Number(amount) > 0) || !categoryId || !accountId) {
-      alert('Preencha todos os campos obrigatórios (valor deve ser maior que zero)');
+      toast.show('Preencha todos os campos obrigatórios (valor deve ser maior que zero)');
       return;
     }
 

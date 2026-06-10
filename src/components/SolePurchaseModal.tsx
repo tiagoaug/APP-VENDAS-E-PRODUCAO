@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+﻿import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, Save, ShoppingCart, Users, CreditCard, 
   Calendar as CalendarIcon, Hash, Package, Palette, 
@@ -11,6 +11,8 @@ import {
   PaymentStatus, SolePurchaseItem, TransactionType
 } from '../types';
 import { format } from 'date-fns';
+import { toast } from '../utils/toast';
+import { parseLocaleNumber } from '../utils/numbers';
 
 interface SolePurchaseModalProps {
   isOpen: boolean;
@@ -27,6 +29,7 @@ interface SolePurchaseModalProps {
     moldId?: string;
     colorId?: string;
     initialGrid?: Record<string, number>;
+    items?: { moldId: string; colorId?: string; initialGrid?: Record<string, number> }[];
     description?: string;
     requestId?: string;
   };
@@ -94,7 +97,33 @@ export default function SolePurchaseModal({
 
   // Pre-fill from initialParams
   useEffect(() => {
-    if (isOpen && initialParams?.moldId) {
+    if (isOpen && initialParams?.items && initialParams.items.length > 0) {
+      // Múltiplos solados agrupados em uma única compra (ex: seleção em lote no PCP)
+      const newItems: SolePurchaseItem[] = [];
+      let firstSupplierId = '';
+      initialParams.items.forEach(p => {
+        const mold = molds.find(m =>
+          m.id === p.moldId ||
+          m.name.toLowerCase() === String(p.moldId).toLowerCase()
+        );
+        if (!mold) return;
+        if (!firstSupplierId && mold.metadata?.supplierId) firstSupplierId = mold.metadata.supplierId;
+        const initialQuantities = p.initialGrid || {};
+        const unitCost = mold.metadata?.unitCost || 0;
+        newItems.push({
+          moldId: mold.id,
+          moldName: mold.name,
+          colorId: p.colorId || '',
+          colorName: p.colorId ? (colorOptions.find(c => c.id === p.colorId)?.name || '') : '',
+          quantities: initialQuantities,
+          unitCost,
+          totalCost: Object.values(initialQuantities).reduce((a: number, b: any) => a + (Number(b) || 0), 0) * unitCost
+        });
+      });
+      setItems(newItems);
+      setSupplierId(firstSupplierId);
+      setNotes(initialParams.description || '');
+    } else if (isOpen && initialParams?.moldId) {
       const mold = molds.find(m => 
         m.id === initialParams.moldId || 
         m.name.toLowerCase() === String(initialParams.moldId).toLowerCase()
@@ -151,13 +180,6 @@ export default function SolePurchaseModal({
     setItems(prev => [...prev, newItem]);
   };
 
-  const parseNumber = (val: any): number => {
-    if (typeof val === 'number') return val;
-    if (!val) return 0;
-    const normalized = String(val).replace(',', '.');
-    const num = Number(normalized);
-    return isNaN(num) ? 0 : num;
-  };
 
   const updateItem = (index: number, updates: Partial<SolePurchaseItem>) => {
     setItems(prev => {
@@ -166,7 +188,7 @@ export default function SolePurchaseModal({
       
       const totalPairs = Object.values(newItem.quantities || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
       newItem.totalPairs = totalPairs;
-      newItem.totalCost = totalPairs * parseNumber(newItem.unitCost);
+      newItem.totalCost = totalPairs * parseLocaleNumber(newItem.unitCost);
       
       newItems[index] = newItem;
       return newItems;
@@ -177,15 +199,15 @@ export default function SolePurchaseModal({
     setItems(prev => prev.filter((_, i) => i !== index));
   };
 
-  const totalGeral = useMemo(() => items.reduce((sum, item) => sum + (parseNumber(item.totalCost) || 0), 0), [items]);
+  const totalGeral = useMemo(() => items.reduce((sum, item) => sum + (parseLocaleNumber(item.totalCost) || 0), 0), [items]);
 
   const handleSave = async () => {
     if (!supplierId) {
-      alert('Selecione um fornecedor');
+      toast.show('Selecione um fornecedor');
       return;
     }
     if (items.length === 0) {
-      alert('Adicione pelo menos um item');
+      toast.show('Adicione pelo menos um item');
       return;
     }
 
@@ -218,7 +240,7 @@ export default function SolePurchaseModal({
       onClose();
     } catch (err) {
       console.error(err);
-      alert('Erro ao salvar: ' + (err as Error).message);
+      toast.show('Erro ao salvar: ' + (err as Error).message);
     } finally {
       setIsSaving(false);
     }

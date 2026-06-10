@@ -1,10 +1,11 @@
-import React from 'react';
+﻿import React from 'react';
 import { Purchase, Person, CompanyCheck } from '../types';
 import { X, Clipboard, Copy, Landmark, Calendar, DollarSign, Hash, User, AlertCircle, Share2, CheckCircle2, RefreshCcw } from 'lucide-react';
 import { format } from 'date-fns';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { sharePDF } from '../utils/pdfExport';
+import { toast } from '../utils/toast';
 
 interface ChecksModalProps {
   isOpen: boolean;
@@ -47,7 +48,7 @@ export default function ChecksModal({
     const summary = `HISTÓRICO DE CHEQUES - Compra #${purchase.id.slice(-6).toUpperCase()}\nFornecedor: ${supplier?.name || '---'}\nTotal em Cheques: R$ ${checks.reduce((acc: number, c: CompanyCheck) => acc + c.value, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n${checkList}`;
 
     navigator.clipboard.writeText(summary);
-    alert('Registros de cheques copiados!');
+    toast.show('Registros de cheques copiados!');
   };
 
   const downloadPDF = () => {

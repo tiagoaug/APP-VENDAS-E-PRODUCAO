@@ -1577,6 +1577,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
             onClose={() => setLabelModalOpen(false)}
             product={prod}
             isDarkMode={isDarkMode}
+            sectors={sectors}
           />
         );
       })()}

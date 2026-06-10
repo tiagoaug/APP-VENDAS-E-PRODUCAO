@@ -1,10 +1,11 @@
-import { useState, useMemo, useEffect } from 'react';
+﻿import { useState, useMemo, useEffect } from 'react';
 import { ProductionConfigItem, ColorValue, Person, SolePurchaseItem, PurchaseType } from '../types';
 import { 
   ArrowLeft, Plus, Trash2, ShoppingCart, Package, Palette, 
   ChevronDown, Save, X, DollarSign, Calculator, CheckCircle2
 } from 'lucide-react';
 import { firebaseService } from '../services/firebaseService';
+import { toast } from '../utils/toast';
 
 interface SolePurchaseViewProps {
   productionConfigs: ProductionConfigItem[];
@@ -178,7 +179,7 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
     });
 
     if (!selectedSupplierId || itemsWithQuantity.length === 0) {
-      alert('Adicione pelo menos uma quantidade em algum item');
+      toast.show('Adicione pelo menos uma quantidade em algum item');
       return;
     }
 
@@ -249,7 +250,7 @@ export default function SolePurchaseView(props: SolePurchaseViewProps) {
 
     } catch (err) {
       console.error('Erro ao salvar:', err);
-      alert('Erro ao salvar compra: ' + (err as Error).message);
+      toast.show('Erro ao salvar compra: ' + (err as Error).message);
     } finally {
       setIsSaving(false);
     }

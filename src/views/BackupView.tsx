@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+﻿import { useState, useMemo } from 'react';
 import { Database, Download, Upload, AlertTriangle, RefreshCw, Copy, Trash2, CheckCircle2, Eraser, X } from 'lucide-react';
 import { Transaction, Purchase, Sale, ProductionConfigItem, SoleStockEntry } from '../types';
+import { toast } from '../utils/toast';
 
 type SelectiveCategory = 'GRADES' | 'CORES' | 'SETORES' | 'ETAPAS' | 'UNIDADES' | 'PRAZOS' | 'INFESTO' | 'EMBALAGENS' | 'SOLADOS' | 'PECAS' | 'INSUMOS';
 
@@ -115,7 +116,7 @@ export default function BackupView({
       setCleanMessage(`${count} registros duplicados foram removidos com sucesso!`);
     } catch (error) {
       console.error(error);
-      alert('Ocorreu um erro ao limpar os dados.');
+      toast.show('Ocorreu um erro ao limpar os dados.');
     } finally {
       setIsCleaning(false);
     }
@@ -150,7 +151,7 @@ export default function BackupView({
       setTimeout(() => { setSelectiveSuccess(false); setShowSelectiveConfirm(false); }, 3000);
     } catch (error) {
       console.error(error);
-      alert('Erro ao apagar os dados.');
+      toast.show('Erro ao apagar os dados.');
     } finally {
       setIsSelectiveDeleting(false);
     }

@@ -2,19 +2,23 @@ export interface LabelLayout {
   refX: number;
   refY: number;
   refSize: number;
+  refFontFamily?: string;
   qrX: number;
   qrY: number;
   qrSize: number;
   colorX: number;
   colorY: number;
   colorSize: number;
+  colorFontFamily?: string;
   footerX: number;
   footerY: number;
   footerSize: number;
+  footerFontFamily?: string;
   showSize: boolean;
   sizeX: number;
   sizeY: number;
   sizeSize: number;
+  sizeFontFamily?: string;
   showPhoto?: boolean;
   photoX?: number;
   photoY?: number;
@@ -25,6 +29,7 @@ export interface LabelLayout {
   gradeY?: number;
   gradeW?: number;
   gradeH?: number;
+  gradeFontFamily?: string;
   showOsData?: boolean;
   osDataX?: number;
   osDataY?: number;
@@ -32,6 +37,16 @@ export interface LabelLayout {
   osDataH?: number;
   osDataSize?: number;
   osDataText?: string;
+  osDataFontFamily?: string;
+  showSectorNotes?: boolean;
+  sectorNotesX?: number;
+  sectorNotesY?: number;
+  sectorNotesW?: number;
+  sectorNotesH?: number;
+  sectorNotesSize?: number;
+  sectorNotesText?: string; // pre-formatted multi-line text built in the modal
+  sectorNotesHasHeader?: boolean; // true when sectorNotesText has alternating "SETOR — NOME"/texto pairs
+  sectorNotesFontFamily?: string;
 }
 
 export enum SaleType {
@@ -115,8 +130,22 @@ export type Variation = {
   soleMapping?: { [size: string]: string };
   subRef?: string;
   sku?: string;
-  stockPkgId?: string; // Padrão de embalagem associado ao estoque desta variação
+  stockPkgId?: string; // Padrão de embalagem legado (substituído por stockPkgAllocations)
+  stockPkgAllocations?: StockPkgAllocation[]; // Múltiplos padrões de embalagem por variação
   photoUrl?: string;   // Optional photo URL for this variation (used in labels)
+  sectorNotes?: Record<string, SectorNote[]>; // sectorId → list of named notes for that sector
+};
+
+export type SectorNote = {
+  id: string;
+  name: string; // short label/identifier e.g. "BORDADO", "COSTURA ESPECIAL"
+  text: string; // full instruction text
+};
+
+export type StockPkgAllocation = {
+  pkgId: string; // 'AVULSA' para grades sem padrão definido
+  qty: number; // Quantidade de grades neste padrão
+  customBreakdown?: Record<string, number>; // Composição manual para grades avulsas
 };
 
 
@@ -208,6 +237,7 @@ export type Purchase = {
   paymentHistory?: PaymentHistory[];
   isAccounting?: boolean;
   isProductionOrder?: boolean;   // Se true, gera mapa de estoque no PCP
+  productionOrderId?: string;
   sellerId?: string;
   sellerName?: string;
   requestId?: string;
@@ -217,6 +247,7 @@ export type Purchase = {
 
 export enum SaleStatus {
   QUOTE = 'QUOTE',
+  CONFIRMED = 'CONFIRMED',
   SALE = 'SALE',
   CANCELLED = 'CANCELLED'
 }
@@ -239,6 +270,13 @@ export type SaleItem = {
   quantity: number; // pairs or boxes
   price: number;    // preço por grade (atacado) ou por par (varejo)
   unitPrice?: number; // preço por par (atacado)
+  fulfilled?: boolean; // true = estoque já abatido; false/undefined = aguardando estoque
+};
+
+export type SaleExtraItem = {
+  id: string;
+  description: string;
+  value: number;
 };
 
 export type SalePayment = {
@@ -258,8 +296,10 @@ export type Sale = {
   customerId?: string;
   customerName?: string;
   items: SaleItem[];
+  extraItems?: SaleExtraItem[];
   subtotal: number;
   discount: number;
+  discountType?: 'fixed' | 'percentage';
   total: number;
   status: SaleStatus;
   paymentTerm: PaymentTerm;
@@ -277,6 +317,8 @@ export type Sale = {
   isProductionOrder?: boolean;
   saleDestination?: 'CUSTOMER' | 'STOCK';
   isAccounting?: boolean; // false = não gera lançamento financeiro
+  deliveryStatus?: 'PENDING' | 'DELIVERED';
+  deliveredAt?: number;
 };
 
 export type Person = {
@@ -505,7 +547,7 @@ export type ProductionConfigItem = {
     category?: string;
     moldReference?: string;
     hasTransfer?: boolean;
-    colorVariations?: { colorId: string, subRef: string }[];
+    colorVariations?: { colorId: string; colorName?: string; subRef: string }[];
     sizeWeights?: Record<string, number>;
     averageWeight?: number;
     colorWeights?: Record<string, number>;
@@ -600,6 +642,7 @@ export type ProductionOrderItem = {
   totalQuantity: number;
   fromStockQty: number;
   toProductionQty: number;
+  notes?: string;
 };
 
 export type ProductionOrder = {
@@ -669,6 +712,10 @@ export type ProductionLot = {
   gradesQty?: number; // número de grades (caixas) do lote — salvo no ato da criação
   status?: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
   currentSectorId?: string;
+  metadata?: {
+    sourceItems?: Array<{ orderId: string; variationId?: string; variationName?: string; productName?: string }>;
+    [key: string]: unknown;
+  };
 };
 
 export interface ServiceOrder {
@@ -699,6 +746,9 @@ export interface ServiceOrder {
   // Print extras
   productPhotoUrl?: string; // URL of the product/variation photo for label printing
   sizeGrid?: string;        // Human-readable size range, e.g. "37-38-39-40-41"
+  // Navigation helpers (derived from linked lot, not persisted)
+  currentSectorIndex?: number;
+  route?: string[];
 }
 
 

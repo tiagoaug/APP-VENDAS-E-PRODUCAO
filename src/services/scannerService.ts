@@ -1,5 +1,6 @@
-import { BarcodeScanner, BarcodeFormat } from '@capacitor-mlkit/barcode-scanning';
+﻿import { BarcodeScanner, BarcodeFormat } from '@capacitor-mlkit/barcode-scanning';
 import { Capacitor } from '@capacitor/core';
+import { toast } from '../utils/toast';
 
 export const scannerService = {
   async checkPermissions(): Promise<boolean> {
@@ -10,7 +11,7 @@ export const scannerService = {
 
     const request = await BarcodeScanner.requestPermissions();
     if (request.camera !== 'granted') {
-      alert('Permissão de câmera negada. Acesse as configurações do celular e permita o acesso à câmera para este app.');
+      toast.show('Permissão de câmera negada. Acesse as configurações do celular e permita o acesso à câmera para este app.');
       return false;
     }
     return true;
@@ -21,7 +22,7 @@ export const scannerService = {
     try {
       const { available } = await BarcodeScanner.isGoogleBarcodeScannerModuleAvailable();
       if (!available) {
-        alert('Instalando módulo de leitura QR Code. Aguarde alguns segundos e tente novamente.');
+        toast.show('Instalando módulo de leitura QR Code. Aguarde alguns segundos e tente novamente.');
         await BarcodeScanner.installGoogleBarcodeScannerModule();
         // Give it a moment to install
         await new Promise(r => setTimeout(r, 3000));
@@ -48,7 +49,7 @@ export const scannerService = {
 
     const moduleReady = await this.ensureModuleInstalled();
     if (!moduleReady) {
-      alert('Módulo de câmera não disponível. Use a entrada manual.');
+      toast.show('Módulo de câmera não disponível. Use a entrada manual.');
       return null;
     }
 
@@ -70,7 +71,7 @@ export const scannerService = {
         return null;
       }
 
-      alert(`Erro ao abrir câmera: ${msg}\n\nUse a entrada manual abaixo.`);
+      toast.show(`Erro ao abrir câmera: ${msg}\n\nUse a entrada manual abaixo.`);
       return null;
     }
   },

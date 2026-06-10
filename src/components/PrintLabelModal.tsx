@@ -1,9 +1,10 @@
-import React, { useState, useMemo, useEffect } from 'react';
+﻿import React, { useState, useMemo, useEffect } from 'react';
 import { Tag, Check, X, Printer, CheckCircle2, Box, Layers, Settings2 } from 'lucide-react';
 import Modal from './Modal';
 import { Product, Variation, SaleType, LabelLayout } from '../types';
 import { labelService } from '../services/labelService';
 import LabelEditor from './LabelEditor';
+import { toast } from '../utils/toast';
 
 interface PrintLabelModalProps {
   isOpen: boolean;
@@ -79,12 +80,12 @@ export default function PrintLabelModal({ isOpen, onClose, product, isDarkMode }
       }
       
       if (qty > (selectedVariation.stock['WHOLESALE'] || 0)) {
-        alert(`Quantidade indisponível no estoque (Máximo: ${selectedVariation.stock['WHOLESALE'] || 0})`);
+        toast.show(`Quantidade indisponível no estoque (Máximo: ${selectedVariation.stock['WHOLESALE'] || 0})`);
         return;
       }
       
       if (qty <= 0) {
-        alert('Selecione uma quantidade válida.');
+        toast.show('Selecione uma quantidade válida.');
         return;
       }
 

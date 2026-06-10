@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { X, FileText, Send, Check } from 'lucide-react';
+import { X, FileText, Send, DollarSign, EyeOff } from 'lucide-react';
 
 interface ExportNoteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (note: string, format: 'pdf' | 'jpg') => void;
+  onConfirm: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean) => void;
   isDarkMode: boolean;
   title?: string;
   initialFormat?: 'pdf' | 'jpg';
+  /** Quando true, exibe um seletor para incluir ou ocultar valores financeiros no documento exportado */
+  showValuesToggle?: boolean;
 }
 
 const PREDEFINED_NOTES = [
@@ -18,21 +20,24 @@ const PREDEFINED_NOTES = [
   "VALOR SUJEITO A ALTERAÇÃO SEM PRÉVIO AVISO"
 ];
 
-export default function ExportNoteModal({ 
-  isOpen, 
-  onClose, 
-  onConfirm, 
-  isDarkMode, 
+export default function ExportNoteModal({
+  isOpen,
+  onClose,
+  onConfirm,
+  isDarkMode,
   title = "Exportar Documento",
-  initialFormat = 'pdf'
+  initialFormat = 'pdf',
+  showValuesToggle = false
 }: ExportNoteModalProps) {
   const [note, setNote] = useState('');
   const [selectedFormat, setSelectedFormat] = useState<'pdf' | 'jpg'>(initialFormat);
+  const [showFinancialValues, setShowFinancialValues] = useState(true);
 
   // Update selectedFormat if initialFormat changes when modal opens
   React.useEffect(() => {
     if (isOpen) {
       setSelectedFormat(initialFormat);
+      setShowFinancialValues(true);
     }
   }, [isOpen, initialFormat]);
 
@@ -113,6 +118,48 @@ export default function ExportNoteModal({
               );
             })}
           </div>
+
+          {/* Financial Values Toggle */}
+          {showValuesToggle && (
+            <div>
+              <div className="flex items-center gap-2 mb-3 px-1">
+                <DollarSign size={14} className="text-emerald-500" />
+                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">Valores Financeiros</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFinancialValues(prev => !prev)}
+                className={`w-full flex items-center justify-between gap-3 p-4 rounded-3xl border transition-all active:scale-[0.99] ${
+                  isDarkMode
+                    ? 'bg-slate-800/50 border-slate-700'
+                    : 'bg-slate-50 border-slate-100'
+                }`}
+              >
+                <div className="flex items-center gap-3 text-left">
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${
+                    showFinancialValues
+                      ? (isDarkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600')
+                      : (isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500')
+                  }`}>
+                    {showFinancialValues ? <DollarSign size={18} strokeWidth={2.5} /> : <EyeOff size={18} strokeWidth={2.5} />}
+                  </div>
+                  <div>
+                    <p className={`text-[11px] font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                      {showFinancialValues ? 'Mostrar valores' : 'Ocultar valores'}
+                    </p>
+                    <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                      {showFinancialValues ? 'Preços e total aparecerão no documento' : 'Documento será gerado sem preços/total'}
+                    </p>
+                  </div>
+                </div>
+                <div className={`w-12 h-7 rounded-full p-1 flex items-center transition-all shrink-0 ${
+                  showFinancialValues ? 'bg-emerald-500 justify-end' : (isDarkMode ? 'bg-slate-700 justify-start' : 'bg-slate-300 justify-start')
+                }`}>
+                  <div className="w-5 h-5 rounded-full bg-white shadow-sm" />
+                </div>
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Footer Actions */}
@@ -127,7 +174,7 @@ export default function ExportNoteModal({
               Cancelar
             </button>
             <button 
-              onClick={() => onConfirm(note, selectedFormat)}
+              onClick={() => onConfirm(note, selectedFormat, showFinancialValues)}
               className={`flex-[1.5] py-4 text-white rounded-2xl text-[12px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 ${
                 selectedFormat === 'pdf' ? 'bg-rose-500 shadow-rose-500/20' : 'bg-indigo-600 shadow-indigo-600/20'
               }`}

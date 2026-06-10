@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, ReactNode } from "react";
+﻿import { useState, useEffect, useMemo, ReactNode } from "react";
 import {
   LayoutDashboard,
   Package,
@@ -27,6 +27,7 @@ import {
   FileText,
   User as UserIcon,
   AlertCircle,
+  AlertTriangle,
   Scale,
   Printer
 } from "lucide-react";
@@ -119,6 +120,10 @@ import PaymentMethodModal from "./components/PaymentMethodModal";
 import Modal from "./components/Modal";
 import TransactionModal from "./components/TransactionModal";
 import SolePurchaseModal from "./components/SolePurchaseModal";
+import { ToastContainer } from "./components/ToastContainer";
+import { toast } from "./utils/toast";
+import { parseLocaleNumber } from './utils/numbers';
+import { generateId } from './utils/id';
 
 const MODAL_VIEWS = [
   ViewType.PRODUCTS,
@@ -209,7 +214,21 @@ export default function App() {
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [transactionModalType, setTransactionModalType] = useState<TransactionType>(TransactionType.INCOME);
   const [isSolePurchaseModalOpen, setIsSolePurchaseModalOpen] = useState(false);
-  const [solePurchaseParams, setSolePurchaseParams] = useState<any>(null);
+  const [solePurchaseParams, setSolePurchaseParams] = useState<{
+    moldId?: string;
+    colorId?: string;
+    initialGrid?: Record<string, number>;
+    items?: { moldId: string; colorId?: string; initialGrid?: Record<string, number> }[];
+    description?: string;
+    requestId?: string;
+  } | null>(null);
+  const [purchaseDeleteWarning, setPurchaseDeleteWarning] = useState<{
+    purchase: Purchase;
+    request?: PurchaseRequest;
+    order?: ProductionOrder;
+    orderLots: ProductionLot[];
+  } | null>(null);
+  const [isDeletingPurchase, setIsDeletingPurchase] = useState(false);
 
 
   // App State
@@ -698,7 +717,7 @@ export default function App() {
       await firebaseService.saveDocument("purchases", updatedPurchase);
     } catch (e) {
       console.error(e);
-      alert("Erro ao atualizar status do cheque.");
+      toast.show("Erro ao atualizar status do cheque.");
     }
   };
 
@@ -780,7 +799,7 @@ export default function App() {
   const handleDuplicateProduct = async (product: Product) => {
     try {
       const newProduct: Product = JSON.parse(JSON.stringify(product));
-      newProduct.id = Math.random().toString(36).substr(2, 9);
+      newProduct.id = generateId();
       newProduct.name = `${newProduct.name} (Cópia)`;
       newProduct.reference = `${newProduct.reference}-COPY`;
       newProduct.createdAt = Date.now();
@@ -788,15 +807,15 @@ export default function App() {
       // Reset stock in variations to 0 for the copy and give new variation IDs
       newProduct.variations = newProduct.variations.map(v => ({
         ...v,
-        id: Math.random().toString(36).substr(2, 9),
+        id: generateId(),
         stock: Object.keys(v.stock).reduce((acc, key) => ({ ...acc, [key]: 0 }), {})
       }));
 
       await firebaseService.saveDocument("products", newProduct);
-      alert("Modelo duplicado com sucesso!");
+      toast.show("Modelo duplicado com sucesso!");
     } catch (e: any) {
       console.error(e);
-      alert("Erro ao duplicar produto: " + (e.message || e));
+      toast.show("Erro ao duplicar produto: " + (e.message || e));
     }
   };
 
@@ -805,17 +824,17 @@ export default function App() {
     if (!sale) return;
 
     if (sale.status === SaleStatus.CANCELLED) {
-      alert("Esta venda já está cancelada/estornada.");
+      toast.show("Esta venda já está cancelada/estornada.");
       return;
     }
 
     try {
       const updatedSale = { ...sale, status: SaleStatus.CANCELLED };
       await firebaseService.saveDocument("sales", updatedSale);
-      alert("Venda marcada como cancelada (sem estorno).");
+      toast.show("Venda marcada como cancelada (sem estorno).");
     } catch (e: any) {
       console.error(e);
-      alert("Erro ao cancelar venda: " + (e.message || e));
+      toast.show("Erro ao cancelar venda: " + (e.message || e));
     }
   };
 
@@ -830,95 +849,97 @@ export default function App() {
   }, []);
 
   const handleSaveSolePurchase = async (purchase: Purchase, soleItems: SolePurchaseItem[]) => {
-    const parseLocaleNumber = (val: any): number => {
-      if (typeof val === 'number') return val;
-      if (!val) return 0;
-      const normalized = String(val).replace(',', '.');
-      const num = Number(normalized);
-      return isNaN(num) ? 0 : num;
-    };
 
-    console.log('[handleSaveSolePurchase] Starting save...', { purchase, soleItems });
     try {
       if (!purchase || !soleItems) throw new Error("Dados de compra incompletos");
       if (!purchase.date) purchase.date = Date.now();
       if (purchase.total === undefined || purchase.total === null) purchase.total = 0;
-      // 1. Vincular os itens à compra para que apareçam no histórico
-      const purchaseToSave = {
-        ...purchase,
-        items: soleItems // Cast ou ajuste de tipo se necessário
-      };
-      
-      console.log('[handleSaveSolePurchase] Saving purchase doc...');
-      const savedResult = await firebaseService.saveDocument("purchases", purchaseToSave);
-      const finalPurchaseId = (savedResult as any)?.id || purchase.id;
-      console.log('[handleSaveSolePurchase] Purchase saved. ID:', finalPurchaseId);
 
-      if (purchase.registerAsReceived === true) {
-        // 2. Atualizar Estoque de Solados (soleStock)
-        let itemIndex = 0;
-        for (const item of soleItems) {
-          console.log(`[handleSaveSolePurchase] Processing item ${itemIndex}...`, item);
-          // Tenta encontrar entrada existente para este molde/cor
-          const existingEntry = soleStockEntries.find(
-            s => s.moldId === item.moldId && s.colorId === item.colorId
-          );
+      const uid = auth.currentUser?.uid;
+      if (!uid) throw new Error("Usuário não autenticado");
 
-          if (existingEntry) {
-            const updatedStock = { ...existingEntry.stock };
-            Object.entries(item.quantities).forEach(([size, qty]) => {
-              updatedStock[size] = (updatedStock[size] || 0) + qty;
-            });
+      const purchaseToSave = { ...purchase, items: soleItems };
 
-            const totalPairs = Object.values(updatedStock).reduce((acc, curr) => acc + (Number(curr) || 0), 0);
+      // Pre-generate ID so the transaction can reference it for the financial entry
+      const purchaseId = (purchaseToSave as any).id || doc(collection(db, `users/${uid}/purchases`)).id;
+      const finalPurchaseId = purchaseId;
 
-            await firebaseService.updateDocument("soleStock", existingEntry.id, {
-              stock: updatedStock,
-              totalPairs,
-              unitCost: item.unitCost,
-              totalCost: totalPairs * parseLocaleNumber(item.unitCost),
-              purchaseDate: purchase.date,
-              updatedAt: Date.now()
-            });
-          } else {
-            const totalPairs = Object.values(item.quantities).reduce((acc, curr) => acc + (Number(curr) || 0), 0);
-            const newEntry: Omit<SoleStockEntry, 'id'> = {
-              moldId: item.moldId,
-              moldName: item.moldName,
-              colorId: item.colorId,
-              colorName: item.colorName,
-              supplierId: purchase.supplierId,
-              supplierName: people.find(p => p.id === purchase.supplierId)?.name || 'Fornecedor',
-              stock: item.quantities,
-              totalPairs,
-              unitCost: parseLocaleNumber(item.unitCost),
-              totalCost: parseLocaleNumber(item.totalCost),
-              purchaseDate: purchase.date,
-              updatedAt: Date.now()
-            };
-            await firebaseService.saveDocument("soleStock", newEntry);
+      // Atomic: save purchase document + update sole stock in one transaction
+      await firebaseService.runAtomic(async (txn) => {
+        // Reads: load existing sole stock entries we'll need to update
+        const soleStockOpsMap = new Map<string, { ref: any; docSnap: any; isNew: boolean }>();
+        if (purchase.registerAsReceived === true) {
+          for (const item of soleItems) {
+            const key = `${item.moldId}_${item.colorId}`;
+            if (!soleStockOpsMap.has(key)) {
+              const existing = soleStockEntries.find(s => s.moldId === item.moldId && s.colorId === item.colorId);
+              if (existing) {
+                const ref = doc(db, `users/${uid}/soleStock`, existing.id);
+                const docSnap = await txn.get(ref);
+                soleStockOpsMap.set(key, { ref, docSnap, isNew: false });
+              } else {
+                const newRef = doc(collection(db, `users/${uid}/soleStock`));
+                soleStockOpsMap.set(key, { ref: newRef, docSnap: null, isNew: true });
+              }
+            }
           }
         }
-      }
 
-      console.log('[handleSaveSolePurchase] Managing partial receipt...');
+        // Write: purchase document
+        const { id: _id, ...purchasePayload } = purchaseToSave as any;
+        const purchaseRef = doc(db, `users/${uid}/purchases`, purchaseId);
+        txn.set(purchaseRef, purchasePayload, { merge: true });
+
+        // Write: sole stock entries
+        if (purchase.registerAsReceived === true) {
+          for (const item of soleItems) {
+            const key = `${item.moldId}_${item.colorId}`;
+            const op = soleStockOpsMap.get(key);
+            if (!op) continue;
+
+            if (!op.isNew && op.docSnap?.exists()) {
+              const updatedStock = { ...op.docSnap.data().stock };
+              Object.entries(item.quantities).forEach(([size, qty]) => {
+                updatedStock[size] = (updatedStock[size] || 0) + qty;
+              });
+              const totalPairs = Object.values(updatedStock).reduce((acc: number, curr) => acc + (Number(curr) || 0), 0);
+              txn.update(op.ref, {
+                stock: updatedStock, totalPairs,
+                unitCost: item.unitCost,
+                totalCost: totalPairs * parseLocaleNumber(item.unitCost),
+                purchaseDate: purchase.date, updatedAt: Date.now()
+              });
+            } else {
+              const totalPairs = Object.values(item.quantities).reduce((acc: number, curr) => acc + (Number(curr) || 0), 0);
+              txn.set(op.ref, {
+                moldId: item.moldId, moldName: item.moldName,
+                colorId: item.colorId, colorName: item.colorName,
+                supplierId: purchase.supplierId,
+                supplierName: people.find(p => p.id === purchase.supplierId)?.name || 'Fornecedor',
+                stock: item.quantities, totalPairs,
+                unitCost: parseLocaleNumber(item.unitCost),
+                totalCost: parseLocaleNumber(item.totalCost),
+                purchaseDate: purchase.date, updatedAt: Date.now()
+              });
+            }
+          }
+        }
+      });
+
+      // Non-critical: update purchase request status
       if (purchase.registerAsReceived && solePurchaseParams?.requestId) {
         const request = purchaseRequests.find(r => r.id === solePurchaseParams.requestId);
         if (request) {
-          console.log('[handleSaveSolePurchase] Found request:', request.id);
           const updatedReceivedBreakdown = { ...(request.receivedBreakdown || {}) };
           let totalReceivedNow = 0;
-
           soleItems.forEach(item => {
             Object.entries(item.quantities).forEach(([size, qty]) => {
               updatedReceivedBreakdown[size] = (updatedReceivedBreakdown[size] || 0) + qty;
               totalReceivedNow += qty;
             });
           });
-
           const totalReceivedAll = (request.receivedQty || 0) + totalReceivedNow;
           const isFullyReceived = totalReceivedAll >= request.requiredQty;
-
           await firebaseService.updateDocument("purchaseRequests", request.id, {
             receivedQty: totalReceivedAll,
             receivedBreakdown: updatedReceivedBreakdown,
@@ -928,9 +949,8 @@ export default function App() {
         }
       }
 
-      console.log('[handleSaveSolePurchase] Generating financial entry...');
+      // Financial entry — financeService.createTransaction handles balance update internally
       if (purchase.paymentTerm === PaymentTerm.CASH && purchase.accountId) {
-        console.log('[handleSaveSolePurchase] Cash payment detected.');
         const transaction: Omit<Transaction, 'id'> = {
           type: TransactionType.EXPENSE,
           amount: parseLocaleNumber(purchase.total),
@@ -942,21 +962,14 @@ export default function App() {
           relatedId: finalPurchaseId
         };
         await financeService.createTransaction(transaction);
-        
-        const account = accounts.find(a => a.id === purchase.accountId);
-        if (account) {
-          await firebaseService.updateDocument("accounts", account.id, {
-            balance: account.balance - parseLocaleNumber(purchase.total)
-          });
-        }
       }
 
-      alert("Compra de solados registrada e estoque atualizado com sucesso!");
+      toast.show("Compra de solados registrada e estoque atualizado com sucesso!");
       setIsSolePurchaseModalOpen(false);
       setSolePurchaseParams(null);
     } catch (err: any) {
       console.error("[App] Erro crítico ao salvar compra de sola:", err);
-      alert("Erro ao salvar compra: " + (err.message || JSON.stringify(err)));
+      toast.show("Erro ao salvar compra: " + (err.message || JSON.stringify(err)));
     }
   };
 
@@ -965,7 +978,7 @@ export default function App() {
     const sale = sales.find(s => s.id === id);
     if (!sale) {
       console.error("Venda não encontrada no estado local:", id);
-      alert("Erro: Venda não encontrada no sistema.");
+      toast.show("Erro: Venda não encontrada no sistema.");
       return;
     }
 
@@ -976,11 +989,11 @@ export default function App() {
         const uid = auth.currentUser?.uid;
         if (!uid) return;
         await firebaseService.deleteDocument("sales", id);
-        alert("Registro (já cancelado) excluído com sucesso.");
+        toast.show("Registro (já cancelado) excluído com sucesso.");
         return;
       } catch (e) {
         console.error(e);
-        alert("Erro ao excluir registro cancelado.");
+        toast.show("Erro ao excluir registro cancelado.");
         return;
       }
     }
@@ -1083,12 +1096,128 @@ export default function App() {
         transaction.delete(salesRef);
       });
 
-      alert('Registro excluído com sucesso! Estoque e financeiro estornados.');
+      toast.show('Registro excluído com sucesso! Estoque e financeiro estornados.');
     } catch (err: any) {
       console.error("Erro ao excluir venda:", err);
-      alert('Erro ao excluir: ' + (err.message || err));
+      toast.show('Erro ao excluir: ' + (err.message || err));
     }
   };
+
+  // Executa a exclusão de uma compra e, se houver vínculos com o PCP (solicitação de compra
+  // e/ou Pedido de Produção gerados a partir dela), recalcula/limpa essas referências para que
+  // a tela de Necessidades de Materiais volte a refletir a realidade.
+  const executePurchaseDeletion = async (
+    purchase: Purchase,
+    pcpLinks?: { request?: PurchaseRequest; order?: ProductionOrder; orderLots?: ProductionLot[] }
+  ) => {
+    try {
+      const uid = auth.currentUser?.uid;
+      if (!uid) throw new Error("Usuário não autenticado");
+
+      // Atomic: delete purchase + revert financials + revert stock in a single transaction
+      await firebaseService.runAtomic(async (txn) => {
+        const purchaseRef = doc(db, `users/${uid}/purchases`, purchase.id);
+
+        // Read refs for financial revert
+        let txRef: any = null, accRef: any = null, txDoc: any = null, accDoc: any = null;
+        if (purchase.paymentTerm === PaymentTerm.CASH && purchase.accountId) {
+          const relatedTx = transactions.find(t => t.relatedId === purchase.id);
+          if (relatedTx) {
+            txRef = doc(db, `users/${uid}/transactions`, relatedTx.id);
+            accRef = doc(db, `users/${uid}/accounts`, purchase.accountId);
+            txDoc = await txn.get(txRef);
+            accDoc = await txn.get(accRef);
+          }
+        }
+
+        // Read refs for stock revert
+        const productRefsMap = new Map<string, any>();
+        const productDocsMap = new Map<string, any>();
+        if (purchase.type === PurchaseType.REPLENISHMENT && purchase.items) {
+          for (const item of purchase.items) {
+            if (!productRefsMap.has(item.productId)) {
+              const pRef = doc(db, `users/${uid}/products`, item.productId);
+              productRefsMap.set(item.productId, pRef);
+              productDocsMap.set(item.productId, await txn.get(pRef));
+            }
+          }
+        }
+
+        // Writes: delete purchase
+        txn.delete(purchaseRef);
+
+        // Writes: revert financial
+        if (txRef && txDoc?.exists() && accDoc?.exists()) {
+          const accData = accDoc.data() as Account;
+          txn.delete(txRef);
+          txn.update(accRef, { balance: accData.balance + purchase.total });
+        }
+
+        // Writes: revert stock
+        if (purchase.type === PurchaseType.REPLENISHMENT && purchase.items) {
+          for (const item of purchase.items) {
+            const pDoc = productDocsMap.get(item.productId);
+            if (pDoc?.exists()) {
+              const productData = pDoc.data() as Product;
+              const variationIndex = productData.variations.findIndex(v => v.id === item.variationId);
+              if (variationIndex !== -1) {
+                const variation = productData.variations[variationIndex];
+                const key = (productData.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+                const amountToSubtract = (productData.type === SaleType.RETAIL && item.isBox) ? item.quantity * 12 : item.quantity;
+                variation.stock[key] = (variation.stock[key] || 0) - amountToSubtract;
+                txn.update(productRefsMap.get(item.productId), { variations: productData.variations });
+              }
+            }
+          }
+        }
+      });
+
+      // Non-critical: recalculate PCP purchase request
+      const request = pcpLinks?.request;
+      if (request) {
+        let contributedQty = 0;
+        const contributedBreakdown: Record<string, number> = {};
+        (purchase.generalItems || []).forEach(gi => { contributedQty += gi.quantity || 0; });
+        (purchase.soleItems || []).forEach(si => {
+          Object.entries(si.quantities || {}).forEach(([size, qty]) => {
+            const q = Number(qty) || 0;
+            contributedBreakdown[size] = (contributedBreakdown[size] || 0) + q;
+            contributedQty += q;
+          });
+        });
+
+        if (purchase.registerAsReceived && contributedQty > 0) {
+          const newReceivedQty = Math.max(0, (request.receivedQty || 0) - contributedQty);
+          const newReceivedBreakdown = { ...(request.receivedBreakdown || {}) };
+          Object.entries(contributedBreakdown).forEach(([size, qty]) => {
+            newReceivedBreakdown[size] = Math.max(0, (newReceivedBreakdown[size] || 0) - qty);
+          });
+          const newStatus = newReceivedQty <= 0 ? 'PENDING' : (newReceivedQty < request.requiredQty ? 'ORDERED' : 'RECEIVED');
+          await firebaseService.updateDocument("purchaseRequests", request.id, {
+            receivedQty: newReceivedQty,
+            receivedBreakdown: newReceivedBreakdown,
+            status: newStatus,
+            updatedAt: Date.now(),
+          });
+        } else if (request.status === 'IN_PROGRESS' || request.status === 'ORDERED') {
+          await firebaseService.updateDocument("purchaseRequests", request.id, {
+            status: 'PENDING',
+            updatedAt: Date.now(),
+          });
+        }
+      }
+
+      // Non-critical: remove production order if no lots exist
+      const order = pcpLinks?.order;
+      if (order && (!pcpLinks?.orderLots || pcpLinks.orderLots.length === 0)) {
+        await firebaseService.deleteDocument("productionOrders", order.id);
+      }
+    } catch (err) {
+      console.error('Error during purchase deletion:', err);
+      toast.show('Erro ao excluir compra: ' + ((err as any)?.message || err));
+    }
+  };
+
   const handleSaveProductionLot = async (lot: ProductionLot) => {
     try {
       // 0. Pegar o estado anterior do lote para detectar remoções
@@ -1159,7 +1288,7 @@ export default function App() {
       }
     } catch (err: any) {
       console.error("Erro ao salvar mapa:", err);
-      alert("Erro ao salvar mapa: " + (err.message || err));
+      toast.show("Erro ao salvar mapa: " + (err.message || err));
     }
   };
 
@@ -1203,7 +1332,28 @@ export default function App() {
       }
     } catch (err: any) {
       console.error("Erro ao excluir mapa:", err);
-      alert("Erro ao excluir mapa: " + (err.message || err));
+      toast.show("Erro ao excluir mapa: " + (err.message || err));
+    }
+  };
+
+  // Remove um Pedido de Produção (OP) da fila do PCP — usado tanto para limpar OPs órfãs
+  // (cuja compra de origem já foi excluída) quanto para remoção manual a pedido do usuário.
+  // Por segurança, não remove se já existirem mapas/lotes ativos vinculados a ela.
+  const handleDeleteProductionOrder = async (orderId: string) => {
+    try {
+      const order = productionOrders.find(o => o.id === orderId);
+      if (!order) return;
+
+      const hasActiveLots = productionLots.some(l => l.productionOrderId === orderId && !l.finishedAt);
+      if (hasActiveLots) {
+        toast.show('Este pedido já possui mapa(s) de produção ativos vinculados — exclua ou finalize os mapas antes de remover o pedido.');
+        return;
+      }
+
+      await firebaseService.deleteDocument("productionOrders", orderId);
+    } catch (err: any) {
+      console.error("Erro ao excluir pedido de produção:", err);
+      toast.show("Erro ao excluir pedido: " + (err.message || err));
     }
   };
 
@@ -1279,7 +1429,7 @@ export default function App() {
 
   const handleCreatePurchaseRequest = async (req: Omit<PurchaseRequest, 'id'>) => {
     console.log('[App] handleCreatePurchaseRequest called', req);
-    const id = Math.random().toString(36).substring(2, 11);
+    const id = generateId();
     try {
       await firebaseService.saveDocument("purchaseRequests", { ...req, id });
       console.log('[App] Purchase request saved with ID:', id);
@@ -1299,7 +1449,7 @@ export default function App() {
     if (productionOrders.some(op => op.saleId === sale.id)) return;
 
     try {
-      const orderId = Math.random().toString(36).substr(2, 9);
+      const orderId = generateId();
       const orderNum = `OP #${String(productionOrders.length + 1).padStart(3, '0')}`;
 
       // Agrupar itens da venda por Produto/Variação para criar os lotes (Mapas)
@@ -1474,25 +1624,25 @@ export default function App() {
             onAdd={async (newPerson) => {
               try {
                 await firebaseService.saveDocument("people", newPerson);
-                alert('Cadastro realizado!');
+                toast.show('Cadastro realizado!');
               } catch (err: any) {
-                alert('Erro ao cadastrar: ' + (err.message || err));
+                toast.show('Erro ao cadastrar: ' + (err.message || err));
               }
             }}
             onEdit={async (id, updatedPerson) => {
               try {
                 await firebaseService.updateDocument("people", id, updatedPerson);
-                alert('Cadastro atualizado!');
+                toast.show('Cadastro atualizado!');
               } catch (err: any) {
-                alert('Erro ao atualizar: ' + (err.message || err));
+                toast.show('Erro ao atualizar: ' + (err.message || err));
               }
             }}
             onDelete={async (id) => {
               try {
                 await firebaseService.deleteDocument("people", id);
-                alert('Cadastro excluído!');
+                toast.show('Cadastro excluído!');
               } catch (err: any) {
-                alert('Erro ao excluir: ' + (err.message || err));
+                toast.show('Erro ao excluir: ' + (err.message || err));
               }
             }}
             onShowDetail={(id) => navigateTo(ViewType.PERSON_DETAIL, id)}
@@ -1581,25 +1731,25 @@ export default function App() {
             onAdd={async (newCategory) => {
               try {
                 await firebaseService.saveDocument("categories", newCategory);
-                alert('Categoria adicionada com sucesso!');
+                toast.show('Categoria adicionada com sucesso!');
               } catch (err: any) {
-                alert('Erro ao adicionar categoria: ' + (err.message || err));
+                toast.show('Erro ao adicionar categoria: ' + (err.message || err));
               }
             }}
             onEdit={async (id, updatedCategory) => {
               try {
                 await firebaseService.updateDocument("categories", id, updatedCategory);
-                alert('Categoria atualizada!');
+                toast.show('Categoria atualizada!');
               } catch (err: any) {
-                alert('Erro ao atualizar categoria: ' + (err.message || err));
+                toast.show('Erro ao atualizar categoria: ' + (err.message || err));
               }
             }}
             onDelete={async (id) => {
               try {
                 await firebaseService.deleteDocument("categories", id);
-                alert('Categoria excluída!');
+                toast.show('Categoria excluída!');
               } catch (err: any) {
-                alert('Erro ao excluir categoria: ' + (err.message || err));
+                toast.show('Erro ao excluir categoria: ' + (err.message || err));
               }
             }}
             isDarkMode={isDarkMode}
@@ -1626,25 +1776,25 @@ export default function App() {
             onAdd={async (newGrid) => {
               try {
                 await firebaseService.saveDocument("grids", newGrid);
-                alert('Grade salva!');
+                toast.show('Grade salva!');
               } catch (err: any) {
-                alert('Erro ao salvar grade: ' + (err.message || err));
+                toast.show('Erro ao salvar grade: ' + (err.message || err));
               }
             }}
             onEdit={async (id, updatedGrid) => {
               try {
                 await firebaseService.updateDocument("grids", id, updatedGrid);
-                alert('Grade atualizada!');
+                toast.show('Grade atualizada!');
               } catch (err: any) {
-                alert('Erro ao atualizar grade: ' + (err.message || err));
+                toast.show('Erro ao atualizar grade: ' + (err.message || err));
               }
             }}
             onDelete={async (id) => {
               try {
                 await firebaseService.deleteDocument("grids", id);
-                alert('Grade excluída!');
+                toast.show('Grade excluída!');
               } catch (err: any) {
-                alert('Erro ao excluir grade: ' + (err.message || err));
+                toast.show('Erro ao excluir grade: ' + (err.message || err));
               }
             }}
             isDarkMode={isDarkMode}
@@ -1657,23 +1807,23 @@ export default function App() {
             onAdd={async (newColor) => {
               try {
                 await firebaseService.saveDocument("colors", newColor);
-                alert('Cor salva!');
+                toast.show('Cor salva!');
               } catch (err: any) {
-                alert('Erro ao salvar cor: ' + (err.message || err));
+                toast.show('Erro ao salvar cor: ' + (err.message || err));
               }
             }}
             onEdit={async (id, updatedColor) => {
               try {
                 await firebaseService.updateDocument("colors", id, updatedColor);
               } catch (err: any) {
-                alert('Erro ao atualizar cor: ' + (err.message || err));
+                toast.show('Erro ao atualizar cor: ' + (err.message || err));
               }
             }}
             onDelete={async (id) => {
               try {
                 await firebaseService.deleteDocument("colors", id);
               } catch (err: any) {
-                alert('Erro ao excluir cor: ' + (err.message || err));
+                toast.show('Erro ao excluir cor: ' + (err.message || err));
               }
             }}
             isDarkMode={isDarkMode}
@@ -1751,11 +1901,11 @@ export default function App() {
                   for (const id of ids) {
                     await firebaseService.deleteDocument(collection, id);
                   }
-                  alert(`${ids.length} item(ns) apagado(s) com sucesso!`);
+                  toast.show(`${ids.length} item(ns) apagado(s) com sucesso!`);
                 }
               } catch (err: any) {
                 console.error("Erro ao apagar itens", err);
-                alert("Erro ao apagar itens: " + (err.message || err));
+                toast.show("Erro ao apagar itens: " + (err.message || err));
               }
             }}
           />
@@ -1799,7 +1949,7 @@ export default function App() {
                 await firebaseService.saveDocument("products", product);
               } catch (err: any) {
                 console.error("Erro ao salvar produto:", err);
-                alert("Erro ao salvar produto: " + (err.message || err));
+                toast.show("Erro ao salvar produto: " + (err.message || err));
               }
             }}
             onSave={async (product) => {
@@ -1808,7 +1958,7 @@ export default function App() {
                 goBack();
               } catch (err: any) {
                 console.error("Erro ao salvar produto:", err);
-                alert("Erro ao salvar produto: " + (err.message || err));
+                toast.show("Erro ao salvar produto: " + (err.message || err));
               }
             }}
             onSaveConfigItem={async (item) => {
@@ -1816,7 +1966,7 @@ export default function App() {
                 await firebaseService.saveDocument("productionConfigs", item);
               } catch (err: any) {
                 console.error("Erro ao salvar item de configuração:", err);
-                alert("Erro ao salvar item: " + (err.message || err));
+                toast.show("Erro ao salvar item: " + (err.message || err));
               }
             }}
             onCancel={goBack}
@@ -1831,67 +1981,36 @@ export default function App() {
           <PurchasesView
             purchases={purchases}
             suppliers={suppliers}
+            products={products}
             onAdd={() => navigateTo(ViewType.PURCHASE_FORM)}
             onEdit={(id) => navigateTo(ViewType.PURCHASE_FORM, id)}
             onDelete={async (id) => {
               console.log('Attempting to delete purchase', id);
               const purchase = purchases.find((p) => p.id === id);
-              if (purchase) {
-                console.log('Found purchase, deleting', purchase);
-                try {
-                  await firebaseService.deleteDocument("purchases", id);
-                  console.log('Purchase document deleted successfully');
-                    
-                    // Revert financial transaction if cash
-                    if (purchase.paymentTerm === PaymentTerm.CASH && purchase.accountId) {
-                      console.log('Reverting financial transaction');
-                      const tx = transactions.find(t => t.relatedId === id);
-                      if (tx) {
-                        await firebaseService.deleteDocument("transactions", tx.id);
-                        
-                        const acc = accounts.find((a) => a.id === purchase.accountId);
-                        if (acc) {
-                          await firebaseService.updateDocument("accounts", purchase.accountId, {
-                            balance: acc.balance + purchase.total,
-                          });
-                        }
-                      }
-                    }
-                    
-                    // Revert stock if replenishment
-                    if (purchase.type === PurchaseType.REPLENISHMENT && purchase.items) {
-                      console.log('Reverting stock');
-                      for (const item of purchase.items) {
-                        const product = products.find((p) => p.id === item.productId);
-                        if (product) {
-                          const variationIndex = product.variations.findIndex(
-                            (v) => v.id === item.variationId,
-                          );
-                          if (variationIndex !== -1) {
-                            const updatedProduct = { ...product };
-                            const variation = updatedProduct.variations[variationIndex];
-                            
-                            const key = (product.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
-                            
-                            // If it is a Retail product and marked as a box, we assume 12 units per box.
-                            // For Wholesale products, we record the quantity of grades directly.
-                            const amountToSubtract = (product.type === SaleType.RETAIL && item.isBox)
-                              ? item.quantity * 12
-                              : item.quantity;
-                              
-                            variation.stock[key] = (variation.stock[key] || 0) - amountToSubtract;
-                            
-                            await firebaseService.saveDocument("products", updatedProduct);
-                          }
-                        }
-                      }
-                    }
-                  } catch (err) {
-                    console.error('Error during purchase deletion:', err);
-                  }
-                } else {
-                  console.warn('Purchase not found for deletion', id);
-                }
+              if (!purchase) {
+                console.warn('Purchase not found for deletion', id);
+                return;
+              }
+
+              // Verifica se esta compra está vinculada a algo no PCP (solicitação de compra
+              // e/ou Pedido de Produção). Se estiver, avisa o usuário antes de excluir, pois
+              // a exclusão simples deixaria essas referências "presas" e desatualizadas.
+              const linkedRequest = purchase.requestId
+                ? purchaseRequests.find(r => r.id === purchase.requestId)
+                : undefined;
+              const linkedOrder = purchase.productionOrderId
+                ? productionOrders.find(o => o.id === purchase.productionOrderId)
+                : undefined;
+              const linkedOrderLots = linkedOrder
+                ? productionLots.filter(l => l.productionOrderId === linkedOrder.id)
+                : [];
+
+              if ((linkedRequest && linkedRequest.status !== 'RECEIVED') || linkedOrder) {
+                setPurchaseDeleteWarning({ purchase, request: linkedRequest, order: linkedOrder, orderLots: linkedOrderLots });
+                return;
+              }
+
+              await executePurchaseDeletion(purchase);
             }}
             onUpdate={(purchase) => firebaseService.saveDocument("purchases", purchase)}
             isDarkMode={isDarkMode}
@@ -1911,6 +2030,26 @@ export default function App() {
             people={people}
             productionConfigs={productionConfigs}
             initialParams={currentParams}
+            productionOrders={productionOrders}
+            onCreateProductionOrder={async (order, newLots, deductions) => {
+              await firebaseService.saveDocument("productionOrders", order);
+              for (const lot of newLots) {
+                await firebaseService.saveDocument("productionLots", lot);
+              }
+              for (const d of deductions) {
+                const product = products.find(p => p.id === d.productId);
+                if (!product) continue;
+                const updatedProduct = JSON.parse(JSON.stringify(product));
+                const variation = updatedProduct.variations.find((v: any) => v.id === d.variationId);
+                if (!variation) continue;
+                if (d.size) {
+                  variation.stock[d.size] = Math.max(0, (variation.stock[d.size] || 0) - d.quantity);
+                } else {
+                  variation.stock['WHOLESALE'] = Math.max(0, (variation.stock['WHOLESALE'] || 0) - d.quantity);
+                }
+                await firebaseService.saveDocument("products", updatedProduct);
+              }
+            }}
             onSave={async (purchase) => {
               try {
                 const prevPurchase = selectedPurchaseId ? purchases.find(p => p.id === selectedPurchaseId) : null;
@@ -1970,12 +2109,58 @@ export default function App() {
                       if (variationIndex !== -1) {
                         const variation = updatedProduct.variations[variationIndex];
                         const key = (updatedProduct.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
-                        
+
                         const amountToAdd = (updatedProduct.type === SaleType.RETAIL && item.isBox) ? item.quantity * 12 : item.quantity;
-                        
+
                         variation.stock[key] = (variation.stock[key] || 0) + amountToAdd;
                       }
                     }
+                  }
+                }
+
+                // AUTO-FULFILL: Atender itens pendentes (CONFIRMED e SALE c/ itens sem estoque)
+                if (purchase.type === PurchaseType.REPLENISHMENT && purchase.items) {
+                  const pendingSales = sales
+                    .filter(s =>
+                      s.status === SaleStatus.CONFIRMED ||
+                      (s.status === SaleStatus.SALE && s.items.some(it => it.fulfilled !== true))
+                    )
+                    .sort((a, b) => (a.date || 0) - (b.date || 0));
+
+                  const autoFulfilled: string[] = [];
+
+                  for (const pendingSale of pendingSales) {
+                    const newItems = pendingSale.items.map(it => ({ ...it }));
+                    let anyFulfilled = false;
+
+                    for (let i = 0; i < newItems.length; i++) {
+                      const item = newItems[i];
+                      if (item.fulfilled === true) continue;
+                      const prod = getProductForUpdate(item.productId);
+                      if (!prod) continue;
+                      const variation = prod.variations.find((v: any) => v.id === item.variationId);
+                      if (!variation) continue;
+                      const key = (prod.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+                      const available = variation.stock[key] || 0;
+                      if (available >= item.quantity) {
+                        variation.stock[key] = Math.max(0, available - item.quantity);
+                        newItems[i] = { ...item, fulfilled: true };
+                        anyFulfilled = true;
+                      }
+                    }
+
+                    if (anyFulfilled) {
+                      const allFulfilled = newItems.every(it => it.fulfilled === true);
+                      const newStatus = (pendingSale.status === SaleStatus.CONFIRMED && allFulfilled)
+                        ? SaleStatus.SALE
+                        : pendingSale.status;
+                      await firebaseService.saveDocument("sales", { ...pendingSale, status: newStatus, items: newItems });
+                      autoFulfilled.push(pendingSale.orderNumber);
+                    }
+                  }
+
+                  if (autoFulfilled.length > 0) {
+                    toast.show(`✓ ${autoFulfilled.length} pedido(s) atendido(s) automaticamente: ${autoFulfilled.join(', ')}`);
                   }
                 }
 
@@ -2073,7 +2258,7 @@ export default function App() {
                 goBack();
               } catch (err: any) {
                 console.error("Purchase Save Error:", err);
-                alert("Erro ao salvar compra: " + (err.message || err));
+                toast.show("Erro ao salvar compra: " + (err.message || err));
               }
             }}
             onCancel={goBack}
@@ -2191,7 +2376,7 @@ export default function App() {
                   }
                 });
 
-                alert("Orçamento confirmado como venda com sucesso!");
+                toast.show("Orçamento confirmado como venda com sucesso!");
                 
                 // Auto-create Production Order
                 const fullSale = sales.find(s => s.id === id);
@@ -2200,7 +2385,7 @@ export default function App() {
                 }
               } catch (err: any) {
                 console.error("Conversion Error:", err);
-                alert("Erro ao converter orçamento: " + (err.message || err));
+                toast.show("Erro ao converter orçamento: " + (err.message || err));
               }
             }}
             onUpdatePaymentStatus={async (id, newStatus) => {
@@ -2234,14 +2419,14 @@ export default function App() {
                     balance: acc.balance + sale.total
                   });
                 }
-                alert('Pagamento registrado e saldo atualizado!');
+                toast.show('Pagamento registrado e saldo atualizado!');
               }
             }}
             onPaySale={async (id, amount, accountId, paymentMethodId, note) => {
               const sale = sales.find(s => s.id === id);
               if (!sale) return;
 
-              const paymentId = Math.random().toString(36).substring(2, 9);
+              const paymentId = generateId();
               const now = Date.now();
 
               // 1. Create Financial Entry first to get the document ID
@@ -2289,7 +2474,7 @@ export default function App() {
                   await firebaseService.updateDocument("people", customer.id, {
                     credit: currentCredit + surplus
                   });
-                  alert(`O valor pago excedeu o total. R$ ${surplus.toLocaleString('pt-BR')} foram adicionados como crédito para o cliente.`);
+                  toast.show(`O valor pago excedeu o total. R$ ${surplus.toLocaleString('pt-BR')} foram adicionados como crédito para o cliente.`);
                 }
               }
 
@@ -2316,7 +2501,7 @@ export default function App() {
               if (!sale) {
                 const msg = `Erro Crítico: Venda ID ${saleId} não encontrada.`;
                 console.error(msg);
-                alert(msg);
+                toast.show(msg);
                 return;
               }
               
@@ -2511,7 +2696,7 @@ export default function App() {
                 }
               }
 
-              alert('Recebimento atualizado com sucesso!');
+              toast.show('Recebimento atualizado com sucesso!');
             }}
             productionOrders={productionOrders}
             lots={productionLots}
@@ -2555,10 +2740,10 @@ export default function App() {
             onSave={async (newTx) => {
               try {
                 await financeService.createTransaction(newTx);
-                alert('Lançamento salvo com sucesso!');
+                toast.show('Lançamento salvo com sucesso!');
               } catch (err: any) {
                 console.error('onSave error:', err);
-                alert('Erro ao salvar lançamento: ' + (err.message || err));
+                toast.show('Erro ao salvar lançamento: ' + (err.message || err));
               }
             }}
             onEdit={async (id, updates) => {
@@ -2566,10 +2751,10 @@ export default function App() {
                 console.log('[App] Calling updateTransaction:', id, updates);
                 await financeService.updateTransaction(id, updates);
                 console.log('[App] updateTransaction success');
-                alert('Atualizado com sucesso!');
+                toast.show('Atualizado com sucesso!');
               } catch (err: any) {
                 console.error('onEdit error:', err);
-                alert('Erro ao atualizar: ' + (err.message || err));
+                toast.show('Erro ao atualizar: ' + (err.message || err));
               }
             }}
             onDelete={async (id) => {
@@ -2577,10 +2762,10 @@ export default function App() {
                 console.log('[App] Calling deleteTransaction:', id);
                 await financeService.deleteTransaction(id);
                 console.log('[App] deleteTransaction success');
-                alert('Excluído com sucesso!');
+                toast.show('Excluído com sucesso!');
               } catch (err: any) {
                 console.error('onDelete error:', err);
-                alert('Erro ao excluir: ' + (err.message || err));
+                toast.show('Erro ao excluir: ' + (err.message || err));
               }
             }}
             onUpdatePurchase={async (id, updates) => {
@@ -2588,14 +2773,14 @@ export default function App() {
                 await firebaseService.updateDocument("purchases", id, updates);
                 // No need for alert here if it's a sub-action usually, but user is used to it.
               } catch (err: any) {
-                alert('Erro ao atualizar compra: ' + (err.message || err));
+                toast.show('Erro ao atualizar compra: ' + (err.message || err));
               }
             }}
             onUpdatePerson={async (id, updates) => {
               try {
                 await firebaseService.updateDocument("people", id, updates);
               } catch (err: any) {
-                alert('Erro ao atualizar cadastro: ' + (err.message || err));
+                toast.show('Erro ao atualizar cadastro: ' + (err.message || err));
               }
             }}
             isDarkMode={isDarkMode}
@@ -2657,7 +2842,7 @@ export default function App() {
             }}
             onTransfer={() => {
               if (accounts.length < 2) {
-                alert(
+                toast.show(
                   "É necessário pelo menos duas contas para transferência.",
                 );
                 return;
@@ -2713,7 +2898,7 @@ export default function App() {
                 };
                 firebaseService.saveDocument("transactions", txOut);
                 firebaseService.saveDocument("transactions", txIn);
-                alert("Transferência realizada com sucesso!");
+                toast.show("Transferência realizada com sucesso!");
               }
             }}
             isDarkMode={isDarkMode}
@@ -2773,7 +2958,8 @@ export default function App() {
             onSave={async (sale) => {
               try {
                 const prevSale = selectedSaleId ? sales.find(s => s.id === selectedSaleId) : null;
-                
+                let updatedSale = sale; // will be updated with per-item fulfilled flags
+
                 await firebaseService.saveDocument("sales", sale);
 
               // Local map to track mutations before saving
@@ -2801,9 +2987,10 @@ export default function App() {
                 return null;
               };
 
-              // REVERT OLD STOCK if it was already a SALE
+              // REVERT OLD STOCK if it was already a SALE — only items that were fulfilled
               if (prevSale && prevSale.status === SaleStatus.SALE) {
                 for (const item of prevSale.items) {
+                   if (item.fulfilled === false) continue; // não foi abatido, nada a reverter
                    const updatedProduct = getProductForUpdate(item.productId);
                    if (updatedProduct) {
                      const variationIndex = updatedProduct.variations.findIndex((v: any) => v.id === item.variationId);
@@ -2816,30 +3003,37 @@ export default function App() {
                 }
               }
 
-              // APPLY NEW STOCK if it is a SALE
+              // APPLY NEW STOCK if it is a SALE — por item, respeitando disponibilidade
               if (sale.status === SaleStatus.SALE) {
-                for (const item of sale.items) {
+                const newItems = sale.items.map(item => ({ ...item }));
+                for (let i = 0; i < newItems.length; i++) {
+                  const item = newItems[i];
+                  if (item.fulfilled === true) continue; // já abatido anteriormente
                   const updatedProduct = getProductForUpdate(item.productId);
-                  if (updatedProduct) {
-                    const variationIndex = updatedProduct.variations.findIndex(
-                      (v: any) => v.id === item.variationId,
-                    );
-                    if (variationIndex !== -1) {
-                      const variation = updatedProduct.variations[variationIndex];
-                      const key = (updatedProduct.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
-
-                      if (variation.stock[key] !== undefined) {
-                        variation.stock[key] -= item.quantity;
-                        if (variation.stock[key] < 0) variation.stock[key] = 0;
-                      }
-                    }
+                  if (!updatedProduct) { newItems[i] = { ...item, fulfilled: false }; continue; }
+                  const variationIndex = updatedProduct.variations.findIndex((v: any) => v.id === item.variationId);
+                  if (variationIndex === -1) { newItems[i] = { ...item, fulfilled: false }; continue; }
+                  const variation = updatedProduct.variations[variationIndex];
+                  const key = (updatedProduct.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+                  const available = variation.stock[key] || 0;
+                  if (available >= item.quantity) {
+                    variation.stock[key] = Math.max(0, available - item.quantity);
+                    newItems[i] = { ...item, fulfilled: true };
+                  } else {
+                    newItems[i] = { ...item, fulfilled: false };
                   }
                 }
+                updatedSale = { ...sale, items: newItems };
               }
 
               // Save accumulated product updates
               for (const [_, prod] of productUpdates) {
                 await firebaseService.saveDocument("products", prod);
+              }
+
+              // Salva a venda com flags de fulfilled atualizados (se houver mudanças)
+              if (updatedSale !== sale) {
+                await firebaseService.saveDocument("sales", updatedSale);
               }
 
               // FINANCIAL LOGIC: Partial Payments & Transactions
@@ -2912,7 +3106,7 @@ export default function App() {
 
               } catch (err: any) {
                 console.error("Save Error:", err);
-                alert("Erro ao salvar: " + (err.message || err));
+                toast.show("Erro ao salvar: " + (err.message || err));
                 throw err;
               }
             }}
@@ -3040,7 +3234,7 @@ export default function App() {
                 await firebaseService.saveDocument("productionConfigs", item);
               } catch (err: any) {
                 console.error("Erro ao salvar item de configuração:", err);
-                alert("Erro ao salvar item: " + (err.message || err));
+                toast.show("Erro ao salvar item: " + (err.message || err));
               }
             }}
             onDeleteConfigItem={(id: string) => firebaseService.deleteDocument("productionConfigs", id)}
@@ -3077,7 +3271,7 @@ export default function App() {
                 await firebaseService.deleteDocument("products", id);
               } catch (e) {
                 console.error(e);
-                alert("Erro ao excluir modelo.");
+                toast.show("Erro ao excluir modelo.");
               }
             }}
             onToggleStatus={async (id, status) => {
@@ -3085,7 +3279,7 @@ export default function App() {
                 await firebaseService.updateDocument("products", id, { status });
               } catch (e) {
                 console.error(e);
-                alert("Erro ao alterar status.");
+                toast.show("Erro ao alterar status.");
               }
             }}
             onBack={goBack}
@@ -3105,6 +3299,7 @@ export default function App() {
             isDarkMode={isDarkMode}
             onSaveLot={handleSaveProductionLot}
             onDeleteLot={handleDeleteProductionLot}
+            onDeleteProductionOrder={handleDeleteProductionOrder}
             onBack={goBack}
             userName={user?.displayName || user?.email || 'Usuário'}
             productionConfigs={productionConfigs}
@@ -3136,7 +3331,7 @@ export default function App() {
                 await firebaseService.saveDocument("productionConfigs", item);
               } catch (err: any) {
                 console.error("Erro ao salvar item de configuração:", err);
-                alert("Erro ao salvar item: " + (err.message || err));
+                toast.show("Erro ao salvar item: " + (err.message || err));
               }
             }}
             onDeleteConfigItem={(id: string) => firebaseService.deleteDocument("productionConfigs", id)}
@@ -3171,6 +3366,7 @@ export default function App() {
             onNavigateToStock={() => navigateTo(ViewType.PRODUCTION_SOLE_STOCK)}
             isDarkMode={isDarkMode}
             existingRecords={weighingRecords}
+            initialTab={currentParams?.initialTab}
           />
         );
       case ViewType.PRODUCTION_SOLE_PURCHASE:
@@ -3193,6 +3389,8 @@ export default function App() {
             productionConfigs={productionConfigs}
             colors={colors as ColorValue[]}
             onBack={goBack}
+            onNavigateToWeighing={() => navigateTo(ViewType.PRODUCTION_WEIGHING)}
+            onNavigateToWeighingHistory={() => navigateTo(ViewType.PRODUCTION_WEIGHING, { initialTab: 'history' })}
             isDarkMode={isDarkMode}
           />
         );
@@ -3221,6 +3419,7 @@ export default function App() {
               {[
                 { id: ViewType.PRODUCTION_STOCK, label: 'Estoques Gerais', description: 'Matéria-prima, adesivos e insumos', icon: <PackageOpen size={24} />, color: 'text-emerald-600' },
                 { id: ViewType.PRODUCTION_SOLE_STOCK, label: 'Estoque de Solados', description: 'Gerenciamento por modelo, cor e tamanho', icon: <Package size={24} />, color: 'text-indigo-600' },
+                { id: ViewType.STOCK, label: 'Estoque de Produtos', description: 'Produtos prontos — por modelo, cor e tamanho', icon: <Boxes size={24} />, color: 'text-amber-700' },
                 { id: ViewType.PRODUCTION_GENERAL_RECEIPT, label: 'Recebimento de Compras', description: 'Dar entrada de materiais comprados no estoque', icon: <ClipboardList size={24} />, color: 'text-amber-600' },
               ].map((item, index, array) => (
                 <button
@@ -3483,11 +3682,12 @@ export default function App() {
   return (
     <div
       className={`flex flex-col h-screen ${
-        appTheme === 'light' ? 'bg-slate-50' : 
-        appTheme === 'industrial' ? 'industrial bg-[#e5e7eb]' : 
+        appTheme === 'light' ? 'bg-slate-50' :
+        appTheme === 'industrial' ? 'industrial bg-[#e5e7eb]' :
         'dark bg-slate-950'
       } font-sans ${appTheme === 'light' || appTheme === 'industrial' ? 'text-slate-900' : 'text-white'} overflow-hidden overflow-x-hidden`}
     >
+      <ToastContainer />
       {/* Header */}
       <header className={`flex items-center justify-between px-4 pt-10 pb-4 border-b sticky top-0 z-10 shrink-0 ${
         appTheme === 'light' ? 'bg-white border-slate-100' : 
@@ -3552,6 +3752,90 @@ export default function App() {
         }
       >
         {renderView(currentView)}
+      </Modal>
+
+      {/* Aviso de exclusão de compra vinculada ao PCP */}
+      <Modal
+        isOpen={!!purchaseDeleteWarning}
+        onClose={() => { if (!isDeletingPurchase) setPurchaseDeleteWarning(null); }}
+        title="Excluir Compra Vinculada ao PCP"
+        icon={<AlertTriangle size={20} />}
+        maxWidth="max-w-lg"
+      >
+        {purchaseDeleteWarning && (() => {
+          const { purchase, request, order, orderLots } = purchaseDeleteWarning;
+          const REQUEST_STATUS_LABEL: Record<string, string> = {
+            PENDING: 'Solicitado',
+            IN_PROGRESS: 'Em Andamento',
+            ORDERED: 'Pedido Feito',
+            RECEIVED: 'Recebido',
+          };
+          return (
+            <div className="flex flex-col gap-5 p-1">
+              <p className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-relaxed">
+                Esta compra está vinculada a registros do PCP. Se você confirmar, a compra será excluída e esses registros serão recalculados/atualizados para refletir que ela não existe mais.
+              </p>
+
+              {request && (
+                <div className="rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20 p-4 flex flex-col gap-1.5">
+                  <p className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest">Solicitação de compra (Necessidades de Materiais)</p>
+                  <p className="text-sm font-black text-slate-800 dark:text-white">{request.name}</p>
+                  <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                    Status atual: {REQUEST_STATUS_LABEL[request.status] || request.status}
+                    {(request.receivedQty || 0) > 0 && ` · Recebido: ${request.receivedQty}`}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Ao confirmar, essa solicitação será recalculada no PCP: a contribuição desta compra será removida e o status voltará a refletir o saldo real ainda em aberto.
+                  </p>
+                </div>
+              )}
+
+              {order && (
+                <div className="rounded-2xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50 dark:bg-indigo-950/20 p-4 flex flex-col gap-1.5">
+                  <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">Pedido de Produção (OP) no PCP</p>
+                  <p className="text-sm font-black text-slate-800 dark:text-white">{order.orderNumber}</p>
+                  <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                    {orderLots.length > 0
+                      ? `${orderLots.length} mapa(s) de produção já vinculado(s) a esta OP`
+                      : 'Nenhum mapa de produção criado ainda'}
+                  </p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {orderLots.length > 0
+                      ? 'Como já existem mapas em produção vinculados a esta OP, ela não será apagada automaticamente — revise manualmente no PCP após excluir a compra.'
+                      : 'Como ainda não há mapas vinculados, esta OP será removida automaticamente da fila do PCP ao confirmar.'}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  disabled={isDeletingPurchase}
+                  onClick={async () => {
+                    setIsDeletingPurchase(true);
+                    try {
+                      await executePurchaseDeletion(purchase, { request, order, orderLots });
+                    } finally {
+                      setIsDeletingPurchase(false);
+                      setPurchaseDeleteWarning(null);
+                    }
+                  }}
+                  className={`w-full py-4 rounded-2xl font-black uppercase tracking-widest shadow-lg transition-all active:scale-[0.98] bg-rose-500 text-white shadow-rose-100 dark:shadow-none hover:bg-rose-600 ${isDeletingPurchase ? 'opacity-60 cursor-wait' : ''}`}
+                >
+                  {isDeletingPurchase ? 'Excluindo e recalculando...' : 'Excluir e recalcular no PCP'}
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeletingPurchase}
+                  onClick={() => setPurchaseDeleteWarning(null)}
+                  className="w-full py-4 rounded-2xl font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"
+                >
+                  Agora não
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </Modal>
 
       {/* Bottom Tab Navigation */}
@@ -3656,7 +3940,7 @@ export default function App() {
             setIsAccountModalOpen(false);
           } catch (error) {
             console.error("Error saving account:", error);
-            alert("Erro ao salvar conta.");
+            toast.show("Erro ao salvar conta.");
           }
         }}
         account={editingAccount}
@@ -3684,7 +3968,7 @@ export default function App() {
             setIsTransactionModalOpen(false);
           } catch (error: any) {
             console.error('Error saving transaction:', error);
-            alert('Erro ao salvar: ' + (error.message || error));
+            toast.show('Erro ao salvar: ' + (error.message || error));
           }
         }}
         categories={categories.filter(c => !c.isPersonal)}
@@ -3701,7 +3985,7 @@ export default function App() {
           setIsSolePurchaseModalOpen(false);
           setSolePurchaseParams(null);
         }}
-        initialParams={solePurchaseParams}
+        initialParams={solePurchaseParams ?? undefined}
         productionConfigs={productionConfigs}
         colors={colors}
         suppliers={suppliers}

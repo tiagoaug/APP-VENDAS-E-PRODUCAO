@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+﻿import React, { useState, useMemo } from 'react';
 import { Purchase, Account, PaymentMethod, PaymentHistory, TransactionType, PaymentStatus, Person } from '../types';
 import { X, DollarSign, Calendar, Wallet, History, Clipboard, CheckCircle2, ChevronRight, AlertCircle, Copy } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { toast } from '../utils/toast';
 
 interface PartialPaymentModalProps {
   isOpen: boolean;
@@ -49,19 +50,19 @@ export default function PartialPaymentModal({
     const summary = `Histórico de Pagamentos - Compra #${purchase.id.slice(-6).toUpperCase()}\nFornecedor: ${supplier?.name || '---'}\nTotal: R$ ${purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n\n${text}\n\nTotal Pago: R$ ${totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\nRestante: R$ ${remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
 
     navigator.clipboard.writeText(summary);
-    alert('Histórico copiado!');
+    toast.show('Histórico copiado!');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const val = parseFloat(amount);
     if (isNaN(val) || val <= 0) {
-      alert('Informe um valor válido');
+      toast.show('Informe um valor válido');
       return;
     }
 
     if (!accountId) {
-      alert('Selecione uma conta');
+      toast.show('Selecione uma conta');
       return;
     }
 

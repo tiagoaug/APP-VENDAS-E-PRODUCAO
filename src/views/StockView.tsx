@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Product, SaleType, ProductionConfigItem } from "../types";
+﻿import React, { useState } from "react";
+import { Product, SaleType, ProductionConfigItem, StockPkgAllocation } from "../types";
 import {
   Search,
   Package,
@@ -9,8 +9,12 @@ import {
   Layers,
   ChevronDown,
   ChevronRight,
+  Plus,
+  Trash2,
+  ClipboardList,
 } from "lucide-react";
 import PrintLabelEditorModal from "../components/PrintLabelEditorModal";
+import { toast } from '../utils/toast';
 
 interface StockViewProps {
   products: Product[];
@@ -62,7 +66,7 @@ export default function StockView({
       setEditedStocks({});
     } catch (error) {
       console.error("Erro ao salvar balanço:", error);
-      alert("Erro ao salvar balanço de estoque.");
+      toast.show("Erro ao salvar balanço de estoque.");
     } finally {
       setIsSaving(false);
     }
@@ -80,11 +84,11 @@ export default function StockView({
     });
   };
 
-  const handleSelectPackaging = async (product: Product, variationId: string, pkgId: string) => {
+  const handleUpdatePkgAllocations = async (product: Product, variationId: string, allocations: StockPkgAllocation[]) => {
     const updated: Product = {
       ...product,
       variations: product.variations.map(v =>
-        v.id === variationId ? { ...v, stockPkgId: pkgId || undefined } : v
+        v.id === variationId ? { ...v, stockPkgAllocations: allocations } : v
       )
     };
     await onUpdateProduct(updated);
@@ -167,7 +171,7 @@ export default function StockView({
             isDarkMode={isDarkMode}
             isEditing={isEditing}
             onUpdateStock={(variationId, key, value) => updateProductStock(product.id, variationId, key, value)}
-            onSelectPackaging={(variationId, pkgId) => handleSelectPackaging(product, variationId, pkgId)}
+            onUpdatePkgAllocations={(variationId, allocations) => handleUpdatePkgAllocations(product, variationId, allocations)}
             onPrint={() => setProductForLabels(product)}
           />
         ))}
@@ -198,10 +202,29 @@ const StockCard: React.FC<{
   isDarkMode: boolean;
   isEditing: boolean;
   onUpdateStock: (variationId: string, key: string, value: number) => void;
-  onSelectPackaging: (variationId: string, pkgId: string) => void;
+  onUpdatePkgAllocations: (variationId: string, allocations: StockPkgAllocation[]) => void;
   onPrint: () => void;
-}> = ({ product, packagingItems, isDarkMode, isEditing, onUpdateStock, onSelectPackaging, onPrint }) => {
+}> = ({ product, packagingItems, isDarkMode, isEditing, onUpdateStock, onUpdatePkgAllocations, onPrint }) => {
   const [expandedVars, setExpandedVars] = useState<string[]>([]);
+  const [expandedPackaging, setExpandedPackaging] = useState<string[]>([]);
+  const [expandedCompositions, setExpandedCompositions] = useState<string[]>([]);
+  const [gradePopup, setGradePopup] = useState<{
+    varId: string;
+    colorName: string;
+    looseQty: number;
+    pkgBreakdown?: Record<string, number>;
+    pkgSizes?: string[];
+    sizeInput: Record<string, number>;
+  } | null>(null);
+  const [allocPopup, setAllocPopup] = useState<{
+    varId: string;
+    allocIdx: number;
+    pkgId: string;
+    pkgName: string;
+    qty: number;
+    pkgCapacity: number;
+    sizeInput: Record<string, number>;
+  } | null>(null);
 
   const totalStock = product.variations.reduce((acc, v) => {
     return acc + (Object.values(v.stock) as number[]).reduce((sum, s) => sum + s, 0);
@@ -213,208 +236,459 @@ const StockCard: React.FC<{
     setExpandedVars(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
 
+  const togglePackaging = (id: string) => {
+    setExpandedPackaging(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  const toggleComposition = (id: string) => {
+    setExpandedCompositions(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
   return (
-    <div className={`p-5 rounded-[2.5rem] border shadow-sm flex flex-col gap-4 transition-all ${isEditing ? 'ring-2 ring-indigo-500/20' : ''} ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-      <div className="flex items-start justify-between">
+    <div className={`p-5 rounded-[2.5rem] border shadow-sm flex flex-col gap-5 transition-all ${isEditing ? 'ring-2 ring-indigo-500/20' : ''} ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+
+      {/* Cabeçalho do produto */}
+      <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700 overflow-hidden shrink-0">
+          <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700 overflow-hidden shrink-0">
             {product.photoUrl
               ? <img src={product.photoUrl} alt={product.name} className="w-full h-full object-cover" />
-              : <Package size={24} className="text-indigo-500" />}
+              : <Package size={26} className="text-indigo-500" />}
           </div>
           <div>
-            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">{product.reference}</p>
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-tight">{product.name}</h3>
+            <p className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none mb-1">{product.reference}</p>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white uppercase tracking-tight">{product.name}</h3>
           </div>
         </div>
-        <div className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 ${isLowStock ? 'bg-rose-50 text-rose-500 dark:bg-rose-900/20' : 'bg-emerald-50 text-emerald-500 dark:bg-emerald-900/20'}`}>
-          {isLowStock ? <TrendingDown size={14} /> : <TrendingUp size={14} />}
-          {isLowStock ? 'Estoque Baixo' : 'Estoque OK'}
+        <div className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shrink-0 ${isLowStock ? 'bg-rose-50 text-rose-500 dark:bg-rose-900/20' : 'bg-emerald-50 text-emerald-500 dark:bg-emerald-900/20'}`}>
+          {isLowStock ? <TrendingDown size={13} /> : <TrendingUp size={13} />}
+          {isLowStock ? 'Baixo' : 'OK'}
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 py-4 border-y border-slate-50 dark:border-slate-800">
-        <div className="flex justify-between items-end">
+      {/* Totais */}
+      <div className="grid grid-cols-2 gap-4 py-5 border-y border-slate-100 dark:border-slate-800">
+        <div className="flex flex-col gap-3">
           <div>
-            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Estoque Total</p>
-            <p className={`text-2xl font-black italic tracking-tighter ${isLowStock ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>
-              {totalStock} <span className="text-xs font-bold not-italic text-slate-400">{product.type === SaleType.WHOLESALE ? 'GRADES' : 'UNIDADES'}</span>
+            <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Estoque Total</p>
+            <p className={`text-3xl font-black italic tracking-tighter ${isLowStock ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>
+              {totalStock}
             </p>
+            <p className="text-xs font-bold text-slate-400 uppercase mt-0.5">{product.type === SaleType.WHOLESALE ? 'GRADES' : 'UNIDADES'}</p>
           </div>
           <button
+            type="button"
             onClick={onPrint}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-all border border-indigo-100/50 dark:border-indigo-500/20 shadow-sm"
+            className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-all border border-indigo-100/50 dark:border-indigo-500/20 shadow-sm w-fit"
             title="Imprimir Etiquetas"
           >
             <Tag size={14} strokeWidth={3} />
-            <span className="text-[10px] font-black uppercase tracking-widest">Imprimir</span>
+            <span className="text-xs font-black uppercase tracking-widest">Imprimir</span>
           </button>
         </div>
         <div className="text-right">
-          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Mínimo (Caixas)</p>
-          <p className="text-2xl font-black italic tracking-tighter text-indigo-500">
-            {product.minStockInBoxes} <span className="text-xs font-bold not-italic text-slate-400">CAIXAS</span>
+          <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Mínimo</p>
+          <p className="text-3xl font-black italic tracking-tighter text-indigo-500">
+            {product.minStockInBoxes}
           </p>
+          <p className="text-xs font-bold text-slate-400 uppercase mt-0.5">CAIXAS</p>
         </div>
       </div>
 
+      {/* Variações */}
       <div className="flex flex-col gap-3">
-        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest pl-1">Variações em Estoque</p>
-        <div className="space-y-3">
+        <p className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest pl-1">Variações em Estoque</p>
+        <div className="space-y-2">
           {product.variations.map(v => {
             const varStock = (Object.values(v.stock) as number[]).reduce((sum, s) => sum + s, 0);
-            const pkg = v.stockPkgId ? packagingItems.find(p => p.id === v.stockPkgId) : null;
+            const allocations: StockPkgAllocation[] = v.stockPkgAllocations || [];
+            const totalAllocated = allocations.reduce((s, a) => s + a.qty, 0);
             const isExpanded = expandedVars.includes(v.id);
-
-            // Pairs per size from packaging
-            const pkgBreakdown = pkg?.metadata?.sizeQuantities as Record<string, number> | undefined;
-            const pkgSizes: string[] = pkg?.metadata?.sizes?.length ? pkg.metadata.sizes as string[] : [];
+            const isPkgExpanded = expandedPackaging.includes(v.id);
             const boxQty = v.stock['WHOLESALE'] || 0;
 
             return (
-              <div key={v.id} className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-800/50 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+              <div key={v.id} className={`rounded-2xl border-2 transition-all ${
+                isExpanded
+                  ? isDarkMode ? 'bg-slate-800 border-indigo-700/60' : 'bg-white border-indigo-200'
+                  : isDarkMode ? 'bg-slate-800/50 border-slate-800' : 'bg-slate-50 border-slate-200'
+              }`}>
 
-                {/* Cabeçalho da variação */}
-                <div className="flex items-center justify-between p-3">
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded-full border border-white dark:border-slate-700 shadow-sm" style={{ backgroundColor: v.color }} />
-                    <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 uppercase">{v.colorName}</span>
+                {/* Linha colapsada — sempre visível */}
+                <button
+                  type="button"
+                  onClick={() => toggleVar(v.id)}
+                  className="w-full flex items-center justify-between px-4 py-4 active:opacity-70 transition-opacity"
+                  aria-label={`${isExpanded ? 'Recolher' : 'Expandir'} variação ${v.colorName}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-5 h-5 rounded-full border-2 border-white dark:border-slate-600 shadow-sm shrink-0" style={{ backgroundColor: v.color }} />
+                    <div className="text-left">
+                      <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none mb-0.5">{product.reference}</p>
+                      <span className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">{v.colorName}</span>
+                    </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-[12px] font-black text-indigo-600 dark:text-indigo-400">
-                      {varStock} {product.type === SaleType.WHOLESALE ? 'GR' : 'UN'}
-                    </span>
-                    {pkg && pkgBreakdown && product.type === SaleType.WHOLESALE && (
-                      <button
-                        type="button"
-                        onClick={() => toggleVar(v.id)}
-                        className="text-slate-400 hover:text-slate-600"
-                        title="Ver composição"
-                        aria-label="Expandir composição"
-                      >
-                        {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Detalhes por tamanho (RETAIL) */}
-                {product.type === SaleType.RETAIL && (
-                  <div className="grid grid-cols-5 sm:grid-cols-8 gap-1.5 px-3 pb-3">
-                    {Object.entries(v.stock).map(([size, qty]) => (
-                      <div key={size} className="flex flex-col items-center p-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
-                        <span className="text-[7px] font-black text-slate-400 uppercase leading-none mb-1">{size}</span>
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            className="w-full bg-slate-50 dark:bg-slate-800 border-none text-center text-[11px] font-black p-0 focus:ring-0"
-                            value={qty === 0 ? '' : qty}
-                            placeholder="0"
-                            title={`Estoque Tamanho ${size}`}
-                            aria-label={`Editar estoque do tamanho ${size}`}
-                            onChange={(e) => onUpdateStock(v.id, size, e.target.value === '' ? 0 : parseInt(e.target.value) || 0)}
-                          />
-                        ) : (
-                          <span className="text-[10px] font-bold text-slate-800 dark:text-slate-100 leading-none">{qty}</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Atacado: contador de grades + seletor de embalagem */}
-                {product.type === SaleType.WHOLESALE && (
-                  <div className="px-3 pb-3 flex flex-col gap-2">
-
-                    {/* Linha: estoque global + input edição */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <Package size={10} className="text-slate-400" />
-                        <span className="text-[8px] font-black text-slate-400 uppercase italic tracking-widest">Estoque Global</span>
-                      </div>
-                      {isEditing ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-[9px] font-black text-slate-400 uppercase">Grades:</span>
-                          <input
-                            type="number"
-                            className="w-16 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-center text-[11px] font-black py-1 focus:ring-2 focus:ring-indigo-500/10"
-                            value={v.stock['WHOLESALE'] === 0 ? '' : v.stock['WHOLESALE'] || ''}
-                            placeholder="0"
-                            title="Estoque Grade"
-                            aria-label="Editar estoque da grade atacado"
-                            onChange={(e) => onUpdateStock(v.id, 'WHOLESALE', e.target.value === '' ? 0 : parseInt(e.target.value) || 0)}
-                          />
-                        </div>
-                      ) : (
-                        <span className="text-[11px] font-black text-slate-500 dark:text-slate-400">
-                          {boxQty} grades
-                        </span>
-                      )}
+                    <div className="text-right">
+                      <p className="text-base font-black text-indigo-600 dark:text-indigo-400 leading-none">{varStock}</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase">{product.type === SaleType.WHOLESALE ? 'GR' : 'UN'}</p>
                     </div>
+                    {isExpanded
+                      ? <ChevronDown size={16} className="text-indigo-400 shrink-0" />
+                      : <ChevronRight size={16} className="text-slate-400 shrink-0" />
+                    }
+                  </div>
+                </button>
 
-                    {/* Seletor de padrão de embalagem */}
-                    <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl border ${
-                      pkg
-                        ? isDarkMode ? 'bg-violet-900/20 border-violet-700/50' : 'bg-violet-50 border-violet-200'
-                        : isDarkMode ? 'bg-slate-900 border-slate-700 border-dashed' : 'bg-white border-dashed border-slate-300'
-                    }`}>
-                      <div className="flex items-center gap-2">
-                        <Layers size={12} className={pkg ? 'text-violet-500' : 'text-slate-400'} />
-                        <span className={`text-[10px] font-black uppercase tracking-widest ${pkg ? 'text-violet-600 dark:text-violet-400' : 'text-slate-400'}`}>
-                          {pkg ? pkg.name : 'Padrão de Embalagem'}
-                        </span>
-                      </div>
-                      <select
-                        value={v.stockPkgId || ''}
-                        onChange={e => onSelectPackaging(v.id, e.target.value)}
-                        title="Selecionar padrão de embalagem"
-                        aria-label="Padrão de embalagem"
-                        className={`text-[10px] font-black rounded-lg px-2 py-1 outline-none border-0 cursor-pointer ${
-                          pkg
-                            ? isDarkMode ? 'bg-violet-900/30 text-violet-300' : 'bg-violet-100 text-violet-700'
-                            : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
-                        }`}
-                      >
-                        <option value="">Selecione…</option>
-                        {packagingItems.map(p => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))}
-                      </select>
-                    </div>
+                {/* Conteúdo expandido — dentro da mesma cápsula */}
+                {isExpanded && (
+                  <div className={`mx-3 mb-3 rounded-xl flex flex-col border ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}>
 
-                    {/* Composição por tamanho (expandível, modo FIXED) */}
-                    {pkg && pkgBreakdown && pkgSizes.length > 0 && isExpanded && boxQty > 0 && (
-                      <div className={`rounded-xl overflow-hidden border ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}>
-                        <div className={`grid grid-cols-3 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-400'}`}>
-                          <span>Tam</span>
-                          <span className="text-center">Por Grade</span>
-                          <span className="text-right text-emerald-500">Total Pares</span>
-                        </div>
-                        {pkgSizes.map(size => {
-                          const perBox = pkgBreakdown[size] || 0;
-                          const total = perBox * boxQty;
-                          return (
-                            <div key={size} className={`grid grid-cols-3 px-3 py-2 text-[11px] border-t ${isDarkMode ? 'border-slate-800 bg-slate-900 text-white' : 'border-slate-50 bg-white text-slate-700'}`}>
-                              <span className="font-black">{size}</span>
-                              <span className="text-center font-bold text-slate-400">{perBox}</span>
-                              <span className="text-right font-black text-emerald-600 dark:text-emerald-400">{total}</span>
+                    {/* RETAIL: grid por tamanho */}
+                    {product.type === SaleType.RETAIL && (
+                      <div className="p-3 flex flex-col gap-2">
+                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                          {Object.entries(v.stock).map(([size, qty]) => (
+                            <div key={size} className={`flex flex-col items-center rounded-xl py-3 px-2 ${isDarkMode ? 'bg-slate-700/60' : 'bg-slate-50'}`}>
+                              <span className="text-[10px] font-black text-slate-500 uppercase leading-none mb-2">{size}</span>
+                              {isEditing ? (
+                                <div className="flex flex-col items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => onUpdateStock(v.id, size, Math.max(0, (qty as number) + 1))}
+                                    className="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-sm font-black hover:bg-indigo-200 transition-all active:scale-95"
+                                    aria-label={`Aumentar tamanho ${size}`}
+                                  >+</button>
+                                  <span className="text-base font-black text-slate-900 dark:text-white">{qty as number}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => onUpdateStock(v.id, size, Math.max(0, (qty as number) - 1))}
+                                    className="w-7 h-7 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-500 flex items-center justify-center text-sm font-black hover:bg-rose-200 transition-all active:scale-95"
+                                    aria-label={`Diminuir tamanho ${size}`}
+                                  >−</button>
+                                </div>
+                              ) : (
+                                <span className="text-base font-bold text-slate-900 dark:text-slate-100">{qty as number}</span>
+                              )}
                             </div>
-                          );
-                        })}
-                        <div className={`grid grid-cols-3 px-3 py-2 border-t ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}>
-                          <span className={`text-[9px] font-black uppercase col-span-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Total Pares</span>
-                          <span className="text-right text-[13px] font-black text-emerald-600 dark:text-emerald-400">
-                            {pkgSizes.reduce((s, sz) => s + (pkgBreakdown[sz] || 0) * boxQty, 0)}
-                          </span>
+                          ))}
                         </div>
                       </div>
                     )}
 
-                    {/* Info sem embalagem configurada */}
-                    {!pkg && packagingItems.length === 0 && (
-                      <p className="text-[9px] text-slate-400 font-bold px-1">
-                        Nenhum padrão cadastrado. Acesse Produção → Config → Embalagens.
-                      </p>
+                    {/* ATACADO: estoque global + embalagens */}
+                    {product.type === SaleType.WHOLESALE && (
+                      <>
+                        {/* Estoque Global com +/- */}
+                        <div className={`flex items-center justify-between px-4 py-4 ${isDarkMode ? 'bg-slate-900/40' : 'bg-slate-50/80'}`}>
+                          <div className="flex items-center gap-2">
+                            <Package size={14} className="text-slate-400" />
+                            <span className="text-sm font-black text-slate-700 dark:text-slate-300 uppercase tracking-wider">Estoque Global</span>
+                          </div>
+                          {isEditing ? (
+                            <div className="flex items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() => onUpdateStock(v.id, 'WHOLESALE', Math.max(0, boxQty - 1))}
+                                className="w-9 h-9 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 flex items-center justify-center text-lg font-black hover:bg-rose-200 transition-all active:scale-95"
+                                aria-label="Diminuir grade"
+                              >−</button>
+                              <span className="w-12 text-center text-xl font-black text-slate-900 dark:text-white">{boxQty}</span>
+                              <button
+                                type="button"
+                                onClick={() => onUpdateStock(v.id, 'WHOLESALE', boxQty + 1)}
+                                className="w-9 h-9 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center text-lg font-black hover:bg-indigo-200 transition-all active:scale-95"
+                                aria-label="Aumentar grade"
+                              >+</button>
+                            </div>
+                          ) : (
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-xl font-black text-slate-900 dark:text-white">{boxQty}</span>
+                              <span className="text-xs font-bold text-slate-400 uppercase">grades</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Embalagens — acordeão multi-alocação */}
+                        <div className={`border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}>
+                          <button
+                            type="button"
+                            onClick={() => togglePackaging(v.id)}
+                            className={`w-full flex items-center justify-between px-4 py-3 transition-colors ${isDarkMode ? 'hover:bg-slate-700/40' : 'hover:bg-slate-50'}`}
+                            aria-label="Expandir embalagens"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Layers size={14} className={allocations.length > 0 ? 'text-violet-500' : 'text-slate-400'} />
+                              <span className={`text-xs font-black uppercase tracking-widest ${allocations.length > 0 ? 'text-violet-700 dark:text-violet-400' : 'text-slate-500'}`}>
+                                Embalagens
+                              </span>
+                              {allocations.length > 0 && (
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                  totalAllocated === boxQty
+                                    ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                    : 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
+                                }`}>
+                                  {totalAllocated}/{boxQty} GR
+                                </span>
+                              )}
+                              {allocations.length === 0 && (
+                                <span className="text-[10px] font-bold text-slate-400">Nenhuma configurada</span>
+                              )}
+                            </div>
+                            {isPkgExpanded
+                              ? <ChevronDown size={14} className="text-slate-400 shrink-0" />
+                              : <ChevronRight size={14} className="text-slate-400 shrink-0" />
+                            }
+                          </button>
+
+                          {/* Conteúdo do acordeão de embalagens */}
+                          {isPkgExpanded && (
+                            <div className={`flex flex-col gap-3 px-4 pb-4 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}>
+
+                              {packagingItems.length === 0 && (
+                                <p className="text-xs text-slate-500 font-bold pt-3">
+                                  Nenhum padrão cadastrado. Acesse Produção → Config → Embalagens.
+                                </p>
+                              )}
+
+                              {/* Lista de alocações */}
+                              {allocations.map((alloc, idx) => {
+                                const pkg = packagingItems.find(p => p.id === alloc.pkgId);
+                                const pkgBreakdown = pkg?.metadata?.sizeQuantities as Record<string, number> | undefined;
+                                const pkgSizes: string[] = pkg?.metadata?.sizes?.length ? pkg.metadata.sizes as string[] : [];
+                                const compKey = `${v.id}-${idx}`;
+                                const isCompExpanded = expandedCompositions.includes(compKey);
+
+                                return (
+                                  <div key={idx} className={`flex flex-col gap-2 pt-3 ${idx > 0 ? `border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}` : ''}`}>
+
+                                    {/* Linha 1: select da embalagem */}
+                                    <select
+                                      value={alloc.pkgId}
+                                      onChange={e => {
+                                        const updated = [...allocations];
+                                        updated[idx] = { ...alloc, pkgId: e.target.value };
+                                        onUpdatePkgAllocations(v.id, updated);
+                                      }}
+                                      title="Padrão de embalagem"
+                                      aria-label="Selecionar padrão de embalagem"
+                                      className={`w-full min-w-0 text-sm font-bold rounded-xl px-3 py-2.5 outline-none cursor-pointer border ${
+                                        pkg
+                                          ? isDarkMode ? 'bg-violet-900/30 text-violet-300 border-violet-700/50' : 'bg-violet-50 text-violet-700 border-violet-200'
+                                          : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-700 border-slate-200'
+                                      }`}
+                                    >
+                                      <option value="">Selecione…</option>
+                                      {packagingItems.map(p => (
+                                        <option key={p.id} value={p.id}>{p.name}</option>
+                                      ))}
+                                    </select>
+
+                                    {/* Linha 2: quantidade + remover */}
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const updated = [...allocations];
+                                            updated[idx] = { ...alloc, qty: Math.max(0, alloc.qty - 1) };
+                                            onUpdatePkgAllocations(v.id, updated);
+                                          }}
+                                          className="w-8 h-8 shrink-0 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 flex items-center justify-center text-base font-black hover:bg-rose-200 transition-all active:scale-95"
+                                          aria-label="Diminuir quantidade"
+                                        >−</button>
+                                        <span className="w-7 text-center text-base font-black text-slate-900 dark:text-white shrink-0">{alloc.qty}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (totalAllocated < boxQty) {
+                                              const updated = [...allocations];
+                                              updated[idx] = { ...alloc, qty: alloc.qty + 1 };
+                                              onUpdatePkgAllocations(v.id, updated);
+                                            }
+                                          }}
+                                          disabled={totalAllocated >= boxQty}
+                                          className="w-8 h-8 shrink-0 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center text-base font-black hover:bg-indigo-200 transition-all active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed"
+                                          aria-label="Aumentar quantidade"
+                                        >+</button>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => onUpdatePkgAllocations(v.id, allocations.filter((_, i) => i !== idx))}
+                                        className="w-8 h-8 shrink-0 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 flex items-center justify-center transition-all active:scale-95"
+                                        aria-label="Remover embalagem"
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </div>
+
+                                    {/* Composição da embalagem com breakdown cadastrado */}
+                                    {pkg && pkgBreakdown && pkgSizes.length > 0 && alloc.qty > 0 && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleComposition(compKey)}
+                                          className="flex items-center gap-1.5 text-xs font-black text-slate-500 dark:text-slate-400 hover:text-slate-700 transition-colors w-fit"
+                                        >
+                                          {isCompExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                          Ver composição por tamanho
+                                        </button>
+                                        {isCompExpanded && (
+                                          <div className={`rounded-xl overflow-hidden border ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                                            <div className={`grid grid-cols-3 px-4 py-2 text-xs font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-600'}`}>
+                                              <span>Tam</span>
+                                              <span className="text-center">Por Grade</span>
+                                              <span className="text-right text-emerald-600">Total Pares</span>
+                                            </div>
+                                            {pkgSizes.map(size => {
+                                              const perBox = pkgBreakdown[size] || 0;
+                                              return (
+                                                <div key={size} className={`grid grid-cols-3 px-4 py-2.5 text-sm border-t ${isDarkMode ? 'border-slate-800 bg-slate-900 text-white' : 'border-slate-100 bg-white text-slate-900'}`}>
+                                                  <span className="font-black">{size}</span>
+                                                  <span className="text-center font-bold text-slate-500">{perBox}</span>
+                                                  <span className="text-right font-black text-emerald-600 dark:text-emerald-400">{perBox * alloc.qty}</span>
+                                                </div>
+                                              );
+                                            })}
+                                            <div className={`grid grid-cols-3 px-4 py-2.5 border-t ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
+                                              <span className={`text-xs font-black uppercase col-span-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>Total Pares</span>
+                                              <span className="text-right text-sm font-black text-emerald-600 dark:text-emerald-400">
+                                                {pkgSizes.reduce((s, sz) => s + (pkgBreakdown[sz] || 0) * alloc.qty, 0)}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </>
+                                    )}
+
+                                    {/* Composição manual para embalagens sem breakdown (avulso) */}
+                                    {alloc.qty > 0 && (!pkgBreakdown || pkgSizes.length === 0) && (
+                                      <div className="flex flex-col gap-2">
+                                        {alloc.customBreakdown && Object.keys(alloc.customBreakdown).length > 0 ? (
+                                          <>
+                                            <div className={`rounded-xl overflow-hidden border ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                                              <div className={`grid grid-cols-3 px-4 py-2 text-xs font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-600'}`}>
+                                                <span>Tam</span>
+                                                <span className="text-center">Por Grade</span>
+                                                <span className="text-right text-indigo-500">Total</span>
+                                              </div>
+                                              {Object.entries(alloc.customBreakdown).map(([size, perGrade]) => (
+                                                <div key={size} className={`grid grid-cols-3 px-4 py-2.5 text-sm border-t ${isDarkMode ? 'border-slate-800 bg-slate-900 text-white' : 'border-slate-100 bg-white text-slate-900'}`}>
+                                                  <span className="font-black">{size}</span>
+                                                  <span className="text-center font-bold text-slate-500">{perGrade}</span>
+                                                  <span className="text-right font-black text-indigo-500">{perGrade * alloc.qty}</span>
+                                                </div>
+                                              ))}
+                                              <div className={`grid grid-cols-3 px-4 py-2.5 border-t ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
+                                                <span className={`text-xs font-black uppercase col-span-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>Total Pares</span>
+                                                <span className="text-right text-sm font-black text-indigo-500">
+                                                  {Object.values(alloc.customBreakdown).reduce((s, q) => s + q, 0) * alloc.qty}
+                                                </span>
+                                              </div>
+                                            </div>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setAllocPopup({ varId: v.id, allocIdx: idx, pkgId: alloc.pkgId, pkgName: pkg?.name || 'Avulso', qty: alloc.qty, pkgCapacity: (pkg?.metadata?.capacity as number) || 0, sizeInput: { ...alloc.customBreakdown! } });
+                                              }}
+                                              className="flex items-center gap-1.5 text-xs font-black text-slate-400 hover:text-indigo-500 transition-colors w-fit"
+                                            >
+                                              <ClipboardList size={12} /> Editar composição
+                                            </button>
+                                          </>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const refPkg = packagingItems.find(p => (p.metadata?.sizes as string[] | undefined)?.length);
+                                              const refSizes = refPkg?.metadata?.sizes as string[] | undefined;
+                                              setAllocPopup({
+                                                varId: v.id,
+                                                allocIdx: idx,
+                                                pkgId: alloc.pkgId,
+                                                pkgName: pkg?.name || 'Avulso',
+                                                qty: alloc.qty,
+                                                pkgCapacity: (pkg?.metadata?.capacity as number) || 0,
+                                                sizeInput: refSizes ? Object.fromEntries(refSizes.map(s => [s, 0])) : {},
+                                              });
+                                            }}
+                                            className={`flex items-center gap-2 text-xs font-black px-3 py-2 rounded-xl border transition-colors w-fit ${isDarkMode ? 'border-slate-600 text-slate-400 hover:border-indigo-500 hover:text-indigo-400' : 'border-slate-300 text-slate-500 hover:border-indigo-300 hover:text-indigo-600'}`}
+                                          >
+                                            <ClipboardList size={13} />
+                                            Informar composição por tamanho
+                                          </button>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+
+                              {/* Espaço + botão adicionar */}
+                              {packagingItems.length > 0 && (
+                                <div className={`pt-3 mt-1 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}>
+                                  <button
+                                    type="button"
+                                    onClick={() => onUpdatePkgAllocations(v.id, [...allocations, { pkgId: '', qty: 0 }])}
+                                    className="flex items-center gap-2 text-sm font-black text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 transition-colors w-fit"
+                                  >
+                                    <Plus size={15} strokeWidth={3} />
+                                    Adicionar embalagem
+                                  </button>
+                                </div>
+                              )}
+
+                              {/* Resumo de alocação */}
+                              {boxQty > 0 && (
+                                <div className={`flex flex-col gap-2 pt-2 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}>
+                                  <div className={`flex items-center justify-between text-xs font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                                    <span>Total alocado</span>
+                                    <span className={`font-black ${totalAllocated === boxQty ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-500'}`}>
+                                      {totalAllocated} / {boxQty} grades
+                                    </span>
+                                  </div>
+
+                                  {/* Grades avulsas */}
+                                  {boxQty - totalAllocated > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const firstPkgWithBreakdown = allocations
+                                          .map(a => packagingItems.find(p => p.id === a.pkgId))
+                                          .find(p => p?.metadata?.sizeQuantities);
+                                        const refSizes = firstPkgWithBreakdown?.metadata?.sizes as string[] | undefined;
+                                        setGradePopup({
+                                          varId: v.id,
+                                          colorName: v.colorName,
+                                          looseQty: boxQty - totalAllocated,
+                                          pkgBreakdown: firstPkgWithBreakdown?.metadata?.sizeQuantities as Record<string, number> | undefined,
+                                          pkgSizes: refSizes,
+                                          sizeInput: refSizes ? Object.fromEntries(refSizes.map(s => [s, 0])) : {},
+                                        });
+                                      }}
+                                      className="flex items-center justify-between w-full px-3 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <Package size={13} className="text-amber-500" />
+                                        <span className="text-xs font-black text-amber-700 dark:text-amber-400 uppercase tracking-wider">
+                                          Grades Avulsas
+                                        </span>
+                                        <span className="text-sm font-black text-amber-600 dark:text-amber-400">
+                                          {boxQty - totalAllocated} GR
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-1.5 text-amber-500">
+                                        <ClipboardList size={15} />
+                                        <span className="text-[10px] font-black uppercase tracking-widest">Registrar</span>
+                                      </div>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </>
                     )}
                   </div>
                 )}
@@ -423,6 +697,279 @@ const StockCard: React.FC<{
           })}
         </div>
       </div>
+
+      {/* Popup — registro de grades avulsas */}
+      {gradePopup && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 px-4 pb-4 sm:pb-0"
+          onClick={() => setGradePopup(null)}
+        >
+          <div
+            className={`w-full max-w-sm rounded-3xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-700' : 'bg-white'}`}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Cabeçalho fixo */}
+            <div className="flex items-start justify-between p-6 pb-4">
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{product.reference}</p>
+                <h3 className="text-base font-black text-slate-900 dark:text-white uppercase">{gradePopup.colorName}</h3>
+                <div className="flex items-center gap-2 mt-1">
+                  <ClipboardList size={13} className="text-amber-500" />
+                  <p className="text-xs font-bold text-amber-500 uppercase tracking-widest">
+                    {gradePopup.looseQty} Grade{gradePopup.looseQty > 1 ? 's' : ''} Avulsa{gradePopup.looseQty > 1 ? 's' : ''}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setGradePopup(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-all text-lg font-black"
+                aria-label="Fechar"
+              >×</button>
+            </div>
+
+            {/* Corpo com scroll */}
+            <div className="flex flex-col gap-4 px-6 pb-2 overflow-y-auto">
+              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">
+                Registre a composição por tamanho de{gradePopup.looseQty > 1 ? ' cada' : ' a'} grade avulsa para controle interno.
+              </p>
+
+              {/* Formulário de tamanhos */}
+              {Object.keys(gradePopup.sizeInput).length > 0 ? (
+                <div className={`rounded-xl overflow-hidden border ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                  <div className={`grid grid-cols-3 px-4 py-2 text-xs font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-600'}`}>
+                    <span>Tamanho</span>
+                    <span className="text-center">Pares/grade</span>
+                    <span className="text-right text-amber-500">Total</span>
+                  </div>
+                  {Object.entries(gradePopup.sizeInput).map(([size, qty]) => (
+                    <div key={size} className={`grid grid-cols-3 items-center px-4 py-2 border-t ${isDarkMode ? 'border-slate-800 bg-slate-900/60' : 'border-slate-100 bg-white'}`}>
+                      <span className="text-sm font-black text-slate-900 dark:text-white">{size}</span>
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setGradePopup(prev => prev ? { ...prev, sizeInput: { ...prev.sizeInput, [size]: Math.max(0, qty - 1) } } : null)}
+                          className="w-6 h-6 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 flex items-center justify-center text-xs font-black hover:bg-rose-200 transition-all"
+                        >−</button>
+                        <span className="w-6 text-center text-sm font-black text-slate-900 dark:text-white">{qty}</span>
+                        <button
+                          type="button"
+                          onClick={() => setGradePopup(prev => prev ? { ...prev, sizeInput: { ...prev.sizeInput, [size]: qty + 1 } } : null)}
+                          className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center text-xs font-black hover:bg-indigo-200 transition-all"
+                        >+</button>
+                      </div>
+                      <span className="text-right text-sm font-black text-amber-500">{qty * gradePopup.looseQty}</span>
+                    </div>
+                  ))}
+                  <div className={`grid grid-cols-3 px-4 py-2.5 border-t ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
+                    <span className={`text-xs font-black uppercase col-span-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>Total Pares</span>
+                    <span className="text-right text-sm font-black text-amber-500">
+                      {Object.values(gradePopup.sizeInput).reduce((s, q) => s + q, 0) * gradePopup.looseQty}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className={`p-4 rounded-xl text-center ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                  <p className="text-xs text-slate-500 font-bold mb-3">Nenhum tamanho de referência disponível.</p>
+                  <p className="text-[10px] text-slate-400">Configure uma embalagem padrão para este produto para ter tamanhos disponíveis.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Botões fixos no rodapé */}
+            <div className="flex gap-3 p-6 pt-4">
+              <button
+                type="button"
+                onClick={() => setGradePopup(null)}
+                className={`flex-1 py-3 rounded-2xl text-sm font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+              >
+                Cancelar
+              </button>
+              {Object.keys(gradePopup.sizeInput).length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const variation = product.variations.find(v => v.id === gradePopup.varId);
+                    if (!variation) return;
+                    const existing = variation.stockPkgAllocations || [];
+                    const newAlloc: StockPkgAllocation = {
+                      pkgId: 'AVULSA',
+                      qty: gradePopup.looseQty,
+                      customBreakdown: gradePopup.sizeInput,
+                    };
+                    onUpdatePkgAllocations(gradePopup.varId, [...existing, newAlloc]);
+                    setGradePopup(null);
+                  }}
+                  className="flex-1 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl text-sm font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <ClipboardList size={15} />
+                  Registrar
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup — composição manual por alocação (avulso) */}
+      {allocPopup && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+          onClick={() => setAllocPopup(null)}
+        >
+          <div
+            className={`w-full max-w-sm rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-700' : 'bg-white'}`}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Cabeçalho */}
+            <div className="flex items-start justify-between p-6 pb-4">
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Composição manual</p>
+                <p className="text-xs font-bold text-indigo-500 mt-0.5">{allocPopup.qty} grade{allocPopup.qty > 1 ? 's' : ''}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAllocPopup(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center hover:bg-slate-200 transition-all text-lg font-black"
+                aria-label="Fechar"
+              >×</button>
+            </div>
+
+            {/* Linha de seleção de embalagem */}
+            <div className={`mx-6 mb-4 flex flex-col gap-1.5`}>
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Embalagem</label>
+              <select
+                value={allocPopup.pkgId}
+                title="Selecionar padrão de embalagem"
+                aria-label="Selecionar padrão de embalagem"
+                onChange={e => {
+                  const selectedPkg = packagingItems.find(p => p.id === e.target.value);
+                  const newCapacity = (selectedPkg?.metadata?.capacity as number) || 0;
+                  const newSizes = selectedPkg?.metadata?.sizes as string[] | undefined;
+                  setAllocPopup(prev => prev ? {
+                    ...prev,
+                    pkgId: e.target.value,
+                    pkgName: selectedPkg?.name || 'Avulso',
+                    pkgCapacity: newCapacity,
+                    sizeInput: newSizes?.length
+                      ? Object.fromEntries(newSizes.map(s => [s, prev.sizeInput[s] ?? 0]))
+                      : prev.sizeInput,
+                  } : null);
+                }}
+                className={`w-full text-sm font-bold rounded-xl px-4 py-3 outline-none cursor-pointer border-2 transition-all ${
+                  allocPopup.pkgId
+                    ? isDarkMode ? 'bg-violet-900/30 text-violet-300 border-violet-700/50' : 'bg-violet-50 text-violet-700 border-violet-200'
+                    : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-50 text-slate-600 border-slate-200'
+                }`}
+              >
+                <option value="">Selecione a embalagem…</option>
+                {packagingItems.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Formulário de tamanhos */}
+            <div className="flex flex-col gap-4 px-6 pb-2 overflow-y-auto">
+              {(() => {
+                const totalPairsInput = Object.values(allocPopup.sizeInput).reduce((s, q) => s + q, 0);
+                const capacity = allocPopup.pkgCapacity;
+                const atCapacity = capacity > 0 && totalPairsInput >= capacity;
+                return (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">
+                        Informe quantos pares de cada tamanho há em {allocPopup.qty > 1 ? 'cada' : 'a'} grade.
+                      </p>
+                      {capacity > 0 && (
+                        <span className={`text-xs font-black px-2.5 py-1 rounded-full shrink-0 ml-3 ${
+                          atCapacity
+                            ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
+                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                        }`}>
+                          {totalPairsInput}/{capacity} pares
+                        </span>
+                      )}
+                    </div>
+
+                    {Object.keys(allocPopup.sizeInput).length > 0 ? (
+                      <div className={`rounded-xl overflow-hidden border ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                        <div className={`grid grid-cols-3 px-4 py-2 text-xs font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-600'}`}>
+                          <span>Tamanho</span>
+                          <span className="text-center">Pares/grade</span>
+                          <span className="text-right text-indigo-500">Total</span>
+                        </div>
+                        {Object.entries(allocPopup.sizeInput).map(([size, qty]) => (
+                          <div key={size} className={`grid grid-cols-3 items-center px-4 py-2 border-t ${isDarkMode ? 'border-slate-800 bg-slate-900/60' : 'border-slate-100 bg-white'}`}>
+                            <span className="text-sm font-black text-slate-900 dark:text-white">{size}</span>
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setAllocPopup(prev => prev ? { ...prev, sizeInput: { ...prev.sizeInput, [size]: Math.max(0, qty - 1) } } : null)}
+                                className="w-6 h-6 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 flex items-center justify-center text-xs font-black hover:bg-rose-200 transition-all"
+                              >−</button>
+                              <span className="w-6 text-center text-sm font-black text-slate-900 dark:text-white">{qty}</span>
+                              <button
+                                type="button"
+                                disabled={atCapacity}
+                                onClick={() => setAllocPopup(prev => prev ? { ...prev, sizeInput: { ...prev.sizeInput, [size]: qty + 1 } } : null)}
+                                className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center text-xs font-black hover:bg-indigo-200 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                              >+</button>
+                            </div>
+                            <span className="text-right text-sm font-black text-indigo-500">{qty * allocPopup.qty}</span>
+                          </div>
+                        ))}
+                        <div className={`grid grid-cols-3 px-4 py-2.5 border-t ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
+                          <span className={`text-xs font-black uppercase col-span-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>Total Pares</span>
+                          <span className={`text-right text-sm font-black ${atCapacity ? 'text-emerald-500' : 'text-indigo-500'}`}>
+                            {totalPairsInput * allocPopup.qty}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400 font-bold">
+                        Nenhum tamanho de referência. Configure um padrão de embalagem com tamanhos cadastrados.
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Botões rodapé */}
+            <div className="flex gap-3 p-6 pt-4">
+              <button
+                type="button"
+                onClick={() => setAllocPopup(null)}
+                className={`flex-1 py-3 rounded-2xl text-sm font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+              >
+                Cancelar
+              </button>
+              {Object.keys(allocPopup.sizeInput).length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const variation = product.variations.find(v => v.id === allocPopup.varId);
+                    if (!variation) return;
+                    const updated = [...(variation.stockPkgAllocations || [])];
+                    updated[allocPopup.allocIdx] = {
+                      ...updated[allocPopup.allocIdx],
+                      pkgId: allocPopup.pkgId,
+                      customBreakdown: allocPopup.sizeInput,
+                    };
+                    onUpdatePkgAllocations(allocPopup.varId, updated);
+                    setAllocPopup(null);
+                  }}
+                  className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl text-sm font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <ClipboardList size={15} />
+                  Salvar
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

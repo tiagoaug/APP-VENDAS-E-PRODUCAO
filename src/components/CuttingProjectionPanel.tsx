@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+﻿import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -16,11 +16,15 @@ import WebCameraScanner from './WebCameraScanner';
 import { Capacitor } from '@capacitor/core';
 import {
   ProductionLot, Product, Sector, FlowTag, ColorValue,
-  ProductionConfigItem, ServiceOrder, Person, Account, Category, ProductionOrder
+  ProductionConfigItem, ServiceOrder, Person, Account, Category, ProductionOrder,
+  ComponentConsumption
 } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import { financeService } from '../services/financeService';
 import { printLotSheet, shareImage } from '../utils/pdfExport';
+import { resolveNextActiveSector, buildSkippedSectorsMessage, computeOSAdvanceOutcome, ensureSectorInRoute } from '../utils/productionRoute';
+import { toast } from '../utils/toast';
+import { generateId } from '../utils/id';
 
 interface CuttingProjectionPanelProps {
   lots: ProductionLot[];
@@ -116,7 +120,6 @@ export default function CuttingProjectionPanel({
   const isWebPlatform = Capacitor.getPlatform() === 'web';
   const [qrBaixaConfirm, setQrBaixaConfirm] = useState<{
     os: ServiceOrder;
-    nextSectorName: string;
   } | null>(null);
 
   // Order selection state for per-order OS creation
@@ -325,14 +328,14 @@ export default function CuttingProjectionPanel({
     if (pendingOsSourceOrderIds.length === 0 && !editingOsId) {
       const wholeLotOS = lotActiveOSListFull.find(os => !os.sourceOrderIds || os.sourceOrderIds.length === 0);
       if (wholeLotOS) {
-        alert(`Já existe a OS ${wholeLotOS.osNumber} em aberto para este lote no setor de corte. Conclua ou exclua-a antes de emitir uma nova.`);
+        toast.show(`Já existe a OS ${wholeLotOS.osNumber} em aberto para este lote no setor de corte. Conclua ou exclua-a antes de emitir uma nova.`);
         setIsOSPanelOpen(false);
         return;
       }
     }
 
     if (!osProviderId) {
-      alert("Por favor, selecione o Cortador (Prestador)!");
+      toast.show("Por favor, selecione o Cortador (Prestador)!");
       return;
     }
 
@@ -362,7 +365,7 @@ export default function CuttingProjectionPanel({
             });
           } catch { /* ignore if transaction not found */ }
         }
-        alert(`OS ${osToEdit?.osNumber || editingOsId} atualizada com sucesso!`);
+        toast.show(`OS ${osToEdit?.osNumber || editingOsId} atualizada com sucesso!`);
         setEditingOsId(null);
         setIsOSPanelOpen(false);
         setIsSavingOS(false);
@@ -370,7 +373,7 @@ export default function CuttingProjectionPanel({
       }
       // ─────────────────────────────────────────────────────────────────────
 
-      const uniqueId = `os_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const uniqueId = `os_${Date.now()}_${generateId()}`;
       const osNumberStr = `OS-C-${Date.now().toString().slice(-4)}`;
 
       let transactionId = '';
@@ -432,15 +435,16 @@ export default function CuttingProjectionPanel({
       await firebaseService.saveDocument("serviceOrders", newOS);
 
       if (osDirectComplete) {
-        // Move lot usando posição do setor atual no roteiro
-        const curSectorPos = (selectedLot.route || []).indexOf(selectedSectorId);
+        // Move lot usando posição do setor atual no roteiro, respeitando o roteiro cadastrado no produto
+        const directRoute = selectedLot.route || [];
+        const curSectorPos = directRoute.indexOf(selectedSectorId);
         const effectiveSectorPos = curSectorPos >= 0 ? curSectorPos : selectedLot.currentSectorIndex;
-        const nextSectorIndex = effectiveSectorPos + 1;
-        const nextRouteId = selectedLot.route[nextSectorIndex] || '';
+        const directProduct = products.find(p => p.id === selectedLot.productId);
+        const { nextIndex: nextSectorIndex, isFinished: directIsFinished, skippedSectorNames: directSkipped } = resolveNextActiveSector(directRoute, effectiveSectorPos, directProduct, sectors);
         await firebaseService.updateDocument("productionLots", selectedLot.id, {
-          currentSectorIndex: Math.min(nextSectorIndex, selectedLot.route.length - 1),
+          currentSectorIndex: Math.min(nextSectorIndex, Math.max(directRoute.length - 1, 0)),
           currentStatusId: '',
-          finishedAt: nextRouteId ? undefined : Date.now(),
+          finishedAt: directIsFinished ? Date.now() : undefined,
           history: [
             ...(selectedLot.history || []),
             {
@@ -452,6 +456,8 @@ export default function CuttingProjectionPanel({
             }
           ]
         });
+        const directSkipMessage = buildSkippedSectorsMessage(directSkipped, directIsFinished ? 'CONCLUÍDO' : (sectors.find(s => s.id === directRoute[nextSectorIndex])?.name || ''));
+        if (directSkipMessage) toast.show(directSkipMessage);
       }
 
       // Set data for the print modal preview before auto-advancement
@@ -465,7 +471,7 @@ export default function CuttingProjectionPanel({
       });
       setPrintTab('both');
 
-      alert(`Ordem de Serviço ${osNumberStr} criada com sucesso!`);
+      toast.show(`Ordem de Serviço ${osNumberStr} criada com sucesso!`);
       setIsOSPanelOpen(false);
       
       // Auto select next lot if available
@@ -477,7 +483,7 @@ export default function CuttingProjectionPanel({
       }
     } catch (e) {
       console.error(e);
-      alert("Erro ao emitir OS de Corte: " + (e instanceof Error ? e.message : String(e)));
+      toast.show("Erro ao emitir OS de Corte: " + (e instanceof Error ? e.message : String(e)));
     } finally {
       setIsSavingOS(false);
     }
@@ -604,16 +610,17 @@ export default function CuttingProjectionPanel({
         l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id))
       );
       if (!lotObj) {
-        alert(`OS ${os.osNumber}: lote não encontrado. Verifique se o mapa foi removido.`);
+        toast.show(`OS ${os.osNumber}: lote não encontrado. Verifique se o mapa foi removido.`);
         return;
       }
 
       // Position of the OS's sector in the lot route
-      const osSectorIdx = (lotObj.route || []).indexOf(os.sectorId ?? '');
+      const cuttingRoute = lotObj.route || [];
+      const osSectorIdx = cuttingRoute.indexOf(os.sectorId ?? '');
       const effectiveSectorIdx = osSectorIdx >= 0 ? osSectorIdx : lotObj.currentSectorIndex;
-      const nextIdx = effectiveSectorIdx + 1;
-      const nextSectorId = (lotObj.route || [])[nextIdx] || '';
-      const nextSectorName = sectors.find(s => s.id === nextSectorId)?.name || 'CONCLUÍDO';
+      // Centraliza o cálculo do próximo setor e a detecção de roteiros divergentes
+      // entre modelos reunidos na mesma OS (ver `computeOSAdvanceOutcome`).
+      const { nextSectorId, nextSectorName, isFinished: isAtRouteEnd, skippedSectorNames: cuttingSkipped, routeDivergence, divergentOrders } = computeOSAdvanceOutcome(os, lotObj, products, sectors);
 
       // 1. Mark OS as COMPLETED
       await firebaseService.updateDocument('serviceOrders', os.id, {
@@ -671,11 +678,51 @@ export default function CuttingProjectionPanel({
           `OS ${os.osNumber} Concluída`,
           `Corte finalizado. Mapa #${lotObj.orderNumber} permanece em "${currentSectorName}".`
         );
+      } else if (routeDivergence) {
+        // Trava: modelos reunidos nesta OS divergem sobre o próximo setor — não dá pra
+        // avançar o mapa inteiro como se fosse um único modelo. Em vez de só explicar e
+        // deixar o usuário procurar o botão certo em outra tela (o que gerava a sensação
+        // de "aceitei e nada aconteceu"), perguntamos e — se confirmado — já direcionamos
+        // cada pedido individualmente para o setor do SEU PRÓPRIO roteiro.
+        const divergenceSummary = `Esta OS reúne modelos com roteiros de produção diferentes:\n` +
+          routeDivergence.map(d => `• ${d.productName} → ${d.sectorName}`).join('\n') +
+          `\n\nO mapa #${lotObj.orderNumber} não pode avançar como um todo sem mover algum modelo para o setor errado.`;
+        if (divergentOrders && divergentOrders.length > 0) {
+          openConfirm({
+            title: `OS ${os.osNumber} Concluída — Direcionar modelos?`,
+            message: divergenceSummary + `\n\nDirecionar agora cada pedido para o setor correto do seu próprio modelo?`,
+            confirmLabel: 'Direcionar Agora',
+            isDanger: false,
+            onConfirm: () => {
+              const currentOrderSectors: Record<string, string> = (lotObj as any).metadata?.orderSectors || {};
+              const updatedOrderSectors = { ...currentOrderSectors };
+              divergentOrders.forEach(d => { updatedOrderSectors[d.orderId] = d.targetSectorId; });
+              firebaseService.updateDocument('productionLots', lotObj.id, {
+                'metadata.orderSectors': updatedOrderSectors,
+              }).then(() => {
+                showInfo(
+                  `Mapa #${lotObj.orderNumber} — Modelos Direcionados`,
+                  `${divergentOrders.length} pedido(s) direcionado(s) ao setor correto de cada modelo:\n` +
+                  divergentOrders.map(d => `• ${d.productName} → ${d.targetSectorName}`).join('\n')
+                );
+              });
+            },
+          });
+        } else {
+          showInfo(`OS ${os.osNumber} Concluída — Ação necessária`, divergenceSummary, true);
+        }
       } else {
         // Normal scenario: lot is in this sector, advance it to the next one.
-        const newSectorIndex = Math.min(nextIdx, (lotObj.route || []).length - 1);
+        // `nextSectorId` now comes from the OS's OWN model's registered route (see
+        // `computeOSAdvanceOutcome`), so it may not exist in the lot's frozen `route`
+        // snapshot (copied from a different "main" model) — `ensureSectorInRoute`
+        // guarantees it's there before we index into it, fixing models that used to
+        // jump past sectors that were never in their bundle's frozen route.
+        const advancedRoute = isAtRouteEnd ? cuttingRoute : ensureSectorInRoute(cuttingRoute, nextSectorId, sectors);
+        const newSectorIndex = isAtRouteEnd ? Math.max(advancedRoute.length - 1, 0) : advancedRoute.indexOf(nextSectorId);
         const updatedLot: ProductionLot = {
           ...lotObj,
+          route: advancedRoute,
           currentSectorIndex: newSectorIndex,
           currentStatusId: '',
           history: [
@@ -689,14 +736,15 @@ export default function CuttingProjectionPanel({
             },
           ],
         };
-        if (!nextSectorId) {
+        if (isAtRouteEnd) {
           updatedLot.finishedAt = Date.now();
         }
         await onSaveLot(updatedLot);
 
+        const cuttingSkipMessage = buildSkippedSectorsMessage(cuttingSkipped, nextSectorName);
         showInfo(
           `Mapa #${lotObj.orderNumber} → ${nextSectorName}`,
-          `Lote avançado para "${nextSectorName}" com sucesso.`
+          cuttingSkipMessage || `Lote avançado para "${nextSectorName}" com sucesso.`
         );
       }
 
@@ -709,7 +757,7 @@ export default function CuttingProjectionPanel({
       );
       setSelectedLotId(remaining.length > 0 ? remaining[0].id : null);
     } catch (e) {
-      alert('Erro ao concluir OS: ' + (e instanceof Error ? e.message : String(e)));
+      toast.show('Erro ao concluir OS: ' + (e instanceof Error ? e.message : String(e)));
     }
   };
 
@@ -761,7 +809,7 @@ export default function CuttingProjectionPanel({
             try { await firebaseService.deleteDocument('transactions', os.transactionId); } catch { /* ignore */ }
           }
         } catch (e) {
-          alert('Erro ao excluir OS: ' + (e instanceof Error ? e.message : String(e)));
+          toast.show('Erro ao excluir OS: ' + (e instanceof Error ? e.message : String(e)));
         }
       },
     });
@@ -959,7 +1007,7 @@ export default function CuttingProjectionPanel({
       await shareImage(canvas.toDataURL('image/jpeg', 0.93), `${prefix}.jpg`);
     } catch (err) {
       console.error('Erro ao gerar JPG:', err);
-      alert('Erro ao gerar imagem. Tente novamente.');
+      toast.show('Erro ao gerar imagem. Tente novamente.');
     } finally {
       setIsShareExporting(false);
     }
@@ -979,19 +1027,10 @@ export default function CuttingProjectionPanel({
       );
     }
 
-    if (!os) { alert('OS não encontrada. Verifique o código e tente novamente.'); return; }
-    if (os.status === 'COMPLETED') { alert(`A OS ${os.osNumber} já foi concluída.`); return; }
+    if (!os) { toast.show('OS não encontrada. Verifique o código e tente novamente.'); return; }
+    if (os.status === 'COMPLETED') { toast.show(`A OS ${os.osNumber} já foi concluída.`); return; }
 
-    const lotObj = cuttingLots.find(l =>
-      l.id === os!.lotId || (os!.lotIds && os!.lotIds.includes(l.id))
-    );
-    // Usa posição da OS no roteiro
-    const osPos = lotObj?.route?.indexOf(os!.sectorId ?? '') ?? -1;
-    const effectiveOsPos = osPos >= 0 ? osPos : (lotObj?.currentSectorIndex ?? 0);
-    const nextIdx = effectiveOsPos + 1;
-    const nextSectorId = lotObj?.route?.[nextIdx] || '';
-    const nextSec = sectors.find(s => s.id === nextSectorId);
-    setQrBaixaConfirm({ os, nextSectorName: nextSec?.name || 'CONCLUÍDO' });
+    setQrBaixaConfirm({ os });
   };
 
   // High-fidelity browser print trigger
@@ -1896,7 +1935,7 @@ export default function CuttingProjectionPanel({
                           )}
                           <div className="flex-1 min-w-0">
                             <p className="text-[10px] font-black uppercase truncate text-slate-800 dark:text-slate-200 leading-none">
-                              {prodName}
+                              {prodRef ? `${prodRef} ${prodName}` : prodName}
                             </p>
                             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                               {colorName && <span className="text-[8px] font-bold text-slate-400 uppercase">{colorName}</span>}
@@ -2078,13 +2117,6 @@ export default function CuttingProjectionPanel({
                       {lotActiveOSListFull.length > 0 ? (
                         <>
                           {lotActiveOSListFull.map(os => {
-                            const osLot = cuttingLots.find(l => l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id)));
-                            // Usa posição da OS no roteiro para evitar pular setores
-                            const osSectorPos = osLot?.route?.indexOf(os.sectorId ?? '') ?? -1;
-                            const effectivePos = osSectorPos >= 0 ? osSectorPos : (osLot?.currentSectorIndex ?? 0);
-                            const nextSectorIdx = effectivePos + 1;
-                            const nextSectorId = osLot?.route?.[nextSectorIdx] || '';
-                            const nextSectorName = sectors.find(s => s.id === nextSectorId)?.name || 'CONCLUÍDO';
                             return (
                             <div key={os.id} className={`rounded-2xl border overflow-hidden ${
                               isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'
@@ -2123,7 +2155,7 @@ export default function CuttingProjectionPanel({
                                     if (!isWebPlatform) { try { await scannerService.scan(); } catch (_) { /* ignore */ } }
                                     setQrBaixaOpen(true);
                                     setQrBaixaManualCode('');
-                                    setQrBaixaConfirm({ os, nextSectorName });
+                                    setQrBaixaConfirm({ os });
                                   }}
                                   className={`flex items-center justify-center gap-2 py-2.5 border-r transition-all active:scale-95 ${isDarkMode ? 'border-slate-800 text-violet-400 hover:bg-violet-900/20' : 'border-slate-100 text-violet-600 hover:bg-violet-50'}`}
                                 >
@@ -2194,13 +2226,13 @@ export default function CuttingProjectionPanel({
                                 </button>
                               </div>
 
-                              {/* Mover Setor — full-width line */}
+                              {/* Concluir e Avançar — full-width line */}
                               <button
                                 type="button"
-                                title={`Concluir OS e mover para ${nextSectorName}`}
+                                title="Concluir esta OS e avançar o mapa de produção"
                                 onClick={() => openConfirm({
-                                  title: `Mover para ${nextSectorName}`,
-                                  message: `Concluir ${os.osNumber} e avançar o lote para o setor "${nextSectorName}"?`,
+                                  title: 'Concluir OS',
+                                  message: `Concluir ${os.osNumber} e avançar o mapa de produção para o próximo setor? O destino é calculado conforme o roteiro de produção cadastrado — se houver modelos com roteiros diferentes neste mapa, o sistema vai pedir para direcioná-los individualmente.`,
                                   confirmLabel: 'Confirmar',
                                   isDanger: false,
                                   onConfirm: () => handleCompleteOSCutting(os),
@@ -2212,7 +2244,7 @@ export default function CuttingProjectionPanel({
                                 }`}
                               >
                                 <CheckCircle2 size={14} />
-                                Mover Setor → {nextSectorName}
+                                Concluir e Avançar Setor
                               </button>
                             </div>
                             );
@@ -3539,6 +3571,7 @@ export default function CuttingProjectionPanel({
                       .join('-') || undefined
                   : undefined)
           }
+          sectors={sectors}
         />
       )}
 
@@ -3772,12 +3805,6 @@ export default function CuttingProjectionPanel({
                       <div className="flex justify-between">
                         <span className="text-slate-400 font-bold uppercase tracking-wider">Cortador</span>
                         <span className="font-black text-slate-800 dark:text-slate-200">{qrBaixaConfirm.os.providerName}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400 font-bold uppercase tracking-wider">Próximo Setor</span>
-                        <span className={`font-black ${qrBaixaConfirm.nextSectorName === 'CONCLUÍDO' ? 'text-emerald-500' : 'text-violet-600 dark:text-violet-400'}`}>
-                          {qrBaixaConfirm.nextSectorName}
-                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-slate-400 font-bold uppercase tracking-wider">Valor</span>

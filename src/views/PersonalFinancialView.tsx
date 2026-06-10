@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+﻿import { useState, useMemo } from 'react';
 import { Transaction, TransactionType, Category, Account, AccountType, CategoryType, FamilyMember, Budget, Person } from '../types';
 import { Search, Plus, TrendingUp, TrendingDown, DollarSign, Wallet, ArrowRightLeft, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, LayoutGrid, ArrowLeft, Settings, Users, Target, ChevronRight, Calculator, Phone } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -12,6 +12,7 @@ import PersonalContactModal from '../components/PersonalContactModal';
 import BudgetModal from '../components/BudgetModal';
 import TransferToPersonalModal from '../components/TransferToPersonalModal';
 import CalculatorModal from '../components/CalculatorModal';
+import { toast } from '../utils/toast';
 
 interface PersonalFinancialViewProps {
   transactions: Transaction[];
@@ -152,7 +153,7 @@ export default function PersonalFinancialView({
 
   const handleAddTx = (type: TransactionType) => {
     if (!personalAccount) {
-      alert('Crie a Conta Pessoal primeiro.');
+      toast.show('Crie a Conta Pessoal primeiro.');
       return;
     }
     setModalInitialType(type);
@@ -162,12 +163,12 @@ export default function PersonalFinancialView({
 
   const handleTransfer = () => {
     if (!personalAccount) {
-      alert('Crie a Conta Pessoal primeiro.');
+      toast.show('Crie a Conta Pessoal primeiro.');
       return;
     }
     const bizAccounts = accounts.filter(a => a.type !== AccountType.PERSONAL);
     if (bizAccounts.length === 0) {
-      alert('Você não possui contas comerciais para transferir.');
+      toast.show('Você não possui contas comerciais para transferir.');
       return;
     }
     setIsTransferModalOpen(true);
@@ -207,10 +208,10 @@ export default function PersonalFinancialView({
         isPersonal: true 
       });
 
-      alert('Transferência realizada com sucesso!');
+      toast.show('Transferência realizada com sucesso!');
     } catch (err: any) { 
       console.error(err);
-      alert('Erro ao realizar transferência: ' + err.message); 
+      toast.show('Erro ao realizar transferência: ' + err.message); 
     }
   };
 

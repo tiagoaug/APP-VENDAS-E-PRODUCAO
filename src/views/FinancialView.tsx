@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+﻿import { useState, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, Product } from '../types';
 import { Search, Plus, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash } from 'lucide-react';
@@ -8,6 +8,7 @@ import TransactionModal from '../components/TransactionModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import FinancialQueryModal from '../components/FinancialQueryModal';
 import PartialPaymentModal from '../components/PartialPaymentModal';
+import { toast } from '../utils/toast';
 
 interface FinancialViewProps {
   transactions: Transaction[];
@@ -107,7 +108,7 @@ export default function FinancialView({
     } catch (error: any) {
       setSettlingId(null);
       console.error('Error settling transaction:', error);
-      alert('Erro ao dar baixa: ' + (error.message || error));
+      toast.show('Erro ao dar baixa: ' + (error.message || error));
     }
   };
 
@@ -129,7 +130,7 @@ export default function FinancialView({
       setDeletingId(null);
       setIdToDelete(null);
       console.error('Error deleting transaction:', error);
-      alert('Erro ao excluir: ' + (error.message || error));
+      toast.show('Erro ao excluir: ' + (error.message || error));
     }
   };
 
@@ -141,7 +142,7 @@ export default function FinancialView({
 
   const copyHistory = (purchase: Purchase) => {
     if (!purchase.paymentHistory || purchase.paymentHistory.length === 0) {
-      alert('Nenhum pagamento registrado para copiar');
+      toast.show('Nenhum pagamento registrado para copiar');
       return;
     }
 
@@ -156,7 +157,7 @@ export default function FinancialView({
     const summary = `Histórico de Pagamentos - Compra #${purchase.id.slice(-6).toUpperCase()}\nFornecedor: ${supplier?.name || '---'}\nTotal: R$ ${purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n${text}\n\nTotal Pago: R$ ${totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\nRestante: R$ ${remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
     navigator.clipboard.writeText(summary);
-    alert('Histórico de pagamentos copiado!');
+    toast.show('Histórico de pagamentos copiado!');
   };
 
   const onPartialPay = async (amount: number, accountId: string, note: string) => {
@@ -204,7 +205,7 @@ export default function FinancialView({
       const overpaid = totalPaid - selectedPurchase.total;
       const currentCredit = supplier.credit || 0;
       await onUpdatePerson(supplier.id, { credit: currentCredit + overpaid });
-      alert(`Sobrepagamento de R$ ${overpaid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} adicionado como crédito ao fornecedor!`);
+      toast.show(`Sobrepagamento de R$ ${overpaid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} adicionado como crédito ao fornecedor!`);
     }
   };
 
@@ -251,7 +252,7 @@ export default function FinancialView({
               }
             } catch (error: any) {
               console.error('Error saving transaction:', error);
-              alert('Erro ao salvar: ' + (error.message || error));
+              toast.show('Erro ao salvar: ' + (error.message || error));
             }
           }}
           categories={businessCategories}

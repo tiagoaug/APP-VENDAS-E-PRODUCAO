@@ -1,6 +1,7 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Account, AccountType } from '../types';
 import { X, ArrowRightLeft, DollarSign, Landmark, Banknote, Building2 } from 'lucide-react';
+import { toast } from '../utils/toast';
 
 interface TransferToPersonalModalProps {
   isOpen: boolean;
@@ -26,11 +27,11 @@ export default function TransferToPersonalModal({
   const handleConfirm = async () => {
     const numAmount = Number(amount);
     if (!selectedAccountId) {
-      alert('Selecione uma conta de origem');
+      toast.show('Selecione uma conta de origem');
       return;
     }
     if (isNaN(numAmount) || numAmount <= 0) {
-      alert('Informe um valor válido');
+      toast.show('Informe um valor válido');
       return;
     }
 
@@ -46,7 +47,7 @@ export default function TransferToPersonalModal({
       await onConfirm(selectedAccountId, numAmount);
       onClose();
     } catch (error: any) {
-      alert('Erro: ' + error.message);
+      toast.show('Erro: ' + error.message);
     } finally {
       setIsSubmitting(false);
     }

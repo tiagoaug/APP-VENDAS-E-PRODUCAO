@@ -1,10 +1,11 @@
-import React, { useState, useMemo } from 'react';
+﻿import React, { useState, useMemo } from 'react';
 import {
   ShoppingCart, X, Package, Layers, Clock,
   CheckCircle, Truck, Circle, ArrowUpRight, ChevronDown, ChevronUp,
   ClipboardList, AlertTriangle
 } from 'lucide-react';
 import { PurchaseRequest, PurchaseRequestStatus, ViewType } from '../types';
+import { generateId } from '../utils/id';
 
 interface PurchaseNeedsModalProps {
   isOpen: boolean;
@@ -125,7 +126,7 @@ export default function PurchaseNeedsModal({
         requestId: req.id,
         initialDescription: `Compra de ${req.name} para produção`,
         initialGeneralItems: [{
-          id: Math.random().toString(36).substr(2, 9),
+          id: generateId(),
           description: `${req.name} (${remainingQty} ${req.unit} restantes)`,
           value: 0,
         }],

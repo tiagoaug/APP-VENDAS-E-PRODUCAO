@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+﻿import React, { useState, useMemo } from 'react';
 import { X, Copy, MessageCircle, CheckCircle2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Person, Product } from '../types';
@@ -7,6 +7,7 @@ import autoTable from 'jspdf-autotable';
 import { sharePDF, shareImage } from '../utils/pdfExport';
 import { toJpeg } from 'html-to-image';
 import ExportNoteModal from './ExportNoteModal';
+import { toast } from '../utils/toast';
 
 interface ConsolidatedMessageModalProps {
   isOpen: boolean;
@@ -74,13 +75,13 @@ export default function ConsolidatedMessageModal({
 
   const handleCopy = () => {
     navigator.clipboard.writeText(messagePreview);
-    alert('Texto copiado!');
+    toast.show('Texto copiado!');
   };
 
   const handleWhatsApp = () => {
     const cleanPhone = (customer?.phone || '').replace(/\D/g, '');
     if (!cleanPhone) {
-      alert('Não é possível abrir o WhatsApp: Cliente não possui telefone cadastrado.');
+      toast.show('Não é possível abrir o WhatsApp: Cliente não possui telefone cadastrado.');
       return;
     }
     const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(messagePreview)}`;
@@ -289,7 +290,7 @@ export default function ConsolidatedMessageModal({
       }
     } catch (e) {
       console.error('Export error:', e);
-      alert(`Erro ao gerar arquivo: ${(e as Error).message || e}`);
+      toast.show(`Erro ao gerar arquivo: ${(e as Error).message || e}`);
     }
   };
 

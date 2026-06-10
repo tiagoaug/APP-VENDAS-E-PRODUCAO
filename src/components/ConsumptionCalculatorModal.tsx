@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Ruler, Check, Copy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { parseLocaleNumber } from '../utils/numbers';
 
 interface ConsumptionCalculatorModalProps {
   isOpen: boolean;
@@ -27,16 +28,16 @@ export default function ConsumptionCalculatorModal({ isOpen, onClose, onResult, 
 
   useEffect(() => {
     if (activeTab === 'PAPEL') {
-      const l1 = parseFloat(lado1.replace(',', '.')) || 0;
-      const l2 = parseFloat(lado2.replace(',', '.')) || 0;
-      const p = parseFloat(pecasPar.replace(',', '.')) || 0;
+      const l1 = parseLocaleNumber(lado1);
+      const l2 = parseLocaleNumber(lado2);
+      const p = parseLocaleNumber(pecasPar);
       
       // M2 = (L1 * L2 * P) / 10000 (assuming L1/L2 are in cm)
       const res = (l1 * l2 * p) / 10000;
       setFinalResult(res);
     } else {
-      const metros = parseFloat(materialMetros.replace(',', '.')) || 0;
-      const pares = parseFloat(materialPares.replace(',', '.')) || 0;
+      const metros = parseLocaleNumber(materialMetros);
+      const pares = parseLocaleNumber(materialPares);
       
       const res = pares > 0 ? metros / pares : 0;
       setFinalResult(res);
