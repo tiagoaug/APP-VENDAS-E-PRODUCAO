@@ -3025,6 +3025,8 @@ function GenericConfigList({
             </button>
           </div>
         </div>
+      </Modal>
+
       <Modal
         isOpen={isStockColorModalOpen}
         onClose={() => setIsStockColorModalOpen(false)}
