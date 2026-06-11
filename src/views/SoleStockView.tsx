@@ -1,28 +1,36 @@
 ﻿import { useState, useMemo } from 'react';
-import { ProductionConfigItem, ColorValue, SoleStockEntry } from '../types';
+import { ProductionConfigItem, ColorValue, SoleStockEntry, ProductionLot, Product, Person, PurchaseRequest, Purchase } from '../types';
 import {
   ArrowLeft, Package, Palette, Clock, Plus, Trash2, Save,
-  ChevronDown, Search, Edit2, CheckCircle2, X, Calculator, Tag,
-  Share2, FileText, Image
+  ChevronDown, ChevronUp, Search, Edit2, CheckCircle2, X, Calculator, Tag,
+  Share2, FileText, Image, Info, ClipboardList, ShoppingCart, SlidersHorizontal
 } from 'lucide-react';
 import { firebaseService } from '../services/firebaseService';
 import PrintSoleLabelModal from '../components/PrintSoleLabelModal';
 import CalculatorModal from '../components/CalculatorModal';
 import { exportSoleStockReport, StockShareItem } from '../utils/soleStockExport';
+import { computeSoleMapaReservations, computeSolePendingOrders } from '../utils/soleNeeds';
 import { toast } from '../utils/toast';
 
 interface SoleStockViewProps {
   productionConfigs: ProductionConfigItem[];
   colors: ColorValue[];
   stockEntries: SoleStockEntry[];
+  productionLots?: ProductionLot[];
+  products?: Product[];
+  people?: Person[];
+  purchaseRequests?: PurchaseRequest[];
+  purchases?: Purchase[];
   onBack: () => void;
   onNavigateToWeighing?: () => void;
   onNavigateToWeighingHistory?: () => void;
+  onFormularPedido?: (items: { moldId: string; colorId?: string; initialGrid?: Record<string, number> }[]) => void;
   isDarkMode: boolean;
 }
 
 export default function SoleStockView({
-  productionConfigs, colors, stockEntries, onBack, onNavigateToWeighing, onNavigateToWeighingHistory, isDarkMode
+  productionConfigs, colors, stockEntries, productionLots, products, people, purchaseRequests, purchases,
+  onBack, onNavigateToWeighing, onNavigateToWeighingHistory, onFormularPedido, isDarkMode
 }: SoleStockViewProps) {
   const molds = useMemo(() => productionConfigs.filter(c => c.type === 'MOLD'), [productionConfigs]);
   
@@ -41,6 +49,34 @@ export default function SoleStockView({
   const [entryGrade, setEntryGrade] = useState<Record<string, string>>({});
   const [calculatorTargetSize, setCalculatorTargetSize] = useState<string | null>(null);
   const [isSavingEntry, setIsSavingEntry] = useState(false);
+
+  // Reservas de mapas (Parte A)
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  const [showInfoBanner, setShowInfoBanner] = useState(
+    () => localStorage.getItem('soleStockReservationInfoDismissed') !== 'true'
+  );
+  const [showDetailFilter, setShowDetailFilter] = useState(false);
+  const [detailFieldVisibility, setDetailFieldVisibility] = useState<{ mapas: boolean; falta: boolean; restante: boolean; pedido: boolean }>(() => {
+    try {
+      const saved = localStorage.getItem('soleStockDetailFieldVisibility');
+      if (saved) return { mapas: true, falta: true, restante: true, pedido: true, ...JSON.parse(saved) };
+    } catch {}
+    return { mapas: true, falta: true, restante: true, pedido: true };
+  });
+  const toggleDetailField = (field: keyof typeof detailFieldVisibility) => {
+    setDetailFieldVisibility(prev => {
+      const next = { ...prev, [field]: !prev[field] };
+      localStorage.setItem('soleStockDetailFieldVisibility', JSON.stringify(next));
+      return next;
+    });
+  };
+
+  // Formular Pedido (Parte B)
+  const [isFormularPedidoMode, setIsFormularPedidoMode] = useState(false);
+  const [formularSupplierId, setFormularSupplierId] = useState('');
+  const [orderQuantities, setOrderQuantities] = useState<Record<string, Record<string, string>>>({});
+  const [orderCalculatorTarget, setOrderCalculatorTarget] = useState<{ itemKey: string; size: string; currentVal: number } | null>(null);
+  const [showSupplierPicker, setShowSupplierPicker] = useState(false);
 
   const [showShareCenter, setShowShareCenter] = useState(false);
   const [shareFilterMoldId, setShareFilterMoldId] = useState('');
@@ -112,9 +148,19 @@ export default function SoleStockView({
     }
   };
 
+  const reservations = useMemo(
+    () => computeSoleMapaReservations(productionLots || [], products || [], stockEntries),
+    [productionLots, products, stockEntries]
+  );
+
+  const pendingOrders = useMemo(
+    () => computeSolePendingOrders(purchaseRequests || [], purchases || []),
+    [purchaseRequests, purchases]
+  );
+
   const aggregatedStock = useMemo(() => {
     const stock: Record<string, { moldId: string; moldName: string; colorId: string; colorName: string; sizes: Record<string, number>; total: number }> = {};
-    
+
     stockEntries.forEach(entry => {
       const key = `${entry.moldId}-${entry.colorId}`;
       if (!stock[key]) {
@@ -127,16 +173,39 @@ export default function SoleStockView({
           total: 0
         };
       }
-      
+
       Object.entries(entry.stock || {}).forEach(([size, qty]) => {
         if (size === 'pesagem' || size === 'GERAL' || size === 'MIXED') return;
         stock[key].sizes[size] = (stock[key].sizes[size] || 0) + qty;
         stock[key].total += qty;
       });
     });
-    
+
+    // Garante que solados sem nenhum estoque cadastrado, mas com mapas reservados ou pedidos
+    // de compra pendentes, também ganhem um card — para essas informações nunca ficarem "órfãs".
+    [...Object.values(reservations), ...Object.values(pendingOrders)].forEach(({ moldId, colorId }) => {
+      const key = `${moldId}-${colorId}`;
+      if (stock[key]) return;
+      const mold = molds.find(m => m.id === moldId);
+      if (!mold) return;
+      const color = colors.find(c => c.id === colorId);
+      stock[key] = {
+        moldId,
+        moldName: mold.name,
+        colorId,
+        colorName: color?.name || '',
+        sizes: {},
+        total: 0
+      };
+    });
+
     return Object.values(stock);
-  }, [stockEntries]);
+  }, [stockEntries, reservations, pendingOrders, molds, colors]);
+
+  const dismissInfoBanner = () => {
+    localStorage.setItem('soleStockReservationInfoDismissed', 'true');
+    setShowInfoBanner(false);
+  };
 
   const filteredStock = useMemo(() => {
     if (isBalanceMode && selectedMoldId) {
@@ -171,6 +240,81 @@ export default function SoleStockView({
   const totalGeral = useMemo(() => {
     return filteredStock.reduce((sum, item) => sum + item.total, 0);
   }, [filteredStock]);
+
+  // Formular Pedido (Parte B) - fornecedores e moldes disponíveis
+  const moldSupplierIds = useMemo(() => {
+    const ids = new Set<string>();
+    molds.forEach(m => { if (m.metadata?.supplierId) ids.add(m.metadata.supplierId); });
+    return ids;
+  }, [molds]);
+
+  const formularSuppliers = useMemo(() => {
+    return (people || []).filter(p => p.isSupplier && moldSupplierIds.has(p.id));
+  }, [people, moldSupplierIds]);
+
+  const formularMoldIds = useMemo(() => {
+    if (!formularSupplierId) return new Set<string>();
+    return new Set(molds.filter(m => m.metadata?.supplierId === formularSupplierId).map(m => m.id));
+  }, [molds, formularSupplierId]);
+
+  const formularStock = useMemo(() => {
+    if (!isFormularPedidoMode || !formularSupplierId) return [];
+    return aggregatedStock.filter(item => formularMoldIds.has(item.moldId));
+  }, [aggregatedStock, isFormularPedidoMode, formularSupplierId, formularMoldIds]);
+
+  const displayedStock = isFormularPedidoMode ? formularStock : filteredStock;
+
+  const hasAnyOrderQty = useMemo(() => {
+    return Object.values(orderQuantities).some(sizes =>
+      Object.values(sizes).some(v => (parseInt(v) || 0) > 0)
+    );
+  }, [orderQuantities]);
+
+  const startFormularPedido = () => {
+    setShowSupplierPicker(true);
+  };
+
+  const selectFormularSupplier = (supplierId: string) => {
+    setFormularSupplierId(supplierId);
+    setIsFormularPedidoMode(true);
+    setShowSupplierPicker(false);
+    setOrderQuantities({});
+  };
+
+  const cancelFormularPedido = () => {
+    setIsFormularPedidoMode(false);
+    setFormularSupplierId('');
+    setOrderQuantities({});
+  };
+
+  const handleFazerCompra = () => {
+    const items: { moldId: string; colorId?: string; initialGrid?: Record<string, number> }[] = [];
+    formularStock.forEach(item => {
+      const itemKey = `${item.moldId}-${item.colorId}`;
+      const sizes = orderQuantities[itemKey];
+      if (!sizes) return;
+      const initialGrid: Record<string, number> = {};
+      let total = 0;
+      Object.entries(sizes).forEach(([size, val]) => {
+        const qty = parseInt(val) || 0;
+        if (qty > 0) {
+          initialGrid[size] = qty;
+          total += qty;
+        }
+      });
+      if (total > 0) {
+        items.push({ moldId: item.moldId, colorId: item.colorId, initialGrid });
+      }
+    });
+
+    if (items.length === 0) return;
+
+    onFormularPedido?.(items);
+
+    setIsFormularPedidoMode(false);
+    setFormularSupplierId('');
+    setOrderQuantities({});
+  };
 
   const shareAvailableColors = useMemo(() => {
     if (!shareFilterMoldId) return colors;
@@ -533,6 +677,95 @@ export default function SoleStockView({
         />
       )}
 
+      {orderCalculatorTarget && (
+        <CalculatorModal
+          isOpen={!!orderCalculatorTarget}
+          onClose={() => setOrderCalculatorTarget(null)}
+          onResult={(val: number) => {
+            const { itemKey, size } = orderCalculatorTarget;
+            const newVal = Math.max(0, Math.round(val));
+            setOrderQuantities(prev => ({
+              ...prev,
+              [itemKey]: { ...(prev[itemKey] || {}), [size]: String(newVal) }
+            }));
+            setOrderCalculatorTarget(null);
+          }}
+          initialValue={orderCalculatorTarget.currentVal}
+          isDarkMode={isDarkMode}
+          zIndex={300}
+        />
+      )}
+
+      {showDetailFilter && (
+        <div className="fixed inset-0 z-[200] flex">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowDetailFilter(false)} />
+          <div className="relative m-auto w-[90%] max-w-sm bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-2xl">
+            <h3 className="font-black text-slate-800 dark:text-white text-base mb-1 uppercase tracking-tight">Filtrar detalhamento</h3>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-4">Escolha o que aparece em cada tamanho</p>
+            <div className="flex flex-col gap-2">
+              {([
+                { key: 'mapas', label: 'Mapas (reservado)' },
+                { key: 'falta', label: 'Falta' },
+                { key: 'restante', label: 'Restante' },
+                { key: 'pedido', label: 'Comprado' },
+              ] as const).map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => toggleDetailField(key)}
+                  className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border-2 text-xs font-black uppercase tracking-tight transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-100 text-slate-800'}`}
+                >
+                  {label}
+                  <span className={`w-10 h-6 rounded-full p-0.5 transition-all ${detailFieldVisibility[key] ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
+                    <span className={`block w-5 h-5 rounded-full bg-white shadow transition-all ${detailFieldVisibility[key] ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </span>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowDetailFilter(false)}
+              className="w-full mt-4 py-3 rounded-xl font-bold text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showSupplierPicker && (
+        <div className="fixed inset-0 z-[200] flex">
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" onClick={() => setShowSupplierPicker(false)} />
+          <div className="relative m-auto w-[90%] max-w-sm bg-white dark:bg-slate-900 rounded-[2rem] p-6 shadow-2xl">
+            <h3 className="font-black text-slate-800 dark:text-white text-base mb-1 uppercase tracking-tight">Formular Pedido</h3>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-4">Selecione o fornecedor</p>
+            {formularSuppliers.length === 0 ? (
+              <p className="text-[10px] text-rose-500 font-bold uppercase tracking-widest">Nenhum fornecedor de solados cadastrado</p>
+            ) : (
+              <div className="flex flex-col gap-2 max-h-72 overflow-y-auto">
+                {formularSuppliers.map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => selectFormularSupplier(p.id)}
+                    className={`w-full text-left px-4 py-3 rounded-2xl border-2 text-xs font-black uppercase tracking-tight transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white hover:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-800 hover:border-emerald-400'}`}
+                  >
+                    {p.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowSupplierPicker(false)}
+              className="w-full mt-4 py-3 rounded-xl font-bold text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center gap-4 mb-6">
         <button 
           onClick={onBack}
@@ -545,6 +778,32 @@ export default function SoleStockView({
           <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">Controle de estoque por modelo e cor</p>
         </div>
       </div>
+
+      {showInfoBanner && (
+        <div className={`mb-4 p-4 rounded-2xl border flex items-start gap-3 ${isDarkMode ? 'bg-amber-900/20 border-amber-700/40' : 'bg-amber-50 border-amber-200'}`}>
+          <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-500 flex items-center justify-center shrink-0">
+            <Info size={18} strokeWidth={2.5} />
+          </div>
+          <div className="flex-1">
+            <p className={`text-[11px] font-black uppercase tracking-tight ${isDarkMode ? 'text-amber-200' : 'text-amber-800'}`}>
+              Novidade: Reservas de Mapas
+            </p>
+            <p className={`text-[10px] font-bold mt-1 leading-relaxed ${isDarkMode ? 'text-amber-300/80' : 'text-amber-700'}`}>
+              Agora cada card mostra a quantidade de pares já reservada pelos mapas de produção ativos (em âmbar)
+              e o quanto ainda falta comprar para cobrir essa demanda (em vermelho). Toque no card para abrir o
+              detalhamento por numeração.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={dismissInfoBanner}
+            title="Dispensar aviso"
+            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isDarkMode ? 'text-amber-300 hover:bg-amber-800/40' : 'text-amber-600 hover:bg-amber-100'}`}
+          >
+            <X size={14} strokeWidth={3} />
+          </button>
+        </div>
+      )}
 
       <div className="flex gap-2 mb-4">
         <div className="relative flex-1">
@@ -560,54 +819,54 @@ export default function SoleStockView({
       </div>
 
       <div className="flex flex-col gap-1.5 mb-4">
-        <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={isFormularPedidoMode}
+          onClick={() => {
+            if (isBalanceMode) {
+              setIsBalanceMode(false);
+              setBalanceData({});
+            } else {
+              const initialData: Record<string, Record<string, number>> = {};
+              aggregatedStock.forEach(item => {
+                initialData[`${item.moldId}-${item.colorId}`] = { ...item.sizes };
+              });
+              setBalanceData(initialData);
+              setIsBalanceMode(true);
+            }
+          }}
+          className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+            isBalanceMode
+              ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20'
+              : 'bg-slate-600 text-white hover:bg-slate-700'
+          }`}
+        >
+          {isBalanceMode ? <X size={14} strokeWidth={3} /> : <Calculator size={14} />}
+          {isBalanceMode ? 'Cancelar Balanço' : 'Balanço'}
+        </button>
+
+        <select
+          value={selectedMoldId}
+          onChange={(e) => setSelectedMoldId(e.target.value)}
+          title="Filtrar por modelo"
+          className={`w-full border-2 rounded-2xl px-4 py-3 text-xs font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
+        >
+          <option value="">Todos os Modelos</option>
+          {molds.map(m => (
+            <option key={m.id} value={m.id}>{m.name}</option>
+          ))}
+        </select>
+
+        {isBalanceMode && stockEntries.length > 0 && (
           <button
-            onClick={() => {
-              if (isBalanceMode) {
-                setIsBalanceMode(false);
-                setBalanceData({});
-              } else {
-                const initialData: Record<string, Record<string, number>> = {};
-                aggregatedStock.forEach(item => {
-                  initialData[`${item.moldId}-${item.colorId}`] = { ...item.sizes };
-                });
-                setBalanceData(initialData);
-                setIsBalanceMode(true);
-              }
-            }}
-            className={`py-3 px-6 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
-              isBalanceMode
-                ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20'
-                : 'bg-slate-600 text-white hover:bg-slate-700'
-            }`}
+            type="button"
+            onClick={() => setShowClearConfirm(true)}
+            className="w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-rose-400 hover:text-rose-500 active:scale-95 transition-all flex items-center gap-2.5 border border-rose-100 dark:border-rose-900/30 bg-rose-50/50 dark:bg-rose-900/10"
+            title="Zerar todo o estoque de solados"
           >
-            {isBalanceMode ? <X size={14} strokeWidth={3} /> : <Calculator size={14} />}
-            {isBalanceMode ? 'Cancelar' : 'Balanço'}
+            <Trash2 size={15} strokeWidth={2.5} /> Zerar Estoque
           </button>
-
-          <select
-            value={selectedMoldId}
-            onChange={(e) => setSelectedMoldId(e.target.value)}
-            title="Filtrar por modelo"
-            className={`flex-1 border-2 rounded-2xl px-4 py-3 text-xs font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
-          >
-            <option value="">Todos os Modelos</option>
-            {molds.map(m => (
-              <option key={m.id} value={m.id}>{m.name}</option>
-            ))}
-          </select>
-
-          {isBalanceMode && stockEntries.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setShowClearConfirm(true)}
-              className="py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest text-rose-400 hover:text-rose-500 active:scale-95 transition-all flex items-center gap-1.5 border border-rose-100 dark:border-rose-900/30 bg-rose-50/50 dark:bg-rose-900/10"
-              title="Zerar todo o estoque de solados"
-            >
-              <Trash2 size={15} strokeWidth={2.5} /> Zerar
-            </button>
-          )}
-        </div>
+        )}
 
         {isBalanceMode && stockEntries.length > 0 && (
           <p className={`text-[9px] font-bold flex items-center gap-1 px-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
@@ -615,134 +874,312 @@ export default function SoleStockView({
             Zerar apaga todo o histórico de entradas e define o estoque como zero. Ação irreversível.
           </p>
         )}
-      </div>
 
-      <div className="flex gap-2 mb-2">
         <button
           type="button"
           onClick={() => setShowAddEntryModal(true)}
-          className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
+          className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
         >
-          <Plus size={15} strokeWidth={2.5} className="text-emerald-500" /> Entrada Manual
+          <Plus size={14} strokeWidth={2.5} className="text-emerald-500" /> Entrada Manual
         </button>
+
         <button
           type="button"
           onClick={() => onNavigateToWeighingHistory ? onNavigateToWeighingHistory() : (onNavigateToWeighing ? onNavigateToWeighing() : onBack())}
-          className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
+          className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
         >
-          <Clock size={15} className="text-indigo-500" /> Histórico de Pesagem
+          <Clock size={14} className="text-indigo-500" /> Histórico de Pesagem
         </button>
-      </div>
 
-      <div className="flex gap-2 mb-4">
         <button
           type="button"
           onClick={() => setShowShareCenter(true)}
-          className={`py-3 px-5 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
+          className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
         >
-          <Share2 size={15} strokeWidth={2.5} className="text-sky-500" /> Compartilhar
+          <Share2 size={14} strokeWidth={2.5} className="text-sky-500" /> Compartilhar
         </button>
+
+        <button
+          type="button"
+          onClick={() => setShowDetailFilter(true)}
+          className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'}`}
+        >
+          <SlidersHorizontal size={14} strokeWidth={2.5} className="text-violet-500" /> Filtrar Detalhamento
+        </button>
+
+        {people && onFormularPedido && (
+          <button
+            type="button"
+            onClick={isFormularPedidoMode ? cancelFormularPedido : startFormularPedido}
+            className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all ${
+              isFormularPedidoMode
+                ? 'bg-rose-500 border-rose-500 text-white'
+                : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50')
+            }`}
+          >
+            {isFormularPedidoMode ? <X size={14} strokeWidth={2.5} /> : <ClipboardList size={14} strokeWidth={2.5} className="text-emerald-500" />}
+            {isFormularPedidoMode ? 'Cancelar Pedido' : 'Formular Pedido'}
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col gap-3 mb-6">
-        {filteredStock.length === 0 ? (
+        {displayedStock.length === 0 ? (
           <div className={`p-8 rounded-3xl text-center ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} border`}>
             <Package size={32} className="mx-auto text-slate-300 mb-2" />
             <p className="text-[10px] text-slate-400 font-bold uppercase">
-              Nenhum solado em estoque
+              {isFormularPedidoMode ? 'Nenhum solado em estoque para este fornecedor' : 'Nenhum solado em estoque'}
             </p>
           </div>
         ) : (
-          filteredStock.map((item, index) => {
-            const sizes = Object.entries(item.sizes).sort((a, b) => parseFloat(a[0]) - parseFloat(b[0]));
-            
+          displayedStock.map((item, index) => {
+            const itemKey = `${item.moldId}-${item.colorId}`;
+            const reservationKey = `${String(item.moldId).trim()}_${String(item.colorId || '').trim() || 'default'}`;
+            const reservedByGrade = reservations[reservationKey]?.reservedByGrade || {};
+            const totalReserved = Object.values(reservedByGrade).reduce((a, b) => a + b, 0);
+            const pendingByGrade = pendingOrders[reservationKey]?.pendingByGrade || {};
+            const pendingSourcesByGrade = pendingOrders[reservationKey]?.sourcesByGrade || {};
+
+            const allSizeKeys = Array.from(new Set([...Object.keys(item.sizes), ...Object.keys(reservedByGrade), ...Object.keys(pendingByGrade)]))
+              .sort((a, b) => parseFloat(a) - parseFloat(b));
+
+            const sizes: [string, number][] = allSizeKeys.map(size => [size, item.sizes[size] || 0]);
+
+            const sizeBreakdown = allSizeKeys.map(size => {
+              const stockQty = item.sizes[size] || 0;
+              const reservedQty = reservedByGrade[size] || 0;
+              const missingQty = Math.max(0, reservedQty - stockQty);
+              const pendingQty = pendingByGrade[size] || 0;
+              const pendingSources = pendingSourcesByGrade[size] || [];
+              return { size, stockQty, reservedQty, missingQty, pendingQty, pendingSources };
+            });
+
+            const totalMissing = sizeBreakdown.reduce((sum, s) => sum + s.missingQty, 0);
+            const isExpanded = !!expandedCards[itemKey];
+            const orderSizeKeys = allSizeKeys.length > 0
+              ? allSizeKeys
+              : (molds.find(m => m.id === item.moldId)?.metadata?.sizes || []);
+
+            const displayTotal = isBalanceMode
+              ? Object.values(balanceData[itemKey] || item.sizes).reduce((a, b) => a + b, 0)
+              : item.total;
+            const paresRestantesTotal = Math.max(0, displayTotal - totalReserved);
+
             return (
               <div key={index} className={`p-5 rounded-3xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                 {/* Header */}
                 <div className="flex justify-between items-start mb-4">
-                  <div>
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                       {item.moldName}
                     </p>
-                    <div className="flex items-center gap-1.5 mt-1">
+                    {item.colorName && (
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-100 dark:bg-sky-900/30 border border-sky-200 dark:border-sky-700/40">
                         <Palette size={11} className="text-sky-500" />
                         <span className="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-widest">{item.colorName}</span>
                       </span>
-                    </div>
+                    )}
                   </div>
-                  <div className="flex items-start gap-3">
-                    <div className="flex flex-col items-center justify-center px-4 py-2.5 rounded-2xl bg-blue-50 border border-blue-100 min-w-[64px]">
-                      <p className="text-3xl font-black text-blue-600 leading-none">
-                        {isBalanceMode 
-                          ? Object.values(balanceData[`${item.moldId}-${item.colorId}`] || item.sizes).reduce((a, b) => a + b, 0)
-                          : item.total
-                        }
+                  <div className="flex items-start gap-3 flex-wrap justify-end">
+                    <div className="flex flex-col items-center justify-center px-4 py-2 rounded-2xl bg-emerald-50 border border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-700/40 min-w-[56px]">
+                      <p className="text-xl font-black text-emerald-600 dark:text-emerald-400 leading-none">
+                        {paresRestantesTotal}
                       </p>
-                      <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mt-0.5">pares</p>
+                      <p className="text-[8px] font-black text-emerald-500 dark:text-emerald-400/70 uppercase tracking-widest mt-0.5">restante</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Grade de tamanhos */}
                 {sizes.length > 0 && (
-                  <div className={`grid gap-2 ${
-                    sizes.length <= 2 ? 'grid-cols-2' :
-                    sizes.length === 3 ? 'grid-cols-3' :
-                    sizes.length === 4 ? 'grid-cols-4' :
-                    sizes.length === 5 ? 'grid-cols-5' :
-                    'grid-cols-6'
-                  }`}>
+                  <div className="flex flex-col gap-1.5">
                     {sizes.map(([size, qty]) => {
                       const itemKey = `${item.moldId}-${item.colorId}`;
                       const currentVal = isBalanceMode ? (balanceData[itemKey]?.[size] ?? qty) : qty;
-                      
+                      const reservedQty = reservedByGrade[size] || 0;
+                      const restanteQty = Math.max(0, qty - reservedQty);
+                      const pendingQty = pendingByGrade[size] || 0;
+
                       return (
                         <div
                           key={size}
-                          className={`relative flex flex-col items-center justify-center gap-0.5 py-2.5 rounded-xl transition-all ${
+                          className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${
                             isBalanceMode
                               ? (isDarkMode ? 'bg-indigo-900/20 border border-indigo-500/30' : 'bg-indigo-50 border border-indigo-200')
                               : (isDarkMode ? 'bg-slate-800 border border-transparent' : 'bg-slate-50 border border-transparent')
                           }`}
                         >
-                          {isBalanceMode && (
-                            <button
-                              type="button"
-                              onClick={() => setBalanceCalculatorTarget({ itemKey, size, currentVal })}
-                              title={`Abrir calculadora para o tamanho ${size}`}
-                              className="absolute top-1 right-1 p-1.5 rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-500/30 hover:bg-indigo-700 active:scale-95 transition-all"
-                            >
-                              <Calculator size={14} strokeWidth={2.5} />
-                            </button>
-                          )}
-                          <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-tight leading-none">
+                          <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-tight w-12 shrink-0">
                             {size}
                           </span>
                           {isBalanceMode ? (
-                            <input
-                              type="number"
-                              value={currentVal}
-                              onChange={(e) => {
-                                const newVal = parseInt(e.target.value) || 0;
-                                setBalanceData(prev => ({
-                                  ...prev,
-                                  [itemKey]: {
-                                    ...(prev[itemKey] || item.sizes),
-                                    [size]: newVal
-                                  }
-                                }));
-                              }}
-                              className="w-full bg-transparent text-center font-black text-indigo-600 dark:text-indigo-400 outline-none text-base [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                            />
+                            <>
+                              <input
+                                type="number"
+                                title={`Quantidade do tamanho ${size}`}
+                                value={currentVal}
+                                onChange={(e) => {
+                                  const newVal = parseInt(e.target.value) || 0;
+                                  setBalanceData(prev => ({
+                                    ...prev,
+                                    [itemKey]: {
+                                      ...(prev[itemKey] || item.sizes),
+                                      [size]: newVal
+                                    }
+                                  }));
+                                }}
+                                className="flex-1 bg-transparent text-right font-black text-indigo-600 dark:text-indigo-400 outline-none text-base [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setBalanceCalculatorTarget({ itemKey, size, currentVal })}
+                                title={`Abrir calculadora para o tamanho ${size}`}
+                                className="shrink-0 p-1.5 rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-500/30 hover:bg-indigo-700 active:scale-95 transition-all"
+                              >
+                                <Calculator size={14} strokeWidth={2.5} />
+                              </button>
+                            </>
                           ) : (
-                            <span className={`font-black text-slate-900 dark:text-white leading-none ${sizes.length <= 4 ? 'text-xl' : 'text-base'}`}>
-                              {qty}
-                            </span>
+                            <div className="flex items-center gap-2 ml-auto">
+                              <span className="font-black text-slate-900 dark:text-white leading-none text-xl">
+                                {restanteQty}
+                              </span>
+                              {detailFieldVisibility.pedido && pendingQty > 0 && (
+                                <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest leading-none">
+                                  +{pendingQty} = {Math.max(0, qty + pendingQty - reservedQty)}
+                                </span>
+                              )}
+                            </div>
                           )}
                         </div>
                       );
                     })}
+                  </div>
+                )}
+
+                {/* Detalhamento de reservas de mapas (Parte A) */}
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedCards(prev => ({ ...prev, [itemKey]: !prev[itemKey] }))}
+                    className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
+                  >
+                    <span>Detalhamento por numeração (mapas)</span>
+                    {isExpanded ? <ChevronUp size={14} strokeWidth={3} /> : <ChevronDown size={14} strokeWidth={3} />}
+                  </button>
+
+                  {isExpanded && (
+                    <>
+                      <div className={`flex items-stretch rounded-xl border mt-2 overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                        <div className="flex-1 flex flex-col items-center justify-center py-2">
+                          <p className="text-base font-black text-blue-500 leading-none">{displayTotal}</p>
+                          <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Pares</p>
+                        </div>
+                        <div className={`w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+                        <div className="flex-1 flex flex-col items-center justify-center py-2">
+                          <p className="text-base font-black text-amber-500 leading-none">{totalReserved}</p>
+                          <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Reservado</p>
+                        </div>
+                        <div className={`w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+                        <div className="flex-1 flex flex-col items-center justify-center py-2">
+                          <p className="text-base font-black text-rose-500 leading-none">{totalMissing}</p>
+                          <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Faltando</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-2 flex flex-col gap-1.5">
+                        {sizeBreakdown.map(({ size, stockQty, reservedQty, missingQty, pendingQty, pendingSources }) => {
+                          const restanteQty = Math.max(0, stockQty - reservedQty);
+                          const showPedido = detailFieldVisibility.pedido && pendingQty > 0;
+                          const showPedidoBreakdown = showPedido && pendingSources.length > 1;
+                          return (
+                            <div key={size} className={`flex flex-col gap-1 px-3 py-2 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                              <div className="flex items-center gap-3">
+                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-tight w-12 shrink-0">{size}</span>
+                                <span className="text-base font-black text-slate-900 dark:text-white w-8 text-center shrink-0">{stockQty}</span>
+                                <div className="flex items-center gap-3 flex-wrap justify-end ml-auto">
+                                  {detailFieldVisibility.mapas && reservedQty > 0 && (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-tight">Mapas</span>
+                                      <span className="text-[11px] font-black text-amber-500 leading-none">{reservedQty}</span>
+                                    </div>
+                                  )}
+                                  {detailFieldVisibility.falta && missingQty > 0 && (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-tight">Falta</span>
+                                      <span className="text-[11px] font-black text-rose-500 leading-none">{missingQty}</span>
+                                    </div>
+                                  )}
+                                  {detailFieldVisibility.restante && (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-tight">Restante</span>
+                                      <span className="text-[11px] font-black text-emerald-500 leading-none">{restanteQty}</span>
+                                    </div>
+                                  )}
+                                  {showPedido && (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-tight">Comprado</span>
+                                      <span className="text-[11px] font-black text-blue-500 leading-none">{pendingQty} → {Math.max(0, stockQty + pendingQty - reservedQty)}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                              {showPedidoBreakdown && (
+                                <div className="flex flex-col gap-0.5 pl-[60px]">
+                                  {pendingSources.map((src, idx) => (
+                                    <div key={`${src.id}-${idx}`} className="flex items-center justify-between gap-2">
+                                      <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight truncate">{src.label}</span>
+                                      <span className="text-[10px] font-black text-blue-400 leading-none shrink-0">{src.qty}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Grade de quantidade a pedir (Parte B - Formular Pedido) */}
+                {isFormularPedidoMode && orderSizeKeys.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-700">
+                    <p className={`text-[10px] font-black uppercase tracking-widest mb-2 ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                      Quantidade a pedir
+                    </p>
+                    <div className="flex flex-col gap-1.5">
+                      {orderSizeKeys.map(size => {
+                        const orderVal = orderQuantities[itemKey]?.[size] ?? '';
+                        return (
+                          <div key={size} className={`flex items-center gap-3 px-3 py-2 rounded-xl border ${isDarkMode ? 'bg-emerald-900/10 border-emerald-700/30' : 'bg-emerald-50 border-emerald-100'}`}>
+                            <span className="text-[11px] font-black text-slate-400 uppercase tracking-tight w-12 shrink-0">{size}</span>
+                            <input
+                              type="number"
+                              min="0"
+                              value={orderVal}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                setOrderQuantities(prev => ({
+                                  ...prev,
+                                  [itemKey]: { ...(prev[itemKey] || {}), [size]: v }
+                                }));
+                              }}
+                              placeholder="0"
+                              className={`flex-1 bg-transparent text-right font-black outline-none text-base [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${isDarkMode ? 'text-emerald-400 placeholder:text-slate-600' : 'text-emerald-600 placeholder:text-slate-300'}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setOrderCalculatorTarget({ itemKey, size, currentVal: parseInt(orderVal) || 0 })}
+                              title={`Abrir calculadora para o tamanho ${size}`}
+                              className="shrink-0 p-1.5 rounded-lg bg-emerald-500 text-white shadow-sm shadow-emerald-500/30 hover:bg-emerald-600 active:scale-95 transition-all"
+                            >
+                              <Calculator size={14} strokeWidth={2.5} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
@@ -750,6 +1187,18 @@ export default function SoleStockView({
           })
         )}
       </div>
+
+      {isFormularPedidoMode && (
+        <div className="fixed bottom-24 left-4 right-4 z-50">
+          <button
+            onClick={handleFazerCompra}
+            disabled={!hasAnyOrderQty}
+            className="w-full py-5 rounded-[2rem] bg-emerald-600 text-white font-black uppercase tracking-[0.2em] shadow-2xl shadow-emerald-500/40 flex items-center justify-center gap-3 hover:bg-emerald-700 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <ShoppingCart size={20} /> Fazer a Compra
+          </button>
+        </div>
+      )}
 
       {isBalanceMode && (
         <div className="fixed bottom-24 left-4 right-4 z-50">

@@ -2,21 +2,24 @@
 import {
   ShoppingCart, ChevronLeft, Package, Layers, Clock,
   CheckCircle, Truck, Circle, ArrowUpRight, ChevronDown, ChevronUp,
-  ClipboardList, Filter, Search, X, Pencil, PackageCheck, Plus, Minus
+  ClipboardList, Filter, Search, X, Pencil, PackageCheck, Plus, Minus,
+  Trash2, RotateCcw, CheckCircle2, ListChecks
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { PurchaseRequest, PurchaseRequestStatus, ViewType } from '../types';
+import { PurchaseRequest, PurchaseRequestStatus, PurchaseType, ViewType, Person } from '../types';
 import { generateId } from '../utils/id';
 
 interface PurchaseNeedsViewProps {
   purchaseRequests: PurchaseRequest[];
   onUpdateRequest: (req: PurchaseRequest) => Promise<void>;
+  onDeleteRequest: (req: PurchaseRequest) => Promise<void>;
   onNavigate: (view: ViewType, params?: any) => void;
   onBack: () => void;
   isDarkMode: boolean;
   userName?: string;
   soleStock?: any[];
   productionConfigs?: any[];
+  people?: Person[];
 }
 
 const STATUS_CONFIG: Record<PurchaseRequestStatus, { label: string; color: string; bg: string; border: string; icon: React.ReactNode }> = {
@@ -43,18 +46,25 @@ const NEXT_LABEL: Record<PurchaseRequestStatus, string> = {
 export default function PurchaseNeedsView({
   purchaseRequests = [],
   onUpdateRequest,
+  onDeleteRequest,
   onNavigate,
   onBack,
   isDarkMode,
   userName,
   soleStock = [],
-  productionConfigs = []
+  productionConfigs = [],
+  people = []
 }: PurchaseNeedsViewProps) {
   const [activeFilter, setActiveFilter] = useState<PurchaseRequestStatus | 'ALL'>('ALL');
   const [showFilters, setShowFilters] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [loadingId, setLoadingId] = useState<string | null>(null);
+
+  // Seleção em lote por fornecedor
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBatchProcessing, setIsBatchProcessing] = useState(false);
 
   // Edit modal
   const [editingReq, setEditingReq] = useState<PurchaseRequest | null>(null);
@@ -69,6 +79,10 @@ export default function PurchaseNeedsView({
   const [receiveQty, setReceiveQty] = useState(0);
   const [receiveBreakdown, setReceiveBreakdown] = useState<Record<string, number>>({});
   const [isSavingReceive, setIsSavingReceive] = useState(false);
+
+  // Delete modal
+  const [deletingReq, setDeletingReq] = useState<PurchaseRequest | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const filtered = useMemo(() => {
     let list = activeFilter === 'ALL'
@@ -208,11 +222,14 @@ export default function PurchaseNeedsView({
         });
       }
 
-      onNavigate(ViewType.PRODUCTION_SOLE_PURCHASE, {
-        moldId: req.moldId,
-        colorId: req.colorId,
-        initialGrid: Object.keys(remainingGrid).length > 0 ? remainingGrid : req.sizeBreakdown,
-        description: `Solicitação: ${req.name}`,
+      onNavigate(ViewType.PURCHASE_FORM, {
+        type: PurchaseType.SOLE,
+        items: [{
+          moldId: req.moldId,
+          colorId: req.colorId,
+          initialGrid: Object.keys(remainingGrid).length > 0 ? remainingGrid : req.sizeBreakdown,
+        }],
+        initialDescription: `Solicitação: ${req.name}`,
         requestId: req.id
       });
     } else {
@@ -232,6 +249,58 @@ export default function PurchaseNeedsView({
     }
   };
 
+  const handleDeleteBackToPCP = async (req: PurchaseRequest) => {
+    setIsDeleting(true);
+    try {
+      await onDeleteRequest(req);
+      setDeletingReq(null);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteAndPurchaseManually = async (req: PurchaseRequest) => {
+    setIsDeleting(true);
+    try {
+      await onDeleteRequest(req);
+      setDeletingReq(null);
+
+      if (req.type === 'SOLE') {
+        const remainingGrid: Record<string, number> = {};
+        if (req.sizeBreakdown) {
+          Object.entries(req.sizeBreakdown).forEach(([size, qty]) => {
+            const received = (req.receivedBreakdown || {})[size] || 0;
+            const left = qty - received;
+            if (left > 0) remainingGrid[size] = left;
+          });
+        }
+        onNavigate(ViewType.PURCHASE_FORM, {
+          type: PurchaseType.SOLE,
+          items: [{
+            moldId: req.moldId,
+            colorId: req.colorId,
+            initialGrid: Object.keys(remainingGrid).length > 0 ? remainingGrid : req.sizeBreakdown,
+          }],
+          initialDescription: `Compra manual: ${req.name}`,
+        });
+      } else {
+        const remainingQty = req.requiredQty - (req.receivedQty || 0);
+        onNavigate(ViewType.PURCHASE_FORM, {
+          initialDescription: `Compra manual: ${req.name}`,
+          initialGeneralItems: [{
+            id: generateId(),
+            description: req.name,
+            materialId: req.materialId,
+            quantity: remainingQty,
+            unit: req.unit,
+            value: 0,
+          }],
+        });
+      }
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const filters: Array<{ key: PurchaseRequestStatus | 'ALL'; label: string }> = [
     { key: 'ALL',         label: 'Todos' },
@@ -255,7 +324,8 @@ export default function PurchaseNeedsView({
           </div>
         </div>
         
-        <button 
+        <button
+          type="button"
           onClick={() => setShowFilters(true)}
           className={`h-11 px-5 rounded-2xl flex items-center gap-3 transition-all duration-300 ${isDarkMode ? 'bg-slate-900 text-slate-400 hover:text-indigo-400' : 'bg-white text-slate-400 border border-slate-100 shadow-sm hover:text-indigo-500'}`}
         >
@@ -323,6 +393,7 @@ export default function PurchaseNeedsView({
                   return (
                     <button
                       key={f.key}
+                      type="button"
                       onClick={() => { setActiveFilter(f.key); setShowFilters(false); }}
                       className={`w-full flex items-center justify-between px-6 py-5 rounded-[1.8rem] border-2 transition-all duration-300 ${
                         isActive
@@ -379,28 +450,12 @@ export default function PurchaseNeedsView({
                 className={`rounded-[2.5rem] border-2 overflow-hidden transition-all duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'} ${isExpanded ? 'ring-2 ring-indigo-500/20 scale-[1.01]' : ''}`}
               >
                 {/* Card header */}
-                <div className="p-6">
-                  <div className="flex items-start gap-4">
+                <div className="p-6 flex flex-col gap-3">
+                  <div className="flex items-center gap-4">
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${req.type === 'SOLE' ? 'bg-indigo-100 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'}`}>
                       {req.type === 'SOLE' ? <Layers size={22} /> : <Package size={22} />}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[15px] font-black uppercase tracking-tight leading-tight mb-2">{req.name}</p>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={`flex items-center gap-1.5 text-[10px] font-black px-3 py-1.5 rounded-xl border ${sc.bg} ${sc.color} ${sc.border} uppercase tracking-widest`}>
-                          {sc.icon} {sc.label}
-                        </span>
-                        <span className={`text-[10px] font-black px-3 py-1.5 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-500'} uppercase tracking-widest`}>
-                          {parseFloat((req.receivedQty || 0).toFixed(2))} / {parseFloat(req.requiredQty.toFixed(2))} {req.unit}
-                        </span>
-                        {req.contributingLots && req.contributingLots.length > 0 && (
-                          <span className={`text-[10px] font-black px-3 py-1.5 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-500'} uppercase tracking-widest`}>
-                            {req.contributingLots.length} {req.contributingLots.length === 1 ? 'Mapa' : 'Mapas'}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-3">Solicitado: {requestDate}{req.requestedBy ? ` • ${req.requestedBy}` : ''}</p>
-                    </div>
+                    <p className="flex-1 min-w-0 text-[15px] font-black uppercase tracking-tight leading-tight">{req.name}</p>
                     <div className="flex gap-2 flex-shrink-0">
                       {req.status !== 'RECEIVED' && (
                         <button
@@ -422,8 +477,35 @@ export default function PurchaseNeedsView({
                           {isExpanded ? <ChevronUp size={20} strokeWidth={2.5} /> : <ChevronDown size={20} strokeWidth={2.5} />}
                         </button>
                       )}
+                      <button
+                        type="button"
+                        title="Excluir solicitação"
+                        onClick={() => setDeletingReq(req)}
+                        className={`w-10 h-10 flex items-center justify-center rounded-2xl transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-400' : 'bg-slate-50 hover:bg-rose-50 text-slate-400 hover:text-rose-500'}`}
+                      >
+                        <Trash2 size={16} strokeWidth={2.5} />
+                      </button>
                     </div>
                   </div>
+
+                  <span className={`self-start flex items-center gap-1.5 text-[10px] font-black px-3 py-1.5 rounded-xl border ${sc.bg} ${sc.color} ${sc.border} uppercase tracking-widest`}>
+                    {sc.icon} {sc.label}
+                  </span>
+
+                  <div className={`grid gap-2 ${req.contributingLots && req.contributingLots.length > 0 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                    <div className={`rounded-2xl border px-4 py-3 ${isDarkMode ? 'bg-slate-800/50 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Quantidade</p>
+                      <p className="text-sm font-black">{parseFloat((req.receivedQty || 0).toFixed(2))} / {parseFloat(req.requiredQty.toFixed(2))} {req.unit}</p>
+                    </div>
+                    {req.contributingLots && req.contributingLots.length > 0 && (
+                      <div className={`rounded-2xl border px-4 py-3 ${isDarkMode ? 'bg-slate-800/50 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Mapas</p>
+                        <p className="text-sm font-black">{req.contributingLots.length} {req.contributingLots.length === 1 ? 'Mapa' : 'Mapas'}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Solicitado: {requestDate}{req.requestedBy ? ` • ${req.requestedBy}` : ''}</p>
                 </div>
 
                 {/* Grade tamanhos (solas) */}
@@ -698,6 +780,80 @@ export default function PurchaseNeedsView({
       {/* State declarations for receivingReq, receiveQty, receiveBreakdown, isSavingReceive are kept above to avoid compile errors */}
       <AnimatePresence>
         {receivingReq && null}
+      </AnimatePresence>
+
+      {/* ── Modal: Excluir Solicitação ── */}
+      <AnimatePresence>
+        {deletingReq && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center px-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+              onClick={() => !isDeleting && setDeletingReq(null)}
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className={`relative w-full max-w-lg rounded-[3rem] p-8 pb-10 flex flex-col gap-5 shadow-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Excluir solicitação</p>
+                  <h3 className="text-lg font-black tracking-tight uppercase">{deletingReq.name}</h3>
+                </div>
+                <button type="button" title="Fechar" disabled={isDeleting} onClick={() => setDeletingReq(null)}
+                  className={`w-10 h-10 flex items-center justify-center rounded-2xl ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-400'}`}>
+                  <X size={18} strokeWidth={2.5} />
+                </button>
+              </div>
+
+              <p className="text-[11px] font-bold text-slate-400 leading-relaxed">
+                Escolha o que fazer com esta necessidade ao excluí-la:
+              </p>
+
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => handleDeleteBackToPCP(deletingReq)}
+                className={`flex flex-col items-start gap-1.5 text-left p-4 rounded-2xl border-2 transition-all active:scale-[0.99] ${isDarkMode ? 'border-slate-800 hover:border-indigo-700 hover:bg-indigo-950/20' : 'border-slate-100 hover:border-indigo-200 hover:bg-indigo-50/50'}`}
+              >
+                <span className="flex items-center gap-2 text-[12px] font-black uppercase tracking-widest text-indigo-500">
+                  <RotateCcw size={16} strokeWidth={2.5} /> Excluir e voltar ao PCP
+                </span>
+                <span className="text-[10px] font-bold text-slate-400 normal-case leading-relaxed">
+                  Remove esta solicitação e a marcação "Solicitado" — a necessidade volta a aparecer em Necessidades de Compra do PCP para ser solicitada novamente.
+                </span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => handleDeleteAndPurchaseManually(deletingReq)}
+                className={`flex flex-col items-start gap-1.5 text-left p-4 rounded-2xl border-2 transition-all active:scale-[0.99] ${isDarkMode ? 'border-slate-800 hover:border-emerald-700 hover:bg-emerald-950/20' : 'border-slate-100 hover:border-emerald-200 hover:bg-emerald-50/50'}`}
+              >
+                <span className="flex items-center gap-2 text-[12px] font-black uppercase tracking-widest text-emerald-500">
+                  <ArrowUpRight size={16} strokeWidth={2.5} /> Excluir e comprar manualmente
+                </span>
+                <span className="text-[10px] font-bold text-slate-400 normal-case leading-relaxed">
+                  Marca esta necessidade como não sendo mais necessária e abre o formulário de compra correspondente para lançar o pedido manualmente.
+                </span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeletingReq(null)}
+                className="text-center text-[11px] font-black uppercase tracking-widest text-slate-400 py-2"
+              >
+                {isDeleting ? 'Excluindo...' : 'Cancelar'}
+              </button>
+            </motion.div>
+          </div>
+        )}
       </AnimatePresence>
     </div>
   );

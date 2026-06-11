@@ -1426,6 +1426,9 @@ export default function App() {
     await firebaseService.saveDocument("purchaseRequests", req);
   };
 
+  const handleDeletePurchaseRequest = async (req: PurchaseRequest) => {
+    await firebaseService.deleteDocument("purchaseRequests", req.id);
+  };
 
   const handleCreatePurchaseRequest = async (req: Omit<PurchaseRequest, 'id'>) => {
     console.log('[App] handleCreatePurchaseRequest called', req);
@@ -3388,9 +3391,15 @@ export default function App() {
             stockEntries={soleStockEntries as SoleStockEntry[]}
             productionConfigs={productionConfigs}
             colors={colors as ColorValue[]}
+            productionLots={productionLots}
+            products={products}
+            people={people}
+            purchaseRequests={purchaseRequests}
+            purchases={purchases}
             onBack={goBack}
             onNavigateToWeighing={() => navigateTo(ViewType.PRODUCTION_WEIGHING)}
             onNavigateToWeighingHistory={() => navigateTo(ViewType.PRODUCTION_WEIGHING, { initialTab: 'history' })}
+            onFormularPedido={(items) => navigateTo(ViewType.PURCHASE_FORM, { type: PurchaseType.SOLE, items, initialDescription: 'Pedido formulado a partir do Estoque de Solados' })}
             isDarkMode={isDarkMode}
           />
         );
@@ -3399,6 +3408,7 @@ export default function App() {
           <PurchaseNeedsView
             purchaseRequests={purchaseRequests}
             onUpdateRequest={handleSavePurchaseRequest}
+            onDeleteRequest={handleDeletePurchaseRequest}
             onNavigate={navigateTo}
             onBack={goBack}
             isDarkMode={isDarkMode}

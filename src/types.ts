@@ -193,6 +193,8 @@ export type GeneralPurchaseItem = {
   id: string;
   description: string;
   materialId?: string;  // Link to ProductionConfigItem (type MATERIAL/PACKAGING)
+  colorId?: string;     // Optional color for colored materials
+  colorName?: string;   // Color name snapshot
   quantity?: number;    // Quantity purchased
   unit?: string;        // Unit label (e.g., "ML", "UN", "KG")
   value: number;        // Unit price
@@ -562,6 +564,7 @@ export type ProductionConfigItem = {
     // Insumo / Peça specific
     stock?: number;
     minStock?: number;
+    stockByColor?: Record<string, number>;
 
     [key: string]: any;
   };

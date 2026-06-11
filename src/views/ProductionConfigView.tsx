@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useRef, useEffect, FormEvent, ChangeEvent, ReactNode, Component } from 'react';
+import React, { useState, useMemo, useRef, useEffect, FormEvent, ChangeEvent, ReactNode, Component } from 'react';
 
 class ErrorBoundary extends Component<{ children: ReactNode; label?: string }, { hasError: boolean; error: Error | null }> {
   constructor(props: any) {
@@ -1302,6 +1302,8 @@ function GenericConfigList({
   const [percValue, setPercValue] = useState(10);
   const [percField, setPercField] = useState<'sizeAreas' | 'sizeWeights' | 'colorSizeWeights'>('sizeAreas');
   const [percTargetId, setPercTargetId] = useState<string | null>(null);
+  const [isStockColorModalOpen, setIsStockColorModalOpen] = useState(false);
+  const [editingStockColors, setEditingStockColors] = useState<Record<string, number>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const applyPercentageScale = (baseSize: string, percentage: number, field: string = 'sizeAreas', targetId: string | null = null) => {
@@ -1775,6 +1777,7 @@ function GenericConfigList({
                     flowTags={flowTags}
                     people={people}
                     need={purchaseNeeds[item.id] || 0}
+                    colors={colors}
                   />
                 ))}
               </div>
@@ -2544,10 +2547,40 @@ function GenericConfigList({
               </div>
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
-                  <label htmlFor="mat-stock" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Estoque Atual</label>
+                  <div className="flex items-center justify-between ml-2">
+                    <label htmlFor="mat-stock" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200">Estoque Atual</label>
+                    {(editingItem?.metadata?.colorIds?.length || 0) > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingStockColors(editingItem?.metadata?.stockByColor || {});
+                          setIsStockColorModalOpen(true);
+                        }}
+                        className="text-[9px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600 transition-colors bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-md flex items-center gap-1"
+                      >
+                        <Settings size={10} /> Estoque por Cor
+                      </button>
+                    )}
+                  </div>
                   <div className="relative group">
-                    <input id="mat-stock" type="number" step="0.01" value={editingItem?.metadata?.stock || ''} title="Estoque Atual" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, stock: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
-                    <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir estoque" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.stock || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, stock: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button>
+                    <input
+                      id="mat-stock"
+                      type="number"
+                      step="0.01"
+                      value={
+                        (editingItem?.metadata?.stockByColor && Object.keys(editingItem.metadata.stockByColor).length > 0)
+                          ? Object.values(editingItem.metadata.stockByColor).reduce((a, b) => a + (b || 0), 0)
+                          : (editingItem?.metadata?.stock || '')
+                      }
+                      readOnly={(editingItem?.metadata?.stockByColor && Object.keys(editingItem.metadata.stockByColor).length > 0) as boolean}
+                      title={(editingItem?.metadata?.stockByColor && Object.keys(editingItem.metadata.stockByColor).length > 0) ? "Estoque calculado pelas cores" : "Estoque Atual"}
+                      onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, stock: Number(e.target.value) } } : null)}
+                      placeholder="0,00"
+                      className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${(editingItem?.metadata?.stockByColor && Object.keys(editingItem.metadata.stockByColor).length > 0) ? 'bg-slate-100 dark:bg-slate-900/80 border-slate-200 dark:border-slate-800 text-slate-500 cursor-not-allowed' : isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                    />
+                    {!(editingItem?.metadata?.stockByColor && Object.keys(editingItem.metadata.stockByColor).length > 0) && (
+                      <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir estoque" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.stock || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, stock: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -2992,7 +3025,81 @@ function GenericConfigList({
             </button>
           </div>
         </div>
+      <Modal
+        isOpen={isStockColorModalOpen}
+        onClose={() => setIsStockColorModalOpen(false)}
+        title="ESTOQUE POR COR"
+      >
+        <div className="flex flex-col gap-6 p-2">
+          <div className={`p-4 rounded-2xl border-2 border-dashed ${isDarkMode ? 'bg-indigo-500/5 border-indigo-500/20' : 'bg-indigo-50 border-indigo-100'}`}>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-relaxed text-center">
+              Informe a quantidade em estoque para cada cor disponível deste insumo. <br/>
+              O estoque global será atualizado com a soma dos estoques por cor.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {(editingItem?.metadata?.colorIds || []).map((colorId: string) => {
+              const color = colors.find(c => c.id === colorId);
+              if (!color) return null;
+              return (
+                <div key={colorId} className="flex items-center gap-4">
+                  <div className="flex-1 flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full border shadow-sm" style={{ backgroundColor: color.hex || '#ccc' }} />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">
+                      {color.name}
+                    </span>
+                  </div>
+                  <div className="w-32 relative group">
+                    <input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={editingStockColors[colorId] ?? ''}
+                      onChange={(e) => setEditingStockColors(prev => ({ ...prev, [colorId]: Number(e.target.value) }))}
+                      placeholder="0,00"
+                      className={`w-full px-4 py-3 rounded-xl font-bold text-xs outline-none transition-all border-2 pr-10 text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
+                    />
+                    <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora" onClick={() => setActiveCalc({ initialValue: editingStockColors[colorId] || 0, onResult: (val) => setEditingStockColors(prev => ({ ...prev, [colorId]: val })) })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-indigo-500 transition-all"><Calculator size={14} /></button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex gap-3 mt-4">
+            <button
+              type="button"
+              onClick={() => setIsStockColorModalOpen(false)}
+              className={`flex-1 py-4 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all border-2 ${isDarkMode ? 'border-slate-800 text-slate-400 hover:bg-slate-800' : 'border-slate-100 text-slate-400 hover:bg-slate-50'}`}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEditingItem(prev => {
+                  if (!prev) return null;
+                  const newStock = Object.values(editingStockColors).reduce((a, b) => a + (b || 0), 0);
+                  return {
+                    ...prev,
+                    metadata: {
+                      ...prev.metadata,
+                      stockByColor: editingStockColors,
+                      stock: newStock,
+                    }
+                  };
+                });
+                setIsStockColorModalOpen(false);
+              }}
+              className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-black uppercase tracking-widest text-[10px] shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+            >
+              Salvar Balanço
+            </button>
+          </div>
+        </div>
       </Modal>
+
     </div>
   );
 }
@@ -3092,7 +3199,7 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: {
   );
 }
 
-function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, need = 0 }: {
+function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, need = 0, colors }: {
   item: ProductionConfigItem,
   isDarkMode: boolean,
   onEdit: () => void,
@@ -3100,6 +3207,7 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ne
   flowTags: FlowTag[],
   people: any[],
   need?: number,
+  colors: any[],
   key?: React.Key
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -3229,7 +3337,7 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ne
 
           {/* Cores + actions */}
           <div className="flex items-center justify-between pt-1">
-            <span className="text-[9px] font-bold text-slate-400 uppercase">Cores: {item.metadata?.colorIds?.length || 0}</span>
+            <span className="text-[9px] font-bold text-slate-400 uppercase">Cores Cadastradas: {item.metadata?.colorIds?.length || 0}</span>
             <div className="flex items-center gap-1">
               <button type="button" onClick={(e) => { e.stopPropagation(); onEdit(); }} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wide text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 dark:text-indigo-400 hover:bg-indigo-100 transition-colors">
                 <Edit3 size={11} /> Editar
@@ -3239,6 +3347,25 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ne
               </button>
             </div>
           </div>
+
+          {/* Estoque detalhado por cor */}
+          {(item.metadata?.stockByColor && Object.keys(item.metadata.stockByColor).length > 0) && (
+            <div className={`mt-2 p-3 rounded-xl flex flex-col gap-2 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50'}`}>
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Estoque por Cor</span>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(item.metadata.stockByColor).map(([colorId, qty]) => {
+                  const color = colors.find(c => c.id === colorId);
+                  return (
+                    <div key={colorId} className="flex items-center gap-1.5 px-2 py-1 rounded-md border shadow-sm bg-white dark:bg-slate-900 dark:border-slate-800">
+                      <div className="w-2 h-2 rounded-full border border-slate-200" style={{ backgroundColor: color?.hex || '#ccc' }} />
+                      <span className="text-[9px] font-bold text-slate-600 dark:text-slate-300 uppercase">{color?.name || 'COR'}</span>
+                      <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 ml-1">{Number(qty).toLocaleString('pt-BR')}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
         </div>
       )}

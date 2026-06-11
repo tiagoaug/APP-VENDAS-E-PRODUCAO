@@ -349,12 +349,19 @@ export default function GeneralReceiptsView({
             const currentStock = material.metadata?.stock || 0;
             const updatedStock = currentStock + receivedQty;
             
+            let stockByColor = material.metadata?.stockByColor;
+            if (item.colorId) {
+              stockByColor = { ...(stockByColor || {}) };
+              stockByColor[item.colorId] = (stockByColor[item.colorId] || 0) + receivedQty;
+            }
+            
             // Update stock in productionConfigs
             await firebaseService.saveDocument('productionConfigs', {
               ...material,
               metadata: {
                 ...material.metadata,
                 stock: updatedStock,
+                ...(stockByColor ? { stockByColor } : {})
               },
             });
             
@@ -957,7 +964,8 @@ export default function GeneralReceiptsView({
                               
                               const rawUnit = item.unit || '';
                               const unitName = rawUnit.length > 0 && rawUnit.length <= 6 ? rawUnit.toUpperCase() : 'UN';
-                              const itemName = configMaterial?.name || item.description || 'Item Sem Descrição';
+                              const colorSuffix = item.colorName ? ` - COR: ${item.colorName}` : '';
+                              const itemName = (configMaterial?.name || item.description || 'Item Sem Descrição') + colorSuffix;
 
                               return (
                                 <div

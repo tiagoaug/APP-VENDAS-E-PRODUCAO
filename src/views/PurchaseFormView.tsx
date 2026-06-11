@@ -1,4 +1,4 @@
-﻿import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Purchase,
   Product,
@@ -128,12 +128,45 @@ export default function PurchaseFormView({
     ? purchases.find((p) => p.id === purchaseId)
     : null;
 
+  // Pré-preenchimento vindo do "Formular Pedido" (Estoque de Solados): converte
+  // { moldId, colorId, initialGrid }[] em SolePurchaseItem[], usando os moldes cadastrados
+  // para resolver nome/custo unitário (mirror de SolePurchaseModal initialParams.items).
+  const buildSoleItemsFromParams = (): SolePurchaseItem[] => {
+    if (!initialParams?.items || initialParams.items.length === 0) return [];
+    const moldsList = productionConfigs.filter(c => c.type === 'MOLD');
+    const result: SolePurchaseItem[] = [];
+    initialParams.items.forEach((p: { moldId: string; colorId?: string; initialGrid?: Record<string, number> }) => {
+      const mold = moldsList.find(m => m.id === p.moldId || m.name.toLowerCase() === String(p.moldId).toLowerCase());
+      if (!mold) return;
+      const initialQuantities = p.initialGrid || {};
+      const unitCost = mold.metadata?.unitCost || 0;
+      result.push({
+        moldId: mold.id,
+        moldName: mold.name,
+        colorId: p.colorId || '',
+        colorName: p.colorId ? (allColors.find(c => c.id === p.colorId)?.name || '') : '',
+        quantities: initialQuantities,
+        unitCost,
+        totalCost: Object.values(initialQuantities).reduce((a: number, b: any) => a + (Number(b) || 0), 0) * unitCost
+      });
+    });
+    return result;
+  };
+
   const [type, setType] = useState<PurchaseType>(
-    existing?.type || PurchaseType.GENERAL,
+    existing?.type || (initialParams?.type === PurchaseType.SOLE ? PurchaseType.SOLE : PurchaseType.GENERAL),
   );
-  const [supplierId, setSupplierId] = useState(
-    existing?.supplierId || ""
-  );
+  const [supplierId, setSupplierId] = useState(() => {
+    if (existing?.supplierId) return existing.supplierId;
+    if (initialParams?.items?.length) {
+      const moldsList = productionConfigs.filter(c => c.type === 'MOLD');
+      for (const p of initialParams.items) {
+        const mold = moldsList.find(m => m.id === p.moldId || m.name.toLowerCase() === String(p.moldId).toLowerCase());
+        if (mold?.metadata?.supplierId) return mold.metadata.supplierId;
+      }
+    }
+    return "";
+  });
   const [sellerId, setSellerId] = useState(existing?.sellerId || '');
   interface PurchaseBlock {
     id: string;
@@ -176,7 +209,7 @@ export default function PurchaseFormView({
     existing?.generalItems || initialParams?.initialGeneralItems || [],
   );
   const [soleItems, setSoleItems] = useState<SolePurchaseItem[]>(
-    existing?.soleItems || []
+    existing?.soleItems || buildSoleItemsFromParams()
   );
   const [notes, setNotes] = useState(existing?.notes || initialParams?.initialDescription || "");
   const [productionGlobalNote, setProductionGlobalNote] = useState<string>(() => {
@@ -207,7 +240,8 @@ export default function PurchaseFormView({
     existing?.generateTransaction !== undefined ? existing?.generateTransaction : true
   );
   const [registerAsReceived, setRegisterAsReceived] = useState(
-    existing?.registerAsReceived !== undefined ? existing.registerAsReceived : true
+    existing?.registerAsReceived !== undefined ? existing.registerAsReceived
+      : (initialParams?.items?.length ? false : true)
   );
   const [isProductionOrder, setIsProductionOrder] = useState(existing?.isProductionOrder ?? false);
   const [isSaving, setIsSaving] = useState(false);
@@ -1099,6 +1133,23 @@ export default function PurchaseFormView({
                           value={item.description}
                           onChange={(e) => updateGeneralItem(index, { description: e.target.value })}
                         />
+                      )}
+                      {(selectedMat?.metadata?.colorIds?.length || 0) > 0 && (
+                        <select
+                          className={`mt-1 w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-[11px] font-bold outline-none ${isDarkMode ? 'text-white' : 'text-slate-700'}`}
+                          value={item.colorId || ''}
+                          onChange={(e) => {
+                            const cid = e.target.value;
+                            const cname = allColors.find(c => c.id === cid)?.name || '';
+                            updateGeneralItem(index, { colorId: cid || undefined, colorName: cname || undefined });
+                          }}
+                        >
+                          <option value="">Selecione a Cor...</option>
+                          {selectedMat!.metadata!.colorIds.map((cid: string) => {
+                            const color = allColors.find(c => c.id === cid);
+                            return <option key={cid} value={cid}>{color?.name || cid}</option>;
+                          })}
+                        </select>
                       )}
                     </div>
                     <button
