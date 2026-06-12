@@ -14,6 +14,9 @@ import {
   Hash,
   Lightbulb,
   Tag,
+  Filter,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -52,6 +55,14 @@ export default function PurchasesView({
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
   const [typeFilter, setTypeFilter] = useState<'ALL' | PurchaseType>('ALL');
   const [periodFilter, setPeriodFilter] = useState<string>(''); // YYYY-MM
+  const [showFilters, setShowFilters] = useState(false);
+  const [expandedCards, setExpandedCards] = useState(true);
+  const [showItems, setShowItems] = useState(true);
+  const [expandedIds, setExpandedIds] = useState<string[]>([]);
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
 
   const [selectedPurchaseForChecks, setSelectedPurchaseForChecks] = useState<Purchase | null>(null);
   const [isChecksModalOpen, setIsChecksModalOpen] = useState(false);
@@ -112,6 +123,15 @@ export default function PurchasesView({
       return true;
     }).sort((a, b) => b.date - a.date);
   }, [purchases, suppliers, typeFilter, periodFilter, searchQuery]);
+
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (typeFilter !== 'ALL') count++;
+    if (periodFilter) count++;
+    if (!expandedCards) count++;
+    if (!showItems) count++;
+    return count;
+  }, [typeFilter, periodFilter, expandedCards, showItems]);
 
   // Generate available months from data
   const availableMonths = useMemo(() => {
@@ -351,65 +371,113 @@ export default function PurchasesView({
       </div>
 
       <div className="flex flex-col gap-3 mt-2">
-        {/* Search Input */}
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search size={16} className="text-slate-400" />
+        {/* Search Input + Configurar */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search size={16} className="text-slate-400" />
+            </div>
+            <input
+              type="text"
+              placeholder="Buscar fornecedor ou nota..."
+              title="Pesquisar"
+              className={`w-full pl-10 pr-4 py-3 rounded-2xl text-[13px] font-bold outline-none transition-all ${isDarkMode ? "bg-slate-900 text-white placeholder-slate-500 focus:ring-2 focus:ring-slate-700" : "bg-white text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-slate-200 shadow-sm border border-slate-100"}`}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
           </div>
-          <input
-            type="text"
-            placeholder="Buscar fornecedor ou nota..."
-            title="Pesquisar"
-            className={`w-full pl-10 pr-4 py-3 rounded-2xl text-[13px] font-bold outline-none transition-all ${isDarkMode ? "bg-slate-900 text-white placeholder-slate-500 focus:ring-2 focus:ring-slate-700" : "bg-white text-slate-800 placeholder-slate-400 focus:ring-2 focus:ring-slate-200 shadow-sm border border-slate-100"}`}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-
-        {/* Filters */}
-        <div className="flex gap-2">
-          {/* Purchase Type Filter */}
-          <div className={`flex flex-1 border p-1 rounded-2xl shadow-sm dark:shadow-none ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-            <button 
-              onClick={() => setTypeFilter('ALL')}
-              className={`px-4 py-2 rounded-xl text-[10px] font-bold tracking-wider transition-all whitespace-nowrap ${typeFilter === 'ALL' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}
-            >
-              Todos
-            </button>
-            <button 
-              onClick={() => setTypeFilter(PurchaseType.REPLENISHMENT)}
-              className={`px-4 py-2 rounded-xl text-[10px] font-bold tracking-wider transition-all whitespace-nowrap ${typeFilter === PurchaseType.REPLENISHMENT ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}
-            >
-              Estoque
-            </button>
-            <button 
-              onClick={() => setTypeFilter(PurchaseType.GENERAL)}
-              className={`px-4 py-2 rounded-xl text-[10px] font-bold tracking-wider transition-all whitespace-nowrap ${typeFilter === PurchaseType.GENERAL ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'}`}
-            >
-              Geral
-            </button>
-          </div>
-
-          {/* Period Filter */}
-          <select
-            className={`min-w-[100px] px-3 py-1.5 rounded-2xl text-[10px] font-bold tracking-wider outline-none border shadow-sm dark:shadow-none ${isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-100 text-slate-800"} focus:ring-2 focus:ring-indigo-500`}
-            value={periodFilter}
-            onChange={(e) => setPeriodFilter(e.target.value)}
-            title="Filtrar por Período"
+          <button
+            type="button"
+            onClick={() => setShowFilters(true)}
+            className={`h-12 w-12 shrink-0 rounded-2xl flex items-center justify-center transition-all relative ${showFilters ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/40' : isDarkMode ? 'bg-slate-900 text-slate-400 border border-slate-800' : 'bg-white text-slate-400 border border-slate-100 shadow-sm'}`}
+            title="Filtros e Configurações"
+            aria-label="Abrir filtros e configurações"
           >
-            <option value="">Meses</option>
-            {availableMonths.map(month => {
-               const [y, m] = month.split('-');
-               const date = new Date(parseInt(y), parseInt(m)-1);
-               return (
-                 <option key={month} value={month}>
-                   {format(date, 'MMM yy', { locale: ptBR })}
-                 </option>
-               )
-            })}
-          </select>
+            <Filter size={18} strokeWidth={2.5} />
+            {activeFiltersCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-orange-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900">
+                {activeFiltersCount}
+              </span>
+            )}
+          </button>
         </div>
       </div>
+
+      {/* Filter Popup */}
+      {showFilters && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4" onClick={() => setShowFilters(false)}>
+          <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
+          <div
+            className={`relative w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl flex flex-col gap-5 animate-in fade-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <h3 className={`text-[13px] font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Filtros e Configurações</h3>
+              <button type="button" onClick={() => setShowFilters(false)} title="Fechar" aria-label="Fechar filtros" className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white">
+                <X size={18} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            {/* Tipo de Compra */}
+            <div className="flex flex-col gap-2">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Tipo de Compra</p>
+              <div className={`flex p-1 rounded-2xl border gap-1 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                {(['ALL', PurchaseType.REPLENISHMENT, PurchaseType.GENERAL] as const).map((v) => (
+                  <button key={v} type="button" onClick={() => setTypeFilter(v)}
+                    className={`flex-1 py-2 rounded-xl text-[10px] font-black tracking-wider transition-all ${typeFilter === v ? 'bg-indigo-600 text-white shadow-sm' : isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+                    {v === 'ALL' ? 'Todos' : v === PurchaseType.REPLENISHMENT ? 'Estoque' : 'Geral'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Período */}
+            <div className="flex flex-col gap-2">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Período</p>
+              <select
+                className={`w-full px-4 py-3 rounded-2xl text-[11px] font-bold tracking-wider outline-none border ${isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-100 text-slate-800"} focus:ring-2 focus:ring-indigo-500`}
+                value={periodFilter}
+                onChange={(e) => setPeriodFilter(e.target.value)}
+                title="Filtrar por Período"
+              >
+                <option value="">Todos os Meses</option>
+                {availableMonths.map(month => {
+                   const [y, m] = month.split('-');
+                   const date = new Date(parseInt(y), parseInt(m)-1);
+                   return (
+                     <option key={month} value={month}>
+                       {format(date, 'MMM yy', { locale: ptBR })}
+                     </option>
+                   )
+                })}
+              </select>
+            </div>
+
+            {/* Visualização */}
+            <div className="flex flex-col gap-2">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Visualização</p>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setExpandedCards(v => !v)}
+                  className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${expandedCards ? 'bg-indigo-600 text-white border-transparent shadow-sm' : isDarkMode ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
+                  {expandedCards ? 'Cards Expandidos' : 'Cards Compactos'}
+                </button>
+                <button type="button" onClick={() => setShowItems(v => !v)}
+                  className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${showItems ? 'bg-indigo-600 text-white border-transparent shadow-sm' : isDarkMode ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
+                  {showItems ? 'Mostrar Itens' : 'Ocultar Itens'}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => { setTypeFilter('ALL'); setPeriodFilter(''); setExpandedCards(true); setShowItems(true); }}
+              className="mt-1 w-full py-3 rounded-2xl text-[10px] font-black tracking-widest text-rose-500 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all"
+            >
+              Limpar Filtros
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 mt-2">
         {filteredPurchases.map((purchase) => {
@@ -421,6 +489,7 @@ export default function PurchasesView({
             : (purchase.items?.length || 0);
           
           const isLate = purchase.dueDate && new Date(purchase.dueDate) < new Date() && purchase.paymentStatus !== PaymentStatus.PAID;
+          const isExpanded = expandedCards || expandedIds.includes(purchase.id);
 
           return (
             <div
@@ -486,11 +555,26 @@ export default function PurchasesView({
                       {purchase.paymentStatus === PaymentStatus.PAID ? 'Quitada' : 'Pendente'}
                     </span>
                   )}
+                  {!isExpanded && itemCount > 0 && (
+                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] font-black uppercase tracking-wider">
+                      {itemCount} {itemCount === 1 ? 'item' : 'itens'}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); toggleExpand(purchase.id); }}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all mt-0.5 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-500'}`}
+                    title={isExpanded ? "Recolher" : "Expandir"}
+                    aria-label={isExpanded ? "Recolher detalhes da compra" : "Expandir detalhes da compra"}
+                  >
+                    {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                  </button>
                 </div>
               </div>
 
               {/* Conteúdo: cheques + itens */}
-              <div className="flex flex-col z-10 gap-2">
+              {isExpanded && (
+              <div className="flex flex-col z-10 gap-2 pt-3 border-t border-slate-100 dark:border-slate-800/50">
                 {purchase.checks && purchase.checks.length > 0 && (
                   <button
                     type="button"
@@ -512,28 +596,31 @@ export default function PurchasesView({
                   </button>
                 )}
 
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedPurchaseForItems(purchase);
-                  }}
-                  title="Ver carrinho de compras completo"
-                  aria-label="Ver carrinho de compras completo"
-                  className="flex flex-col gap-1.5 text-left rounded-2xl -mx-1 px-1 py-1 transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40 active:scale-[0.99]"
-                >
-                  {purchase.type === PurchaseType.GENERAL
-                    ? purchase.generalItems?.slice(0, 5).map((item, idx) => renderGeneralItemRow(item, idx))
-                    : purchase.type === PurchaseType.SOLE
-                    ? purchase.soleItems?.slice(0, 5).map((item: any, idx) => renderPurchaseItemRow(item, idx))
-                    : purchase.items?.slice(0, 5).map((item: any, idx) => renderPurchaseItemRow(item, idx))}
-                  {itemCount > 5 && (
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 italic">
-                      + {itemCount - 5} outros itens
-                    </span>
-                  )}
-                </button>
+                {showItems && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedPurchaseForItems(purchase);
+                    }}
+                    title="Ver carrinho de compras completo"
+                    aria-label="Ver carrinho de compras completo"
+                    className={`flex flex-col gap-1.5 text-left rounded-2xl p-2 transition-colors active:scale-[0.99] ${isDarkMode ? 'bg-slate-950/40 hover:bg-slate-800/60' : 'bg-slate-50/80 hover:bg-slate-100'}`}
+                  >
+                    {purchase.type === PurchaseType.GENERAL
+                      ? purchase.generalItems?.slice(0, 5).map((item, idx) => renderGeneralItemRow(item, idx))
+                      : purchase.type === PurchaseType.SOLE
+                      ? purchase.soleItems?.slice(0, 5).map((item: any, idx) => renderPurchaseItemRow(item, idx))
+                      : purchase.items?.slice(0, 5).map((item: any, idx) => renderPurchaseItemRow(item, idx))}
+                    {itemCount > 5 && (
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 italic">
+                        + {itemCount - 5} outros itens
+                      </span>
+                    )}
+                  </button>
+                )}
               </div>
+              )}
 
               {/* Action Bar (Footer) */}
               <div className="flex justify-between items-center pt-4 border-t border-slate-100 dark:border-slate-800/50 z-10">

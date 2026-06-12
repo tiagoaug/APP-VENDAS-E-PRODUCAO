@@ -87,6 +87,21 @@ import CalculatorModal from '../components/CalculatorModal';
 
 import ConsumptionCalculatorModal from '../components/ConsumptionCalculatorModal';
 import { toast } from '../utils/toast';
+import { getTotalMaterialStock } from '../utils/materialStock';
+
+// Trava de ordenação das numerações (ex: "34", "38-39", "40-41") para que a grade de
+// tamanhos sempre apareça na mesma ordem numérica crescente, independente da ordem em
+// que foram cadastradas. Extrai o primeiro número de cada chave para comparar.
+const getSizeSortKey = (size: string): number => {
+  const match = String(size).match(/-?\d+(\.\d+)?/);
+  return match ? parseFloat(match[0]) : Infinity;
+};
+
+const sortSizeKeys = (sizes: string[]): string[] =>
+  [...sizes].sort((a, b) => getSizeSortKey(a) - getSizeSortKey(b));
+
+const sortSizeEntries = <T,>(entries: [string, T][]): [string, T][] =>
+  [...entries].sort(([a], [b]) => getSizeSortKey(a) - getSizeSortKey(b));
 
 const AreaInput = ({ size, value, onChange, isDarkMode, onShowCalc, onShowConsumptionCalc }: any) => {
   const [localValue, setLocalValue] = React.useState(
@@ -406,6 +421,15 @@ interface ProductionConfigViewProps {
   lots?: ProductionLot[];
   products?: Product[];
   soleStock?: SoleStockEntry[];
+}
+
+// Quando a conjugação é < 1, a faca precisa de mais de 1 batida para formar 1 par
+// (ex.: 0.5 PR/BAT = 2 batidas por par). Exibe nesse caso como "X BAT/PR" para facilitar a leitura.
+function formatConjugationLabel(conjugation: number): string {
+  if (conjugation > 0 && conjugation < 1) {
+    return `${Math.round(1 / conjugation)} BAT/PR`;
+  }
+  return `${conjugation} PR/BAT`;
 }
 
 export default function ProductionConfigView({
@@ -906,9 +930,11 @@ export default function ProductionConfigView({
           placeholderLabel="Nenhuma faca cadastrada"
           productionConfigs={productionConfigs}
           people={people}
+          colors={colors}
           grids={grids}
           toolCategoryNames={toolCategoryNames}
           products={products}
+          sectors={sectors}
           onNavigateToScreen={handleNavigateShortcut}
         />
       </Modal>
@@ -1253,7 +1279,8 @@ function GenericConfigList({
   onNavigateToScreen,
   zIndex = 60000,
   soleStock = [],
-  purchaseNeeds = {}
+  purchaseNeeds = {},
+  sectors = []
 }: {
   title: string;
   label: string;
@@ -1278,6 +1305,7 @@ function GenericConfigList({
   zIndex?: number;
   soleStock?: SoleStockEntry[];
   purchaseNeeds?: Record<string, number>;
+  sectors?: Sector[];
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ProductionConfigItem | null>(null);
@@ -1304,7 +1332,22 @@ function GenericConfigList({
   const [percTargetId, setPercTargetId] = useState<string | null>(null);
   const [isStockColorModalOpen, setIsStockColorModalOpen] = useState(false);
   const [editingStockColors, setEditingStockColors] = useState<Record<string, number>>({});
+  const [editingPriceColors, setEditingPriceColors] = useState<Record<string, number>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const openStockColorModal = (colorIds: string[]) => {
+    const stockMap = editingItem?.metadata?.stockByColor || {};
+    const priceMap = editingItem?.metadata?.priceByColor || {};
+    const newStock: Record<string, number> = {};
+    const newPrice: Record<string, number> = {};
+    colorIds.forEach(id => {
+      newStock[id] = stockMap[id] ?? 0;
+      newPrice[id] = priceMap[id] ?? (editingItem?.metadata?.baseCost || 0);
+    });
+    setEditingStockColors(newStock);
+    setEditingPriceColors(newPrice);
+    setIsStockColorModalOpen(true);
+  };
 
   const applyPercentageScale = (baseSize: string, percentage: number, field: string = 'sizeAreas', targetId: string | null = null) => {
     const sizes = editingItem?.metadata?.sizes || [];
@@ -1394,6 +1437,7 @@ function GenericConfigList({
 
   const units = useMemo(() => productionConfigs.filter(c => c.type === 'UNIT'), [productionConfigs]);
   const suppliers = useMemo(() => people.filter(p => p.isSupplier), [people]);
+  const selectedUnitName = units.find(u => u.id === editingItem?.metadata?.unitId)?.name || '';
 
   const filteredItems = useMemo(() => {
     return items
@@ -1452,8 +1496,8 @@ function GenericConfigList({
     // Validar metadados para Facas
     if (type === 'TOOL') {
       const conjugation = editingItem.metadata?.conjugation || 1;
-      if (conjugation < 1) {
-        toast.show('A conjugação deve ser pelo menos 1');
+      if (conjugation <= 0) {
+        toast.show('A conjugação deve ser maior que 0');
         return;
       }
     }
@@ -1717,7 +1761,7 @@ function GenericConfigList({
                         <div className="flex-1">
                           <p className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.name}</p>
                           <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
-                            CONSUMO P/ ÁREA • {item.metadata?.conjugation || 1} PR/BAT
+                            CONSUMO P/ ÁREA • {formatConjugationLabel(item.metadata?.conjugation || 1)}
                           </p>
                         </div>
                       </div>
@@ -1743,7 +1787,7 @@ function GenericConfigList({
             ];
             const pal = catPalette[catIdx % catPalette.length];
             const alertCount = catItems.filter(i => {
-              const stock = i.metadata?.currentStock ?? 0;
+              const stock = getTotalMaterialStock(i);
               const minStock = i.metadata?.minStock ?? 0;
               return stock < minStock;
             }).length;
@@ -1778,6 +1822,7 @@ function GenericConfigList({
                     people={people}
                     need={purchaseNeeds[item.id] || 0}
                     colors={colors}
+                    productionConfigs={productionConfigs}
                   />
                 ))}
               </div>
@@ -1812,7 +1857,7 @@ function GenericConfigList({
                     <p className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.name}</p>
                     {(type as string) === 'TOOL' ? (
                       <div className="flex flex-col gap-1 mt-0.5">
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">CONSUMO P/ ÁREA • {item.metadata?.conjugation || 1} PR/BAT</p>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">CONSUMO P/ ÁREA • {formatConjugationLabel(item.metadata?.conjugation || 1)}</p>
                         {item.metadata?.category && (
                           <span className="inline-flex self-start px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-900/40 text-[8px] font-black text-indigo-500 uppercase tracking-widest">
                             {item.metadata.category}
@@ -2098,7 +2143,7 @@ function GenericConfigList({
                     </button>
                   </div>
                   <div className="p-4 rounded-[1.5rem] border-2 border-dashed border-slate-100 dark:border-slate-800 flex flex-wrap gap-2">
-                    {(editingItem?.metadata?.sizes || []).map(size => (
+                    {sortSizeKeys(editingItem?.metadata?.sizes || []).map(size => (
                       <div key={size} className={`px-3 py-1.5 rounded-xl flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}>
                         <span className="text-[10px] font-black">{size}</span>
                         <button type="button" title={`Remover ${size}`} aria-label={`Remover tamanho ${size}`} onClick={() => removeSize(size)} className="text-slate-300 hover:text-red-500 transition-colors">
@@ -2132,7 +2177,7 @@ function GenericConfigList({
                 >
                   <div className="flex flex-col gap-6">
                     <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2">
-                      {Object.entries(editingItem?.metadata?.sizeWeights || {}).map(([size, weight]) => (
+                      {sortSizeEntries(Object.entries(editingItem?.metadata?.sizeWeights || {})).map(([size, weight]) => (
                         <div key={size} className={`flex items-center justify-between p-3 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-50'}`}>
                           <label htmlFor={`weight-${size}`} className="text-xs font-black text-slate-600 dark:text-slate-300 w-24 ml-2">TAM {size}</label>
                           <div className="relative flex-1 max-w-[150px] group">
@@ -2545,43 +2590,62 @@ function GenericConfigList({
                 <div className="flex flex-col gap-2"><label htmlFor="mat-cost" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Custo Base</label><div className="relative group"><input id="mat-cost" type="number" step="0.01" value={editingItem?.metadata?.baseCost || ''} title="Custo Base" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir custo base" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.baseCost || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
                 <div className="flex flex-col gap-2"><label htmlFor="mat-width" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Largura (m)</label><div className="relative group"><input id="mat-width" type="number" step="0.01" value={editingItem?.metadata?.width || ''} title="Largura" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir largura" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.width || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
               </div>
+              <div className="flex flex-col gap-2">
+                {renderLabelWithShortcut('mat-colors', 'Cores Disponíveis', ViewType.COLORS)}
+                <div className={`p-4 rounded-2xl border-2 flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>{colors.map(color => { const isSelected = (editingItem?.metadata?.colorIds || []).includes(color.id); return (<button key={color.id} type="button" onClick={() => { const currentIds = editingItem?.metadata?.colorIds || []; const wasSelected = isSelected; const newIds = wasSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id]; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, colorIds: newIds } } : null); if (!wasSelected) openStockColorModal(newIds); }} className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${isSelected ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'}`}>{color.name}</button>); })}</div>
+              </div>
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between ml-2">
-                    <label htmlFor="mat-stock" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200">Estoque Atual</label>
-                    {(editingItem?.metadata?.colorIds?.length || 0) > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingStockColors(editingItem?.metadata?.stockByColor || {});
-                          setIsStockColorModalOpen(true);
-                        }}
-                        className="text-[9px] font-black uppercase tracking-widest text-indigo-500 hover:text-indigo-600 transition-colors bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-md flex items-center gap-1"
-                      >
-                        <Settings size={10} /> Estoque por Cor
-                      </button>
+                  <div className="flex items-center gap-2 ml-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200">Estoque Atual</label>
+                    {selectedUnitName && (
+                      <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                        {selectedUnitName}
+                      </span>
                     )}
                   </div>
-                  <div className="relative group">
-                    <input
-                      id="mat-stock"
-                      type="number"
-                      step="0.01"
-                      value={
-                        (editingItem?.metadata?.stockByColor && Object.keys(editingItem.metadata.stockByColor).length > 0)
-                          ? Object.values(editingItem.metadata.stockByColor).reduce((a, b) => a + (b || 0), 0)
-                          : (editingItem?.metadata?.stock || '')
-                      }
-                      readOnly={(editingItem?.metadata?.stockByColor && Object.keys(editingItem.metadata.stockByColor).length > 0) as boolean}
-                      title={(editingItem?.metadata?.stockByColor && Object.keys(editingItem.metadata.stockByColor).length > 0) ? "Estoque calculado pelas cores" : "Estoque Atual"}
-                      onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, stock: Number(e.target.value) } } : null)}
-                      placeholder="0,00"
-                      className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${(editingItem?.metadata?.stockByColor && Object.keys(editingItem.metadata.stockByColor).length > 0) ? 'bg-slate-100 dark:bg-slate-900/80 border-slate-200 dark:border-slate-800 text-slate-500 cursor-not-allowed' : isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
-                    />
-                    {!(editingItem?.metadata?.stockByColor && Object.keys(editingItem.metadata.stockByColor).length > 0) && (
+                  {(editingItem?.metadata?.colorIds?.length || 0) > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => openStockColorModal(editingItem?.metadata?.colorIds || [])}
+                      className={`w-full px-6 py-4 rounded-2xl font-bold text-xs outline-none transition-all border-2 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white hover:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 hover:border-indigo-200'}`}
+                    >
+                      <span className="tracking-widest">{Object.values(editingItem?.metadata?.stockByColor || {}).reduce((a, b) => a + (b || 0), 0)}</span>
+                      <span className="flex items-center gap-1.5 text-indigo-500 text-[9px] font-black uppercase tracking-widest">
+                        <Settings size={12} /> Estoque e Preço por Cor
+                      </span>
+                    </button>
+                  ) : null}
+                  {(editingItem?.metadata?.colorIds?.length || 0) > 0 && Object.keys(editingItem?.metadata?.stockByColor || {}).length > 0 && (
+                    <div className={`p-3 rounded-xl flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50'}`}>
+                      {Object.entries(editingItem?.metadata?.stockByColor || {}).map(([colorId, qty]) => {
+                        const color = colors.find(c => c.id === colorId);
+                        if (!color) return null;
+                        return (
+                          <div key={colorId} className={`flex items-center gap-1.5 px-2 py-1 rounded-md border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                            <div className="w-2 h-2 rounded-full border border-slate-200 shrink-0" style={{ backgroundColor: color.hex || '#ccc' }} />
+                            <span className="text-[9px] font-bold text-slate-600 dark:text-slate-300 uppercase">{color.name}</span>
+                            <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 ml-1">{Number(qty).toLocaleString('pt-BR')}{selectedUnitName ? ` ${selectedUnitName}` : ''}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {!((editingItem?.metadata?.colorIds?.length || 0) > 0) && (
+                    <div className="relative group">
+                      <input
+                        id="mat-stock"
+                        type="number"
+                        step="0.01"
+                        value={editingItem?.metadata?.stock || ''}
+                        title="Estoque Atual"
+                        onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, stock: Number(e.target.value) } } : null)}
+                        placeholder="0,00"
+                        className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                      />
                       <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir estoque" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.stock || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, stock: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
                 <div className="flex flex-col gap-2">
                   <label htmlFor="mat-min-stock" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Estoque Mínimo</label>
@@ -2590,10 +2654,6 @@ function GenericConfigList({
                     <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir estoque mínimo" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.minStock || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, minStock: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button>
                   </div>
                 </div>
-              </div>
-              <div className="flex flex-col gap-2">
-                {renderLabelWithShortcut('mat-colors', 'Cores Disponíveis', ViewType.COLORS)}
-                <div className={`p-4 rounded-2xl border-2 flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>{colors.map(color => { const isSelected = (editingItem?.metadata?.colorIds || []).includes(color.id); return (<button key={color.id} type="button" onClick={() => { const currentIds = editingItem?.metadata?.colorIds || []; const newIds = isSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id]; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, colorIds: newIds } } : null); }} className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${isSelected ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'}`}>{color.name}</button>); })}</div>
               </div>
             </div>
           ) : type === 'TOOL' ? (
@@ -2666,21 +2726,21 @@ function GenericConfigList({
                 )}
               </div>
               <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">QUANTAS SÃO NECESSÁRIOS PARA FAZER 1 PAR</label>
                 <input
-                  type="number" 
-                  value={editingItem?.metadata?.conjugation || ''} 
-                  onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, conjugation: Number(e.target.value) } } : null)} 
-                  placeholder="1" 
-                  className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'} border-2`} 
-                  required 
+                  type="number"
+                  step="any"
+                  value={editingItem?.metadata?.conjugation ?? ''}
+                  onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, conjugation: e.target.value === '' ? undefined : Number(e.target.value) } } : null)}
+                  placeholder="1"
+                  className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'} border-2`}
+                  required
                 />
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1 ml-2 leading-relaxed italic">
-                  ( AQUI CADASTRAMOS SE A FACA E SIMPLES OU CONJUGADA, SE CONJUGADA ELA TEM QUANTAS REPETICOES, CONJUGACOES )
+                <p className="text-[9px] font-bold text-red-500 uppercase tracking-widest mt-1 ml-2 leading-relaxed italic">
+                  ( AQUI CADASTRAMOS SE A FACA E SIMPLES OU CONJUGADA, SE CONJUGADA ELA TEM QUANTAS REPETICOES, CONJUGACOES. SE A FACA PRECISA DE MAIS DE 1 BATIDA PARA FORMAR 1 PAR, USE UM VALOR FRACIONARIO, EX: <span className="text-black dark:text-white not-italic">2</span> BATIDAS POR PAR = <span className="text-black dark:text-white not-italic">0.5</span> )
                 </p>
               </div>
 
-              <div className="flex items-center justify-between mb-2 ml-2">
+              <div className="flex flex-col gap-2 mb-2 ml-2">
                 <div className="flex items-center gap-2">
                   <div className="p-2 bg-rose-500/10 rounded-lg text-rose-500"><TableCellsMerge size={16} /></div>
                   {renderLabelWithShortcut('tool-pull-grid', 'Puxar Grade', ViewType.GRIDS)}
@@ -2697,7 +2757,7 @@ function GenericConfigList({
                       setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, sizeAreas: areas, sizes: grid.sizes } } : null);
                     }
                   }}
-                  className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-600 focus:border-indigo-600'}`}
+                  className={`w-full px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-600 focus:border-indigo-600'}`}
                 >
                   <option value="">Selecionar...</option>
                   {grids.filter(g => g.type === GridType.FACA || !g.type).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
@@ -2809,6 +2869,130 @@ function GenericConfigList({
                   </div>
                 </div>
               )}
+
+              {/* PALMILHA - vincular esta faca como molde de palmilha (estoque por cor/grade) */}
+              <div className={`p-6 rounded-[2rem] border-2 flex flex-col gap-4 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
+                <button
+                  type="button"
+                  onClick={() => setEditingItem(prev => {
+                    if (!prev) return null;
+                    const meta = { ...(prev.metadata || {}) };
+                    if (meta.palmilha) {
+                      delete meta.palmilha;
+                    } else {
+                      meta.palmilha = { subtype: 'MONTAGEM', colorVariations: [] };
+                    }
+                    return { ...prev, metadata: meta };
+                  })}
+                  className="w-full flex items-center justify-between gap-2 text-left"
+                >
+                  <div className="flex items-center gap-2">
+                    <Footprints size={18} className="text-rose-500" />
+                    <span className="text-xs font-black uppercase tracking-widest text-slate-500">Esta faca também é molde de Palmilha?</span>
+                  </div>
+                  {editingItem?.metadata?.palmilha ? <CheckCircle2 size={22} className="text-rose-500" /> : <Circle size={22} className="text-slate-300" />}
+                </button>
+
+                {editingItem?.metadata?.palmilha && (
+                  <div className="flex flex-col gap-4 pt-2">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                      Usa as numerações cadastradas acima como grades de estoque de palmilha.
+                    </p>
+
+                    <div className="flex flex-col gap-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Palmilha</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['MONTAGEM', 'ACABAMENTO'] as const).map(sub => (
+                          <button
+                            key={sub}
+                            type="button"
+                            onClick={() => setEditingItem(prev => {
+                              if (!prev) return null;
+                              const currentPalmilha = prev.metadata?.palmilha || { subtype: 'MONTAGEM' as const, colorVariations: [] };
+                              return { ...prev, metadata: { ...prev.metadata, palmilha: { ...currentPalmilha, subtype: sub } } };
+                            })}
+                            className={`py-3 rounded-2xl font-black text-xs uppercase tracking-widest border-2 transition-all ${editingItem?.metadata?.palmilha?.subtype === sub ? 'bg-rose-500 border-rose-600 text-white' : isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-100 text-slate-500'}`}
+                          >
+                            {sub === 'MONTAGEM' ? 'Montagem' : 'Acabamento'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-4">
+                      <div className="flex items-center gap-2"><Palette size={18} className="text-rose-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Cores da Palmilha</span></div>
+                      <div className="flex flex-col gap-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                        {(colors || []).map(color => {
+                          const variation = (editingItem?.metadata?.palmilha?.colorVariations || []).find((cv: any) => cv.colorId === color.id);
+                          const isSelected = !!variation;
+                          return (
+                            <div key={color.id} className={`p-3 rounded-2xl border-2 flex items-center justify-between transition-all ${isSelected ? 'border-rose-500/30 bg-rose-500/5' : isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-50 bg-slate-50/50'}`}>
+                              <div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl shadow-sm border border-black/10" style={{ backgroundColor: color.hex }} /><span className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{color.name}</span></div>
+                              <div className="flex items-center gap-2">
+                                {isSelected && (
+                                  <input
+                                    type="text"
+                                    placeholder="SUB-REF"
+                                    value={variation.subRef || ''}
+                                    onChange={(e) => {
+                                      const subRef = e.target.value.toUpperCase();
+                                      setEditingItem(prev => {
+                                        if (!prev) return null;
+                                        const currentPalmilha = prev.metadata?.palmilha || { subtype: 'MONTAGEM' as const, colorVariations: [] };
+                                        const variations = [...(currentPalmilha.colorVariations || [])];
+                                        const idx = variations.findIndex((cv: any) => cv.colorId === color.id);
+                                        variations[idx] = { ...variations[idx], subRef };
+                                        return { ...prev, metadata: { ...prev.metadata, palmilha: { ...currentPalmilha, colorVariations: variations } } };
+                                      });
+                                    }}
+                                    className={`w-24 px-3 py-2 rounded-xl font-black text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100'}`}
+                                  />
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingItem(prev => {
+                                      if (!prev) return null;
+                                      const currentPalmilha = prev.metadata?.palmilha || { subtype: 'MONTAGEM' as const, colorVariations: [] };
+                                      const variations = [...(currentPalmilha.colorVariations || [])];
+                                      const idx = variations.findIndex((cv: any) => cv.colorId === color.id);
+                                      if (idx >= 0) variations.splice(idx, 1);
+                                      else variations.push({ colorId: color.id, colorName: color.name, subRef: '' });
+                                      return { ...prev, metadata: { ...prev.metadata, palmilha: { ...currentPalmilha, colorVariations: variations } } };
+                                    });
+                                  }}
+                                  className={`p-2 rounded-xl transition-all ${isSelected ? 'text-rose-500' : 'text-slate-300'}`}
+                                >
+                                  {isSelected ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {editingItem?.metadata?.palmilha?.subtype === 'ACABAMENTO' && (
+                      <div className="flex flex-col gap-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Serviço de Acabamento (ex: Silk)</label>
+                        <select
+                          value={editingItem?.metadata?.palmilha?.silkServiceId || ''}
+                          title="Serviço de Acabamento"
+                          onChange={(e) => setEditingItem(prev => {
+                            if (!prev) return null;
+                            const currentPalmilha = prev.metadata?.palmilha || { subtype: 'ACABAMENTO' as const, colorVariations: [] };
+                            return { ...prev, metadata: { ...prev.metadata, palmilha: { ...currentPalmilha, silkServiceId: e.target.value || undefined } } };
+                          })}
+                          className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-rose-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-rose-100'}`}
+                        >
+                          <option value="">Nenhum</option>
+                          {sectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           ) : type === 'INFESTO' ? (
             <div className="flex flex-col gap-6">
@@ -3030,12 +3214,13 @@ function GenericConfigList({
       <Modal
         isOpen={isStockColorModalOpen}
         onClose={() => setIsStockColorModalOpen(false)}
-        title="ESTOQUE POR COR"
+        title="ESTOQUE E PREÇO POR COR"
+        zIndex={80000}
       >
         <div className="flex flex-col gap-6 p-2">
           <div className={`p-4 rounded-2xl border-2 border-dashed ${isDarkMode ? 'bg-indigo-500/5 border-indigo-500/20' : 'bg-indigo-50 border-indigo-100'}`}>
             <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-relaxed text-center">
-              Informe a quantidade em estoque para cada cor disponível deste insumo. <br/>
+              Informe a quantidade em estoque e o custo de cada cor disponível deste insumo. <br/>
               O estoque global será atualizado com a soma dos estoques por cor.
             </p>
           </div>
@@ -3045,24 +3230,44 @@ function GenericConfigList({
               const color = colors.find(c => c.id === colorId);
               if (!color) return null;
               return (
-                <div key={colorId} className="flex items-center gap-4">
-                  <div className="flex-1 flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full border shadow-sm" style={{ backgroundColor: color.hex || '#ccc' }} />
+                <div key={colorId} className={`p-3 rounded-2xl border-2 flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full border shadow-sm shrink-0" style={{ backgroundColor: color.hex || '#ccc' }} />
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-300">
                       {color.name}
                     </span>
                   </div>
-                  <div className="w-32 relative group">
-                    <input
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      value={editingStockColors[colorId] ?? ''}
-                      onChange={(e) => setEditingStockColors(prev => ({ ...prev, [colorId]: Number(e.target.value) }))}
-                      placeholder="0,00"
-                      className={`w-full px-4 py-3 rounded-xl font-bold text-xs outline-none transition-all border-2 pr-10 text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
-                    />
-                    <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora" onClick={() => setActiveCalc({ initialValue: editingStockColors[colorId] || 0, onResult: (val) => setEditingStockColors(prev => ({ ...prev, [colorId]: val })) })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-indigo-500 transition-all"><Calculator size={14} /></button>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Estoque</span>
+                      <div className="relative group">
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={editingStockColors[colorId] ?? ''}
+                          onChange={(e) => setEditingStockColors(prev => ({ ...prev, [colorId]: Number(e.target.value) }))}
+                          placeholder="0,00"
+                          className={`w-full px-4 py-3 rounded-xl font-bold text-xs outline-none transition-all border-2 pr-10 text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
+                        />
+                        <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora de estoque" onClick={() => setActiveCalc({ initialValue: editingStockColors[colorId] || 0, onResult: (val) => setEditingStockColors(prev => ({ ...prev, [colorId]: val })) })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-indigo-500 transition-all"><Calculator size={14} /></button>
+                      </div>
+                    </div>
+                    <div className="flex-1 flex flex-col gap-1">
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Custo (R$)</span>
+                      <div className="relative group">
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={editingPriceColors[colorId] ?? ''}
+                          onChange={(e) => setEditingPriceColors(prev => ({ ...prev, [colorId]: Number(e.target.value) }))}
+                          placeholder="0,00"
+                          className={`w-full px-4 py-3 rounded-xl font-bold text-xs outline-none transition-all border-2 pr-10 text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
+                        />
+                        <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora de custo" onClick={() => setActiveCalc({ initialValue: editingPriceColors[colorId] || 0, onResult: (val) => setEditingPriceColors(prev => ({ ...prev, [colorId]: val })) })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-indigo-500 transition-all"><Calculator size={14} /></button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               );
@@ -3088,6 +3293,7 @@ function GenericConfigList({
                     metadata: {
                       ...prev.metadata,
                       stockByColor: editingStockColors,
+                      priceByColor: editingPriceColors,
                       stock: newStock,
                     }
                   };
@@ -3201,7 +3407,7 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: {
   );
 }
 
-function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, need = 0, colors }: {
+function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, need = 0, colors, productionConfigs }: {
   item: ProductionConfigItem,
   isDarkMode: boolean,
   onEdit: () => void,
@@ -3210,9 +3416,11 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ne
   people: any[],
   need?: number,
   colors: any[],
+  productionConfigs: ProductionConfigItem[],
   key?: React.Key
 }) {
   const [expanded, setExpanded] = useState(false);
+  const unitName = productionConfigs.find(c => c.id === item.metadata?.unitId)?.name || item.metadata?.unit || 'UN';
   const flowTag = flowTags.find(t => t.id === item.metadata?.flowTagId);
   const supplier = people.find(p => p.id === item.metadata?.supplierId);
 
@@ -3223,7 +3431,7 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ne
     return { totalWeight: total, yieldVal: activeWeights.length > 0 ? activeWeights.length / total : 0 };
   }, [item.metadata]);
 
-  const stock = item.metadata?.stock || 0;
+  const stock = getTotalMaterialStock(item);
   const minStock = item.metadata?.minStock || 0;
   const isLowStock = stock < minStock;
   const hasPendingNeed = need > 0;
@@ -3254,7 +3462,7 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ne
           <span className={`text-sm font-black ${isLowStock ? 'text-rose-500' : isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
             {stock.toLocaleString('pt-BR')}
           </span>
-          <span className="text-[8px] font-bold text-slate-400 uppercase">{item.metadata?.unit || 'UN'}</span>
+          <span className="text-[8px] font-bold text-slate-400 uppercase">{unitName}</span>
         </div>
 
         {/* Alert badges */}
@@ -3305,7 +3513,7 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ne
             {yieldVal > 0 && (
               <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                 <Hash size={10} className="text-emerald-500" />
-                <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase">{yieldVal.toFixed(2)} prs / {item.metadata?.unit || 'UN'}</span>
+                <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase">{yieldVal.toFixed(2)} prs / {unitName}</span>
               </div>
             )}
           </div>
@@ -3316,7 +3524,7 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ne
               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Estoque Atual</span>
               <div className="flex items-baseline gap-1">
                 <span className={`text-base font-black ${isLowStock ? 'text-rose-500' : isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{stock.toLocaleString('pt-BR')}</span>
-                <span className="text-[8px] font-bold text-slate-400 uppercase">{item.metadata?.unit || 'UN'}</span>
+                <span className="text-[8px] font-bold text-slate-400 uppercase">{unitName}</span>
               </div>
               <span className="text-[8px] font-bold text-slate-400 uppercase">Mín: {minStock}</span>
               {isLowStock && <span className="text-[8px] font-black text-rose-500 uppercase mt-0.5">⚠ Estoque Baixo</span>}
@@ -3326,7 +3534,7 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ne
               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Necessidade Prod.</span>
               <div className="flex items-baseline gap-1">
                 <span className={`text-base font-black ${hasPendingNeed ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>{need.toLocaleString('pt-BR')}</span>
-                <span className="text-[8px] font-bold text-slate-400 uppercase">{item.metadata?.unit || 'UN'}</span>
+                <span className="text-[8px] font-bold text-slate-400 uppercase">{unitName}</span>
               </div>
               {hasPendingNeed && (
                 <div className="flex items-center gap-1 mt-0.5">
@@ -3351,17 +3559,18 @@ function MaterialCard({ item, isDarkMode, onEdit, onDelete, flowTags, people, ne
           </div>
 
           {/* Estoque detalhado por cor */}
-          {(item.metadata?.stockByColor && Object.keys(item.metadata.stockByColor).length > 0) && (
+          {((item.metadata?.colorIds?.length || 0) > 0) && (
             <div className={`mt-2 p-3 rounded-xl flex flex-col gap-2 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50'}`}>
               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Estoque por Cor</span>
               <div className="flex flex-wrap gap-2">
-                {Object.entries(item.metadata.stockByColor).map(([colorId, qty]) => {
+                {(item.metadata?.colorIds || []).map((colorId) => {
                   const color = colors.find(c => c.id === colorId);
+                  const qty = item.metadata?.stockByColor?.[colorId] || 0;
                   return (
                     <div key={colorId} className="flex items-center gap-1.5 px-2 py-1 rounded-md border shadow-sm bg-white dark:bg-slate-900 dark:border-slate-800">
                       <div className="w-2 h-2 rounded-full border border-slate-200" style={{ backgroundColor: color?.hex || '#ccc' }} />
                       <span className="text-[9px] font-bold text-slate-600 dark:text-slate-300 uppercase">{color?.name || 'COR'}</span>
-                      <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 ml-1">{Number(qty).toLocaleString('pt-BR')}</span>
+                      <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 ml-1">{Number(qty).toLocaleString('pt-BR')} {unitName}</span>
                     </div>
                   );
                 })}
@@ -3443,7 +3652,7 @@ function SoleMatrixCard({ item, isDarkMode, onEdit, onDelete, flowTags, colors, 
             <span className="text-[9px] font-black uppercase tracking-widest">Pesos por Tamanho (g)</span>
           </div>
           <div className="flex flex-wrap justify-center gap-3">
-            {Object.entries(safeSizeWeights).map(([size, weight]) => {
+            {sortSizeEntries(Object.entries(safeSizeWeights)).map(([size, weight]) => {
               const stock = getStockForSize(size);
               return (
                 <div key={size} className="flex flex-col items-center rounded-xl overflow-hidden border border-slate-100 dark:border-slate-800 shadow-sm min-w-[72px]">

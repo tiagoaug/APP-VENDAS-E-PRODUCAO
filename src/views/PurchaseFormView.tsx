@@ -1145,7 +1145,7 @@ export default function PurchaseFormView({
                           }}
                         >
                           <option value="">Selecione a Cor...</option>
-                          {selectedMat!.metadata!.colorIds.map((cid: string) => {
+                          {(selectedMat!.metadata!.colorIds || []).map((cid: string) => {
                             const color = allColors.find(c => c.id === cid);
                             return <option key={cid} value={cid}>{color?.name || cid}</option>;
                           })}

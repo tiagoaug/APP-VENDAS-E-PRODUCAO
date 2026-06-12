@@ -1,7 +1,7 @@
 ﻿import { useState, useMemo, ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Sale, Purchase, Product, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig } from "../types";
-import { Share2, TrendingUp, TrendingDown, Package, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings } from "lucide-react";
+import { Share2, TrendingUp, TrendingDown, Package, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings, Sparkles } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { jsPDF } from 'jspdf';
@@ -29,10 +29,11 @@ interface DashboardViewProps {
     newStatus: "PENDING" | "CLEARED" | "OVERDUE",
   ) => void;
   onNavigate: (view: ViewType, id?: string | null, search?: string) => void;
-  onNavigateProduction: (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES') => void;
+  onNavigateProduction: (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES', sectorId?: string) => void;
   onNavigateGrids: () => void;
   onAddProduct: () => void;
   onAddTransaction: (type: TransactionType) => void;
+  onOpenAIAssistant: () => void;
   isDarkMode: boolean;
   dashboardConfig: DashboardConfig;
   modulesConfig: import("../types").AppModulesConfig;
@@ -56,6 +57,7 @@ export default function DashboardView({
   onNavigateGrids,
   onAddProduct,
   onAddTransaction,
+  onOpenAIAssistant,
   isDarkMode,
   dashboardConfig,
   modulesConfig,
@@ -541,6 +543,31 @@ export default function DashboardView({
         if (salesDependent.includes(card.id) && !modulesConfig.sales) return null;
 
         switch (card.id) {
+          case "ai_assistant":
+            return (
+              <div key="ai_assistant" className={`p-5 rounded-[1.5rem] border flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+                <div className={`flex items-center justify-between pb-3 border-b ${isDarkMode ? "border-slate-800" : "border-slate-100"}`}>
+                  <div>
+                    <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-sm font-black uppercase tracking-tight text-indigo-600 dark:text-indigo-400">Assistente IA</span>
+                    <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mt-1.5">Claude — Consultas e análises</p>
+                  </div>
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-indigo-900/30 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+                    <Sparkles size={18} />
+                  </div>
+                </div>
+                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 leading-relaxed">
+                  Pergunte sobre produtos, pedidos atrasados, financeiro e estoque de solados, ou use as perguntas rápidas para gerar relatórios e sugestões.
+                </p>
+                <button
+                  type="button"
+                  onClick={onOpenAIAssistant}
+                  className="w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 bg-indigo-600 text-white hover:bg-indigo-500"
+                >
+                  <Sparkles size={13} /> Abrir Assistente IA
+                </button>
+              </div>
+            );
+
           case "sales_products":
             return (
               <div key="sales_products" className={`p-6 rounded-[2rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
@@ -1670,7 +1697,7 @@ export default function DashboardView({
                         key={sector?.id || 'sem-setor'}
                         type="button"
                         title={`Ver setor ${sector?.name}`}
-                        onClick={() => onNavigateProduction('PCP')}
+                        onClick={() => onNavigateProduction('PCP', sector?.id)}
                         className={`flex items-center justify-between px-4 py-3 rounded-2xl border transition-all active:scale-95 text-left ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-indigo-50 hover:border-indigo-100'}`}
                       >
                         <div className="flex items-center gap-3 min-w-0">

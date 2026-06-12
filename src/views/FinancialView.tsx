@@ -1,7 +1,7 @@
 ﻿import { useState, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, Product } from '../types';
-import { Search, Plus, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash } from 'lucide-react';
+import { Search, Plus, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash, ChevronDown, ChevronUp, Tag, FileText } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import TransactionModal from '../components/TransactionModal';
@@ -23,23 +23,27 @@ interface FinancialViewProps {
   onDelete: (id: string) => Promise<void>;
   onUpdatePurchase: (id: string, purchase: Partial<Purchase>) => Promise<void>;
   onUpdatePerson?: (id: string, updates: Partial<Person>) => Promise<void>;
+  onOpenPurchase?: (id: string) => void;
+  onOpenSale?: (id: string) => void;
   isDarkMode: boolean;
 }
 
-export default function FinancialView({ 
-  transactions, 
-  categories, 
-  accounts, 
+export default function FinancialView({
+  transactions,
+  categories,
+  accounts,
   people,
   purchases,
   sales,
   products,
-  onSave, 
+  onSave,
   onEdit,
   onDelete,
   onUpdatePurchase,
   onUpdatePerson,
-  isDarkMode 
+  onOpenPurchase,
+  onOpenSale,
+  isDarkMode
 }: FinancialViewProps) {
   const [filterType, setFilterType] = useState<TransactionType | 'ALL' | 'PAYABLE'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
@@ -56,6 +60,86 @@ export default function FinancialView({
   const [selectedPurchase, setSelectedPurchase] = useState<Purchase | null>(null);
   const [paymentModalMode, setPaymentModalMode] = useState<'PAYMENT' | 'HISTORY'>('PAYMENT');
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+
+  const [expandedIds, setExpandedIds] = useState<string[]>([]);
+  const toggleExpand = (id: string) => {
+    setExpandedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+  };
+
+  // Renderiza uma linha de item do carrinho de uma compra (estoque/solados/geral)
+  const renderPurchaseItemRow = (item: any, idx: number) => {
+    const isSole = 'moldId' in item;
+    const isStockItem = !isSole && 'productId' in item;
+    if (isStockItem) {
+      const stockItem = item as any;
+      const prod = products.find(p => p.id === stockItem.productId);
+      const vari = prod?.variations.find(v => v.id === stockItem.variationId);
+      return (
+        <div key={idx} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
+          <div className="flex items-center gap-2 min-w-0">
+            <Package size={12} className="text-indigo-500 shrink-0" />
+            <span className="text-[11px] font-black uppercase tracking-tight truncate">
+              {prod?.reference ? `${prod.reference} ` : ''}{prod?.name || 'Produto não encontrado'}
+            </span>
+            {vari && (
+              <>
+                <span className="text-[10px] text-slate-400 shrink-0">•</span>
+                <span className="text-[11px] font-bold text-slate-500 truncate">{vari.colorName}{stockItem.size ? ` / ${stockItem.size}` : ''}</span>
+              </>
+            )}
+          </div>
+          <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 shrink-0">{stockItem.quantity} {stockItem.isBox ? 'cx' : 'un'}</span>
+        </div>
+      );
+    }
+    if (isSole) {
+      const soleItem = item as any;
+      const totalPairs = Object.values(soleItem.quantities || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+      const sizeEntries = Object.entries(soleItem.quantities || {}).filter(([, q]) => (q as number) > 0);
+      return (
+        <div key={idx} className="flex flex-col gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
+          <div className="flex items-center gap-2">
+            <Package size={12} className="text-indigo-500 shrink-0" />
+            <span className="text-xs font-black uppercase tracking-tight text-slate-900 dark:text-white">{soleItem.moldName}</span>
+            <span className="text-[10px] text-slate-400">•</span>
+            <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 uppercase">{soleItem.colorName}</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {sizeEntries.map(([size, qty]) => (
+              <div key={size} className="flex flex-col items-center justify-center min-w-[36px] px-2 py-1.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-sm">
+                <span className="text-[9px] font-black text-slate-500 uppercase leading-none mb-0.5">{size}</span>
+                <span className="text-sm font-black text-slate-900 dark:text-white leading-none">{qty as number}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-700">
+            <span className="text-[11px] font-black text-slate-900 dark:text-white">{totalPairs} <span className="text-[10px] font-bold text-slate-400 uppercase">pares</span></span>
+            {soleItem.totalCost > 0 && (
+              <span className="text-xs font-black text-rose-500 dark:text-rose-400">
+                R$ {soleItem.totalCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            )}
+          </div>
+        </div>
+      );
+    }
+    const genItem = item as any;
+    const lineTotal = (genItem.value || 0) * (genItem.quantity || 1);
+    return (
+      <div key={genItem.id || idx} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
+        <div className="flex items-center gap-2 min-w-0">
+          <Tag size={12} className="text-slate-400 shrink-0" />
+          <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 truncate">
+            {genItem.description}
+            {genItem.quantity ? <span className="text-slate-400"> · {genItem.quantity}{genItem.unit ? ` ${genItem.unit}` : ''}</span> : null}
+          </span>
+        </div>
+        <span className="text-[10px] font-black text-rose-500 dark:text-rose-400 shrink-0">
+          R$ {lineTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+      </div>
+    );
+  };
 
   const payableCount = useMemo(() => 
     purchases.filter(p => p.paymentTerm === PaymentTerm.INSTALLMENTS && p.paymentStatus !== PaymentStatus.PAID).length
@@ -397,80 +481,120 @@ export default function FinancialView({
                 const totalPaid = (purchase.paymentHistory || []).reduce((acc, p) => acc + p.amount, 0);
                 const remaining = Math.max(0, purchase.total - totalPaid);
 
+                const isExpanded = expandedIds.includes(purchase.id);
+                const itemCount = purchase.type === PurchaseType.GENERAL
+                  ? (purchase.generalItems?.length || 0)
+                  : purchase.type === PurchaseType.SOLE
+                  ? (purchase.soleItems?.length || 0)
+                  : (purchase.items?.length || 0);
+                const hasDetails = !!purchase.notes || itemCount > 0;
+
                 return (
-                  <div key={purchase.id} className={`p-4 rounded-3x border-2 border-dashed flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-100'}`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4 flex-1 min-w-0">
-                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}>
-                          <Package size={24} />
+                  <div key={purchase.id} className={`p-4 rounded-[2rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900/50 border-slate-700' : 'bg-white border-slate-200'}`}>
+                    <div className="flex items-center">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-orange-500 text-white text-[10px] font-black uppercase tracking-wide truncate max-w-full">
+                            <User size={11} className="shrink-0" /> {supplier?.name || 'Fornecedor Desconhecido'}
+                          </span>
+                          <span className="font-black text-sm tracking-tight text-rose-500 shrink-0">
+                            R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                             <h3 className={`font-black text-xs tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                                {purchase.type === PurchaseType.REPLENISHMENT ? 'Abastecimento de Estoque' : 'Compra Geral'}
-                             </h3>
-                             {totalPaid > 0 && <span className="text-[8px] font-black px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-500">Parcial</span>}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[9px] font-bold text-slate-400 tracking-widest mt-0.5">
-                            <span className="flex items-center gap-1"><User size={10} /> {supplier?.name || 'Fornecedor Desconhecido'}</span>
-                            <span className="flex items-center gap-1"><Hash size={10} /> ID: {purchase.batchNumber || purchase.id.slice(-6).toUpperCase()}</span>
-                          </div>
+                        <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                           <Package size={12} className={isDarkMode ? 'text-slate-400' : 'text-slate-400'} />
+                           <h3 className={`font-black text-sm tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                              {purchase.type === PurchaseType.REPLENISHMENT ? 'Abastecimento de Estoque' : 'Compra Geral'}
+                           </h3>
+                           {totalPaid > 0 && <span className="text-[9px] font-black px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-500">Parcial</span>}
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-black text-sm tracking-tight text-slate-900 dark:text-white">
-                          R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                        {totalPaid > 0 ? (
-                           <p className="text-[9px] font-bold text-slate-400 tracking-widest mt-1 line-through">
-                             Total: R$ {purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                           </p>
-                        ) : (
-                          <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black tracking-widest mt-1 ${isLate ? 'bg-rose-50 text-rose-500' : 'bg-amber-50 text-amber-500'}`}>
-                            {isLate ? <AlertCircle size={10} /> : <Clock size={10} />}
-                            {isLate ? 'Vencido' : 'Pendente'}
-                          </div>
-                        )}
+                        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 mt-1.5">
+                          <span className="flex items-center gap-1 text-[10px] font-bold text-slate-400 tracking-widest"><Hash size={11} /> ID: {purchase.batchNumber || purchase.id.slice(-6).toUpperCase()}</span>
+                          {totalPaid > 0 ? (
+                             <span className="text-[10px] font-bold text-slate-400 tracking-widest line-through">
+                               Total: R$ {purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                             </span>
+                          ) : (
+                            <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black tracking-widest ${isLate ? 'bg-rose-50 text-rose-500' : 'bg-amber-50 text-amber-500'}`}>
+                              {isLate ? <AlertCircle size={10} /> : <Clock size={10} />}
+                              {isLate ? 'Vencido' : 'Pendente'}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="flex flex-col gap-4 pt-4 border-t border-slate-50 dark:border-slate-800">
-                      <div className="flex items-center justify-between">
-                        <div className="flex flex-wrap items-center gap-4">
-                          {purchase.dueDate && (
-                            <span className={`text-[9px] font-bold tracking-widest flex items-center gap-1 ${isLate ? 'text-rose-500' : 'text-slate-400'}`}>
-                              <Calendar size={10} />
-                              Vence em: {format(purchase.dueDate, "dd/MM/yyyy")}
-                            </span>
-                          )}
-                          {totalPaid > 0 && (
-                            <span className="text-[9px] font-black tracking-widest px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100">
-                               PAGO: R$ {totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </span>
-                          )}
-                        </div>
-                        
-                        <button 
-                           onClick={() => handlePartialPayment(purchase, 'PAYMENT')}
-                           className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-indigo-600 text-white text-[10px] font-black tracking-widest shadow-xl shadow-indigo-100 active:scale-95 transition-all translate-y-[-4px]"
+                    {hasDetails && (
+                      <div className="flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleExpand(purchase.id)}
+                          className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-[10px] font-black tracking-[0.2em] uppercase transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-100 text-slate-500'}`}
                         >
-                          <DollarSign size={16} strokeWidth={3} />
-                          Fazer Pagamento
+                          <span className="flex items-center gap-2">
+                            <FileText size={14} />
+                            Descrição e Itens da Compra
+                            {itemCount > 0 && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[9px] font-black normal-case tracking-normal">
+                                {itemCount} {itemCount === 1 ? 'item' : 'itens'}
+                              </span>
+                            )}
+                          </span>
+                          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                         </button>
+                        {isExpanded && (
+                          <div className="flex flex-col gap-2">
+                            {purchase.notes && (
+                              <p className={`text-xs font-semibold leading-relaxed p-3 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-100 text-slate-600'}`}>
+                                {purchase.notes}
+                              </p>
+                            )}
+                            {purchase.type === PurchaseType.GENERAL
+                              ? purchase.generalItems?.map((item, idx) => renderPurchaseItemRow(item, idx))
+                              : purchase.type === PurchaseType.SOLE
+                              ? purchase.soleItems?.map((item: any, idx) => renderPurchaseItemRow(item, idx))
+                              : purchase.items?.map((item: any, idx) => renderPurchaseItemRow(item, idx))}
+                          </div>
+                        )}
                       </div>
+                    )}
+
+                    <div className="flex flex-col gap-3 pt-4 border-t border-slate-50 dark:border-slate-800">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {purchase.dueDate && (
+                          <span className={`text-[10px] font-bold tracking-widest flex items-center gap-1 ${isLate ? 'text-rose-500' : 'text-slate-400'}`}>
+                            <Calendar size={11} />
+                            Vence em: {format(purchase.dueDate, "dd/MM/yyyy")}
+                          </span>
+                        )}
+                        {totalPaid > 0 && (
+                          <span className="text-[10px] font-black tracking-widest px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100">
+                             PAGO: R$ {totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        )}
+                      </div>
+
+                      <button
+                         type="button"
+                         onClick={() => handlePartialPayment(purchase, 'PAYMENT')}
+                         className="w-full flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-indigo-600 text-white text-[11px] font-black tracking-widest shadow-xl shadow-indigo-100 active:scale-95 transition-all"
+                      >
+                        <DollarSign size={16} strokeWidth={3} />
+                        Fazer Pagamento
+                      </button>
 
                       {/* New Row: History and Copy */}
                       <div className="flex items-center gap-2">
-                        <button 
+                        <button
                           onClick={() => handlePartialPayment(purchase, 'HISTORY')}
-                          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-[9px] font-black tracking-[0.2em] transition-all hover:bg-slate-50 dark:hover:bg-slate-800 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-100 text-slate-500'}`}
+                          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl border text-[10px] font-black tracking-[0.2em] transition-all hover:bg-slate-50 dark:hover:bg-slate-800 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-white border-slate-100 text-slate-500'}`}
                         >
                           <History size={14} />
                           Ver Histórico
                         </button>
-                        <button 
+                        <button
                           onClick={() => copyHistory(purchase)}
-                          className={`px-4 py-2.5 rounded-xl border flex items-center justify-center gap-2 text-[9px] font-black tracking-[0.2em] transition-all ${isDarkMode ? 'bg-emerald-950/20 border-emerald-900/50 text-emerald-400 hover:bg-emerald-900/30' : 'bg-emerald-50 border-emerald-100 text-emerald-600 hover:bg-emerald-100'}`}
+                          className={`px-4 py-2.5 rounded-xl border flex items-center justify-center gap-2 text-[10px] font-black tracking-[0.2em] transition-all ${isDarkMode ? 'bg-emerald-950/20 border-emerald-900/50 text-emerald-400 hover:bg-emerald-900/30' : 'bg-emerald-50 border-emerald-100 text-emerald-600 hover:bg-emerald-100'}`}
                           title="Copiar Histórico de Pagamentos"
                         >
                           <Clipboard size={14} />
@@ -487,29 +611,53 @@ export default function FinancialView({
             const account = accounts.find(a => a.id === transaction.accountId);
             const isPending = transaction.status === 'PENDING';
 
+            const relatedSale = sales.find(s => s.id === transaction.relatedId);
+            const relatedPurchase = purchases.find(p => p.id === transaction.relatedId);
+            const isPartialPayment = /pagto parcial/i.test(transaction.description || '');
+            let displayTitle = transaction.description;
+            if (relatedPurchase) {
+              const baseLabel = relatedPurchase.type === PurchaseType.REPLENISHMENT
+                ? 'Abastecimento de Estoque'
+                : relatedPurchase.type === PurchaseType.SOLE
+                ? 'Compra de Solados'
+                : 'Compra Geral';
+              displayTitle = isPartialPayment ? `Pagamento Parcial - ${baseLabel}` : baseLabel;
+            } else if (relatedSale) {
+              displayTitle = `Venda #${relatedSale.orderNumber}`;
+            }
+            const canNavigate = !!((relatedPurchase && onOpenPurchase) || (relatedSale && onOpenSale));
+
             return (
-              <div key={transaction.id} className={`p-4 rounded-2xl border shadow-sm flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+              <div
+                key={transaction.id}
+                onClick={canNavigate ? () => {
+                  if (relatedPurchase && onOpenPurchase) onOpenPurchase(relatedPurchase.id);
+                  else if (relatedSale && onOpenSale) onOpenSale(relatedSale.id);
+                } : undefined}
+                className={`p-4 rounded-3xl border shadow-sm flex flex-col gap-3 ${canNavigate ? 'cursor-pointer active:scale-[0.99] transition-transform' : ''} ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
+              >
+                {/* Linha do topo: título sempre visível por completo */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className={`font-black text-sm tracking-tight leading-snug flex-1 min-w-0 ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                    {displayTitle}
+                  </h3>
+                  {relatedSale && (
+                     <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 text-[7px] font-black tracking-widest shrink-0">Venda</span>
+                  )}
+                  {relatedPurchase && (
+                     <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 text-[7px] font-black tracking-widest shrink-0">Compra</span>
+                  )}
+                </div>
+
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4 flex-1 min-w-0">
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${transaction.type === TransactionType.INCOME ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400'}`}>
                       {transaction.type === TransactionType.INCOME ? <TrendingUp size={24} /> : <TrendingDown size={24} />}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className={`font-black text-xs tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                          {transaction.description}
-                        </h3>
-                        {transaction.relatedId && sales.find(s => s.id === transaction.relatedId) && (
-                           <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 text-[7px] font-black tracking-widest">Venda</span>
-                        )}
-                        {transaction.relatedId && purchases.find(p => p.id === transaction.relatedId) && (
-                           <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 text-[7px] font-black tracking-widest">Compra</span>
-                        )}
-                      </div>
-
                       {/* Sale Details if applicable */}
                       {(() => {
-                        const sale = sales.find(s => s.id === transaction.relatedId);
+                        const sale = relatedSale;
                         if (sale) {
                           return (
                             <div className="mt-1.5 space-y-1">
@@ -544,7 +692,7 @@ export default function FinancialView({
                           );
                         }
 
-                        const purchase = purchases.find(p => p.id === transaction.relatedId);
+                        const purchase = relatedPurchase;
                         if (purchase) {
                           const supplier = people.find(p => p.id === purchase.supplierId);
                           return (

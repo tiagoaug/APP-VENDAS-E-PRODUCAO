@@ -12,6 +12,14 @@ import {
 import Modal from './Modal';
 import CalculatorModal from './CalculatorModal';
 
+// Normaliza nomes de cor para comparação (maiúsculas, sem acentos, espaços colapsados)
+const normalizeColorName = (name: string) =>
+  name
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .trim()
+    .replace(/\s+/g, ' ');
+
 interface EngineeringEditorProps {
   key?: any;
   isDarkMode: boolean;
@@ -26,6 +34,8 @@ interface EngineeringEditorProps {
   defaultGridId: string;
   toolMapping: { [size: string]: string };
   activeVariationColor?: { name: string, hex: string };
+  productReference?: string;
+  productName?: string;
   onSaveConfigItem?: (item: ProductionConfigItem) => Promise<void>;
 }
 
@@ -42,6 +52,8 @@ export default function EngineeringEditor({
   defaultGridId,
   toolMapping,
   activeVariationColor,
+  productReference,
+  productName,
   onSaveConfigItem
 }: EngineeringEditorProps) {
   const [editing, setEditing] = useState<ComponentConsumption>({ ...consumption });
@@ -50,6 +62,7 @@ export default function EngineeringEditor({
   const [showToolMapping, setShowToolMapping] = useState(false);
   const [calcExpression, setCalcExpression] = useState(consumption.quantity ? consumption.quantity.toString().replace('.', ',') : '');
   const material = productionConfigs.find(m => m.id === editing.materialId);
+  const materialUnitName = productionConfigs.find(c => c.id === material?.metadata?.unitId)?.name || 'PEÇAS';
   const [calcQty, setCalcQty] = useState(consumption.quantity ? consumption.quantity.toString().replace('.', ',') : '1');
   const [calcUnitVal, setCalcUnitVal] = useState(
     (consumption.unitValue && consumption.unitValue > 0) 
@@ -238,7 +251,18 @@ export default function EngineeringEditor({
       }
     }
 
-    setEditing({ ...editing, materialId, quantity: newQuantity, colorId: '' });
+    // Cruzamento automático: se o insumo tem cores cadastradas e alguma delas tem o
+    // MESMO nome da cor da variação atual (cabedal), pré-seleciona essa cor — evita
+    // que o usuário escolha manualmente a cor errada do insumo para esta variação.
+    let autoColorId = '';
+    const matColorIds = mat?.metadata?.colorIds;
+    if (matColorIds?.length && activeVariationColor?.name) {
+      const targetName = normalizeColorName(activeVariationColor.name);
+      const matchedColor = colors.find(c => matColorIds.includes(c.id) && normalizeColorName(c.name) === targetName);
+      if (matchedColor) autoColorId = matchedColor.id;
+    }
+
+    setEditing({ ...editing, materialId, quantity: newQuantity, colorId: autoColorId });
   };
 
   const handleToolChange = (toolId: string) => {
@@ -340,26 +364,34 @@ export default function EngineeringEditor({
       className={`h-full pb-32 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
     >
       {/* Header - Not sticky anymore to avoid overlapping parent modal header */}
-      <div className={`p-6 border-b flex items-center justify-between ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-        <div className="flex items-center gap-4">
-          <button 
-            onClick={onCancel} 
+      <div className={`p-6 border-b flex items-center gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+        <div className="flex items-center gap-4 min-w-0">
+          <button
+            type="button"
+            onClick={onCancel}
             title="Voltar"
-            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+            className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all shrink-0"
           >
             <ChevronLeft size={24} />
           </button>
-          <div>
+          <div className="min-w-0">
             <h3 className="text-base font-black uppercase tracking-[0.1em] text-indigo-600 dark:text-indigo-400">Configurar Engenharia</h3>
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              {(productReference || productName) && (
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-900/50">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 truncate max-w-[180px]">
+                    {productReference}{productReference && productName ? ' — ' : ''}{productName}
+                  </span>
+                </div>
+              )}
               {activeVariationColor && (
                 <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                  <div 
-                    className="w-2.5 h-2.5 rounded-full border border-black/10" 
+                  <div
+                    className="w-2.5 h-2.5 rounded-full border border-black/10"
                     style={{ backgroundColor: activeVariationColor.hex }}
                   />
                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                    VARIANTE: {activeVariationColor.name}
+                    COR: {activeVariationColor.name}
                   </span>
                 </div>
               )}
@@ -371,15 +403,6 @@ export default function EngineeringEditor({
             </div>
           </div>
         </div>
-        <button 
-          onClick={() => onSave({ ...editing, unitValue: evaluate(calcUnitVal) })}
-          disabled={!editing.materialId || (!editing.colorId && !editing.ignoreColor)}
-          title={(!editing.colorId && !editing.ignoreColor) ? "Selecione uma cor para confirmar" : "Confirmar engenharia e salvar"}
-          aria-label="Confirmar engenharia e salvar alterações"
-          className={`px-6 py-3 rounded-2xl flex items-center gap-2 text-xs font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 disabled:opacity-50 disabled:grayscale ${isDarkMode ? 'bg-indigo-600 shadow-indigo-900/40' : 'bg-slate-900 shadow-slate-900/20 text-white'}`}
-        >
-          <Save size={16} /> Confirmar
-        </button>
       </div>
 
       <div className="px-1 py-4 sm:p-6 space-y-5 sm:space-y-8 max-w-3xl mx-auto">
@@ -457,8 +480,7 @@ export default function EngineeringEditor({
           </div>
         </div>
 
-        {/* Card de Faca ou Calculadora de Consumo */}
-        {needsTool ? (
+        {needsTool && (
           <div className={`p-4 sm:p-8 rounded-[2.5rem] border-2 shadow-xl space-y-6 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             <div className="flex items-center gap-4">
               <div className={`w-14 h-14 shrink-0 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
@@ -553,10 +575,11 @@ export default function EngineeringEditor({
                   <ChevronRight size={18} />
                 </button>
 
-                <Modal 
-                  isOpen={showToolMapping} 
+                <Modal
+                  isOpen={showToolMapping}
                   onClose={() => setShowToolMapping(false)}
                   title="Mapeamento de Facas"
+                  closeLabel="Fechar Mapeamento de Facas"
                 >
                   <div className="flex flex-col gap-6">
                     <div className="grid grid-cols-1 gap-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2">
@@ -638,7 +661,8 @@ export default function EngineeringEditor({
               </>
             )}
           </div>
-        ) : material && (
+        )}
+        {material && (!needsTool || editing.ignoreQuantity) && (
           <div className={`p-4 sm:p-8 rounded-[2.5rem] border shadow-2xl space-y-8 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             {/* MATERIAL + UNID. em linha única */}
             <div className="flex flex-col gap-2">
@@ -1081,7 +1105,7 @@ export default function EngineeringEditor({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4">
              <div className={`flex flex-col gap-3 transition-all ${editing.ignoreColor ? 'opacity-50 pointer-events-none' : ''}`}>
                 <label htmlFor="color-select" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">
                   Cor {editing.ignoreColor && <span className="text-[9px] text-indigo-500">(IGNORADO)</span>}
@@ -1107,30 +1131,49 @@ export default function EngineeringEditor({
                 {!editing.colorId && !editing.ignoreColor && (
                   <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest mt-1 ml-2">Campo Obrigatório</span>
                 )}
+                {(() => {
+                  // Avisa se a cor da variação atual (cabedal) tem uma cor com o MESMO nome
+                  // cadastrada no insumo, mas o item selecionado aponta para outra cor —
+                  // sinal de cruzamento de cores incorreto na ficha técnica.
+                  if (editing.ignoreColor || !editing.colorId || !activeVariationColor?.name) return null;
+                  const selMat = productionConfigs.find(m => m.id === editing.materialId);
+                  const matColorIds = selMat?.metadata?.colorIds;
+                  if (!matColorIds?.length) return null;
+                  const targetName = normalizeColorName(activeVariationColor.name);
+                  const matchingColor = colors.find(c => matColorIds.includes(c.id) && normalizeColorName(c.name) === targetName);
+                  if (!matchingColor || matchingColor.id === editing.colorId) return null;
+                  return (
+                    <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest mt-1 ml-2 leading-relaxed">
+                      ⚠ A variação é "{activeVariationColor.name}" e o insumo tem uma cor com esse mesmo nome — confirme se não é um cruzamento de cor errado.
+                    </span>
+                  );
+                })()}
              </div>
-             <div className={`flex flex-col gap-3 transition-all ${editing.ignoreQuantity ? 'opacity-50 pointer-events-none' : ''}`}>
-                <label htmlFor="pieces-per-pair-input" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">
-                  Peças / Par {editing.ignoreQuantity && <span className="text-[9px] text-indigo-500">(IGNORADO)</span>}
-                </label>
-                <input 
-                  id="pieces-per-pair-input"
-                  type="number" 
-                  disabled={editing.ignoreQuantity}
-                  className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
-                  value={editing.ignoreQuantity ? 1 : (editing.piecesPerPair || 2)}
-                  title="Número de Peças por Par"
-                  onChange={(e) => {
-                    const ppp = Number(e.target.value);
-                    const tool = productionConfigs.find(t => t.id === editing.toolId);
-                    const material = productionConfigs.find(m => m.id === editing.materialId);
-                    if (tool && material) {
-                      setEditing({ ...editing, piecesPerPair: ppp, quantity: calculateConsumption(tool, material, ppp, editing.toolMapping) });
-                    } else {
-                      setEditing({ ...editing, piecesPerPair: ppp });
-                    }
-                  }}
-                />
-             </div>
+             {needsTool && (
+               <div className={`flex flex-col gap-3 transition-all ${editing.ignoreQuantity ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <label htmlFor="pieces-per-pair-input" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">
+                    Peças / Par {editing.ignoreQuantity && <span className="text-[9px] text-indigo-500">(IGNORADO)</span>}
+                  </label>
+                  <input 
+                    id="pieces-per-pair-input"
+                    type="number" 
+                    disabled={editing.ignoreQuantity}
+                    className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+                    value={editing.ignoreQuantity ? 1 : (editing.piecesPerPair || 2)}
+                    title={`Quantidade de peças por par`}
+                    onChange={(e) => {
+                      const ppp = Number(e.target.value);
+                      const tool = productionConfigs.find(t => t.id === editing.toolId);
+                      const material = productionConfigs.find(m => m.id === editing.materialId);
+                      if (tool && material) {
+                        setEditing({ ...editing, piecesPerPair: ppp, quantity: calculateConsumption(tool, material, ppp, editing.toolMapping) });
+                      } else {
+                        setEditing({ ...editing, piecesPerPair: ppp });
+                      }
+                    }}
+                  />
+               </div>
+             )}
           </div>
         </div>
 
@@ -1204,6 +1247,18 @@ export default function EngineeringEditor({
               ))}
            </div>
         </div>
+
+        {/* Confirmar - ao final do formulário */}
+        <button
+          type="button"
+          onClick={() => onSave({ ...editing, quantity: evaluate(calcQty), unitValue: evaluate(calcUnitVal) })}
+          disabled={!editing.materialId || (!editing.colorId && !editing.ignoreColor)}
+          title={(!editing.colorId && !editing.ignoreColor) ? "Selecione uma cor para confirmar" : "Confirmar engenharia e salvar"}
+          aria-label="Confirmar engenharia e salvar alterações"
+          className={`w-full px-6 py-4 rounded-2xl flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 disabled:opacity-50 disabled:grayscale ${isDarkMode ? 'bg-indigo-600 shadow-indigo-900/40' : 'bg-slate-900 shadow-slate-900/20 text-white'}`}
+        >
+          <Save size={18} /> Confirmar
+        </button>
 
       </div>
 

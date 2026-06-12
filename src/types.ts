@@ -58,6 +58,7 @@ export enum PurchaseType {
   REPLENISHMENT = 'REPLENISHMENT', // Abastecimento de estoque
   GENERAL = 'GENERAL', // Compras gerais
   SOLE = 'SOLE', // Compra de solados
+  PALMILHA = 'PALMILHA', // Compra/produção de palmilhas
 }
 
 export enum ProductStatus {
@@ -86,7 +87,8 @@ export type TechSheetItem = {
   quantity: number;
 };
 
-export type ComponentCategory = 'CUTTING_PIECE' | 'PACKAGING' | 'CHEMICAL' | 'TRIMMING';
+// Categorias fixas + categorias customizadas (ProductionConfigItem do tipo 'CONSUMPTION_CATEGORY', usando o id do item)
+export type ComponentCategory = 'CUTTING_PIECE' | 'PACKAGING' | 'CHEMICAL' | 'TRIMMING' | (string & {});
 
 export type ComponentConsumption = {
   id: string;
@@ -227,6 +229,7 @@ export type Purchase = {
   items?: PurchaseItem[];
   generalItems?: GeneralPurchaseItem[];
   soleItems?: SolePurchaseItem[];
+  palmilhaItems?: PalmilhaPurchaseItem[];
   total: number;
   notes?: string;
   batchNumber?: string; // Controle por lote
@@ -459,6 +462,8 @@ export enum ViewType {
   PRODUCTION_WEIGHING = 'PRODUCTION_WEIGHING',
   PRODUCTION_SOLE_PURCHASE = 'PRODUCTION_SOLE_PURCHASE',
   PRODUCTION_SOLE_STOCK = 'PRODUCTION_SOLE_STOCK',
+  PRODUCTION_PALMILHA_STOCK = 'PRODUCTION_PALMILHA_STOCK',
+  PRODUCTION_PALMILHA_PURCHASE = 'PRODUCTION_PALMILHA_PURCHASE',
   PRODUCTION_ENGINEERING = 'PRODUCTION_ENGINEERING',
   CATEGORY_CONFIG = 'CATEGORY_CONFIG',
   PRODUCTION_ESTOQUES_MENU = 'PRODUCTION_ESTOQUES_MENU',
@@ -527,7 +532,7 @@ export type ProductionConfigItem = {
   id: string;
   name: string;
   description: string;
-  type: 'UNIT' | 'TOOL' | 'INFESTO' | 'DEADLINE' | 'TECH_SHEET' | 'PACKAGING' | 'MATERIAL' | 'MOLD' | 'PIECE';
+  type: 'UNIT' | 'TOOL' | 'INFESTO' | 'DEADLINE' | 'TECH_SHEET' | 'PACKAGING' | 'MATERIAL' | 'MOLD' | 'PIECE' | 'CONSUMPTION_CATEGORY';
   imageUrl?: string;
   metadata?: {
     // Shared or existing
@@ -560,11 +565,19 @@ export type ProductionConfigItem = {
       type: 'weight' | 'percentage';
     }[];
     extraServices?: { name: string, cost: number }[];
-    
+
+    // Palmilha (Insole) specific - on TOOL (faca) items
+    palmilha?: {
+      subtype: 'MONTAGEM' | 'ACABAMENTO';
+      colorVariations: { colorId: string; colorName?: string; subRef?: string }[];
+      silkServiceId?: string; // Link to FlowTag/Sector, apenas para ACABAMENTO
+    };
+
     // Insumo / Peça specific
     stock?: number;
     minStock?: number;
     stockByColor?: Record<string, number>;
+    priceByColor?: Record<string, number>;
 
     [key: string]: any;
   };
@@ -630,6 +643,36 @@ export type SolePurchaseItem = {
   colorId: string;
   colorName: string;
   quantities: { [size: string]: number };
+  totalPairs?: number;
+  unitCost: number;
+  totalCost: number;
+};
+
+export type PalmilhaStockEntry = {
+  id: string;
+  toolId: string;
+  toolName: string;
+  subtype: 'MONTAGEM' | 'ACABAMENTO';
+  colorId: string;
+  colorName: string;
+  supplierId?: string;
+  supplierName?: string;
+  stock: { [grade: string]: number }; // pares por tamanho/grade da faca
+  totalPairs: number;
+  unitCost: number;
+  totalCost: number;
+  purchaseDate: number;
+  notes?: string;
+  updatedAt?: number;
+};
+
+export type PalmilhaPurchaseItem = {
+  toolId: string;
+  toolName: string;
+  subtype: 'MONTAGEM' | 'ACABAMENTO';
+  colorId: string;
+  colorName: string;
+  quantities: { [grade: string]: number };
   totalPairs?: number;
   unitCost: number;
   totalCost: number;
@@ -752,6 +795,28 @@ export interface ServiceOrder {
   // Navigation helpers (derived from linked lot, not persisted)
   currentSectorIndex?: number;
   route?: string[];
+}
+
+export interface AIQuickPrompt {
+  id: string;
+  label: string;
+  prompt: string;
+  icon: string;
+  autoSend: boolean;
+  order: number;
+}
+
+export interface AIUsageLimits {
+  dailyTokenLimit: number;
+  weeklyTokenLimit: number;
+}
+
+export interface AIUsageEntry {
+  id: string;
+  timestamp: number;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
 }
 
 

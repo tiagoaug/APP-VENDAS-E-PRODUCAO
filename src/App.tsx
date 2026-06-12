@@ -29,7 +29,8 @@ import {
   AlertCircle,
   AlertTriangle,
   Scale,
-  Printer
+  Printer,
+  Footprints
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { auth, db, logout } from "./lib/firebase";
@@ -68,6 +69,8 @@ import {
   AppModulesConfig,
   SoleStockEntry,
   SolePurchaseItem,
+  PalmilhaStockEntry,
+  PalmilhaPurchaseItem,
   ProductionOrder,
   ProductionOrderItem,
   ProductionLot,
@@ -107,6 +110,7 @@ import ManualView from "./views/ManualView";
 import WeighingView from "./views/WeighingView";
 import SoleProcurement from "./views/SolePurchaseView";
 import SoleStockView from "./views/SoleStockView";
+import PalmilhaStockView from "./views/PalmilhaStockView";
 import PCPView from "./views/PCPView";
 import PurchaseNeedsView from "./views/PurchaseNeedsView";
 import GeneralReceiptsView from "./views/GeneralReceiptsView";
@@ -120,6 +124,8 @@ import PaymentMethodModal from "./components/PaymentMethodModal";
 import Modal from "./components/Modal";
 import TransactionModal from "./components/TransactionModal";
 import SolePurchaseModal from "./components/SolePurchaseModal";
+import PalmilhaPurchaseModal from "./components/PalmilhaPurchaseModal";
+import AIAssistantModal from "./components/AIAssistantModal";
 import { ToastContainer } from "./components/ToastContainer";
 import { toast } from "./utils/toast";
 import { parseLocaleNumber } from './utils/numbers';
@@ -214,11 +220,21 @@ export default function App() {
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [transactionModalType, setTransactionModalType] = useState<TransactionType>(TransactionType.INCOME);
   const [isSolePurchaseModalOpen, setIsSolePurchaseModalOpen] = useState(false);
+  const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
   const [solePurchaseParams, setSolePurchaseParams] = useState<{
     moldId?: string;
     colorId?: string;
     initialGrid?: Record<string, number>;
     items?: { moldId: string; colorId?: string; initialGrid?: Record<string, number> }[];
+    description?: string;
+    requestId?: string;
+  } | null>(null);
+  const [isPalmilhaPurchaseModalOpen, setIsPalmilhaPurchaseModalOpen] = useState(false);
+  const [palmilhaPurchaseParams, setPalmilhaPurchaseParams] = useState<{
+    toolId?: string;
+    colorId?: string;
+    initialGrid?: Record<string, number>;
+    items?: { toolId: string; toolName?: string; subtype?: 'MONTAGEM' | 'ACABAMENTO'; colorId?: string; colorName?: string; initialGrid?: Record<string, number> }[];
     description?: string;
     requestId?: string;
   } | null>(null);
@@ -250,6 +266,7 @@ export default function App() {
   const [productionConfigs, setProductionConfigs] = useState<ProductionConfigItem[]>([]);
   const [weighingRecords, setWeighingRecords] = useState<WeighingRecord[]>([]);
   const [soleStockEntries, setSoleStockEntries] = useState<SoleStockEntry[]>([]);
+  const [palmilhaStockEntries, setPalmilhaStockEntries] = useState<PalmilhaStockEntry[]>([]);
   const [productionLots, setProductionLots] = useState<ProductionLot[]>([]);
   const [productionOrders, setProductionOrders] = useState<ProductionOrder[]>([]);
   const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequest[]>([]);
@@ -260,6 +277,7 @@ export default function App() {
 
   const defaultDashboardConfig: DashboardConfig = {
     cards: [
+      { id: 'ai_assistant', label: 'Assistente IA (Claude)', visible: true, order: -1, module: 'any' },
       { id: 'balance', label: 'Saldo Consolidado', visible: true, order: 0, module: 'sales' },
       { id: 'sales_products', label: 'Produtos e Catálogo', visible: true, order: 1, module: 'sales' },
       { id: 'manual_entries', label: 'Lançamentos Manuais', visible: true, order: 2, module: 'sales' },
@@ -328,6 +346,11 @@ export default function App() {
     if (config.cards && !config.cards.find((c: any) => c.id === 'pcp_sector_map')) {
       config.cards.push({ id: 'pcp_sector_map', label: 'Mapas por Setor (PCP)', visible: true, order: 20, module: 'production' });
       config.cards.push({ id: 'pcp_purchase_needs', label: 'Necessidades de Compras (PCP)', visible: true, order: 21, module: 'production' });
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+    // Migration: ensure ai_assistant card is present
+    if (config.cards && !config.cards.find((c: any) => c.id === 'ai_assistant')) {
+      config.cards.push({ id: 'ai_assistant', label: 'Assistente IA (Claude)', visible: true, order: -1, module: 'any' });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
 
@@ -482,6 +505,11 @@ export default function App() {
       setSoleStockEntries
     );
 
+    const unsubPalmilhaStock = firebaseService.subscribeToCollection<PalmilhaStockEntry>(
+      "palmilhaStock",
+      setPalmilhaStockEntries
+    );
+
     const unsubProductionLots = firebaseService.subscribeToCollection<ProductionLot>(
       "productionLots",
       setProductionLots
@@ -563,6 +591,7 @@ export default function App() {
       unsubProductionConfigs();
       unsubWeighingRecords();
       unsubSoleStock();
+      unsubPalmilhaStock();
       unsubProductionLots();
       unsubProductionOrders();
       unsubPurchaseRequests();
@@ -611,6 +640,12 @@ export default function App() {
       return;
     }
 
+    if (view === ViewType.PRODUCTION_PALMILHA_PURCHASE) {
+      setPalmilhaPurchaseParams(params);
+      setIsPalmilhaPurchaseModalOpen(true);
+      return;
+    }
+
     // If params is a string, it might be the old 'search' parameter
     if (typeof params === 'string') {
       setSearchContext(params);
@@ -630,9 +665,9 @@ export default function App() {
     }
   };
 
-  const navigateToProduction = (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES') => {
+  const navigateToProduction = (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES', sectorId?: string) => {
     if (subScreen === 'PCP') {
-      navigateTo(ViewType.PRODUCTION_PCP);
+      navigateTo(ViewType.PRODUCTION_PCP, sectorId ? { initialSectorId: sectorId } : null);
     } else if (subScreen === 'NECESSIDADES') {
       navigateTo(ViewType.PRODUCTION_PCP, { initialTab: 'needs' });
     } else {
@@ -848,6 +883,16 @@ export default function App() {
     return () => window.removeEventListener('open-sole-purchase-modal' as any, handleOpenModal);
   }, []);
 
+  useEffect(() => {
+    const handleOpenModal = (e: any) => {
+      const { params } = e.detail;
+      setPalmilhaPurchaseParams(params);
+      setIsPalmilhaPurchaseModalOpen(true);
+    };
+    window.addEventListener('open-palmilha-purchase-modal' as any, handleOpenModal);
+    return () => window.removeEventListener('open-palmilha-purchase-modal' as any, handleOpenModal);
+  }, []);
+
   const handleSaveSolePurchase = async (purchase: Purchase, soleItems: SolePurchaseItem[]) => {
 
     try {
@@ -969,6 +1014,132 @@ export default function App() {
       setSolePurchaseParams(null);
     } catch (err: any) {
       console.error("[App] Erro crítico ao salvar compra de sola:", err);
+      toast.show("Erro ao salvar compra: " + (err.message || JSON.stringify(err)));
+    }
+  };
+
+  const handleSavePalmilhaPurchase = async (purchase: Purchase, palmilhaItems: PalmilhaPurchaseItem[]) => {
+
+    try {
+      if (!purchase || !palmilhaItems) throw new Error("Dados de compra incompletos");
+      if (!purchase.date) purchase.date = Date.now();
+      if (purchase.total === undefined || purchase.total === null) purchase.total = 0;
+
+      const uid = auth.currentUser?.uid;
+      if (!uid) throw new Error("Usuário não autenticado");
+
+      const purchaseToSave = { ...purchase, items: palmilhaItems };
+
+      // Pre-generate ID so the transaction can reference it for the financial entry
+      const purchaseId = (purchaseToSave as any).id || doc(collection(db, `users/${uid}/purchases`)).id;
+      const finalPurchaseId = purchaseId;
+
+      // Atomic: save purchase document + update palmilha stock in one transaction
+      await firebaseService.runAtomic(async (txn) => {
+        // Reads: load existing palmilha stock entries we'll need to update
+        const palmilhaStockOpsMap = new Map<string, { ref: any; docSnap: any; isNew: boolean }>();
+        if (purchase.registerAsReceived === true) {
+          for (const item of palmilhaItems) {
+            const key = `${item.toolId}_${item.colorId}`;
+            if (!palmilhaStockOpsMap.has(key)) {
+              const existing = palmilhaStockEntries.find(s => s.toolId === item.toolId && s.colorId === item.colorId);
+              if (existing) {
+                const ref = doc(db, `users/${uid}/palmilhaStock`, existing.id);
+                const docSnap = await txn.get(ref);
+                palmilhaStockOpsMap.set(key, { ref, docSnap, isNew: false });
+              } else {
+                const newRef = doc(collection(db, `users/${uid}/palmilhaStock`));
+                palmilhaStockOpsMap.set(key, { ref: newRef, docSnap: null, isNew: true });
+              }
+            }
+          }
+        }
+
+        // Write: purchase document
+        const { id: _id, ...purchasePayload } = purchaseToSave as any;
+        const purchaseRef = doc(db, `users/${uid}/purchases`, purchaseId);
+        txn.set(purchaseRef, purchasePayload, { merge: true });
+
+        // Write: palmilha stock entries
+        if (purchase.registerAsReceived === true) {
+          for (const item of palmilhaItems) {
+            const key = `${item.toolId}_${item.colorId}`;
+            const op = palmilhaStockOpsMap.get(key);
+            if (!op) continue;
+
+            if (!op.isNew && op.docSnap?.exists()) {
+              const updatedStock = { ...op.docSnap.data().stock };
+              Object.entries(item.quantities).forEach(([grade, qty]) => {
+                updatedStock[grade] = (updatedStock[grade] || 0) + qty;
+              });
+              const totalPairs = Object.values(updatedStock).reduce((acc: number, curr) => acc + (Number(curr) || 0), 0);
+              txn.update(op.ref, {
+                stock: updatedStock, totalPairs,
+                unitCost: item.unitCost,
+                totalCost: totalPairs * parseLocaleNumber(item.unitCost),
+                purchaseDate: purchase.date, updatedAt: Date.now()
+              });
+            } else {
+              const totalPairs = Object.values(item.quantities).reduce((acc: number, curr) => acc + (Number(curr) || 0), 0);
+              txn.set(op.ref, {
+                toolId: item.toolId, toolName: item.toolName,
+                subtype: item.subtype,
+                colorId: item.colorId, colorName: item.colorName,
+                supplierId: purchase.supplierId,
+                supplierName: people.find(p => p.id === purchase.supplierId)?.name || 'Fornecedor',
+                stock: item.quantities, totalPairs,
+                unitCost: parseLocaleNumber(item.unitCost),
+                totalCost: parseLocaleNumber(item.totalCost),
+                purchaseDate: purchase.date, updatedAt: Date.now()
+              });
+            }
+          }
+        }
+      });
+
+      // Non-critical: update purchase request status
+      if (purchase.registerAsReceived && palmilhaPurchaseParams?.requestId) {
+        const request = purchaseRequests.find(r => r.id === palmilhaPurchaseParams.requestId);
+        if (request) {
+          const updatedReceivedBreakdown = { ...(request.receivedBreakdown || {}) };
+          let totalReceivedNow = 0;
+          palmilhaItems.forEach(item => {
+            Object.entries(item.quantities).forEach(([grade, qty]) => {
+              updatedReceivedBreakdown[grade] = (updatedReceivedBreakdown[grade] || 0) + qty;
+              totalReceivedNow += qty;
+            });
+          });
+          const totalReceivedAll = (request.receivedQty || 0) + totalReceivedNow;
+          const isFullyReceived = totalReceivedAll >= request.requiredQty;
+          await firebaseService.updateDocument("purchaseRequests", request.id, {
+            receivedQty: totalReceivedAll,
+            receivedBreakdown: updatedReceivedBreakdown,
+            status: isFullyReceived ? 'RECEIVED' : 'ORDERED',
+            updatedAt: Date.now()
+          });
+        }
+      }
+
+      // Financial entry — financeService.createTransaction handles balance update internally
+      if (purchase.paymentTerm === PaymentTerm.CASH && purchase.accountId) {
+        const transaction: Omit<Transaction, 'id'> = {
+          type: TransactionType.EXPENSE,
+          amount: parseLocaleNumber(purchase.total),
+          date: purchase.date,
+          categoryId: purchase.categoryId || (categories || []).find(c => String(c.name || '').toLowerCase().includes('palmilha'))?.id || categories?.[0]?.id || 'cat1',
+          accountId: purchase.accountId,
+          description: `Compra de Palmilhas - ${people.find(p => p.id === purchase.supplierId)?.name || purchase.supplierId}`,
+          status: 'COMPLETED',
+          relatedId: finalPurchaseId
+        };
+        await financeService.createTransaction(transaction);
+      }
+
+      toast.show("Compra de palmilhas registrada e estoque atualizado com sucesso!");
+      setIsPalmilhaPurchaseModalOpen(false);
+      setPalmilhaPurchaseParams(null);
+    } catch (err: any) {
+      console.error("[App] Erro crítico ao salvar compra de palmilhas:", err);
       toast.show("Erro ao salvar compra: " + (err.message || JSON.stringify(err)));
     }
   };
@@ -1565,6 +1736,7 @@ export default function App() {
               setTransactionModalType(type);
               setIsTransactionModalOpen(true);
             }}
+            onOpenAIAssistant={() => setIsAIAssistantOpen(true)}
           />
         );
       case ViewType.DASHBOARD_CONFIG:
@@ -1972,6 +2144,7 @@ export default function App() {
                 toast.show("Erro ao salvar item: " + (err.message || err));
               }
             }}
+            onDeleteConfigItem={(id: string) => firebaseService.deleteDocument("productionConfigs", id)}
             onCancel={goBack}
             isDarkMode={isDarkMode}
             sectors={sectors}
@@ -2031,6 +2204,7 @@ export default function App() {
             accounts={accounts}
             grids={grids}
             people={people}
+            colors={colors}
             productionConfigs={productionConfigs}
             initialParams={currentParams}
             productionOrders={productionOrders}
@@ -2191,7 +2365,11 @@ export default function App() {
                     date: purchase.date,
                     categoryId: purchase.categoryId || categories[0]?.id || "cat1",
                     accountId: purchase.accountId,
-                    description: `Compra ${purchase.supplierId || purchase.batchNumber}`,
+                    description: purchase.type === PurchaseType.REPLENISHMENT
+                      ? 'Abastecimento de Estoque'
+                      : purchase.type === PurchaseType.SOLE
+                      ? 'Compra de Solados'
+                      : 'Compra Geral',
                     status: "COMPLETED",
                     relatedId: purchase.id,
                   };
@@ -2786,6 +2964,8 @@ export default function App() {
                 toast.show('Erro ao atualizar cadastro: ' + (err.message || err));
               }
             }}
+            onOpenPurchase={(id) => navigateTo(ViewType.PURCHASE_FORM, id)}
+            onOpenSale={(id) => navigateTo(ViewType.SALE_FORM, id)}
             isDarkMode={isDarkMode}
           />
         );
@@ -3307,10 +3487,12 @@ export default function App() {
             userName={user?.displayName || user?.email || 'Usuário'}
             productionConfigs={productionConfigs}
             soleStock={soleStockEntries}
+            palmilhaStock={palmilhaStockEntries}
             onNavigate={navigateTo}
             purchaseRequests={purchaseRequests}
             onRequestPurchase={handleCreatePurchaseRequest}
             initialTab={currentParams?.initialTab}
+            initialSectorId={currentParams?.initialSectorId}
             people={people}
             accounts={accounts}
             categories={categories}
@@ -3403,6 +3585,22 @@ export default function App() {
             isDarkMode={isDarkMode}
           />
         );
+      case ViewType.PRODUCTION_PALMILHA_STOCK:
+        return (
+          <PalmilhaStockView
+            stockEntries={palmilhaStockEntries}
+            productionConfigs={productionConfigs}
+            colors={colors as ColorValue[]}
+            productionLots={productionLots}
+            products={products}
+            people={people}
+            purchaseRequests={purchaseRequests}
+            purchases={purchases}
+            onBack={goBack}
+            onFormularPedido={(items) => navigateTo(ViewType.PRODUCTION_PALMILHA_PURCHASE, { items, description: 'Pedido formulado a partir do Estoque de Palmilhas' })}
+            isDarkMode={isDarkMode}
+          />
+        );
       case ViewType.PRODUCTION_PURCHASE_NEEDS:
         return (
           <PurchaseNeedsView
@@ -3415,6 +3613,7 @@ export default function App() {
             userName={user?.displayName || user?.email || 'Usuário'}
             soleStock={soleStockEntries}
             productionConfigs={productionConfigs}
+            people={people}
           />
         );
       case ViewType.PRODUCTION_ESTOQUES_MENU:
@@ -3429,6 +3628,7 @@ export default function App() {
               {[
                 { id: ViewType.PRODUCTION_STOCK, label: 'Estoques Gerais', description: 'Matéria-prima, adesivos e insumos', icon: <PackageOpen size={24} />, color: 'text-emerald-600' },
                 { id: ViewType.PRODUCTION_SOLE_STOCK, label: 'Estoque de Solados', description: 'Gerenciamento por modelo, cor e tamanho', icon: <Package size={24} />, color: 'text-indigo-600' },
+                { id: ViewType.PRODUCTION_PALMILHA_STOCK, label: 'Estoque de Palmilhas', description: 'Montagem e Acabamento, por faca e cor', icon: <Footprints size={24} />, color: 'text-rose-600' },
                 { id: ViewType.STOCK, label: 'Estoque de Produtos', description: 'Produtos prontos — por modelo, cor e tamanho', icon: <Boxes size={24} />, color: 'text-amber-700' },
                 { id: ViewType.PRODUCTION_GENERAL_RECEIPT, label: 'Recebimento de Compras', description: 'Dar entrada de materiais comprados no estoque', icon: <ClipboardList size={24} />, color: 'text-amber-600' },
               ].map((item, index, array) => (
@@ -3594,6 +3794,10 @@ export default function App() {
         return "Entrada de Solados";
       case ViewType.PRODUCTION_SOLE_STOCK:
         return "Estoque de Solados";
+      case ViewType.PRODUCTION_PALMILHA_PURCHASE:
+        return "Entrada de Palmilhas";
+      case ViewType.PRODUCTION_PALMILHA_STOCK:
+        return "Estoque de Palmilhas";
       case ViewType.PRODUCTION_ESTOQUES_MENU:
         return "Controle de Estoques";
       case ViewType.PRODUCTION_PURCHASE_NEEDS:
@@ -3649,6 +3853,8 @@ export default function App() {
       case ViewType.PRODUCTION_WEIGHING: return <Scale size={24} className="text-violet-600 dark:text-violet-400" />;
       case ViewType.PRODUCTION_SOLE_PURCHASE: return <ShoppingCart size={24} className="text-cyan-600 dark:text-cyan-400" />;
       case ViewType.PRODUCTION_SOLE_STOCK: return <Package size={24} className="text-emerald-600 dark:text-emerald-400" />;
+      case ViewType.PRODUCTION_PALMILHA_PURCHASE: return <ShoppingCart size={24} className="text-rose-600 dark:text-rose-400" />;
+      case ViewType.PRODUCTION_PALMILHA_STOCK: return <Footprints size={24} className="text-rose-600 dark:text-rose-400" />;
       case ViewType.PRODUCTION_ESTOQUES_MENU: return <Boxes size={24} className="text-emerald-600 dark:text-emerald-400" />;
       case ViewType.PRODUCTION_PURCHASE_NEEDS: return <ClipboardList size={24} className="text-amber-600 dark:text-amber-400" />;
       case ViewType.PRODUCTION_CONFIG: return <Hammer size={24} className="text-slate-500 dark:text-slate-400" />;
@@ -4004,6 +4210,29 @@ export default function App() {
         accounts={accounts}
         isDarkMode={isDarkMode}
         onSave={handleSaveSolePurchase}
+      />
+
+      <PalmilhaPurchaseModal
+        isOpen={isPalmilhaPurchaseModalOpen}
+        onClose={() => {
+          setIsPalmilhaPurchaseModalOpen(false);
+          setPalmilhaPurchaseParams(null);
+        }}
+        initialParams={palmilhaPurchaseParams ?? undefined}
+        productionConfigs={productionConfigs}
+        colors={colors}
+        suppliers={suppliers}
+        people={people}
+        categories={categories}
+        accounts={accounts}
+        isDarkMode={isDarkMode}
+        onSave={handleSavePalmilhaPurchase}
+      />
+
+      <AIAssistantModal
+        isOpen={isAIAssistantOpen}
+        onClose={() => setIsAIAssistantOpen(false)}
+        isDarkMode={isDarkMode}
       />
     </div>
   );

@@ -105,6 +105,52 @@ export default function PurchaseNeedsView({
     RECEIVED:    purchaseRequests.filter(r => r.status === 'RECEIVED').length,
   }), [purchaseRequests]);
 
+  const getSupplierId = (req: PurchaseRequest): string => {
+    if (req.type === 'SOLE' && req.moldId) {
+      return productionConfigs.find(c => c.id === req.moldId)?.metadata?.supplierId || '';
+    }
+    if (req.type === 'MATERIAL' && req.materialId) {
+      return productionConfigs.find(c => c.id === req.materialId)?.metadata?.supplierId || '';
+    }
+    return '';
+  };
+
+  const getSupplierName = (supplierId: string): string =>
+    people.find(p => p.id === supplierId)?.name || 'Fornecedor';
+
+  // Fornecedor + tipo do primeiro item selecionado: define quais outros itens podem
+  // ser marcados junto (mesma compra agrupada).
+  const selectionContext = useMemo(() => {
+    if (selectedIds.size === 0) return null;
+    const first = purchaseRequests.find(r => selectedIds.has(r.id));
+    if (!first) return null;
+    return { supplierId: getSupplierId(first), type: first.type };
+  }, [selectedIds, purchaseRequests, productionConfigs]);
+
+  // Com uma seleção ativa, mostra apenas a(s) solicitação(ões) selecionada(s) e
+  // outras compras do mesmo fornecedor (se houver).
+  const visibleList = useMemo(() => {
+    if (!isSelectMode || !selectionContext) return filtered;
+    return filtered.filter(r => {
+      if (selectedIds.has(r.id)) return true;
+      const supplierId = getSupplierId(r);
+      const eligible = !!supplierId && r.status !== 'RECEIVED';
+      return eligible && supplierId === selectionContext.supplierId && r.type === selectionContext.type;
+    });
+  }, [filtered, isSelectMode, selectionContext, selectedIds, productionConfigs]);
+
+  const toggleSelect = (req: PurchaseRequest) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(req.id)) {
+        next.delete(req.id);
+      } else {
+        next.add(req.id);
+      }
+      return next;
+    });
+  };
+
   const handleAdvance = async (req: PurchaseRequest) => {
     const next = NEXT_STATUS[req.status];
     if (!next) return;
@@ -302,6 +348,63 @@ export default function PurchaseNeedsView({
     }
   };
 
+  const handleBatchOrder = async () => {
+    const selectedReqs = purchaseRequests.filter(r => selectedIds.has(r.id));
+    if (selectedReqs.length === 0) return;
+
+    setIsBatchProcessing(true);
+    try {
+      for (const req of selectedReqs) {
+        if (req.status === 'PENDING') {
+          await onUpdateRequest({ ...req, status: 'IN_PROGRESS', updatedAt: Date.now() });
+        }
+      }
+
+      const description = `Solicitações: ${selectedReqs.map(r => r.name).join(', ')}`;
+
+      if (selectedReqs[0].type === 'SOLE') {
+        const items = selectedReqs.map(req => {
+          const remainingGrid: Record<string, number> = {};
+          if (req.sizeBreakdown) {
+            Object.entries(req.sizeBreakdown).forEach(([size, qty]) => {
+              const received = (req.receivedBreakdown || {})[size] || 0;
+              const left = qty - received;
+              if (left > 0) remainingGrid[size] = left;
+            });
+          }
+          return {
+            moldId: req.moldId,
+            colorId: req.colorId,
+            initialGrid: Object.keys(remainingGrid).length > 0 ? remainingGrid : req.sizeBreakdown,
+          };
+        });
+        onNavigate(ViewType.PURCHASE_FORM, {
+          type: PurchaseType.SOLE,
+          items,
+          initialDescription: description,
+        });
+      } else {
+        const initialGeneralItems = selectedReqs.map(req => ({
+          id: generateId(),
+          description: req.name,
+          materialId: req.materialId,
+          quantity: req.requiredQty - (req.receivedQty || 0),
+          unit: req.unit,
+          value: 0,
+        }));
+        onNavigate(ViewType.PURCHASE_FORM, {
+          initialDescription: description,
+          initialGeneralItems,
+        });
+      }
+
+      setSelectedIds(new Set());
+      setIsSelectMode(false);
+    } finally {
+      setIsBatchProcessing(false);
+    }
+  };
+
   const filters: Array<{ key: PurchaseRequestStatus | 'ALL'; label: string }> = [
     { key: 'ALL',         label: 'Todos' },
     { key: 'PENDING',     label: 'Aguardando' },
@@ -313,26 +416,53 @@ export default function PurchaseNeedsView({
   return (
     <div className={`flex flex-col min-h-screen ${isDarkMode ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'}`}>
       {/* Header */}
-      <div className={`sticky top-0 z-20 px-4 pt-4 pb-3 flex items-center justify-between border-b ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'} shadow-sm`}>
-        <div className="flex items-center gap-3">
-          <button type="button" title="Voltar" onClick={onBack} className={`w-10 h-10 flex items-center justify-center rounded-2xl ${isDarkMode ? 'bg-slate-900 hover:bg-slate-800' : 'bg-slate-50 hover:bg-slate-100 shadow-sm text-slate-500'}`}>
+      <div className={`sticky top-0 z-20 px-4 pt-4 pb-3 flex items-center justify-between gap-2 border-b ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'} shadow-sm`}>
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <button type="button" title="Voltar" onClick={onBack} className={`w-10 h-10 flex items-center justify-center rounded-2xl shrink-0 ${isDarkMode ? 'bg-slate-900 hover:bg-slate-800' : 'bg-slate-50 hover:bg-slate-100 shadow-sm text-slate-500'}`}>
             <ChevronLeft size={20} />
           </button>
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Setor de Compras</p>
-            <h2 className="text-base font-black tracking-tight leading-none">Necessidade de Compras</h2>
+          <div className="min-w-0">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 truncate">Setor de Compras</p>
+            <h2 className="text-base font-black tracking-tight leading-none truncate">Necessidade de Compras</h2>
           </div>
         </div>
-        
-        <button
-          type="button"
-          onClick={() => setShowFilters(true)}
-          className={`h-11 px-5 rounded-2xl flex items-center gap-3 transition-all duration-300 ${isDarkMode ? 'bg-slate-900 text-slate-400 hover:text-indigo-400' : 'bg-white text-slate-400 border border-slate-100 shadow-sm hover:text-indigo-500'}`}
-        >
-          <Filter size={18} strokeWidth={2.5} />
-          <span className="text-[10px] font-black uppercase tracking-widest">Configurar</span>
-        </button>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              if (isSelectMode) setSelectedIds(new Set());
+              setIsSelectMode(prev => !prev);
+            }}
+            className={`h-10 px-2.5 rounded-xl flex items-center gap-1.5 transition-all duration-300 ${
+              isSelectMode
+                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                : isDarkMode ? 'bg-slate-900 text-indigo-400 hover:text-indigo-300' : 'bg-white text-indigo-500 border border-slate-100 shadow-sm hover:text-indigo-600'
+            }`}
+          >
+            <ListChecks size={16} strokeWidth={2.5} className={isSelectMode ? 'text-white' : 'text-indigo-500'} />
+            <span className="text-[9px] font-black uppercase tracking-widest">{isSelectMode ? 'Cancelar' : 'Selecionar'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowFilters(true)}
+            className={`h-10 px-2.5 rounded-xl flex items-center gap-1.5 transition-all duration-300 ${isDarkMode ? 'bg-slate-900 text-amber-400 hover:text-amber-300' : 'bg-white text-amber-500 border border-slate-100 shadow-sm hover:text-amber-600'}`}
+          >
+            <Filter size={16} strokeWidth={2.5} className="text-amber-500" />
+            <span className="text-[9px] font-black uppercase tracking-widest">Configurar</span>
+          </button>
+        </div>
       </div>
+
+      {isSelectMode && (
+        <div className="px-4 mt-3">
+          <div className={`rounded-2xl border px-4 py-3 text-[10px] font-bold uppercase tracking-widest ${isDarkMode ? 'bg-indigo-950/30 border-indigo-800 text-indigo-300' : 'bg-indigo-50 border-indigo-200 text-indigo-700'}`}>
+            {selectionContext
+              ? `Selecione outros itens do fornecedor ${getSupplierName(selectionContext.supplierId)} para agrupar na mesma compra`
+              : 'Selecione itens de um mesmo fornecedor para formular uma compra agrupada'}
+          </div>
+        </div>
+      )}
 
       {/* Search Bar */}
       <div className="px-4 mt-4">
@@ -418,7 +548,7 @@ export default function PurchaseNeedsView({
 
       {/* Lista */}
       <div className="flex-1 px-4 pb-8 flex flex-col gap-4 mt-4">
-        {filtered.length === 0 ? (
+        {visibleList.length === 0 ? (
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -433,7 +563,7 @@ export default function PurchaseNeedsView({
             </div>
           </motion.div>
         ) : (
-          filtered.map((req, index) => {
+          visibleList.map((req, index) => {
             const sc = STATUS_CONFIG[req.status];
             const next = NEXT_STATUS[req.status];
             const isExpanded = expandedId === req.id;
@@ -441,17 +571,43 @@ export default function PurchaseNeedsView({
             const hasSizes = req.type === 'SOLE' && req.sizeBreakdown && Object.keys(req.sizeBreakdown).length > 0;
             const requestDate = new Date(req.requestedAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
 
+            const supplierId = getSupplierId(req);
+            const isSelected = selectedIds.has(req.id);
+            const eligibleForBatch = !!supplierId && req.status !== 'RECEIVED';
+            const selectableNow = eligibleForBatch && (
+              !selectionContext || (supplierId === selectionContext.supplierId && req.type === selectionContext.type)
+            );
+
             return (
               <motion.div
                 key={req.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.05 }}
-                className={`rounded-[2.5rem] border-2 overflow-hidden transition-all duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'} ${isExpanded ? 'ring-2 ring-indigo-500/20 scale-[1.01]' : ''}`}
+                className={`rounded-[2.5rem] border-2 overflow-hidden transition-all duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'} ${isExpanded ? 'ring-2 ring-indigo-500/20 scale-[1.01]' : ''} ${isSelectMode && !selectableNow ? 'opacity-40' : ''} ${isSelected ? 'ring-2 ring-indigo-500/50' : ''}`}
               >
                 {/* Card header */}
                 <div className="p-6 flex flex-col gap-3">
                   <div className="flex items-center gap-4">
+                    {isSelectMode && (
+                      <span
+                        role="checkbox"
+                        aria-checked={isSelected}
+                        tabIndex={0}
+                        onClick={() => { if (selectableNow || isSelected) toggleSelect(req); }}
+                        onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && (selectableNow || isSelected)) toggleSelect(req); }}
+                        title={eligibleForBatch ? 'Selecionar para compra agrupada' : 'Sem fornecedor configurado'}
+                        className={`w-7 h-7 rounded-lg border-2 flex items-center justify-center shrink-0 transition-colors ${
+                          isSelected
+                            ? 'bg-indigo-600 border-indigo-600 text-white'
+                            : selectableNow
+                              ? (isDarkMode ? 'border-slate-700 hover:border-indigo-500 cursor-pointer' : 'border-slate-300 hover:border-indigo-400 cursor-pointer')
+                              : (isDarkMode ? 'border-slate-800 cursor-not-allowed' : 'border-slate-200 cursor-not-allowed')
+                        }`}
+                      >
+                        {isSelected && <CheckCircle2 size={16} strokeWidth={3} />}
+                      </span>
+                    )}
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 ${req.type === 'SOLE' ? 'bg-indigo-100 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'}`}>
                       {req.type === 'SOLE' ? <Layers size={22} /> : <Package size={22} />}
                     </div>
@@ -481,7 +637,7 @@ export default function PurchaseNeedsView({
                         type="button"
                         title="Excluir solicitação"
                         onClick={() => setDeletingReq(req)}
-                        className={`w-10 h-10 flex items-center justify-center rounded-2xl transition-colors ${isDarkMode ? 'bg-slate-800 hover:bg-rose-900/40 text-slate-400 hover:text-rose-400' : 'bg-slate-50 hover:bg-rose-50 text-slate-400 hover:text-rose-500'}`}
+                        className={`w-10 h-10 flex items-center justify-center rounded-2xl transition-colors ${isDarkMode ? 'bg-rose-950/30 hover:bg-rose-900/40 text-rose-400' : 'bg-rose-50 hover:bg-rose-100 text-rose-500'}`}
                       >
                         <Trash2 size={16} strokeWidth={2.5} />
                       </button>
@@ -668,6 +824,27 @@ export default function PurchaseNeedsView({
           })
         )}
       </div>
+
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-24 left-4 right-4 z-50">
+          <button
+            type="button"
+            onClick={handleBatchOrder}
+            disabled={isBatchProcessing}
+            className="w-full py-5 rounded-[2rem] bg-indigo-600 text-white font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-500/40 flex items-center justify-center gap-3 hover:bg-indigo-700 active:scale-95 transition-all disabled:opacity-60"
+          >
+            {isBatchProcessing ? (
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <>
+                <ArrowUpRight size={20} strokeWidth={3} />
+                Comprar {selectedIds.size} {selectedIds.size === 1 ? 'Item' : 'Itens'}
+                {selectionContext ? ` • ${getSupplierName(selectionContext.supplierId)}` : ''}
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* ── Modal: Editar Solicitação ── */}
       <AnimatePresence>

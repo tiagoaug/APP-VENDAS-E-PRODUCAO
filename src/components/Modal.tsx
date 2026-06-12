@@ -11,9 +11,10 @@ interface ModalProps {
   children: ReactNode;
   maxWidth?: string;
   zIndex?: number;
+  closeLabel?: string;
 }
 
-export default function Modal({ isOpen, onClose, title, icon, children, maxWidth = "max-w-2xl", zIndex = 50000 }: ModalProps) {
+export default function Modal({ isOpen, onClose, title, icon, children, maxWidth = "max-w-2xl", zIndex = 50000, closeLabel = "Voltar" }: ModalProps) {
   // Prevent scrolling of background when modal is open
   useEffect(() => {
     if (isOpen) {
@@ -78,7 +79,7 @@ export default function Modal({ isOpen, onClose, title, icon, children, maxWidth
                 onClick={onClose}
                 className="w-full py-4 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 font-black uppercase tracking-widest text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-all active:scale-[0.98]"
               >
-                Voltar
+                {closeLabel}
               </button>
             </div>
           </motion.div>

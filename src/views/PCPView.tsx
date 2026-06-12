@@ -10,14 +10,16 @@ import {
   Settings2, Trash2, Edit3, Edit2, ClipboardList,
   Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart,
   DollarSign, Hammer, FileText, CheckSquare, Scissors, Printer, Share2, Truck,
-  QrCode, ScanLine, Hash, Lock, ChevronDown, List, ArrowLeftRight, MessageSquare, Eye
+  QrCode, ScanLine, Hash, Lock, ChevronDown, List, ArrowLeftRight, MessageSquare, Eye,
+  Footprints
 } from 'lucide-react';
 import {
   ProductionLot, Product, Sector,
   FlowTag, Variation, ColorValue, ProductionOrder,
-  ProductionConfigItem, SoleStockEntry, ViewType, PurchaseRequest, Grid,
+  ProductionConfigItem, SoleStockEntry, PalmilhaStockEntry, ViewType, PurchaseRequest, Grid,
   ServiceOrder, Person, Account, Category, Transaction, Purchase, PurchaseType, SectorNote
 } from '../types';
+import { computePalmilhaMapaReservations, computePalmilhaPendingOrders } from '../utils/palmilhaNeeds';
 import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
 import ScannerModal from '../components/ScannerModal';
@@ -37,6 +39,7 @@ import { firebaseService } from '../services/firebaseService';
 import CuttingProjectionPanel from '../components/CuttingProjectionPanel';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
+import { getMaterialStockForColor } from '../utils/materialStock';
 
 // Um modelo (pedido/produto) que compõe um mapa, com o setor que SEU PRÓPRIO roteiro
 // de produção indica como próximo passo (`suggestedSectorId`) e o setor finalmente
@@ -65,6 +68,7 @@ interface PCPViewProps {
   productionOrders: ProductionOrder[];
   productionConfigs: ProductionConfigItem[];
   soleStock: SoleStockEntry[];
+  palmilhaStock?: PalmilhaStockEntry[];
   purchaseRequests?: PurchaseRequest[];
   isDarkMode: boolean;
   onSaveLot: (lot: ProductionLot) => Promise<void>;
@@ -75,6 +79,7 @@ interface PCPViewProps {
   onBack: () => void;
   userName?: string;
   initialTab?: 'monitor' | 'lots' | 'orders' | 'needs';
+  initialSectorId?: string;
   people?: Person[];
   accounts?: Account[];
   categories?: Category[];
@@ -93,6 +98,7 @@ export default function PCPView({
   productionOrders = [],
   productionConfigs = [],
   soleStock = [],
+  palmilhaStock = [],
   purchaseRequests = [],
   isDarkMode,
   onSaveLot,
@@ -103,6 +109,7 @@ export default function PCPView({
   onBack,
   userName,
   initialTab = 'monitor',
+  initialSectorId,
   people = [],
   accounts = [],
   categories = [],
@@ -129,7 +136,7 @@ export default function PCPView({
   const [selectedLots, setSelectedLots] = useState<ProductionLot[]>([]);
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedLotIds, setSelectedLotIds] = useState<string[]>([]);
-  const [selectedSectorId, setSelectedSectorId] = useState<string | null>(null);
+  const [selectedSectorId, setSelectedSectorId] = useState<string | null>(initialSectorId ?? null);
   const [isSectorSwitcherOpen, setIsSectorSwitcherOpen] = useState(false);
   // Override manual de setor: escapatória para quando o cálculo automático erra
   // (ex.: pedidos adiantados / mapas com modelos de roteiros diferentes fazem o
@@ -484,20 +491,25 @@ export default function PCPView({
           const groupsMeta: any[] = (lot as any).metadata.groups;
           const totalGroupQty = groupsMeta.reduce((s: number, g: any) => s + (g.quantity || 0), 0);
           groupsMeta.forEach((g: any) => {
+            const ratio = totalGroupQty > 0 ? (g.quantity || 0) / totalGroupQty : 0;
             let gPairs: Record<string, number>;
             if (g.pairs && Object.keys(g.pairs).length > 0) {
               // Novo: pares por grupo salvos corretamente
               gPairs = g.pairs;
             } else {
               // Legado: distribui lot.pairs proporcionalmente pelo peso do grupo
-              const ratio = totalGroupQty > 0 ? (g.quantity || 0) / totalGroupQty : 0;
               gPairs = {};
               Object.entries(lot.pairs || {}).forEach(([size, qty]) => {
                 const v = Math.round(Number(qty) * ratio);
                 if (v > 0) gPairs[size] = v;
               });
             }
-            units.push({ productId: g.productId, variationId: g.variationId, pairs: gPairs, quantity: lot.quantity, gradesQty: lot.gradesQty, sourceType: 'LOT', sourceLabel: lot.orderNumber });
+            // Cada grupo representa apenas a SUA fatia do mapa — usar o total do mapa (lot.quantity)
+            // aqui faria cada grupo consumir materiais como se fosse o mapa inteiro (ex: 1 par de
+            // etiqueta por par viraria N vezes o necessário, uma vez por grupo).
+            const gQuantity = g.quantity || 0;
+            const gGradesQty = lot.gradesQty ? Math.round(lot.gradesQty * ratio) : undefined;
+            units.push({ productId: g.productId, variationId: g.variationId, pairs: gPairs, quantity: gQuantity, gradesQty: gGradesQty, sourceType: 'LOT', sourceLabel: lot.orderNumber });
           });
         } else {
           units.push({ productId: lot.productId, variationId: lot.variationId, pairs: lot.pairs || {}, quantity: lot.quantity, gradesQty: lot.gradesQty, sourceType: 'LOT', sourceLabel: lot.orderNumber });
@@ -552,12 +564,17 @@ export default function PCPView({
         if (!key) return;
         if (!materialReqs[key]) {
           const colorName = colorKey ? (colors.find(c => c.id === cons.colorId)?.name || '') : '';
+          // Materiais com cores cadastradas (metadata.colorIds) controlam o estoque por cor em
+          // stockByColor — o campo metadata.stock genérico não reflete o estoque desta cor
+          // específica e, se usado para todas as cores, mascara faltas reais (uma cor com saldo
+          // alto "empresta" seu estoque para as outras na comparação required > stock).
+          const stockForKey = getMaterialStockForColor(config, colorKey || undefined);
           materialReqs[key] = {
             id: key,
             materialId: cons.materialId,
             name: colorName ? `${config?.name || cons.name} — ${colorName}` : (config?.name || cons.name),
             required: 0,
-            stock: config?.metadata?.stock || 0,
+            stock: stockForKey,
             minStock: config?.metadata?.minStock || 0,
             unit: productionConfigs.find(c => c.id === config?.metadata?.unitId)?.name || 'UN',
             type: 'MATERIAL',
@@ -767,6 +784,62 @@ export default function PCPView({
     if (needsSourceFilter === 'BOTH') return purchaseNeeds.length > 0;
     return buildPurchaseNeeds('BOTH').length > 0;
   }, [needsSourceFilter, purchaseNeeds, activeLots, productionConfigs, soleStock, products, colors, pendingItems]);
+
+  // Necessidades de Palmilhas (Montagem/Acabamento) — comparando reservas dos mapas ativos
+  // contra o estoque de palmilhas e pedidos pendentes, mirror simplificado do fluxo de Solado.
+  const palmilhaItems = useMemo(() => {
+    const reservations = computePalmilhaMapaReservations(activeLots, products, productionConfigs, palmilhaStock);
+    const pendingOrders = computePalmilhaPendingOrders(purchaseRequests, purchases);
+
+    return Object.values(reservations).map(res => {
+      const stockEntries = palmilhaStock.filter(s => s.toolId === res.toolId && String(s.colorId || '').trim() === res.colorId);
+      const pending = pendingOrders[`${res.toolId}_${res.colorId || 'default'}`];
+
+      const grades = Array.from(new Set([
+        ...Object.keys(res.reservedByGrade),
+        ...stockEntries.flatMap(s => Object.keys(s.stock || {})),
+        ...Object.keys(pending?.pendingByGrade || {})
+      ]));
+
+      const sizeShortages: Record<string, { required: number; stock: number; pending: number }> = {};
+      grades.forEach(grade => {
+        const required = res.reservedByGrade[grade] || 0;
+        const stock = stockEntries.reduce((sum, s) => sum + (Number(s.stock[grade]) || 0), 0);
+        const pendingQty = pending?.pendingByGrade[grade] || 0;
+        sizeShortages[grade] = { required, stock, pending: pendingQty };
+      });
+
+      const totalRequired = Object.values(res.reservedByGrade).reduce((a, b) => a + b, 0);
+      const totalStock = stockEntries.reduce((sum, s) => sum + (s.totalPairs || 0), 0);
+      const totalPending = Object.values(pending?.pendingByGrade || {}).reduce((a, b) => a + b, 0);
+      const colorName = res.colorId ? (colors.find(c => c.id === res.colorId)?.name || res.colorId) : 'Sem Cor';
+      const tool = productionConfigs.find(c => c.id === res.toolId);
+      const silkSector = res.subtype === 'ACABAMENTO' && tool?.metadata?.palmilha?.silkServiceId
+        ? sectors.find(s => s.id === tool.metadata!.palmilha!.silkServiceId)
+        : undefined;
+      const totalShortage = Object.values(sizeShortages).reduce((sum, s) => sum + Math.max(0, s.required - s.stock - s.pending), 0);
+      const silkCostEstimate = (res.silkCostPerPair || 0) * totalRequired;
+
+      return {
+        toolId: res.toolId,
+        toolName: res.toolName,
+        subtype: res.subtype,
+        colorId: res.colorId,
+        colorName,
+        sizeShortages,
+        totalRequired,
+        totalStock,
+        totalPending,
+        totalShortage,
+        silkSector,
+        silkCostPerPair: res.silkCostPerPair || 0,
+        silkCostEstimate
+      };
+    }).filter(item => item.totalShortage > 0);
+  }, [activeLots, products, productionConfigs, palmilhaStock, purchaseRequests, purchases, colors, sectors]);
+
+  const palmilhaMontagemItems = useMemo(() => palmilhaItems.filter(i => i.subtype === 'MONTAGEM'), [palmilhaItems]);
+  const palmilhaAcabamentoItems = useMemo(() => palmilhaItems.filter(i => i.subtype === 'ACABAMENTO'), [palmilhaItems]);
 
   // Busca por digitação e modo de agrupamento das "Sugestões de Mapas"
   const [mapSuggestionSearch, setMapSuggestionSearch] = useState('');
@@ -4902,7 +4975,7 @@ export default function PCPView({
                                   {quickShortage > 0 && (
                                     <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
                                   )}
-                                  <p className={`text-base font-black uppercase leading-tight ${quickShortage > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}`}>
+                                  <p className={`text-sm font-black uppercase leading-tight ${quickShortage > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}`}>
                                     {item.type === 'SOLE' ? item.name.split(' - ')[0] : item.name}
                                   </p>
                                   {item.type === 'SOLE' && (() => {
@@ -5318,6 +5391,165 @@ export default function PCPView({
                 )}
               </div>
             </div>
+
+            {palmilhaItems.length > 0 && (
+              <div className={`p-8 rounded-[2.5rem] border-2 shadow-xl ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-xl font-black uppercase tracking-tight">Palmilhas</h3>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Reserva dos Mapas vs Estoque de Palmilhas</p>
+                  </div>
+                  <span className="px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 text-rose-500">
+                    {palmilhaItems.length} Falta{palmilhaItems.length > 1 ? 's' : ''}
+                  </span>
+                </div>
+
+                {([
+                  { key: 'MONTAGEM', label: 'Palmilha de Montagem', items: palmilhaMontagemItems },
+                  { key: 'ACABAMENTO', label: 'Palmilha de Acabamento', items: palmilhaAcabamentoItems },
+                ] as { key: 'MONTAGEM' | 'ACABAMENTO'; label: string; items: typeof palmilhaItems }[]).map(group => {
+                  if (group.items.length === 0) return null;
+                  return (
+                    <div key={group.key} className="flex flex-col gap-3 mb-6 last:mb-0">
+                      <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                        <Footprints size={14} /> {group.label}
+                      </h4>
+                      {group.items.map(item => {
+                        const needId = `palmilha_${item.toolId}_${item.colorId || 'default'}`;
+                        const isExpanded = expandedNeedIds.has(needId);
+                        const gradeKeys = Object.keys(item.sizeShortages).sort((a, b) => {
+                          const numA = parseFloat(a);
+                          const numB = parseFloat(b);
+                          if (isNaN(numA) || isNaN(numB)) return a.localeCompare(b);
+                          return numA - numB;
+                        });
+
+                        return (
+                          <div
+                            key={needId}
+                            className={`rounded-[2rem] border-2 transition-all overflow-hidden ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-white shadow-sm'} ${isExpanded ? 'border-rose-300 dark:border-rose-700' : ''}`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => toggleNeedExpand(needId)}
+                              title={isExpanded ? `Recolher detalhes de ${item.toolName}` : `Expandir detalhes de ${item.toolName}`}
+                              aria-label={isExpanded ? `Recolher detalhes de ${item.toolName}` : `Expandir detalhes de ${item.toolName}`}
+                              className={`w-full flex flex-col gap-3 px-5 py-4 text-left transition-colors ${isExpanded ? isDarkMode ? 'bg-rose-950/30' : 'bg-rose-50/60' : ''}`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-rose-100 text-rose-500 dark:bg-rose-900/30 dark:text-rose-400">
+                                  <Footprints size={18} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1 text-rose-500">
+                                    {item.subtype === 'MONTAGEM' ? 'Palmilha Montagem' : 'Palmilha Acabamento'}
+                                  </p>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
+                                    <p className="text-sm font-black uppercase leading-tight text-rose-600 dark:text-rose-400">
+                                      {item.toolName}
+                                    </p>
+                                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-rose-950/40 border-rose-800 text-rose-300' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
+                                      {item.colorName}
+                                    </span>
+                                    {item.silkSector && (
+                                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border" style={{ borderColor: item.silkSector.color, color: item.silkSector.color }}>
+                                        SILK · {item.silkSector.name}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180 bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                                  <ChevronDown size={16} strokeWidth={2.5} />
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+                                <div>
+                                  <p className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none mb-0.5">Falta</p>
+                                  <p className="text-2xl font-black text-rose-600 dark:text-rose-400 leading-none">
+                                    {Math.round(item.totalShortage)} <span className="text-xs font-bold text-slate-400">PAR</span>
+                                  </p>
+                                </div>
+                                {item.silkCostEstimate > 0 && (
+                                  <div className="text-right">
+                                    <p className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none mb-0.5">Custo SILK Estimado</p>
+                                    <p className="text-sm font-black text-violet-600 dark:text-violet-400 leading-none">
+                                      R$ {item.silkCostEstimate.toFixed(2)}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </button>
+
+                            {isExpanded && (
+                              <div className={`px-6 pb-6 pt-2 flex flex-col gap-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                                <div className={`rounded-2xl overflow-hidden border ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                                  <div className={`grid grid-cols-4 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                                    <span>Grade</span>
+                                    <span className="text-center">Estoque</span>
+                                    <span className="text-center">Necess.</span>
+                                    <span className="text-right">Falta</span>
+                                  </div>
+                                  {gradeKeys.map(grade => {
+                                    const s = item.sizeShortages[grade];
+                                    const shortage = Math.max(0, s.required - s.stock - s.pending);
+                                    return (
+                                      <div key={grade} className={`grid grid-cols-4 px-4 py-3 border-t text-[13px] font-black ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
+                                        <span className={isDarkMode ? 'text-white' : 'text-slate-800'}>{grade}</span>
+                                        <span className={`text-center ${s.stock > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{s.stock}</span>
+                                        <span className="text-center text-slate-400">{s.required}</span>
+                                        <span className={`text-right ${shortage > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
+                                          {shortage > 0 ? `-${shortage}` : '✓'}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                  <div className={`grid grid-cols-4 px-4 py-3 border-t-2 text-[12px] font-black ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
+                                    <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Total</span>
+                                    <span className={`text-center font-black ${item.totalStock > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{item.totalStock}</span>
+                                    <span className="text-center text-slate-500">{item.totalRequired}</span>
+                                    <span className="text-right font-black text-[14px] text-rose-600">-{item.totalShortage}</span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center justify-end pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const initialGrid: Record<string, number> = {};
+                                      gradeKeys.forEach(grade => {
+                                        const s = item.sizeShortages[grade];
+                                        const shortage = Math.max(0, s.required - s.stock - s.pending);
+                                        if (shortage > 0) initialGrid[grade] = shortage;
+                                      });
+                                      onNavigate(ViewType.PRODUCTION_PALMILHA_PURCHASE, {
+                                        items: [{
+                                          toolId: item.toolId,
+                                          toolName: item.toolName,
+                                          subtype: item.subtype,
+                                          colorId: item.colorId,
+                                          colorName: item.colorName,
+                                          initialGrid
+                                        }],
+                                        description: `Pedido formulado a partir das Necessidades — ${item.toolName} (${item.colorName})`
+                                      });
+                                    }}
+                                    className="flex items-center gap-1.5 px-5 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg transition-all bg-rose-600 text-white shadow-rose-500/20 hover:scale-105 active:scale-95"
+                                  >
+                                    <ArrowUpRight size={14} strokeWidth={3} /> Formular Pedido
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -6652,13 +6884,24 @@ export default function PCPView({
                                 {/* Linha 2: Cor + Pedido */}
                                 <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                   {colorName && (
-                                    <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-wide">{colorName}</span>
+                                    <span className="text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">{colorName}</span>
                                   )}
                                   <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Ped. {order?.saleOrderNumber || selectedLot.saleOrderNumber}</span>
                                   {hasOS && (
                                     <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">· {orderOS!.osNumber}</span>
                                   )}
                                 </div>
+                                {/* Linha 3: Origem do pedido — Cliente ou Estoque */}
+                                {(() => {
+                                  const custName = (order?.customerName || selectedLot.customerName || '').trim();
+                                  if (!custName) return null;
+                                  const isStock = custName.toUpperCase() === 'ESTOQUE';
+                                  return (
+                                    <p className="text-[8px] font-black text-slate-900 dark:text-white uppercase tracking-widest mt-0.5 truncate">
+                                      {isStock ? 'Estoque' : `Cliente: ${custName}`}
+                                    </p>
+                                  );
+                                })()}
                                 {/* Indicador de roteiro divergente: este modelo segue um caminho diferente do mapa */}
                                 {(() => {
                                   if (!hasCompletedOS) return null;
@@ -7221,26 +7464,26 @@ export default function PCPView({
                     const tag = flowTags.find(t => t.id === h.statusId);
                     const canRevert = i === 0 && (selectedLot.history?.length || 0) > 0;
                     return (
-                      <div key={i} className={`p-4 rounded-2xl border flex items-center gap-4 ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
-                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${i === 0 ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-400'}`}>
-                          {i === 0 ? <Clock size={17} /> : <History size={17} />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-0.5">
-                            <span className="text-xs font-black uppercase text-slate-700 dark:text-slate-300">{sector?.name || '---'}</span>
+                      <div key={i} className={`p-4 rounded-2xl border flex flex-col gap-2 ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                        <div className="flex items-center gap-4">
+                          <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${i === 0 ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-400'}`}>
+                            {i === 0 ? <Clock size={17} /> : <History size={17} />}
+                          </div>
+                          <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                            <span className="text-xs font-black uppercase text-slate-700 dark:text-slate-300 leading-tight">{sector?.name || '---'}</span>
                             <span className="text-[9px] font-bold text-slate-400">{new Date(h.timestamp).toLocaleString()}</span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">{tag?.name || 'MIGRAÇÃO'}</span>
-                            {h.notes && <span className="text-[10px] text-slate-400 font-bold italic truncate">• {h.notes}</span>}
-                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 pl-[52px] flex-wrap">
+                          <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest shrink-0">{tag?.name || 'MIGRAÇÃO'}</span>
+                          {h.notes && <span className="text-[10px] text-slate-400 font-bold italic truncate">• {h.notes}</span>}
                         </div>
                         {canRevert && (
                           <button
                             type="button"
                             onClick={() => handleRevertLot(selectedLot)}
                             title="Reverter esta movimentação"
-                            className="shrink-0 flex items-center gap-1 px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-all"
+                            className="self-end flex items-center gap-1 px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-all"
                           >
                             <History size={13} />
                             Reverter

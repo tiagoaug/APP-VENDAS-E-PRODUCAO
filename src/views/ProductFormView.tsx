@@ -28,6 +28,7 @@ interface ProductFormViewProps {
   onSaveOnly?: (product: Product) => void | Promise<void>;
   onCancel: () => void;
   onSaveConfigItem?: (item: ProductionConfigItem) => Promise<void>;
+  onDeleteConfigItem?: (id: string) => void | Promise<void>;
   isDarkMode: boolean;
   sectors: Sector[];
   modulesConfig: AppModulesConfig;
@@ -35,7 +36,7 @@ interface ProductFormViewProps {
   module?: 'SALES' | 'PRODUCTION';
 }
 
-export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, productionConfigs, flowTags, onSave, onSaveOnly, onCancel, onSaveConfigItem, isDarkMode, sectors, modulesConfig, restrictedProductMode = false, module = 'SALES' }: ProductFormViewProps) {
+export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, productionConfigs, flowTags, onSave, onSaveOnly, onCancel, onSaveConfigItem, onDeleteConfigItem, isDarkMode, sectors, modulesConfig, restrictedProductMode = false, module = 'SALES' }: ProductFormViewProps) {
   const existingProduct = useMemo(() => products.find(p => p.id === productId), [productId, products]);
   // Fixa o id do produto no momento em que o formulário é aberto: ao criar um modelo novo
   // (productId nulo), o primeiro salvamento gera um id aleatório e os salvamentos
@@ -94,6 +95,38 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [newServiceId, setNewServiceId] = useState('');
   const [newServiceCost, setNewServiceCost] = useState<number | string>(0);
   const [consumptionCategory, setConsumptionCategory] = useState<ComponentCategory>('CUTTING_PIECE');
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
+  const customCategories = useMemo(
+    () => productionConfigs.filter(c => c.type === 'CONSUMPTION_CATEGORY'),
+    [productionConfigs]
+  );
+
+  const handleAddCategory = async () => {
+    const trimmed = newCategoryName.trim().toUpperCase();
+    if (!trimmed || !onSaveConfigItem || isSavingCategory) return;
+    const exists = productionConfigs.find(c => c.type === 'CONSUMPTION_CATEGORY' && c.name.toUpperCase() === trimmed);
+    if (exists) {
+      setNewCategoryName('');
+      return;
+    }
+    setIsSavingCategory(true);
+    try {
+      await onSaveConfigItem({
+        id: generateId(),
+        name: trimmed,
+        description: '',
+        type: 'CONSUMPTION_CATEGORY',
+        createdAt: Date.now()
+      });
+      setNewCategoryName('');
+    } catch (err) {
+      console.error('Erro ao adicionar categoria:', err);
+    } finally {
+      setIsSavingCategory(false);
+    }
+  };
   const [saleTypes, setSaleTypes] = useState<SaleType[]>(existingProduct?.saleTypes || (existingProduct?.type ? [existingProduct.type] : [SaleType.WHOLESALE]));
   const [productionRoute, setProductionRoute] = useState<string[]>(existingProduct?.productionRoute || []);
   const [sectorPrices, setSectorPrices] = useState<Record<string, number>>(existingProduct?.sectorPrices || {});
@@ -397,10 +430,21 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   <div className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-indigo-900/50' : 'bg-indigo-100'}`}>
                     <Package size={13} className="text-indigo-600 dark:text-indigo-400" />
                   </div>
-                  <div className="flex flex-col min-w-0">
+                  <div className="flex flex-col min-w-0 flex-1">
                     {reference && <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest leading-none">{reference}</span>}
                     {name && <span className={`text-[11px] font-black uppercase tracking-tight leading-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{name}</span>}
                   </div>
+                  {v.colorName && (
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shrink-0">
+                      <div
+                        className="w-2.5 h-2.5 rounded-full border border-black/10"
+                        style={{ backgroundColor: v.color }}
+                      />
+                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                        {v.colorName}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -717,9 +761,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   <div className="grid grid-cols-1 gap-6">
                     {/* Componentes do Cabedal (Peças de Corte) */}
                     <div className={`p-5 sm:p-6 rounded-3xl border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                      <div className="flex items-center justify-between mb-8">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
                         <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                          <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
                             <Scissors size={24} />
                           </div>
                           <div>
@@ -740,7 +784,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                             });
                             setIsConsumptionModalOpen(true);
                           }}
-                          className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 hover:scale-105 active:scale-95 transition-all"
+                          className="flex items-center justify-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 hover:scale-105 active:scale-95 transition-all w-full sm:w-auto"
                         >
                           <Plus size={14} strokeWidth={3} /> Nova Peça
                         </button>
@@ -873,12 +917,29 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       </div>
                     </div>
 
-                    {/* Outros Consumos (Embalagem, Químicos, Aviamentos) */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Outros Consumos (Embalagem, Químicos, Aviamentos + Categorias customizadas) */}
+                    <div className="flex items-center justify-between px-2">
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Outras Categorias</p>
+                      <button
+                        type="button"
+                        onClick={() => setShowCategoryManager(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] font-black uppercase tracking-widest hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                      >
+                        <Tag size={12} /> Gerenciar Categorias
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                       {[
                         { cat: 'PACKAGING' as ComponentCategory, label: 'Embalagens', icon: <Box size={22} />, color: 'bg-emerald-600', textColor: 'text-emerald-600' },
                         { cat: 'CHEMICAL' as ComponentCategory, label: 'Químicos', icon: <Droplets size={22} />, color: 'bg-blue-600', textColor: 'text-blue-600' },
                         { cat: 'TRIMMING' as ComponentCategory, label: 'Aviamentos', icon: <Sparkles size={22} />, color: 'bg-amber-600', textColor: 'text-amber-600' },
+                        ...customCategories.map(c => ({
+                          cat: c.id as ComponentCategory,
+                          label: c.name,
+                          icon: <Tag size={22} />,
+                          color: 'bg-violet-600',
+                          textColor: 'text-violet-600'
+                        })),
                       ].map(group => (
                         <div key={group.cat} className={`p-6 rounded-[2rem] border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                           <div className="flex items-center justify-between mb-6">
@@ -971,6 +1032,74 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     </div>
                   </div>
 
+                  {/* Gerenciar Categorias da Ficha Técnica */}
+                  <Modal
+                    isOpen={showCategoryManager}
+                    onClose={() => setShowCategoryManager(false)}
+                    title="Categorias da Ficha Técnica"
+                    icon={<Tag size={18} />}
+                    maxWidth="max-w-md"
+                  >
+                    <div className="flex flex-col gap-4 p-1">
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-relaxed">
+                        Crie categorias adicionais para organizar a ficha técnica além de Embalagens, Químicos e Aviamentos.
+                      </p>
+                      <div className={`flex items-start gap-2.5 px-3 py-2.5 rounded-2xl border ${isDarkMode ? 'bg-indigo-950/30 border-indigo-900/50' : 'bg-indigo-50 border-indigo-100'}`}>
+                        <Info size={14} className="text-indigo-500 shrink-0 mt-0.5" />
+                        <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 uppercase tracking-widest leading-relaxed">
+                          As categorias criadas aqui são globais: ficam disponíveis na Ficha Técnica de TODOS os produtos cadastrados, não só deste.
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        {customCategories.length === 0 && (
+                          <p className="text-[10px] text-slate-300 font-bold uppercase text-center py-4 italic">Nenhuma categoria customizada</p>
+                        )}
+                        {customCategories.map(cat => (
+                          <div key={cat.id} className={`flex items-center justify-between gap-2 px-4 py-3 rounded-2xl border ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                            <span className="text-xs font-black uppercase tracking-wide truncate">{cat.name}</span>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const usedCount = variations.reduce((acc, vr) => acc + (vr.consumptions || []).filter(c => c.category === cat.id).length, 0);
+                                if (usedCount > 0) {
+                                  const proceed = confirm(`A categoria "${cat.name}" está sendo usada em ${usedCount} item(ns) da ficha técnica deste produto. Os itens deixarão de aparecer agrupados (mas continuam contando no custo total). Deseja excluir mesmo assim?`);
+                                  if (!proceed) return;
+                                }
+                                await onDeleteConfigItem?.(cat.id);
+                              }}
+                              title="Excluir categoria"
+                              className="p-2 rounded-xl text-rose-500 bg-rose-50 dark:bg-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors shrink-0"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                        <input
+                          type="text"
+                          placeholder="Nova categoria (ex: SOLA, VIÉS...)"
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleAddCategory(); }}
+                          className={`flex-1 border-2 rounded-2xl px-4 py-3 text-xs font-black uppercase outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddCategory}
+                          disabled={!newCategoryName.trim() || isSavingCategory}
+                          title="Adicionar categoria"
+                          aria-label="Adicionar categoria"
+                          className="px-4 py-3 rounded-2xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 hover:bg-indigo-700 disabled:opacity-50 transition-all shrink-0"
+                        >
+                          <Plus size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </Modal>
+
                   {/* Resumo de Custos da Engenharia */}
                   <div className="mt-4 p-6 bg-slate-900 dark:bg-indigo-600 rounded-[2.5rem] shadow-xl flex items-center justify-between">
                     <div className="flex items-center gap-4">
@@ -1045,15 +1174,38 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               productionGridId={productionGridId}
               defaultGridId={defaultGridId}
               toolMapping={toolMapping}
-              activeVariationColor={activeVariationIndex !== null ? { 
-                name: variations[activeVariationIndex].colorName, 
-                hex: variations[activeVariationIndex].color 
+              activeVariationColor={activeVariationIndex !== null ? {
+                name: variations[activeVariationIndex].colorName,
+                hex: variations[activeVariationIndex].color
               } : undefined}
+              productReference={reference}
+              productName={name}
               onSaveConfigItem={onSaveConfigItem}
               onSave={(updated) => {
                 if (activeVariationIndex !== null) {
                   const currentConsumptions = variations[activeVariationIndex].consumptions || [];
                   const exists = currentConsumptions.findIndex(c => c.id === updated.id);
+
+                  // Blindagem: alerta se já existir outro item com o MESMO material + cor
+                  // nesta ficha — duplicidade aqui soma o consumo das duas entradas e infla
+                  // a "Necessidade de Compra" (cada par passa a "consumir" 2x ou mais o material).
+                  const duplicate = currentConsumptions.find((c, idx) =>
+                    idx !== exists &&
+                    c.materialId === updated.materialId &&
+                    (c.colorId || '') === (updated.colorId || '')
+                  );
+                  if (duplicate) {
+                    const matName = productionConfigs.find(m => m.id === updated.materialId)?.name || 'este material';
+                    const colorName = updated.colorId ? (colors.find(c => c.id === updated.colorId)?.name || '') : '';
+                    const label = colorName ? `${matName} — ${colorName}` : matName;
+                    const proceed = confirm(
+                      `Já existe "${duplicate.name}" usando ${label} nesta ficha técnica.\n\n` +
+                      `Adicionar mais um item com o mesmo material/cor SOMA o consumo das duas entradas por par, ` +
+                      `o que pode inflar a Necessidade de Compra. Deseja continuar mesmo assim?`
+                    );
+                    if (!proceed) return;
+                  }
+
                   let newC = [...currentConsumptions];
                   if (exists >= 0) {
                     newC[exists] = updated;

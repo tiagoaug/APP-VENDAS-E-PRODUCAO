@@ -47,4 +47,7 @@
     <!-- Permissions for the Contacts plugin -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.WRITE_CONTACTS" />
+
+    <!-- Microphone — required for voice input in the AI assistant -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 </manifest>
