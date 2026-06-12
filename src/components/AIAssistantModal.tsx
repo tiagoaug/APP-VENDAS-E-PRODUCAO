@@ -1,23 +1,26 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { Sparkles, X, Send, Zap, Loader2, Info, Settings, Trash2, Check, Camera, Mic, Square } from "lucide-react";
+import { Sparkles, X, Send, Zap, Loader2, Info, Settings, Trash2, Check, Camera, Mic, Square, UserPlus } from "lucide-react";
 import AIQuickPrompts from "./AIQuickPrompts";
 import AIAssistantSettings from "./AIAssistantSettings";
-import { sendAIChatMessage, AIChatMessage } from "../services/aiService";
+import { sendAIChatMessage, AIChatMessage, AIFormProposal, AIPersonProposalData } from "../services/aiService";
 import { AIQuickPrompt } from "../types";
 import { subscribeToQuickPrompts, seedDefaultQuickPromptsIfEmpty } from "../services/aiSettingsService";
 import { compressImageFile, CompressedImage } from "../utils/aiImageUtils";
 import { isVoiceInputSupported, ensureVoicePermission, startVoiceListening, stopVoiceListening } from "../services/voiceInputService";
 
+type ChatMessage = AIChatMessage & { formProposal?: AIFormProposal };
+
 interface AIAssistantModalProps {
   isOpen: boolean;
   onClose: () => void;
   isDarkMode: boolean;
+  onOpenPersonForm: (data: AIPersonProposalData) => void;
 }
 
-export default function AIAssistantModal({ isOpen, onClose, isDarkMode }: AIAssistantModalProps) {
-  const [messages, setMessages] = useState<AIChatMessage[]>([]);
+export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPersonForm }: AIAssistantModalProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [showQuickPrompts, setShowQuickPrompts] = useState(false);
@@ -85,7 +88,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode }: AIAssi
 
     try {
       const response = await sendAIChatMessage(newMessages);
-      setMessages([...newMessages, { role: "assistant", content: response.text }]);
+      setMessages([...newMessages, { role: "assistant", content: response.text, formProposal: response.formProposal }]);
       setLastUsage(response.usage);
     } catch (err: any) {
       setMessages([
@@ -256,6 +259,35 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode }: AIAssi
                     />
                   ))}
                   {m.content && <span>{m.content}</span>}
+
+                  {m.formProposal?.type === 'person' && (
+                    <div className={`p-3 rounded-xl border-2 flex flex-col gap-2 ${isDarkMode ? "bg-slate-900 border-indigo-500/40" : "bg-white border-indigo-200"}`}>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-indigo-500">Dados extraídos pela IA</span>
+                      <div className="flex flex-col gap-0.5 text-[11px] normal-case font-medium">
+                        <span><strong>Nome:</strong> {m.formProposal.data.name}</span>
+                        {m.formProposal.data.phone && <span><strong>Telefone:</strong> {m.formProposal.data.phone}</span>}
+                        {m.formProposal.data.email && <span><strong>E-mail:</strong> {m.formProposal.data.email}</span>}
+                        {m.formProposal.data.document && <span><strong>Documento:</strong> {m.formProposal.data.document}</span>}
+                        {(m.formProposal.data.isCustomer || m.formProposal.data.isSupplier) && (
+                          <span>
+                            <strong>Tipo:</strong>{" "}
+                            {[m.formProposal.data.isCustomer && "Cliente", m.formProposal.data.isSupplier && "Fornecedor"].filter(Boolean).join(" / ")}
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onOpenPersonForm(m.formProposal!.data);
+                          onClose();
+                        }}
+                        className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-black uppercase tracking-widest transition-colors"
+                      >
+                        <UserPlus size={14} />
+                        Abrir cadastro preenchido
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
 

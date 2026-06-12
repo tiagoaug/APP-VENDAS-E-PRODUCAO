@@ -13,6 +13,10 @@ const MODEL = "claude-sonnet-4-6";
 const MAX_HISTORY_MESSAGES = 20;
 const MAX_TOOL_ITERATIONS = 5;
 
+// Ferramentas que não consultam o Firestore — seu "input" é a própria proposta
+// devolvida ao frontend para o usuário revisar e preencher um formulário manualmente.
+const PROPOSAL_TOOL_NAMES = new Set(["propose_person_registration"]);
+
 function buildSystemPrompt(): string {
   const today = new Date().toISOString().slice(0, 10);
   return `Você é o assistente de IA do "Gestão Pro", um app de gestão de vendas e produção de calçados (cabedais e solados).
@@ -24,9 +28,10 @@ Diretrizes:
 - Responda sempre em português do Brasil, de forma direta e objetiva.
 - Use as ferramentas para buscar dados reais em vez de supor valores.
 - Ao sugerir um "pedido de compra de solados", baseie-se no estoque atual e no fornecedor de cada molde retornado por get_sole_stock.
-- Você ainda NÃO pode criar, editar ou excluir cadastros — apenas consultar e analisar. Se o usuário pedir uma ação de escrita, explique que essa função chega em uma próxima atualização e ofereça a informação/análise que puder.
+- Você ainda NÃO pode criar, editar ou excluir cadastros diretamente — apenas consultar e analisar. Se o usuário pedir uma ação de escrita que não seja cadastro de cliente/fornecedor, explique que essa função chega em uma próxima atualização e ofereça a informação/análise que puder.
 - Formate valores monetários como "R$ X.XXX,XX".
-- O usuário pode enviar fotos (ex: etiqueta de produto, ficha técnica, nota fiscal, foto de calçado ou solado). Quando receber uma imagem, extraia e organize as informações relevantes (nome/referência, cores, medidas, valores, fornecedor, quantidades etc.) e, se fizer sentido, compare com os dados já cadastrados usando as ferramentas disponíveis.`;
+- O usuário pode enviar fotos (ex: etiqueta de produto, ficha técnica, nota fiscal, foto de calçado ou solado). Quando receber uma imagem, extraia e organize as informações relevantes (nome/referência, cores, medidas, valores, fornecedor, quantidades etc.) e, se fizer sentido, compare com os dados já cadastrados usando as ferramentas disponíveis.
+- Se o usuário fornecer (texto ou foto) os dados de um novo cliente ou fornecedor e pedir para cadastrar, use 'list_people' para checar se já existe um cadastro parecido e, em seguida, use a ferramenta 'propose_person_registration' com os campos que conseguir extrair com confiança (sem inventar dados). Essa ferramenta NÃO salva nada — ela abre o formulário de cadastro já preenchido para o usuário revisar e salvar manualmente. Avise o usuário se encontrou um cadastro parecido.`;
 }
 
 export const aiChat = onCall(
@@ -90,6 +95,29 @@ export const aiChat = onCall(
 
       totalInputTokens += response.usage.input_tokens;
       totalOutputTokens += response.usage.output_tokens;
+
+      const proposalBlock = response.content.find(
+        (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && PROPOSAL_TOOL_NAMES.has(b.name)
+      );
+      if (proposalBlock) {
+        const text = response.content
+          .filter((b): b is Anthropic.TextBlock => b.type === "text")
+          .map((b) => b.text)
+          .join("\n");
+
+        await db.collection("users").doc(uid).collection("aiUsage").add({
+          timestamp: Date.now(),
+          model: MODEL,
+          input_tokens: totalInputTokens,
+          output_tokens: totalOutputTokens,
+        });
+
+        return {
+          text,
+          usage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens },
+          formProposal: { type: "person", data: proposalBlock.input },
+        };
+      }
 
       if (response.stop_reason === "tool_use") {
         conversation.push({ role: "assistant", content: response.content });

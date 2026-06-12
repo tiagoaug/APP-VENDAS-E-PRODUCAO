@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Person, Sale, Purchase, Transaction } from '../types';
 import { Search, Plus, User, Mail, Phone, Trash2, Edit, Truck, ShieldCheck, ChevronRight, History, Tag, ShoppingBag } from 'lucide-react';
 import PersonModal from '../components/PersonModal';
@@ -15,14 +15,26 @@ interface PeopleViewProps {
   onDelete: (id: string) => void;
   onShowDetail: (id: string) => void;
   isDarkMode: boolean;
+  aiPrefillData?: Partial<Person> | null;
+  onPrefillConsumed?: () => void;
 }
 
-export default function PeopleView({ people, sales, purchases, transactions, onAdd, onEdit, onDelete, onShowDetail, isDarkMode }: PeopleViewProps) {
+export default function PeopleView({ people, sales, purchases, transactions, onAdd, onEdit, onDelete, onShowDetail, isDarkMode, aiPrefillData, onPrefillConsumed }: PeopleViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER' | 'SELLER' | 'BUYER'>('ALL');
-  
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
+  const [aiInitialData, setAiInitialData] = useState<Partial<Person> | null>(null);
+
+  useEffect(() => {
+    if (aiPrefillData) {
+      setEditingPerson(null);
+      setAiInitialData(aiPrefillData);
+      setIsModalOpen(true);
+      onPrefillConsumed?.();
+    }
+  }, [aiPrefillData, onPrefillConsumed]);
 
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
@@ -71,7 +83,7 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
       />
       <PersonModal
         isOpen={isModalOpen}
-        onClose={() => { setIsModalOpen(false); setEditingPerson(null); }}
+        onClose={() => { setIsModalOpen(false); setEditingPerson(null); setAiInitialData(null); }}
         onSave={(p) => {
           if (editingPerson) onEdit(editingPerson.id, p);
           else onAdd(p);
@@ -79,6 +91,7 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
         person={editingPerson || undefined}
         sellers={people.filter(p => p.isSeller)}
         allPeople={people}
+        initialData={aiInitialData ?? undefined}
       />
       {isHistoryModalOpen && historyPerson && (
         <FinancialHistoryModal

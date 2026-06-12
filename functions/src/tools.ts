@@ -69,6 +69,48 @@ export const TOOLS: Anthropic.Tool[] = [
       },
     },
   },
+  {
+    name: "propose_person_registration",
+    description:
+      "Use quando o usuário fornecer (por texto ou foto de cartão/documento) os dados de um novo cliente ou fornecedor e pedir para cadastrá-lo. " +
+      "Extraia apenas os campos que tiver certeza, sem inventar valores. " +
+      "Esta ferramenta NÃO grava nada no banco — ela apenas envia os dados extraídos para o usuário revisar no formulário de cadastro e salvar manualmente. " +
+      "Recomenda-se usar 'list_people' antes para verificar se já existe um cadastro parecido e avisar o usuário caso exista.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Nome completo da pessoa ou empresa (obrigatório).",
+        },
+        phone: {
+          type: "string",
+          description: "Telefone/WhatsApp, se identificado.",
+        },
+        email: {
+          type: "string",
+          description: "E-mail, se identificado.",
+        },
+        document: {
+          type: "string",
+          description: "CPF ou CNPJ, se identificado.",
+        },
+        isCustomer: {
+          type: "boolean",
+          description: "true se deve ser cadastrado como cliente.",
+        },
+        isSupplier: {
+          type: "boolean",
+          description: "true se deve ser cadastrado como fornecedor.",
+        },
+        observations: {
+          type: "string",
+          description: "Observações adicionais relevantes (ex: contexto de onde vieram os dados).",
+        },
+      },
+      required: ["name"],
+    },
+  },
 ];
 
 async function getCollection(db: Firestore, uid: string, name: string) {

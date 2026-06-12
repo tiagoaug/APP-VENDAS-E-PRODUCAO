@@ -16,9 +16,25 @@ export type AIChatMessage = {
   images?: AIChatImage[];
 };
 
+export type AIPersonProposalData = {
+  name: string;
+  phone?: string;
+  email?: string;
+  document?: string;
+  isCustomer?: boolean;
+  isSupplier?: boolean;
+  observations?: string;
+};
+
+export type AIFormProposal = {
+  type: 'person';
+  data: AIPersonProposalData;
+};
+
 export type AIChatResponse = {
   text: string;
   usage: { input_tokens: number; output_tokens: number };
+  formProposal?: AIFormProposal;
 };
 
 export async function sendAIChatMessage(messages: AIChatMessage[]): Promise<AIChatResponse> {

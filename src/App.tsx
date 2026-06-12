@@ -221,6 +221,7 @@ export default function App() {
   const [transactionModalType, setTransactionModalType] = useState<TransactionType>(TransactionType.INCOME);
   const [isSolePurchaseModalOpen, setIsSolePurchaseModalOpen] = useState(false);
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
+  const [aiPersonPrefill, setAiPersonPrefill] = useState<Partial<Person> | null>(null);
   const [solePurchaseParams, setSolePurchaseParams] = useState<{
     moldId?: string;
     colorId?: string;
@@ -1822,6 +1823,8 @@ export default function App() {
             }}
             onShowDetail={(id) => navigateTo(ViewType.PERSON_DETAIL, id)}
             isDarkMode={isDarkMode}
+            aiPrefillData={aiPersonPrefill}
+            onPrefillConsumed={() => setAiPersonPrefill(null)}
           />
         );
       case ViewType.PERSON_DETAIL:
@@ -4233,6 +4236,11 @@ export default function App() {
         isOpen={isAIAssistantOpen}
         onClose={() => setIsAIAssistantOpen(false)}
         isDarkMode={isDarkMode}
+        onOpenPersonForm={(data) => {
+          setAiPersonPrefill(data);
+          setIsAIAssistantOpen(false);
+          navigateTo(ViewType.PEOPLE);
+        }}
       />
     </div>
   );

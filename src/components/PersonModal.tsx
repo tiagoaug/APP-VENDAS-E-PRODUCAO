@@ -10,9 +10,10 @@ interface PersonModalProps {
   person?: Person;
   sellers: Person[];
   allPeople: Person[];
+  initialData?: Partial<Person>;
 }
 
-export default function PersonModal({ isOpen, onClose, onSave, person, sellers, allPeople }: PersonModalProps) {
+export default function PersonModal({ isOpen, onClose, onSave, person, sellers, allPeople, initialData }: PersonModalProps) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
@@ -44,21 +45,21 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
       setInternalContacts(person.internalContacts || []);
       setObservations(person.observations || '');
     } else {
-      setName('');
-      setPhone('');
-      setEmail('');
-      setDocument('');
-      setIsCustomer(false);
-      setIsSupplier(false);
+      setName(initialData?.name || '');
+      setPhone(initialData?.phone || '');
+      setEmail(initialData?.email || '');
+      setDocument(initialData?.document || '');
+      setIsCustomer(initialData?.isCustomer || false);
+      setIsSupplier(initialData?.isSupplier || false);
       setIsSeller(false);
       setIsBuyer(false);
       setAssociatedSellerIds([]);
       setAssociatedContactIds([]);
       setInternalContacts([]);
-      setObservations('');
+      setObservations(initialData?.observations || '');
     }
     setSellerSearch('');
-  }, [person, isOpen]);
+  }, [person, isOpen, initialData]);
 
   if (!isOpen) return null;
 
@@ -150,7 +151,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
           <h3 className="text-xl font-black uppercase tracking-tight text-slate-800 dark:text-white">
             {person ? 'Editar Cadastro' : 'Novo Registro'}
           </h3>
-          <button 
+          <button
             onClick={onClose}
             className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700 transition-colors"
             title="Fechar"
@@ -159,6 +160,12 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
             <X size={20} />
           </button>
         </div>
+
+        {!person && initialData && (
+          <div className="mb-6 p-3 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-100 dark:border-indigo-800 text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 text-center">
+            Dados preenchidos pela IA — revise antes de salvar
+          </div>
+        )}
 
         <div className="space-y-4">
           <div className="space-y-1.5">
