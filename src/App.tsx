@@ -30,7 +30,10 @@ import {
   AlertTriangle,
   Scale,
   Printer,
-  Footprints
+  Footprints,
+  Sparkles,
+  ScanLine,
+  Sun
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { auth, db, logout } from "./lib/firebase";
@@ -126,6 +129,8 @@ import TransactionModal from "./components/TransactionModal";
 import SolePurchaseModal from "./components/SolePurchaseModal";
 import PalmilhaPurchaseModal from "./components/PalmilhaPurchaseModal";
 import AIAssistantModal from "./components/AIAssistantModal";
+import ScannerModal from "./components/ScannerModal";
+import { scannerService } from "./services/scannerService";
 import { ToastContainer } from "./components/ToastContainer";
 import { toast } from "./utils/toast";
 import { parseLocaleNumber } from './utils/numbers';
@@ -221,6 +226,7 @@ export default function App() {
   const [transactionModalType, setTransactionModalType] = useState<TransactionType>(TransactionType.INCOME);
   const [isSolePurchaseModalOpen, setIsSolePurchaseModalOpen] = useState(false);
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
+  const [isHeaderScannerOpen, setIsHeaderScannerOpen] = useState(false);
   const [aiPersonPrefill, setAiPersonPrefill] = useState<Partial<Person> | null>(null);
   const [solePurchaseParams, setSolePurchaseParams] = useState<{
     moldId?: string;
@@ -302,6 +308,7 @@ export default function App() {
       { id: 'print_center', label: 'Central de Impressões', visible: true, order: 19, module: 'any' },
       { id: 'pcp_sector_map', label: 'Mapas por Setor (PCP)', visible: true, order: 20, module: 'production' },
       { id: 'pcp_purchase_needs', label: 'Necessidades de Compras (PCP)', visible: true, order: 21, module: 'production' },
+      { id: 'qr_scanner', label: 'Scanner Rápido', visible: true, order: 23, module: 'any' },
     ]
   };
 
@@ -352,6 +359,11 @@ export default function App() {
     // Migration: ensure ai_assistant card is present
     if (config.cards && !config.cards.find((c: any) => c.id === 'ai_assistant')) {
       config.cards.push({ id: 'ai_assistant', label: 'Assistente IA (Claude)', visible: true, order: -1, module: 'any' });
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+    // Migration: ensure qr_scanner card is present
+    if (config.cards && !config.cards.find((c: any) => c.id === 'qr_scanner')) {
+      config.cards.push({ id: 'qr_scanner', label: 'Scanner Rápido', visible: true, order: config.cards.length, module: 'any' });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
 
@@ -664,6 +676,41 @@ export default function App() {
     if (view !== ViewType.PRODUCTION_CONFIG) {
       setProductionSubScreen('MENU');
     }
+  };
+
+  const handleHeaderScan = (parsed: any) => {
+    let sectorId: string | undefined;
+    let entry: { id: string; kind: string; label: string; sublabel?: string; sectorId?: string; timestamp: number } | null = null;
+
+    if (parsed?.type === 'PRODUCT') {
+      const product = products.find(p => p.id === parsed.productId);
+      const variation = product?.variations?.find((v: any) => v.id === parsed.variationId);
+      const lot = parsed.lotId ? productionLots.find(l => l.id === parsed.lotId) : undefined;
+      sectorId = lot?.route?.[lot.currentSectorIndex];
+      const subParts = [variation?.colorName, `Tam ${parsed.size}`, lot ? `Mapa #${lot.orderNumber}` : null].filter(Boolean);
+      entry = { id: `${Date.now()}`, kind: 'PRODUCT', label: product?.name || 'Produto', sublabel: subParts.join(' • '), sectorId, timestamp: Date.now() };
+    } else if (parsed?.type === 'LOT') {
+      const lot = productionLots.find(l => l.id === parsed.lotId);
+      const product = lot ? products.find(p => p.id === lot.productId) : undefined;
+      sectorId = lot?.route?.[lot.currentSectorIndex];
+      entry = { id: `${Date.now()}`, kind: 'LOT', label: lot ? `Mapa #${lot.orderNumber}` : 'Mapa não encontrado', sublabel: product?.name, sectorId, timestamp: Date.now() };
+    } else if (parsed?.type === 'SOLE') {
+      entry = { id: `${Date.now()}`, kind: 'SOLE', label: 'Molde de Solado', sublabel: `Cor ${parsed.colorId} • Tam ${parsed.size}`, timestamp: Date.now() };
+    } else if (parsed?.type === 'OS') {
+      entry = { id: `${Date.now()}`, kind: 'OS', label: 'Ordem de Serviço', sublabel: `#${parsed.osId}`, timestamp: Date.now() };
+    }
+
+    if (!entry) {
+      toast.show('Código não reconhecido.');
+      return;
+    }
+
+    try {
+      const existing = JSON.parse(localStorage.getItem('dashboard_scan_history') || '[]');
+      localStorage.setItem('dashboard_scan_history', JSON.stringify([entry, ...existing].slice(0, 10)));
+    } catch { /* ignore */ }
+
+    navigateToProduction('PCP', sectorId);
   };
 
   const navigateToProduction = (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES', sectorId?: string) => {
@@ -3931,14 +3978,40 @@ export default function App() {
           </h1>
         </div>
         <div className="flex items-center gap-3 text-slate-500">
-          <button 
+          <motion.button
+            type="button"
+            onClick={() => setIsHeaderScannerOpen(true)}
+            title="Escanear Código"
+            aria-label="Escanear Código"
+            whileHover={{ scale: 1.15, rotate: -8 }}
+            whileTap={{ scale: 0.9 }}
+            className="p-2 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 dark:text-emerald-400 transition-colors hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
+          >
+            <ScanLine size={20} />
+          </motion.button>
+          <motion.button
+            type="button"
+            onClick={() => setIsAIAssistantOpen(true)}
+            title="Abrir Assistente IA"
+            aria-label="Abrir Assistente IA"
+            whileHover={{ scale: 1.15, rotate: 8 }}
+            whileTap={{ scale: 0.9 }}
+            animate={{ scale: [1, 1.08, 1] }}
+            transition={{ scale: { duration: 2, repeat: Infinity, ease: "easeInOut" } }}
+            className="p-2 rounded-full bg-violet-50 dark:bg-violet-900/30 text-violet-500 dark:text-violet-400 transition-colors hover:bg-violet-100 dark:hover:bg-violet-900/50"
+          >
+            <Sparkles size={20} />
+          </motion.button>
+          <motion.button
             onClick={toggleDarkMode}
             title={isDarkMode ? "Mudar para modo claro" : "Mudar para modo escuro"}
             aria-label={isDarkMode ? "Mudar para modo claro" : "Mudar para modo escuro"}
-            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            whileHover={{ scale: 1.15, rotate: 25 }}
+            whileTap={{ scale: 0.9 }}
+            className={`p-2 rounded-full transition-colors ${isDarkMode ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50' : 'bg-blue-50 text-blue-500 hover:bg-blue-100'}`}
           >
-            <Moon size={20} />
-          </button>
+            {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+          </motion.button>
         </div>
       </header>
 
@@ -4236,11 +4309,46 @@ export default function App() {
         isOpen={isAIAssistantOpen}
         onClose={() => setIsAIAssistantOpen(false)}
         isDarkMode={isDarkMode}
+        soleStockEntries={soleStockEntries}
         onOpenPersonForm={(data) => {
           setAiPersonPrefill(data);
           setIsAIAssistantOpen(false);
           navigateTo(ViewType.PEOPLE);
         }}
+        onOpenPurchaseForm={(data) => {
+          setIsAIAssistantOpen(false);
+          navigateTo(ViewType.PURCHASE_FORM, {
+            type: PurchaseType.GENERAL,
+            supplierId: data.supplierId,
+            initialGeneralItems: data.items.map((item) => ({
+              id: generateId(),
+              description: item.description,
+              quantity: item.quantity,
+              unit: item.unit,
+              value: item.value ?? 0,
+            })),
+            initialDescription: data.notes,
+          });
+        }}
+        onOpenSolePurchaseForm={(data) => {
+          setIsAIAssistantOpen(false);
+          navigateTo(ViewType.PURCHASE_FORM, {
+            type: PurchaseType.SOLE,
+            items: data.items.map((item) => ({
+              moldId: item.moldId,
+              colorId: item.colorId,
+              initialGrid: item.grid,
+            })),
+            initialDescription: data.notes || 'Pedido sugerido pelo Assistente IA',
+          });
+        }}
+      />
+
+      <ScannerModal
+        isOpen={isHeaderScannerOpen}
+        onClose={() => setIsHeaderScannerOpen(false)}
+        onScan={(parsed) => { setIsHeaderScannerOpen(false); handleHeaderScan(parsed); }}
+        title="Scanner Rápido"
       />
     </div>
   );

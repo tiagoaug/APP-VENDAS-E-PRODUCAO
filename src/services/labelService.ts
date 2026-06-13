@@ -120,7 +120,7 @@ export const labelService = {
     }
   },
 
-  async printProductLabels(product: Product, variation?: Variation, sizes?: string[], quantities?: Record<string, number>, dimensions: [number, number] = [40, 30], layout?: LabelLayout, photoUrl?: string, sizeGrid?: string) {
+  async printProductLabels(product: Product, variation?: Variation, sizes?: string[], quantities?: Record<string, number>, dimensions: [number, number] = [40, 30], layout?: LabelLayout, photoUrl?: string, sizeGrid?: string, lotId?: string, orderId?: string, itemIdx?: number) {
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -141,7 +141,9 @@ export const labelService = {
           if (!firstPage) doc.addPage(dimensions);
           firstPage = false;
 
-          const qrData = `PRD|${product.id}|${v.id}|${size}`;
+          const qrData = (lotId && orderId)
+            ? `PRD|${product.id}|${v.id}|${size}|${lotId}|${orderId}|${itemIdx ?? ''}`
+            : `PRD|${product.id}|${v.id}|${size}`;
           const qrCode = await this.generateQRCode(qrData);
 
           // Reference
@@ -203,7 +205,7 @@ export const labelService = {
   },
 
   async printProductLabelsBatch(
-    items: { product: Product; variation: Variation; sizeGrid: string; sectorNotesText?: string; photoUrl?: string }[],
+    items: { product: Product; variation: Variation; sizeGrid: string; sectorNotesText?: string; photoUrl?: string; lotId?: string; orderId?: string; itemIdx?: number }[],
     dimensions: [number, number] = [40, 30],
     layout?: LabelLayout
   ) {
@@ -217,10 +219,11 @@ export const labelService = {
     const activeLayout = layout || this.getDefaultLayout(dimensions);
 
     for (let idx = 0; idx < items.length; idx++) {
-      const { product, variation, sizeGrid, sectorNotesText, photoUrl } = items[idx];
+      const { product, variation, sizeGrid, sectorNotesText, photoUrl, lotId, orderId, itemIdx } = items[idx];
       if (idx > 0) doc.addPage(dimensions);
 
-      const qrCode = await this.generateQRCode(`PRD|${product.id}|${variation.id}|GRADE`);
+      const qrSuffix = (lotId && orderId) ? `|${lotId}|${orderId}|${itemIdx ?? ''}` : '';
+      const qrCode = await this.generateQRCode(`PRD|${product.id}|${variation.id}|GRADE${qrSuffix}`);
 
       // Reference
       doc.setFontSize(activeLayout.refSize);

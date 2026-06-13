@@ -1,9 +1,10 @@
 import { Firestore } from "firebase-admin/firestore";
-import type Anthropic from "@anthropic-ai/sdk";
+import type { PromptCachingBetaTool } from "@anthropic-ai/sdk/resources/beta/prompt-caching/messages";
+import { computeSoleMapaReservations } from "./soleNeeds";
 
 // Tool schemas exposed to Claude (Anthropic Messages API "tools" format).
 // All tools are READ-ONLY for now — they only query the user's Firestore data.
-export const TOOLS: Anthropic.Tool[] = [
+export const TOOLS: PromptCachingBetaTool[] = [
   {
     name: "search_products",
     description:
@@ -39,7 +40,9 @@ export const TOOLS: Anthropic.Tool[] = [
   {
     name: "get_sole_stock",
     description:
-      "Consulta o estoque de solados (moldes/cores) e seus fornecedores. Use para sugerir pedidos de compra de solados com base no estoque atual.",
+      "Consulta o estoque de solados (moldes/cores), seus fornecedores e a disponibilidade real considerando reservas da produção ativa. " +
+      "Para cada item, 'stock' é o estoque total por grade/tamanho, 'reserved' é o quanto já está reservado pela produção em andamento, e 'available' " +
+      "é o disponível real (stock - reserved, por grade). Use 'available' para planejamento estratégico e sugestão de pedidos de compra de solados.",
     input_schema: {
       type: "object",
       properties: {
@@ -110,6 +113,120 @@ export const TOOLS: Anthropic.Tool[] = [
       },
       required: ["name"],
     },
+  },
+  {
+    name: "propose_purchase_registration",
+    description:
+      "Use quando o usuário fornecer (por texto ou foto de nota/ficha de material, aviamento, embalagem etc.) os itens de uma compra geral e pedir para cadastrá-la. " +
+      "Extraia apenas os itens e valores que tiver certeza, sem inventar dados. " +
+      "Esta ferramenta NÃO grava nada no banco — ela apenas envia os dados extraídos para o usuário revisar no formulário de 'Compra Geral' e salvar manualmente. " +
+      "Recomenda-se usar 'list_people' (type='supplier') antes para tentar localizar o fornecedor pelo nome.",
+    input_schema: {
+      type: "object",
+      properties: {
+        supplierId: {
+          type: "string",
+          description: "ID do fornecedor, se encontrado via 'list_people'.",
+        },
+        supplierName: {
+          type: "string",
+          description: "Nome do fornecedor extraído da foto/texto, mesmo que não tenha sido encontrado um cadastro correspondente.",
+        },
+        items: {
+          type: "array",
+          description: "Itens da compra.",
+          items: {
+            type: "object",
+            properties: {
+              description: {
+                type: "string",
+                description: "Descrição do item (obrigatório).",
+              },
+              quantity: {
+                type: "number",
+                description: "Quantidade, se identificada.",
+              },
+              unit: {
+                type: "string",
+                description: "Unidade (ex: 'un', 'par', 'm', 'kg'), se identificada.",
+              },
+              value: {
+                type: "number",
+                description: "Valor unitário ou total do item, se identificado.",
+              },
+            },
+            required: ["description"],
+          },
+        },
+        notes: {
+          type: "string",
+          description: "Observações adicionais relevantes (ex: número da nota, contexto de onde vieram os dados).",
+        },
+      },
+      required: ["items"],
+    },
+  },
+  {
+    name: "propose_sole_purchase_registration",
+    description:
+      "Use para propor um pedido de compra de solados (matéria-prima) com base no planejamento estratégico de estoque. " +
+      "Antes de usar, consulte 'get_sole_stock' para obter o campo 'available' (disponível = estoque - reservado pela produção ativa) de cada molde/cor. " +
+      "Quando o usuário informar a grade/quantidade que deseja manter em estoque para um molde/cor, calcule o déficit por tamanho como " +
+      "max(0, quantidade desejada - available[tamanho]) e inclua no 'grid' apenas os tamanhos com déficit maior que zero. " +
+      "Não invente moldes, cores ou tamanhos que não existam no estoque retornado por 'get_sole_stock'. " +
+      "Esta ferramenta NÃO grava nada no banco — ela apenas envia os dados para o usuário revisar no formulário de 'Compra de Solados' e salvar manualmente.",
+    input_schema: {
+      type: "object",
+      properties: {
+        items: {
+          type: "array",
+          description: "Itens do pedido de solados (um por molde/cor).",
+          items: {
+            type: "object",
+            properties: {
+              moldId: {
+                type: "string",
+                description: "ID do molde, obtido de 'get_sole_stock' (obrigatório).",
+              },
+              moldName: {
+                type: "string",
+                description: "Nome do molde.",
+              },
+              colorId: {
+                type: "string",
+                description: "ID da cor da sola, se houver.",
+              },
+              colorName: {
+                type: "string",
+                description: "Nome da cor da sola.",
+              },
+              supplierId: {
+                type: "string",
+                description: "ID do fornecedor, se conhecido.",
+              },
+              supplierName: {
+                type: "string",
+                description: "Nome do fornecedor, se conhecido.",
+              },
+              grid: {
+                type: "object",
+                description: "Déficit de pares por tamanho/grade (apenas tamanhos com déficit > 0). Ex: { \"37\": 5, \"38\": 8 }.",
+                additionalProperties: { type: "number" },
+              },
+            },
+            required: ["moldId", "grid"],
+          },
+        },
+        notes: {
+          type: "string",
+          description: "Observações adicionais relevantes (ex: contexto do planejamento, urgência).",
+        },
+      },
+      required: ["items"],
+    },
+    // Marca o fim do bloco "tools" para cache — Anthropic cacheia tudo até este ponto
+    // (system prompt + definição das tools), evitando reprocessar esses tokens em toda chamada.
+    cache_control: { type: "ephemeral" },
   },
 ];
 
@@ -244,7 +361,11 @@ async function getFinancialOverview(db: Firestore, uid: string) {
 }
 
 async function getSoleStock(db: Firestore, uid: string, input: { query?: string }) {
-  const entries = await getCollection(db, uid, "soleStockEntries");
+  const [entries, products, lots] = await Promise.all([
+    getCollection(db, uid, "soleStockEntries"),
+    getCollection(db, uid, "products"),
+    getCollection(db, uid, "productionLots"),
+  ]);
   const q = (input.query || "").trim().toLowerCase();
   const filtered = q
     ? entries.filter(
@@ -255,14 +376,39 @@ async function getSoleStock(db: Firestore, uid: string, input: { query?: string 
       )
     : entries;
 
-  return filtered.slice(0, 20).map((e) => ({
-    moldName: e.moldName,
-    colorName: e.colorName,
-    supplierName: e.supplierName,
-    stock: e.stock,
-    totalPairs: e.totalPairs,
-    unitCost: e.unitCost,
-  }));
+  const reservations = computeSoleMapaReservations(lots, products, entries);
+
+  return filtered.slice(0, 20).map((e) => {
+    const key = `${String(e.moldId || "").trim()}_${String(e.colorId || "").trim() || "default"}`;
+    const reservedByGrade = reservations[key]?.reservedByGrade || {};
+    const stock: Record<string, number> = e.stock || {};
+    const available: Record<string, number> = {};
+    let totalReserved = 0;
+    let totalAvailable = 0;
+    Object.entries(stock).forEach(([grade, qty]) => {
+      const reserved = reservedByGrade[grade] || 0;
+      const avail = Math.max(0, (Number(qty) || 0) - reserved);
+      available[grade] = avail;
+      totalReserved += reserved;
+      totalAvailable += avail;
+    });
+
+    return {
+      moldId: e.moldId,
+      moldName: e.moldName,
+      colorId: e.colorId,
+      colorName: e.colorName,
+      supplierId: e.supplierId,
+      supplierName: e.supplierName,
+      stock,
+      reserved: reservedByGrade,
+      available,
+      totalPairs: e.totalPairs,
+      totalReserved,
+      totalAvailable,
+      unitCost: e.unitCost,
+    };
+  });
 }
 
 async function listPeople(db: Firestore, uid: string, input: { query?: string; type?: "customer" | "supplier" }) {

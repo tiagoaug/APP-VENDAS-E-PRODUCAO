@@ -7,13 +7,10 @@ import {
   Play, User, DollarSign, FileText, CheckCircle2,
   AlertCircle, Info, Hash, Clock, Settings, HelpCircle,
   Sparkles, List, Printer, Eye, Settings2, X, Tag,
-  QrCode, ScanLine, CheckSquare, Edit2, Trash2, Share2, Filter
+  Edit2, Trash2, Share2, Filter
 } from 'lucide-react';
 import PrintLabelEditorModal from './PrintLabelEditorModal';
 import ConfirmDialog from './ConfirmDialog';
-import { scannerService } from '../services/scannerService';
-import WebCameraScanner from './WebCameraScanner';
-import { Capacitor } from '@capacitor/core';
 import {
   ProductionLot, Product, Sector, FlowTag, ColorValue,
   ProductionConfigItem, ServiceOrder, Person, Account, Category, ProductionOrder,
@@ -22,11 +19,10 @@ import {
 import { firebaseService } from '../services/firebaseService';
 import { financeService } from '../services/financeService';
 import { printLotSheet, shareImage } from '../utils/pdfExport';
-import { resolveNextActiveSector, buildSkippedSectorsMessage, computeOSAdvanceOutcome, ensureSectorInRoute } from '../utils/productionRoute';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
 
-interface CuttingProjectionPanelProps {
+interface CuttingAreaPanelProps {
   lots: ProductionLot[];
   products: Product[];
   sectors: Sector[];
@@ -39,13 +35,12 @@ interface CuttingProjectionPanelProps {
   serviceOrders: ServiceOrder[];
   productionOrders?: ProductionOrder[];
   isDarkMode: boolean;
-  selectedSectorId: string;
   onBack: () => void;
   onSaveLot: (lot: ProductionLot) => Promise<void>;
   userName?: string;
 }
 
-export default function CuttingProjectionPanel({
+export default function CuttingAreaPanel({
   lots = [],
   products = [],
   sectors = [],
@@ -58,22 +53,22 @@ export default function CuttingProjectionPanel({
   serviceOrders = [],
   productionOrders = [],
   isDarkMode,
-  selectedSectorId,
   onBack,
   onSaveLot,
   userName = 'Operador de Corte'
-}: CuttingProjectionPanelProps) {
-  // Filter active lots in the cutting sector
+}: CuttingAreaPanelProps) {
+  // Flow Tag designada como gatilho da Área de Corte
+  const cuttingFlowTagId = useMemo(() => flowTags.find(t => t.isCuttingFlowTag)?.id, [flowTags]);
+
+  // Mapas marcados com a Tag de Corte como status atual, independente do setor
   const cuttingLots = useMemo(() => {
-    return lots.filter(l => {
-      if (l.finishedAt || !l.route) return false;
-      // Lote cujo setor atual É o corte
-      if (l.route[l.currentSectorIndex] === selectedSectorId) return true;
-      // Lote com pedidos adiantados para o corte via orderSectors
-      const orderSectors: Record<string, string> = (l as any).metadata?.orderSectors || {};
-      return Object.values(orderSectors).some(sid => sid === selectedSectorId);
-    });
-  }, [lots, selectedSectorId]);
+    if (!cuttingFlowTagId) return [];
+    return lots.filter(l => !l.finishedAt && l.currentStatusId === cuttingFlowTagId);
+  }, [lots, cuttingFlowTagId]);
+
+  // Setor de Corte (para registrar OS e precificação padrão)
+  const corteSector = useMemo(() => sectors.find(s => s.name.toLowerCase().includes('corte')), [sectors]);
+  const corteSectorId = corteSector?.id;
 
   // Local state
   const [selectedLotId, setSelectedLotId] = useState<string | null>(
@@ -101,7 +96,6 @@ export default function CuttingProjectionPanel({
   const [osNotes, setOsNotes] = useState('');
   const [osAccountId, setOsAccountId] = useState('');
   const [osCategoryId, setOsCategoryId] = useState('');
-  const [osDirectComplete, setOsDirectComplete] = useState(false);
   const [osNaoContabil, setOsNaoContabil] = useState(false);
   const [isSavingOS, setIsSavingOS] = useState(false);
   const [editingOsId, setEditingOsId] = useState<string | null>(null);
@@ -111,16 +105,6 @@ export default function CuttingProjectionPanel({
   const [labelModalOpen, setLabelModalOpen] = useState(false);
   const [labelSizeGridOverride, setLabelSizeGridOverride] = useState<string | undefined>(undefined);
   const [labelOsOverride, setLabelOsOverride] = useState<ServiceOrder | null | undefined>(undefined);
-
-  // QR Baixa modal state
-  const [qrBaixaOpen, setQrBaixaOpen] = useState(false);
-  const [qrBaixaManualCode, setQrBaixaManualCode] = useState('');
-  const [qrBaixaScanning, setQrBaixaScanning] = useState(false);
-  const [qrBaixaShowWebCamera, setQrBaixaShowWebCamera] = useState(false);
-  const isWebPlatform = Capacitor.getPlatform() === 'web';
-  const [qrBaixaConfirm, setQrBaixaConfirm] = useState<{
-    os: ServiceOrder;
-  } | null>(null);
 
   // Order selection state for per-order OS creation
   const [selectedOrderKeys, setSelectedOrderKeys] = useState<Set<string>>(new Set());
@@ -166,10 +150,8 @@ export default function CuttingProjectionPanel({
     return { product, variation };
   }, [products, selectedLot]);
 
-  // Active sector object
-  const currentSector = useMemo(() => {
-    return sectors.find(s => s.id === selectedSectorId);
-  }, [sectors, selectedSectorId]);
+  // Active sector object (Corte)
+  const currentSector = corteSector;
 
   // Cutting pieces/consumptions from engineering sheet — with source variation tracking
   const cuttingPieces = useMemo<{ piece: ComponentConsumption; sourceVariationId: string; sourceProductId: string }[]>(() => {
@@ -311,17 +293,17 @@ export default function CuttingProjectionPanel({
 
       // Default OS value per pair from sector or default
       if (lotProductDetails?.product) {
-        const sectorPrice = lotProductDetails.product.sectorPrices?.[selectedSectorId] ||
+        const sectorPrice = (corteSectorId && lotProductDetails.product.sectorPrices?.[corteSectorId]) ||
                             currentSector?.defaultServiceValue ||
                             0;
         setOsValuePerPair(sectorPrice);
       }
       setOsNaoContabil(false);
     }
-  }, [isOSPanelOpen, lotProductDetails, selectedSectorId, currentSector, accounts, categories]);
+  }, [isOSPanelOpen, lotProductDetails, corteSectorId, currentSector, accounts, categories]);
 
-  // Generate Service Order
-  const handleCreateOS = async () => {
+  // Generate Service Order — "Despachar": cria a OS de corte (sempre PENDING) e abre a exportação da ficha
+  const handleDespachar = async () => {
     if (!selectedLot || !lotProductDetails?.product) return;
 
     // Trava: impede OS duplicada apenas quando é OS do lote inteiro (sem pedidos específicos) e não é edição
@@ -387,7 +369,7 @@ export default function CuttingProjectionPanel({
           accountId: osAccountId,
           categoryId: osCategoryId,
           date: Date.now(),
-          status: osDirectComplete ? 'COMPLETED' : 'PENDING',
+          status: 'PENDING',
           personId: osProviderId || undefined,
           notes: `OS de Corte: ${osNumberStr}\nPrestador: ${providerName}\nQuantidade: ${totalPairs} pares\nPreço/Par: R$ ${osValuePerPair.toFixed(2)}`
         };
@@ -416,7 +398,7 @@ export default function CuttingProjectionPanel({
         productName: lotProductDetails.product.name,
         variationId: selectedLot.variationId,
         variationName: lotProductDetails.variation?.colorName || '',
-        sectorId: selectedSectorId,
+        sectorId: corteSectorId || '',
         sectorName: currentSector?.name || 'Cortes',
         type: 'INTERNAL',
         providerId: osProviderId,
@@ -425,42 +407,16 @@ export default function CuttingProjectionPanel({
         valuePerPair: osValuePerPair,
         totalValue: totalValue,
         notes: `${osNotes}\n\nDetalhamento de Corte:\n${resolvedDetailsNotes}`,
-        status: osDirectComplete ? 'COMPLETED' : 'PENDING',
+        status: 'PENDING',
         transactionId: transactionId || undefined,
         createdAt: Date.now(),
-        finishedAt: osDirectComplete ? Date.now() : undefined,
+        finishedAt: undefined,
         ...(pendingOsSourceOrderIds.length > 0 && { sourceOrderIds: pendingOsSourceOrderIds })
       };
 
       await firebaseService.saveDocument("serviceOrders", newOS);
 
-      if (osDirectComplete) {
-        // Move lot usando posição do setor atual no roteiro, respeitando o roteiro cadastrado no produto
-        const directRoute = selectedLot.route || [];
-        const curSectorPos = directRoute.indexOf(selectedSectorId);
-        const effectiveSectorPos = curSectorPos >= 0 ? curSectorPos : selectedLot.currentSectorIndex;
-        const directProduct = products.find(p => p.id === selectedLot.productId);
-        const { nextIndex: nextSectorIndex, isFinished: directIsFinished, skippedSectorNames: directSkipped } = resolveNextActiveSector(directRoute, effectiveSectorPos, directProduct, sectors);
-        await firebaseService.updateDocument("productionLots", selectedLot.id, {
-          currentSectorIndex: Math.min(nextSectorIndex, Math.max(directRoute.length - 1, 0)),
-          currentStatusId: '',
-          finishedAt: directIsFinished ? Date.now() : undefined,
-          history: [
-            ...(selectedLot.history || []),
-            {
-              sectorId: selectedSectorId,
-              statusId: 'CONCLUÍDO',
-              timestamp: Date.now(),
-              userName: userName,
-              notes: `Corte concluído e OS ${osNumberStr} baixada.`
-            }
-          ]
-        });
-        const directSkipMessage = buildSkippedSectorsMessage(directSkipped, directIsFinished ? 'CONCLUÍDO' : (sectors.find(s => s.id === directRoute[nextSectorIndex])?.name || ''));
-        if (directSkipMessage) toast.show(directSkipMessage);
-      }
-
-      // Set data for the print modal preview before auto-advancement
+      // Set data for the print modal preview
       setPrintModalData({
         lot: selectedLot,
         pieces: resolvedPieces,
@@ -493,55 +449,37 @@ export default function CuttingProjectionPanel({
   const existingOS = useMemo(() => {
     if (!printModalData?.lot) return null;
     return serviceOrders.find(
-      os => os.lotId === printModalData.lot.id && os.sectorId === selectedSectorId
+      os => os.lotId === printModalData.lot.id && os.sectorId === corteSectorId
     );
-  }, [serviceOrders, printModalData, selectedSectorId]);
+  }, [serviceOrders, printModalData, corteSectorId]);
 
   // OS pendente do lote ATUALMENTE selecionado na estação de trabalho
   const activeOSForSelectedLot = useMemo(() => {
     if (!selectedLot) return null;
     return serviceOrders.find(os =>
       (os.lotId === selectedLot.id || (os.lotIds && os.lotIds.includes(selectedLot.id))) &&
-      os.sectorId === selectedSectorId &&
+      os.sectorId === corteSectorId &&
       os.status === 'PENDING'
     ) || null;
-  }, [serviceOrders, selectedLot, selectedSectorId]);
+  }, [serviceOrders, selectedLot, corteSectorId]);
 
   // All active OS for selected lot (to check per-order coverage)
   const lotActiveOSListFull = useMemo(() => {
     if (!selectedLot) return [];
     return serviceOrders.filter(os =>
       (os.lotId === selectedLot.id || (os.lotIds && os.lotIds.includes(selectedLot.id))) &&
-      os.sectorId === selectedSectorId &&
+      os.sectorId === corteSectorId &&
       os.status === 'PENDING'
     );
-  }, [serviceOrders, selectedLot, selectedSectorId]);
-
-  // Completed OS for the selected lot in this sector (for Desfazer option)
-  const lotCompletedOSList = useMemo(() => {
-    if (!selectedLot) return [];
-    return serviceOrders.filter(os =>
-      (os.lotId === selectedLot.id || (os.lotIds && os.lotIds.includes(selectedLot.id))) &&
-      os.sectorId === selectedSectorId &&
-      os.status === 'COMPLETED'
-    );
-  }, [serviceOrders, selectedLot, selectedSectorId]);
+  }, [serviceOrders, selectedLot, corteSectorId]);
 
   // Source order items (pedidos vinculados) for selected lot
   const lotSourceItems = useMemo(() => {
     if (!selectedLot) return [];
     const allItems: any[] = (selectedLot as any).metadata?.sourceItems ||
       (selectedLot.productionOrderId ? [{ orderId: selectedLot.productionOrderId, itemIdx: 0, qty: selectedLot.quantity }] : []);
-    if (!allItems.length) return [];
-    // Filtra apenas os pedidos que estão neste setor (por orderSectors ou pelo setor atual do lote)
-    const orderSectors: Record<string, string> = (selectedLot as any).metadata?.orderSectors || {};
-    const lotCurrentSector = selectedLot.route?.[selectedLot.currentSectorIndex];
-    return allItems.filter((si: any) => {
-      const dest = orderSectors[si.orderId];
-      const effective = dest || lotCurrentSector;
-      return effective === selectedSectorId;
-    });
-  }, [selectedLot, selectedSectorId]);
+    return allItems;
+  }, [selectedLot]);
 
   // True when every source order already has an active OS in this sector
   const allSourceOrdersCovered = useMemo(() => {
@@ -552,19 +490,13 @@ export default function CuttingProjectionPanel({
     return lotSourceItems.every((si: any) => coveredIds.has(si.orderId));
   }, [lotSourceItems, lotActiveOSListFull]);
 
-  // Effective size grade — para pedidos adiantados, calcula apenas as quantidades no setor atual
+  // Grade de tamanhos do lote — considera todos os itens, independente do setor atual
   const effectivePairs = useMemo<Record<string, number>>(() => {
-    // Se o lote está neste setor (não adiantado), usa lot.pairs diretamente
-    const lotCurrentSector = selectedLot?.route?.[selectedLot.currentSectorIndex];
-    const isAdvancedToSector = lotCurrentSector !== selectedSectorId;
+    // Usa lot.pairs diretamente quando disponível
+    const direct = selectedLot?.pairs;
+    if (direct && Object.values(direct).some(v => (v || 0) > 0)) return direct;
 
-    if (!isAdvancedToSector) {
-      // Lote físico neste setor — usa lot.pairs se disponível
-      const direct = selectedLot?.pairs;
-      if (direct && Object.values(direct).some(v => (v || 0) > 0)) return direct;
-    }
-
-    // Calcula grade a partir dos itens filtrados (só os do setor atual)
+    // Fallback: agrega a partir dos itens de pedido vinculados ao lote
     const result: Record<string, number> = {};
     lotSourceItems.forEach((si: any) => {
       const order = productionOrders.find((o: ProductionOrder) => o.id === si.orderId);
@@ -580,9 +512,8 @@ export default function CuttingProjectionPanel({
     });
 
     if (Object.keys(result).length > 0) return result;
-    // Último fallback: lot.pairs completo
     return selectedLot?.pairs || {};
-  }, [selectedLot, lotSourceItems, productionOrders, selectedSectorId]);
+  }, [selectedLot, lotSourceItems, productionOrders]);
 
   // Reset order selection when the selected lot changes
   useEffect(() => {
@@ -603,204 +534,14 @@ export default function CuttingProjectionPanel({
     return () => document.removeEventListener('mousedown', handler);
   }, [sharePopupOpen]);
 
-  // Complete an OS — advances lot OR clears orderSectors (advanced-orders scenario)
-  const handleCompleteOSCutting = async (os: ServiceOrder) => {
-    try {
-      const lotObj = lots.find(l =>
-        l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id))
-      );
-      if (!lotObj) {
-        toast.show(`OS ${os.osNumber}: lote não encontrado. Verifique se o mapa foi removido.`);
-        return;
-      }
-
-      // Position of the OS's sector in the lot route
-      const cuttingRoute = lotObj.route || [];
-      const osSectorIdx = cuttingRoute.indexOf(os.sectorId ?? '');
-      const effectiveSectorIdx = osSectorIdx >= 0 ? osSectorIdx : lotObj.currentSectorIndex;
-      // Centraliza o cálculo do próximo setor e a detecção de roteiros divergentes
-      // entre modelos reunidos na mesma OS (ver `computeOSAdvanceOutcome`).
-      const { nextSectorId, nextSectorName, isFinished: isAtRouteEnd, skippedSectorNames: cuttingSkipped, routeDivergence, divergentOrders } = computeOSAdvanceOutcome(os, lotObj, products, sectors);
-
-      // 1. Mark OS as COMPLETED
-      await firebaseService.updateDocument('serviceOrders', os.id, {
-        status: 'COMPLETED',
-        finishedAt: Date.now(),
-      });
-
-      // 2. Settle financial transaction if present
-      if (os.transactionId) {
-        try {
-          const { financeService: fs } = await import('../services/financeService');
-          await fs.settleTransaction(os.transactionId);
-        } catch { /* ignore */ }
-      }
-
-      // 3. Check remaining PENDING OSes for this lot in this sector
-      const remainingPending = serviceOrders.filter(o =>
-        o.id !== os.id &&
-        (o.lotId === lotObj.id || (o.lotIds?.includes(lotObj.id) ?? false)) &&
-        o.sectorId === (os.sectorId || selectedSectorId) &&
-        o.status === 'PENDING'
-      );
-
-      if (remainingPending.length > 0) {
-        showInfo(
-          `OS ${os.osNumber} Concluída`,
-          `Mapa #${lotObj.orderNumber} aguarda ${remainingPending.length} OS pendente(s) para avançar para "${nextSectorName}".`
-        );
-        return;
-      }
-
-      // 4. Decide: advance lot OR clear orderSectors
-      const lotIsAlreadyPast = lotObj.currentSectorIndex > effectiveSectorIdx;
-
-      if (lotIsAlreadyPast) {
-        // Advanced-orders scenario: lot is already past this sector.
-        // Clear all orderSectors entries pointing to this sector so the lot
-        // leaves the CORTE (or current) panel view.
-        const currentOrderSectors: Record<string, string> =
-          (lotObj as any).metadata?.orderSectors || {};
-        const osSectorId = os.sectorId || selectedSectorId;
-        const updatedOrderSectors: Record<string, string> = {};
-        Object.entries(currentOrderSectors).forEach(([oid, sid]) => {
-          if (sid !== osSectorId) updatedOrderSectors[oid] = sid;
-        });
-
-        // Update only metadata.orderSectors via dot-notation (preserves other metadata fields)
-        await firebaseService.updateDocument('productionLots', lotObj.id, {
-          'metadata.orderSectors': updatedOrderSectors,
-        });
-
-        const currentSectorName =
-          sectors.find(s => s.id === lotObj.route?.[lotObj.currentSectorIndex])?.name || 'setor atual';
-        showInfo(
-          `OS ${os.osNumber} Concluída`,
-          `Corte finalizado. Mapa #${lotObj.orderNumber} permanece em "${currentSectorName}".`
-        );
-      } else if (routeDivergence) {
-        // Trava: modelos reunidos nesta OS divergem sobre o próximo setor — não dá pra
-        // avançar o mapa inteiro como se fosse um único modelo. Em vez de só explicar e
-        // deixar o usuário procurar o botão certo em outra tela (o que gerava a sensação
-        // de "aceitei e nada aconteceu"), perguntamos e — se confirmado — já direcionamos
-        // cada pedido individualmente para o setor do SEU PRÓPRIO roteiro.
-        const divergenceSummary = `Esta OS reúne modelos com roteiros de produção diferentes:\n` +
-          routeDivergence.map(d => `• ${d.productName} → ${d.sectorName}`).join('\n') +
-          `\n\nO mapa #${lotObj.orderNumber} não pode avançar como um todo sem mover algum modelo para o setor errado.`;
-        if (divergentOrders && divergentOrders.length > 0) {
-          openConfirm({
-            title: `OS ${os.osNumber} Concluída — Direcionar modelos?`,
-            message: divergenceSummary + `\n\nDirecionar agora cada pedido para o setor correto do seu próprio modelo?`,
-            confirmLabel: 'Direcionar Agora',
-            isDanger: false,
-            onConfirm: () => {
-              const currentOrderSectors: Record<string, string> = (lotObj as any).metadata?.orderSectors || {};
-              const updatedOrderSectors = { ...currentOrderSectors };
-              divergentOrders.forEach(d => { updatedOrderSectors[d.orderId] = d.targetSectorId; });
-              firebaseService.updateDocument('productionLots', lotObj.id, {
-                'metadata.orderSectors': updatedOrderSectors,
-              }).then(() => {
-                showInfo(
-                  `Mapa #${lotObj.orderNumber} — Modelos Direcionados`,
-                  `${divergentOrders.length} pedido(s) direcionado(s) ao setor correto de cada modelo:\n` +
-                  divergentOrders.map(d => `• ${d.productName} → ${d.targetSectorName}`).join('\n')
-                );
-              });
-            },
-          });
-        } else {
-          showInfo(`OS ${os.osNumber} Concluída — Ação necessária`, divergenceSummary, true);
-        }
-      } else {
-        // Normal scenario: lot is in this sector, advance it to the next one.
-        // `nextSectorId` now comes from the OS's OWN model's registered route (see
-        // `computeOSAdvanceOutcome`), so it may not exist in the lot's frozen `route`
-        // snapshot (copied from a different "main" model) — `ensureSectorInRoute`
-        // guarantees it's there before we index into it, fixing models that used to
-        // jump past sectors that were never in their bundle's frozen route.
-        const advancedRoute = isAtRouteEnd ? cuttingRoute : ensureSectorInRoute(cuttingRoute, nextSectorId, sectors);
-        const newSectorIndex = isAtRouteEnd ? Math.max(advancedRoute.length - 1, 0) : advancedRoute.indexOf(nextSectorId);
-        const updatedLot: ProductionLot = {
-          ...lotObj,
-          route: advancedRoute,
-          currentSectorIndex: newSectorIndex,
-          currentStatusId: '',
-          history: [
-            ...(lotObj.history || []),
-            {
-              sectorId: os.sectorId || selectedSectorId,
-              statusId: 'CONCLUÍDO',
-              timestamp: Date.now(),
-              userName: userName,
-              notes: `Mapa avançado — OS ${os.osNumber} concluída.`,
-            },
-          ],
-        };
-        if (isAtRouteEnd) {
-          updatedLot.finishedAt = Date.now();
-        }
-        await onSaveLot(updatedLot);
-
-        const cuttingSkipMessage = buildSkippedSectorsMessage(cuttingSkipped, nextSectorName);
-        showInfo(
-          `Mapa #${lotObj.orderNumber} → ${nextSectorName}`,
-          cuttingSkipMessage || `Lote avançado para "${nextSectorName}" com sucesso.`
-        );
-      }
-
-      // Select next lot still in this sector
-      const remaining = lots.filter(l =>
-        l.id !== lotObj.id &&
-        !l.finishedAt &&
-        (l.route?.[l.currentSectorIndex] === selectedSectorId ||
-          Object.values((l as any).metadata?.orderSectors || {}).some((sid: any) => sid === selectedSectorId))
-      );
-      setSelectedLotId(remaining.length > 0 ? remaining[0].id : null);
-    } catch (e) {
-      toast.show('Erro ao concluir OS: ' + (e instanceof Error ? e.message : String(e)));
-    }
-  };
-
-  // Undo a completed OS — deletes OS, all related OS, and the lot (frees production orders)
-  const handleUndoOS = async (os: ServiceOrder) => {
-    try {
-      const lotObj = lots.find(l =>
-        l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id))
-      );
-
-      // 1. Delete all OS related to this lot in this sector (including this one)
-      const allRelatedOS = serviceOrders.filter(o =>
-        (o.lotId === (lotObj?.id || os.lotId) ||
-         (o.lotIds && o.lotIds.includes(lotObj?.id || os.lotId))) &&
-        o.sectorId === selectedSectorId
-      );
-      for (const relOS of allRelatedOS) {
-        if (relOS.transactionId) {
-          try { await firebaseService.deleteDocument('transactions', relOS.transactionId); } catch { /* ignore */ }
-        }
-        await firebaseService.deleteDocument('serviceOrders', relOS.id);
-      }
-
-      // 2. Delete the lot itself → this frees all linked production orders
-      if (lotObj) {
-        await firebaseService.deleteDocument('productionLots', lotObj.id);
-      }
-
-      showInfo(
-        'Revertido com Sucesso',
-        'Mapa e OS excluídos. Os pedidos estão desvinculados e disponíveis novamente.'
-      );
-      setSelectedLotId(null);
-    } catch (e) {
-      showInfo('Erro ao Reverter', (e instanceof Error ? e.message : String(e)), true);
-    }
-  };
-
-  const handleDeleteOS = (os: ServiceOrder) => {
+  // Cancelar Despacho — exclui a OS de corte PENDENTE criada via "Despachar" (e sua
+  // transação financeira), sem tocar no mapa de produção. A baixa/avanço do mapa
+  // acontece depois, pela tela genérica do setor Corte.
+  const handleCancelDespacho = (os: ServiceOrder) => {
     openConfirm({
-      title: `Excluir ${os.osNumber}`,
-      message: 'Esta ação não pode ser desfeita. A OS e sua transação financeira serão removidas permanentemente.',
-      confirmLabel: 'Excluir',
+      title: `Cancelar Despacho — ${os.osNumber}`,
+      message: 'A OS de corte pendente e sua transação financeira serão removidas. O mapa de produção não será alterado.',
+      confirmLabel: 'Cancelar Despacho',
       isDanger: true,
       onConfirm: async () => {
         try {
@@ -809,7 +550,7 @@ export default function CuttingProjectionPanel({
             try { await firebaseService.deleteDocument('transactions', os.transactionId); } catch { /* ignore */ }
           }
         } catch (e) {
-          toast.show('Erro ao excluir OS: ' + (e instanceof Error ? e.message : String(e)));
+          toast.show('Erro ao cancelar despacho: ' + (e instanceof Error ? e.message : String(e)));
         }
       },
     });
@@ -1011,26 +752,6 @@ export default function CuttingProjectionPanel({
     } finally {
       setIsShareExporting(false);
     }
-  };
-
-  // Resolve OS from a raw scan string or manual OS number
-  const handleQrBaixaResolve = (raw: string) => {
-    const parsed = scannerService.parseScanResult(raw);
-    let os: ServiceOrder | undefined;
-
-    if (parsed?.type === 'OS') {
-      os = serviceOrders.find(so => so.id === parsed.osId);
-    } else {
-      const normalized = raw.trim().toUpperCase();
-      os = serviceOrders.find(so =>
-        so.osNumber.toUpperCase() === normalized || so.id === raw.trim()
-      );
-    }
-
-    if (!os) { toast.show('OS não encontrada. Verifique o código e tente novamente.'); return; }
-    if (os.status === 'COMPLETED') { toast.show(`A OS ${os.osNumber} já foi concluída.`); return; }
-
-    setQrBaixaConfirm({ os });
   };
 
   // High-fidelity browser print trigger
@@ -1544,7 +1265,13 @@ export default function CuttingProjectionPanel({
               <List size={14} /> Selecione o Mapa de Produção
             </h3>
             
-            {cuttingLots.length === 0 ? (
+            {!cuttingFlowTagId ? (
+              <div className="py-12 text-center text-slate-500 flex flex-col items-center gap-2">
+                <AlertCircle size={32} className="opacity-20 mb-2" />
+                <p className="text-[10px] font-black uppercase tracking-widest">Nenhuma Tag de Corte configurada</p>
+                <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400 mt-1">Configure em Configurações de Produção → Etapas e Processos, marcando uma etapa como "Tag de Corte"</p>
+              </div>
+            ) : cuttingLots.length === 0 ? (
               <div className="py-12 text-center text-slate-500 flex flex-col items-center gap-2">
                 <Scissors size={32} className="opacity-20 mb-2" />
                 <p className="text-[10px] font-black uppercase tracking-widest">Nenhum mapa na fila de corte</p>
@@ -1558,7 +1285,7 @@ export default function CuttingProjectionPanel({
                   const isSelected = selectedLotId === lot.id;
                   const lotOSList = serviceOrders.filter(os =>
                     (os.lotId === lot.id || (os.lotIds && os.lotIds.includes(lot.id))) &&
-                    os.sectorId === selectedSectorId &&
+                    os.sectorId === corteSectorId &&
                     os.status === 'PENDING'
                   );
 
@@ -1938,7 +1665,7 @@ export default function CuttingProjectionPanel({
                               {prodRef ? `${prodRef} ${prodName}` : prodName}
                             </p>
                             <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                              {colorName && <span className="text-[8px] font-bold text-slate-400 uppercase">{colorName}</span>}
+                              {colorName && <span className="text-[8px] font-black px-2 py-0.5 rounded-full uppercase bg-orange-500 text-white tracking-widest shadow-sm shadow-orange-500/30">{colorName}</span>}
                               <span className="text-[7px] text-slate-400 uppercase">Ped. {order?.saleOrderNumber || '—'}</span>
                               {hasOS && <span className="text-[7px] font-black text-emerald-600 dark:text-emerald-400 uppercase">{orderOS!.osNumber}</span>}
                             </div>
@@ -2145,26 +1872,10 @@ export default function CuttingProjectionPanel({
                                 )}
                               </div>
 
-                              {/* 2x2 action grid */}
+                              {/* Action grid */}
                               <div className={`grid grid-cols-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                                {/* QR Baixa */}
-                                <button
-                                  type="button"
-                                  title="Baixa via QR Code"
-                                  onClick={async () => {
-                                    if (!isWebPlatform) { try { await scannerService.scan(); } catch (_) { /* ignore */ } }
-                                    setQrBaixaOpen(true);
-                                    setQrBaixaManualCode('');
-                                    setQrBaixaConfirm({ os });
-                                  }}
-                                  className={`flex items-center justify-center gap-2 py-2.5 border-r transition-all active:scale-95 ${isDarkMode ? 'border-slate-800 text-violet-400 hover:bg-violet-900/20' : 'border-slate-100 text-violet-600 hover:bg-violet-50'}`}
-                                >
-                                  <QrCode size={14} />
-                                  <span className="text-[9px] font-black uppercase tracking-wide">QR Baixa</span>
-                                </button>
-
                                 {/* Compartilhar */}
-                                <div className="relative">
+                                <div className={`relative border-r ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
                                   <button
                                     type="button"
                                     title="Compartilhar"
@@ -2208,83 +1919,30 @@ export default function CuttingProjectionPanel({
                                   type="button"
                                   title="Editar OS"
                                   onClick={() => handleEditOS(os)}
-                                  className={`flex items-center justify-center gap-2 py-2.5 border-t border-r transition-all active:scale-95 ${isDarkMode ? 'border-slate-800 text-slate-400 hover:text-blue-400 hover:bg-blue-900/20' : 'border-slate-100 text-slate-500 hover:text-blue-600 hover:bg-blue-50'}`}
+                                  className={`flex items-center justify-center gap-2 py-2.5 transition-all active:scale-95 ${isDarkMode ? 'text-slate-400 hover:text-blue-400 hover:bg-blue-900/20' : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50'}`}
                                 >
                                   <Edit2 size={14} />
                                   <span className="text-[9px] font-black uppercase tracking-wide">Editar</span>
                                 </button>
-
-                                {/* Excluir */}
-                                <button
-                                  type="button"
-                                  title="Excluir OS"
-                                  onClick={() => handleDeleteOS(os)}
-                                  className={`flex items-center justify-center gap-2 py-2.5 border-t transition-all active:scale-95 ${isDarkMode ? 'border-slate-800 text-slate-600 hover:text-rose-400 hover:bg-rose-900/20' : 'border-slate-100 text-slate-400 hover:text-rose-500 hover:bg-rose-50'}`}
-                                >
-                                  <Trash2 size={14} />
-                                  <span className="text-[9px] font-black uppercase tracking-wide">Excluir</span>
-                                </button>
                               </div>
 
-                              {/* Concluir e Avançar — full-width line */}
+                              {/* Cancelar Despacho — full-width line */}
                               <button
                                 type="button"
-                                title="Concluir esta OS e avançar o mapa de produção"
-                                onClick={() => openConfirm({
-                                  title: 'Concluir OS',
-                                  message: `Concluir ${os.osNumber} e avançar o mapa de produção para o próximo setor? O destino é calculado conforme o roteiro de produção cadastrado — se houver modelos com roteiros diferentes neste mapa, o sistema vai pedir para direcioná-los individualmente.`,
-                                  confirmLabel: 'Confirmar',
-                                  isDanger: false,
-                                  onConfirm: () => handleCompleteOSCutting(os),
-                                })}
+                                title="Cancelar este despacho (exclui a OS pendente)"
+                                onClick={() => handleCancelDespacho(os)}
                                 className={`w-full flex items-center justify-center gap-2 py-3 border-t text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] ${
                                   isDarkMode
-                                    ? 'border-slate-800 bg-emerald-950/30 text-emerald-400 hover:bg-emerald-900/40'
-                                    : 'border-slate-100 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                    ? 'border-slate-800 bg-rose-950/30 text-rose-400 hover:bg-rose-900/40'
+                                    : 'border-slate-100 bg-rose-50 text-rose-600 hover:bg-rose-100'
                                 }`}
                               >
-                                <CheckCircle2 size={14} />
-                                Concluir e Avançar Setor
+                                <Trash2 size={14} />
+                                Cancelar Despacho
                               </button>
                             </div>
                             );
                           })}
-
-                          {/* OS concluídas — com opção de Desfazer */}
-                          {lotCompletedOSList.length > 0 && (
-                            <div className="flex flex-col gap-2 mt-1">
-                              <p className={`text-[8px] font-black uppercase tracking-widest px-1 ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
-                                Concluídas neste setor
-                              </p>
-                              {lotCompletedOSList.map(os => (
-                                <div key={os.id} className={`rounded-2xl border overflow-hidden opacity-60 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-                                  <div className="flex items-center gap-2 px-3 py-2">
-                                    <CheckCircle2 size={12} className="text-emerald-500 shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                      <span className={`text-[10px] font-black uppercase line-through ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{os.osNumber}</span>
-                                      {os.providerName && (
-                                        <p className="text-[9px] text-slate-400 truncate">{os.providerName}</p>
-                                      )}
-                                    </div>
-                                    <button
-                                      type="button"
-                                      title="Reverter esta OS para pendente"
-                                      onClick={() => openConfirm({
-                                        title: `Reverter ${os.osNumber}`,
-                                        message: `Reabrir a OS e reverter o lote para o setor de corte, se ele já tiver avançado?`,
-                                        confirmLabel: 'Reverter',
-                                        isDanger: true,
-                                        onConfirm: () => handleUndoOS(os),
-                                      })}
-                                      className={`shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all active:scale-95 ${isDarkMode ? 'text-amber-400 hover:bg-amber-900/30' : 'text-amber-600 hover:bg-amber-50'}`}
-                                    >
-                                      <ArrowLeft size={11} /> Desfazer
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
 
                           {/* Nova OS — bloqueada quando todos os pedidos já têm OS */}
                           {!allSourceOrdersCovered && (
@@ -2604,9 +2262,10 @@ export default function CuttingProjectionPanel({
                             <div className="flex items-center gap-2">
                               <button
                                 onClick={() => handleLayerChange(piece.id, -1)}
+                                disabled={!!activeOSForSelectedLot}
                                 aria-label="Diminuir camadas"
                                 title="Diminuir camadas"
-                                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors border ${
+                                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors border disabled:opacity-40 disabled:cursor-not-allowed ${
                                   isDarkMode
                                     ? 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
                                     : 'bg-white border-slate-200 text-slate-500 hover:text-slate-950 hover:bg-slate-50 shadow-sm'
@@ -2615,17 +2274,18 @@ export default function CuttingProjectionPanel({
                                 <Minus size={16} />
                               </button>
                               <div className={`flex-1 text-center py-2 border rounded-xl ${
-                                isDarkMode 
-                                  ? 'bg-slate-950/60 border-slate-850' 
+                                isDarkMode
+                                  ? 'bg-slate-950/60 border-slate-850'
                                   : 'bg-white border-slate-200 shadow-sm'
                               }`}>
                                 <span className="text-sm font-black text-indigo-600 dark:text-indigo-550">{layers} Camadas</span>
                               </div>
                               <button
                                 onClick={() => handleLayerChange(piece.id, 1)}
+                                disabled={!!activeOSForSelectedLot}
                                 aria-label="Aumentar camadas"
                                 title="Aumentar camadas"
-                                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors border ${
+                                className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors border disabled:opacity-40 disabled:cursor-not-allowed ${
                                   isDarkMode
                                     ? 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
                                     : 'bg-white border-slate-200 text-slate-500 hover:text-slate-950 hover:bg-slate-50 shadow-sm'
@@ -2643,8 +2303,9 @@ export default function CuttingProjectionPanel({
                                   <button
                                     key={preset}
                                     onClick={() => handlePresetLayer(piece.id, preset)}
+                                    disabled={!!activeOSForSelectedLot}
                                     title={presetName}
-                                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black transition-all flex items-center gap-1 ${
+                                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black transition-all flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed ${
                                       layers === preset
                                         ? 'bg-sky-600 text-white shadow-sm'
                                         : isDarkMode
@@ -3699,18 +3360,6 @@ export default function CuttingProjectionPanel({
                 </div>
               </label>
 
-              {/* Direct complete toggle */}
-              <label className="flex items-center gap-4 cursor-pointer select-none px-1">
-                <div className={`relative w-11 h-6 rounded-full transition-all duration-200 shrink-0 ${osDirectComplete ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'}`}>
-                  <input type="checkbox" checked={osDirectComplete} onChange={(e) => setOsDirectComplete(e.target.checked)} className="sr-only" />
-                  <div className={`absolute top-0.5 left-0.5 bg-white w-5 h-5 rounded-full shadow-md transition-transform duration-200 ${osDirectComplete ? 'translate-x-5' : 'translate-x-0'}`} />
-                </div>
-                <div>
-                  <span className="text-[10px] font-black uppercase tracking-widest block text-slate-700 dark:text-slate-200">Baixa Direta / Concluir</span>
-                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Já avançar lote e finalizar OS no ato!</span>
-                </div>
-              </label>
-
               {/* Cost summary + actions */}
               <div className={`flex items-center justify-between gap-4 p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
                 <div>
@@ -3736,11 +3385,11 @@ export default function CuttingProjectionPanel({
                   </button>
                   <button
                     type="button"
-                    onClick={handleCreateOS}
+                    onClick={handleDespachar}
                     disabled={isSavingOS}
                     className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-black uppercase tracking-widest flex items-center gap-1 shadow-lg shadow-indigo-600/20 transition-all active:scale-95 disabled:opacity-50"
                   >
-                    {isSavingOS ? 'Salvando...' : 'Confirmar'}
+                    {isSavingOS ? 'Despachando...' : 'Despachar'}
                   </button>
                 </div>
               </div>
@@ -3751,191 +3400,6 @@ export default function CuttingProjectionPanel({
         document.body
       )}
 
-      {/* ── QR Baixa Modal — Setor de Corte ──────────────────────────── */}
-      {qrBaixaOpen && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-md">
-          <div className={`w-full max-w-sm rounded-[2rem] border shadow-2xl flex flex-col overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-
-            {/* Header */}
-            <div className={`flex items-center justify-between px-6 pt-6 pb-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-violet-500/10 flex items-center justify-center">
-                  <QrCode size={20} className="text-violet-500" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-900 dark:text-white">Baixa por QR Code</h3>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Setor de Corte</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                aria-label="Fechar"
-                title="Fechar"
-                onClick={() => { setQrBaixaOpen(false); setQrBaixaConfirm(null); setQrBaixaManualCode(''); setQrBaixaShowWebCamera(false); }}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="flex flex-col gap-5 p-6">
-
-              {/* Active OS info pill */}
-              {activeOSForSelectedLot && !qrBaixaConfirm && (
-                <div className={`p-4 rounded-2xl border flex flex-col gap-1 ${isDarkMode ? 'bg-emerald-950/20 border-emerald-800/40' : 'bg-emerald-50 border-emerald-100'}`}>
-                  <span className="text-[9px] font-black uppercase tracking-widest text-emerald-500">OS Ativa no Mapa Selecionado</span>
-                  <span className="text-sm font-black text-slate-900 dark:text-white">{activeOSForSelectedLot.osNumber}</span>
-                  <span className="text-[10px] font-bold text-slate-400">{activeOSForSelectedLot.providerName} • R$ {activeOSForSelectedLot.totalValue.toFixed(2)}</span>
-                </div>
-              )}
-
-              {/* Confirmation panel */}
-              {qrBaixaConfirm ? (
-                <div className="flex flex-col gap-4">
-                  <div className={`p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                    <div className="flex items-center gap-2 mb-3">
-                      <CheckSquare size={16} className="text-emerald-500" />
-                      <span className="text-xs font-black uppercase tracking-widest text-slate-900 dark:text-white">Confirmar Baixa</span>
-                    </div>
-                    <div className="flex flex-col gap-1.5 text-[11px]">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400 font-bold uppercase tracking-wider">OS</span>
-                        <span className="font-black text-indigo-600 dark:text-indigo-400">{qrBaixaConfirm.os.osNumber}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400 font-bold uppercase tracking-wider">Cortador</span>
-                        <span className="font-black text-slate-800 dark:text-slate-200">{qrBaixaConfirm.os.providerName}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400 font-bold uppercase tracking-wider">Valor</span>
-                        <span className="font-black text-rose-500">R$ {qrBaixaConfirm.os.totalValue.toFixed(2)}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setQrBaixaConfirm(null)}
-                      className={`flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-                    >
-                      Voltar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const os = qrBaixaConfirm.os;
-                        setQrBaixaOpen(false);
-                        setQrBaixaConfirm(null);
-                        setQrBaixaManualCode('');
-                        setQrBaixaShowWebCamera(false);
-                        await handleCompleteOSCutting(os);
-                      }}
-                      className="flex-1 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 active:scale-95 transition-all flex items-center justify-center gap-2"
-                    >
-                      <CheckSquare size={14} /> Confirmar Baixa
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {/* Camera scan area */}
-                  {isWebPlatform && qrBaixaShowWebCamera ? (
-                    <WebCameraScanner
-                      onScan={(raw) => {
-                        setQrBaixaShowWebCamera(false);
-                        handleQrBaixaResolve(raw);
-                      }}
-                      onClose={() => setQrBaixaShowWebCamera(false)}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      disabled={qrBaixaScanning}
-                      onClick={async () => {
-                        if (!isWebPlatform) {
-                          // Native Android: câmera SEMPRE abre primeiro
-                          setQrBaixaScanning(true);
-                          try {
-                            const raw = await scannerService.scan();
-                            if (raw) {
-                              handleQrBaixaResolve(raw);
-                            } else if (activeOSForSelectedLot) {
-                              // Usuário cancelou scan — confirmar a OS ativa diretamente
-                              handleQrBaixaResolve(`OS|${activeOSForSelectedLot.id}`);
-                            }
-                          } finally {
-                            setQrBaixaScanning(false);
-                          }
-                        } else if (activeOSForSelectedLot) {
-                          // Web + OS conhecida: confirmar direto
-                          handleQrBaixaResolve(`OS|${activeOSForSelectedLot.id}`);
-                        } else {
-                          // Web + sem OS: abre câmera web
-                          setQrBaixaShowWebCamera(true);
-                        }
-                      }}
-                      className={`w-full flex flex-col items-center justify-center gap-3 py-8 rounded-2xl border-2 border-dashed transition-all ${
-                        qrBaixaScanning
-                          ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20 animate-pulse'
-                          : isDarkMode
-                            ? 'border-violet-700/50 bg-violet-950/10 hover:bg-violet-950/25 text-violet-400'
-                            : 'border-violet-200 bg-violet-50/50 hover:bg-violet-50 text-violet-600'
-                      }`}
-                    >
-                      <ScanLine size={40} className={qrBaixaScanning ? 'animate-bounce' : ''} />
-                      <div className="text-center">
-                        <p className="text-sm font-black uppercase tracking-widest">
-                          {qrBaixaScanning ? 'Abrindo câmera...' : 'Escanear QR Code da OS'}
-                        </p>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mt-1">
-                          {activeOSForSelectedLot && !isWebPlatform
-                            ? `Escaneie para confirmar ${activeOSForSelectedLot.osNumber}`
-                            : 'Toque para abrir a câmera'}
-                        </p>
-                      </div>
-                    </button>
-                  )}
-
-                  {/* Divider */}
-                  <div className="flex items-center gap-3">
-                    <div className={`flex-1 h-px ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
-                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">ou digitar manualmente</span>
-                    <div className={`flex-1 h-px ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
-                  </div>
-
-                  {/* Manual input */}
-                  <div className="flex gap-2">
-                    <div className="relative flex-1">
-                      <Hash size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                      <input
-                        type="text"
-                        value={qrBaixaManualCode}
-                        onChange={e => setQrBaixaManualCode(e.target.value.toUpperCase())}
-                        onKeyDown={e => { if (e.key === 'Enter' && qrBaixaManualCode.trim()) handleQrBaixaResolve(qrBaixaManualCode); }}
-                        placeholder="Ex: OS-C-1895"
-                        className={`w-full pl-8 pr-3 py-3 rounded-2xl text-xs font-black uppercase tracking-widest outline-none border-2 transition-colors ${
-                          isDarkMode
-                            ? 'bg-slate-950 border-slate-800 text-white focus:border-violet-500 placeholder:text-slate-700'
-                            : 'bg-white border-slate-200 text-slate-900 focus:border-violet-500 placeholder:text-slate-300'
-                        }`}
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      disabled={!qrBaixaManualCode.trim()}
-                      onClick={() => handleQrBaixaResolve(qrBaixaManualCode)}
-                      className="px-4 py-3 rounded-2xl bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all disabled:opacity-40 shrink-0"
-                    >
-                      Buscar
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
       {/* Custom confirm dialog — rendered via portal to bypass motion.div CSS transform context */}
       {createPortal(
         <ConfirmDialog

@@ -158,6 +158,7 @@ export default function PurchaseFormView({
   );
   const [supplierId, setSupplierId] = useState(() => {
     if (existing?.supplierId) return existing.supplierId;
+    if (initialParams?.supplierId) return initialParams.supplierId;
     if (initialParams?.items?.length) {
       const moldsList = productionConfigs.filter(c => c.type === 'MOLD');
       for (const p of initialParams.items) {

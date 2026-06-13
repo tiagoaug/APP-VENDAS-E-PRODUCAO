@@ -1,15 +1,27 @@
 ﻿import { useState, useMemo, ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Sale, Purchase, Product, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig } from "../types";
-import { Share2, TrendingUp, TrendingDown, Package, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings, Sparkles } from "lucide-react";
+import { Share2, TrendingUp, TrendingDown, Package, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings, Sparkles, ScanLine, QrCode, Trash2 } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import ConfigMenuItem from '../components/ConfigMenuItem';
+import ScannerModal from '../components/ScannerModal';
 import { ProductionScreenType } from "../types";
 import { sharePDF } from "../utils/pdfExport";
 import { toast } from '../utils/toast';
+
+const SCAN_HISTORY_KEY = 'dashboard_scan_history';
+
+type DashboardScanItem = {
+  id: string;
+  kind: 'PRODUCT' | 'LOT' | 'SOLE' | 'OS';
+  label: string;
+  sublabel?: string;
+  sectorId?: string;
+  timestamp: number;
+};
 
 interface DashboardViewProps {
   sales: Sale[];
@@ -69,7 +81,69 @@ export default function DashboardView({
   const [checksStatusFilter, setChecksStatusFilter] = useState<'ALL' | 'PENDING' | 'CLEARED' | 'OVERDUE'>('PENDING');
   const [expandedCheckId, setExpandedCheckId] = useState<string | null>(null);
   const [isRecentActivityExpanded, setIsRecentActivityExpanded] = useState(false);
-  
+
+  // Scanner Rápido (Dashboard)
+  const [isQuickScannerOpen, setIsQuickScannerOpen] = useState(false);
+  const [scanHistory, setScanHistory] = useState<DashboardScanItem[]>(() => {
+    try { return JSON.parse(localStorage.getItem(SCAN_HISTORY_KEY) || '[]'); } catch { return []; }
+  });
+
+  const persistScanHistory = (items: DashboardScanItem[]) => {
+    setScanHistory(items);
+    try { localStorage.setItem(SCAN_HISTORY_KEY, JSON.stringify(items)); } catch { /* ignore */ }
+  };
+
+  const handleClearScanHistory = () => persistScanHistory([]);
+
+  const handleQuickScanResult = (parsed: any) => {
+    let entry: DashboardScanItem | null = null;
+
+    if (parsed?.type === 'PRODUCT') {
+      const product = products.find(p => p.id === parsed.productId);
+      const variation = product?.variations?.find((v: any) => v.id === parsed.variationId);
+      const lot = parsed.lotId ? productionLots.find((l: any) => l.id === parsed.lotId) : undefined;
+      const sectorId = lot?.route?.[lot.currentSectorIndex];
+      const subParts = [variation?.colorName, `Tam ${parsed.size}`, lot ? `Mapa #${lot.orderNumber}` : null].filter(Boolean);
+      entry = {
+        id: `${Date.now()}`, kind: 'PRODUCT',
+        label: product?.name || 'Produto',
+        sublabel: subParts.join(' • '),
+        sectorId, timestamp: Date.now(),
+      };
+    } else if (parsed?.type === 'LOT') {
+      const lot = productionLots.find((l: any) => l.id === parsed.lotId);
+      const product = lot ? products.find(p => p.id === lot.productId) : undefined;
+      const sectorId = lot?.route?.[lot.currentSectorIndex];
+      entry = {
+        id: `${Date.now()}`, kind: 'LOT',
+        label: lot ? `Mapa #${lot.orderNumber}` : 'Mapa não encontrado',
+        sublabel: product?.name,
+        sectorId, timestamp: Date.now(),
+      };
+    } else if (parsed?.type === 'SOLE') {
+      entry = {
+        id: `${Date.now()}`, kind: 'SOLE',
+        label: 'Molde de Solado',
+        sublabel: `Cor ${parsed.colorId} • Tam ${parsed.size}`,
+        timestamp: Date.now(),
+      };
+    } else if (parsed?.type === 'OS') {
+      entry = {
+        id: `${Date.now()}`, kind: 'OS',
+        label: 'Ordem de Serviço',
+        sublabel: `#${parsed.osId}`,
+        timestamp: Date.now(),
+      };
+    }
+
+    if (entry) {
+      persistScanHistory([entry, ...scanHistory].slice(0, 10));
+      onNavigateProduction('PCP', entry.sectorId);
+    } else {
+      toast.show('Código não reconhecido.');
+    }
+  };
+
   const [customerDashboardTab, setCustomerDashboardTab] = useState<'DEBITS' | 'CREDITS'>('DEBITS');
   const [supplierDashboardTab, setSupplierDashboardTab] = useState<'DEBITS' | 'CREDITS'>('DEBITS');
 
@@ -1822,10 +1896,90 @@ export default function DashboardView({
             );
           }
 
+          case "qr_scanner": {
+            const kindStyles: Record<DashboardScanItem['kind'], { icon: ReactNode; color: string; bg: string }> = {
+              PRODUCT: { icon: <Package size={16} strokeWidth={2.5} />, color: 'text-indigo-600 dark:text-indigo-400', bg: isDarkMode ? 'bg-indigo-900/30' : 'bg-indigo-50' },
+              LOT: { icon: <Factory size={16} strokeWidth={2.5} />, color: 'text-violet-600 dark:text-violet-400', bg: isDarkMode ? 'bg-violet-900/30' : 'bg-violet-50' },
+              SOLE: { icon: <Footprints size={16} strokeWidth={2.5} />, color: 'text-orange-600 dark:text-orange-400', bg: isDarkMode ? 'bg-orange-900/30' : 'bg-orange-50' },
+              OS: { icon: <ClipboardList size={16} strokeWidth={2.5} />, color: 'text-rose-600 dark:text-rose-400', bg: isDarkMode ? 'bg-rose-900/30' : 'bg-rose-50' },
+            };
+
+            return (
+              <div key="qr_scanner" className={`p-5 rounded-[1.5rem] border flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+                <div className={`flex items-center justify-between pb-3 border-b ${isDarkMode ? "border-slate-800" : "border-slate-100"}`}>
+                  <div>
+                    <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-sm font-black uppercase tracking-tight text-indigo-600 dark:text-indigo-400">Scanner Rápido</span>
+                    <p className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-widest mt-1.5">Etiquetas, Mapas e OS</p>
+                  </div>
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-indigo-900/30 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+                    <ScanLine size={18} />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsQuickScannerOpen(true)}
+                  className="w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 bg-indigo-600 text-white hover:bg-indigo-500"
+                >
+                  <QrCode size={13} /> Escanear Código
+                </button>
+
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between px-1">
+                    <p className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Últimos Escaneados</p>
+                    {scanHistory.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleClearScanHistory}
+                        className={`flex items-center gap-1 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full transition-all active:scale-95 ${isDarkMode ? 'text-slate-500 hover:text-rose-400 hover:bg-rose-900/20' : 'text-slate-400 hover:text-rose-500 hover:bg-rose-50'}`}
+                      >
+                        <Trash2 size={11} /> Limpar Histórico
+                      </button>
+                    )}
+                  </div>
+
+                  {scanHistory.length === 0 ? (
+                    <div className="text-center py-8 bg-slate-50/50 dark:bg-slate-900/50 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[1.5rem] flex flex-col items-center">
+                      <ScanLine size={32} className="text-slate-200 dark:text-slate-800 mb-2" strokeWidth={1} />
+                      <p className="text-[10px] font-black text-slate-300 dark:text-slate-700 tracking-[0.2em] italic">Nenhum escaneamento</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      {scanHistory.map((item) => (
+                        <button
+                          type="button"
+                          key={item.id}
+                          onClick={() => onNavigateProduction('PCP', item.sectorId)}
+                          className={`flex items-center gap-3 p-2.5 rounded-2xl border text-left transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800/60 border-slate-800 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-indigo-50/50'}`}
+                        >
+                          <div className={`flex items-center justify-center w-8 h-8 rounded-xl shrink-0 ${kindStyles[item.kind].bg} ${kindStyles[item.kind].color}`}>
+                            {kindStyles[item.kind].icon}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-[11px] font-black truncate tracking-tight leading-none ${isDarkMode ? "text-white" : "text-slate-800"}`}>{item.label}</p>
+                            {item.sublabel && <p className="text-[9px] text-slate-500 dark:text-slate-400 font-bold truncate mt-1">{item.sublabel}</p>}
+                          </div>
+                          <p className="text-[9px] text-slate-400 dark:text-slate-500 font-bold shrink-0">{format(item.timestamp, "dd MMM, HH:mm", { locale: ptBR })}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
           default:
             return null;
         }
       })}
+
+      <ScannerModal
+        isOpen={isQuickScannerOpen}
+        onClose={() => setIsQuickScannerOpen(false)}
+        onScan={(parsed) => { setIsQuickScannerOpen(false); handleQuickScanResult(parsed); }}
+        title="Scanner Rápido"
+      />
     </div>
   );
 }

@@ -13,6 +13,8 @@ export interface StockShareItem {
 interface ExportData {
   items: StockShareItem[];
   observations?: string;
+  title?: string;
+  subtitle?: string;
 }
 
 export const exportSoleStockReport = async (data: ExportData, formatType: 'pdf' | 'jpg', filename: string) => {
@@ -35,7 +37,7 @@ const QTY_COLOR: [number, number, number] = [15, 23, 42]; // slate-900 (preto)
 const ZERO_COLOR: [number, number, number] = [203, 213, 225]; // slate-300
 
 async function generatePDF(data: ExportData, filename: string) {
-  const { items, observations } = data;
+  const { items, observations, title = 'Relatório de Estoque de Solados', subtitle = 'Central de Compartilhamento' } = data;
   const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
 
   // Header Banner
@@ -45,11 +47,11 @@ async function generatePDF(data: ExportData, filename: string) {
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(22);
-  doc.text('Relatório de Estoque de Solados', 105, 18, { align: 'center' });
+  doc.text(title, 105, 18, { align: 'center' });
 
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
-  doc.text('Central de Compartilhamento', 105, 26, { align: 'center' });
+  doc.text(subtitle, 105, 26, { align: 'center' });
 
   doc.setFontSize(8);
   doc.setTextColor(200, 200, 200);
@@ -159,7 +161,7 @@ async function generatePDF(data: ExportData, filename: string) {
 }
 
 async function generateJPG(data: ExportData, filename: string) {
-  const { items, observations } = data;
+  const { items, observations, title = 'Estoque de Solados', subtitle = 'Central de Compartilhamento' } = data;
 
   const W = 600;
   const S = 2;
@@ -242,10 +244,10 @@ async function generateJPG(data: ExportData, filename: string) {
   ctx.textAlign = 'center';
   ctx.font = 'bold 24px Arial';
   ctx.fillStyle = '#ffffff';
-  ctx.fillText('Estoque de Solados', W / 2, y + 36);
+  ctx.fillText(title, W / 2, y + 36);
   ctx.font = '600 13px Arial';
   ctx.fillStyle = '#94a3b8';
-  ctx.fillText('Central de Compartilhamento', W / 2, y + 58);
+  ctx.fillText(subtitle, W / 2, y + 58);
   ctx.font = '500 10px Arial';
   ctx.fillStyle = '#475569';
   ctx.fillText(`Gerado em ${format(new Date(), 'dd/MM/yyyy HH:mm')}`, W / 2, y + 75);

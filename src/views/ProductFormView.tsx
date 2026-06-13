@@ -254,7 +254,6 @@ export default function ProductFormView({ productId, products, grids, suppliers,
         setSectorPrices(p => { const n = { ...p }; delete n[sectorId]; return n; });
         return prev.filter(id => id !== sectorId);
       }
-      if (prev.length >= 9) return prev;
       return [...prev, sectorId];
     });
   };

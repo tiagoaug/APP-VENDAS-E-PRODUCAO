@@ -537,6 +537,12 @@ export default function ProductionConfigView({
   const handleSaveTag = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTag) return;
+    if (editingTag.isCuttingFlowTag) {
+      const previousCuttingTag = flowTags.find(t => t.id !== editingTag.id && t.isCuttingFlowTag);
+      if (previousCuttingTag) {
+        await onSaveFlowTag({ ...previousCuttingTag, isCuttingFlowTag: false });
+      }
+    }
     await onSaveFlowTag(editingTag);
     setEditingTag(null);
     setIsAddingTag(false);
@@ -821,7 +827,7 @@ export default function ProductionConfigView({
             </div>
             <button
               onClick={() => {
-                setEditingTag({ id: '', name: '', subcategories: [] });
+                setEditingTag({ id: '', name: '', subcategories: [], isCuttingFlowTag: false });
                 setIsAddingTag(true);
               }}
               title="Adicionar Flow Tag"
@@ -843,7 +849,12 @@ export default function ProductionConfigView({
                     <Tags size={24} />
                   </div>
                   <div>
-                    <p className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{tag.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{tag.name}</p>
+                      {tag.isCuttingFlowTag && (
+                        <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase bg-indigo-600 text-white tracking-widest">Corte</span>
+                      )}
+                    </div>
                     <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
                       {tag.subcategories.length} {tag.subcategories.length === 1 ? 'Subcategoria' : 'Subcategorias'}
                     </p>
@@ -1099,6 +1110,24 @@ export default function ProductionConfigView({
               required
             />
           </div>
+
+          <label className="flex items-center gap-4 cursor-pointer select-none px-1">
+            <div className={`relative w-11 h-6 rounded-full transition-all duration-200 shrink-0 ${editingTag?.isCuttingFlowTag ? 'bg-indigo-600' : 'bg-slate-300 dark:bg-slate-700'}`}>
+              <input
+                type="checkbox"
+                checked={!!editingTag?.isCuttingFlowTag}
+                onChange={(e) => setEditingTag(prev => prev ? { ...prev, isCuttingFlowTag: e.target.checked } : null)}
+                className="sr-only"
+              />
+              <div className={`absolute top-0.5 left-0.5 bg-white w-5 h-5 rounded-full shadow-md transition-transform duration-200 ${editingTag?.isCuttingFlowTag ? 'translate-x-5' : 'translate-x-0'}`} />
+            </div>
+            <div>
+              <span className="text-[10px] font-black uppercase tracking-widest block text-slate-700 dark:text-slate-200">Tag de Corte</span>
+              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
+                Define esta etapa como o gatilho da Área de Corte (somente uma tag pode ser marcada)
+              </span>
+            </div>
+          </label>
 
           <div className="flex flex-col gap-4">
             <div className="flex items-center justify-between px-2">

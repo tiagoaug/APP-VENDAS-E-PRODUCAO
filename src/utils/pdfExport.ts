@@ -170,6 +170,121 @@ export const printLotSheet = ({ lot, product, variationName, sectorName, os, pro
   wrap.remove();
 };
 
+// ─── Shared A4 Pedido (Order Item) Sheet Printer ─────────────────────────────
+
+export interface PrintOrderItemSheetOptions {
+  lot: ProductionLot;
+  product?: Product;
+  variationName?: string;
+  orderNumber?: string;
+  customerName?: string;
+  deliveryDate?: number;
+  totalQty: number;
+  sizeEntries: [string, number][];
+  orderNotes?: string;
+  sectorNotes?: { sectorName: string; sectorColor?: string; notes: { name?: string; text: string }[] }[];
+}
+
+export const printOrderItemSheet = ({
+  lot, product, variationName, orderNumber, customerName, deliveryDate, totalQty, sizeEntries, orderNotes, sectorNotes = [],
+}: PrintOrderItemSheetOptions) => {
+  const container = document.getElementById('_lot_print_container');
+  if (container) container.remove();
+
+  const wrap = document.createElement('div');
+  wrap.id = '_lot_print_container';
+
+  const style = document.createElement('style');
+  style.innerHTML = PRINT_STYLES;
+  wrap.appendChild(style);
+
+  const date = new Date().toLocaleDateString('pt-BR');
+
+  const notesBlock = orderNotes
+    ? `<div style="margin-bottom:18px;padding:10px 14px;border:1.5px solid #f59e0b;border-radius:6px;background:#fffbeb;">
+        <div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#b45309;margin-bottom:4px;">Observação do Pedido</div>
+        <div style="font-size:12px;font-weight:700;color:#78350f;">${orderNotes}</div>
+      </div>`
+    : '';
+
+  const sectorNotesBlock = sectorNotes.length > 0
+    ? `<div style="margin-bottom:18px;padding:10px 14px;border:1.5px solid #4f46e5;border-radius:6px;background:#eef2ff;">
+        <div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#4f46e5;margin-bottom:8px;">Instruções por Setor</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${sectorNotes.map(sec => `
+            <div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">
+                <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${sec.sectorColor || '#6366f1'};flex-shrink:0;"></span>
+                <span style="font-size:9px;font-weight:900;text-transform:uppercase;color:${sec.sectorColor || '#6366f1'};">${sec.sectorName}</span>
+              </div>
+              <div style="margin-left:16px;border-left:2px solid ${sec.sectorColor || '#6366f1'};padding-left:8px;display:flex;flex-direction:column;gap:3px;">
+                ${sec.notes.map(n => `<div>${n.name ? `<div style="font-size:8px;font-weight:900;color:#4f46e5;text-transform:uppercase;">${n.name}</div>` : ''}<div style="font-size:11px;font-weight:700;color:#1e1b4b;">${n.text}</div></div>`).join('')}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>`
+    : '';
+
+  wrap.innerHTML += `
+    <div class="pp">
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000;padding-bottom:12px;margin-bottom:22px;">
+        <div>
+          <h1 style="margin:0;font-size:26px;font-weight:900;letter-spacing:-1px;text-transform:uppercase;">GESTÃO PRO</h1>
+          <p style="margin:3px 0 0 0;font-size:10px;font-weight:800;color:#4b5563;text-transform:uppercase;letter-spacing:2px;">Sistema de Produção &amp; PCP</p>
+        </div>
+        <div style="text-align:right;">
+          <span class="badge">Ficha de Pedido</span>
+          <p style="margin:6px 0 0 0;font-size:12px;font-weight:900;text-transform:uppercase;color:#374151;">
+            Mapa: #${lot.orderNumber}${orderNumber ? ` • Pedido: ${orderNumber}` : ''} • Emissão: ${date}
+          </p>
+        </div>
+      </div>
+
+      <!-- Info row -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px;">
+        <div>
+          <span class="info-label">Referência / Modelo</span>
+          <span class="info-val">${product?.name || '—'} <span style="font-weight:normal;color:#4b5563;">(${product?.reference || 'S/Ref'})</span></span>
+        </div>
+        <div>
+          <span class="info-label">Cor / Variação</span>
+          <span class="info-val">${variationName || '—'}</span>
+        </div>
+        <div>
+          <span class="info-label">Total de Pares</span>
+          <span class="info-val">${totalQty} Pares</span>
+        </div>
+        ${customerName ? `<div><span class="info-label">Cliente</span><span class="info-val">${customerName}</span></div>` : ''}
+        ${deliveryDate ? `<div><span class="info-label">Entrega</span><span class="info-val">${new Date(deliveryDate).toLocaleDateString('pt-BR')}</span></div>` : ''}
+      </div>
+
+      ${notesBlock}
+      ${sectorNotesBlock}
+
+      <!-- Grade -->
+      <h3 style="font-size:13px;font-weight:900;text-transform:uppercase;border-bottom:2px solid #000;padding-bottom:6px;margin-top:20px;">Grade de Produção</h3>
+      <table style="margin-top:10px;">
+        <thead><tr>
+          <th style="width:120px;">Tamanho</th>
+          ${sizeEntries.map(([sz]) => `<th class="gc">${sz}</th>`).join('')}
+          <th class="gc" style="width:80px;">TOTAL</th>
+        </tr></thead>
+        <tbody><tr>
+          <td style="font-weight:bold;">Pares</td>
+          ${sizeEntries.map(([, q]) => `<td class="gv">${q}</td>`).join('')}
+          <td class="gv" style="background:#f3f4f6 !important;">${totalQty}</td>
+        </tr></tbody>
+      </table>
+    </div>
+  `;
+
+  document.body.appendChild(wrap);
+  window.print();
+  wrap.remove();
+};
+
 /**
  * Shares a jsPDF document using native share on mobile or downloads it on web.
  */

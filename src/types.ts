@@ -505,6 +505,7 @@ export type FlowTag = {
   id: string;
   name: string;
   subcategories: string[];
+  isCuttingFlowTag?: boolean;
 };
 
 export type Sector = {

@@ -79,16 +79,25 @@ export const scannerService = {
   parseScanResult(data: string) {
     const parts = data.split('|');
     if (parts[0] === 'PRD' && parts.length >= 4) {
-      return { type: 'PRODUCT', productId: parts[1], variationId: parts[2], size: parts[3] };
+      const result: { type: 'PRODUCT'; productId: string; variationId: string; size: string; lotId?: string; orderId?: string; itemIdx?: string } = {
+        type: 'PRODUCT', productId: parts[1], variationId: parts[2], size: parts[3],
+      };
+      // Etiquetas de pedido vinculado embutem o mapa/pedido de origem para roteamento.
+      if (parts.length >= 6 && parts[4] && parts[5]) {
+        result.lotId = parts[4];
+        result.orderId = parts[5];
+        if (parts[6] !== undefined && parts[6] !== '') result.itemIdx = parts[6];
+      }
+      return result;
     }
     if (parts[0] === 'LOT' && parts.length >= 2) {
-      return { type: 'LOT', lotId: parts[1] };
+      return { type: 'LOT' as const, lotId: parts[1] };
     }
     if (parts[0] === 'SOL' && parts.length >= 4) {
-      return { type: 'SOLE', moldId: parts[1], colorId: parts[2], size: parts[3] };
+      return { type: 'SOLE' as const, moldId: parts[1], colorId: parts[2], size: parts[3] };
     }
     if (parts[0] === 'OS' && parts.length >= 2) {
-      return { type: 'OS', osId: parts[1] };
+      return { type: 'OS' as const, osId: parts[1] };
     }
     return null;
   },

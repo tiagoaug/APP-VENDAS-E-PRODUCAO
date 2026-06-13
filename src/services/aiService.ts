@@ -26,14 +26,48 @@ export type AIPersonProposalData = {
   observations?: string;
 };
 
-export type AIFormProposal = {
-  type: 'person';
-  data: AIPersonProposalData;
+export type AIPurchaseItemProposalData = {
+  description: string;
+  quantity?: number;
+  unit?: string;
+  value?: number;
 };
+
+export type AIPurchaseProposalData = {
+  supplierId?: string;
+  supplierName?: string;
+  items: AIPurchaseItemProposalData[];
+  notes?: string;
+};
+
+export type AISolePurchaseItemProposalData = {
+  moldId: string;
+  moldName: string;
+  colorId?: string;
+  colorName: string;
+  supplierId?: string;
+  supplierName?: string;
+  grid: Record<string, number>;
+};
+
+export type AISolePurchaseProposalData = {
+  items: AISolePurchaseItemProposalData[];
+  notes?: string;
+};
+
+export type AIFormProposal =
+  | { type: 'person'; data: AIPersonProposalData }
+  | { type: 'purchase'; data: AIPurchaseProposalData }
+  | { type: 'sole_purchase'; data: AISolePurchaseProposalData };
 
 export type AIChatResponse = {
   text: string;
-  usage: { input_tokens: number; output_tokens: number };
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
   formProposal?: AIFormProposal;
 };
 

@@ -2,6 +2,12 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
 import Anthropic from "@anthropic-ai/sdk";
+import type {
+  PromptCachingBetaMessageParam,
+  PromptCachingBetaTextBlockParam,
+  PromptCachingBetaImageBlockParam,
+  PromptCachingBetaToolResultBlockParam,
+} from "@anthropic-ai/sdk/resources/beta/prompt-caching/messages";
 import { TOOLS, executeTool } from "./tools";
 
 admin.initializeApp();
@@ -15,7 +21,11 @@ const MAX_TOOL_ITERATIONS = 5;
 
 // Ferramentas que não consultam o Firestore — seu "input" é a própria proposta
 // devolvida ao frontend para o usuário revisar e preencher um formulário manualmente.
-const PROPOSAL_TOOL_NAMES = new Set(["propose_person_registration"]);
+const PROPOSAL_TOOL_NAMES = new Set([
+  "propose_person_registration",
+  "propose_purchase_registration",
+  "propose_sole_purchase_registration",
+]);
 
 function buildSystemPrompt(): string {
   const today = new Date().toISOString().slice(0, 10);
@@ -31,7 +41,9 @@ Diretrizes:
 - Você ainda NÃO pode criar, editar ou excluir cadastros diretamente — apenas consultar e analisar. Se o usuário pedir uma ação de escrita que não seja cadastro de cliente/fornecedor, explique que essa função chega em uma próxima atualização e ofereça a informação/análise que puder.
 - Formate valores monetários como "R$ X.XXX,XX".
 - O usuário pode enviar fotos (ex: etiqueta de produto, ficha técnica, nota fiscal, foto de calçado ou solado). Quando receber uma imagem, extraia e organize as informações relevantes (nome/referência, cores, medidas, valores, fornecedor, quantidades etc.) e, se fizer sentido, compare com os dados já cadastrados usando as ferramentas disponíveis.
-- Se o usuário fornecer (texto ou foto) os dados de um novo cliente ou fornecedor e pedir para cadastrar, use 'list_people' para checar se já existe um cadastro parecido e, em seguida, use a ferramenta 'propose_person_registration' com os campos que conseguir extrair com confiança (sem inventar dados). Essa ferramenta NÃO salva nada — ela abre o formulário de cadastro já preenchido para o usuário revisar e salvar manualmente. Avise o usuário se encontrou um cadastro parecido.`;
+- Se o usuário fornecer (texto ou foto) os dados de um novo cliente ou fornecedor e pedir para cadastrar, use 'list_people' para checar se já existe um cadastro parecido e, em seguida, use a ferramenta 'propose_person_registration' com os campos que conseguir extrair com confiança (sem inventar dados). Essa ferramenta NÃO salva nada — ela abre o formulário de cadastro já preenchido para o usuário revisar e salvar manualmente. Avise o usuário se encontrou um cadastro parecido.
+- Se o usuário fornecer (texto ou foto de nota/ficha) os itens de uma compra (material, aviamento, embalagem etc.) e pedir para cadastrar, use 'list_people' (type='supplier') para tentar localizar o fornecedor pelo nome e, em seguida, use a ferramenta 'propose_purchase_registration' com os itens e valores que conseguir extrair com confiança (sem inventar dados). Essa ferramenta NÃO salva nada — ela abre o formulário de "Compra Geral" já preenchido para o usuário revisar e salvar manualmente.
+- Para planejamento estratégico de solados: quando o usuário informar a grade/quantidade que deseja MANTER em estoque para um molde/cor (ex.: "quero ter sempre 12 pares de cada tamanho da grade 37-44 do molde X cor Y"), use 'get_sole_stock' para obter o campo 'available' (disponível real = estoque - reservado pela produção ativa) de cada tamanho/grade do molde/cor em questão. Calcule o déficit por tamanho como max(0, quantidade desejada - available[tamanho]) e, se houver algum déficit maior que zero, use 'propose_sole_purchase_registration' incluindo no 'grid' apenas os tamanhos com déficit > 0, preenchendo moldId/colorId/supplierId a partir do resultado de 'get_sole_stock'. Não invente moldes, cores ou tamanhos que não existam no estoque. Se não houver déficit em nenhum tamanho, informe ao usuário que o estoque disponível já atende à necessidade, sem chamar 'propose_sole_purchase_registration'.`;
 }
 
 export const aiChat = onCall(
@@ -54,47 +66,65 @@ export const aiChat = onCall(
 
     const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
-    const conversation: Anthropic.MessageParam[] = incomingMessages
-      .slice(-MAX_HISTORY_MESSAGES)
-      .map((m: any) => {
-        const role: "user" | "assistant" = m.role === "assistant" ? "assistant" : "user";
-        const images = Array.isArray(m.images) ? m.images : [];
+    const slicedMessages = incomingMessages.slice(-MAX_HISTORY_MESSAGES);
+    const lastIndex = slicedMessages.length - 1;
 
-        if (images.length === 0) {
-          return { role, content: String(m.content || "") };
-        }
+    // Apenas a última mensagem pode levar imagens — evita reenviar (e re-cobrar)
+    // fotos já enviadas em mensagens anteriores da mesma conversa.
+    const conversation: PromptCachingBetaMessageParam[] = slicedMessages.map((m: any, idx: number) => {
+      const role: "user" | "assistant" = m.role === "assistant" ? "assistant" : "user";
+      const images = idx === lastIndex && Array.isArray(m.images) ? m.images : [];
+      const hadOlderImages = idx !== lastIndex && Array.isArray(m.images) && m.images.length > 0;
 
-        const blocks: Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> = [];
-        for (const img of images) {
-          if (img?.data && ALLOWED_IMAGE_TYPES.has(img.mediaType)) {
-            blocks.push({
-              type: "image",
-              source: { type: "base64", media_type: img.mediaType, data: img.data },
-            });
-          }
+      if (images.length === 0) {
+        const text = hadOlderImages
+          ? `${m.content ? String(m.content) + "\n" : ""}[Imagem enviada anteriormente nesta conversa]`
+          : String(m.content || "");
+        return { role, content: text };
+      }
+
+      const blocks: Array<PromptCachingBetaTextBlockParam | PromptCachingBetaImageBlockParam> = [];
+      for (const img of images) {
+        if (img?.data && ALLOWED_IMAGE_TYPES.has(img.mediaType)) {
+          blocks.push({
+            type: "image",
+            source: { type: "base64", media_type: img.mediaType, data: img.data },
+          });
         }
-        if (m.content) {
-          blocks.push({ type: "text", text: String(m.content) });
-        }
-        return { role, content: blocks };
-      });
+      }
+      if (m.content) {
+        blocks.push({ type: "text", text: String(m.content) });
+      }
+      return { role, content: blocks };
+    });
 
     const anthropic = new Anthropic({ apiKey: anthropicApiKey.value() });
 
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
+    let totalCacheReadTokens = 0;
+    let totalCacheCreationTokens = 0;
+
+    // System prompt + tools são marcados como cacheáveis: são idênticos em toda
+    // chamada (dentro do mesmo dia), então a Anthropic cobra ~10% por esses tokens
+    // em vez do preço cheio a partir da segunda chamada dentro da janela de cache.
+    const system: PromptCachingBetaTextBlockParam[] = [
+      { type: "text", text: buildSystemPrompt(), cache_control: { type: "ephemeral" } },
+    ];
 
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-      const response = await anthropic.messages.create({
+      const response = await anthropic.beta.promptCaching.messages.create({
         model: MODEL,
         max_tokens: 2048,
-        system: buildSystemPrompt(),
+        system,
         tools: TOOLS,
         messages: conversation,
       });
 
       totalInputTokens += response.usage.input_tokens;
       totalOutputTokens += response.usage.output_tokens;
+      totalCacheReadTokens += response.usage.cache_read_input_tokens || 0;
+      totalCacheCreationTokens += response.usage.cache_creation_input_tokens || 0;
 
       const proposalBlock = response.content.find(
         (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && PROPOSAL_TOOL_NAMES.has(b.name)
@@ -110,19 +140,33 @@ export const aiChat = onCall(
           model: MODEL,
           input_tokens: totalInputTokens,
           output_tokens: totalOutputTokens,
+          cache_read_input_tokens: totalCacheReadTokens,
+          cache_creation_input_tokens: totalCacheCreationTokens,
         });
+
+        const proposalType =
+          proposalBlock.name === "propose_purchase_registration"
+            ? "purchase"
+            : proposalBlock.name === "propose_sole_purchase_registration"
+            ? "sole_purchase"
+            : "person";
 
         return {
           text,
-          usage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens },
-          formProposal: { type: "person", data: proposalBlock.input },
+          usage: {
+            input_tokens: totalInputTokens,
+            output_tokens: totalOutputTokens,
+            cache_read_input_tokens: totalCacheReadTokens,
+            cache_creation_input_tokens: totalCacheCreationTokens,
+          },
+          formProposal: { type: proposalType, data: proposalBlock.input },
         };
       }
 
       if (response.stop_reason === "tool_use") {
         conversation.push({ role: "assistant", content: response.content });
 
-        const toolResults: Anthropic.ToolResultBlockParam[] = [];
+        const toolResults: PromptCachingBetaToolResultBlockParam[] = [];
         for (const block of response.content) {
           if (block.type === "tool_use") {
             const result = await executeTool(db, uid, block.name, block.input);
@@ -147,11 +191,18 @@ export const aiChat = onCall(
         model: MODEL,
         input_tokens: totalInputTokens,
         output_tokens: totalOutputTokens,
+        cache_read_input_tokens: totalCacheReadTokens,
+        cache_creation_input_tokens: totalCacheCreationTokens,
       });
 
       return {
         text,
-        usage: { input_tokens: totalInputTokens, output_tokens: totalOutputTokens },
+        usage: {
+          input_tokens: totalInputTokens,
+          output_tokens: totalOutputTokens,
+          cache_read_input_tokens: totalCacheReadTokens,
+          cache_creation_input_tokens: totalCacheCreationTokens,
+        },
       };
     }
 

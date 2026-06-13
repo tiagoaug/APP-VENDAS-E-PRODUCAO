@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -27,7 +27,7 @@ import PrintOSModal from '../components/PrintOSModal';
 import PrintLabelEditorModal from '../components/PrintLabelEditorModal';
 import { Camera } from 'lucide-react';
 import { labelService } from '../services/labelService';
-import { printLotSheet, shareImage, sharePDF } from '../utils/pdfExport';
+import { printLotSheet, printOrderItemSheet, shareImage, sharePDF } from '../utils/pdfExport';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { resolveCorrectSectorForProduct, computeOSAdvanceOutcome, ensureSectorInRoute } from '../utils/productionRoute';
@@ -36,7 +36,7 @@ import { financeService } from '../services/financeService';
 import WebCameraScanner from '../components/WebCameraScanner';
 import { Capacitor } from '@capacitor/core';
 import { firebaseService } from '../services/firebaseService';
-import CuttingProjectionPanel from '../components/CuttingProjectionPanel';
+import CuttingAreaPanel from '../components/CuttingProjectionPanel';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
 import { getMaterialStockForColor } from '../utils/materialStock';
@@ -129,6 +129,7 @@ export default function PCPView({
   });
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'finished' | 'urgent'>('active');
   const [isFilterPopupOpen, setIsFilterPopupOpen] = useState(false);
+  const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
@@ -171,7 +172,7 @@ export default function PCPView({
     if (next.has(id)) next.delete(id); else next.add(id);
     return next;
   });
-  const [isProjectionMode, setIsProjectionMode] = useState(true);
+  const [isCuttingAreaOpen, setIsCuttingAreaOpen] = useState(false);
 
   // ── Centro de Compartilhamento PCP ──────────────────────────────────────────
   const [isPCPShareModalOpen, setIsPCPShareModalOpen] = useState(false);
@@ -202,9 +203,10 @@ export default function PCPView({
   const [labelModalProduct, setLabelModalProduct] = useState<import('../types').Product | null>(null);
   const [labelModalLot, setLabelModalLot] = useState<import('../types').ProductionLot | null>(null);
   const [labelModalSizeGrid, setLabelModalSizeGrid] = useState<string>('');
-  const [labelModalBatchItems, setLabelModalBatchItems] = useState<{ product: import('../types').Product; variation: import('../types').Variation; sizeGrid: string }[] | undefined>(undefined);
+  const [labelModalBatchItems, setLabelModalBatchItems] = useState<{ product: import('../types').Product; variation: import('../types').Variation; sizeGrid: string; lotId?: string; orderId?: string; itemIdx?: number }[] | undefined>(undefined);
   const [selectedSourceItemKeys, setSelectedSourceItemKeys] = useState<Set<string>>(new Set());
   const [expandedSourceItems, setExpandedSourceItems] = useState<Set<string>>(new Set());
+  const [scanFocusKey, setScanFocusKey] = useState<string | null>(null);
   const [sourceFilterModel, setSourceFilterModel] = useState<string>('');
   const [sourceFilterColor, setSourceFilterColor] = useState<string>('');
   const [osFeedback, setOsFeedback] = useState<{ osNumber: string; nextSector: string; action?: string } | null>(null);
@@ -235,6 +237,8 @@ export default function PCPView({
   } | null>(null);
   const [sharePopupLotId, setSharePopupLotId] = useState<string | null>(null);
   const [isShareExporting, setIsShareExporting] = useState(false);
+  const [sharePedidoPopupKey, setSharePedidoPopupKey] = useState<string | null>(null);
+  const [isPedidoShareExporting, setIsPedidoShareExporting] = useState(false);
 
   // Filtered and organized data
   const filteredLots = useMemo(() => {
@@ -262,13 +266,13 @@ export default function PCPView({
     return filteredLots.filter(l => !l.finishedAt);
   }, [filteredLots]);
 
-  const isCuttingSector = useMemo(() => {
-    if (!selectedSectorId) return false;
-    const currentSector = sectors.find(s => s.id === selectedSectorId);
-    return currentSector?.name.toLowerCase().includes('corte') || false;
-  }, [selectedSectorId, sectors]);
-
   const knives = useMemo(() => productionConfigs.filter(c => c.type === 'TOOL'), [productionConfigs]);
+
+  const cuttingFlowTagId = useMemo(() => flowTags.find(t => t.isCuttingFlowTag)?.id, [flowTags]);
+  const cuttingAreaLotsCount = useMemo(() => {
+    if (!cuttingFlowTagId) return 0;
+    return lots.filter(l => !l.finishedAt && l.currentStatusId === cuttingFlowTagId).length;
+  }, [lots, cuttingFlowTagId]);
 
   // Sector Metrics for Dashboard
   const sectorMetrics = useMemo(() => {
@@ -989,6 +993,16 @@ export default function PCPView({
       }));
     }
   }, [isCreateModalOpen]);
+
+  // Após escanear um QR e abrir o Mapa direto em um pedido vinculado, rola até o card expandido
+  useEffect(() => {
+    if (!scanFocusKey || !isDetailModalOpen) return;
+    const timer = setTimeout(() => {
+      document.getElementById(`pedido-card-${scanFocusKey}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setScanFocusKey(null);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [scanFocusKey, isDetailModalOpen]);
 
   const deadlineConfigs = useMemo(() => {
     return (productionConfigs || []).filter(c => c.type === 'DEADLINE');
@@ -1740,6 +1754,92 @@ export default function PCPView({
     }
   };
 
+  const handleSharePedidoSheet = async (
+    lot: ProductionLot,
+    product: Product | undefined,
+    variation: Variation | undefined,
+    order: ProductionOrder | undefined,
+    sizeEntries: [string, number][],
+    totalQty: number,
+    format: 'pdf' | 'jpg'
+  ) => {
+    const colorName = variation?.colorName || '—';
+    const orderNumber = order?.saleOrderNumber || lot.saleOrderNumber;
+    const customerName = order?.customerName || lot.customerName;
+    const deliveryDate = order?.deliveryDate || lot.deliveryDate;
+    const orderNotes = order?.notes;
+
+    const sectorNotesEntries = Object.entries(variation?.sectorNotes || {})
+      .map(([sid, notes]) => ({ sid, notes: (notes as SectorNote[]).filter(n => n.text) }))
+      .filter(({ notes }) => notes.length > 0)
+      .map(({ sid, notes }) => ({ sec: sectors.find(s => s.id === sid), notes }))
+      .filter(({ sec }) => !!sec)
+      .map(({ sec, notes }) => ({ sectorName: sec!.name, sectorColor: sec!.color, notes: notes.map(n => ({ name: n.name, text: n.text })) }));
+
+    if (format === 'pdf') {
+      printOrderItemSheet({ lot, product, variationName: colorName, orderNumber, customerName, deliveryDate, totalQty, sizeEntries, orderNotes, sectorNotes: sectorNotesEntries });
+      return;
+    }
+
+    setIsPedidoShareExporting(true);
+    try {
+      const date = new Date().toLocaleDateString('pt-BR');
+
+      const notesBlock = orderNotes
+        ? `<div style="margin-bottom:18px;padding:10px 14px;border:1.5px solid #f59e0b;border-radius:6px;background:#fffbeb;"><div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#b45309;margin-bottom:4px;">Observação do Pedido</div><div style="font-size:12px;font-weight:700;color:#78350f;">${orderNotes}</div></div>`
+        : '';
+
+      const sectorNotesBlock = sectorNotesEntries.length > 0
+        ? `<div style="margin-bottom:18px;padding:10px 14px;border:1.5px solid #4f46e5;border-radius:6px;background:#eef2ff;"><div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#4f46e5;margin-bottom:8px;">Instruções por Setor</div><div style="display:flex;flex-direction:column;gap:8px;">${sectorNotesEntries.map(sec => `<div><div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${sec.sectorColor || '#6366f1'};flex-shrink:0;"></span><span style="font-size:9px;font-weight:900;text-transform:uppercase;color:${sec.sectorColor || '#6366f1'};">${sec.sectorName}</span></div><div style="margin-left:16px;border-left:2px solid ${sec.sectorColor || '#6366f1'};padding-left:8px;display:flex;flex-direction:column;gap:3px;">${sec.notes.map(n => `<div>${n.name ? `<div style="font-size:8px;font-weight:900;color:#4f46e5;text-transform:uppercase;">${n.name}</div>` : ''}<div style="font-size:11px;font-weight:700;color:#1e1b4b;">${n.text}</div></div>`).join('')}</div></div>`).join('')}</div></div>`
+        : '';
+
+      const sizeHeaders = sizeEntries.map(([sz]) => `<th style="border:1px solid #000;padding:5px 6px;background:#e5e7eb;text-align:center;font-weight:900;font-size:10px;">${sz}</th>`).join('');
+      const sizeCells = sizeEntries.map(([, q]) => `<td style="border:1px solid #000;padding:5px 6px;text-align:center;font-weight:900;font-size:13px;">${q}</td>`).join('');
+
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = 'position:fixed;left:-10000px;top:0;pointer-events:none;';
+      const el = document.createElement('div');
+      el.style.cssText = 'width:794px;padding:48px;box-sizing:border-box;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#000;font-size:12px;line-height:1.4;';
+      el.innerHTML = `
+        <div style="display:table;width:100%;border-bottom:3px solid #000;padding-bottom:12px;margin-bottom:22px;">
+          <div style="display:table-cell;vertical-align:middle;"><div style="font-size:26px;font-weight:900;letter-spacing:-1px;text-transform:uppercase;margin:0;">GESTÃO PRO</div><div style="margin-top:3px;font-size:10px;font-weight:800;color:#4b5563;text-transform:uppercase;letter-spacing:2px;">Sistema de Produção &amp; PCP</div></div>
+          <div style="display:table-cell;vertical-align:middle;text-align:right;"><span style="background:#e0f2fe;border:1.5px solid #000;color:#000;padding:4px 10px;border-radius:4px;font-weight:900;font-size:10px;display:inline-block;text-transform:uppercase;">Ficha de Pedido</span><div style="margin-top:6px;font-size:12px;font-weight:900;text-transform:uppercase;color:#374151;">Mapa: #${lot.orderNumber}${orderNumber ? ` • Pedido: ${orderNumber}` : ''} • Emissão: ${date}</div></div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;margin-bottom:22px;" cellpadding="0" cellspacing="0"><tr>
+          <td style="width:33%;padding-right:12px;vertical-align:top;"><div style="font-weight:800;text-transform:uppercase;font-size:10px;color:#374151;margin-bottom:2px;">Referência / Modelo</div><div style="font-weight:bold;font-size:13px;">${product?.name || '—'} <span style="font-weight:normal;color:#4b5563;">(${product?.reference || 'S/Ref'})</span></div></td>
+          <td style="width:33%;padding-right:12px;vertical-align:top;"><div style="font-weight:800;text-transform:uppercase;font-size:10px;color:#374151;margin-bottom:2px;">Cor / Variação</div><div style="font-weight:bold;font-size:13px;">${colorName}</div></td>
+          <td style="width:33%;vertical-align:top;"><div style="font-weight:800;text-transform:uppercase;font-size:10px;color:#374151;margin-bottom:2px;">Total de Pares</div><div style="font-weight:bold;font-size:13px;">${totalQty} Pares</div></td>
+        </tr>
+        ${(customerName || deliveryDate) ? `<tr>
+          ${customerName ? `<td style="padding-top:10px;vertical-align:top;"><div style="font-weight:800;text-transform:uppercase;font-size:10px;color:#374151;margin-bottom:2px;">Cliente</div><div style="font-weight:bold;font-size:13px;">${customerName}</div></td>` : '<td></td>'}
+          ${deliveryDate ? `<td style="padding-top:10px;vertical-align:top;"><div style="font-weight:800;text-transform:uppercase;font-size:10px;color:#374151;margin-bottom:2px;">Entrega</div><div style="font-weight:bold;font-size:13px;">${new Date(deliveryDate).toLocaleDateString('pt-BR')}</div></td>` : '<td></td>'}
+          <td></td>
+        </tr>` : ''}
+        </table>
+        ${notesBlock}
+        ${sectorNotesBlock}
+        <div style="font-size:13px;font-weight:900;text-transform:uppercase;border-bottom:2px solid #000;padding-bottom:6px;margin-top:20px;">Grade de Produção</div>
+        <table style="width:100%;border-collapse:collapse;margin-top:10px;" cellpadding="0" cellspacing="0"><thead><tr><th style="border:1px solid #000;padding:5px 6px;background:#f3f4f6;font-weight:900;text-transform:uppercase;font-size:10px;text-align:left;width:120px;">Tamanho</th>${sizeHeaders}<th style="border:1px solid #000;padding:5px 6px;background:#e5e7eb;text-align:center;font-weight:900;font-size:10px;width:80px;">TOTAL</th></tr></thead><tbody><tr><td style="border:1px solid #000;padding:5px 6px;font-weight:bold;">Pares</td>${sizeCells}<td style="border:1px solid #000;padding:5px 6px;text-align:center;font-weight:900;font-size:13px;background:#f3f4f6;">${totalQty}</td></tr></tbody></table>
+      `;
+      wrapper.appendChild(el);
+      document.body.appendChild(wrapper);
+      let dataUrl = '';
+      try {
+        void el.offsetHeight;
+        const { toJpeg } = await import('html-to-image');
+        dataUrl = await toJpeg(el, { quality: 0.93, pixelRatio: 2, backgroundColor: '#ffffff' });
+      } finally {
+        if (document.body.contains(wrapper)) document.body.removeChild(wrapper);
+      }
+      await shareImage(dataUrl, `Ficha_Pedido_${orderNumber || lot.orderNumber}.jpg`);
+    } catch (err) {
+      console.error('Erro ao gerar JPG:', err);
+      toast.show('Erro ao gerar imagem. Tente novamente.');
+    } finally {
+      setIsPedidoShareExporting(false);
+    }
+  };
+
   // Classifica os IDs de pedido em "destino cliente" vs "destino estoque"
   const classifyExpedicaoOrders = (orderIds: string[]) => {
     const customerItems: string[] = [];
@@ -2151,23 +2251,46 @@ export default function PCPView({
     if (parsed?.type === 'OS') {
       const os = serviceOrders?.find(so => so.id === parsed.osId);
       if (!os) { toast.show('Ordem de Serviço não encontrada.'); return; }
-      if (os.status === 'COMPLETED') { toast.show(`A OS ${os.osNumber} já foi concluída.`); return; }
       const lot = lots.find(l => l.id === os.lotId || (os.lotIds && os.lotIds.includes(l.id)));
-      const confirmMessage = (() => {
-        if (!lot) return `Concluir ${os.osNumber}?`;
-        const outcome = computeOSAdvanceOutcome(os, lot, products, sectors);
-        if (outcome.routeDivergence) {
-          return `Concluir ${os.osNumber}?\n\nAtenção: esta OS reúne modelos com roteiros de produção diferentes — o mapa NÃO será avançado como um todo. Em seguida você poderá confirmar o direcionamento individual de cada modelo ao seu setor correto.`;
-        }
-        return `Concluir ${os.osNumber} e avançar lote(s) para "${outcome.nextSectorName}"?`;
-      })();
-      if (confirm(confirmMessage)) {
-        handleCompleteOS(os);
+      if (!lot) { toast.show(`Mapa da OS ${os.osNumber} não encontrado.`); return; }
+      if (os.status === 'COMPLETED') toast.show(`A OS ${os.osNumber} já foi concluída.`);
+      setExpandedOSIds(prev => new Set(prev).add(os.id));
+      setSelectedLot(lot);
+      setIsDetailModalOpen(true);
+      return;
+    }
+
+    // Etiqueta de pedido vinculado (PRD|...|lotId|orderId|itemIdx) -> abre o Mapa direto no pedido
+    if (parsed?.type === 'PRODUCT' && parsed.lotId && parsed.orderId) {
+      const lot = lots.find(l => l.id === parsed.lotId);
+      if (!lot) { toast.show('Mapa não encontrado.'); return; }
+
+      const allSourceItems: any[] = (lot as any).metadata?.sourceItems || [
+        { orderId: lot.productionOrderId, itemIdx: 0, qty: lot.quantity }
+      ];
+      const currentSectorId = lot.route && lot.route[lot.currentSectorIndex];
+      const orderSectorsMap: Record<string, string> = (lot as any).metadata?.orderSectors || {};
+      const sourceItems = allSourceItems.filter((si: any) => {
+        const destSector = orderSectorsMap[si.orderId];
+        return !destSector || destSector === currentSectorId;
+      });
+
+      const itemIdxNum = parsed.itemIdx !== undefined && parsed.itemIdx !== '' ? Number(parsed.itemIdx) : undefined;
+      const si = sourceItems.find((s: any) => s.orderId === parsed.orderId && (itemIdxNum === undefined || s.itemIdx === itemIdxNum))
+        || sourceItems.find((s: any) => s.orderId === parsed.orderId);
+
+      setSelectedLot(lot);
+      setIsDetailModalOpen(true);
+      if (si) {
+        const idx = sourceItems.indexOf(si);
+        const focusKey = `${parsed.orderId}-${idx}`;
+        setExpandedSourceItems(prev => new Set(prev).add(focusKey));
+        setScanFocusKey(focusKey);
       }
       return;
     }
 
-    // Formato LOT|id ou fallback JSON/id direto
+    // Formato LOT|id ou fallback JSON/id direto -> abre o Mapa direto no pedido vinculado
     let lotId = parsed?.type === 'LOT' ? parsed.lotId : '';
     if (!lotId) {
       try { lotId = JSON.parse(result)?.id || result; } catch { lotId = result; }
@@ -2180,6 +2303,23 @@ export default function PCPView({
 
     setSelectedLot(lot);
     setIsDetailModalOpen(true);
+
+    const allSourceItems: any[] = (lot as any).metadata?.sourceItems || [
+      { orderId: lot.productionOrderId, itemIdx: 0, qty: lot.quantity }
+    ];
+    const currentSectorId = lot.route && lot.route[lot.currentSectorIndex];
+    const orderSectorsMap: Record<string, string> = (lot as any).metadata?.orderSectors || {};
+    const sourceItems = allSourceItems.filter((si: any) => {
+      const destSector = orderSectorsMap[si.orderId];
+      return !destSector || destSector === currentSectorId;
+    });
+    const firstItem = sourceItems[0];
+    if (firstItem) {
+      const idx = sourceItems.indexOf(firstItem);
+      const focusKey = `${firstItem.orderId}-${idx}`;
+      setExpandedSourceItems(prev => new Set(prev).add(focusKey));
+      setScanFocusKey(focusKey);
+    }
   };
 
   // ── Dados filtrados para exportação PCP ─────────────────────────────────────
@@ -2776,6 +2916,28 @@ export default function PCPView({
     }
   };
 
+  if (isCuttingAreaOpen) {
+    return (
+      <CuttingAreaPanel
+        lots={lots}
+        products={products}
+        sectors={sectors}
+        flowTags={flowTags}
+        colors={colors}
+        productionConfigs={productionConfigs}
+        people={people}
+        accounts={accounts}
+        categories={categories}
+        serviceOrders={serviceOrders}
+        isDarkMode={isDarkMode}
+        onBack={() => setIsCuttingAreaOpen(false)}
+        onSaveLot={onSaveLot}
+        userName={userName}
+        productionOrders={productionOrders}
+      />
+    );
+  }
+
   return (
     <div className={`flex flex-col gap-6 pb-32 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
       <header className="flex flex-col gap-4">
@@ -2796,31 +2958,70 @@ export default function PCPView({
           </div>
         </div>
 
-        {/* Linha 2: Botões de ação em card único */}
-        <div className={`flex items-center gap-1.5 px-2 py-2 rounded-[2rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+        {/* Linha 2: Ações rápidas — card único com acordeão */}
+        <div className={`rounded-[2rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
           <button
             type="button"
-            onClick={() => setIsScannerOpen(true)}
-            className={`flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 shrink-0 ${isDarkMode ? 'bg-sky-900/30 text-sky-400' : 'bg-sky-50 text-sky-600'}`}
+            onClick={() => setIsQuickActionsOpen(!isQuickActionsOpen)}
+            className={`w-full flex items-center justify-between gap-2 px-5 py-3.5 text-[10px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? 'text-slate-300 hover:bg-slate-800/60' : 'text-slate-600 hover:bg-slate-50'}`}
           >
-            <Camera size={12} strokeWidth={3} /> Escanear
+            <span className="flex items-center gap-2">
+              <Settings2 size={14} className="text-indigo-500" /> Ações Rápidas
+              {(statusFilter !== 'all' || cuttingAreaLotsCount > 0) && (
+                <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+              )}
+            </span>
+            <ChevronDown size={15} className={`text-slate-400 transition-transform duration-200 ${isQuickActionsOpen ? 'rotate-180' : ''}`} />
           </button>
-          <button
-            type="button"
-            onClick={() => setIsFilterPopupOpen(!isFilterPopupOpen)}
-            className={`flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 shrink-0 ${isDarkMode ? 'bg-sky-900/30 text-sky-400' : 'bg-sky-50 text-sky-600'}`}
-          >
-            <Filter size={12} /> Filtros
-            {statusFilter !== 'all' && <span className="w-1.5 h-1.5 rounded-full bg-sky-500 flex-shrink-0" />}
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsPCPShareModalOpen(true)}
-            title="Centro de Compartilhamento PCP"
-            className="flex-1 min-w-0 flex items-center justify-center gap-1.5 h-9 px-3 rounded-xl text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 bg-orange-500 text-white shadow-sm shadow-orange-500/30"
-          >
-            <Share2 size={12} strokeWidth={2.5} /> Compartilhar
-          </button>
+          <AnimatePresence>
+            {isQuickActionsOpen && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className={`grid grid-cols-2 sm:grid-cols-4 gap-2 px-3 pb-3 pt-1 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                  <button
+                    type="button"
+                    onClick={() => setIsScannerOpen(true)}
+                    className={`flex items-center justify-center gap-2 h-12 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 border ${isDarkMode ? 'bg-sky-900/30 border-sky-800/40 text-sky-400' : 'bg-sky-50 border-sky-100 text-sky-600'}`}
+                  >
+                    <Camera size={15} strokeWidth={2.5} /> Escanear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsFilterPopupOpen(!isFilterPopupOpen)}
+                    className={`relative flex items-center justify-center gap-2 h-12 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 border ${isDarkMode ? 'bg-sky-900/30 border-sky-800/40 text-sky-400' : 'bg-sky-50 border-sky-100 text-sky-600'}`}
+                  >
+                    <Filter size={15} strokeWidth={2.5} /> Filtros
+                    {statusFilter !== 'all' && <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsPCPShareModalOpen(true)}
+                    title="Centro de Compartilhamento PCP"
+                    className="flex items-center justify-center gap-2 h-12 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 bg-orange-500 text-white shadow-sm shadow-orange-500/30"
+                  >
+                    <Share2 size={15} strokeWidth={2.5} /> Compartilhar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsCuttingAreaOpen(true)}
+                    title="Área de Corte"
+                    className={`relative flex items-center justify-center gap-2 h-12 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 border ${isDarkMode ? 'bg-indigo-900/30 border-indigo-800/40 text-indigo-400' : 'bg-indigo-50 border-indigo-100 text-indigo-600'}`}
+                  >
+                    <Scissors size={15} strokeWidth={2.5} /> Área de Corte
+                    {cuttingAreaLotsCount > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[8px] font-black flex items-center justify-center">
+                        {cuttingAreaLotsCount}
+                      </span>
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Filter Popup/Section */}
@@ -2919,17 +3120,17 @@ export default function PCPView({
             <div className="grid grid-cols-3 divide-x divide-slate-100 dark:divide-slate-800">
               <div className="flex flex-col pr-4">
                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight mb-1.5" style={{ minHeight: 26 }}>Total Produção</span>
-                <span className="text-2xl font-black text-indigo-600 leading-none">{activeLots.reduce((acc, l) => acc + l.quantity, 0)}</span>
+                <span className="text-xl font-black text-indigo-600 leading-none">{activeLots.reduce((acc, l) => acc + l.quantity, 0)}</span>
                 <span className="text-[9px] font-bold text-slate-400 uppercase mt-1">Pares</span>
               </div>
               <div className="flex flex-col px-4">
                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight mb-1.5" style={{ minHeight: 26 }}>Mapas Ativos</span>
-                <span className="text-2xl font-black text-emerald-600 leading-none">{activeLots.length}</span>
+                <span className="text-xl font-black text-emerald-600 leading-none">{activeLots.length}</span>
                 <span className="text-[9px] font-bold text-slate-400 uppercase mt-1">Mapas</span>
               </div>
               <div className="flex flex-col pl-4">
                 <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight mb-1.5" style={{ minHeight: 26 }}>Atrasos</span>
-                <span className="text-2xl font-black text-rose-500 leading-none">{Object.values(sectorMetrics).reduce((acc, m) => acc + m.delayedCount, 0)}</span>
+                <span className="text-xl font-black text-rose-500 leading-none">{Object.values(sectorMetrics).reduce((acc, m) => acc + m.delayedCount, 0)}</span>
                 <span className="text-[9px] font-bold text-slate-400 uppercase mt-1">Críticos</span>
               </div>
             </div>
@@ -3079,22 +3280,6 @@ export default function PCPView({
 
                 {/* Linha 2: ações do setor */}
                 <div className="flex flex-wrap items-center gap-2">
-                  {isCuttingSector && (
-                    <button
-                      onClick={() => setIsProjectionMode(!isProjectionMode)}
-                      className={`px-4 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
-                        isProjectionMode
-                          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
-                          : isDarkMode
-                          ? 'bg-slate-900 text-slate-400 border border-slate-800 hover:border-indigo-500/50'
-                          : 'bg-white text-slate-500 border border-slate-100 shadow-sm hover:border-indigo-300'
-                      }`}
-                    >
-                      <Scissors size={14} />
-                      {isProjectionMode ? 'Ver Mapas do Setor' : 'Painel de Projeção'}
-                    </button>
-                  )}
-
                   <button
                     onClick={() => {
                       setIsMultiSelectMode(!isMultiSelectMode);
@@ -3130,30 +3315,7 @@ export default function PCPView({
               </div>
 
 
-              {isCuttingSector && isProjectionMode ? (
-                <CuttingProjectionPanel
-                  lots={filteredActiveLots}
-                  products={products}
-                  sectors={sectors}
-                  flowTags={flowTags}
-                  colors={colors}
-                  productionConfigs={productionConfigs}
-                  people={people}
-                  accounts={accounts}
-                  categories={categories}
-                  serviceOrders={serviceOrders}
-                  isDarkMode={isDarkMode}
-                  selectedSectorId={selectedSectorId!}
-                  onBack={() => {
-                    setSelectedSectorId(null);
-                    setIsMultiSelectMode(false);
-                    setSelectedLotIds([]);
-                  }}
-                  onSaveLot={onSaveLot}
-                  userName={userName}
-                  productionOrders={productionOrders}
-                />
-              ) : (
+              {(
                 <>
                   {isMultiSelectMode && selectedLotIds.length > 0 && (
                 <div className={`p-5 rounded-[2rem] border-2 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all ${isDarkMode ? 'bg-slate-900 border-indigo-950/50 text-white' : 'bg-indigo-50/50 border-indigo-100/50 text-indigo-950 shadow-sm'}`}>
@@ -3312,7 +3474,11 @@ export default function PCPView({
                           )}
                         </div>
                       </div>
-                      
+
+                      <p className={`text-center text-[9px] font-black uppercase tracking-[0.2em] mb-3 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                        {sectors.find(s => s.id === selectedSectorId)?.name}
+                      </p>
+
                       {(() => {
                         const lotGroups = (lot as any).metadata?.groups;
                         const isMultiProduct = lotGroups?.length > 1 && !lot.variationId;
@@ -3327,7 +3493,7 @@ export default function PCPView({
                               </div>
                               <div className="flex flex-col min-w-0">
                                 <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">{uniqueProds.length} Modelos</p>
-                                <p className="text-sm font-black text-slate-900 dark:text-white uppercase leading-tight truncate">
+                                <p className="text-sm font-black text-slate-900 dark:text-white uppercase leading-tight line-clamp-2">
                                   {uniqueProds.map((g: any) => {
                                     const p = products.find(pr => pr.id === g.productId);
                                     return p ? (p.reference ? `${p.reference} · ${p.name}` : p.name) : g.productName;
@@ -3545,6 +3711,12 @@ export default function PCPView({
                                 }
                               }
                               setLabelModalSizeGrid(sg);
+                              // Mapa de um único pedido: embute o roteamento no QR da etiqueta
+                              if (variation && lot.productionOrderId) {
+                                setLabelModalBatchItems([{ product, variation, sizeGrid: sg, lotId: lot.id, orderId: lot.productionOrderId, itemIdx: 0 }]);
+                              } else {
+                                setLabelModalBatchItems(undefined);
+                              }
                             }}
                             className={`w-full flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all border ${
                               isDarkMode
@@ -4950,7 +5122,7 @@ export default function PCPView({
                               {item.type === 'SOLE' && quickShortage > 0 && !existingReqOuter && (
                                 <span
                                   role="checkbox"
-                                  aria-checked={selectedSoleNeedIds.has(item.id) ? "true" : "false"}
+                                  aria-checked={selectedSoleNeedIds.has(item.id)}
                                   tabIndex={0}
                                   onClick={(e) => { e.stopPropagation(); toggleSoleNeedSelection(item.id); }}
                                   onKeyDown={(e) => { if (e.key === ' ') { e.stopPropagation(); toggleSoleNeedSelection(item.id); } }}
@@ -5810,7 +5982,7 @@ export default function PCPView({
                   className={`w-full pl-9 pr-4 py-2.5 rounded-xl text-sm font-bold border outline-none focus:ring-2 focus:ring-indigo-500/20 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-600' : 'bg-slate-50 border-slate-200 text-slate-800 placeholder:text-slate-400'}`}
                 />
                 {shareSearch && (
-                  <button type="button" onClick={() => setShareSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <button type="button" onClick={() => setShareSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" title="Limpar busca" aria-label="Limpar busca">
                     <X size={14} />
                   </button>
                 )}
@@ -6016,6 +6188,8 @@ export default function PCPView({
                 type="button"
                 onClick={() => setSharePreviewOpen(false)}
                 className="w-8 h-8 flex items-center justify-center rounded-xl bg-red-500 text-white active:scale-95 transition-all shrink-0"
+                title="Fechar pré-visualização"
+                aria-label="Fechar pré-visualização"
               >
                 <X size={14} strokeWidth={2.5} />
               </button>
@@ -6645,8 +6819,8 @@ export default function PCPView({
 
                 // Cada pedido selecionado vira UMA etiqueta própria, com sua grade e
                 // instruções por setor (não agrega tudo num único mapa).
-                const computeBatchItems = (): { product: import('../types').Product; variation: import('../types').Variation; sizeGrid: string }[] => {
-                  const items: { product: import('../types').Product; variation: import('../types').Variation; sizeGrid: string }[] = [];
+                const computeBatchItems = (): { product: import('../types').Product; variation: import('../types').Variation; sizeGrid: string; lotId?: string; orderId?: string; itemIdx?: number }[] => {
+                  const items: { product: import('../types').Product; variation: import('../types').Variation; sizeGrid: string; lotId?: string; orderId?: string; itemIdx?: number }[] = [];
                   selectedItemsList.forEach((si: any) => {
                     const order = productionOrders.find(o => o.id === si.orderId);
                     const orderItem: any = si.itemIdx !== undefined
@@ -6663,7 +6837,7 @@ export default function PCPView({
                       .map(([sz, s]) => `${sz}x${s.toProduction}`)
                       .join('-');
                     if (!itemSizeGrid) return;
-                    items.push({ product: itemProduct, variation: itemVariation, sizeGrid: itemSizeGrid });
+                    items.push({ product: itemProduct, variation: itemVariation, sizeGrid: itemSizeGrid, lotId: selectedLot.id, orderId: si.orderId, itemIdx: si.itemIdx });
                   });
                   return items;
                 };
@@ -6836,7 +7010,7 @@ export default function PCPView({
                           : [];
 
                         return (
-                          <div key={idx} className={`rounded-2xl border overflow-hidden transition-all ${
+                          <div key={idx} id={`pedido-card-${key}`} className={`rounded-2xl border overflow-hidden transition-all ${
                             hasOS
                               ? (isDarkMode ? 'bg-amber-950/20 border-amber-700/40' : 'bg-amber-50 border-amber-200')
                               : hasCompletedOS
@@ -7040,6 +7214,59 @@ export default function PCPView({
                                     </div>
                                   );
                                 })()}
+                                {product && variation && (
+                                  <div className={`flex items-center justify-between gap-2 pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Etiqueta deste Pedido</p>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        const itemSizeGrid = sizeEntries.map(([sz, s]) => `${sz}x${s.toProduction}`).join('-');
+                                        setLabelModalProduct(product);
+                                        setLabelModalLot(selectedLot);
+                                        setLabelModalSizeGrid(itemSizeGrid);
+                                        setLabelModalBatchItems([{ product, variation, sizeGrid: itemSizeGrid, lotId: selectedLot.id, orderId: si.orderId, itemIdx: si.itemIdx }]);
+                                      }}
+                                      className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 transition-all active:scale-95"
+                                    >
+                                      <Printer size={11} />
+                                      Imprimir / Compartilhar
+                                    </button>
+                                  </div>
+                                )}
+                                {product && (
+                                <div className={`relative flex items-center justify-between gap-2 pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Ficha do Pedido</p>
+                                  <button
+                                    type="button"
+                                    disabled={isPedidoShareExporting}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSharePedidoPopupKey(sharePedidoPopupKey === key ? null : key);
+                                    }}
+                                    className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-slate-600 text-white hover:bg-slate-700 transition-all active:scale-95 disabled:opacity-50"
+                                  >
+                                    {isPedidoShareExporting && sharePedidoPopupKey === key
+                                      ? <span className="animate-spin text-xs leading-none">⏳</span>
+                                      : <Share2 size={11} />}
+                                    Compartilhar Ficha
+                                  </button>
+                                  {sharePedidoPopupKey === key && (
+                                    <>
+                                      <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setSharePedidoPopupKey(null); }} />
+                                      <div className={`absolute bottom-full right-0 mb-1.5 rounded-2xl shadow-2xl border z-50 p-2 flex flex-col gap-1 min-w-[190px] ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                        <p className={`text-[8px] font-black uppercase tracking-widest px-2 pb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Ficha do Pedido</p>
+                                        <button type="button" onClick={(e) => { e.stopPropagation(); setSharePedidoPopupKey(null); handleSharePedidoSheet(selectedLot, product, variation, order, sizeEntries.map(([sz, s]) => [sz, s.toProduction] as [string, number]), si.qty, 'pdf'); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'}`}>
+                                          <Share2 size={11} className="shrink-0" /> PDF — Impressão
+                                        </button>
+                                        <button type="button" onClick={(e) => { e.stopPropagation(); setSharePedidoPopupKey(null); handleSharePedidoSheet(selectedLot, product, variation, order, sizeEntries.map(([sz, s]) => [sz, s.toProduction] as [string, number]), si.qty, 'jpg'); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'}`}>
+                                          <Share2 size={11} className="shrink-0" /> JPG — Imagem
+                                        </button>
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                                )}
                               </div>
                             )}
                           </div>

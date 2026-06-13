@@ -137,6 +137,9 @@ interface BatchLabelItem {
   product: Product;
   variation: Variation;
   sizeGrid: string;
+  lotId?: string;
+  orderId?: string;
+  itemIdx?: number;
 }
 
 interface Props {
@@ -214,6 +217,13 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   const variation = (product.variations || []).find(v => v.id === selectedVariationId) || (product.variations || [])[0];
   const availSizes = variation ? Object.keys(variation.stock).filter(s => s !== 'WHOLESALE') : [];
 
+  // Etiqueta de um único pedido vinculado a um mapa: embute o roteamento (mapa/pedido)
+  // no QR Code para que o "Escanear" do PCP abra direto o pedido correspondente.
+  const routeItem = batchItems?.length === 1 ? batchItems[0] : undefined;
+  const qrRouteSuffix = (routeItem?.lotId && routeItem?.orderId)
+    ? `|${routeItem.lotId}|${routeItem.orderId}|${routeItem.itemIdx ?? ''}`
+    : '';
+
   const getSectorNotesText = (v?: Variation, filter?: { sectorId: string; noteName: string }): string => {
     if (!v?.sectorNotes) return '';
     if (filter) {
@@ -279,9 +289,9 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   useEffect(() => {
     const qd = isBoxLabel
       ? `PRD|${product.id}|${variation?.id || ''}|WHOLESALE`
-      : `PRD|${product.id}|${variation?.id || ''}|${previewSize}`;
+      : `PRD|${product.id}|${variation?.id || ''}|${previewSize}${qrRouteSuffix}`;
     labelService.generateQRCode(qd).then(setQrPreview);
-  }, [product.id, variation?.id, previewSize, isBoxLabel]);
+  }, [product.id, variation?.id, previewSize, isBoxLabel, qrRouteSuffix]);
 
   const saveLayout = useCallback((l: Layout) => {
     const key = sizeKey === 'manual' ? `${manualW}x${manualH}` : sizeKey;
@@ -388,13 +398,16 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
             sizeGrid: item.sizeGrid,
             sectorNotesText: getSectorNotesText(item.variation, layout.elems.sectornotes.noteFilter) || undefined,
             photoUrl: item.product.photoUrl,
+            lotId: item.lotId,
+            orderId: item.orderId,
+            itemIdx: item.itemIdx,
           })),
           paperDims, ll
         );
       } else if (isBoxLabel) {
         await labelService.printWholesaleLabel(product, variation!, customQty, paperDims, ll, photoUrl, sizeGrid);
       } else {
-        await labelService.printProductLabels(product, variation, sizesToPrint, quantities, paperDims, ll, photoUrl, sizeGrid);
+        await labelService.printProductLabels(product, variation, sizesToPrint, quantities, paperDims, ll, photoUrl, sizeGrid, routeItem?.lotId, routeItem?.orderId, routeItem?.itemIdx);
       }
       onClose();
     } finally { setPrinting(false); }
@@ -599,7 +612,8 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
       if (batchItems && batchItems.length > 1) {
         fileNames = [];
         for (const item of batchItems) {
-          const qrDataUrl = await labelService.generateQRCode(`PRD|${item.product.id}|${item.variation.id}|GRADE`);
+          const itemQrSuffix = (item.lotId && item.orderId) ? `|${item.lotId}|${item.orderId}|${item.itemIdx ?? ''}` : '';
+          const qrDataUrl = await labelService.generateQRCode(`PRD|${item.product.id}|${item.variation.id}|GRADE${itemQrSuffix}`);
           const canvas = await drawFrame({
             refText: item.product.reference || item.product.name,
             colorText: item.variation.colorName || '---',
@@ -627,7 +641,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           const qty = quantities[size] || 1;
           const qrData = isBoxLabel
             ? `PRD|${product.id}|${variation?.id || ''}|WHOLESALE`
-            : `PRD|${product.id}|${variation?.id || ''}|${size}`;
+            : `PRD|${product.id}|${variation?.id || ''}|${size}${qrRouteSuffix}`;
           const qrDataUrl = await labelService.generateQRCode(qrData);
 
           for (let i = 0; i < qty; i++) {
