@@ -1221,7 +1221,7 @@ export default function ProductionConfigView({
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Prestador de Serviço Padrão</label>
               <ComboBox
                 options={people
-                  .filter(p => p.isSupplier || (p as any).role === 'WORKER')
+                  .filter(p => p.isSupplier || p.isServiceProvider)
                   .map(p => ({ id: p.id || '', name: p.name }))}
                 value={editingSector?.defaultServiceProviderId || ''}
                 onChange={(id) => {

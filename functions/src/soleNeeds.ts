@@ -149,3 +149,44 @@ export function computeSoleMapaReservations(
 
   return result;
 }
+
+export type SolePendingOrder = {
+  moldId: string;
+  colorId: string; // '' = sem soleColorId (bucket 'default')
+  pendingByGrade: Record<string, number>; // gradeKey -> quantidade de pares já comprados e ainda não recebidos
+};
+
+export type SolePendingOrdersMap = Record<string, SolePendingOrder>; // key = `${moldId}_${colorId || 'default'}`
+
+const addPending = (result: SolePendingOrdersMap, moldId: string, colorId: string, size: string, qty: number) => {
+  const mId = String(moldId || '').trim();
+  if (!mId || qty <= 0) return;
+  const cId = String(colorId || '').trim();
+  const sz = String(size || '').trim();
+  if (!sz) return;
+  const key = `${mId}_${cId || 'default'}`;
+  if (!result[key]) result[key] = { moldId: mId, colorId: cId, pendingByGrade: {} };
+  result[key].pendingByGrade[sz] = (result[key].pendingByGrade[sz] || 0) + qty;
+};
+
+// Port de src/utils/soleNeeds.ts (computeSolePendingOrders) para Cloud Functions — mesma
+// lógica, com tipos `any[]`. Soma, por molde + cor + grade, as quantidades de solas já
+// compradas (Purchase com itens de sola, registerAsReceived !== true) e ainda não recebidas.
+export function computeSolePendingOrders(purchases: any[]): SolePendingOrdersMap {
+  const result: SolePendingOrdersMap = {};
+
+  purchases
+    .filter((p) => p.registerAsReceived !== true)
+    .forEach((p) => {
+      const candidates = [...(p.soleItems || []), ...(p.items || [])];
+      candidates
+        .filter((it) => !!it && typeof it.moldId === 'string' && it.moldId.length > 0 && !!it.quantities)
+        .forEach((item) => {
+          Object.entries(item.quantities || {}).forEach(([size, qty]) => {
+            addPending(result, item.moldId, item.colorId || '', size, Number(qty) || 0);
+          });
+        });
+    });
+
+  return result;
+}

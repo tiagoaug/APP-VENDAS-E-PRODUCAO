@@ -22,6 +22,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
   const [isSupplier, setIsSupplier] = useState(false);
   const [isSeller, setIsSeller] = useState(false);
   const [isBuyer, setIsBuyer] = useState(false);
+  const [isServiceProvider, setIsServiceProvider] = useState(false);
   const [associatedSellerIds, setAssociatedSellerIds] = useState<string[]>([]);
   const [associatedContactIds, setAssociatedContactIds] = useState<string[]>([]);
   const [internalContacts, setInternalContacts] = useState<{ name: string; role: 'Vendedor' | 'Comprador' }[]>([]);
@@ -40,6 +41,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
       setIsSupplier(person.isSupplier || false);
       setIsSeller(person.isSeller || false);
       setIsBuyer(person.isBuyer || false);
+      setIsServiceProvider(person.isServiceProvider || false);
       setAssociatedSellerIds(person.associatedSellerIds || []);
       setAssociatedContactIds(person.associatedContactIds || []);
       setInternalContacts(person.internalContacts || []);
@@ -53,6 +55,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
       setIsSupplier(initialData?.isSupplier || false);
       setIsSeller(false);
       setIsBuyer(false);
+      setIsServiceProvider(initialData?.isServiceProvider || false);
       setAssociatedSellerIds([]);
       setAssociatedContactIds([]);
       setInternalContacts([]);
@@ -105,21 +108,22 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
       toast.show('O nome é obrigatório');
       return;
     }
-    onSave({ 
-      name, 
-      phone, 
-      email, 
-      document, 
-      isCustomer, 
-      isSupplier, 
+    onSave({
+      name,
+      phone,
+      email,
+      document,
+      isCustomer,
+      isSupplier,
       isSeller,
       isBuyer,
+      isServiceProvider,
       associatedSellerIds,
       associatedContactIds,
       internalContacts,
       observations
     });
-    
+
     // Se for um novo cadastro, limpa para o próximo
     if (!person) {
       setName('');
@@ -130,6 +134,7 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
       setIsSupplier(false);
       setIsSeller(false);
       setIsBuyer(false);
+      setIsServiceProvider(false);
       setAssociatedSellerIds([]);
       setAssociatedContactIds([]);
       toast.show('Cadastro realizado com sucesso!');
@@ -241,13 +246,22 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Vendedor</span>
             </label>
             <label className="flex-1 min-w-[100px] flex items-center gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
-              <input 
-                type="checkbox" 
+              <input
+                type="checkbox"
                 className="w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600"
-                checked={isBuyer} 
-                onChange={(e) => setIsBuyer(e.target.checked)} 
+                checked={isBuyer}
+                onChange={(e) => setIsBuyer(e.target.checked)}
               />
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Comprador</span>
+            </label>
+            <label className="flex-1 min-w-[100px] flex items-center gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors border-2 border-transparent has-[:checked]:border-indigo-500">
+              <input
+                type="checkbox"
+                className="w-4 h-4 rounded-lg border-2 border-slate-300 text-indigo-600 focus:ring-indigo-500 bg-white dark:bg-slate-700 dark:border-slate-600"
+                checked={isServiceProvider}
+                onChange={(e) => setIsServiceProvider(e.target.checked)}
+              />
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Prestador de Serviço</span>
             </label>
           </div>
 

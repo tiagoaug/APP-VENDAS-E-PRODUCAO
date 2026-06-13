@@ -80,6 +80,9 @@ interface PCPViewProps {
   userName?: string;
   initialTab?: 'monitor' | 'lots' | 'orders' | 'needs';
   initialSectorId?: string;
+  initialLotId?: string;
+  initialOrderId?: string;
+  initialItemIdx?: string | number;
   people?: Person[];
   accounts?: Account[];
   categories?: Category[];
@@ -110,6 +113,9 @@ export default function PCPView({
   userName,
   initialTab = 'monitor',
   initialSectorId,
+  initialLotId,
+  initialOrderId,
+  initialItemIdx,
   people = [],
   accounts = [],
   categories = [],
@@ -1004,6 +1010,45 @@ export default function PCPView({
     return () => clearTimeout(timer);
   }, [scanFocusKey, isDetailModalOpen]);
 
+  // Ao chegar via QR Code do scanner rápido do cabeçalho (header), abre direto o
+  // Mapa correspondente em sua tela de detalhes expandida, em vez de deixar o
+  // usuário apenas na tela de setores do PCP.
+  const initialLotHandledRef = useRef(false);
+  useEffect(() => {
+    if (!initialLotId || initialLotHandledRef.current) return;
+    const lot = lots.find(l => l.id === initialLotId);
+    if (!lot) return;
+    initialLotHandledRef.current = true;
+
+    setSelectedLot(lot);
+    setIsDetailModalOpen(true);
+
+    const allSourceItems: any[] = (lot as any).metadata?.sourceItems || [
+      { orderId: lot.productionOrderId, itemIdx: 0, qty: lot.quantity }
+    ];
+    const currentSectorId = lot.route && lot.route[lot.currentSectorIndex];
+    const orderSectorsMap: Record<string, string> = (lot as any).metadata?.orderSectors || {};
+    const sourceItems = allSourceItems.filter((si: any) => {
+      const destSector = orderSectorsMap[si.orderId];
+      return !destSector || destSector === currentSectorId;
+    });
+
+    let targetItem = sourceItems[0];
+    if (initialOrderId) {
+      const itemIdxNum = initialItemIdx !== undefined && initialItemIdx !== '' ? Number(initialItemIdx) : undefined;
+      targetItem = sourceItems.find((s: any) => s.orderId === initialOrderId && (itemIdxNum === undefined || s.itemIdx === itemIdxNum))
+        || sourceItems.find((s: any) => s.orderId === initialOrderId)
+        || targetItem;
+    }
+
+    if (targetItem) {
+      const idx = sourceItems.indexOf(targetItem);
+      const focusKey = `${targetItem.orderId}-${idx}`;
+      setExpandedSourceItems(prev => new Set(prev).add(focusKey));
+      setScanFocusKey(focusKey);
+    }
+  }, [initialLotId, initialOrderId, initialItemIdx, lots]);
+
   const deadlineConfigs = useMemo(() => {
     return (productionConfigs || []).filter(c => c.type === 'DEADLINE');
   }, [productionConfigs]);
@@ -1439,7 +1484,7 @@ export default function PCPView({
       setOsProviderId(currentSector.defaultServiceProviderId);
       setOsProviderManualName(currentSector.defaultServiceProviderName || '');
     } else {
-      const workers = people.filter(p => p.isSupplier || (p as any).isWorker || (p as any).role);
+      const workers = people.filter(p => p.isSupplier || p.isServiceProvider);
       if (workers.length > 0) {
         setOsProviderId(workers[0].id);
         setOsProviderManualName(workers[0].name);
@@ -8219,7 +8264,7 @@ export default function PCPView({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <ComboBox
                   options={people
-                    .filter(p => p.isSupplier || (p as any).role === 'WORKER')
+                    .filter(p => p.isSupplier || p.isServiceProvider)
                     .map(p => ({ id: p.id || '', name: p.name }))}
                   value={osProviderId}
                   onChange={(id) => {

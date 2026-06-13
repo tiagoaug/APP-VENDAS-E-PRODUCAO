@@ -19,10 +19,17 @@ interface ExportData {
 
 export const exportSoleStockReport = async (data: ExportData, formatType: 'pdf' | 'jpg', filename: string) => {
   try {
+    const sortedData: ExportData = {
+      ...data,
+      items: data.items.map(item => ({
+        ...item,
+        sizes: [...item.sizes].sort((a, b) => parseFloat(a.size) - parseFloat(b.size)),
+      })),
+    };
     if (formatType === 'pdf') {
-      await generatePDF(data, filename);
+      await generatePDF(sortedData, filename);
     } else {
-      await generateJPG(data, filename);
+      await generateJPG(sortedData, filename);
     }
   } catch (error) {
     console.error('Export error:', error);

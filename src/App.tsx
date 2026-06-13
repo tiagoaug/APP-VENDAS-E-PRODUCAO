@@ -710,12 +710,29 @@ export default function App() {
       localStorage.setItem('dashboard_scan_history', JSON.stringify([entry, ...existing].slice(0, 10)));
     } catch { /* ignore */ }
 
+    if (parsed?.type === 'LOT' && parsed.lotId) {
+      navigateTo(ViewType.PRODUCTION_PCP, { initialSectorId: sectorId, initialLotId: parsed.lotId });
+      return;
+    }
+
+    // Etiqueta de pedido vinculado (PRD|...|lotId|orderId|itemIdx) -> abre o Mapa
+    // direto no card do pedido expandido, igual ao scanner interno do PCP.
+    if (parsed?.type === 'PRODUCT' && parsed.lotId) {
+      navigateTo(ViewType.PRODUCTION_PCP, {
+        initialSectorId: sectorId,
+        initialLotId: parsed.lotId,
+        initialOrderId: parsed.orderId,
+        initialItemIdx: parsed.itemIdx,
+      });
+      return;
+    }
+
     navigateToProduction('PCP', sectorId);
   };
 
-  const navigateToProduction = (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES', sectorId?: string) => {
+  const navigateToProduction = (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES', sectorId?: string, lotId?: string) => {
     if (subScreen === 'PCP') {
-      navigateTo(ViewType.PRODUCTION_PCP, sectorId ? { initialSectorId: sectorId } : null);
+      navigateTo(ViewType.PRODUCTION_PCP, (sectorId || lotId) ? { initialSectorId: sectorId, initialLotId: lotId } : null);
     } else if (subScreen === 'NECESSIDADES') {
       navigateTo(ViewType.PRODUCTION_PCP, { initialTab: 'needs' });
     } else {
@@ -3543,6 +3560,9 @@ export default function App() {
             onRequestPurchase={handleCreatePurchaseRequest}
             initialTab={currentParams?.initialTab}
             initialSectorId={currentParams?.initialSectorId}
+            initialLotId={currentParams?.initialLotId}
+            initialOrderId={currentParams?.initialOrderId}
+            initialItemIdx={currentParams?.initialItemIdx}
             people={people}
             accounts={accounts}
             categories={categories}
@@ -4310,6 +4330,7 @@ export default function App() {
         onClose={() => setIsAIAssistantOpen(false)}
         isDarkMode={isDarkMode}
         soleStockEntries={soleStockEntries}
+        people={people}
         onOpenPersonForm={(data) => {
           setAiPersonPrefill(data);
           setIsAIAssistantOpen(false);

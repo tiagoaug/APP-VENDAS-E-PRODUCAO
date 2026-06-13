@@ -1,6 +1,6 @@
 import { Firestore } from "firebase-admin/firestore";
 import type { PromptCachingBetaTool } from "@anthropic-ai/sdk/resources/beta/prompt-caching/messages";
-import { computeSoleMapaReservations } from "./soleNeeds";
+import { computeSoleMapaReservations, computeSolePendingOrders } from "./soleNeeds";
 
 // Tool schemas exposed to Claude (Anthropic Messages API "tools" format).
 // All tools are READ-ONLY for now — they only query the user's Firestore data.
@@ -40,9 +40,10 @@ export const TOOLS: PromptCachingBetaTool[] = [
   {
     name: "get_sole_stock",
     description:
-      "Consulta o estoque de solados (moldes/cores), seus fornecedores e a disponibilidade real considerando reservas da produção ativa. " +
-      "Para cada item, 'stock' é o estoque total por grade/tamanho, 'reserved' é o quanto já está reservado pela produção em andamento, e 'available' " +
-      "é o disponível real (stock - reserved, por grade). Use 'available' para planejamento estratégico e sugestão de pedidos de compra de solados.",
+      "Consulta o estoque de solados (moldes/cores), seus fornecedores e a disponibilidade real considerando reservas da produção ativa e pedidos de compra já feitos. " +
+      "Para cada item, 'stock' é o estoque total por grade/tamanho, 'reserved' é o quanto já está reservado pela produção em andamento, 'available' " +
+      "é o disponível real (stock - reserved, por grade), e 'pending' é o quanto já foi COMPRADO (pedido de compra registrado) e ainda não chegou no estoque, por grade. " +
+      "Para planejamento estratégico, considere available + pending como a quantidade que ficará disponível em breve, para não sugerir comprar algo que já foi comprado.",
     input_schema: {
       type: "object",
       properties: {
@@ -56,7 +57,10 @@ export const TOOLS: PromptCachingBetaTool[] = [
   {
     name: "list_people",
     description:
-      "Lista clientes e/ou fornecedores cadastrados, com documento, telefone e saldo (crédito/débito) em aberto.",
+      "Lista clientes e/ou fornecedores cadastrados, com documento, telefone, crédito interno ('credit') e os valores em aberto: " +
+      "'totalPayable' (quanto AINDA FALTA PAGAR a esse fornecedor, somando compras a prazo não pagas — igual à aba Financeiro > 'A Pagar') " +
+      "e 'totalReceivable' (quanto esse cliente ainda deve, somando vendas a prazo não pagas). " +
+      "Para perguntas sobre 'saldo em aberto', 'o que tenho a pagar/receber' ou 'valores pendentes' por cliente/fornecedor, use 'totalPayable'/'totalReceivable' (não 'credit').",
     input_schema: {
       type: "object",
       properties: {
@@ -170,9 +174,10 @@ export const TOOLS: PromptCachingBetaTool[] = [
     name: "propose_sole_purchase_registration",
     description:
       "Use para propor um pedido de compra de solados (matéria-prima) com base no planejamento estratégico de estoque. " +
-      "Antes de usar, consulte 'get_sole_stock' para obter o campo 'available' (disponível = estoque - reservado pela produção ativa) de cada molde/cor. " +
+      "Antes de usar, consulte 'get_sole_stock' para obter os campos 'available' (disponível = estoque - reservado pela produção ativa) e 'pending' " +
+      "(já comprado e ainda não recebido) de cada molde/cor. " +
       "Quando o usuário informar a grade/quantidade que deseja manter em estoque para um molde/cor, calcule o déficit por tamanho como " +
-      "max(0, quantidade desejada - available[tamanho]) e inclua no 'grid' apenas os tamanhos com déficit maior que zero. " +
+      "max(0, quantidade desejada - available[tamanho] - pending[tamanho]) e inclua no 'grid' apenas os tamanhos com déficit maior que zero. " +
       "Não invente moldes, cores ou tamanhos que não existam no estoque retornado por 'get_sole_stock'. " +
       "Esta ferramenta NÃO grava nada no banco — ela apenas envia os dados para o usuário revisar no formulário de 'Compra de Solados' e salvar manualmente.",
     input_schema: {
@@ -223,6 +228,107 @@ export const TOOLS: PromptCachingBetaTool[] = [
         },
       },
       required: ["items"],
+    },
+  },
+  {
+    name: "search_production_lots",
+    description:
+      "Busca pedidos/lotes de produção (mapas do PCP) por nome do cliente, número do pedido/lote ou nome do prestador de serviço terceirizado. " +
+      "Retorna, para cada resultado, o setor atual (ou 'Finalizado'), prioridade, quantidade de pares e, se houver uma O.S. terceirizada ativa " +
+      "no setor atual, o prestador e o valor dessa O.S. Use para responder perguntas como 'em qual setor está o pedido do cliente X?' ou " +
+      "'quais pedidos estão com o prestador Y?'.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Nome do cliente, número do pedido/lote ou nome do prestador de serviço.",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "get_provider_service_orders",
+    description:
+      "Lista as O.S. (ordens de serviço) terceirizadas de um prestador de serviço, opcionalmente filtradas por período (data de conclusão) e status. " +
+      "Para cada OS, retorna setor, quantidade de pares, valor por par, valor total, status de pagamento (via transação financeira vinculada) e o " +
+      "detalhamento dos pedidos/modelos (referência e cor) incluídos na OS. Também retorna totais agregados (pares, valor total, já pago, pendente). " +
+      "Use para responder 'quanto tenho que pagar para o prestador X' ou para montar um relatório de serviços terceirizados.",
+    input_schema: {
+      type: "object",
+      properties: {
+        providerName: {
+          type: "string",
+          description: "Nome (ou parte do nome) do prestador de serviço.",
+        },
+        fromDate: {
+          type: "string",
+          description: "Data inicial (YYYY-MM-DD), baseada na data de conclusão da OS. Opcional.",
+        },
+        toDate: {
+          type: "string",
+          description: "Data final (YYYY-MM-DD), inclusive. Opcional.",
+        },
+        statusFilter: {
+          type: "string",
+          enum: ["PENDING", "COMPLETED", "ALL"],
+          description: "Filtra por status da OS ('PENDING' = em andamento, 'COMPLETED' = concluída). Padrão: ALL.",
+        },
+      },
+      required: ["providerName"],
+    },
+  },
+  {
+    name: "propose_provider_service_report",
+    description:
+      "Use SEMPRE depois de 'get_provider_service_orders', repassando EXATAMENTE os mesmos dados retornados por ela (sem inventar ou alterar " +
+      "valores), para que o app exiba ao usuário um card de 'Relatório de Serviços Terceirizados' com opções de copiar os dados e exportar em " +
+      "PDF/Imagem. Esta ferramenta NÃO grava nada no banco.",
+    input_schema: {
+      type: "object",
+      properties: {
+        providerName: { type: "string", description: "Nome do prestador de serviço." },
+        fromDate: { type: "string", description: "Data inicial do período (YYYY-MM-DD), se informada." },
+        toDate: { type: "string", description: "Data final do período (YYYY-MM-DD), se informada." },
+        totalPairs: { type: "number", description: "Soma de pares de todas as OS retornadas." },
+        totalAmount: { type: "number", description: "Soma do valor total de todas as OS retornadas." },
+        totalPaid: { type: "number", description: "Soma do valor já pago (transações concluídas)." },
+        totalPending: { type: "number", description: "Soma do valor ainda pendente (transações pendentes)." },
+        orders: {
+          type: "array",
+          description: "Lista de O.S. retornadas por 'get_provider_service_orders'.",
+          items: {
+            type: "object",
+            properties: {
+              osNumber: { type: "string" },
+              sectorName: { type: "string" },
+              status: { type: "string", enum: ["PENDING", "COMPLETED"] },
+              paymentStatus: { type: "string", enum: ["PENDING", "COMPLETED"] },
+              quantity: { type: "number" },
+              valuePerPair: { type: "number" },
+              totalValue: { type: "number" },
+              finishedAt: { type: "number" },
+              items: {
+                type: "array",
+                description: "Pedidos/modelos incluídos na OS.",
+                items: {
+                  type: "object",
+                  properties: {
+                    productName: { type: "string" },
+                    reference: { type: "string" },
+                    colorName: { type: "string" },
+                    quantity: { type: "number" },
+                  },
+                  required: ["productName", "quantity"],
+                },
+              },
+            },
+            required: ["osNumber", "sectorName", "status", "paymentStatus", "quantity", "valuePerPair", "totalValue", "items"],
+          },
+        },
+      },
+      required: ["providerName", "totalPairs", "totalAmount", "totalPaid", "totalPending", "orders"],
     },
     // Marca o fim do bloco "tools" para cache — Anthropic cacheia tudo até este ponto
     // (system prompt + definição das tools), evitando reprocessar esses tokens em toda chamada.
@@ -361,10 +467,11 @@ async function getFinancialOverview(db: Firestore, uid: string) {
 }
 
 async function getSoleStock(db: Firestore, uid: string, input: { query?: string }) {
-  const [entries, products, lots] = await Promise.all([
-    getCollection(db, uid, "soleStockEntries"),
+  const [entries, products, lots, purchases] = await Promise.all([
+    getCollection(db, uid, "soleStock"),
     getCollection(db, uid, "products"),
     getCollection(db, uid, "productionLots"),
+    getCollection(db, uid, "purchases"),
   ]);
   const q = (input.query || "").trim().toLowerCase();
   const filtered = q
@@ -377,20 +484,27 @@ async function getSoleStock(db: Firestore, uid: string, input: { query?: string 
     : entries;
 
   const reservations = computeSoleMapaReservations(lots, products, entries);
+  const pendingOrders = computeSolePendingOrders(purchases);
 
   return filtered.slice(0, 20).map((e) => {
     const key = `${String(e.moldId || "").trim()}_${String(e.colorId || "").trim() || "default"}`;
     const reservedByGrade = reservations[key]?.reservedByGrade || {};
+    const pendingByGrade = pendingOrders[key]?.pendingByGrade || {};
     const stock: Record<string, number> = e.stock || {};
     const available: Record<string, number> = {};
+    const pending: Record<string, number> = {};
     let totalReserved = 0;
     let totalAvailable = 0;
+    let totalPending = 0;
     Object.entries(stock).forEach(([grade, qty]) => {
       const reserved = reservedByGrade[grade] || 0;
       const avail = Math.max(0, (Number(qty) || 0) - reserved);
       available[grade] = avail;
       totalReserved += reserved;
       totalAvailable += avail;
+      const p = pendingByGrade[grade] || 0;
+      pending[grade] = p;
+      totalPending += p;
     });
 
     return {
@@ -403,17 +517,41 @@ async function getSoleStock(db: Firestore, uid: string, input: { query?: string 
       stock,
       reserved: reservedByGrade,
       available,
+      pending,
       totalPairs: e.totalPairs,
       totalReserved,
       totalAvailable,
+      totalPending,
       unitCost: e.unitCost,
     };
   });
 }
 
+function remainingAmount(record: { total: number; paymentHistory?: { amount: number }[] }): number {
+  const paid = (record.paymentHistory || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+  return Math.max(0, (Number(record.total) || 0) - paid);
+}
+
 async function listPeople(db: Firestore, uid: string, input: { query?: string; type?: "customer" | "supplier" }) {
-  const people = await getCollection(db, uid, "people");
+  const [people, purchases, sales] = await Promise.all([
+    getCollection(db, uid, "people"),
+    getCollection(db, uid, "purchases"),
+    getCollection(db, uid, "sales"),
+  ]);
   const q = (input.query || "").trim().toLowerCase();
+
+  // Saldo em aberto (a pagar/receber) por pessoa, com base em compras/vendas a prazo ainda não pagas
+  // (mesmo critério usado na tela Financeiro > "A Pagar").
+  const payableByPerson: Record<string, number> = {};
+  for (const p of purchases) {
+    if (p.paymentTerm !== "INSTALLMENTS" || p.paymentStatus === "PAID" || !p.supplierId) continue;
+    payableByPerson[p.supplierId] = (payableByPerson[p.supplierId] || 0) + remainingAmount(p);
+  }
+  const receivableByPerson: Record<string, number> = {};
+  for (const s of sales) {
+    if (s.paymentTerm !== "INSTALLMENTS" || s.paymentStatus === "PAID" || !s.customerId) continue;
+    receivableByPerson[s.customerId] = (receivableByPerson[s.customerId] || 0) + remainingAmount(s);
+  }
 
   return people
     .filter((p) => (q ? (p.name || "").toLowerCase().includes(q) : true))
@@ -428,9 +566,197 @@ async function listPeople(db: Firestore, uid: string, input: { query?: string; t
       document: p.document,
       phone: p.phone,
       credit: p.credit || 0,
+      totalPayable: payableByPerson[p.id] || 0,
+      totalReceivable: receivableByPerson[p.id] || 0,
       isCustomer: !!p.isCustomer,
       isSupplier: !!p.isSupplier,
     }));
+}
+
+async function searchProductionLots(db: Firestore, uid: string, input: { query: string }) {
+  const [lots, sectors, serviceOrders, products] = await Promise.all([
+    getCollection(db, uid, "productionLots"),
+    getCollection(db, uid, "sectors"),
+    getCollection(db, uid, "serviceOrders"),
+    getCollection(db, uid, "products"),
+  ]);
+
+  const q = (input.query || "").trim().toLowerCase();
+  const sectorName = (id?: string) => sectors.find((s) => s.id === id)?.name || "Desconhecido";
+  const productName = (id?: string) => products.find((p) => p.id === id)?.name || "";
+
+  const activeOSForLot = (lotId: string) =>
+    serviceOrders.find(
+      (os) =>
+        os.status === "PENDING" &&
+        os.type === "OUTSOURCED" &&
+        (os.lotId === lotId || (Array.isArray(os.lotIds) && os.lotIds.includes(lotId)))
+    );
+
+  const matches = lots.filter((lot) => {
+    const searchable: any[] = [lot.orderNumber, lot.saleOrderNumber, lot.customerName, productName(lot.productId)];
+    if (Array.isArray(lot.metadata?.groups)) {
+      lot.metadata.groups.forEach((g: any) => searchable.push(g.productName));
+    }
+    const os = activeOSForLot(lot.id);
+    if (os) {
+      searchable.push(os.providerName, os.osNumber);
+    }
+    return searchable.some((s) => String(s || "").toLowerCase().includes(q));
+  });
+
+  matches.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  return matches.slice(0, 15).map((lot) => {
+    const route: string[] = lot.route || [];
+    const currentSectorId = lot.finishedAt ? route[route.length - 1] : route[lot.currentSectorIndex ?? 0];
+    const os = activeOSForLot(lot.id);
+    return {
+      lotId: lot.id,
+      orderNumber: lot.orderNumber,
+      customerName: lot.customerName,
+      saleOrderNumber: lot.saleOrderNumber,
+      quantity: lot.quantity,
+      prioridade: lot.prioridade,
+      deliveryDate: lot.deliveryDate,
+      status: lot.finishedAt ? "Finalizado" : "Em produção",
+      currentSectorName: sectorName(currentSectorId),
+      activeServiceOrder: os
+        ? {
+            osNumber: os.osNumber,
+            providerName: os.providerName,
+            sectorName: os.sectorName || sectorName(os.sectorId),
+            valuePerPair: os.valuePerPair,
+            totalValue: os.totalValue,
+            status: os.status,
+          }
+        : null,
+    };
+  });
+}
+
+async function getProviderServiceOrders(
+  db: Firestore,
+  uid: string,
+  input: { providerName: string; fromDate?: string; toDate?: string; statusFilter?: "PENDING" | "COMPLETED" | "ALL" }
+) {
+  const [serviceOrders, lots, products, transactions] = await Promise.all([
+    getCollection(db, uid, "serviceOrders"),
+    getCollection(db, uid, "productionLots"),
+    getCollection(db, uid, "products"),
+    getCollection(db, uid, "transactions"),
+  ]);
+
+  const q = (input.providerName || "").trim().toLowerCase();
+  let filtered = serviceOrders.filter(
+    (os) => os.type === "OUTSOURCED" && String(os.providerName || "").toLowerCase().includes(q)
+  );
+
+  const fromMs = input.fromDate ? new Date(`${input.fromDate}T00:00:00`).getTime() : undefined;
+  const toMs = input.toDate ? new Date(`${input.toDate}T23:59:59.999`).getTime() : undefined;
+  if (fromMs !== undefined || toMs !== undefined) {
+    filtered = filtered.filter((os) => {
+      const ts = os.finishedAt ?? os.createdAt;
+      if (!ts) return false;
+      if (fromMs !== undefined && ts < fromMs) return false;
+      if (toMs !== undefined && ts > toMs) return false;
+      return true;
+    });
+  }
+
+  if (input.statusFilter && input.statusFilter !== "ALL") {
+    filtered = filtered.filter((os) => os.status === input.statusFilter);
+  }
+
+  filtered.sort((a, b) => (b.finishedAt ?? b.createdAt ?? 0) - (a.finishedAt ?? a.createdAt ?? 0));
+  filtered = filtered.slice(0, 30);
+
+  const resolveProductInfo = (productId?: string, variationId?: string) => {
+    const product = products.find((p) => p.id === productId);
+    const variation = (product?.variations || []).find((v: any) => v.id === variationId);
+    return {
+      productName: product?.name as string | undefined,
+      reference: product?.reference as string | undefined,
+      colorName: variation?.colorName as string | undefined,
+    };
+  };
+
+  let totalPairs = 0;
+  let totalAmount = 0;
+  let totalPaid = 0;
+  let totalPending = 0;
+
+  const orders = filtered.map((os) => {
+    const lotIds: string[] = Array.isArray(os.lotIds) && os.lotIds.length > 0 ? os.lotIds : [os.lotId];
+    const items: { productName: string; reference?: string; colorName?: string; quantity: number }[] = [];
+
+    lotIds.forEach((lotId) => {
+      const lot = lots.find((l) => l.id === lotId);
+      if (!lot) return;
+      if (Array.isArray(lot.metadata?.groups) && lot.metadata.groups.length > 0) {
+        lot.metadata.groups.forEach((g: any) => {
+          const info = resolveProductInfo(g.productId, g.variationId);
+          items.push({
+            productName: g.productName || info.productName || "",
+            reference: info.reference,
+            colorName: info.colorName,
+            quantity: g.quantity || 0,
+          });
+        });
+      } else {
+        const info = resolveProductInfo(lot.productId, lot.variationId);
+        items.push({
+          productName: info.productName || os.productName || "",
+          reference: info.reference,
+          colorName: info.colorName,
+          quantity: lot.quantity || 0,
+        });
+      }
+    });
+
+    if (items.length === 0) {
+      items.push({
+        productName: os.productName || "",
+        colorName: os.variationName,
+        quantity: os.quantity || 0,
+      });
+    }
+
+    const transaction = transactions.find((t) => t.id === os.transactionId);
+    const paymentStatus: "PENDING" | "COMPLETED" = transaction?.status ?? os.status;
+
+    totalPairs += os.quantity || 0;
+    totalAmount += os.totalValue || 0;
+    if (paymentStatus === "COMPLETED") {
+      totalPaid += os.totalValue || 0;
+    } else {
+      totalPending += os.totalValue || 0;
+    }
+
+    return {
+      osNumber: os.osNumber,
+      sectorName: os.sectorName,
+      status: os.status,
+      paymentStatus,
+      quantity: os.quantity,
+      valuePerPair: os.valuePerPair,
+      totalValue: os.totalValue,
+      finishedAt: os.finishedAt,
+      items,
+    };
+  });
+
+  return {
+    providerName: filtered[0]?.providerName || input.providerName,
+    fromDate: input.fromDate,
+    toDate: input.toDate,
+    osCount: orders.length,
+    totalPairs,
+    totalAmount,
+    totalPaid,
+    totalPending,
+    orders,
+  };
 }
 
 export async function executeTool(
@@ -450,6 +776,10 @@ export async function executeTool(
       return getSoleStock(db, uid, input);
     case "list_people":
       return listPeople(db, uid, input);
+    case "search_production_lots":
+      return searchProductionLots(db, uid, input);
+    case "get_provider_service_orders":
+      return getProviderServiceOrders(db, uid, input);
     default:
       return { error: `Ferramenta desconhecida: ${name}` };
   }

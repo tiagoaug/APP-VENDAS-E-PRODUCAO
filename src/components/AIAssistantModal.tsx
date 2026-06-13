@@ -1,19 +1,21 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { Sparkles, X, Send, Zap, Loader2, Info, Settings, Trash2, Check, Camera as CameraIcon, Images, Mic, Square, UserPlus, ShoppingCart, Copy, FileText, Image as ImageIcon, ClipboardList } from "lucide-react";
+import { Sparkles, X, Send, Zap, Loader2, Info, Settings, Trash2, Check, Camera as CameraIcon, Images, Mic, Square, UserPlus, ShoppingCart, Copy, FileText, Image as ImageIcon, ClipboardList, Receipt } from "lucide-react";
 import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 import AIQuickPrompts from "./AIQuickPrompts";
 import AIAssistantSettings from "./AIAssistantSettings";
-import SoleNeedsFormModal from "./SoleNeedsFormModal";
-import { sendAIChatMessage, AIChatMessage, AIChatResponse, AIFormProposal, AIPersonProposalData, AIPurchaseProposalData, AISolePurchaseProposalData } from "../services/aiService";
-import { AIQuickPrompt, SoleStockEntry } from "../types";
+import SoleNeedsFormModal, { CardExportPreference } from "./SoleNeedsFormModal";
+import ProviderServiceReportFormModal from "./ProviderServiceReportFormModal";
+import { sendAIChatMessage, AIChatMessage, AIChatResponse, AIFormProposal, AIPersonProposalData, AIPurchaseProposalData, AISolePurchaseProposalData, AIProviderServiceReportData } from "../services/aiService";
+import { AIQuickPrompt, SoleStockEntry, Person } from "../types";
 import { subscribeToQuickPrompts, seedDefaultQuickPromptsIfEmpty } from "../services/aiSettingsService";
 import { photoToCompressedImage, CompressedImage } from "../utils/aiImageUtils";
 import { formatCurrency } from "../utils/numbers";
 import { isVoiceInputSupported, ensureVoicePermission, startVoiceListening, stopVoiceListening } from "../services/voiceInputService";
 import { toast } from "../utils/toast";
 import { exportSoleStockReport, StockShareItem } from "../utils/soleStockExport";
+import { exportProviderServiceReport } from "../utils/serviceOrderReportExport";
 
 type ChatMessage = AIChatMessage & { formProposal?: AIFormProposal };
 
@@ -25,9 +27,10 @@ interface AIAssistantModalProps {
   onOpenPurchaseForm: (data: AIPurchaseProposalData) => void;
   onOpenSolePurchaseForm: (data: AISolePurchaseProposalData) => void;
   soleStockEntries: SoleStockEntry[];
+  people: Person[];
 }
 
-export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPersonForm, onOpenPurchaseForm, onOpenSolePurchaseForm, soleStockEntries }: AIAssistantModalProps) {
+export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPersonForm, onOpenPurchaseForm, onOpenSolePurchaseForm, soleStockEntries, people }: AIAssistantModalProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -40,8 +43,11 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
   const [isListening, setIsListening] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [isSoleNeedsOpen, setIsSoleNeedsOpen] = useState(false);
+  const [isProviderReportOpen, setIsProviderReportOpen] = useState(false);
+  const [cardExportPreference, setCardExportPreference] = useState<CardExportPreference>("both");
   const scrollRef = useRef<HTMLDivElement>(null);
   const voiceSupported = isVoiceInputSupported();
+  const serviceProviders = people.filter((p) => p.isSupplier || p.isServiceProvider);
 
   useEffect(() => {
     document.body.style.overflow = isOpen ? "hidden" : "unset";
@@ -139,13 +145,16 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
     }
   };
 
+  const sortedGridEntries = (grid: Record<string, number>) =>
+    Object.entries(grid).sort(([a], [b]) => parseFloat(a) - parseFloat(b));
+
   const buildSoleProposalText = (data: AISolePurchaseProposalData) => {
     const lines: string[] = ["Pedido de Solados Sugerido"];
     data.items.forEach((item) => {
       const total = Object.values(item.grid).reduce((s, v) => s + (Number(v) || 0), 0);
       const supplier = item.supplierName ? ` — ${item.supplierName}` : "";
       lines.push(`${item.moldName} • ${item.colorName}${supplier}`);
-      const sizesText = Object.entries(item.grid).map(([size, qty]) => `${size}: ${qty}`).join(", ");
+      const sizesText = sortedGridEntries(item.grid).map(([size, qty]) => `${size}: ${qty}`).join(", ");
       lines.push(`  ${sizesText} (Total: ${total} pares)`);
     });
     if (data.notes) lines.push(`Obs.: ${data.notes}`);
@@ -165,7 +174,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
     const items: StockShareItem[] = data.items.map((item) => ({
       moldName: item.moldName,
       colorName: item.colorName,
-      sizes: Object.entries(item.grid).map(([size, qty]) => ({ size, qty: Number(qty) || 0 })),
+      sizes: sortedGridEntries(item.grid).map(([size, qty]) => ({ size, qty: Number(qty) || 0 })),
       total: Object.values(item.grid).reduce((s, v) => s + (Number(v) || 0), 0),
     }));
     const today = new Date();
@@ -175,6 +184,69 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
       formatType,
       `Pedido_Solados_${stamp}`
     );
+  };
+
+  const showPdfButton = cardExportPreference !== "jpg";
+  const showJpgButton = cardExportPreference !== "pdf";
+  const exportButtonsCount = 1 + (showPdfButton ? 1 : 0) + (showJpgButton ? 1 : 0);
+  const exportGridColsClass = exportButtonsCount === 3 ? "grid-cols-3" : exportButtonsCount === 2 ? "grid-cols-2" : "grid-cols-1";
+
+  const providerReportStatusLabel = (s: "PENDING" | "COMPLETED") => (s === "COMPLETED" ? "Concluída" : "Pendente");
+  const providerReportPaymentLabel = (s: "PENDING" | "COMPLETED") => (s === "COMPLETED" ? "Pago" : "Pendente");
+
+  const providerReportPeriodText = (data: AIProviderServiceReportData) => {
+    const fmt = (d: string) => {
+      const [y, m, day] = d.split("-");
+      return `${day}/${m}/${y}`;
+    };
+    if (data.fromDate && data.toDate) return `${fmt(data.fromDate)} a ${fmt(data.toDate)}`;
+    if (data.fromDate) return `A partir de ${fmt(data.fromDate)}`;
+    if (data.toDate) return `Até ${fmt(data.toDate)}`;
+    return "Todo o período";
+  };
+
+  const buildProviderReportText = (data: AIProviderServiceReportData) => {
+    const lines: string[] = [
+      "Relatório de Serviços Terceirizados",
+      `Prestador: ${data.providerName}`,
+      `Período: ${providerReportPeriodText(data)}`,
+      "",
+      `Total de pares: ${data.totalPairs}`,
+      `Valor total: ${formatCurrency(data.totalAmount)}`,
+      `Pago: ${formatCurrency(data.totalPaid)}`,
+      `Pendente: ${formatCurrency(data.totalPending)}`,
+      "",
+    ];
+    data.orders.forEach((os) => {
+      lines.push(
+        `OS-${os.osNumber} • ${os.sectorName} • ${providerReportStatusLabel(os.status)} • ${providerReportPaymentLabel(os.paymentStatus)} — ${formatCurrency(os.totalValue)} (${os.quantity} x ${formatCurrency(os.valuePerPair)})`
+      );
+      os.items.forEach((item) => {
+        const parts = [item.productName];
+        if (item.colorName) parts.push(item.colorName);
+        let line = `  ${parts.join(" • ")}`;
+        if (item.reference) line += ` — Ref: ${item.reference}`;
+        line += ` — ${item.quantity} pares`;
+        lines.push(line);
+      });
+    });
+    return lines.join("\n");
+  };
+
+  const handleCopyProviderReport = async (data: AIProviderServiceReportData) => {
+    try {
+      await navigator.clipboard.writeText(buildProviderReportText(data));
+      toast.show("Dados copiados.");
+    } catch {
+      toast.show("Não foi possível copiar os dados.");
+    }
+  };
+
+  const handleExportProviderReport = async (data: AIProviderServiceReportData, formatType: "pdf" | "jpg") => {
+    const today = new Date();
+    const stamp = `${today.getFullYear()}${(today.getMonth() + 1).toString().padStart(2, "0")}${today.getDate().toString().padStart(2, "0")}`;
+    const providerSlug = data.providerName.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+    await exportProviderServiceReport(data, formatType, `Relatorio_Servicos_${providerSlug}_${stamp}`);
   };
 
   const handleToggleVoice = async () => {
@@ -234,76 +306,87 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
                 Consulta de dados · fotos e voz
               </p>
-              <div className="flex items-center justify-center relative">
-                <div className="flex flex-col items-center rounded-[1.75rem] bg-slate-100 dark:bg-slate-800/60 divide-y divide-slate-200 dark:divide-slate-700 overflow-hidden">
-                  <div className="flex items-stretch justify-center divide-x divide-slate-200 dark:divide-slate-700">
+              <div className="relative">
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-stretch gap-2">
                     <button
                       type="button"
                       onClick={handleClearChat}
                       title="Limpar conversa"
-                      className="flex flex-col items-center gap-0.5 w-16 py-1.5 text-slate-400 hover:text-red-500 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-all"
+                      className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-rose-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all"
                     >
-                      <Trash2 size={16} />
-                      <span className="text-[8px] font-bold uppercase tracking-wide">Limpar</span>
+                      <Trash2 size={20} />
+                      <span className="text-[8px] font-bold uppercase tracking-wide text-slate-800 dark:text-slate-100">Limpar</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setIsSettingsOpen(true)}
                       title="Configurações"
-                      className="flex flex-col items-center gap-0.5 w-16 py-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-all"
+                      className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-amber-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all"
                     >
-                      <Settings size={16} />
-                      <span className="text-[8px] font-bold uppercase tracking-wide">Ajustes</span>
+                      <Settings size={20} />
+                      <span className="text-[8px] font-bold uppercase tracking-wide text-slate-800 dark:text-slate-100">Ajustes</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setShowQuickPrompts((v) => !v)}
                       title="Perguntas rápidas"
-                      className="flex flex-col items-center gap-0.5 w-16 py-1.5 text-indigo-500 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-all"
+                      className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-indigo-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all"
                     >
-                      <Zap size={16} />
-                      <span className="text-[8px] font-bold uppercase tracking-wide">Perguntas</span>
+                      <Zap size={20} />
+                      <span className="text-[8px] font-bold uppercase tracking-wide text-slate-800 dark:text-slate-100">Perguntas</span>
                     </button>
                     <button
                       type="button"
                       onClick={onClose}
                       aria-label="Fechar"
-                      className="flex flex-col items-center gap-0.5 w-16 py-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-all"
+                      title="Fechar"
+                      className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all"
                     >
-                      <X size={16} />
-                      <span className="text-[8px] font-bold uppercase tracking-wide">Fechar</span>
+                      <X size={20} />
+                      <span className="text-[8px] font-bold uppercase tracking-wide text-slate-800 dark:text-slate-100">Fechar</span>
                     </button>
                   </div>
-                  <div className="flex items-stretch justify-center divide-x divide-slate-200 dark:divide-slate-700">
+                  <div className="flex items-stretch gap-2">
                     <button
                       type="button"
                       onClick={() => setIsSoleNeedsOpen(true)}
                       disabled={isLoading}
                       title="Planejamento de solados"
-                      className="flex flex-col items-center gap-0.5 w-16 py-1.5 text-slate-400 hover:text-indigo-500 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-all disabled:opacity-40"
+                      className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-violet-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all disabled:opacity-40"
                     >
-                      <ClipboardList size={16} />
-                      <span className="text-[8px] font-bold uppercase tracking-wide">Planejar</span>
+                      <ClipboardList size={20} />
+                      <span className="text-[8px] font-bold uppercase tracking-wide text-slate-800 dark:text-slate-100">Planejar</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsProviderReportOpen(true)}
+                      disabled={isLoading}
+                      title="Relatório de serviços terceirizados"
+                      className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-teal-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all disabled:opacity-40"
+                    >
+                      <Receipt size={20} />
+                      <span className="text-[8px] font-bold uppercase tracking-wide text-slate-800 dark:text-slate-100">Serviços</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => handleCapturePhoto(CameraSource.Camera)}
                       disabled={isLoading}
                       title="Tirar foto"
-                      className="flex flex-col items-center gap-0.5 w-16 py-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-all disabled:opacity-40"
+                      className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-sky-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all disabled:opacity-40"
                     >
-                      <CameraIcon size={16} />
-                      <span className="text-[8px] font-bold uppercase tracking-wide">Foto</span>
+                      <CameraIcon size={20} />
+                      <span className="text-[8px] font-bold uppercase tracking-wide text-slate-800 dark:text-slate-100">Foto</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => handleCapturePhoto(CameraSource.Photos)}
                       disabled={isLoading}
                       title="Escolher da galeria"
-                      className="flex flex-col items-center gap-0.5 w-16 py-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-all disabled:opacity-40"
+                      className="flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/60 text-emerald-500 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-all disabled:opacity-40"
                     >
-                      <Images size={16} />
-                      <span className="text-[8px] font-bold uppercase tracking-wide">Galeria</span>
+                      <Images size={20} />
+                      <span className="text-[8px] font-bold uppercase tracking-wide text-slate-800 dark:text-slate-100">Galeria</span>
                     </button>
                     {voiceSupported && (
                       <button
@@ -311,14 +394,14 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                         onClick={handleToggleVoice}
                         disabled={isLoading}
                         title={isListening ? "Parar gravação" : "Digitar por voz"}
-                        className={`flex flex-col items-center gap-0.5 w-16 py-1.5 transition-all disabled:opacity-40 ${
+                        className={`flex flex-1 flex-col items-center gap-1 py-2.5 rounded-2xl transition-all disabled:opacity-40 ${
                           isListening
-                            ? "text-rose-500 bg-rose-500/10 animate-pulse"
-                            : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60"
+                            ? "bg-rose-500/10 text-rose-500 animate-pulse"
+                            : "bg-slate-100 dark:bg-slate-800/60 text-orange-500 hover:bg-slate-200 dark:hover:bg-slate-700/60"
                         }`}
                       >
-                        {isListening ? <Square size={16} /> : <Mic size={16} />}
-                        <span className="text-[8px] font-bold uppercase tracking-wide">Voz</span>
+                        {isListening ? <Square size={20} /> : <Mic size={20} />}
+                        <span className="text-[8px] font-bold uppercase tracking-wide text-slate-800 dark:text-slate-100">Voz</span>
                       </button>
                     )}
                   </div>
@@ -350,6 +433,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                 const personProposal = m.formProposal?.type === 'person' ? m.formProposal.data : null;
                 const purchaseProposal = m.formProposal?.type === 'purchase' ? m.formProposal.data : null;
                 const soleProposal = m.formProposal?.type === 'sole_purchase' ? m.formProposal.data : null;
+                const providerReportProposal = m.formProposal?.type === 'provider_service_report' ? m.formProposal.data : null;
                 return (
                 <div
                   key={i}
@@ -443,7 +527,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                                 {item.supplierName ? ` — ${item.supplierName}` : ""}
                               </span>
                               <div className="flex flex-wrap gap-1">
-                                {Object.entries(item.grid).map(([size, qty]) => (
+                                {sortedGridEntries(item.grid).map(([size, qty]) => (
                                   <span
                                     key={size}
                                     className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-600"}`}
@@ -469,7 +553,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                         <ShoppingCart size={14} />
                         Abrir pedido preenchido
                       </button>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className={`grid ${exportGridColsClass} gap-2`}>
                         <button
                           type="button"
                           onClick={() => handleCopySoleProposal(soleProposal)}
@@ -478,22 +562,121 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                           <Copy size={14} />
                           Copiar
                         </button>
+                        {showPdfButton && (
+                          <button
+                            type="button"
+                            onClick={() => handleExportSoleProposal(soleProposal, "pdf")}
+                            className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                          >
+                            <FileText size={14} />
+                            PDF
+                          </button>
+                        )}
+                        {showJpgButton && (
+                          <button
+                            type="button"
+                            onClick={() => handleExportSoleProposal(soleProposal, "jpg")}
+                            className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                          >
+                            <ImageIcon size={14} />
+                            Imagem
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {providerReportProposal && (
+                    <div className={`p-3 rounded-xl border-2 flex flex-col gap-2 ${isDarkMode ? "bg-slate-900 border-indigo-500/40" : "bg-white border-indigo-200"}`}>
+                      <div className="flex flex-col gap-0.5">
+                        <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-indigo-500">
+                          <Receipt size={14} />
+                          Relatório de Serviços Terceirizados
+                        </span>
+                        <span className="text-[11px] normal-case font-bold text-slate-500">
+                          {providerReportProposal.providerName} · {providerReportPeriodText(providerReportProposal)}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        <div className={`flex flex-col items-center gap-0.5 py-2 rounded-lg ${isDarkMode ? "bg-slate-800" : "bg-slate-100"}`}>
+                          <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Pares</span>
+                          <span className="text-[12px] font-black">{providerReportProposal.totalPairs}</span>
+                        </div>
+                        <div className={`flex flex-col items-center gap-0.5 py-2 rounded-lg ${isDarkMode ? "bg-slate-800" : "bg-slate-100"}`}>
+                          <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Total</span>
+                          <span className="text-[12px] font-black">{formatCurrency(providerReportProposal.totalAmount)}</span>
+                        </div>
+                        <div className={`flex flex-col items-center gap-0.5 py-2 rounded-lg ${isDarkMode ? "bg-slate-800" : "bg-slate-100"}`}>
+                          <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Pago</span>
+                          <span className="text-[12px] font-black text-emerald-500">{formatCurrency(providerReportProposal.totalPaid)}</span>
+                        </div>
+                        <div className={`flex flex-col items-center gap-0.5 py-2 rounded-lg ${isDarkMode ? "bg-slate-800" : "bg-slate-100"}`}>
+                          <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400">Pendente</span>
+                          <span className="text-[12px] font-black text-amber-500">{formatCurrency(providerReportProposal.totalPending)}</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2 text-[11px] normal-case font-medium">
+                        {providerReportProposal.orders.map((os, osIdx) => (
+                          <div key={osIdx} className={`flex flex-col gap-1 p-2 rounded-lg ${isDarkMode ? "bg-slate-800/60" : "bg-slate-50"}`}>
+                            <div className="flex items-center justify-between gap-2">
+                              <span>
+                                <strong>OS-{os.osNumber}</strong> • {os.sectorName}
+                              </span>
+                              <span className="text-[10px] font-black">{formatCurrency(os.totalValue)}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${os.status === "COMPLETED" ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"}`}>
+                                {providerReportStatusLabel(os.status)}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${os.paymentStatus === "COMPLETED" ? "bg-emerald-500/10 text-emerald-500" : "bg-amber-500/10 text-amber-500"}`}>
+                                {providerReportPaymentLabel(os.paymentStatus)}
+                              </span>
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-600"}`}>
+                                {os.quantity} pares x {formatCurrency(os.valuePerPair)}
+                              </span>
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                              {os.items.map((item, itemIdx) => (
+                                <span key={itemIdx} className="text-[10px] text-slate-400 font-bold">
+                                  {item.productName}
+                                  {item.colorName ? ` • ${item.colorName}` : ""}
+                                  {item.reference ? ` — Ref: ${item.reference}` : ""}
+                                  {` — ${item.quantity} pares`}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className={`grid ${exportGridColsClass} gap-2`}>
                         <button
                           type="button"
-                          onClick={() => handleExportSoleProposal(soleProposal, "pdf")}
+                          onClick={() => handleCopyProviderReport(providerReportProposal)}
                           className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                         >
-                          <FileText size={14} />
-                          PDF
+                          <Copy size={14} />
+                          Copiar
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => handleExportSoleProposal(soleProposal, "jpg")}
-                          className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
-                        >
-                          <ImageIcon size={14} />
-                          Imagem
-                        </button>
+                        {showPdfButton && (
+                          <button
+                            type="button"
+                            onClick={() => handleExportProviderReport(providerReportProposal, "pdf")}
+                            className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                          >
+                            <FileText size={14} />
+                            PDF
+                          </button>
+                        )}
+                        {showJpgButton && (
+                          <button
+                            type="button"
+                            onClick={() => handleExportProviderReport(providerReportProposal, "jpg")}
+                            className={`flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                          >
+                            <ImageIcon size={14} />
+                            Imagem
+                          </button>
+                        )}
                       </div>
                     </div>
                   )}
@@ -574,6 +757,17 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
             onClose={() => setIsSoleNeedsOpen(false)}
             isDarkMode={isDarkMode}
             soleStockEntries={soleStockEntries}
+            onSubmit={(text, exportPref) => {
+              setCardExportPreference(exportPref);
+              handleSend(text);
+            }}
+          />
+
+          <ProviderServiceReportFormModal
+            isOpen={isProviderReportOpen}
+            onClose={() => setIsProviderReportOpen(false)}
+            isDarkMode={isDarkMode}
+            providers={serviceProviders}
             onSubmit={(text) => handleSend(text)}
           />
 

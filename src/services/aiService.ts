@@ -55,10 +55,41 @@ export type AISolePurchaseProposalData = {
   notes?: string;
 };
 
+export type AIProviderServiceOrderItem = {
+  productName: string;
+  reference?: string;
+  colorName?: string;
+  quantity: number;
+};
+
+export type AIProviderServiceOrder = {
+  osNumber: string;
+  sectorName: string;
+  status: 'PENDING' | 'COMPLETED';
+  paymentStatus: 'PENDING' | 'COMPLETED';
+  quantity: number;
+  valuePerPair: number;
+  totalValue: number;
+  finishedAt?: number;
+  items: AIProviderServiceOrderItem[];
+};
+
+export type AIProviderServiceReportData = {
+  providerName: string;
+  fromDate?: string;
+  toDate?: string;
+  totalPairs: number;
+  totalAmount: number;
+  totalPaid: number;
+  totalPending: number;
+  orders: AIProviderServiceOrder[];
+};
+
 export type AIFormProposal =
   | { type: 'person'; data: AIPersonProposalData }
   | { type: 'purchase'; data: AIPurchaseProposalData }
-  | { type: 'sole_purchase'; data: AISolePurchaseProposalData };
+  | { type: 'sole_purchase'; data: AISolePurchaseProposalData }
+  | { type: 'provider_service_report'; data: AIProviderServiceReportData };
 
 export type AIChatResponse = {
   text: string;

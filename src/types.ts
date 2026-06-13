@@ -338,6 +338,7 @@ export type Person = {
   avatar?: string;
   isSeller?: boolean;
   isBuyer?: boolean;
+  isServiceProvider?: boolean;
   associatedSellerIds?: string[];
   associatedContactIds?: string[]; // Para compradores internos e outros contatos
   observations?: string;

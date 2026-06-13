@@ -41,7 +41,7 @@ interface DashboardViewProps {
     newStatus: "PENDING" | "CLEARED" | "OVERDUE",
   ) => void;
   onNavigate: (view: ViewType, id?: string | null, search?: string) => void;
-  onNavigateProduction: (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES', sectorId?: string) => void;
+  onNavigateProduction: (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES', sectorId?: string, lotId?: string) => void;
   onNavigateGrids: () => void;
   onAddProduct: () => void;
   onAddTransaction: (type: TransactionType) => void;
@@ -138,7 +138,7 @@ export default function DashboardView({
 
     if (entry) {
       persistScanHistory([entry, ...scanHistory].slice(0, 10));
-      onNavigateProduction('PCP', entry.sectorId);
+      onNavigateProduction('PCP', entry.sectorId, parsed?.type === 'LOT' ? parsed.lotId : undefined);
     } else {
       toast.show('Código não reconhecido.');
     }

@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { X, Plus, Trash2, Send, ClipboardList } from "lucide-react";
+import { X, Plus, Trash2, Send, ClipboardList, FileText, ImageIcon, Ban } from "lucide-react";
 import { SoleStockEntry } from "../types";
+
+export type CardExportPreference = "none" | "pdf" | "jpg" | "both";
 
 interface SoleNeedsFormModalProps {
   isOpen: boolean;
   onClose: () => void;
   isDarkMode: boolean;
   soleStockEntries: SoleStockEntry[];
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string, exportPreference: CardExportPreference) => void;
 }
 
 type NeedRow = {
@@ -24,7 +26,9 @@ const GRADE_BLACKLIST = new Set(["pesagem", "total"]);
 const gradeKeysFor = (entries: SoleStockEntry[], moldId: string, colorId: string): string[] => {
   const entry = entries.find((e) => e.moldId === moldId && (e.colorId || "") === colorId);
   if (!entry) return [];
-  return Object.keys(entry.stock || {}).filter((k) => !GRADE_BLACKLIST.has(k));
+  return Object.keys(entry.stock || {})
+    .filter((k) => !GRADE_BLACKLIST.has(k))
+    .sort((a, b) => parseFloat(a) - parseFloat(b));
 };
 
 const emptyRow = (entries: SoleStockEntry[]): NeedRow => {
@@ -38,6 +42,7 @@ const emptyRow = (entries: SoleStockEntry[]): NeedRow => {
 
 export default function SoleNeedsFormModal({ isOpen, onClose, isDarkMode, soleStockEntries, onSubmit }: SoleNeedsFormModalProps) {
   const [rows, setRows] = useState<NeedRow[]>(() => [emptyRow(soleStockEntries)]);
+  const [exportPreference, setExportPreference] = useState<CardExportPreference>("both");
 
   const molds = Array.from(new Map(soleStockEntries.map((e) => [e.moldId, e.moldName])).entries());
 
@@ -97,7 +102,17 @@ export default function SoleNeedsFormModal({ isOpen, onClose, isDarkMode, soleSt
       "Verifique o estoque disponível (estoque atual menos o que já está reservado pela produção em andamento) e, se houver déficit em algum tamanho, proponha o pedido de compra de solados necessário."
     );
 
-    onSubmit(lines.join("\n"));
+    if (exportPreference === "none") {
+      lines.push(
+        "Não gere o card de pedido sugerido (não use propose_sole_purchase_registration) — responda apenas em texto, resumindo o déficit por molde/cor/tamanho, para economizar tokens."
+      );
+    } else {
+      lines.push(
+        "Se houver déficit, gere o card de pedido sugerido (propose_sole_purchase_registration) para eu poder copiar/exportar."
+      );
+    }
+
+    onSubmit(lines.join("\n"), exportPreference);
     setRows([emptyRow(soleStockEntries)]);
     onClose();
   };
@@ -106,6 +121,12 @@ export default function SoleNeedsFormModal({ isOpen, onClose, isDarkMode, soleSt
     isDarkMode
       ? "bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 focus:ring-indigo-500/10"
       : "bg-white border-slate-200 text-slate-900 placeholder:text-slate-400 focus:ring-slate-900/5"
+  }`;
+
+  const gradeInputClass = `w-20 text-center px-3 py-2.5 rounded-xl border-2 text-sm font-bold outline-none transition-all focus:ring-4 ${
+    isDarkMode
+      ? "bg-slate-800 border-slate-300 text-emerald-400 placeholder:text-emerald-700/60 focus:ring-emerald-500/10"
+      : "bg-white border-slate-900 text-emerald-600 placeholder:text-emerald-300 focus:ring-emerald-500/10"
   }`;
 
   return createPortal(
@@ -197,17 +218,17 @@ export default function SoleNeedsFormModal({ isOpen, onClose, isDarkMode, soleSt
                     </div>
 
                     {grades.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
+                      <div className="flex flex-wrap justify-center gap-2">
                         {grades.map((grade) => (
                           <div key={grade} className="flex flex-col gap-0.5 min-w-[64px]">
-                            <span className="text-[9px] font-bold uppercase tracking-wide text-slate-400 text-center">{grade}</span>
+                            <span className="text-[9px] font-bold uppercase tracking-wide text-slate-900 dark:text-white text-center">{grade}</span>
                             <input
                               type="number"
                               min={0}
                               value={row.grades[grade]}
                               onChange={(e) => handleGradeChange(row.id, grade, e.target.value)}
                               placeholder="0"
-                              className={`w-16 text-center ${inputClass}`}
+                              className={gradeInputClass}
                             />
                           </div>
                         ))}
@@ -231,6 +252,66 @@ export default function SoleNeedsFormModal({ isOpen, onClose, isDarkMode, soleSt
                 <Plus size={14} />
                 Adicionar molde/cor
               </button>
+
+              <div
+                className={`flex flex-col gap-2 p-3 rounded-2xl border-2 ${
+                  isDarkMode ? "bg-slate-800/60 border-slate-700" : "bg-slate-50 border-slate-200"
+                }`}
+              >
+                <span className="flex flex-col">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white">
+                    Exportação do card de pedido
+                  </span>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-snug">
+                    Escolha "Sem card" para uma resposta só em texto e economizar tokens
+                  </span>
+                </span>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {[
+                    {
+                      value: "none" as const,
+                      label: "Sem card",
+                      icon: <Ban size={14} className="text-rose-500" />,
+                    },
+                    {
+                      value: "pdf" as const,
+                      label: "PDF",
+                      icon: <FileText size={14} className="text-blue-500" />,
+                    },
+                    {
+                      value: "jpg" as const,
+                      label: "Imagem",
+                      icon: <ImageIcon size={14} className="text-purple-500" />,
+                    },
+                    {
+                      value: "both" as const,
+                      label: "PDF + Img",
+                      icon: (
+                        <span className="flex items-center gap-0.5">
+                          <FileText size={13} className="text-blue-500" />
+                          <ImageIcon size={13} className="text-purple-500" />
+                        </span>
+                      ),
+                    },
+                  ].map(({ value, label, icon }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setExportPreference(value)}
+                      className={`flex flex-col items-center justify-center gap-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-colors border-2 ${
+                        exportPreference === value
+                          ? "bg-indigo-600 border-indigo-600 text-white"
+                          : isDarkMode
+                          ? "bg-slate-800 border-transparent text-slate-300 hover:bg-slate-700"
+                          : "bg-white border-transparent text-slate-600 hover:bg-slate-100"
+                      }`}
+                    >
+                      {icon}
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             <div className="px-6 py-4 border-t border-slate-50 dark:border-slate-800/50 shrink-0 bg-slate-50/30 dark:bg-slate-900/50">
