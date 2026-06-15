@@ -1,6 +1,6 @@
 ﻿import { useState, useMemo } from 'react';
-import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig } from '../types';
-import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck } from 'lucide-react';
+import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, ProductionConfigItem } from '../types';
+import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes } from 'lucide-react';
 import ProductionOrderModal from '../components/ProductionOrderModal';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -9,6 +9,26 @@ import ExportNoteModal from '../components/ExportNoteModal';
 import SalePaymentModal from '../components/SalePaymentModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { toast } from '../utils/toast';
+import { saleProductionHasProgressed } from '../utils/productionRoute';
+
+// Preferências de "Visualização" (Cards Compactos/Expandidos, Mostrar Produtos,
+// Mostrar Grade e Quantidades, Mostrar Padrão de Embalagem) persistem entre
+// navegações/recarregamentos — sem isso, voltar para a tela de Vendas sempre
+// resetava essas escolhas para o padrão.
+function usePersistedToggle(key: string, defaultValue: boolean): [boolean, (v: boolean | ((prev: boolean) => boolean)) => void] {
+  const [value, setValue] = useState<boolean>(() => {
+    const saved = localStorage.getItem(key);
+    return saved !== null ? saved === 'true' : defaultValue;
+  });
+  const setPersisted = (v: boolean | ((prev: boolean) => boolean)) => {
+    setValue(prev => {
+      const next = typeof v === 'function' ? (v as (p: boolean) => boolean)(prev) : v;
+      localStorage.setItem(key, String(next));
+      return next;
+    });
+  };
+  return [value, setPersisted];
+}
 
 interface SalesViewProps {
   sales: Sale[];
@@ -24,6 +44,7 @@ interface SalesViewProps {
   onEdit: (sale: Sale) => void;
   onDelete: (id: string) => void;
   onCancelOnly: (id: string) => void;
+  onCancelAndRevert: (id: string) => void;
   onConvert: (id: string) => void;
   onUpdatePaymentStatus: (id: string, status: PaymentStatus) => void;
   onPaySale: (saleId: string, amount: number, accountId: string, paymentMethodId: string, note: string) => Promise<void>;
@@ -33,6 +54,10 @@ interface SalesViewProps {
   modulesConfig: AppModulesConfig;
   isDarkMode: boolean;
   initialSearchQuery?: string;
+  stockLots: StockLot[];
+  onReleaseSale: (saleId: string) => Promise<void>;
+  onNavigateStock: () => void;
+  productionConfigs: ProductionConfigItem[];
 }
 
 export default function SalesView({
@@ -49,6 +74,7 @@ export default function SalesView({
   onEdit,
   onDelete,
   onCancelOnly,
+  onCancelAndRevert,
   onConvert,
   onUpdatePaymentStatus,
   onPaySale,
@@ -57,7 +83,11 @@ export default function SalesView({
   onCreateProductionOrder,
   modulesConfig,
   isDarkMode,
-  initialSearchQuery = ''
+  initialSearchQuery = '',
+  stockLots,
+  onReleaseSale,
+  onNavigateStock,
+  productionConfigs,
 }: SalesViewProps) {
   const hasProduction = modulesConfig.production;
   const [filter, setFilter] = useState<'ALL' | 'RETAIL' | 'WHOLESALE'>('ALL');
@@ -65,8 +95,9 @@ export default function SalesView({
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
   const [selectedStatuses, setSelectedStatuses] = useState<SaleStatus[]>([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]);
   const [showFilters, setShowFilters] = useState(false);
-  const [expandedCards, setExpandedCards] = useState(false);
-  const [showProducts, setShowProducts] = useState(true);
+  const [expandedCards, setExpandedCards] = usePersistedToggle('salesView_expandedCards', false);
+  const [showProducts, setShowProducts] = usePersistedToggle('salesView_showProducts', true);
+  const [showGradeBreakdown, setShowGradeBreakdown] = usePersistedToggle('salesView_showGradeBreakdown', false);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [paymentModalSale, setPaymentModalSale] = useState<Sale | null>(null);
   const [paymentModalMode, setPaymentModalMode] = useState<'PAYMENT' | 'HISTORY'>('PAYMENT');
@@ -128,6 +159,28 @@ export default function SalesView({
     return { delivered, pending };
   }, [sales]);
 
+  // Lotes RESERVADO (caixas já produzidas, com a grade exata, aguardando "Liberar
+  // Pedido" para o cliente), agrupados por venda.
+  const reservedLotsBySale = useMemo(() => {
+    const map = new Map<string, StockLot[]>();
+    stockLots.filter(l => l.status === 'RESERVADO' && l.saleId).forEach(l => {
+      const arr = map.get(l.saleId!) || [];
+      arr.push(l);
+      map.set(l.saleId!, arr);
+    });
+    return map;
+  }, [stockLots]);
+
+  const handleReleaseClick = (sale: Sale) => {
+    const lots = reservedLotsBySale.get(sale.id) || [];
+    if (lots.length === 0) return;
+    const totalPairs = lots.reduce((s, l) => s + l.totalPairs, 0);
+    const breakdown = lots.map(l => `${l.productName} (${l.variationName}) — ${l.gradeLabel}`).join('\n');
+    const msg = `Confirmar liberação de ${lots.length} caixa(s) (${totalPairs} pares) para o pedido #${sale.orderNumber}?\n\n${breakdown}\n\nIsso marcará o pedido como ENTREGUE.`;
+    if (!confirm(msg)) return;
+    onReleaseSale(sale.id);
+  };
+
   // Mapas para busca rápida O(1)
   const productMap = useMemo(() => {
     const map = new Map<string, Product>();
@@ -175,6 +228,57 @@ export default function SalesView({
   const getVariationInfo = (productId: string, variationId: string) => {
     const product = getProductInfo(productId);
     return product?.variations.find(v => v.id === variationId);
+  };
+
+  // Para itens ainda não abatidos do estoque (fulfilled !== true), verifica se já
+  // existe estoque na grade/tamanho vendido suficiente para completar e expedir.
+  const getUnfulfilledStockStatus = (sale: Sale) => {
+    const unfulfilled = sale.items.filter(it => it.fulfilled !== true);
+    if (unfulfilled.length === 0) return null;
+    let ready = 0;
+    unfulfilled.forEach(item => {
+      const variation = getVariationInfo(item.productId, item.variationId);
+      const available = item.saleType === SaleType.WHOLESALE
+        ? (variation?.stock['WHOLESALE'] || 0)
+        : (variation?.stock[item.size || ''] || 0);
+      if (available >= item.quantity) ready++;
+    });
+    return { total: unfulfilled.length, ready, allReady: ready === unfulfilled.length };
+  };
+
+  // Disponibilidade de estoque para um item específico (já abatido, disponível p/ separar, ou indisponível).
+  const getItemStockStatus = (item: Sale['items'][number]): 'fulfilled' | 'available' | 'unavailable' => {
+    if (item.fulfilled === true) return 'fulfilled';
+    const variation = getVariationInfo(item.productId, item.variationId);
+    const available = item.saleType === SaleType.WHOLESALE
+      ? (variation?.stock['WHOLESALE'] || 0)
+      : (variation?.stock[item.size || ''] || 0);
+    return available >= item.quantity ? 'available' : 'unavailable';
+  };
+
+  // Grade do pedido (tamanhos x quantidade) e total de pares para o item vendido.
+  // Prioriza a grade real registrada no Pedido de Produção vinculado à venda (que pode
+  // ser diferente da grade padrão de produção do produto, caso o vendedor tenha montado
+  // uma grade personalizada na hora da venda). Se não houver pedido de produção vinculado
+  // (ou o item não constar nele), cai para a grade padrão de produção do produto cadastrado.
+  const getItemGradeInfo = (sale: Sale, item: Sale['items'][number], product?: Product) => {
+    if (item.saleType !== SaleType.WHOLESALE) return null;
+
+    if (sale.productionOrderId) {
+      const po = productionOrders.find(p => p.id === sale.productionOrderId);
+      const poItem = po?.items.find(oi => oi.productId === item.productId && oi.variationId === item.variationId);
+      if (poItem) {
+        const sizeTotals = Object.entries(poItem.sizes).map(([sz, s]) => [sz, s.total] as [string, number]);
+        return { gridName: 'Grade do Pedido', sizeTotals, totalPairs: poItem.totalQuantity };
+      }
+    }
+
+    const gridId = product?.productionGridId || product?.defaultGridId;
+    const grid = grids.find(g => g.id === gridId);
+    if (!grid?.configuration) return null;
+    const sizeTotals = Object.entries(grid.configuration).map(([sz, q]) => [sz, q * item.quantity] as [string, number]);
+    const totalPairs = sizeTotals.reduce((sum, [, q]) => sum + q, 0);
+    return { gridName: grid.name, sizeTotals, totalPairs };
   };
 
   const generateMessage = (sale: Sale) => {
@@ -231,42 +335,61 @@ export default function SalesView({
 
   return (
     <div className="flex flex-col gap-6 h-full pb-44 px-1 overflow-y-auto overflow-x-hidden force-scrollbar">
-      <ConfirmDialog
-        isOpen={!!saleToDelete}
-        title="Excluir Registro?"
-        message="Deseja realmente excluir esta venda e reverter os lançamentos financeiros/estoque? Esta ação não pode ser desfeita."
-        confirmLabel="Sim, Excluir"
-        cancelLabel="Agora não"
-        onConfirm={() => {
-          if (saleToDelete) {
-            onDelete(saleToDelete);
-            setSaleToDelete(null);
-          }
-        }}
-        onCancel={() => setSaleToDelete(null)}
-        isDanger={true}
-      />
+      {(() => {
+        const saleBeingDeleted = saleToDelete ? sales.find(s => s.id === saleToDelete) : null;
+        const mustCancelAndRevert = saleBeingDeleted ? saleProductionHasProgressed(saleBeingDeleted, productionOrders, lots) : false;
+        return (
+          <ConfirmDialog
+            isOpen={!!saleToDelete}
+            title={mustCancelAndRevert ? "Cancelar e Estornar Pedido?" : "Excluir Registro?"}
+            message={mustCancelAndRevert
+              ? "Este pedido já está em produção (houve baixa em algum setor) e não pode mais ser excluído. Ele será cancelado e os lançamentos financeiros/estoque serão estornados — a produção em andamento seguirá normalmente e as caixas produzidas entrarão no estoque geral."
+              : "Deseja realmente excluir esta venda e reverter os lançamentos financeiros/estoque? Esta ação não pode ser desfeita."}
+            confirmLabel={mustCancelAndRevert ? "Sim, Cancelar e Estornar" : "Sim, Excluir"}
+            cancelLabel="Agora não"
+            onConfirm={() => {
+              if (saleToDelete) {
+                if (mustCancelAndRevert) onCancelAndRevert(saleToDelete);
+                else onDelete(saleToDelete);
+                setSaleToDelete(null);
+              }
+            }}
+            onCancel={() => setSaleToDelete(null)}
+            isDanger={true}
+          />
+        );
+      })()}
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <div>
             <h2 className={`text-[13px] font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Vendas</h2>
             <p className="text-[11px] text-slate-400 dark:text-slate-500 font-bold tracking-widest leading-none">Relatórios</p>
           </div>
-          <button 
-            onClick={() => setShowFilters(true)}
-            className={`h-11 px-5 rounded-2xl flex items-center gap-3 transition-all duration-300 relative ${showFilters ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/40' : isDarkMode ? 'bg-slate-900 text-slate-400 hover:text-indigo-400' : 'bg-white text-slate-400 border border-slate-100 shadow-sm hover:text-indigo-500'}`}
-            title="Configurações e Filtros"
-          >
-            <div className="relative">
-              <Filter size={18} strokeWidth={2.5} />
-              {activeFiltersCount > 0 && (
-                <span className="absolute -top-3 -right-3 w-5 h-5 bg-orange-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 animate-in zoom-in">
-                  {activeFiltersCount}
-                </span>
-              )}
-            </div>
-            <span className="text-[10px] font-black tracking-[0.2em]">Configurar</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onNavigateStock}
+              className={`h-11 px-5 rounded-2xl flex items-center gap-3 transition-all duration-300 ${isDarkMode ? 'bg-slate-900 text-slate-400 hover:text-amber-400' : 'bg-white text-slate-400 border border-slate-100 shadow-sm hover:text-amber-600'}`}
+              title="Estoque de Produtos"
+            >
+              <Boxes size={18} strokeWidth={2.5} className="text-amber-500" />
+              <span className="text-[10px] font-black tracking-[0.2em]">Estoque</span>
+            </button>
+            <button
+              onClick={() => setShowFilters(true)}
+              className={`h-11 px-5 rounded-2xl flex items-center gap-3 transition-all duration-300 relative ${showFilters ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/40' : isDarkMode ? 'bg-slate-900 text-slate-400 hover:text-indigo-400' : 'bg-white text-slate-400 border border-slate-100 shadow-sm hover:text-indigo-500'}`}
+              title="Configurações e Filtros"
+            >
+              <div className="relative">
+                <Filter size={18} strokeWidth={2.5} className={showFilters ? '' : 'text-indigo-500'} />
+                {activeFiltersCount > 0 && (
+                  <span className="absolute -top-3 -right-3 w-5 h-5 bg-orange-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 animate-in zoom-in">
+                    {activeFiltersCount}
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] font-black tracking-[0.2em]">Configurar</span>
+            </button>
+          </div>
         </div>
 
         {/* Search - Always Visible */}
@@ -387,10 +510,14 @@ export default function SalesView({
                   {showProducts ? 'Mostrar Produtos' : 'Ocultar Produtos'}
                 </button>
               </div>
+              <button onClick={() => setShowGradeBreakdown(v => !v)}
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${showGradeBreakdown ? 'bg-indigo-600 text-white border-transparent shadow-sm' : isDarkMode ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
+                {showGradeBreakdown ? 'Ocultar Padrão de Embalagem' : 'Mostrar Padrão de Embalagem'}
+              </button>
             </div>
 
             <button
-              onClick={() => { setFilter('ALL'); setPaymentFilter('ALL'); setSelectedStatuses([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]); setExpandedCards(false); setShowProducts(true); }}
+              onClick={() => { setFilter('ALL'); setPaymentFilter('ALL'); setSelectedStatuses([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]); setExpandedCards(false); setShowProducts(true); setShowGradeBreakdown(false); }}
               className="mt-1 w-full py-3 rounded-2xl text-[10px] font-black tracking-widest text-rose-500 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all"
             >
               Limpar Filtros
@@ -416,25 +543,26 @@ export default function SalesView({
               {/* Row 1: Customer & Basic Info */}
               <div className="flex justify-between items-start z-10 gap-4">
                 <div className="flex items-center gap-3 min-w-0">
-                  <button 
-                    onClick={() => setSelectedSale(sale)}
-                    title="Ver Detalhes do Pedido"
-                    aria-label={`Ver detalhes do pedido de ${sale.customerName || 'Cliente'}`}
-                    className={`w-14 h-14 rounded-2xl flex items-center justify-center cursor-pointer transition-all hover:scale-110 shrink-0 shadow-lg ${
-                      sale.status === SaleStatus.QUOTE
-                        ? 'bg-amber-500 text-white shadow-amber-200'
-                        : sale.status === SaleStatus.CONFIRMED
-                          ? 'bg-sky-500 text-white shadow-sky-200'
-                          : 'bg-indigo-600 text-white shadow-indigo-200'
-                    }`}
-                  >
-                    <ShoppingBag size={28} strokeWidth={2.5} />
-                  </button>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <h3 className={`font-black text-base tracking-tight leading-none truncate ${sale.status === SaleStatus.CANCELLED ? 'text-slate-500' : isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                         {sale.saleDestination === 'STOCK' ? 'Estoque' : (sale.customerName || 'Cliente')}
                       </h3>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedSale(sale)}
+                        title="Ver Detalhes do Pedido"
+                        aria-label={`Ver detalhes do pedido de ${sale.customerName || 'Cliente'}`}
+                        className={`shrink-0 transition-all hover:scale-110 ${
+                          sale.status === SaleStatus.QUOTE
+                            ? 'text-amber-500'
+                            : sale.status === SaleStatus.CONFIRMED
+                              ? 'text-sky-500'
+                              : 'text-indigo-600 dark:text-indigo-400'
+                        }`}
+                      >
+                        <ShoppingBag size={16} strokeWidth={2.5} />
+                      </button>
                       {sale.saleDestination === 'STOCK' && (
                         <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white uppercase tracking-widest shrink-0">
                           Estoque
@@ -496,10 +624,28 @@ export default function SalesView({
                     </span>
                   )}
 
-                  {/* Badge Itens aguardando estoque */}
-                  {sale.status === SaleStatus.SALE && sale.items.some(it => it.fulfilled !== true) && (
-                    <span className="text-[8px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 flex items-center gap-1">
-                      <Clock size={9} /> Aguard. estoque
+                  {/* Badge Itens aguardando estoque — indica se já há estoque na grade vendida */}
+                  {sale.status === SaleStatus.SALE && (() => {
+                    const stockStatus = getUnfulfilledStockStatus(sale);
+                    if (!stockStatus) return null;
+                    if (stockStatus.allReady) {
+                      return (
+                        <span className="text-[8px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 size={9} /> Estoque pronto p/ expedir
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="text-[8px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 flex items-center gap-1">
+                        <Clock size={9} /> Aguard. estoque ({stockStatus.ready}/{stockStatus.total})
+                      </span>
+                    );
+                  })()}
+
+                  {/* Badge Caixas prontas — produção concluída, aguardando "Liberar Pedido" */}
+                  {sale.status === SaleStatus.SALE && sale.deliveryStatus !== 'DELIVERED' && (reservedLotsBySale.get(sale.id) || []).length > 0 && (
+                    <span className="text-[8px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400 flex items-center gap-1">
+                      <PackageCheck size={9} /> {(reservedLotsBySale.get(sale.id) || []).length} pronta(s)
                     </span>
                   )}
 
@@ -513,9 +659,47 @@ export default function SalesView({
                 </div>
             </div>
 
+              {/* Balão Pedido em Produção atrelado à venda — mostra quantos lotes faltam concluir */}
+              {sale.status !== SaleStatus.CANCELLED && sale.productionOrderId && (() => {
+                const po = productionOrders.find(p => p.id === sale.productionOrderId);
+                if (!po || po.status === 'COMPLETED') return null;
+                const label = po.status === 'IN_PRODUCTION' ? 'Pedido em Produção' : 'Aguardando Produção';
+                const poLots = lots.filter(l => po.lotIds.includes(l.id));
+                const pendingLots = poLots.filter(l => !l.finishedAt);
+                return (
+                  <div className="w-full flex items-center gap-2 px-3 py-2 rounded-2xl bg-orange-50 dark:bg-orange-900/20 z-10">
+                    <Factory size={14} className="text-orange-500 shrink-0" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-orange-600 dark:text-orange-400 truncate">
+                      {label} · #{po.orderNumber}
+                      {poLots.length > 0 && ` · Faltam ${pendingLots.length} de ${poLots.length} lote(s)`}
+                    </span>
+                  </div>
+                );
+              })()}
+
               {/* Content Row: Items Preview & Large Price */}
               {isExpanded && (
-                <div className={`flex ${sale.status === SaleStatus.QUOTE ? 'flex-col' : 'justify-between items-start'} z-10 gap-4`}>
+                <div className="flex flex-col gap-3 z-10">
+                  {/* Banner: produtos disponíveis para separação do pedido */}
+                  {sale.status === SaleStatus.SALE && (() => {
+                    const stockStatus = getUnfulfilledStockStatus(sale);
+                    if (!stockStatus || stockStatus.ready === 0) return null;
+                    return (
+                      <div className={`flex items-center justify-between gap-2 px-4 py-2.5 rounded-2xl ${isDarkMode ? 'bg-emerald-900/20 border border-emerald-800/40' : 'bg-emerald-50 border border-emerald-100'}`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <CheckCircle2 size={14} className="text-emerald-500 shrink-0" />
+                          <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest truncate">
+                            Há produtos disponíveis para separação do pedido
+                          </span>
+                        </div>
+                        <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest shrink-0 ${stockStatus.allReady ? 'bg-emerald-500 text-white' : 'bg-amber-400 text-white'}`}>
+                          {stockStatus.allReady ? 'Completo' : 'Parcial'}
+                        </span>
+                      </div>
+                    );
+                  })()}
+
+                <div className={`flex ${sale.status === SaleStatus.QUOTE ? 'flex-col' : 'justify-between items-start'} gap-4`}>
                   {/* Items List (Left/Top) */}
                   {showProducts ? (
                     <button
@@ -527,18 +711,45 @@ export default function SalesView({
                       {sale.items.slice(0, 3).map((item, idx) => {
                         const product = getProductInfo(item.productId);
                         const variation = getVariationInfo(item.productId, item.variationId);
+                        const stockStatus = sale.status === SaleStatus.SALE ? getItemStockStatus(item) : null;
+                        const gradeInfo = showGradeBreakdown ? getItemGradeInfo(sale, item, product) : null;
+                        // Além do estoque geral, considera "pronto" também quando já existe um
+                        // StockLot RESERVADO para esta venda+item — produção concluída e
+                        // separada especificamente para este pedido (badge "N pronta(s)"),
+                        // ainda que não conte no estoque geral da variação.
+                        const hasReservedLot = (reservedLotsBySale.get(sale.id) || []).some(l =>
+                          l.productId === item.productId && l.variationId === item.variationId && (l.itemIdx === undefined || l.itemIdx === idx)
+                        );
+                        const isAvailable = stockStatus === 'available' || hasReservedLot;
                         return (
-                          <div key={idx} className="flex items-center gap-3">
-                            <div className={`p-2 rounded-xl shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-                               <Tag size={12} className={sale.status === SaleStatus.CANCELLED ? 'text-slate-600' : 'text-indigo-500'} strokeWidth={3} />
+                          <div key={idx} className={`flex items-center gap-3 ${isAvailable ? '-m-1 p-1 rounded-xl bg-emerald-50 dark:bg-emerald-900/15' : ''}`}>
+                            <div className={`p-2 rounded-xl shrink-0 ${isAvailable ? 'bg-emerald-100 dark:bg-emerald-900/30' : isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                               {isAvailable
+                                 ? <CheckCircle2 size={12} className="text-emerald-500" strokeWidth={3} />
+                                 : <Tag size={12} className={sale.status === SaleStatus.CANCELLED ? 'text-slate-600' : 'text-indigo-500'} strokeWidth={3} />}
                             </div>
                             <div className="min-w-0">
-                              <p className={`text-[11px] font-black leading-none tracking-tight truncate ${sale.status === SaleStatus.CANCELLED ? 'text-slate-500' : isDarkMode ? 'text-slate-300' : 'text-slate-400'}`}>
+                              <p className={`text-[11px] font-black leading-none tracking-tight truncate ${isAvailable ? 'text-emerald-600 dark:text-emerald-400' : sale.status === SaleStatus.CANCELLED ? 'text-slate-500' : isDarkMode ? 'text-slate-300' : 'text-slate-400'}`}>
                                 {product?.reference || '---'} {product?.name}
                               </p>
                               <p className="text-[11px] text-slate-400 dark:text-slate-500 font-bold mt-1.5 tracking-widest">
                                 {variation?.colorName} • <span className="text-indigo-500 dark:text-indigo-400">{item.quantity} {item.saleType === SaleType.WHOLESALE ? 'Grades' : 'Pares'}</span>
                               </p>
+                              {gradeInfo && (
+                                <div className="mt-1.5">
+                                  <p className={`text-[8px] font-black uppercase tracking-widest mb-1 truncate ${isAvailable ? 'text-emerald-500' : 'text-sky-400'}`}>
+                                    {gradeInfo.gridName} · Total ({gradeInfo.totalPairs} pares){isAvailable ? ' · Pronto' : ''}
+                                  </p>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {gradeInfo.sizeTotals.map(([size, qty]) => (
+                                      <div key={size} className={`flex flex-col items-center min-w-[32px] py-1 px-1.5 rounded-lg border ${isAvailable ? (isDarkMode ? 'bg-emerald-950/30 border-emerald-900' : 'bg-emerald-50 border-emerald-100') : isDarkMode ? 'bg-sky-950/30 border-sky-900' : 'bg-sky-50 border-sky-100'}`}>
+                                        <p className={`text-[9px] font-black leading-none ${isAvailable ? 'text-emerald-500' : 'text-sky-400'}`}>{size}</p>
+                                        <p className={`text-[12px] font-black leading-none mt-0.5 ${isAvailable ? 'text-emerald-700 dark:text-emerald-300' : 'text-sky-700 dark:text-sky-300'}`}>{qty}</p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -567,6 +778,7 @@ export default function SalesView({
                       </div>
                     </div>
                   </div>
+                </div>
                 </div>
               )}
 
@@ -662,17 +874,27 @@ export default function SalesView({
                           }`}
                           onClick={e => e.stopPropagation()}
                         >
-                          <button 
+                          <button
                             onClick={(e) => { e.stopPropagation(); handleCopyMessage(sale); setActiveMenuId(null); }}
                             className={`w-full px-4 py-3 text-[10px] font-bold tracking-widest flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}
                           >
                             <Copy size={14} /> Copiar Texto
                           </button>
-                          <button 
+                          {sale.status === SaleStatus.SALE && sale.deliveryStatus !== 'DELIVERED' && (reservedLotsBySale.get(sale.id) || []).length > 0 && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleReleaseClick(sale); setActiveMenuId(null); }}
+                              className="w-full px-4 py-3 text-[10px] font-bold tracking-widest flex items-center gap-2 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
+                            >
+                              <PackageCheck size={14} /> Liberar Pedido
+                            </button>
+                          )}
+                          <button
                             onClick={(e) => { e.stopPropagation(); setSaleToDelete(sale.id); setActiveMenuId(null); }}
                             className="w-full px-4 py-3 text-[10px] font-bold tracking-widest flex items-center gap-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10"
                           >
-                            <Trash2 size={14} /> Excluir
+                            {saleProductionHasProgressed(sale, productionOrders, lots)
+                              ? <><Ban size={14} /> Cancelar e Estornar</>
+                              : <><Trash2 size={14} /> Excluir</>}
                           </button>
                         </div>
                       )}
@@ -723,10 +945,10 @@ export default function SalesView({
         const s = itemsPopupSale;
         const totalItems = s.items.reduce((acc, i) => acc + i.quantity, 0);
         return (
-          <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/50 backdrop-blur-sm" onClick={() => setItemsPopupSale(null)}>
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onClick={() => setItemsPopupSale(null)}>
             <div
               onClick={e => e.stopPropagation()}
-              className={`w-full max-w-md rounded-t-[2rem] sm:rounded-[2rem] shadow-2xl flex flex-col overflow-hidden ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
+              className={`w-full max-w-md rounded-[2rem] shadow-2xl flex flex-col overflow-hidden ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
             >
               {/* Header */}
               <div className={`flex items-center justify-between px-6 py-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>

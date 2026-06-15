@@ -381,7 +381,7 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
           <ArrowLeft size={20} />
         </button>
         <div className="flex-1">
-          <h2 className={`text-[13px] font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Pesagem e Contagem</h2>
+          <h2 className={`text-[13px] font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Pesagem e Contagem de Solados</h2>
           <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold tracking-widest">Conferência de solados por peso</p>
         </div>
       </div>

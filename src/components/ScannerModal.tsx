@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Camera, AlertCircle, Zap } from 'lucide-react';
 import Modal from './Modal';
 import { scannerService } from '../services/scannerService';
@@ -41,6 +41,24 @@ export default function ScannerModal({ isOpen, onClose, onScan, title = "Escanea
       }
     }
   };
+
+  // Abre a câmera automaticamente ao abrir o modal, sem exigir um clique extra
+  // em "Abrir Câmera". A tela com o botão continua disponível como fallback
+  // (ex.: usuário cancelou a câmera nativa e quer tentar de novo).
+  useEffect(() => {
+    if (!isOpen) {
+      setShowWebCamera(false);
+      setError(null);
+      return;
+    }
+    setError(null);
+    if (isWebPlatform) {
+      setShowWebCamera(true);
+    } else {
+      handleNativeScan();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   return (
     <Modal isOpen={isOpen} onClose={() => { setShowWebCamera(false); onClose(); }} title={title} maxWidth="max-w-md">

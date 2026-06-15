@@ -1,6 +1,43 @@
 ﻿import { BarcodeScanner, BarcodeFormat } from '@capacitor-mlkit/barcode-scanning';
 import { Capacitor } from '@capacitor/core';
 import { toast } from '../utils/toast';
+import { firebaseService } from './firebaseService';
+import type { Product, ProductionLot } from '../types';
+
+export const SCAN_HISTORY_KEY = 'dashboard_scan_history';
+
+export type ScanHistoryEntry = {
+  id: string;
+  kind: 'PRODUCT' | 'LOT' | 'SOLE' | 'OS';
+  label: string;
+  sublabel?: string;
+  sectorId?: string;
+  timestamp: number;
+};
+
+export type ScanNavigationTarget = {
+  sectorId?: string;
+  lotId?: string;
+  orderId?: string;
+  itemIdx?: string | number;
+  // Identificador único por leitura — usado para forçar o PCP a reprocessar o
+  // foco no pedido escaneado mesmo quando o mesmo Mapa/pedido já está aberto.
+  scanNonce?: number;
+};
+
+export type ScanResolution =
+  | { ok: true; entry: ScanHistoryEntry; nav: ScanNavigationTarget }
+  | { ok: false; error: string };
+
+// Mensagens de erro compartilhadas entre os Scanners Rápidos (cabeçalho/Dashboard,
+// via resolveScanResult) e o botão "Escanear" do PCP (handleScanLotResult em
+// PCPView.tsx), para que o usuário veja a mesma explicação independente de qual
+// scanner usou.
+export const SCAN_ERRORS = {
+  noRoute: 'Esta etiqueta não está vinculada a um pedido/Mapa. Reimprima a etiqueta a partir do MAPA para habilitar a abertura direta.',
+  lotNotFound: (lotId: string) => `Mapa #${lotId} não encontrado. Ele pode ter sido excluído.`,
+  sole: 'Código de molde de solado não pode ser aberto pelo Scanner do PCP.',
+};
 
 export const scannerService = {
   async checkPermissions(): Promise<boolean> {
@@ -100,6 +137,80 @@ export const scannerService = {
       return { type: 'OS' as const, osId: parts[1] };
     }
     return null;
+  },
+
+  // Busca um Mapa por ID primeiro na lista local (já sincronizada) e, se não
+  // encontrar, vai direto ao Firestore — "carrega diretamente" o Mapa mesmo que
+  // a subscription local ainda não tenha esse documento (ex.: leitura logo após
+  // a criação/edição do Mapa em outra sessão).
+  async findLotById(lotId: string, productionLots: ProductionLot[]): Promise<ProductionLot | null> {
+    const local = productionLots.find(l => l.id === lotId);
+    if (local) return local;
+    return firebaseService.getDocument<ProductionLot>('productionLots', lotId);
+  },
+
+  // Resolve um resultado já parseado (parseScanResult) em uma entrada de histórico
+  // e nos parâmetros de navegação do PCP, usados por ambos os scanners rápidos
+  // (cabeçalho e Dashboard) — garante que os dois tenham o mesmo comportamento.
+  //
+  // Diferente da versão anterior (síncrona, apenas consultava a lista local
+  // `productionLots`), esta versão é assíncrona e busca o Mapa direto no
+  // Firestore quando ele não está na lista local, evitando o caso em que o
+  // scanner "navega" para o PCP mas não encontra nada para abrir. Também retorna
+  // mensagens de erro específicas (`ok: false`) para cada motivo de falha, em vez
+  // de simplesmente deixar o app cair na tela de Setores sem explicação.
+  async resolveScanResult(parsed: any, products: Product[], productionLots: ProductionLot[]): Promise<ScanResolution> {
+    if (parsed?.type === 'PRODUCT') {
+      if (!parsed.lotId || !parsed.orderId) {
+        return { ok: false, error: SCAN_ERRORS.noRoute };
+      }
+      const lot = await this.findLotById(parsed.lotId, productionLots);
+      if (!lot) {
+        return { ok: false, error: SCAN_ERRORS.lotNotFound(parsed.lotId) };
+      }
+      const product = products.find(p => p.id === parsed.productId);
+      const variation = product?.variations?.find((v: any) => v.id === parsed.variationId);
+      const sectorId = lot.route?.[lot.currentSectorIndex];
+      const subParts = [variation?.colorName, `Tam ${parsed.size}`, `Mapa #${lot.orderNumber}`].filter(Boolean);
+      return {
+        ok: true,
+        entry: { id: `${Date.now()}`, kind: 'PRODUCT', label: product?.name || 'Produto', sublabel: subParts.join(' • '), sectorId, timestamp: Date.now() },
+        nav: { sectorId, lotId: parsed.lotId, orderId: parsed.orderId, itemIdx: parsed.itemIdx, scanNonce: Date.now() },
+      };
+    }
+    if (parsed?.type === 'LOT') {
+      const lot = await this.findLotById(parsed.lotId, productionLots);
+      if (!lot) {
+        return { ok: false, error: SCAN_ERRORS.lotNotFound(parsed.lotId) };
+      }
+      const product = products.find(p => p.id === lot.productId);
+      const sectorId = lot.route?.[lot.currentSectorIndex];
+      return {
+        ok: true,
+        entry: { id: `${Date.now()}`, kind: 'LOT', label: `Mapa #${lot.orderNumber}`, sublabel: product?.name, sectorId, timestamp: Date.now() },
+        nav: { sectorId, lotId: parsed.lotId, scanNonce: Date.now() },
+      };
+    }
+    if (parsed?.type === 'SOLE') {
+      return { ok: false, error: 'Código de molde de solado não pode ser aberto pelo Scanner Rápido.' };
+    }
+    if (parsed?.type === 'OS') {
+      return { ok: false, error: 'Para abrir uma Ordem de Serviço, use o botão "Escanear" dentro do Mapa, no PCP.' };
+    }
+    return { ok: false, error: 'Código não reconhecido.' };
+  },
+
+  // Adiciona uma entrada ao histórico de scans compartilhado (chave usada pelo
+  // Dashboard) e retorna a lista atualizada.
+  pushScanHistory(entry: ScanHistoryEntry): ScanHistoryEntry[] {
+    try {
+      const existing = JSON.parse(localStorage.getItem(SCAN_HISTORY_KEY) || '[]');
+      const updated = [entry, ...existing].slice(0, 10);
+      localStorage.setItem(SCAN_HISTORY_KEY, JSON.stringify(updated));
+      return updated;
+    } catch {
+      return [entry];
+    }
   },
 
   async toggleTorch(): Promise<void> {

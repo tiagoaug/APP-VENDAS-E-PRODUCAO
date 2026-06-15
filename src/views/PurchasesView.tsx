@@ -74,7 +74,7 @@ export default function PurchasesView({
     setExportModal({ isOpen: true, purchase, format });
   };
 
-  const handleConfirmExport = async (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean) => {
+  const handleConfirmExport = async (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupItems: boolean) => {
     if (!exportModal.purchase) return;
 
     try {
@@ -84,7 +84,8 @@ export default function PurchasesView({
         products,
         additionalNote: note,
         isDarkMode,
-        showFinancialValues
+        showFinancialValues,
+        grouped: groupItems
       }, format);
       setExportModal(prev => ({ ...prev, isOpen: false }));
     } catch (error) {
@@ -186,7 +187,9 @@ export default function PurchasesView({
     if (isSole) {
       const soleItem = item as any;
       const totalPairs = Object.values(soleItem.quantities || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
-      const sizeEntries = Object.entries(soleItem.quantities || {}).filter(([, q]) => (q as number) > 0);
+      const sizeEntries = Object.entries(soleItem.quantities || {})
+        .filter(([, q]) => (q as number) > 0)
+        .sort(([a], [b]) => parseFloat(a) - parseFloat(b));
       return (
         <div key={idx} className="flex flex-col gap-2 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
           {/* Cabeçalho: modelo + cor */}
@@ -497,78 +500,84 @@ export default function PurchasesView({
               onClick={() => onEdit(purchase.id)}
               className={`p-5 rounded-[1.5rem] border flex flex-col gap-4 relative overflow-hidden group cursor-pointer ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}
             >
-              {/* Linha 1: ícone + info + total/badges */}
-              <div className="flex items-start gap-3 z-10">
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${purchase.type === PurchaseType.REPLENISHMENT ? "bg-indigo-600 text-white shadow-indigo-200" : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400"}`}>
+              {/* Linha 1: nome no topo + info/total/badges abaixo */}
+              <div className="flex flex-col gap-3 z-10">
+                <h3 className={`font-black text-[15px] uppercase tracking-tight leading-snug flex items-center justify-between gap-2 ${isDarkMode ? "text-white" : "text-slate-900"}`}>
+                  <span className="truncate">{supplier?.name || "Fornecedor"}</span>
                   {purchase.type === PurchaseType.REPLENISHMENT ? (
-                    <Package size={28} strokeWidth={2.5} />
+                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-50 dark:bg-indigo-900/30 shrink-0">
+                      <Package size={13} strokeWidth={2.5} className="text-indigo-500" />
+                    </span>
                   ) : (
-                    <ShoppingCart size={28} strokeWidth={2.5} />
+                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 shrink-0">
+                      <ShoppingCart size={13} strokeWidth={2.5} className="text-slate-400 dark:text-slate-500" />
+                    </span>
                   )}
-                </div>
+                </h3>
 
-                {/* Centro: nome + data + lote */}
-                <div className="flex-1 min-w-0 flex flex-col gap-1">
-                  <h3 className={`font-black text-[15px] uppercase tracking-tight leading-snug ${isDarkMode ? "text-white" : "text-slate-900"}`}>
-                    {supplier?.name || "Fornecedor"}
-                  </h3>
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-400">
-                    <Calendar size={12} strokeWidth={3} />
-                    {purchase.date ? (
-                      (() => {
-                        const d = new Date(purchase.date);
-                        return isNaN(d.getTime()) ? "Data Inválida" : format(d, "dd MMM yyyy", { locale: ptBR }).toUpperCase();
-                      })()
-                    ) : "Sem Data"}
+                <div className="flex flex-col gap-1.5">
+                  {/* Linha 1: data + venc + expandir */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-400 min-w-0">
+                      <Calendar size={12} strokeWidth={3} />
+                      {purchase.date ? (
+                        (() => {
+                          const d = new Date(purchase.date);
+                          return isNaN(d.getTime()) ? "Data Inválida" : format(d, "dd MMM yyyy", { locale: ptBR }).toUpperCase();
+                        })()
+                      ) : "Sem Data"}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {purchase.dueDate && purchase.paymentStatus === PaymentStatus.PENDING && (
+                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold tracking-wider ${isLate ? 'bg-rose-50 text-rose-500' : 'animate-pulse-orange-yellow'}`}>
+                          Venc: {format(new Date(purchase.dueDate), "dd/MM/yy")}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); toggleExpand(purchase.id); }}
+                        className="w-8 h-8 rounded-full flex items-center justify-center transition-all bg-slate-500 text-white"
+                        title={isExpanded ? "Recolher" : "Expandir"}
+                        aria-label={isExpanded ? "Recolher detalhes da compra" : "Expandir detalhes da compra"}
+                      >
+                        {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400">
-                    <Hash size={12} strokeWidth={3} />
-                    #{purchase.batchNumber || purchase.id.slice(-6).toUpperCase()}
-                  </div>
-                  {purchase.sellerName && (
-                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-md leading-none tracking-wider bg-indigo-600 text-white shadow-sm w-fit mt-0.5">
-                      {purchase.sellerName}
-                    </span>
-                  )}
-                </div>
 
-                {/* Direita: total + tipo + status */}
-                <div className="flex flex-col items-end gap-1.5 shrink-0">
-                  <h3 className="font-black text-base text-rose-500 dark:text-rose-400 leading-none">
-                    R$ {purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </h3>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                    {purchase.type === PurchaseType.REPLENISHMENT ? 'Reposição' : purchase.type === PurchaseType.SOLE ? 'Solados' : 'Geral'}
-                  </span>
-                  {purchase.dueDate && purchase.paymentStatus === PaymentStatus.PENDING && (
-                    <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold tracking-wider ${isLate ? 'bg-rose-50 text-rose-500' : 'animate-pulse-orange-yellow'}`}>
-                      Venc: {format(new Date(purchase.dueDate), "dd/MM/yy")}
-                    </span>
+                  {/* Linha 2: lote + status pagamento */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 min-w-0">
+                      <Hash size={12} strokeWidth={3} />
+                      #{purchase.batchNumber || purchase.id.slice(-6).toUpperCase()}
+                    </div>
+                    {purchase.paymentTerm === PaymentTerm.CASH ? (
+                      <span className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-black tracking-wider shrink-0">Quitada</span>
+                    ) : (
+                      <span className={`px-2 py-1 rounded-lg text-[10px] font-black tracking-wider shrink-0 ${purchase.paymentStatus === PaymentStatus.PAID ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : 'animate-pulse-orange-yellow'}`}>
+                        {purchase.paymentStatus === PaymentStatus.PAID ? 'Quitada' : 'Pendente'}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Linha 3: badges extras */}
+                  {(purchase.sellerName || purchase.generateTransaction === false || (!isExpanded && itemCount > 0)) && (
+                    <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                      {purchase.sellerName && (
+                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-md leading-none tracking-wider bg-indigo-600 text-white shadow-sm w-fit">
+                          {purchase.sellerName}
+                        </span>
+                      )}
+                      {purchase.generateTransaction === false && (
+                        <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-500 text-[10px] font-bold tracking-wider">Não Contábil</span>
+                      )}
+                      {!isExpanded && itemCount > 0 && (
+                        <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] font-black uppercase tracking-wider">
+                          {itemCount} {itemCount === 1 ? 'item' : 'itens'}
+                        </span>
+                      )}
+                    </div>
                   )}
-                  {purchase.generateTransaction === false && (
-                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-500 text-[10px] font-bold tracking-wider">Não Contábil</span>
-                  )}
-                  {purchase.paymentTerm === PaymentTerm.CASH ? (
-                    <span className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-black tracking-wider">Quitada</span>
-                  ) : (
-                    <span className={`px-2 py-1 rounded-lg text-[10px] font-black tracking-wider ${purchase.paymentStatus === PaymentStatus.PAID ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : 'animate-pulse-orange-yellow'}`}>
-                      {purchase.paymentStatus === PaymentStatus.PAID ? 'Quitada' : 'Pendente'}
-                    </span>
-                  )}
-                  {!isExpanded && itemCount > 0 && (
-                    <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] font-black uppercase tracking-wider">
-                      {itemCount} {itemCount === 1 ? 'item' : 'itens'}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); toggleExpand(purchase.id); }}
-                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-all mt-0.5 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-500'}`}
-                    title={isExpanded ? "Recolher" : "Expandir"}
-                    aria-label={isExpanded ? "Recolher detalhes da compra" : "Expandir detalhes da compra"}
-                  >
-                    {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                  </button>
                 </div>
               </div>
 
@@ -624,7 +633,16 @@ export default function PurchasesView({
 
               {/* Action Bar (Footer) */}
               <div className="flex justify-between items-center pt-4 border-t border-slate-100 dark:border-slate-800/50 z-10">
-                <div className="flex items-center">
+                <div className="flex items-center gap-3">
+                  {/* Total Geral */}
+                  <div className="flex flex-col">
+                    <h3 className="font-black text-base text-rose-500 dark:text-rose-400 leading-none">
+                      R$ {purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </h3>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      {purchase.type === PurchaseType.REPLENISHMENT ? 'Reposição' : purchase.type === PurchaseType.SOLE ? 'Solados' : 'Geral'}
+                    </span>
+                  </div>
                   {/* Note Modal Toggle */}
                   {purchase.notes && (
                     <button
@@ -748,6 +766,7 @@ export default function PurchasesView({
         initialFormat={exportModal.format}
         title="Exportar Compra"
         showValuesToggle
+        showGroupingToggle
       />
     </div>
   );

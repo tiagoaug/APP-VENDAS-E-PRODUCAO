@@ -12,6 +12,8 @@ interface ExportData {
   additionalNote?: string;
   isDarkMode: boolean;
   showFinancialValues: boolean;
+  /** Quando true, agrupa itens de mesma referência + cor (somando quantidades/caixas e total) */
+  grouped?: boolean;
 }
 
 type ItemRow = {
@@ -29,7 +31,7 @@ const TYPE_LABELS: Record<string, string> = {
   [PurchaseType.SOLE]: 'Compra de Solados',
 };
 
-function buildItemRows(purchase: Purchase, products: Product[]): ItemRow[] {
+function buildItemRows(purchase: Purchase, products: Product[], grouped = false): ItemRow[] {
   if (purchase.type === PurchaseType.GENERAL) {
     return (purchase.generalItems || []).map(item => ({
       title: item.description,
@@ -53,7 +55,35 @@ function buildItemRows(purchase: Purchase, products: Product[]): ItemRow[] {
     });
   }
 
-  return (purchase.items || []).map((raw: any) => {
+  const items = purchase.items || [];
+
+  // Agrupamento: soma quantidades (caixas/unidades) e total dos itens que compartilham
+  // a mesma referência (produto) + mesma cor (variação) + mesma unidade (cx/un). Útil
+  // após duplicar modelos — em vez de várias linhas iguais, mostra uma só com o total.
+  if (grouped) {
+    const map = new Map<string, { productId: string; variationId: string; isBox: boolean; quantity: number; lineTotal: number }>();
+    for (const raw of items as any[]) {
+      const key = `${raw.productId}::${raw.variationId}::${raw.isBox ? 'cx' : 'un'}`;
+      const acc = map.get(key) || { productId: raw.productId, variationId: raw.variationId, isBox: !!raw.isBox, quantity: 0, lineTotal: 0 };
+      acc.quantity += Number(raw.quantity) || 0;
+      acc.lineTotal += (raw.cost || 0) * (Number(raw.quantity) || 0);
+      map.set(key, acc);
+    }
+    return Array.from(map.values()).map(g => {
+      const product = products.find(p => p.id === g.productId);
+      const variation = product?.variations?.find(v => v.id === g.variationId);
+      const ref = product?.reference ? `${product.reference} ` : '';
+      return {
+        title: `${ref}${product?.name || 'Produto não encontrado'}`,
+        subtitle: variation?.colorName || undefined,
+        qtyLabel: `${g.quantity} ${g.isBox ? 'cx' : 'un'}`,
+        unitValue: g.quantity > 0 ? g.lineTotal / g.quantity : undefined,
+        lineTotal: g.lineTotal,
+      };
+    });
+  }
+
+  return items.map((raw: any) => {
     const product = products.find(p => p.id === raw.productId);
     const variation = product?.variations?.find(v => v.id === raw.variationId);
     const ref = product?.reference ? `${product.reference} ` : '';
@@ -97,10 +127,10 @@ const ROSE: [number, number, number] = [239, 68, 68];
 // ── PDF ───────────────────────────────────────────────────────────────────────
 
 async function generatePDF(data: ExportData, filename: string, orderNumber: string) {
-  const { purchase, suppliers, products, additionalNote, showFinancialValues } = data;
+  const { purchase, suppliers, products, additionalNote, showFinancialValues, grouped } = data;
   const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
   const supplier = suppliers.find(s => s.id === purchase.supplierId);
-  const rows = buildItemRows(purchase, products);
+  const rows = buildItemRows(purchase, products, grouped);
   const isSole = purchase.type === PurchaseType.SOLE;
 
   // Header Banner
@@ -335,9 +365,9 @@ async function generatePDF(data: ExportData, filename: string, orderNumber: stri
 // ── JPG ───────────────────────────────────────────────────────────────────────
 
 async function generateJPG(data: ExportData, filename: string, orderNumber: string) {
-  const { purchase, suppliers, products, additionalNote, showFinancialValues } = data;
+  const { purchase, suppliers, products, additionalNote, showFinancialValues, grouped } = data;
   const supplier = suppliers.find(s => s.id === purchase.supplierId);
-  const rows = buildItemRows(purchase, products);
+  const rows = buildItemRows(purchase, products, grouped);
   const isSole = purchase.type === PurchaseType.SOLE;
 
   const W = 600;

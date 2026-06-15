@@ -1,12 +1,13 @@
-import { 
-  collection, 
-  doc, 
-  setDoc, 
-  getDocs, 
-  query, 
-  where, 
-  onSnapshot, 
-  updateDoc, 
+import {
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  getDocs,
+  query,
+  where,
+  onSnapshot,
+  updateDoc,
   deleteDoc,
   Timestamp,
   orderBy,
@@ -97,6 +98,24 @@ export const firebaseService = {
     } catch (error) {
       handleFirestoreError(error, OperationType.LIST, fullPath);
       return [];
+    }
+  },
+
+  // Busca um único documento direto do Firestore por ID, sem depender de uma
+  // subscription já ativa — usado pelo scanner de QR Code para "carregar
+  // diretamente" um Mapa/pedido mesmo que a lista local (`productionLots`)
+  // ainda não tenha sincronizado.
+  getDocument: async <T>(path: string, id: string): Promise<(T & { id: string }) | null> => {
+    if (!auth.currentUser) return null;
+    if (!id) return null;
+    const fullPath = `users/${auth.currentUser.uid}/${path}`;
+    try {
+      const snapshot = await getDoc(doc(db, fullPath, id));
+      if (!snapshot.exists()) return null;
+      return { id: snapshot.id, ...snapshot.data() } as T & { id: string };
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, `${fullPath}/${id}`);
+      return null;
     }
   },
 

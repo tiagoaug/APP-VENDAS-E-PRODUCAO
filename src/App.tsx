@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useMemo, ReactNode } from "react";
+import { useState, useEffect, useMemo, ReactNode } from "react";
 import {
   LayoutDashboard,
   Package,
@@ -38,8 +38,10 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 import { auth, db, logout } from "./lib/firebase";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
-import { doc, collection, query, where, getDocs } from "firebase/firestore";
+import { doc, collection, query, where, getDocs, deleteField } from "firebase/firestore";
 import { firebaseService } from "./services/firebaseService";
+import { resolveSoleConsumption } from "./utils/soleNeeds";
+import { getSourceItemKey, saleProductionHasProgressed } from "./utils/productionRoute";
 import { financeService } from "./services/financeService";
 import {
   ViewType,
@@ -79,6 +81,8 @@ import {
   ProductionLot,
   PurchaseRequest,
   ServiceOrder,
+  StockLot,
+  StockLotRevertPreview,
 } from "./types";
 
 // Views
@@ -117,6 +121,7 @@ import PalmilhaStockView from "./views/PalmilhaStockView";
 import PCPView from "./views/PCPView";
 import PurchaseNeedsView from "./views/PurchaseNeedsView";
 import GeneralReceiptsView from "./views/GeneralReceiptsView";
+import SoleReceiptView from "./views/SoleReceiptView";
 
 import ProductionEngineeringView from "./views/ProductionEngineeringView";
 
@@ -275,6 +280,7 @@ export default function App() {
   const [soleStockEntries, setSoleStockEntries] = useState<SoleStockEntry[]>([]);
   const [palmilhaStockEntries, setPalmilhaStockEntries] = useState<PalmilhaStockEntry[]>([]);
   const [productionLots, setProductionLots] = useState<ProductionLot[]>([]);
+  const [stockLots, setStockLots] = useState<StockLot[]>([]);
   const [productionOrders, setProductionOrders] = useState<ProductionOrder[]>([]);
   const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequest[]>([]);
   const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
@@ -528,6 +534,11 @@ export default function App() {
       setProductionLots
     );
 
+    const unsubStockLots = firebaseService.subscribeToCollection<StockLot>(
+      "stockLots",
+      setStockLots
+    );
+
     const unsubProductionOrders = firebaseService.subscribeToCollection<ProductionOrder>(
       "productionOrders",
       setProductionOrders
@@ -606,6 +617,7 @@ export default function App() {
       unsubSoleStock();
       unsubPalmilhaStock();
       unsubProductionLots();
+      unsubStockLots();
       unsubProductionOrders();
       unsubPurchaseRequests();
       unsubServiceOrders();
@@ -678,61 +690,27 @@ export default function App() {
     }
   };
 
-  const handleHeaderScan = (parsed: any) => {
-    let sectorId: string | undefined;
-    let entry: { id: string; kind: string; label: string; sublabel?: string; sectorId?: string; timestamp: number } | null = null;
-
-    if (parsed?.type === 'PRODUCT') {
-      const product = products.find(p => p.id === parsed.productId);
-      const variation = product?.variations?.find((v: any) => v.id === parsed.variationId);
-      const lot = parsed.lotId ? productionLots.find(l => l.id === parsed.lotId) : undefined;
-      sectorId = lot?.route?.[lot.currentSectorIndex];
-      const subParts = [variation?.colorName, `Tam ${parsed.size}`, lot ? `Mapa #${lot.orderNumber}` : null].filter(Boolean);
-      entry = { id: `${Date.now()}`, kind: 'PRODUCT', label: product?.name || 'Produto', sublabel: subParts.join(' • '), sectorId, timestamp: Date.now() };
-    } else if (parsed?.type === 'LOT') {
-      const lot = productionLots.find(l => l.id === parsed.lotId);
-      const product = lot ? products.find(p => p.id === lot.productId) : undefined;
-      sectorId = lot?.route?.[lot.currentSectorIndex];
-      entry = { id: `${Date.now()}`, kind: 'LOT', label: lot ? `Mapa #${lot.orderNumber}` : 'Mapa não encontrado', sublabel: product?.name, sectorId, timestamp: Date.now() };
-    } else if (parsed?.type === 'SOLE') {
-      entry = { id: `${Date.now()}`, kind: 'SOLE', label: 'Molde de Solado', sublabel: `Cor ${parsed.colorId} • Tam ${parsed.size}`, timestamp: Date.now() };
-    } else if (parsed?.type === 'OS') {
-      entry = { id: `${Date.now()}`, kind: 'OS', label: 'Ordem de Serviço', sublabel: `#${parsed.osId}`, timestamp: Date.now() };
-    }
-
-    if (!entry) {
-      toast.show('Código não reconhecido.');
+  // Resolução compartilhada com o "Scanner Rápido" do Dashboard
+  // (scannerService.resolveScanResult) — garante que ambos tenham o mesmo
+  // comportamento ao abrir um Mapa/pedido a partir de uma etiqueta escaneada.
+  // Carrega o Mapa diretamente (local ou Firestore) ANTES de navegar, em vez de
+  // navegar e esperar o PCP encontrar o Mapa por conta própria.
+  const handleHeaderScan = async (parsed: any) => {
+    const resolved = await scannerService.resolveScanResult(parsed, products, productionLots);
+    if (!resolved.ok) {
+      toast.show(resolved.error);
       return;
     }
 
-    try {
-      const existing = JSON.parse(localStorage.getItem('dashboard_scan_history') || '[]');
-      localStorage.setItem('dashboard_scan_history', JSON.stringify([entry, ...existing].slice(0, 10)));
-    } catch { /* ignore */ }
+    scannerService.pushScanHistory(resolved.entry);
 
-    if (parsed?.type === 'LOT' && parsed.lotId) {
-      navigateTo(ViewType.PRODUCTION_PCP, { initialSectorId: sectorId, initialLotId: parsed.lotId });
-      return;
-    }
-
-    // Etiqueta de pedido vinculado (PRD|...|lotId|orderId|itemIdx) -> abre o Mapa
-    // direto no card do pedido expandido, igual ao scanner interno do PCP.
-    if (parsed?.type === 'PRODUCT' && parsed.lotId) {
-      navigateTo(ViewType.PRODUCTION_PCP, {
-        initialSectorId: sectorId,
-        initialLotId: parsed.lotId,
-        initialOrderId: parsed.orderId,
-        initialItemIdx: parsed.itemIdx,
-      });
-      return;
-    }
-
-    navigateToProduction('PCP', sectorId);
+    const { sectorId, lotId, orderId, itemIdx, scanNonce } = resolved.nav;
+    navigateTo(ViewType.PRODUCTION_PCP, { initialSectorId: sectorId, initialLotId: lotId, initialOrderId: orderId, initialItemIdx: itemIdx, initialScanNonce: scanNonce });
   };
 
-  const navigateToProduction = (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES', sectorId?: string, lotId?: string) => {
+  const navigateToProduction = (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES', sectorId?: string, lotId?: string, orderId?: string, itemIdx?: string | number, scanNonce?: number) => {
     if (subScreen === 'PCP') {
-      navigateTo(ViewType.PRODUCTION_PCP, (sectorId || lotId) ? { initialSectorId: sectorId, initialLotId: lotId } : null);
+      navigateTo(ViewType.PRODUCTION_PCP, (sectorId || lotId) ? { initialSectorId: sectorId, initialLotId: lotId, initialOrderId: orderId, initialItemIdx: itemIdx, initialScanNonce: scanNonce } : null);
     } else if (subScreen === 'NECESSIDADES') {
       navigateTo(ViewType.PRODUCTION_PCP, { initialTab: 'needs' });
     } else {
@@ -935,6 +913,39 @@ export default function App() {
     } catch (e: any) {
       console.error(e);
       toast.show("Erro ao cancelar venda: " + (e.message || e));
+    }
+  };
+
+  // "Liberar Pedido" — baixa manual de uma venda: marca todos os StockLots RESERVADO
+  // vinculados a essa venda como ENTREGUE e marca a venda/itens como entregues.
+  const handleReleaseSale = async (saleId: string) => {
+    const sale = sales.find(s => s.id === saleId);
+    if (!sale) return;
+
+    const reservedLots = stockLots.filter(l => l.saleId === saleId && l.status === 'RESERVADO');
+    if (reservedLots.length === 0) return;
+
+    try {
+      const now = Date.now();
+      for (const lot of reservedLots) {
+        await firebaseService.updateDocument('stockLots', lot.id, {
+          status: 'ENTREGUE',
+          deliveredAt: now,
+          updatedAt: now,
+        });
+      }
+
+      const updatedItems = sale.items.map(item => ({ ...item, fulfilled: true }));
+      await firebaseService.updateDocument('sales', saleId, {
+        items: updatedItems,
+        deliveryStatus: 'DELIVERED',
+        deliveredAt: now,
+      });
+
+      toast.show('Pedido liberado para o cliente.');
+    } catch (e: any) {
+      console.error(e);
+      toast.show('Erro ao liberar pedido: ' + (e.message || e));
     }
   };
 
@@ -1234,6 +1245,13 @@ export default function App() {
       }
     }
 
+    // Pedido já em produção com baixa em algum setor: não pode mais ser excluído
+    // (o Mapa continua em produção). Só pode ser cancelado — ver handleCancelSaleWithRevert.
+    if (saleProductionHasProgressed(sale, productionOrders, productionLots)) {
+      toast.show("Este pedido já está em produção e não pode ser excluído. Use \"Cancelar e Estornar\".");
+      return;
+    }
+
     try {
       const uid = auth.currentUser?.uid;
       if (!uid) throw new Error("Usuário não autenticado");
@@ -1328,7 +1346,19 @@ export default function App() {
           }
         }
 
-        // D. Excluir o Registro
+        // D. Excluir Pedido de Produção (e Mapas) ainda sem nenhuma baixa — checado
+        // acima via saleProductionHasProgressed, então é seguro remover.
+        if (sale.productionOrderId) {
+          const po = productionOrders.find(p => p.id === sale.productionOrderId);
+          if (po) {
+            po.lotIds.forEach(lotId => {
+              transaction.delete(doc(db, `users/${uid}/productionLots`, lotId));
+            });
+            transaction.delete(doc(db, `users/${uid}/productionOrders`, po.id));
+          }
+        }
+
+        // E. Excluir o Registro
         transaction.delete(salesRef);
       });
 
@@ -1336,6 +1366,165 @@ export default function App() {
     } catch (err: any) {
       console.error("Erro ao excluir venda:", err);
       toast.show('Erro ao excluir: ' + (err.message || err));
+    }
+  };
+
+  // Cancela e estorna um pedido cuja produção já teve "baixa" em algum setor — não pode
+  // mais ser excluído (ver handleDeleteSale/saleProductionHasProgressed), pois o Mapa
+  // continua em produção. Reverte estoque/financeiro/crédito como uma exclusão faria,
+  // mas mantém o registro como CANCELLED (em vez de apagar) e devolve ao estoque geral
+  // (EM_ESTOQUE) qualquer caixa já produzida e reservada (RESERVADO) para essa venda —
+  // a produção pendente segue normalmente e, ao concluir, entra no estoque geral em vez
+  // de ser reservada para esta venda (ver classifyExpedicaoOrders em PCPView).
+  const handleCancelSaleWithRevert = async (id: string) => {
+    const sale = sales.find(s => s.id === id);
+    if (!sale) {
+      toast.show("Erro: Venda não encontrada no sistema.");
+      return;
+    }
+    if (sale.status === SaleStatus.CANCELLED) {
+      toast.show("Esta venda já está cancelada.");
+      return;
+    }
+
+    try {
+      const uid = auth.currentUser?.uid;
+      if (!uid) throw new Error("Usuário não autenticado");
+
+      const transactionsRef = collection(db, `users/${uid}/transactions`);
+      const q = query(transactionsRef, where("relatedId", "==", id));
+      const txSnapshot = await getDocs(q);
+      const relatedTxsFromDb = txSnapshot.docs.map(d => ({ id: d.id, ...d.data() } as Transaction));
+
+      const reservedLots = stockLots.filter(l => l.saleId === id && l.status === 'RESERVADO');
+
+      await firebaseService.runAtomic(async (transaction) => {
+        const salesRef = doc(db, `users/${uid}/sales`, id);
+
+        // 1. Preparar Referências
+        const productRefsMap = new Map<string, any>();
+        if (sale.status === SaleStatus.SALE) {
+          sale.items.forEach(item => {
+            if (item.fulfilled !== false) productRefsMap.set(item.productId, doc(db, `users/${uid}/products`, item.productId));
+          });
+        }
+        reservedLots.forEach(lot => {
+          if (!productRefsMap.has(lot.productId)) productRefsMap.set(lot.productId, doc(db, `users/${uid}/products`, lot.productId));
+        });
+
+        const accountRefsMap = new Map<string, any>();
+        const uniqueAccountIds = Array.from(new Set(relatedTxsFromDb.map(t => t.accountId as string)));
+        uniqueAccountIds.forEach((aId: string) => {
+          accountRefsMap.set(aId, doc(db, `users/${uid}/accounts`, aId));
+        });
+
+        let customerRef = null;
+        if (sale.customerId) {
+          customerRef = doc(db, `users/${uid}/people`, sale.customerId);
+        }
+
+        // 2. Realizar todas as LEITURAS
+        const productDocsMap = new Map();
+        for (const [pId, ref] of productRefsMap.entries()) {
+          productDocsMap.set(pId, await transaction.get(ref));
+        }
+
+        const accountDocsMap = new Map();
+        for (const [aId, ref] of accountRefsMap.entries()) {
+          accountDocsMap.set(aId, await transaction.get(ref));
+        }
+
+        let customerDoc = null;
+        if (customerRef) {
+          customerDoc = await transaction.get(customerRef);
+        }
+
+        // 3. Realizar todas as ESCRITAS
+
+        // A. Estorno do estoque já abatido na venda + entrada das caixas RESERVADAS
+        // (já produzidas para este pedido) de volta ao estoque geral.
+        for (const [pId, pDoc] of productDocsMap.entries()) {
+          if (!pDoc.exists()) continue;
+          const productData = pDoc.data() as Product;
+
+          if (sale.status === SaleStatus.SALE) {
+            sale.items.filter(item => item.productId === pId && item.fulfilled !== false).forEach(item => {
+              const variation = productData.variations.find(v => v.id === item.variationId);
+              if (!variation) return;
+              const stockKey = (productData.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+              variation.stock[stockKey] = (variation.stock[stockKey] || 0) + item.quantity;
+            });
+          }
+
+          reservedLots.filter(l => l.productId === pId).forEach(lot => {
+            const variation = productData.variations.find(v => v.id === lot.variationId);
+            if (!variation) return;
+            if (productData.type === SaleType.WHOLESALE) {
+              const boxQty = lot.boxQty || 0;
+              variation.stock['WHOLESALE'] = (variation.stock['WHOLESALE'] || 0) + boxQty;
+              if (lot.pkgId && boxQty > 0) {
+                const allocations = [...(variation.stockPkgAllocations || [])];
+                const allocIdx = allocations.findIndex(a => a.pkgId === lot.pkgId);
+                if (allocIdx >= 0) {
+                  allocations[allocIdx] = { ...allocations[allocIdx], qty: allocations[allocIdx].qty + boxQty };
+                } else {
+                  allocations.push({ pkgId: lot.pkgId, qty: boxQty });
+                }
+                variation.stockPkgAllocations = allocations;
+              }
+            } else {
+              Object.entries(lot.sizeBreakdown).forEach(([size, qty]) => {
+                variation.stock[size] = (variation.stock[size] || 0) + qty;
+              });
+            }
+          });
+
+          transaction.update(productRefsMap.get(pId), { variations: productData.variations });
+        }
+
+        // B. Devolve as caixas RESERVADO para o estoque geral (EM_ESTOQUE), removendo
+        // o vínculo com a venda — a produção pendente seguirá normalmente e entrará
+        // direto no estoque geral (classifyExpedicaoOrders, PCPView).
+        reservedLots.forEach(lot => {
+          transaction.update(doc(db, `users/${uid}/stockLots`, lot.id), {
+            status: 'EM_ESTOQUE',
+            saleId: deleteField(),
+            saleOrderNumber: deleteField(),
+            customerName: deleteField(),
+            updatedAt: Date.now(),
+          });
+        });
+
+        // C. Estorno Financeiro
+        for (const tx of relatedTxsFromDb) {
+          const aDoc = accountDocsMap.get(tx.accountId);
+          if (aDoc?.exists()) {
+            const accData = aDoc.data() as Account;
+            const adjustment = tx.type === TransactionType.INCOME ? -tx.amount : tx.amount;
+            transaction.update(accountRefsMap.get(tx.accountId), { balance: accData.balance + adjustment });
+          }
+          transaction.delete(doc(db, `users/${uid}/transactions`, tx.id));
+        }
+
+        // D. Estorno de Crédito de Cliente
+        if (customerDoc?.exists() && sale.paymentHistory) {
+          const custData = customerDoc.data() as Person;
+          const amountPaid = sale.paymentHistory.reduce((acc, p) => acc + p.amount, 0);
+          const surplus = Math.max(0, amountPaid - sale.total);
+          if (surplus > 0) {
+            transaction.update(customerRef!, { credit: Math.max(0, (custData.credit || 0) - surplus) });
+          }
+        }
+
+        // E. Marca como cancelada (mantém o registro — o Mapa em produção continua
+        // vinculado ao Pedido de Produção e não é alterado aqui).
+        transaction.update(salesRef, { status: SaleStatus.CANCELLED });
+      });
+
+      toast.show('Pedido cancelado e estornado. A produção em andamento segue normalmente e as caixas produzidas entrarão no estoque geral.');
+    } catch (err: any) {
+      console.error("Erro ao cancelar pedido com estorno:", err);
+      toast.show('Erro ao cancelar: ' + (err.message || err));
     }
   };
 
@@ -1452,6 +1641,135 @@ export default function App() {
       console.error('Error during purchase deletion:', err);
       toast.show('Erro ao excluir compra: ' + ((err as any)?.message || err));
     }
+  };
+
+  // Calcula o que reverter este StockLot vai desfazer — sem escrever nada —
+  // para exibir um popup de devolução com os valores de estoque (produto e
+  // solados) antes/depois e a confirmação da volta do pedido p/ Expedição.
+  const buildStockLotRevertPreview = (stockLot: StockLot): StockLotRevertPreview => {
+    const product = products.find(p => p.id === stockLot.productId);
+    const variation = product?.variations.find(v => v.id === stockLot.variationId);
+
+    const productStockRows: { label: string; before: number; after: number }[] = [];
+    if (product && variation && stockLot.status === 'EM_ESTOQUE') {
+      if (stockLot.boxQty !== undefined) {
+        const before = variation.stock['WHOLESALE'] || 0;
+        productStockRows.push({
+          label: stockLot.pkgName ? `Caixas · ${stockLot.pkgName}` : 'Caixas',
+          before,
+          after: Math.max(0, before - stockLot.boxQty),
+        });
+      } else {
+        Object.entries(stockLot.sizeBreakdown || {})
+          .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
+          .forEach(([size, qty]) => {
+            const before = variation.stock[size] || 0;
+            productStockRows.push({ label: size, before, after: Math.max(0, before - (Number(qty) || 0)) });
+          });
+      }
+    }
+
+    let sole: StockLotRevertPreview['sole'];
+    if (product && variation) {
+      const consumption = resolveSoleConsumption(product, variation, stockLot.sizeBreakdown || {}, stockLot.totalPairs, soleStockEntries);
+      if (consumption) {
+        const entry = soleStockEntries.find(s => String(s.moldId).trim() === consumption.moldId && String(s.colorId || '').trim() === consumption.colorId);
+        if (entry) {
+          const rows = Object.entries(consumption.gradeQuantities)
+            .filter(([k]) => k !== 'pesagem' && k !== 'total')
+            .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
+            .map(([size, qty]) => ({ size, before: entry.stock[size] || 0, after: (entry.stock[size] || 0) + (Number(qty) || 0) }));
+          sole = { moldName: entry.moldName, colorName: entry.colorName, rows };
+        }
+      }
+    }
+
+    const lot = productionLots.find(l => l.id === stockLot.lotId);
+    const expedicaoSectorId = sectors.find(s => s.isProductionCycleEnd)?.id;
+
+    return {
+      productName: stockLot.productName,
+      productReference: stockLot.productReference,
+      variationName: stockLot.variationName,
+      gradeLabel: stockLot.gradeLabel,
+      totalPairs: stockLot.totalPairs,
+      boxQty: stockLot.boxQty,
+      pkgName: stockLot.pkgName,
+      stockReverted: stockLot.status === 'EM_ESTOQUE',
+      productStockRows,
+      sole,
+      lotOrderNumber: stockLot.lotOrderNumber,
+      orderNumber: stockLot.productionOrderNumber || stockLot.saleOrderNumber,
+      orderReturnedToExpedicao: !!(lot && stockLot.productionOrderId && expedicaoSectorId),
+      lotReopened: !!lot?.finishedAt,
+    };
+  };
+
+  // Reverte uma entrada de estoque criada por uma "baixa de expedição" (StockLot):
+  // remove a caixa/pares do estoque do produto (se EM_ESTOQUE), repõe os solados
+  // que haviam sido consumidos, devolve o pedido para o setor de Expedição no mapa
+  // de origem (removendo a marca ORDER_FINALIZED) e, se o mapa havia sido marcado
+  // como concluído por essa baixa, reabre o mapa (remove `finishedAt`).
+  const handleRevertStockLot = async (stockLot: StockLot): Promise<StockLotRevertPreview> => {
+    const preview = buildStockLotRevertPreview(stockLot);
+    const product = products.find(p => p.id === stockLot.productId);
+    const variation = product?.variations.find(v => v.id === stockLot.variationId);
+
+    if (product && variation && stockLot.status === 'EM_ESTOQUE') {
+      const variIdx = product.variations.findIndex(v => v.id === variation.id);
+      const updatedVariations = product.variations.map((v, idx) => {
+        if (idx !== variIdx) return v;
+        const newStock = { ...v.stock };
+        if (stockLot.boxQty !== undefined) {
+          newStock['WHOLESALE'] = Math.max(0, (newStock['WHOLESALE'] || 0) - stockLot.boxQty);
+          const allocations = (v.stockPkgAllocations || []).map(a =>
+            a.pkgId === stockLot.pkgId ? { ...a, qty: Math.max(0, a.qty - (stockLot.boxQty || 0)) } : a
+          );
+          return { ...v, stock: newStock, stockPkgAllocations: allocations };
+        }
+        Object.entries(stockLot.sizeBreakdown || {}).forEach(([size, qty]) => {
+          newStock[size] = Math.max(0, (newStock[size] || 0) - (Number(qty) || 0));
+        });
+        return { ...v, stock: newStock };
+      });
+      await firebaseService.saveDocument("products", { ...product, variations: updatedVariations });
+    }
+
+    if (product && variation) {
+      const consumption = resolveSoleConsumption(product, variation, stockLot.sizeBreakdown || {}, stockLot.totalPairs, soleStockEntries);
+      if (consumption) {
+        const entry = soleStockEntries.find(s => String(s.moldId).trim() === consumption.moldId && String(s.colorId || '').trim() === consumption.colorId);
+        if (entry) {
+          const updatedStock = { ...entry.stock };
+          Object.entries(consumption.gradeQuantities).forEach(([gradeKey, qty]) => {
+            updatedStock[gradeKey] = (updatedStock[gradeKey] || 0) + qty;
+          });
+          const totalPairs = Object.entries(updatedStock)
+            .filter(([k]) => k !== 'pesagem' && k !== 'total')
+            .reduce((s, [, v]) => s + (Number(v) || 0), 0);
+          await firebaseService.updateDocument('soleStock', entry.id, { stock: updatedStock, totalPairs, updatedAt: Date.now() });
+        }
+      }
+    }
+
+    const lot = productionLots.find(l => l.id === stockLot.lotId);
+    if (lot && stockLot.productionOrderId) {
+      const expedicaoSectorId = sectors.find(s => s.isProductionCycleEnd)?.id;
+      const currentOrderSectors: Record<string, string> = (lot as any).metadata?.orderSectors || {};
+      const updatedOrderSectors = { ...currentOrderSectors };
+      const itemKey = getSourceItemKey({ orderId: stockLot.productionOrderId, itemIdx: stockLot.itemIdx });
+      if (expedicaoSectorId) updatedOrderSectors[itemKey] = expedicaoSectorId;
+      else delete updatedOrderSectors[itemKey];
+
+      await firebaseService.updateDocument('productionLots', lot.id, {
+        metadata: { ...(lot as any).metadata, orderSectors: updatedOrderSectors },
+        ...(lot.finishedAt ? { finishedAt: deleteField() } : {}),
+      });
+    }
+
+    await firebaseService.deleteDocument('stockLots', stockLot.id);
+    toast.show('Entrada revertida — estoque, solados e pedido devolvidos ao estado anterior.');
+    return preview;
   };
 
   const handleSaveProductionLot = async (lot: ProductionLot) => {
@@ -2526,6 +2844,7 @@ export default function App() {
             onEdit={(sale) => navigateTo(ViewType.SALE_FORM, sale.id)}
             onDelete={handleDeleteSale}
             onCancelOnly={handleCancelOnlySale}
+            onCancelAndRevert={handleCancelSaleWithRevert}
             onConvert={async (id) => {
               const sale = sales.find((s) => s.id === id);
               if (!sale) return;
@@ -2973,6 +3292,10 @@ export default function App() {
             modulesConfig={modulesConfig}
             isDarkMode={isDarkMode}
             initialSearchQuery={searchContext}
+            stockLots={stockLots}
+            onReleaseSale={handleReleaseSale}
+            onNavigateStock={() => navigateTo(ViewType.STOCK)}
+            productionConfigs={productionConfigs}
           />
         );
       case ViewType.FINANCIAL:
@@ -3164,6 +3487,9 @@ export default function App() {
               await firebaseService.saveDocument("products", product);
             }}
             isDarkMode={isDarkMode}
+            stockLots={stockLots}
+            onPreviewRevertStockLot={buildStockLotRevertPreview}
+            onRevertStockLot={handleRevertStockLot}
           />
         );
       case ViewType.SALE_FORM:
@@ -3362,6 +3688,7 @@ export default function App() {
             }}
             onDelete={handleDeleteSale}
             onCancelOnly={handleCancelOnlySale}
+            onCancelAndRevert={handleCancelSaleWithRevert}
             onCancel={goBack}
             modulesConfig={modulesConfig}
             isDarkMode={isDarkMode}
@@ -3405,13 +3732,46 @@ export default function App() {
                   {[
                     { id: ViewType.PRODUCTION_PCP, label: 'PCP Central', icon: <GanttChartSquare size={22} />, color: 'text-indigo-600' },
                     { id: ViewType.PRODUCTION_ESTOQUES_MENU, label: 'Estoques', icon: <Boxes size={22} />, color: 'text-emerald-600' },
-                    { id: ViewType.PRODUCTION_WEIGHING, label: 'Pesagem e Contagem', icon: <Scale size={22} />, color: 'text-violet-600' },
-                    { id: ViewType.PRODUCTION_SOLE_PURCHASE, label: 'Entrada de Solados', icon: <ShoppingCart size={22} />, color: 'text-cyan-600' },
                     { id: ViewType.PRODUCTION_PURCHASE_NEEDS, label: 'Necessidade de Compras', icon: <ClipboardList size={22} />, color: 'text-amber-600' },
                   ].map((item, index, array) => (
                     <button
                       key={item.id}
                       onClick={() => navigateTo(item.id)}
+                      className={`w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${index !== array.length - 1 ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={`w-10 h-10 flex items-center justify-center shrink-0 ${item.color}`}>
+                          {item.icon}
+                        </div>
+                        <div className="text-left">
+                          <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.label}</p>
+                        </div>
+                      </div>
+                      <ChevronRight size={20} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Novo Grupo Gestão de Solados */}
+              <div className="flex flex-col gap-3">
+                <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Gestão de Solados</h3>
+                <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                  {[
+                    { id: ViewType.PRODUCTION_WEIGHING, label: 'Pesagem e Contagem de Solados', icon: <Scale size={22} />, color: 'text-violet-600' },
+                    { id: ViewType.PRODUCTION_SOLE_RECEIPT, label: 'Conferência de Compras (Solas)', icon: <ShoppingCart size={22} />, color: 'text-cyan-600' },
+                    { id: ViewType.PRODUCTION_SOLE_STOCK, label: 'Estoques de Solados', icon: <Package size={22} />, color: 'text-emerald-500' },
+                    { id: 'matrizes', label: 'Matrizes', icon: <Database size={22} />, color: 'text-indigo-500' },
+                  ].map((item, index, array) => (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        if (item.id === 'matrizes') {
+                          navigateToProduction('MATRIZES');
+                        } else {
+                          navigateTo(item.id as ViewType);
+                        }
+                      }}
                       className={`w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${index !== array.length - 1 ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
                     >
                       <div className="flex items-center gap-4">
@@ -3556,6 +3916,7 @@ export default function App() {
             soleStock={soleStockEntries}
             palmilhaStock={palmilhaStockEntries}
             onNavigate={navigateTo}
+            onNavigateProduction={navigateToProduction}
             purchaseRequests={purchaseRequests}
             onRequestPurchase={handleCreatePurchaseRequest}
             initialTab={currentParams?.initialTab}
@@ -3563,6 +3924,7 @@ export default function App() {
             initialLotId={currentParams?.initialLotId}
             initialOrderId={currentParams?.initialOrderId}
             initialItemIdx={currentParams?.initialItemIdx}
+            initialScanNonce={currentParams?.initialScanNonce}
             people={people}
             accounts={accounts}
             categories={categories}
@@ -3731,8 +4093,19 @@ export default function App() {
             purchaseRequests={purchaseRequests}
             onBack={goBack}
             isDarkMode={isDarkMode}
-            soleStockEntries={soleStockEntries}
             onEditPurchase={(id) => navigateTo(ViewType.PURCHASE_FORM, id)}
+          />
+        );
+      case ViewType.PRODUCTION_SOLE_RECEIPT:
+        return (
+          <SoleReceiptView
+            purchases={purchases}
+            suppliers={suppliers}
+            soleStockEntries={soleStockEntries}
+            productionLots={productionLots}
+            products={products}
+            onBack={goBack}
+            isDarkMode={isDarkMode}
           />
         );
       case ViewType.MODULES_CONFIG:
@@ -3859,9 +4232,11 @@ export default function App() {
       case ViewType.PRODUCTION_STOCK:
         return "Estoque de Materiais";
       case ViewType.PRODUCTION_WEIGHING:
-        return "Pesagem e Contagem";
+        return "Pesagem e Contagem de Solados";
       case ViewType.PRODUCTION_SOLE_PURCHASE:
         return "Entrada de Solados";
+      case ViewType.PRODUCTION_SOLE_RECEIPT:
+        return "Conferência de Compras (Solas)";
       case ViewType.PRODUCTION_SOLE_STOCK:
         return "Estoque de Solados";
       case ViewType.PRODUCTION_PALMILHA_PURCHASE:
@@ -3922,6 +4297,7 @@ export default function App() {
       case ViewType.PRODUCTION_STOCK: return <PackageOpen size={24} className="text-emerald-600 dark:text-emerald-400" />;
       case ViewType.PRODUCTION_WEIGHING: return <Scale size={24} className="text-violet-600 dark:text-violet-400" />;
       case ViewType.PRODUCTION_SOLE_PURCHASE: return <ShoppingCart size={24} className="text-cyan-600 dark:text-cyan-400" />;
+      case ViewType.PRODUCTION_SOLE_RECEIPT: return <ShoppingCart size={24} className="text-cyan-600 dark:text-cyan-400" />;
       case ViewType.PRODUCTION_SOLE_STOCK: return <Package size={24} className="text-emerald-600 dark:text-emerald-400" />;
       case ViewType.PRODUCTION_PALMILHA_PURCHASE: return <ShoppingCart size={24} className="text-rose-600 dark:text-rose-400" />;
       case ViewType.PRODUCTION_PALMILHA_STOCK: return <Footprints size={24} className="text-rose-600 dark:text-rose-400" />;

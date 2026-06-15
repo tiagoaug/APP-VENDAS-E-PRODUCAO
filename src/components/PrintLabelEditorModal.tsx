@@ -288,7 +288,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
 
   useEffect(() => {
     const qd = isBoxLabel
-      ? `PRD|${product.id}|${variation?.id || ''}|WHOLESALE`
+      ? `PRD|${product.id}|${variation?.id || ''}|WHOLESALE${qrRouteSuffix}`
       : `PRD|${product.id}|${variation?.id || ''}|${previewSize}${qrRouteSuffix}`;
     labelService.generateQRCode(qd).then(setQrPreview);
   }, [product.id, variation?.id, previewSize, isBoxLabel, qrRouteSuffix]);
@@ -405,7 +405,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           paperDims, ll
         );
       } else if (isBoxLabel) {
-        await labelService.printWholesaleLabel(product, variation!, customQty, paperDims, ll, photoUrl, sizeGrid);
+        await labelService.printWholesaleLabel(product, variation!, customQty, paperDims, ll, photoUrl, sizeGrid, routeItem?.lotId, routeItem?.orderId, routeItem?.itemIdx);
       } else {
         await labelService.printProductLabels(product, variation, sizesToPrint, quantities, paperDims, ll, photoUrl, sizeGrid, routeItem?.lotId, routeItem?.orderId, routeItem?.itemIdx);
       }
@@ -640,7 +640,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         for (const size of sizesToPrint) {
           const qty = quantities[size] || 1;
           const qrData = isBoxLabel
-            ? `PRD|${product.id}|${variation?.id || ''}|WHOLESALE`
+            ? `PRD|${product.id}|${variation?.id || ''}|WHOLESALE${qrRouteSuffix}`
             : `PRD|${product.id}|${variation?.id || ''}|${size}${qrRouteSuffix}`;
           const qrDataUrl = await labelService.generateQRCode(qrData);
 

@@ -1,6 +1,6 @@
 ﻿import { useState, useMemo, ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Sale, Purchase, Product, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig } from "../types";
+import { Sale, Purchase, Product, Variation, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig, SaleType } from "../types";
 import { Share2, TrendingUp, TrendingDown, Package, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings, Sparkles, ScanLine, QrCode, Trash2 } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -11,17 +11,10 @@ import ScannerModal from '../components/ScannerModal';
 import { ProductionScreenType } from "../types";
 import { sharePDF } from "../utils/pdfExport";
 import { toast } from '../utils/toast';
+import { scannerService, SCAN_HISTORY_KEY, ScanHistoryEntry } from '../services/scannerService';
+import { getLotPendingSectorGroups } from '../utils/productionRoute';
 
-const SCAN_HISTORY_KEY = 'dashboard_scan_history';
-
-type DashboardScanItem = {
-  id: string;
-  kind: 'PRODUCT' | 'LOT' | 'SOLE' | 'OS';
-  label: string;
-  sublabel?: string;
-  sectorId?: string;
-  timestamp: number;
-};
+type DashboardScanItem = ScanHistoryEntry;
 
 interface DashboardViewProps {
   sales: Sale[];
@@ -41,7 +34,7 @@ interface DashboardViewProps {
     newStatus: "PENDING" | "CLEARED" | "OVERDUE",
   ) => void;
   onNavigate: (view: ViewType, id?: string | null, search?: string) => void;
-  onNavigateProduction: (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES', sectorId?: string, lotId?: string) => void;
+  onNavigateProduction: (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES', sectorId?: string, lotId?: string, orderId?: string, itemIdx?: string | number, scanNonce?: number) => void;
   onNavigateGrids: () => void;
   onAddProduct: () => void;
   onAddTransaction: (type: TransactionType) => void;
@@ -95,53 +88,22 @@ export default function DashboardView({
 
   const handleClearScanHistory = () => persistScanHistory([]);
 
-  const handleQuickScanResult = (parsed: any) => {
-    let entry: DashboardScanItem | null = null;
-
-    if (parsed?.type === 'PRODUCT') {
-      const product = products.find(p => p.id === parsed.productId);
-      const variation = product?.variations?.find((v: any) => v.id === parsed.variationId);
-      const lot = parsed.lotId ? productionLots.find((l: any) => l.id === parsed.lotId) : undefined;
-      const sectorId = lot?.route?.[lot.currentSectorIndex];
-      const subParts = [variation?.colorName, `Tam ${parsed.size}`, lot ? `Mapa #${lot.orderNumber}` : null].filter(Boolean);
-      entry = {
-        id: `${Date.now()}`, kind: 'PRODUCT',
-        label: product?.name || 'Produto',
-        sublabel: subParts.join(' • '),
-        sectorId, timestamp: Date.now(),
-      };
-    } else if (parsed?.type === 'LOT') {
-      const lot = productionLots.find((l: any) => l.id === parsed.lotId);
-      const product = lot ? products.find(p => p.id === lot.productId) : undefined;
-      const sectorId = lot?.route?.[lot.currentSectorIndex];
-      entry = {
-        id: `${Date.now()}`, kind: 'LOT',
-        label: lot ? `Mapa #${lot.orderNumber}` : 'Mapa não encontrado',
-        sublabel: product?.name,
-        sectorId, timestamp: Date.now(),
-      };
-    } else if (parsed?.type === 'SOLE') {
-      entry = {
-        id: `${Date.now()}`, kind: 'SOLE',
-        label: 'Molde de Solado',
-        sublabel: `Cor ${parsed.colorId} • Tam ${parsed.size}`,
-        timestamp: Date.now(),
-      };
-    } else if (parsed?.type === 'OS') {
-      entry = {
-        id: `${Date.now()}`, kind: 'OS',
-        label: 'Ordem de Serviço',
-        sublabel: `#${parsed.osId}`,
-        timestamp: Date.now(),
-      };
+  // Resolução compartilhada com o "Scanner Rápido" do cabeçalho (App.tsx)
+  // via scannerService.resolveScanResult — garante que ambos tenham o mesmo
+  // comportamento ao abrir um Mapa/pedido a partir de uma etiqueta escaneada.
+  // Carrega o Mapa diretamente (local ou Firestore) ANTES de navegar, em vez de
+  // navegar e esperar o PCP encontrar o Mapa por conta própria.
+  const handleQuickScanResult = async (parsed: any) => {
+    const resolved = await scannerService.resolveScanResult(parsed, products, productionLots);
+    if (!resolved.ok) {
+      toast.show(resolved.error);
+      return;
     }
 
-    if (entry) {
-      persistScanHistory([entry, ...scanHistory].slice(0, 10));
-      onNavigateProduction('PCP', entry.sectorId, parsed?.type === 'LOT' ? parsed.lotId : undefined);
-    } else {
-      toast.show('Código não reconhecido.');
-    }
+    persistScanHistory([resolved.entry, ...scanHistory].slice(0, 10));
+
+    const { sectorId, lotId, orderId, itemIdx, scanNonce } = resolved.nav;
+    onNavigateProduction('PCP', sectorId, lotId, orderId, itemIdx, scanNonce);
   };
 
   const [customerDashboardTab, setCustomerDashboardTab] = useState<'DEBITS' | 'CREDITS'>('DEBITS');
@@ -314,10 +276,17 @@ export default function DashboardView({
       .filter(t => t.status === 'COMPLETED' && t.type === TransactionType.EXPENSE)
       .reduce((acc, t) => acc + t.amount, 0);
 
+    // Quantidade em estoque de uma variação: para ATACADO, apenas a contagem de
+    // caixas (v.stock['WHOLESALE']) — os tamanhos individuais ali presentes vêm
+    // da produção e não devem ser somados de novo (senão dobra a contagem).
+    const getVariationQty = (p: Product, v: Variation) =>
+      p.type === SaleType.WHOLESALE
+        ? (v.stock['WHOLESALE'] || 0)
+        : Object.values(v.stock || {}).reduce((sum, s) => sum + (Number(s) || 0), 0);
+
     const lowStockProducts = products.filter(p => {
       return (p.variations || []).some(
-        (v) =>
-          Object.values(v.stock || {}).reduce((sum, s) => sum + (Number(s) || 0), 0) < (v.minStock || 0),
+        (v) => getVariationQty(p, v) < (v.minStock || 0),
       );
     });
 
@@ -326,7 +295,7 @@ export default function DashboardView({
     const stockSummary = products.reduce((acc, p) => {
       let totalQty = 0;
       (p.variations || []).forEach(v => {
-        const qty = Object.values(v.stock || {}).reduce((sum, s) => sum + Number(s || 0), 0);
+        const qty = getVariationQty(p, v);
         totalQty += qty;
         
         // Group by color
@@ -1742,13 +1711,15 @@ export default function DashboardView({
             // Agrupa lotes por setor atual
             const sectorMap: Record<string, { sector: any; lots: any[] }> = {};
             activeLots.forEach((lot: any) => {
-              const sid = lot.route?.[lot.currentSectorIndex];
-              if (!sid) return;
-              if (!sectorMap[sid]) {
-                const sec = sectors.find((s: any) => s.id === sid);
-                sectorMap[sid] = { sector: sec, lots: [] };
-              }
-              sectorMap[sid].lots.push(lot);
+              const pendingSectors = getLotPendingSectorGroups(lot);
+              pendingSectors.forEach((_items, sid) => {
+                if (!sid) return;
+                if (!sectorMap[sid]) {
+                  const sec = sectors.find((s: any) => s.id === sid);
+                  sectorMap[sid] = { sector: sec, lots: [] };
+                }
+                sectorMap[sid].lots.push(lot);
+              });
             });
             const sectorEntries = Object.values(sectorMap).sort((a, b) => (a.sector?.name || '').localeCompare(b.sector?.name || ''));
             return (

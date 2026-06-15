@@ -55,7 +55,7 @@ export function ToastContainer() {
               className={`pointer-events-auto flex items-start gap-2.5 px-4 py-3 rounded-2xl shadow-xl text-white text-sm font-semibold ${cfg.bg}`}
             >
               {cfg.icon}
-              <span className="flex-1 leading-snug">{t.message}</span>
+              <span className="flex-1 min-w-0 leading-snug break-words whitespace-pre-line">{t.message}</span>
               <button
                 type="button"
                 onClick={() => setToasts(prev => prev.filter(x => x.id !== t.id))}

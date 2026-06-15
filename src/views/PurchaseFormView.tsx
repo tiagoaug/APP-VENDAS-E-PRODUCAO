@@ -46,7 +46,8 @@ import {
   Layers,
   ShoppingBag,
   Box,
-  MessageSquare
+  MessageSquare,
+  Copy
 } from "lucide-react";
 import { format } from "date-fns";
 import CalculatorModal from '../components/CalculatorModal';
@@ -242,7 +243,7 @@ export default function PurchaseFormView({
   );
   const [registerAsReceived, setRegisterAsReceived] = useState(
     existing?.registerAsReceived !== undefined ? existing.registerAsReceived
-      : (initialParams?.items?.length ? false : true)
+      : (initialParams?.items?.length || initialParams?.type === PurchaseType.SOLE ? false : true)
   );
   const [isProductionOrder, setIsProductionOrder] = useState(existing?.isProductionOrder ?? false);
   const [isSaving, setIsSaving] = useState(false);
@@ -251,6 +252,9 @@ export default function PurchaseFormView({
   const [pkgPickerBlockIndex, setPkgPickerBlockIndex] = useState<number | null>(null);
   const [gradePerVar, setGradePerVar] = useState<Record<string, Record<string, number>>>({});
   const [gradeModalTarget, setGradeModalTarget] = useState<{ blockId: string; variationId: string; variationName: string; productId: string } | null>(null);
+  // Duplicação de modelo (item): escolhe quantas cópias serão criadas a partir de um bloco.
+  const [duplicateTarget, setDuplicateTarget] = useState<{ index: number } | null>(null);
+  const [duplicateCount, setDuplicateCount] = useState<number>(1);
   const [deliveryDate, setDeliveryDate] = useState<string>(
     existing?.deliveryDate ? new Date(existing.deliveryDate).toISOString().split('T')[0] : ''
   );
@@ -452,6 +456,49 @@ export default function PurchaseFormView({
 
   const removeBlock = (index: number) => {
     setBlocks(blocks.filter((_, i) => i !== index));
+  };
+
+  // Duplica o bloco `index` criando `count` cópias logo após ele. Copia também as
+  // grades/embalagens por variação (chaveadas por `${blockId}-${variationId}`), para
+  // que cada cópia fique idêntica ao original (quantidades, custo, grade e embalagem).
+  const duplicateBlock = (index: number, count: number) => {
+    const source = blocks[index];
+    if (!source || count < 1) return;
+
+    const newBlocks: PurchaseBlock[] = [];
+    const newIds: string[] = [];
+    const pkgAdditions: Record<string, { pkgId: string; breakdown: Record<string, number>; fromStock: Record<string, number> }> = {};
+    const gradeAdditions: Record<string, Record<string, number>> = {};
+
+    for (let i = 0; i < count; i++) {
+      const newId = generateId();
+      newIds.push(newId);
+      // Deep-copy das variações (cada uma é um objeto próprio).
+      const clonedVariations: Record<string, { quantity: number; size?: string; note?: string }> = {};
+      Object.entries(source.variations).forEach(([varId, data]) => {
+        clonedVariations[varId] = { ...data };
+        const srcKey = `${source.id}-${varId}`;
+        const newKey = `${newId}-${varId}`;
+        if (packagingPerVar[srcKey]) {
+          pkgAdditions[newKey] = {
+            pkgId: packagingPerVar[srcKey].pkgId,
+            breakdown: { ...packagingPerVar[srcKey].breakdown },
+            fromStock: { ...packagingPerVar[srcKey].fromStock },
+          };
+        }
+        if (gradePerVar[srcKey]) {
+          gradeAdditions[newKey] = { ...gradePerVar[srcKey] };
+        }
+      });
+      newBlocks.push({ ...source, id: newId, variations: clonedVariations });
+    }
+
+    const next = [...blocks];
+    next.splice(index + 1, 0, ...newBlocks);
+    setBlocks(next);
+    if (Object.keys(pkgAdditions).length > 0) setPackagingPerVar(prev => ({ ...prev, ...pkgAdditions }));
+    if (Object.keys(gradeAdditions).length > 0) setGradePerVar(prev => ({ ...prev, ...gradeAdditions }));
+    setExpandedBlocks(prev => [...prev, ...newIds]);
   };
 
   const addCheck = () => {
@@ -1078,10 +1125,10 @@ export default function PurchaseFormView({
         <section>
           <div className="flex items-center justify-between mb-4 px-2">
             <div>
-              <h3 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400 leading-none">
+              <h3 className="text-[12px] font-black uppercase tracking-[0.15em] text-slate-900 dark:text-white leading-none">
                 Itens da Compra Geral
               </h3>
-              <p className="text-[8px] text-slate-300 font-bold uppercase tracking-widest mt-1">
+              <p className="text-[9px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-widest mt-1">
                 Despesas Diversas
               </p>
             </div>
@@ -1109,7 +1156,7 @@ export default function PurchaseFormView({
                   {/* Campo 1: Seleção do Material */}
                   <div className="flex gap-3 items-start">
                     <div className="flex-1 flex flex-col gap-1">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Material</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white ml-1">Material</p>
                       <ComboBox
                         options={availableMaterials.map(m => ({ id: m.id, name: m.name }))}
                         value={item.materialId || ''}
@@ -1130,7 +1177,7 @@ export default function PurchaseFormView({
                           type="text"
                           placeholder="Ou descreva manualmente..."
                           title="Descrição manual"
-                          className={`mt-1 w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-[11px] font-bold text-slate-600 dark:text-slate-300 placeholder:text-slate-300 dark:placeholder:text-slate-600 outline-none`}
+                          className={`mt-1 w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-[12px] font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none`}
                           value={item.description}
                           onChange={(e) => updateGeneralItem(index, { description: e.target.value })}
                         />
@@ -1168,7 +1215,7 @@ export default function PurchaseFormView({
                   <div className="flex gap-2 items-end">
                     {/* Quantidade */}
                     <div className="flex flex-col gap-1 w-28">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white ml-1">
                         Qtd{unitLabel ? ` (${unitLabel})` : ''}
                       </p>
                       <input
@@ -1185,7 +1232,7 @@ export default function PurchaseFormView({
 
                     {/* Valor Unitário */}
                     <div className="flex flex-col gap-1 flex-1">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Valor Unit. (R$)</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white ml-1">Valor Unit. (R$)</p>
                       <div className="flex gap-2">
                         <div className="relative flex-1">
                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-black text-slate-400">R$</span>
@@ -1215,7 +1262,7 @@ export default function PurchaseFormView({
 
                   {/* Linha 2: Total do item */}
                   <div className={`flex items-center justify-between px-4 py-3 rounded-2xl ${total > 0 ? 'bg-indigo-50 dark:bg-indigo-950/30' : 'bg-slate-50 dark:bg-slate-800/40'}`}>
-                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400">Total do Item</p>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white">Total do Item</p>
                     <p className={`text-sm font-black ${total > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-300 dark:text-slate-600'}`}>
                       R$ {total.toFixed(2)}
                     </p>
@@ -1511,10 +1558,10 @@ export default function PurchaseFormView({
 
           <div className="flex items-center justify-between mb-4 px-2">
             <div>
-              <h3 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400 leading-none">
+              <h3 className="text-[12px] font-black uppercase tracking-[0.15em] text-slate-900 dark:text-white leading-none">
                 Itens
               </h3>
-              <p className="text-[8px] text-slate-300 font-bold uppercase tracking-widest mt-1">
+              <p className="text-[9px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-widest mt-1">
                 Adicione referências
               </p>
             </div>
@@ -1570,6 +1617,15 @@ export default function PurchaseFormView({
                         title="Ver detalhes"
                       >
                         {isExpanded ? <ChevronUp size={20} strokeWidth={2.5} /> : <ChevronDown size={20} strokeWidth={2.5} />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setDuplicateTarget({ index }); setDuplicateCount(1); }}
+                        className="p-2 text-slate-300 dark:text-slate-600 hover:text-indigo-500 transition-colors transform active:scale-90"
+                        aria-label="Duplicar item"
+                        title="Duplicar"
+                      >
+                        <Copy size={18} strokeWidth={2.5} />
                       </button>
                       <button
                         type="button"
@@ -1659,7 +1715,13 @@ export default function PurchaseFormView({
                         {product.variations.map((v) => {
                           const varState = block.variations[v.id] || { quantity: 0 };
                           const qty = varState.quantity;
-                          const stock = Object.values(v.stock || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+                          // Estoque exibido deve casar com o Controle de Estoque/Vendas:
+                          // para atacado é a contagem de caixas (v.stock['WHOLESALE']); para
+                          // varejo é a soma das grades por tamanho. Somar TODAS as chaves de
+                          // v.stock inflava o número no atacado (contava resíduo por tamanho).
+                          const stock = product.type === SaleType.WHOLESALE
+                            ? (v.stock?.['WHOLESALE'] || 0)
+                            : Object.values(v.stock || {}).reduce((a, b) => a + (Number(b) || 0), 0);
                           const varPkgKey = `${block.id}-${v.id}`;
                           const varPkg = packagingPerVar[varPkgKey];
                           const varPkgConfig = varPkg?.pkgId ? productionConfigs.find(c => c.id === varPkg.pkgId) : null;
@@ -2087,6 +2149,75 @@ export default function PurchaseFormView({
           </div>
         </section>
       )}
+
+      {/* Modal de duplicação de modelo — escolhe quantas cópias serão criadas */}
+      {duplicateTarget !== null && (() => {
+        const block = blocks[duplicateTarget.index];
+        const product = block ? products.find(p => p.id === block.productId) : undefined;
+        return (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className={`rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+              <div className="flex flex-col items-center text-center gap-4">
+                <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center text-indigo-600 mb-1">
+                  <Copy size={30} strokeWidth={2.5} />
+                </div>
+                <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white leading-none">Duplicar Modelo</h3>
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 leading-relaxed px-2">
+                  Quantas cópias de <span className="text-indigo-500">{product?.name || 'este item'}</span> deseja criar? Cada cópia mantém as quantidades, grades e embalagens configuradas.
+                </p>
+
+                <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800 rounded-2xl p-2 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setDuplicateCount(c => Math.max(1, c - 1))}
+                    className="w-11 h-11 rounded-xl flex items-center justify-center text-slate-400 hover:text-rose-500 bg-white dark:bg-slate-900 active:scale-90 transition-all"
+                    aria-label="Diminuir cópias"
+                  >
+                    <Minus size={18} strokeWidth={3} />
+                  </button>
+                  <input
+                    type="number"
+                    min={1}
+                    value={duplicateCount}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => setDuplicateCount(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-16 bg-transparent border-none p-0 text-center text-2xl font-black text-slate-900 dark:text-white focus:ring-0"
+                    aria-label="Número de cópias"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setDuplicateCount(c => c + 1)}
+                    className="w-11 h-11 rounded-xl flex items-center justify-center text-indigo-500 bg-white dark:bg-slate-900 active:scale-90 transition-all"
+                    aria-label="Aumentar cópias"
+                  >
+                    <Plus size={18} strokeWidth={3} />
+                  </button>
+                </div>
+
+                <div className="flex gap-2 w-full mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setDuplicateTarget(null)}
+                    className="flex-1 py-4 px-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      duplicateBlock(duplicateTarget.index, duplicateCount);
+                      setDuplicateTarget(null);
+                    }}
+                    className="flex-1 py-4 px-4 bg-indigo-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all shadow-lg shadow-indigo-200 dark:shadow-none"
+                  >
+                    Duplicar {duplicateCount > 1 ? `(${duplicateCount}x)` : ''}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* PackagingBuilderModal */}
       {packagingModalTarget && (() => {

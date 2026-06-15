@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Purchase, Person, ProductionConfigItem, PurchaseRequest, PurchaseType, PaymentTerm, PaymentStatus, SoleStockEntry } from '../types';
+import { Purchase, Person, ProductionConfigItem, PurchaseRequest, PurchaseType, PaymentTerm, PaymentStatus } from '../types';
 import {
   Package,
   Calendar,
@@ -33,7 +33,6 @@ interface GeneralReceiptsViewProps {
   purchaseRequests: PurchaseRequest[];
   onBack: () => void;
   isDarkMode: boolean;
-  soleStockEntries?: SoleStockEntry[];
   onEditPurchase?: (id: string) => void;
 }
 
@@ -44,47 +43,23 @@ export default function GeneralReceiptsView({
   purchaseRequests,
   onBack,
   isDarkMode,
-  soleStockEntries,
   onEditPurchase,
 }: GeneralReceiptsViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [supplierFilter, setSupplierFilter] = useState('ALL');
   const [expandedPurchaseId, setExpandedPurchaseId] = useState<string | null>(null);
-  
+
   // Track received quantities. Key: `${purchaseId}-${itemIndex}` -> number
   const [receivedQuantities, setReceivedQuantities] = useState<Record<string, number>>({});
-  
+
   const [loadingPurchaseId, setLoadingPurchaseId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [showReceived, setShowReceived] = useState(false);
-  const [revertingId, setRevertingId] = useState<string | null>(null);
-  const [revertModal, setRevertModal] = useState<{ purchase: Purchase; soleItems: any[] } | null>(null);
-  const [revertQtys, setRevertQtys] = useState<Record<string, number>>({});
   const [successToast, setSuccessToast] = useState<{ message: string; details?: string[] } | null>(null);
   const [errorToast, setErrorToast] = useState<string | null>(null);
 
   const handleDelete = async (purchaseId: string) => {
     try {
-      const purchase = purchases.find(p => p.id === purchaseId);
-      if (purchase) {
-        // Reverse any received sole stock before deleting
-        const soleItems: any[] = (purchase as any).soleItems || (purchase as any).items?.filter((i: any) => i.moldId) || [];
-        for (const item of soleItems) {
-          // Use totalReceivedQtys if available (partial receipts), otherwise use quantities if fully received
-          const qtyToReverse: Record<string, number> = item.totalReceivedQtys || (purchase.registerAsReceived ? item.quantities : {});
-          const hasReceived = Object.values(qtyToReverse).some((v: any) => Number(v) > 0);
-          if (!hasReceived) continue;
-          const existing = (soleStockEntries || []).find((s: any) => s.moldId === item.moldId && s.colorId === item.colorId);
-          if (existing) {
-            const updatedStock = { ...existing.stock };
-            Object.entries(qtyToReverse).forEach(([size, qty]: [string, any]) => {
-              updatedStock[size] = Math.max(0, (updatedStock[size] || 0) - (Number(qty) || 0));
-            });
-            const totalPairs = Object.values(updatedStock).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
-            await firebaseService.updateDocument('soleStock', existing.id, { stock: updatedStock, totalPairs, updatedAt: Date.now() });
-          }
-        }
-      }
       await firebaseService.deleteDocument('purchases', purchaseId);
       setConfirmDeleteId(null);
     } catch {
@@ -92,91 +67,18 @@ export default function GeneralReceiptsView({
     }
   };
 
-  const handleRevertReceipt = async (purchase: Purchase) => {
-    setRevertingId(purchase.id);
-    try {
-      // Reverse stock for GENERAL purchases
-      for (const item of purchase.generalItems || []) {
-        if (item.materialId && (item.quantity || 0) > 0) {
-          const material = productionConfigs.find(c => c.id === item.materialId);
-          if (material) {
-            const currentStock = material.metadata?.stock || 0;
-            await firebaseService.saveDocument('productionConfigs', {
-              ...material,
-              metadata: { ...material.metadata, stock: Math.max(0, currentStock - (item.quantity || 0)) }
-            });
-          }
-        }
-      }
-      // Reverse stock for sole purchases — usa apenas totalReceivedQtys (novas compras)
-      // Para compras antigas sem totalReceivedQtys, não toca no estoque para evitar inconsistências
-      const soleItems: any[] = (purchase as any).soleItems || (purchase as any).items?.filter((i: any) => i.moldId) || [];
-      let stockReversed = false;
-      for (const item of soleItems) {
-        const receivedQtys: Record<string, number> = item.totalReceivedQtys || {};
-        const hasReceivedData = Object.values(receivedQtys).some((v: any) => Number(v) > 0);
-        if (!hasReceivedData) continue; // compra antiga sem dados de recebimento — não reverte estoque
-        const existing = (soleStockEntries || []).find((s: any) => s.moldId === item.moldId && s.colorId === item.colorId);
-        if (existing) {
-          const updatedStock = { ...existing.stock };
-          Object.entries(receivedQtys).forEach(([size, qty]: [string, any]) => {
-            updatedStock[size] = Math.max(0, (updatedStock[size] || 0) - (Number(qty) || 0));
-          });
-          const totalPairs = Object.values(updatedStock).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
-          await firebaseService.updateDocument('soleStock', existing.id, { stock: updatedStock, totalPairs, updatedAt: Date.now() });
-          stockReversed = true;
-        }
-      }
-      // Restaura quantidades originais (totalReceivedQtys → de volta para quantities)
-      const isSoleType = !!(purchase as any).soleItems;
-      const restoredItems = soleItems.map((item: any) => {
-        const received: Record<string, number> = item.totalReceivedQtys || {};
-        const remaining: Record<string, number> = { ...(item.quantities || {}) };
-        Object.entries(received).forEach(([size, qty]: [string, any]) => {
-          remaining[size] = (remaining[size] || 0) + Number(qty);
-        });
-        return { ...item, quantities: remaining, totalReceivedQtys: {} };
-      });
-      await firebaseService.saveDocument('purchases', {
-        ...purchase,
-        ...(isSoleType ? { soleItems: restoredItems } : { items: restoredItems }),
-        registerAsReceived: false,
-      });
-      setSuccessToast({ message: 'Recebimento revertido. Compra volta para pendentes.', details: stockReversed ? ['Estoque ajustado.'] : ['Nenhuma alteração de estoque (compra antiga).'] });
-      setTimeout(() => setSuccessToast(null), 5000);
-    } catch (err) {
-      setErrorToast('Erro ao reverter recebimento.');
-    } finally {
-      setRevertingId(null);
-    }
-  };
+  const receivedCount = useMemo(() => purchases.filter(p =>
+    p.type === PurchaseType.GENERAL && p.registerAsReceived === true
+  ).length, [purchases]);
 
-  const receivedCount = useMemo(() => purchases.filter(p => {
-    if (p.registerAsReceived === true) return true;
-    const soleItems: any[] = (p as any).soleItems || (p as any).items?.filter((i: any) => i.moldId) || [];
-    return soleItems.some((item: any) => item.totalReceivedQtys && Object.values(item.totalReceivedQtys).some((v: any) => Number(v) > 0));
-  }).length, [purchases]);
-
-  // Filter purchases: General / Sole pending receipt
+  // Filter purchases: General materials pending receipt
   const pendingPurchases = useMemo(() => {
     return purchases
       .filter((p) => {
-        // GENERAL: always eligible for receiving
-        if (p.type === PurchaseType.GENERAL) { /* continue */ }
-        // SOLE (new tab in PurchaseFormView): always eligible
-        else if (p.type === PurchaseType.SOLE) { /* continue */ }
-        // REPLENISHMENT: only if it contains sole items (moldId), not product items
-        else if (p.type === PurchaseType.REPLENISHMENT) {
-          const rawItems: any[] = (p as any).items || [];
-          const hasSoleItems = rawItems.some((i: any) => i.moldId);
-          const hasSoleItemsField = ((p as any).soleItems || []).length > 0;
-          if (!hasSoleItems && !hasSoleItemsField) return false;
-        } else {
-          return false; // exclude all other types
-        }
+        if (p.type !== PurchaseType.GENERAL) return false;
         // Must NOT be registered as received yet
         if (p.registerAsReceived === true) return false;
-        
+
         const supplier = suppliers.find((s) => s.id === p.supplierId);
         const lowerSearch = searchQuery.toLowerCase();
 
@@ -189,7 +91,7 @@ export default function GeneralReceiptsView({
           const notesMatch = p.notes?.toLowerCase().includes(lowerSearch);
           const batchMatch = p.batchNumber?.toLowerCase().includes(lowerSearch);
           const idMatch = p.id.toLowerCase().includes(lowerSearch);
-          
+
           if (!supplierMatch && !notesMatch && !batchMatch && !idMatch) return false;
         }
 
@@ -204,7 +106,7 @@ export default function GeneralReceiptsView({
       setExpandedPurchaseId(null);
     } else {
       setExpandedPurchaseId(purchase.id);
-      
+
       // Initialize inputs to the purchase's general items quantity
       const newQuantities = { ...receivedQuantities };
       purchase.generalItems?.forEach((item, idx) => {
@@ -212,14 +114,6 @@ export default function GeneralReceiptsView({
         if (newQuantities[key] === undefined) {
           newQuantities[key] = item.quantity || 0;
         }
-      });
-      // Initialize sole item quantities to 0 — user enters what they receive NOW
-      const soleItems: any[] = (purchase as any).soleItems || (purchase as any).items?.filter((i: any) => i.moldId) || [];
-      soleItems.forEach((item: any, idx: number) => {
-        Object.entries(item.quantities || {}).forEach(([size]: [string, any]) => {
-          const key = `${purchase.id}-sole-${idx}-${size}`;
-          newQuantities[key] = 0; // always reset to 0 when expanding
-        });
       });
       setReceivedQuantities(newQuantities);
     }
@@ -250,74 +144,6 @@ export default function GeneralReceiptsView({
       ...prev,
       [key]: originalQty,
     }));
-  };
-
-  const openRevertModal = (p: Purchase) => {
-    const soleItems: any[] = (p as any).soleItems || (p as any).items?.filter((i: any) => i.moldId) || [];
-    const initQtys: Record<string, number> = {};
-    soleItems.forEach((item: any, idx: number) => {
-      const qtys: Record<string, number> = item.totalReceivedQtys || item.quantities || {};
-      Object.entries(qtys).forEach(([size, qty]: [string, any]) => {
-        if (Number(qty) > 0) initQtys[`${idx}-${size}`] = Number(qty);
-      });
-    });
-    setRevertQtys(initQtys);
-    setRevertModal({ purchase: p, soleItems });
-  };
-
-  const handlePartialRevert = async () => {
-    if (!revertModal) return;
-    const { purchase, soleItems } = revertModal;
-    setRevertingId(purchase.id);
-    try {
-      const updatedSoleItems = soleItems.map((item: any, idx: number) => {
-        const prevReceived: Record<string, number> = item.totalReceivedQtys || item.quantities || {};
-        const newTotalReceived: Record<string, number> = {};
-        const newRemaining: Record<string, number> = { ...(item.quantities || {}) };
-        Object.keys(prevReceived).forEach(size => {
-          const toRevert = revertQtys[`${idx}-${size}`] ?? 0;
-          const wasThere = Number(prevReceived[size]) || 0;
-          newTotalReceived[size] = Math.max(0, wasThere - toRevert);
-          newRemaining[size] = (Number(newRemaining[size]) || 0) + toRevert;
-        });
-        return { ...item, totalReceivedQtys: newTotalReceived, quantities: newRemaining };
-      });
-
-      // Reverse soleStock
-      for (let idx = 0; idx < soleItems.length; idx++) {
-        const item = soleItems[idx];
-        if (!item.moldId) continue;
-        const existing = (soleStockEntries || []).find((s: any) => s.moldId === item.moldId && s.colorId === item.colorId);
-        if (existing) {
-          const updatedStock = { ...existing.stock };
-          const prevReceived: Record<string, number> = item.totalReceivedQtys || item.quantities || {};
-          Object.keys(prevReceived).forEach(size => {
-            const toRevert = revertQtys[`${idx}-${size}`] ?? 0;
-            updatedStock[size] = Math.max(0, (updatedStock[size] || 0) - toRevert);
-          });
-          const totalPairs = Object.values(updatedStock).reduce((a: number, b: any) => a + Number(b), 0);
-          await firebaseService.updateDocument('soleStock', existing.id, { stock: updatedStock, totalPairs, updatedAt: Date.now() });
-        }
-      }
-
-      const allReverted = updatedSoleItems.every((item: any) =>
-        Object.values(item.totalReceivedQtys || {}).every((v: any) => Number(v) === 0)
-      );
-      const isSoleType = !!(purchase as any).soleItems;
-      await firebaseService.saveDocument('purchases', {
-        ...purchase,
-        ...(isSoleType ? { soleItems: updatedSoleItems } : { items: updatedSoleItems }),
-        registerAsReceived: !allReverted && purchase.registerAsReceived ? false : purchase.registerAsReceived && !allReverted,
-      });
-
-      setSuccessToast({ message: allReverted ? 'Reversão total concluída.' : 'Reversão parcial concluída.', details: [] });
-      setTimeout(() => setSuccessToast(null), 3000);
-      setRevertModal(null);
-    } catch {
-      setErrorToast('Erro ao reverter.');
-    } finally {
-      setRevertingId(null);
-    }
   };
 
   // Confirm receipt action
@@ -368,88 +194,6 @@ export default function GeneralReceiptsView({
             stockSuccessList.push(`${material.name}: +${receivedQty} ${material.metadata?.unitId || 'UN'}`);
           }
         }
-      }
-
-      // Handle sole purchases (REPLENISHMENT or SOLE) — support partial receipt
-      if (purchase.type === PurchaseType.REPLENISHMENT || purchase.type === PurchaseType.SOLE) {
-        const soleItems: any[] = (purchase as any).soleItems || (purchase as any).items?.filter((i: any) => i.moldId) || [];
-        const updatedSoleItems: any[] = [];
-        let hasRemainingQty = false;
-
-        for (let idx = 0; idx < soleItems.length; idx++) {
-          const item = soleItems[idx];
-          if (!item.moldId) { updatedSoleItems.push(item); continue; }
-
-          // Build received quantities per size using user-edited inputs
-          const receivedQtys: Record<string, number> = {};
-          const remainingQtys: Record<string, number> = {};
-          Object.entries(item.quantities || {}).forEach(([size, ordered]: [string, any]) => {
-            const key = `${purchase.id}-sole-${idx}-${size}`;
-            const received = Math.min(receivedQuantities[key] ?? Number(ordered), Number(ordered));
-            receivedQtys[size] = received;
-            remainingQtys[size] = Number(ordered) - received;
-            if (remainingQtys[size] > 0) hasRemainingQty = true;
-          });
-
-          const totalReceived = Object.values(receivedQtys).reduce((a: number, b: number) => a + b, 0);
-          if (totalReceived > 0) {
-            const existingEntry = (soleStockEntries || []).find(
-              (s: any) => s.moldId === item.moldId && s.colorId === item.colorId
-            );
-            if (existingEntry) {
-              const updatedStock = { ...existingEntry.stock };
-              Object.entries(receivedQtys).forEach(([size, qty]) => {
-                updatedStock[size] = (updatedStock[size] || 0) + qty;
-              });
-              const totalPairs = Object.values(updatedStock).reduce((acc: number, curr: any) => acc + (Number(curr) || 0), 0);
-              await firebaseService.updateDocument('soleStock', existingEntry.id, {
-                stock: updatedStock, totalPairs,
-                unitCost: item.unitCost,
-                totalCost: totalPairs * (Number(item.unitCost) || 0),
-                updatedAt: Date.now()
-              });
-            } else {
-              await firebaseService.saveDocument('soleStock', {
-                moldId: item.moldId, moldName: item.moldName || '',
-                colorId: item.colorId || '', colorName: item.colorName || '',
-                stock: receivedQtys, totalPairs: totalReceived,
-                unitCost: Number(item.unitCost) || 0,
-                totalCost: totalReceived * (Number(item.unitCost) || 0),
-                updatedAt: Date.now()
-              });
-            }
-            stockSuccessList.push(`${item.moldName || 'Solado'} ${item.colorName || ''}: +${totalReceived} PAR`);
-          }
-
-          // Accumulate total received quantities across partial receipts
-          const prevReceived: Record<string, number> = item.totalReceivedQtys || {};
-          const newTotalReceived: Record<string, number> = {};
-          Object.keys(receivedQtys).forEach(size => {
-            newTotalReceived[size] = (prevReceived[size] || 0) + (receivedQtys[size] || 0);
-          });
-          updatedSoleItems.push({ ...item, quantities: remainingQtys, totalReceivedQtys: newTotalReceived });
-        }
-
-        // If partial receipt: update purchase with remaining quantities and keep pending
-        // If full receipt: mark as fully received
-        const isSoleType = !!(purchase as any).soleItems;
-        const updatedPurchase: any = {
-          ...purchase,
-          ...(isSoleType ? { soleItems: updatedSoleItems } : { items: updatedSoleItems }),
-          registerAsReceived: !hasRemainingQty,
-        };
-        await firebaseService.saveDocument('purchases', updatedPurchase);
-
-        if (hasRemainingQty) {
-          setSuccessToast({ message: 'Recebimento parcial registrado!', details: ['Os itens restantes continuam pendentes de entrega.'] });
-          setTimeout(() => setSuccessToast(null), 4000);
-        } else {
-          setSuccessToast({ message: 'Recebimento total confirmado!', details: stockSuccessList });
-          setTimeout(() => setSuccessToast(null), 3000);
-        }
-        setLoadingPurchaseId(null);
-        setExpandedPurchaseId(null);
-        return;
       }
 
       // 3. Update the Purchase request itself to mark as received
@@ -531,72 +275,6 @@ export default function GeneralReceiptsView({
 
   return (
     <div className={`flex flex-col min-h-screen pb-20 ${isDarkMode ? 'bg-[#0f172a] text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
-
-      {/* Revert Modal */}
-      {revertModal && (
-        <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setRevertModal(null)} />
-          <div className={`relative w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
-            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-white">Reverter Recebimento</h3>
-              <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">Ajuste as quantidades a reverter</p>
-            </div>
-            <div className="p-4 flex flex-col gap-4 max-h-[60vh] overflow-y-auto">
-              {revertModal.soleItems.map((item: any, idx: number) => {
-                const receivedQtys: Record<string, number> = item.totalReceivedQtys || item.quantities || {};
-                const sizesWithQty = Object.entries(receivedQtys).filter(([, qty]) => Number(qty) > 0);
-                if (sizesWithQty.length === 0) return null;
-                return (
-                  <div key={idx} className={`p-3 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-xs font-black text-slate-700 dark:text-slate-200">{item.moldName}</p>
-                      <span className="text-[9px] font-bold text-violet-500 uppercase">{item.colorName}</span>
-                    </div>
-                    <div className="flex flex-col gap-2.5">
-                      {sizesWithQty.map(([size, max]: [string, any]) => {
-                        const key = `${idx}-${size}`;
-                        const val = revertQtys[key] ?? Number(max);
-                        return (
-                          <div key={size} className="flex items-center justify-between gap-2">
-                            <div className="w-20">
-                              <p className="text-sm font-black text-slate-700 dark:text-slate-200">{size}</p>
-                              <p className="text-[9px] text-slate-400 font-bold">Recebido: {max}</p>
-                            </div>
-                            <div className="flex items-center gap-1.5 flex-1 justify-end">
-                              <button type="button" title="Diminuir" onClick={() => setRevertQtys(p => ({ ...p, [key]: Math.max(0, val - 1) }))} className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 flex items-center justify-center active:scale-95 transition-all"><Minus size={12} /></button>
-                              <input
-                                type="number" min={0} max={Number(max)}
-                                value={val}
-                                title={`Reverter tamanho ${size}`}
-                                aria-label={`Reverter tamanho ${size}`}
-                                onChange={e => setRevertQtys(p => ({ ...p, [key]: Math.min(Number(max), Math.max(0, parseInt(e.target.value) || 0)) }))}
-                                className={`w-14 text-center text-sm font-black rounded-lg border-2 py-1.5 outline-none ${val > 0 ? 'border-rose-400 bg-rose-50 dark:bg-rose-950/30 text-rose-600' : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-400'}`}
-                              />
-                              <button type="button" title="Aumentar" onClick={() => setRevertQtys(p => ({ ...p, [key]: Math.min(Number(max), val + 1) }))} className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-700 flex items-center justify-center active:scale-95 transition-all"><Plus size={12} /></button>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="px-4 pb-4 flex gap-3">
-              <button type="button" onClick={() => setRevertModal(null)} className="flex-1 py-3 rounded-xl font-bold text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 active:scale-95 transition-all">Cancelar</button>
-              <button
-                type="button"
-                disabled={revertingId === revertModal.purchase.id}
-                onClick={handlePartialRevert}
-                className="flex-1 py-3 rounded-xl font-bold text-sm bg-rose-500 text-white hover:bg-rose-600 active:scale-95 transition-all shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {revertingId === revertModal.purchase.id ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                Confirmar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Premium Header */}
       <header className="p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800/40 backdrop-blur-md sticky top-0 z-30">
@@ -734,18 +412,10 @@ export default function GeneralReceiptsView({
               {/* List */}
               <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
                 {purchases
-                  .filter(p => {
-                    if (p.registerAsReceived === true) return true;
-                    // Include partial receipts (soleItems with totalReceivedQtys)
-                    const soleItems: any[] = (p as any).soleItems || (p as any).items?.filter((i: any) => i.moldId) || [];
-                    return soleItems.some((item: any) =>
-                      item.totalReceivedQtys && Object.values(item.totalReceivedQtys).some((v: any) => Number(v) > 0)
-                    );
-                  })
+                  .filter(p => p.type === PurchaseType.GENERAL && p.registerAsReceived === true)
                   .sort((a, b) => b.date - a.date)
                   .map(p => {
                     const sup = suppliers.find(s => s.id === p.supplierId);
-                    const soleItems: any[] = (p as any).soleItems || (p as any).items?.filter((i: any) => i.moldId) || [];
                     const generalItems = p.generalItems || [];
                     const formattedDate = p.date ? format(new Date(p.date), 'dd/MM/yyyy', { locale: ptBR }) : '---';
                     return (
@@ -756,10 +426,7 @@ export default function GeneralReceiptsView({
                             <p className="text-sm font-black uppercase tracking-wide text-slate-800 dark:text-white truncate">{sup?.name || 'Fornecedor'}</p>
                             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                               <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{formattedDate} · {p.batchNumber} · R$ {p.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                              {p.registerAsReceived
-                                ? <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-md uppercase tracking-widest">Total</span>
-                                : <span className="text-[10px] font-black text-amber-600 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-md uppercase tracking-widest">Parcial</span>
-                              }
+                              <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-md uppercase tracking-widest">Total</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-1.5 shrink-0">
@@ -768,44 +435,8 @@ export default function GeneralReceiptsView({
                                 <Pencil size={16} />
                               </button>
                             )}
-                            <button type="button" onClick={() => openRevertModal(p)}
-                              className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 text-rose-500 border border-rose-100 dark:border-rose-800/40 hover:bg-rose-100 active:scale-95 transition-all flex items-center gap-2"
-                              title="Reverter recebimento" aria-label="Reverter recebimento"
-                            >
-                              <RefreshCw size={13} />
-                              Reverter
-                            </button>
                           </div>
                         </div>
-
-                        {/* Sole items received quantities */}
-                        {soleItems.length > 0 && (
-                          <div className={`mx-3 mb-3 p-3 rounded-xl ${isDarkMode ? 'bg-slate-900/50' : 'bg-white border border-slate-100'}`}>
-                            {soleItems.map((item: any, idx: number) => {
-                              const receivedQtys: Record<string, number> = item.totalReceivedQtys || item.quantities || {};
-                              const totalRec = Object.values(receivedQtys).reduce((a: number, b: any) => a + Number(b), 0);
-                              return (
-                                <div key={idx} className={idx > 0 ? 'mt-3 pt-3 border-t border-slate-100 dark:border-slate-800' : ''}>
-                                  <div className="flex items-center justify-between mb-3">
-                                    <p className="text-sm font-black text-slate-700 dark:text-slate-200">{item.moldName}</p>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-xs font-bold text-violet-500 uppercase">{item.colorName}</span>
-                                      <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full">{totalRec} PAR</span>
-                                    </div>
-                                  </div>
-                                  <div className="flex flex-col gap-2">
-                                    {Object.entries(receivedQtys).filter(([, qty]) => Number(qty) > 0).map(([size, qty]: [string, any]) => (
-                                      <div key={size} className="flex items-center justify-between">
-                                        <span className="text-sm font-black text-slate-600 dark:text-slate-300">{size}</span>
-                                        <span className="text-sm font-black text-slate-800 dark:text-white">{qty} pares</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
 
                         {/* General items */}
                         {generalItems.length > 0 && (
@@ -821,7 +452,7 @@ export default function GeneralReceiptsView({
                       </div>
                     );
                   })}
-                {purchases.filter(p => p.registerAsReceived === true).length === 0 && (
+                {purchases.filter(p => p.type === PurchaseType.GENERAL && p.registerAsReceived === true).length === 0 && (
                   <p className="text-center text-xs text-slate-400 py-10">Nenhum recebimento registrado ainda.</p>
                 )}
               </div>
@@ -841,9 +472,8 @@ export default function GeneralReceiptsView({
             pendingPurchases.map((purchase) => {
               const supplier = suppliers.find((s) => s.id === purchase.supplierId);
               const isExpanded = expandedPurchaseId === purchase.id;
-              const soleItemsList: any[] = (purchase as any).soleItems || (purchase as any).items?.filter((i: any) => i.moldId) || [];
               const generalItemsList = purchase.generalItems || [];
-              const hasItems = generalItemsList.length > 0 || soleItemsList.length > 0;
+              const hasItems = generalItemsList.length > 0;
               const formattedDate = purchase.date
                 ? format(new Date(purchase.date), 'dd/MM/yyyy', { locale: ptBR })
                 : '---';
@@ -889,7 +519,7 @@ export default function GeneralReceiptsView({
                             </span>
                           )}
                           <span>
-                            {generalItemsList.length + soleItemsList.length} ITENS
+                            {generalItemsList.length} ITENS
                           </span>
                         </div>
                       </div>
@@ -1043,75 +673,6 @@ export default function GeneralReceiptsView({
                                       {unitName}
                                     </span>
                                   </div>
-                                </div>
-                              );
-                            })}
-
-                            {(purchase.type === PurchaseType.REPLENISHMENT || purchase.type === PurchaseType.SOLE) && soleItemsList.map((item: any, idx: number) => {
-                              const remainingTotal = Object.values(item.quantities || {}).reduce((a: number, b: any) => a + Number(b), 0);
-                              const receivedTotal = Object.keys(item.quantities || {}).reduce((a: number, size: string) => {
-                                const key = `${purchase.id}-sole-${idx}-${size}`;
-                                return a + (receivedQuantities[key] ?? 0);
-                              }, 0);
-                              const isPartial = receivedTotal < remainingTotal;
-                              const orderedTotal = remainingTotal; // alias for clarity
-                              return (
-                                <div key={idx} className={`p-3 rounded-xl border ${isPartial ? 'bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800' : 'bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700'}`}>
-                                  <div className="flex items-center justify-between mb-2">
-                                    <p className="text-xs font-black text-slate-700 dark:text-slate-200">{item.moldName}</p>
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-[9px] font-bold text-violet-500 uppercase">{item.colorName}</span>
-                                      {isPartial && <span className="text-[8px] font-black text-amber-600 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded-md uppercase">Parcial</span>}
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center justify-between mb-2">
-                                    <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">
-                                      Faltando: <span className="text-amber-600 dark:text-amber-400 font-black">{remainingTotal} pares</span>
-                                      {receivedTotal > 0 && <> — Recebendo agora: <span className="text-emerald-600 dark:text-emerald-400 font-black">{receivedTotal} pares</span></>}
-                                    </p>
-                                    <button
-                                      type="button"
-                                      title="Receber tudo"
-                                      onClick={() => {
-                                        const updates: Record<string, number> = {};
-                                        Object.entries(item.quantities || {}).forEach(([size, qty]: [string, any]) => {
-                                          updates[`${purchase.id}-sole-${idx}-${size}`] = Number(qty);
-                                        });
-                                        setReceivedQuantities(p => ({ ...p, ...updates }));
-                                      }}
-                                      className="text-[8px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest hover:underline"
-                                    >
-                                      Receber tudo
-                                    </button>
-                                  </div>
-                                  <div className="flex flex-col gap-3 mt-1">
-                                    {Object.entries(item.quantities || {}).sort(([a], [b]) => parseFloat(a) - parseFloat(b)).map(([size, remaining]: [string, any]) => {
-                                      const key = `${purchase.id}-sole-${idx}-${size}`;
-                                      const val = receivedQuantities[key] ?? 0;
-                                      const max = Number(remaining);
-                                      return (
-                                        <div key={size} className="flex items-center justify-between gap-3">
-                                          <div className="flex flex-col gap-0.5 w-24">
-                                            <span className="text-sm font-black text-slate-700 dark:text-slate-200">{size}</span>
-                                            <span className="text-xs font-bold text-amber-600 dark:text-amber-400">{remaining} faltando</span>
-                                          </div>
-                                          <div className="flex items-center gap-2 flex-1 justify-end">
-                                            <button type="button" title="Diminuir" aria-label="Diminuir" onClick={() => setReceivedQuantities(p => ({ ...p, [key]: Math.max(0, val - 1) }))} className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center font-black active:scale-95 transition-all"><Minus size={14} /></button>
-                                            <input
-                                              type="number" min={0} max={max}
-                                              title={`Receber tamanho ${size}`}
-                                              aria-label={`Receber tamanho ${size}`}
-                                              value={val}
-                                              onChange={e => setReceivedQuantities(p => ({ ...p, [key]: Math.min(max, Math.max(0, parseInt(e.target.value) || 0)) }))}
-                                              className={`w-16 text-center text-base font-black rounded-xl border-2 py-2 outline-none transition-all ${val > 0 ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400' : 'border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-400 dark:text-slate-500'}`}
-                                            />
-                                            <button type="button" title="Aumentar" aria-label="Aumentar" onClick={() => setReceivedQuantities(p => ({ ...p, [key]: Math.min(max, val + 1) }))} className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center font-black active:scale-95 transition-all"><Plus size={14} /></button>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                  <p className="text-[9px] text-slate-400 mt-2 text-right">Custo un.: R$ {Number(item.unitCost || 0).toFixed(2)}</p>
                                 </div>
                               );
                             })}

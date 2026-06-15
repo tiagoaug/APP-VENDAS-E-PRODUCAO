@@ -20,7 +20,7 @@ interface PackagingBuilderModalProps {
   stockPerSize: Record<string, number>;   // estoque disponível por tamanho (varejo)
   stockGrades?: number;                  // estoque de grades completas (atacado)
   orderQuantity?: number;                // qtd de grades pedidas (para limitar abate)
-  inProductionGrades?: number;           // grades já em ordens de produção ativas
+  inProductionPairs?: number;            // pares já em ordens de produção ativas
   initialPkgId?: string;
   initialBreakdown?: Record<string, number>;
   initialFromStock?: Record<string, number>;
@@ -34,7 +34,7 @@ export default function PackagingBuilderModal({
   stockPerSize,
   stockGrades = 0,
   orderQuantity,
-  inProductionGrades = 0,
+  inProductionPairs = 0,
   initialPkgId = '', initialBreakdown = {}, initialFromStock = {},
   isDarkMode
 }: PackagingBuilderModalProps) {
@@ -64,6 +64,12 @@ export default function PackagingBuilderModal({
 
   const isFixed = selectedPkg?.metadata?.mode !== 'FREE';
   const capacity: number = selectedPkg?.metadata?.capacity || 0;
+
+  // Pares por grade (para converter os pares em produção em grades equivalentes)
+  const pairsPerGrade = productGrid?.configuration
+    ? Object.values(productGrid.configuration).reduce((a: number, b: number) => a + b, 0)
+    : capacity;
+  const inProductionGrades = pairsPerGrade > 0 ? Math.round(inProductionPairs / pairsPerGrade) : 0;
 
     // Sizes: from packaging if defined, plus product grid, plus any sizes present in current breakdown or stock
     const sizes = useMemo(() => {
@@ -217,16 +223,21 @@ export default function PackagingBuilderModal({
             </select>
           </div>
 
-          {/* Aviso: grades já em produção ativa */}
-          {inProductionGrades > 0 && (
+          {/* Aviso: pares já em produção ativa */}
+          {inProductionPairs > 0 && (
             <div className={`flex items-start gap-3 px-4 py-3 rounded-xl ${isDarkMode ? 'bg-amber-900/20 border border-amber-700/40' : 'bg-amber-50 border border-amber-200'}`}>
               <Factory size={16} className="text-amber-500 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest mb-0.5">Atenção — Em produção</p>
+              <div className="flex flex-col gap-1">
+                <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Atenção — Em produção</p>
                 <p className={`text-sm font-black ${isDarkMode ? 'text-amber-300' : 'text-amber-800'}`}>
-                  {inProductionGrades} {inProductionGrades === 1 ? 'grade já está' : 'grades já estão'} em ordem de produção ativa para esta cor.
+                  {inProductionPairs} {inProductionPairs === 1 ? 'par já está' : 'pares já estão'} em ordem de produção ativa para esta cor.
                 </p>
-                <p className="text-[9px] font-bold text-amber-500 mt-0.5">
+                {inProductionGrades > 0 && (
+                  <p className={`text-sm font-black ${isDarkMode ? 'text-amber-300' : 'text-amber-800'}`}>
+                    Equivalente a {inProductionGrades} {inProductionGrades === 1 ? 'grade' : 'grades'} de {pairsPerGrade} pares.
+                  </p>
+                )}
+                <p className="text-[9px] font-bold text-amber-500">
                   Verifique antes de criar uma nova produção desnecessária.
                 </p>
               </div>

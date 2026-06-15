@@ -1,4 +1,4 @@
-﻿import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Sale, Product, SaleType, SaleItem, SaleExtraItem, SalePayment, Grid, Person, PaymentMethod, SaleStatus, PaymentTerm, Account, ProductStatus, PaymentStatus, ProductionOrder, ProductionLot, Sector, AppModulesConfig, ProductionConfigItem } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import ComboBox from '../components/ComboBox';
@@ -14,6 +14,7 @@ import PackagingBuilderModal from '../components/PackagingBuilderModal';
 import GradeBuilderModal from '../components/GradeBuilderModal';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
+import { saleProductionHasProgressed } from '../utils/productionRoute';
 
 interface SaleBlock {
   id: string;
@@ -40,16 +41,25 @@ interface SaleFormViewProps {
   onSave: (sale: Sale) => void;
   onDelete: (id: string) => void;
   onCancelOnly: (id: string) => void;
+  onCancelAndRevert: (id: string) => void;
   onCancel: () => void;
   onCreateProductionOrder: (order: ProductionOrder, lots: ProductionLot[], deductions: { productId: string; variationId: string; size?: string; quantity: number }[]) => Promise<void>;
   modulesConfig: AppModulesConfig;
   isDarkMode: boolean;
 }
 
-export default function SaleFormView({ saleId, sales, products, grids, people, paymentMethods, accounts, productionOrders, lots, sectors, productionConfigs, onSave, onDelete, onCancelOnly, onCancel, onCreateProductionOrder, modulesConfig, isDarkMode }: SaleFormViewProps) {
+export default function SaleFormView({ saleId, sales, products, grids, people, paymentMethods, accounts, productionOrders, lots, sectors, productionConfigs, onSave, onDelete, onCancelOnly, onCancelAndRevert, onCancel, onCreateProductionOrder, modulesConfig, isDarkMode }: SaleFormViewProps) {
   const hasProduction = modulesConfig.production;
   const [deliveryDate, setDeliveryDate] = useState<string>('');
   const [prioridade, setPrioridade] = useState<string>('NORMAL');
+
+  // Pedido já em produção com baixa em algum setor: não pode mais ser excluído/estornado
+  // como exclusão — só pode ser cancelado com estorno (ver handleCancelSaleWithRevert em App.tsx).
+  const mustCancelAndRevert = useMemo(() => {
+    const sale = saleId ? sales.find(s => s.id === saleId) : null;
+    if (!sale) return false;
+    return saleProductionHasProgressed(sale, productionOrders, lots);
+  }, [saleId, sales, productionOrders, lots]);
 
   // Helper to get default days based on productionConfigs (matching PCP deadlines)
   const getDefaultDaysForDeadline = (deadlineName: string): number => {
@@ -161,7 +171,42 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             size: item.size
           };
         });
-        setBlocks(Object.values(blocksMap));
+        const blockList = Object.values(blocksMap);
+        setBlocks(blockList);
+
+        // Restaura a configuração de embalagem/grade (pares avulsos) salva na Ordem de Produção vinculada
+        if (sale.productionOrderId) {
+          const linkedOrder = productionOrders.find(o => o.id === sale.productionOrderId);
+          if (linkedOrder) {
+            const restoredPackaging: Record<string, { pkgId: string; breakdown: Record<string, number>; fromStock: Record<string, number> }> = {};
+            const restoredGrades: Record<string, Record<string, number>> = {};
+
+            linkedOrder.items.forEach(poItem => {
+              const block = blockList.find(b => b.productId === poItem.productId && b.saleType === poItem.saleType);
+              if (!block) return;
+              const varData = block.variations[poItem.variationId];
+              if (!varData || varData.quantity <= 0) return;
+
+              const breakdown: Record<string, number> = {};
+              const fromStock: Record<string, number> = {};
+              Object.entries(poItem.sizes).forEach(([size, sizeInfo]) => {
+                breakdown[size] = sizeInfo.total / varData.quantity;
+                fromStock[size] = sizeInfo.fromStock;
+              });
+
+              const varKey = `${block.id}-${poItem.variationId}`;
+              if (poItem.pkgId) {
+                restoredPackaging[varKey] = { pkgId: poItem.pkgId, breakdown, fromStock };
+              } else {
+                restoredGrades[varKey] = breakdown;
+              }
+            });
+
+            if (Object.keys(restoredPackaging).length > 0) setPackagingPerVar(prev => ({ ...prev, ...restoredPackaging }));
+            if (Object.keys(restoredGrades).length > 0) setGradePerVar(prev => ({ ...prev, ...restoredGrades }));
+          }
+        }
+
         setIsInitialized(true);
       }
     } else if (!saleId && !isInitialized) {
@@ -402,6 +447,17 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     if (!p) return;
 
     const newBlockId = generateId();
+    const isWholesale = p.type === SaleType.WHOLESALE;
+    let defaultPkgId = undefined;
+
+    if (isWholesale) {
+      const packagings = productionConfigs.filter(c => c.type === 'PACKAGING');
+      const standardPkg = packagings.find(c => c.name.toLowerCase().includes('padrão')) || packagings[0];
+      if (standardPkg) {
+        defaultPkgId = standardPkg.id;
+      }
+    }
+
     const newBlock: SaleBlock = {
       id: newBlockId,
       productId: p.id,
@@ -409,8 +465,28 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       price: p.salePrice || 0,
       unitPrice: p.unitSalePrice || p.salePrice || 0,
       variations: {},
+      blockPkgId: defaultPkgId,
     };
     setBlocks([...blocks, newBlock]);
+
+    if (defaultPkgId) {
+      setPackagingPerVar(prev => {
+        const next = { ...prev };
+        const pkg = productionConfigs.find(c => c.id === defaultPkgId && c.type === 'PACKAGING');
+        if (pkg) {
+          const sizeQtys: Record<string, number> = pkg.metadata?.sizeQuantities || {};
+          const pkgSizes: string[] = pkg.metadata?.sizes?.length ? pkg.metadata.sizes as string[] : Object.keys(sizeQtys);
+          const breakdown: Record<string, number> = {};
+          pkgSizes.forEach(s => { breakdown[s] = sizeQtys[s] || 0; });
+
+          p.variations.forEach(v => {
+            next[`${newBlockId}-${v.id}`] = { pkgId: defaultPkgId!, breakdown, fromStock: {} };
+          });
+        }
+        return next;
+      });
+    }
+
     setExpandedBlocks([...expandedBlocks, newBlockId]);
     setShowProductModal(false);
     setProductSearchQuery("");
@@ -461,6 +537,17 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       if (blockIndex === -1) {
         // Add new block
         const newBlockId = generateId();
+        const isWholesale = product.type === SaleType.WHOLESALE;
+        let defaultPkgId = undefined;
+
+        if (isWholesale) {
+          const packagings = productionConfigs.filter(c => c.type === 'PACKAGING');
+          const standardPkg = packagings.find(c => c.name.toLowerCase().includes('padrão')) || packagings[0];
+          if (standardPkg) {
+            defaultPkgId = standardPkg.id;
+          }
+        }
+
         const newBlock: SaleBlock = {
           id: newBlockId,
           productId,
@@ -468,10 +555,29 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
           price: product.salePrice || 0,
           unitPrice: product.unitSalePrice || product.salePrice || 0,
           variations: {},
+          blockPkgId: defaultPkgId,
         };
         newBlocks.push(newBlock);
         blockIndex = newBlocks.length - 1;
         targetBlockId = newBlockId;
+
+        if (defaultPkgId) {
+          setPackagingPerVar(prev => {
+            const next = { ...prev };
+            const pkg = productionConfigs.find(c => c.id === defaultPkgId && c.type === 'PACKAGING');
+            if (pkg) {
+              const sizeQtys: Record<string, number> = pkg.metadata?.sizeQuantities || {};
+              const pkgSizes: string[] = pkg.metadata?.sizes?.length ? pkg.metadata.sizes as string[] : Object.keys(sizeQtys);
+              const breakdown: Record<string, number> = {};
+              pkgSizes.forEach(s => { breakdown[s] = sizeQtys[s] || 0; });
+
+              product.variations.forEach(v => {
+                next[`${newBlockId}-${v.id}`] = { pkgId: defaultPkgId!, breakdown, fromStock: {} };
+              });
+            }
+            return next;
+          });
+        }
       } else {
         targetBlockId = newBlocks[blockIndex].id;
       }
@@ -576,6 +682,16 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     if (stockIssues.length > 0 && status === SaleStatus.SALE) {
       if (!confirm('Alguns itens estão com estoque insuficiente. Deseja continuar?')) return;
     }
+
+    // Valida que todos os blocos de atacado tenham embalagem selecionada
+    const wholesaleBlocksWithoutPkg = blocks.filter(b => b.saleType === SaleType.WHOLESALE && !b.blockPkgId);
+    if (wholesaleBlocksWithoutPkg.length > 0) {
+      const names = wholesaleBlocksWithoutPkg
+        .map(b => products.find(p => p.id === b.productId)?.name || 'Modelo')
+        .join(', ');
+      toast.show(`Padrão de embalagem obrigatório!\n\nSelecione o padrão de embalagem para: ${names}\n\nConfigure a "Caixa Coletiva" em cada item antes de salvar.`);
+      return;
+    }
     
     const customer = people.find(p => p.id === customerId);
     const seller = people.find(p => p.id === sellerId);
@@ -615,16 +731,6 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     }
     if (isProductionOrder) {
       saleToSave.isProductionOrder = true;
-
-      // Valida que todos os blocos têm padrão de embalagem selecionado
-      const blocksWithoutPkg = blocks.filter(b => b.productId && !b.blockPkgId);
-      if (blocksWithoutPkg.length > 0) {
-        const names = blocksWithoutPkg
-          .map(b => products.find(p => p.id === b.productId)?.name || 'Modelo')
-          .join(', ');
-        toast.show(`Padrão de embalagem obrigatório!\n\nSelecione o padrão de embalagem para: ${names}\n\nConfigure a "Caixa Coletiva" em cada item antes de salvar.`);
-        return;
-      }
     }
     if (saleDestination === 'STOCK') {
       saleToSave.saleDestination = 'STOCK';
@@ -639,8 +745,11 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
 
       // Cria o Pedido de Produção na fila de espera do PCP (sem criar mapas — feito manualmente lá)
       if (isProductionOrder && (status === SaleStatus.SALE || status === SaleStatus.CONFIRMED)) {
-        const orderId = generateId();
-        const orderNum = `OP #${String(productionOrders.length + 1).padStart(3, '0')}`;
+        const existingOrder = existingSale?.productionOrderId
+          ? productionOrders.find(o => o.id === existingSale.productionOrderId)
+          : undefined;
+        const orderId = existingOrder?.id || generateId();
+        const orderNum = existingOrder?.orderNumber || `OP #${String(productionOrders.length + 1).padStart(3, '0')}`;
         const orderItems: import('../types').ProductionOrderItem[] = [];
 
         blocks.forEach(block => {
@@ -687,6 +796,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               totalQuantity: totalPairs,
               fromStockQty: fromStockTotal,
               toProductionQty: totalPairs - fromStockTotal,
+              ...(pkg?.pkgId ? { pkgId: pkg.pkgId } : {}),
               ...(combinedNote ? { notes: combinedNote } : {}),
             });
           });
@@ -703,15 +813,16 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             orderDate: saleToSave.date,
             deliveryDate: saleToSave.deliveryDate || Date.now(),
             items: orderItems,
-            status: 'PENDING',
-            lotIds: [], // mapas criados manualmente no PCP
+            status: existingOrder?.status || 'PENDING',
+            lotIds: existingOrder?.lotIds || [], // mapas criados manualmente no PCP
             notes: productionGlobalNote?.trim() || undefined,
-            createdAt: Date.now()
+            createdAt: existingOrder?.createdAt || Date.now()
           };
           saleToSave.productionOrderId = orderId;
           await onSave(saleToSave);
           await onCreateProductionOrder(order, [], []); // sem lotes — fila de espera
         } else {
+          if (existingOrder) saleToSave.productionOrderId = existingOrder.id;
           await onSave(saleToSave);
         }
       } else {
@@ -2414,51 +2525,51 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest leading-none mb-1">Finalizar {status === SaleStatus.QUOTE ? 'Orçamento' : status === SaleStatus.CONFIRMED ? 'Pedido' : 'Venda'}</p>
             <p className="text-2xl font-black text-white leading-none">R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
          </div>
-         <div className="flex gap-2 w-full xl:w-auto">
-            {saleId && (
-              <button 
-                onClick={() => setShowCancelOnlyConfirm(true)} 
+         <div className="flex flex-col gap-2 w-full xl:flex-row xl:w-auto">
+            {saleId && !mustCancelAndRevert && (
+              <button
+                onClick={() => setShowCancelOnlyConfirm(true)}
                 disabled={status === SaleStatus.CANCELLED}
                 title={status === SaleStatus.CANCELLED ? "Venda Cancelada/Neutro" : "Cancelar (Sem Estorno)"}
-                className={`flex-1 h-12 px-2 rounded-full flex items-center justify-center gap-1.5 text-white font-black uppercase tracking-tight text-[9px] sm:text-[10px] transition-all active:scale-90 ${status === SaleStatus.CANCELLED ? 'bg-slate-700 cursor-not-allowed' : 'bg-white/10 hover:bg-slate-500 active:bg-slate-600'}`}
+                className={`w-full xl:flex-1 h-12 px-2 rounded-full flex items-center justify-center gap-1.5 text-white font-black uppercase tracking-tight text-[10px] transition-all active:scale-90 ${status === SaleStatus.CANCELLED ? 'bg-slate-700 cursor-not-allowed' : 'bg-white/10 hover:bg-slate-500 active:bg-slate-600'}`}
               >
-                <Ban size={16} strokeWidth={2.5} className="shrink-0" /> <span className="line-clamp-1 break-all text-center leading-none mt-0.5">S/ Estorno</span>
+                <Ban size={16} strokeWidth={2.5} className="shrink-0" /> <span className="text-center leading-none mt-0.5">S/ Estorno</span>
               </button>
             )}
-            <button 
+            <button
               onClick={() => {
                 if (saleId) {
                   setShowCancelConfirm(true);
                 } else {
                   onCancel();
                 }
-              }} 
+              }}
               disabled={status === SaleStatus.CANCELLED}
-              title={saleId ? (status === SaleStatus.CANCELLED ? "Venda Cancelada/Estornada" : "Cancelar Venda e Estornar") : "Descartar"}
-              className={`flex-1 h-12 px-2 rounded-full flex items-center justify-center gap-1.5 text-white font-black uppercase tracking-tight text-[9px] sm:text-[10px] transition-all active:scale-90 ${status === SaleStatus.CANCELLED ? 'bg-slate-700 cursor-not-allowed' : 'bg-white/10 hover:bg-rose-500 active:bg-rose-600'}`}
+              title={saleId ? (status === SaleStatus.CANCELLED ? "Venda Cancelada/Estornada" : mustCancelAndRevert ? "Cancelar Pedido e Estornar" : "Cancelar Venda e Estornar") : "Descartar"}
+              className={`w-full xl:flex-1 h-12 px-2 rounded-full flex items-center justify-center gap-1.5 text-white font-black uppercase tracking-tight text-[10px] transition-all active:scale-90 ${status === SaleStatus.CANCELLED ? 'bg-slate-700 cursor-not-allowed' : 'bg-white/10 hover:bg-rose-500 active:bg-rose-600'}`}
             >
-              {saleId ? <><RotateCcw size={16} strokeWidth={2.5} className="shrink-0" /> <span className="line-clamp-1 break-all text-center leading-none mt-0.5">Estornar</span></> : <><Trash2 size={16} strokeWidth={2.5} className="shrink-0" /> <span className="line-clamp-1 break-all text-center leading-none mt-0.5">Descartar</span></>}
+              {saleId ? <><RotateCcw size={16} strokeWidth={2.5} className="shrink-0" /> <span className="text-center leading-none mt-0.5">{mustCancelAndRevert ? 'Cancelar' : 'Estornar'}</span></> : <><Trash2 size={16} strokeWidth={2.5} className="shrink-0" /> <span className="text-center leading-none mt-0.5">Descartar</span></>}
             </button>
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className={`flex-1 h-12 px-2 rounded-full text-white font-black uppercase tracking-tight text-[10px] sm:text-[11px] flex items-center justify-center gap-1.5 shadow-sm transition-all active:scale-95 ${isSaving ? 'bg-slate-500 cursor-wait' : 'bg-indigo-600 active:bg-indigo-700 hover:bg-indigo-500'}`}
+              className={`w-full xl:flex-1 h-12 px-2 rounded-full text-white font-black uppercase tracking-tight text-[11px] flex items-center justify-center gap-1.5 shadow-sm transition-all active:scale-95 ${isSaving ? 'bg-slate-500 cursor-wait' : 'bg-indigo-600 active:bg-indigo-700 hover:bg-indigo-500'}`}
             >
-              <Save size={16} strokeWidth={3} className={`shrink-0 ${isSaving ? 'animate-spin' : ''}`} /> <span className="line-clamp-1 break-all text-center leading-none mt-0.5">{isSaving ? 'Salvando...' : status === SaleStatus.QUOTE ? 'Salvar' : 'Concluir'}</span>
+              <Save size={16} strokeWidth={3} className={`shrink-0 ${isSaving ? 'animate-spin' : ''}`} /> <span className="text-center leading-none mt-0.5">{isSaving ? 'Salvando...' : status === SaleStatus.QUOTE ? 'Salvar' : 'Concluir'}</span>
             </button>
             {hasProduction && saleId && status === SaleStatus.SALE && (
               <button
                 type="button"
                 onClick={() => setShowProductionOrderModal(true)}
                 title="Gerar Pedido de Produção"
-                className={`h-12 px-3 rounded-full font-black uppercase tracking-tight text-[9px] flex items-center justify-center gap-1.5 transition-all active:scale-95 border-2 ${
+                className={`w-full xl:w-auto h-12 px-3 rounded-full font-black uppercase tracking-tight text-[10px] flex items-center justify-center gap-1.5 transition-all active:scale-95 border-2 ${
                   sales.find(s => s.id === saleId)?.productionOrderId
                     ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10'
                     : 'border-violet-500 text-violet-400 bg-violet-500/10 hover:bg-violet-500/20'
                 }`}
               >
                 <Factory size={15} strokeWidth={2.5} />
-                <span className="hidden sm:inline">
+                <span>
                   {sales.find(s => s.id === saleId)?.productionOrderId ? 'Ver OP' : 'Gerar OP'}
                 </span>
               </button>
@@ -2474,23 +2585,26 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               <div className="w-16 h-16 bg-rose-100 dark:bg-rose-900/30 rounded-2xl flex items-center justify-center text-rose-600 mb-2">
                 <RotateCcw size={32} strokeWidth={2.5} />
               </div>
-              <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white leading-none">Cancelar e Estornar?</h3>
+              <h3 className="text-xl font-black uppercase tracking-tight text-slate-900 dark:text-white leading-none">{mustCancelAndRevert ? 'Cancelar e Estornar Pedido?' : 'Cancelar e Estornar?'}</h3>
               <p className="text-xs font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
-                Esta ação <span className="text-rose-500">estornará os estoques</span> e apagará as movimentações financeiras relacionadas desta venda, mantendo o registro apenas como cancelado.
+                {mustCancelAndRevert
+                  ? <>Este pedido já está em produção (houve baixa em algum setor) e não pode mais ser excluído. Esta ação <span className="text-rose-500">estornará os estoques</span> e as movimentações financeiras relacionadas, mantendo o registro como cancelado — a produção em andamento seguirá normalmente e as caixas produzidas entrarão no estoque geral.</>
+                  : <>Esta ação <span className="text-rose-500">estornará os estoques</span> e apagará as movimentações financeiras relacionadas desta venda, mantendo o registro apenas como cancelado.</>}
               </p>
-              
+
               <div className="flex gap-2 w-full mt-4">
-                <button 
-                  onClick={() => setShowCancelConfirm(false)} 
+                <button
+                  onClick={() => setShowCancelConfirm(false)}
                   className="flex-1 py-4 px-4 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all"
                 >
                   Voltar
                 </button>
-                <button 
+                <button
                   onClick={() => {
                     setShowCancelConfirm(false);
-                    onDelete(saleId);
-                  }} 
+                    if (mustCancelAndRevert) onCancelAndRevert(saleId);
+                    else onDelete(saleId);
+                  }}
                   className="flex-1 py-4 px-4 bg-rose-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all shadow-lg shadow-rose-200 dark:shadow-none"
                 >
                   Confirmar Estorno
@@ -2589,8 +2703,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         const varData = block?.variations[variationId];
         const orderQuantity = isWholesale ? (varData?.quantity || undefined) : undefined;
 
-        // Grades já em ordens de produção ativas para esta variação
-        const inProductionGrades = isWholesale
+        // Pares já em ordens de produção ativas para esta variação
+        const inProductionPairs = isWholesale
           ? productionOrders
               .filter(o => o.status !== 'COMPLETED')
               .flatMap(o => o.items)
@@ -2617,7 +2731,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             stockPerSize={stockPerSize}
             stockGrades={stockGrades}
             orderQuantity={orderQuantity}
-            inProductionGrades={inProductionGrades}
+            inProductionPairs={inProductionPairs}
             initialPkgId={existing?.pkgId}
             initialBreakdown={existing?.breakdown}
             initialFromStock={existing?.fromStock}

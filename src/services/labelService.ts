@@ -346,7 +346,7 @@ export const labelService = {
     await sharePDF(doc, `Etiquetas_Solado_${mold.metadata?.moldReference || mold.id}.pdf`);
   },
 
-  async printWholesaleLabel(product: Product, variation: Variation, quantity: number = 1, dimensions: [number, number] = [40, 30], layout?: LabelLayout, photoUrl?: string, sizeGrid?: string) {
+  async printWholesaleLabel(product: Product, variation: Variation, quantity: number = 1, dimensions: [number, number] = [40, 30], layout?: LabelLayout, photoUrl?: string, sizeGrid?: string, lotId?: string, orderId?: string, itemIdx?: number) {
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -360,7 +360,10 @@ export const labelService = {
       if (!firstPage) doc.addPage(dimensions);
       firstPage = false;
 
-      const qrCode = await this.generateQRCode(`PRD|${product.id}|${variation.id}|WHOLESALE`);
+      const qrData = (lotId && orderId)
+        ? `PRD|${product.id}|${variation.id}|WHOLESALE|${lotId}|${orderId}|${itemIdx ?? ''}`
+        : `PRD|${product.id}|${variation.id}|WHOLESALE`;
+      const qrCode = await this.generateQRCode(qrData);
 
       doc.setFontSize(activeLayout.refSize);
       doc.setFont(this.toPdfFont(activeLayout.refFontFamily), 'bold');

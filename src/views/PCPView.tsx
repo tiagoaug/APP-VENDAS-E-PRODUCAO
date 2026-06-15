@@ -5,21 +5,23 @@ import {
   Plus, Search, ChevronRight, Filter,
   Factory, LayoutDashboard, ListTodo,
   History, MoreVertical, ArrowRight,
-  CheckCircle2, AlertCircle, Clock,
+  CheckCircle2, AlertCircle, AlertTriangle, Clock,
   ArrowUpRight, ArrowDownRight, Loader2,
   Settings2, Trash2, Edit3, Edit2, ClipboardList,
   Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart,
   DollarSign, Hammer, FileText, CheckSquare, Scissors, Printer, Share2, Truck,
   QrCode, ScanLine, Hash, Lock, ChevronDown, List, ArrowLeftRight, MessageSquare, Eye,
-  Footprints
+  Footprints, Scale, Database, TrendingDown
 } from 'lucide-react';
 import {
   ProductionLot, Product, Sector,
   FlowTag, Variation, ColorValue, ProductionOrder,
   ProductionConfigItem, SoleStockEntry, PalmilhaStockEntry, ViewType, PurchaseRequest, Grid,
-  ServiceOrder, Person, Account, Category, Transaction, Purchase, PurchaseType, SectorNote
+  ServiceOrder, Person, Account, Category, Transaction, Purchase, PurchaseType, SectorNote,
+  ProductionScreenType, StockLot, SaleType, SaleStatus
 } from '../types';
 import { computePalmilhaMapaReservations, computePalmilhaPendingOrders } from '../utils/palmilhaNeeds';
+import { resolveSoleConsumption } from '../utils/soleNeeds';
 import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
 import ScannerModal from '../components/ScannerModal';
@@ -30,8 +32,8 @@ import { labelService } from '../services/labelService';
 import { printLotSheet, printOrderItemSheet, shareImage, sharePDF } from '../utils/pdfExport';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { resolveCorrectSectorForProduct, computeOSAdvanceOutcome, ensureSectorInRoute } from '../utils/productionRoute';
-import { scannerService } from '../services/scannerService';
+import { resolveCorrectSectorForProduct, computeOSAdvanceOutcome, ensureSectorInRoute, ORDER_FINALIZED, getOrderEffectiveSector, getLotPendingSectorGroups, getSourceItemKey } from '../utils/productionRoute';
+import { scannerService, SCAN_ERRORS } from '../services/scannerService';
 import { financeService } from '../services/financeService';
 import WebCameraScanner from '../components/WebCameraScanner';
 import { Capacitor } from '@capacitor/core';
@@ -48,6 +50,8 @@ import { getMaterialStockForColor } from '../utils/materialStock';
 type LotAdvanceItem = {
   key: string;
   orderId: string;
+  itemIdx?: number;
+  variationId?: string;
   productId: string;
   productName: string;
   colorName: string;
@@ -75,14 +79,16 @@ interface PCPViewProps {
   onDeleteLot: (id: string) => Promise<void>;
   onDeleteProductionOrder?: (orderId: string) => Promise<void>;
   onNavigate: (view: ViewType, params?: any) => void;
+  onNavigateProduction?: (subScreen: ProductionScreenType) => void;
   onRequestPurchase?: (req: Omit<PurchaseRequest, 'id'>) => Promise<void>;
   onBack: () => void;
   userName?: string;
-  initialTab?: 'monitor' | 'lots' | 'orders' | 'needs';
+  initialTab?: 'monitor' | 'lots' | 'orders' | 'needs' | 'solados';
   initialSectorId?: string;
   initialLotId?: string;
   initialOrderId?: string;
   initialItemIdx?: string | number;
+  initialScanNonce?: number;
   people?: Person[];
   accounts?: Account[];
   categories?: Category[];
@@ -108,6 +114,7 @@ export default function PCPView({
   onDeleteLot,
   onDeleteProductionOrder,
   onNavigate,
+  onNavigateProduction,
   onRequestPurchase,
   onBack,
   userName,
@@ -116,6 +123,7 @@ export default function PCPView({
   initialLotId,
   initialOrderId,
   initialItemIdx,
+  initialScanNonce,
   people = [],
   accounts = [],
   categories = [],
@@ -123,7 +131,7 @@ export default function PCPView({
   purchases = [],
   sales = [],
 }: PCPViewProps) {
-  const [activeTab, setActiveTab] = useState<'monitor' | 'lots' | 'orders' | 'needs'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'monitor' | 'lots' | 'orders' | 'needs' | 'solados'>(initialTab);
   const [requestingId, setRequestingId] = useState<string | null>(null);
   const [isRequestingBatch, setIsRequestingBatch] = useState(false);
   const [inTransitPopupItem, setInTransitPopupItem] = useState<any | null>(null);
@@ -140,6 +148,15 @@ export default function PCPView({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedLot, setSelectedLot] = useState<ProductionLot | null>(null);
+  // Mantém o snapshot do mapa aberto no modal de detalhe em sincronia com a
+  // lista viva `lots` — sem isso, atualizações externas (ex.: reversão de
+  // histórico de estoque que devolve um pedido para Expedição) não refletem
+  // no modal já aberto (badge "✓ finalizados" ficaria com a contagem antiga).
+  useEffect(() => {
+    if (!selectedLot) return;
+    const fresh = lots.find(l => l.id === selectedLot.id);
+    if (fresh && fresh !== selectedLot) setSelectedLot(fresh);
+  }, [lots, selectedLot]);
   const [selectedLots, setSelectedLots] = useState<ProductionLot[]>([]);
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedLotIds, setSelectedLotIds] = useState<string[]>([]);
@@ -215,11 +232,14 @@ export default function PCPView({
   const [scanFocusKey, setScanFocusKey] = useState<string | null>(null);
   const [sourceFilterModel, setSourceFilterModel] = useState<string>('');
   const [sourceFilterColor, setSourceFilterColor] = useState<string>('');
-  const [osFeedback, setOsFeedback] = useState<{ osNumber: string; nextSector: string; action?: string } | null>(null);
+  const [osFeedback, setOsFeedback] = useState<{ osNumber: string; nextSector: string; action?: string; type?: 'pedido' | 'os'; details?: string[] } | null>(null);
+  const [finalizeSelectedConfirm, setFinalizeSelectedConfirm] = useState<{ lot: ProductionLot; items: LotAdvanceItem[]; lines: string[]; stockInfo?: Record<string, { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string }>; soleInfo?: { moldName: string; colorName: string; rows: { size: string; before: number; after: number }[] }[] } | null>(null);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
   const [mappingWarningModal, setMappingWarningModal] = useState<{ itemName: string; reason: string; diagnostic: string } | null>(null);
   const [mappingDiagnosticCopied, setMappingDiagnosticCopied] = useState(false);
   const [orderDeleteConfirm, setOrderDeleteConfirm] = useState<{ orderId: string; saleOrderNumber: string; hasSourcePurchase: boolean } | null>(null);
-  const [moveSectorModal, setMoveSectorModal] = useState<{ lotId: string; orderIds: string[]; qty: number; fromSectorId?: string } | null>(null);
+  const [repairLinkConfirm, setRepairLinkConfirm] = useState<{ order: ProductionOrder; sale: import('../types').Sale; orphanOrder?: ProductionOrder; orphanIsEmpty: boolean } | null>(null);
+  const [moveSectorModal, setMoveSectorModal] = useState<{ lotId: string; items: { orderId: string; itemIdx?: number; productId?: string; variationId?: string }[]; qty: number; fromSectorId?: string; manual?: boolean } | null>(null);
   const [moveSectorTarget, setMoveSectorTarget] = useState<string>('');
   const [expandedOSIds, setExpandedOSIds] = useState<Set<string>>(new Set());
   const [expandedOSItemKeys, setExpandedOSItemKeys] = useState<Set<string>>(new Set());
@@ -283,52 +303,30 @@ export default function PCPView({
   // Sector Metrics for Dashboard
   const sectorMetrics = useMemo(() => {
     const metrics: Record<string, {
-      totalPares: number;     // pares do lote no setor (desconta movidos)
+      totalPares: number;     // pares pendentes no setor (soma dos pedidos com setor efetivo aqui)
       lotsCount: number;
       delayedCount: number;
       urgentCount: number;
-      movedOutPairs: number;  // pares que saíram deste setor via orderSectors
-      arrivedPairs: number;   // pares que chegaram de outro setor via orderSectors
-      arrivedOrders: number;  // número de pedidos vindos de outro setor
     }> = {};
 
     sectors.forEach(s => {
-      metrics[s.id] = { totalPares: 0, lotsCount: 0, delayedCount: 0, urgentCount: 0, movedOutPairs: 0, arrivedPairs: 0, arrivedOrders: 0 };
+      metrics[s.id] = { totalPares: 0, lotsCount: 0, delayedCount: 0, urgentCount: 0 };
     });
 
     filteredActiveLots.forEach(lot => {
-      const sectorId = (lot.route && lot.route[lot.currentSectorIndex]);
-      const orderSectors: Record<string, string> = (lot as any).metadata?.orderSectors || {};
-      const lotSI: any[] = (lot as any).metadata?.sourceItems || [];
+      const pendingGroups = getLotPendingSectorGroups(lot);
+      const lastMove = (lot.history && lot.history.length > 0)
+        ? lot.history[lot.history.length - 1]?.timestamp || lot.createdAt
+        : lot.createdAt;
+      const isDelayed = Date.now() - lastMove > 24 * 60 * 60 * 1000;
+      const isUrgent = lot.prioridade === 'URGENTE' || lot.prioridade === 'ALTA';
 
-      if (sectorId && metrics[sectorId]) {
-        // Pares movidos para fora — descontar do setor atual do lote
-        let movedOut = 0;
-        lotSI.forEach((si: any) => {
-          if (orderSectors[si.orderId] && orderSectors[si.orderId] !== sectorId) {
-            movedOut += si.qty || 0;
-          }
-        });
-        metrics[sectorId].movedOutPairs += movedOut;
-        metrics[sectorId].totalPares += Math.max(0, lot.quantity - movedOut);
+      pendingGroups.forEach((items, sectorId) => {
+        if (!metrics[sectorId]) return;
+        metrics[sectorId].totalPares += items.reduce((s: number, si: any) => s + (si.qty || 0), 0);
         metrics[sectorId].lotsCount += 1;
-
-        const lastMove = (lot.history && lot.history.length > 0)
-          ? lot.history[lot.history.length - 1]?.timestamp || lot.createdAt
-          : lot.createdAt;
-        if (Date.now() - lastMove > 24 * 60 * 60 * 1000) metrics[sectorId].delayedCount += 1;
-        if (lot.prioridade === 'URGENTE' || lot.prioridade === 'ALTA') metrics[sectorId].urgentCount += 1;
-      }
-
-      // Pedidos adiantados para outro setor — contam como JÁ PRESENTES naquele setor
-      lotSI.forEach((si: any) => {
-        const destSector = orderSectors[si.orderId];
-        if (destSector && destSector !== sectorId && metrics[destSector]) {
-          metrics[destSector].arrivedPairs += si.qty || 0;
-          metrics[destSector].arrivedOrders += 1;
-          // Já estão no setor destino — somam ao total de pares
-          metrics[destSector].totalPares += si.qty || 0;
-        }
+        if (isDelayed) metrics[sectorId].delayedCount += 1;
+        if (isUrgent) metrics[sectorId].urgentCount += 1;
       });
     });
 
@@ -1010,33 +1008,42 @@ export default function PCPView({
     return () => clearTimeout(timer);
   }, [scanFocusKey, isDetailModalOpen]);
 
-  // Ao chegar via QR Code do scanner rápido do cabeçalho (header), abre direto o
+  // Ao chegar via QR Code do scanner rápido (cabeçalho/Dashboard), abre direto o
   // Mapa correspondente em sua tela de detalhes expandida, em vez de deixar o
-  // usuário apenas na tela de setores do PCP.
-  const initialLotHandledRef = useRef(false);
+  // usuário apenas na tela de setores do PCP. Usa uma assinatura (lote+pedido+item)
+  // em vez de um booleano simples, para que cada novo escaneamento — mesmo de um
+  // pedido diferente dentro do mesmo Mapa — seja processado, ainda que o Mapa já
+  // esteja aberto de um escaneamento anterior.
+  const initialLotHandledKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!initialLotId || initialLotHandledRef.current) return;
+    if (!initialLotId) return;
+    const signature = `${initialLotId}|${initialOrderId ?? ''}|${initialItemIdx ?? ''}|${initialScanNonce ?? ''}`;
+    if (initialLotHandledKeyRef.current === signature) return;
     const lot = lots.find(l => l.id === initialLotId);
     if (!lot) return;
-    initialLotHandledRef.current = true;
+    initialLotHandledKeyRef.current = signature;
 
     setSelectedLot(lot);
     setIsDetailModalOpen(true);
+    // Limpa filtros deixados por uma sessão anterior do modal, que poderiam
+    // esconder o card do pedido recém-escaneado.
+    setSourceFilterModel('');
+    setSourceFilterColor('');
 
     const allSourceItems: any[] = (lot as any).metadata?.sourceItems || [
       { orderId: lot.productionOrderId, itemIdx: 0, qty: lot.quantity }
     ];
     const currentSectorId = lot.route && lot.route[lot.currentSectorIndex];
-    const orderSectorsMap: Record<string, string> = (lot as any).metadata?.orderSectors || {};
-    const sourceItems = allSourceItems.filter((si: any) => {
-      const destSector = orderSectorsMap[si.orderId];
-      return !destSector || destSector === currentSectorId;
-    });
+    const sourceItems = allSourceItems.filter((si: any) =>
+      getOrderEffectiveSector(lot, si.orderId, si) === currentSectorId
+    );
+
+    const itemIdxNum = initialItemIdx !== undefined && initialItemIdx !== '' ? Number(initialItemIdx) : undefined;
+    const matchesTarget = (s: any) => s.orderId === initialOrderId && (itemIdxNum === undefined || s.itemIdx === itemIdxNum);
 
     let targetItem = sourceItems[0];
     if (initialOrderId) {
-      const itemIdxNum = initialItemIdx !== undefined && initialItemIdx !== '' ? Number(initialItemIdx) : undefined;
-      targetItem = sourceItems.find((s: any) => s.orderId === initialOrderId && (itemIdxNum === undefined || s.itemIdx === itemIdxNum))
+      targetItem = sourceItems.find(matchesTarget)
         || sourceItems.find((s: any) => s.orderId === initialOrderId)
         || targetItem;
     }
@@ -1046,8 +1053,18 @@ export default function PCPView({
       const focusKey = `${targetItem.orderId}-${idx}`;
       setExpandedSourceItems(prev => new Set(prev).add(focusKey));
       setScanFocusKey(focusKey);
+    } else if (initialOrderId) {
+      // O pedido escaneado não está no setor atual do Mapa — foi direcionado
+      // individualmente para outro setor. Avisa o usuário onde ele está, já que
+      // não há um card correspondente para destacar nesta tela.
+      const movedItem = allSourceItems.find(matchesTarget) || allSourceItems.find((s: any) => s.orderId === initialOrderId);
+      const movedSectorId = movedItem ? getOrderEffectiveSector(lot, movedItem.orderId, movedItem) : undefined;
+      const movedSectorName = movedSectorId ? sectors.find(s => s.id === movedSectorId)?.name : undefined;
+      toast.show(movedSectorName
+        ? `Este pedido já foi direcionado para o setor "${movedSectorName}".`
+        : 'Pedido não encontrado neste Mapa.');
     }
-  }, [initialLotId, initialOrderId, initialItemIdx, lots]);
+  }, [initialLotId, initialOrderId, initialItemIdx, initialScanNonce, lots]);
 
   const deadlineConfigs = useMemo(() => {
     return (productionConfigs || []).filter(c => c.type === 'DEADLINE');
@@ -1144,47 +1161,210 @@ export default function PCPView({
     );
   };
 
-  // Move pedidos individuais para um setor específico (apenas para OS já concluídas)
-  const handleMoveOrdersToSector = async (lotId: string, orderIds: string[], targetSectorId: string) => {
+  // Descreve um pedido/item para exibição em popups de confirmação/feedback,
+  // ex.: "MULE BOSS PRETO · Ped. 69607 · 96P".
+  const describeMoveItem = (lot: ProductionLot, it: { orderId: string; itemIdx?: number; productId?: string; variationId?: string; qty?: number }): string => {
+    const order = productionOrders.find(o => o.id === it.orderId);
+    const orderItem: any = it.itemIdx !== undefined
+      ? order?.items[it.itemIdx]
+      : order?.items.find((i: any) => i.productId === it.productId && i.variationId === it.variationId);
+    const sourceItems: any[] = (lot as any).metadata?.sourceItems || [];
+    const si = sourceItems.find((s: any) => getSourceItemKey(s) === getSourceItemKey(it));
+    const resolvedProductId = it.productId || orderItem?.productId;
+    const product = products.find(p => p.id === resolvedProductId);
+    const variation = product?.variations.find(v => v.id === (it.variationId || orderItem?.variationId));
+    const productName = product?.name || orderItem?.productName || si?.productName || '—';
+    const productRef = product?.reference || '';
+    const colorName = variation?.colorName || orderItem?.variationName || si?.colorName || '';
+    const qty = it.qty ?? si?.qty;
+    const orderNumber = order?.saleOrderNumber || order?.orderNumber || '';
+    return [
+      [productRef, productName, colorName].filter(Boolean).join(' '),
+      orderNumber ? `Ped. ${orderNumber}` : '',
+      qty ? `${qty}P` : '',
+    ].filter(Boolean).join(' · ');
+  };
+
+  // Para um item que está saindo da Expedição (toFinalize), calcula o destino
+  // ("Estoque" ou "Reserva: Cliente") e — quando o destino é Estoque — o estoque
+  // ATUAL do produto/cor e para quanto ele FICARÁ após a entrada deste pedido.
+  // Espelha a conversão pares→caixas usada em `applyExpedicaoStockUpdate`
+  // (ATACADO: caixas via "Grade de Produção Padrão"; demais: pares).
+  const computeStockProjection = (
+    it: { productId?: string; variationId?: string; qty: number },
+    destino: { isStock: boolean; customerName?: string },
+  ): { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string } | null => {
+    const product = products.find(p => p.id === it.productId);
+    const variation = product?.variations.find(v => v.id === it.variationId);
+    if (!product || !variation) return null;
+
+    const destinoLabel = destino.isStock ? 'Estoque' : `Reserva: ${destino.customerName || 'Cliente'}`;
+
+    if (product.type === SaleType.WHOLESALE) {
+      const gridId = product.productionGridId || product.defaultGridId;
+      const defaultPkg = productionConfigs.find(c => c.type === 'PACKAGING' && c.metadata?.productionGradeId === gridId);
+      let pairsPerBox = defaultPkg?.metadata?.capacity as number | undefined;
+      if (!pairsPerBox) {
+        const grid = grids.find(gr => gr.id === gridId);
+        pairsPerBox = grid ? Object.values(grid.configuration).reduce((a: number, b: number) => a + b, 0) : 12;
+      }
+      const addedBoxes = Math.round(it.qty / Math.max(1, pairsPerBox));
+      const currentBoxes = (variation.stock as any)?.['WHOLESALE'] || 0;
+      return {
+        destino: destinoLabel,
+        currentQty: currentBoxes,
+        addQty: addedBoxes,
+        projectedQty: destino.isStock ? currentBoxes + addedBoxes : currentBoxes,
+        unit: 'caixas',
+      };
+    }
+
+    const currentPairs = Object.entries(variation.stock || {}).reduce((s, [, v]) => s + (Number(v) || 0), 0);
+    return {
+      destino: destinoLabel,
+      currentQty: currentPairs,
+      addQty: it.qty,
+      projectedQty: destino.isStock ? currentPairs + it.qty : currentPairs,
+      unit: 'pares',
+    };
+  };
+
+  // Move pedidos/itens individuais para um setor específico (apenas para OS já concluídas
+  // ou via "Mudar Setor Manualmente"). Cada item é identificado pela sua própria chave
+  // (`getSourceItemKey`) — pedidos que compartilham `orderId` (ex.: várias cores do mesmo
+  // pedido de compra) são movidos independentemente, sem afetar os demais itens do pedido.
+  const handleMoveOrdersToSector = async (
+    lotId: string,
+    items: { orderId: string; itemIdx?: number; productId?: string; variationId?: string }[],
+    targetSectorId: string,
+  ) => {
     const lot = lots.find(l => l.id === lotId);
     if (!lot) return;
     const currentOrderSectors: Record<string, string> = (lot as any).metadata?.orderSectors || {};
     const updatedOrderSectors = { ...currentOrderSectors };
-    orderIds.forEach(oid => { updatedOrderSectors[oid] = targetSectorId; });
-    const allSI: any[] = (lot as any).metadata?.sourceItems || [];
-    const allAdvanced = allSI.length > 0 && allSI.every((si: any) => updatedOrderSectors[si.orderId]);
-    if (allAdvanced) {
-      const nextIdx = lot.currentSectorIndex + 1;
-      if (nextIdx < (lot.route?.length || 0)) {
-        await onSaveLot({
-          ...lot,
-          currentSectorIndex: nextIdx,
-          currentStatusId: undefined,
-          metadata: { ...(lot as any).metadata, orderSectors: updatedOrderSectors },
-          history: [...(lot.history || []), { sectorId: lot.route?.[lot.currentSectorIndex] || '', statusId: '', timestamp: Date.now(), userName: userName || 'Usuário', notes: 'Todos os pedidos movidos manualmente.' }],
-        });
-      }
-    } else {
-      await firebaseService.updateDocument('productionLots', lotId, {
-        metadata: { ...(lot as any).metadata, orderSectors: updatedOrderSectors }
-      });
-    }
+    items.forEach(it => { updatedOrderSectors[getSourceItemKey(it)] = targetSectorId; });
+    await firebaseService.updateDocument('productionLots', lotId, {
+      metadata: { ...(lot as any).metadata, orderSectors: updatedOrderSectors }
+    });
     setMoveSectorModal(null);
     setMoveSectorTarget('');
     setSelectedSourceItemKeys(new Set());
-    setOsFeedback({ osNumber: `${orderIds.length} pedido(s)`, nextSector: sectors.find(s => s.id === targetSectorId)?.name || targetSectorId, action: 'Movidos para o setor com sucesso.' });
+    setOsFeedback({
+      osNumber: `${items.length} pedido(s)`,
+      nextSector: sectors.find(s => s.id === targetSectorId)?.name || targetSectorId,
+      action: 'Movidos para o setor com sucesso.',
+      type: 'pedido',
+      details: items.map(it => describeMoveItem(lot, it)),
+    });
+  };
+
+  // "Finalizar Produção" escopado a um subconjunto de pedidos do mapa: cada pedido
+  // segue seu PRÓPRIO destino (resolvido via resolveCorrectSectorForProduct) — ou é
+  // movido para o próximo setor do seu roteiro (orderSectors), ou, se o roteiro dele
+  // já terminou, recebe a baixa de Expedição (estoque/entrega) e é marcado com
+  // ORDER_FINALIZED. Os demais pedidos do mapa permanecem inalterados.
+  const handleFinalizeSelectedSourceItems = async (lot: ProductionLot, items: LotAdvanceItem[]) => {
+    const currentSectorId = lot.route?.[lot.currentSectorIndex] || '';
+    const currentOrderSectors: Record<string, string> = (lot as any).metadata?.orderSectors || {};
+    const updatedOrderSectors = { ...currentOrderSectors };
+
+    const toFinalize = items.filter(it => it.chosenSectorId === '');
+    const toMove = items.filter(it => it.chosenSectorId !== '');
+
+    if (toFinalize.length > 0) {
+      const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalize.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx })));
+      await applyExpedicaoStockUpdate(lot, stockItems, customerItems);
+      toFinalize.forEach(it => { updatedOrderSectors[getSourceItemKey(it)] = ORDER_FINALIZED; });
+    }
+    toMove.forEach(it => { updatedOrderSectors[getSourceItemKey(it)] = it.chosenSectorId; });
+
+    const allSI: any[] = (lot as any).metadata?.sourceItems
+      || [{ orderId: lot.productionOrderId, itemIdx: 0, qty: lot.quantity }];
+    const lotWithUpdatedSectors = { ...lot, metadata: { ...(lot as any).metadata, orderSectors: updatedOrderSectors } };
+    const allFinalized = allSI.every((si: any) =>
+      getOrderEffectiveSector(lotWithUpdatedSectors, si.orderId, si) === ORDER_FINALIZED
+    );
+
+    if (allFinalized) {
+      await onSaveLot({
+        ...lot,
+        finishedAt: Date.now(),
+        metadata: { ...(lot as any).metadata, orderSectors: updatedOrderSectors },
+        history: [...(lot.history || []), {
+          sectorId: currentSectorId, statusId: '', timestamp: Date.now(),
+          userName: userName || 'Usuário', notes: 'Mapa finalizado (pedidos concluídos individualmente).',
+        }],
+      });
+    } else {
+      await firebaseService.updateDocument('productionLots', lot.id, {
+        metadata: { ...(lot as any).metadata, orderSectors: updatedOrderSectors },
+      });
+    }
+
+    setSelectedSourceItemKeys(new Set());
+    setOsFeedback({
+      osNumber: `${items.length} pedido(s)`,
+      nextSector: allFinalized ? 'FINALIZADO' : 'PROCESSADO',
+      action: toFinalize.length > 0 && toMove.length > 0
+        ? `${toFinalize.length} finalizado(s) (baixa/entrega) e ${toMove.length} movido(s) de setor.`
+        : toFinalize.length > 0
+          ? `${toFinalize.length} pedido(s) finalizado(s) — baixa/entrega aplicada.`
+          : `${toMove.length} pedido(s) movido(s) para o próximo setor.`,
+      type: 'pedido',
+      details: items.map(it => describeMoveItem(lot, it)),
+    });
   };
 
   // Direciona um único pedido (modelo) ao setor que corresponde ao SEU PRÓPRIO roteiro de produção,
   // mesmo que isso difira do setor para onde o restante do mapa está indo (mapas com modelos divergentes).
-  const handleRouteOrderToCorrectSector = async (lot: ProductionLot, orderId: string, targetSectorId: string, targetSectorName: string, productName: string) => {
+  const handleRouteOrderToCorrectSector = async (lot: ProductionLot, si: { orderId: string; itemIdx?: number; productId?: string; variationId?: string }, targetSectorId: string, targetSectorName: string, productName: string) => {
     if (!confirm(`Direcionar o pedido do modelo "${productName}" diretamente para o setor "${targetSectorName}", conforme o roteiro de produção cadastrado para este modelo?`)) return;
     const currentOrderSectors: Record<string, string> = (lot as any).metadata?.orderSectors || {};
-    const updatedOrderSectors = { ...currentOrderSectors, [orderId]: targetSectorId };
+    const updatedOrderSectors = { ...currentOrderSectors, [getSourceItemKey(si)]: targetSectorId };
     await firebaseService.updateDocument('productionLots', lot.id, {
       metadata: { ...(lot as any).metadata, orderSectors: updatedOrderSectors },
     });
-    setOsFeedback({ osNumber: `Modelo ${productName}`, nextSector: targetSectorName, action: 'Direcionado para o setor correto conforme o roteiro do modelo.' });
+    setOsFeedback({
+      osNumber: `Modelo ${productName}`,
+      nextSector: targetSectorName,
+      action: 'Direcionado para o setor correto conforme o roteiro do modelo.',
+      type: 'pedido',
+      details: [describeMoveItem(lot, si)],
+    });
+  };
+
+  // Repara o caso em que uma venda perdeu a referência (sale.productionOrderId) para a
+  // Ordem de Produção que efetivamente gerou os mapas em produção — geralmente porque uma
+  // edição anterior da venda criou uma OP nova/órfã e sobrescreveu o vínculo correto.
+  // Reaponta a venda para a OP que este mapa realmente referencia e, se a OP atualmente
+  // vinculada à venda estiver órfã (sem mapas), remove-a.
+  const handleRepairSaleLink = (order: ProductionOrder) => {
+    if (!order.saleId) return;
+    const sale = sales.find(s => s.id === order.saleId);
+    if (!sale) {
+      toast.show('Venda original não encontrada.');
+      return;
+    }
+    if (sale.productionOrderId === order.id) {
+      toast.show('Este pedido já está corretamente vinculado.');
+      return;
+    }
+    const orphanOrder = sale.productionOrderId
+      ? productionOrders.find(o => o.id === sale.productionOrderId)
+      : undefined;
+    const orphanIsEmpty = !!orphanOrder && (!orphanOrder.lotIds || orphanOrder.lotIds.length === 0);
+    setRepairLinkConfirm({ order, sale, orphanOrder, orphanIsEmpty });
+  };
+
+  const executeRepairSaleLink = async () => {
+    if (!repairLinkConfirm) return;
+    const { order, sale, orphanOrder, orphanIsEmpty } = repairLinkConfirm;
+    await firebaseService.saveDocument('sales', { ...sale, productionOrderId: order.id });
+    if (orphanOrder && orphanIsEmpty && onDeleteProductionOrder) {
+      await onDeleteProductionOrder(orphanOrder.id);
+    }
+    toast.show('Vínculo do pedido reparado com sucesso.');
+    setRepairLinkConfirm(null);
   };
 
   // Monta, para cada modelo (pedido) que compõe o mapa, o setor que o ROTEIRO DE
@@ -1342,18 +1522,18 @@ export default function PCPView({
     // Proteção de estoque: se o lote está saindo da Expedição sem ter passado por OS,
     // aciona a mesma baixa de estoque/entrega que aconteceria via handleCompleteOS.
     const currentSectorObj = sectors.find(s => s.id === currentSectorId);
-    const isExpedicao = currentSectorObj?.name?.toLowerCase().includes('expedi');
-    if (isExpedicao) {
+    const isCycleEndSector = !!currentSectorObj?.isProductionCycleEnd;
+    if (isCycleEndSector) {
       const lotMeta = (lot as any).metadata;
       const sourceOrderIds: string[] = Array.from(new Set([
         ...(lot.productionOrderId ? [lot.productionOrderId] : []),
         ...(lotMeta?.sourceItems?.map((si: any) => si.orderId) || []),
       ]));
       if (sourceOrderIds.length > 0) {
-        const { customerItems, stockItems } = classifyExpedicaoOrders(sourceOrderIds);
+        const { customerItems, stockItems } = classifyExpedicaoOrders(sourceOrderIds.map(orderId => ({ orderId })));
         if (stockItems.length > 0 || customerItems.length > 0) {
           const lines: string[] = ['Mapa saindo da Expedição'];
-          if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → ENTREGA AO CLIENTE`);
+          if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
           if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} pedido(s) → ENTRADA EM ESTOQUE`);
           lines.push('\nConfirmar baixa de expedição?');
           if (!confirm(lines.join('\n'))) { setSectorChangeConfirm(null); return; }
@@ -1885,65 +2065,239 @@ export default function PCPView({
     }
   };
 
-  // Classifica os IDs de pedido em "destino cliente" vs "destino estoque"
-  const classifyExpedicaoOrders = (orderIds: string[]) => {
-    const customerItems: string[] = [];
-    const stockItems: string[] = [];
-    for (const oid of orderIds) {
-      const prodOrder = productionOrders.find(o => o.id === oid);
+  // Classifica pedidos/itens em "destino cliente" vs "destino estoque". Cada entrada
+  // identifica um pedido (orderId) ou, quando `itemIdx` é informado, um ÚNICO item
+  // (modelo/cor) dentro de um pedido de compra que agrupa vários itens — preservado
+  // até `applyExpedicaoStockUpdate` para que a baixa afete só o item finalizado.
+  const classifyExpedicaoOrders = (items: { orderId: string; itemIdx?: number }[]) => {
+    const customerItems: { orderId: string; itemIdx?: number }[] = [];
+    const stockItems: { orderId: string; itemIdx?: number }[] = [];
+    for (const item of items) {
+      const prodOrder = productionOrders.find(o => o.id === item.orderId);
       if (!prodOrder) continue;
       const sale = sales?.find(s => s.id === prodOrder.saleId);
-      const isStockDestination = prodOrder.customerName === 'Estoque' || sale?.saleDestination === 'STOCK';
-      if (isStockDestination) stockItems.push(oid);
-      else customerItems.push(oid);
+      // Venda cancelada (excluída/estornada após a produção já ter "baixa" em algum
+      // setor): a produção segue normalmente, mas as caixas deixam de ser reservadas
+      // para essa venda e entram no estoque geral.
+      const isStockDestination = prodOrder.customerName === 'Estoque' || sale?.saleDestination === 'STOCK' || sale?.status === SaleStatus.CANCELLED;
+      if (isStockDestination) stockItems.push(item);
+      else customerItems.push(item);
     }
     return { customerItems, stockItems };
   };
 
-  // Aplica a baixa de estoque e marcação de entrega para pedidos que saíram da Expedição.
+  // Resolve um sourceItem (lot.metadata.sourceItems) na produção/produto/variação
+  // correspondente e na grade exata produzida (size -> qty, a partir de
+  // ordItem.sizes[size].toProduction) — usado tanto para a baixa de soladoStock
+  // quanto para a criação dos StockLots (Estoque e Pedidos).
+  const resolveSourceItem = (si: any) => {
+    const prodOrder = productionOrders.find(o => o.id === si.orderId);
+    if (!prodOrder) return null;
+    const itemIdx = si.itemIdx;
+    const ordItem: any = itemIdx !== undefined
+      ? prodOrder.items[itemIdx]
+      : prodOrder.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+    if (!ordItem) return null;
+    const prod = products.find(p => p.id === (si.productId || ordItem.productId));
+    if (!prod) return null;
+    const vari = prod.variations.find(v => v.id === (si.variationId || ordItem.variationId));
+    if (!vari) return null;
+
+    const pairs: Record<string, number> = {};
+    Object.entries(ordItem.sizes || {}).forEach(([size, sData]: any) => {
+      const qty = Number(sData.toProduction) || 0;
+      if (qty > 0) pairs[size] = qty;
+    });
+    const totalQty = Object.values(pairs).reduce((s, q) => s + q, 0);
+    const gradeLabel = Object.entries(pairs).map(([sz, q]) => `${sz}x${q}`).join('-');
+
+    return { prodOrder, ordItem, prod, vari, pairs, totalQty, gradeLabel, itemIdx };
+  };
+
+  // Aplica a baixa de estoque para pedidos que saíram da Expedição. Para pedidos com
+  // destino "Estoque", incrementa o estoque geral do produto e registra um StockLot
+  // EM_ESTOQUE com a grade exata produzida. Para pedidos vinculados a um cliente,
+  // registra um StockLot RESERVADO (vinculado à venda) — a venda só é marcada como
+  // entregue manualmente, via "Liberar Pedido" (Vendas).
   // Chamado tanto pela conclusão de OS quanto pelo avanço direto de setor ("Próximo Setor").
-  const applyExpedicaoStockUpdate = async (lot: ProductionLot, stockItems: string[], customerItems: string[]) => {
-    if (stockItems.length > 0) {
-      const lotSI: any[] = (lot as any).metadata?.sourceItems || [];
-      const stockSI = lotSI.filter((si: any) => stockItems.includes(si.orderId));
-      for (const si of stockSI) {
-        const prodOrder = productionOrders.find(o => o.id === si.orderId);
-        if (!prodOrder) continue;
-        const ordItem: any = si.itemIdx !== undefined
-          ? prodOrder.items[si.itemIdx]
-          : prodOrder.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
-        if (!ordItem) continue;
-        const prod = products.find(p => p.id === (si.productId || ordItem.productId));
-        if (!prod) continue;
-        const variIdx = prod.variations.findIndex(v => v.id === (si.variationId || ordItem.variationId));
-        if (variIdx === -1) continue;
-        const updVars = prod.variations.map((v, idx) => {
-          if (idx !== variIdx) return v;
-          const newStock = { ...v.stock };
-          Object.entries(ordItem.sizes || {}).forEach(([size, sData]: any) => {
-            const qty = Number(sData.toProduction) || 0;
-            if (qty > 0) newStock[size] = (newStock[size] || 0) + qty;
+  const applyExpedicaoStockUpdate = async (
+    lot: ProductionLot,
+    stockItems: { orderId: string; itemIdx?: number }[],
+    customerItems: { orderId: string; itemIdx?: number }[],
+  ) => {
+    // Um pedido de compra pode agrupar vários itens (modelos/cores) sob o mesmo
+    // orderId — quando `item.itemIdx` é informado, casa apenas o sourceItem daquele
+    // item específico; quando não, casa TODOS os sourceItems daquele orderId (caso
+    // de finalizações "pedido inteiro", ex.: conclusão de OS/avanço de mapa).
+    const matchesItem = (si: any, item: { orderId: string; itemIdx?: number }) =>
+      si.orderId === item.orderId && (item.itemIdx === undefined || si.itemIdx === item.itemIdx);
+
+    // Dá baixa real no estoque de solados (soleStock) para todos os pedidos que saíram da
+    // Expedição, independente do destino (estoque ou cliente), consumindo os pares por
+    // molde/cor/grade usando a mesma lógica de mapeamento das reservas (resolveSoleConsumption).
+    const allItems = [...stockItems, ...customerItems];
+    const lotSI: any[] = (lot as any).metadata?.sourceItems || [];
+    if (allItems.length > 0) {
+      const consumedSI = lotSI.filter((si: any) => allItems.some(it => matchesItem(si, it)));
+      const consumptionByKey = new Map<string, { moldId: string; colorId: string; gradeQuantities: Record<string, number> }>();
+
+      for (const si of consumedSI) {
+        const resolved = resolveSourceItem(si);
+        if (!resolved || resolved.totalQty <= 0) continue;
+        const { prod, vari, pairs, totalQty } = resolved;
+
+        const consumption = resolveSoleConsumption(prod, vari, pairs, totalQty, soleStock);
+        if (!consumption) continue;
+
+        const key = `${consumption.moldId}_${consumption.colorId || 'default'}`;
+        const existing = consumptionByKey.get(key);
+        if (!existing) {
+          consumptionByKey.set(key, { moldId: consumption.moldId, colorId: consumption.colorId, gradeQuantities: { ...consumption.gradeQuantities } });
+        } else {
+          Object.entries(consumption.gradeQuantities).forEach(([gradeKey, qty]) => {
+            existing.gradeQuantities[gradeKey] = (existing.gradeQuantities[gradeKey] || 0) + qty;
           });
-          return { ...v, stock: newStock };
+        }
+      }
+
+      for (const { moldId, colorId, gradeQuantities } of consumptionByKey.values()) {
+        const entry = soleStock.find(s => String(s.moldId).trim() === moldId && String(s.colorId || '').trim() === colorId);
+        if (!entry) continue;
+
+        const updatedStock = { ...entry.stock };
+        Object.entries(gradeQuantities).forEach(([gradeKey, qty]) => {
+          updatedStock[gradeKey] = Math.max(0, (updatedStock[gradeKey] || 0) - qty);
         });
-        await firebaseService.updateDocument('products', prod.id, { variations: updVars });
+        const totalPairs = Object.entries(updatedStock)
+          .filter(([k]) => k !== 'pesagem' && k !== 'total')
+          .reduce((s, [, v]) => s + (Number(v) || 0), 0);
+
+        await firebaseService.updateDocument('soleStock', entry.id, { stock: updatedStock, totalPairs, updatedAt: Date.now() });
       }
     }
 
-    if (customerItems.length > 0) {
-      const uniqueSaleIds = new Set<string>();
-      for (const oid of customerItems) {
-        const prodOrder = productionOrders.find(o => o.id === oid);
-        if (prodOrder?.saleId) uniqueSaleIds.add(prodOrder.saleId);
+    // Pedidos destino "Estoque": mantém o incremento de variation.stock e registra
+    // um StockLot EM_ESTOQUE com a composição exata da caixa produzida.
+    if (stockItems.length > 0) {
+      const stockSI = lotSI.filter((si: any) => stockItems.some(it => matchesItem(si, it)));
+      // Vários sourceItems (cores diferentes) podem pertencer ao MESMO produto — acumula
+      // os incrementos de `variations` aqui e grava uma única vez por produto ao final.
+      // Gravar a cada iteração a partir do snapshot original de `prod.variations` faria
+      // a última cor processada sobrescrever (perder) o incremento das cores anteriores.
+      const productVariationsMap = new Map<string, Product['variations']>();
+      for (const si of stockSI) {
+        const resolved = resolveSourceItem(si);
+        if (!resolved || resolved.totalQty <= 0) continue;
+        const { prodOrder, prod, vari, pairs, totalQty, gradeLabel, itemIdx } = resolved;
+
+        let entryBoxQty: number | undefined;
+        let entryPkg: ProductionConfigItem | undefined;
+
+        const baseVariations = productVariationsMap.get(prod.id) || prod.variations;
+        const variIdx = baseVariations.findIndex(v => v.id === vari.id);
+        const updVars = baseVariations.map((v, idx) => {
+          if (idx !== variIdx) return v;
+          const newStock = { ...v.stock };
+          if (prod.type === SaleType.WHOLESALE) {
+            // ATACADO: "Estoque Global" (CAIXAS) é incrementado convertendo os pares
+            // produzidos pela embalagem cujo "Grade de Produção Padrão" corresponde à
+            // grade de produção do produto (pares por caixa), com fallback para a
+            // soma da própria grade de produção.
+            const gridId = prod.productionGridId || prod.defaultGridId;
+            const defaultPkg = productionConfigs.find(c => c.type === 'PACKAGING' && c.metadata?.productionGradeId === gridId);
+            let pairsPerBox = defaultPkg?.metadata?.capacity as number | undefined;
+            if (!pairsPerBox) {
+              const grid = grids.find(gr => gr.id === gridId);
+              pairsPerBox = grid ? Object.values(grid.configuration).reduce((a: number, b: number) => a + b, 0) : 12;
+            }
+            const boxesProduced = Math.round(totalQty / Math.max(1, pairsPerBox));
+            newStock['WHOLESALE'] = (newStock['WHOLESALE'] || 0) + boxesProduced;
+            entryBoxQty = boxesProduced;
+            entryPkg = defaultPkg;
+
+            if (defaultPkg && boxesProduced > 0) {
+              const allocations = [...(v.stockPkgAllocations || [])];
+              const allocIdx = allocations.findIndex(a => a.pkgId === defaultPkg.id);
+              if (allocIdx >= 0) {
+                allocations[allocIdx] = { ...allocations[allocIdx], qty: allocations[allocIdx].qty + boxesProduced };
+              } else {
+                allocations.push({ pkgId: defaultPkg.id, qty: boxesProduced });
+              }
+              return { ...v, stock: newStock, stockPkgAllocations: allocations };
+            }
+          } else {
+            Object.entries(pairs).forEach(([size, qty]) => {
+              newStock[size] = (newStock[size] || 0) + qty;
+            });
+          }
+          return { ...v, stock: newStock };
+        });
+        productVariationsMap.set(prod.id, updVars);
+
+        const stockLot: Omit<StockLot, 'id'> = {
+          productId: prod.id,
+          productName: prod.name,
+          productReference: prod.reference,
+          variationId: vari.id,
+          variationName: vari.colorName,
+          sizeBreakdown: pairs,
+          totalPairs: totalQty,
+          gradeLabel,
+          status: 'EM_ESTOQUE',
+          lotId: lot.id,
+          lotOrderNumber: lot.orderNumber,
+          productionOrderId: si.orderId,
+          productionOrderNumber: prodOrder.orderNumber,
+          itemIdx,
+          boxQty: entryBoxQty,
+          pkgId: entryPkg?.id,
+          pkgName: entryPkg?.name,
+          saleId: prodOrder.saleId,
+          saleOrderNumber: prodOrder.saleOrderNumber,
+          customerName: prodOrder.customerName,
+          createdAt: Date.now(),
+        };
+        await firebaseService.saveDocument('stockLots', stockLot);
       }
-      for (const saleId of Array.from(uniqueSaleIds)) {
-        const sale = sales?.find(s => s.id === saleId);
-        if (sale && sale.deliveryStatus !== 'DELIVERED') {
-          await firebaseService.updateDocument('sales', sale.id, {
-            deliveryStatus: 'DELIVERED',
-            deliveredAt: Date.now()
-          });
-        }
+
+      for (const [productId, variations] of productVariationsMap.entries()) {
+        await firebaseService.updateDocument('products', productId, { variations });
+      }
+    }
+
+    // Pedidos vinculados a cliente: NÃO marca a venda como entregue automaticamente
+    // nem altera variation.stock — registra um StockLot RESERVADO com a composição
+    // exata produzida, vinculado à venda. A liberação ao cliente é manual (Vendas).
+    if (customerItems.length > 0) {
+      const customerSI = lotSI.filter((si: any) => customerItems.some(it => matchesItem(si, it)));
+      for (const si of customerSI) {
+        const resolved = resolveSourceItem(si);
+        if (!resolved || resolved.totalQty <= 0) continue;
+        const { prodOrder, prod, vari, pairs, totalQty, gradeLabel, itemIdx } = resolved;
+
+        const sale = sales?.find(s => s.id === prodOrder.saleId);
+
+        const stockLot: Omit<StockLot, 'id'> = {
+          productId: prod.id,
+          productName: prod.name,
+          productReference: prod.reference,
+          variationId: vari.id,
+          variationName: vari.colorName,
+          sizeBreakdown: pairs,
+          totalPairs: totalQty,
+          gradeLabel,
+          status: 'RESERVADO',
+          lotId: lot.id,
+          lotOrderNumber: lot.orderNumber,
+          productionOrderId: si.orderId,
+          productionOrderNumber: prodOrder.orderNumber,
+          itemIdx,
+          saleId: prodOrder.saleId,
+          saleOrderNumber: sale?.orderNumber || prodOrder.saleOrderNumber,
+          customerName: sale?.customerName || prodOrder.customerName,
+          createdAt: Date.now(),
+        };
+        await firebaseService.saveDocument('stockLots', stockLot);
       }
     }
   };
@@ -1974,18 +2328,55 @@ export default function PCPView({
         try { await financeService.settleTransaction(os.transactionId); } catch { /* ignore */ }
       }
 
-      // 2b. Se setor atual é Expedição → baixa automática (entrega ou estoque)
+      // 2b. Se setor atual é Expedição → baixa automática (entrega ou estoque) e
+      // finalização ESCOPADA APENAS aos pedidos desta OS. Diferente dos demais
+      // setores (onde o mapa avança fisicamente como um todo), na Expedição cada
+      // pedido/cor pode finalizar de forma independente — os demais pedidos do
+      // mapa permanecem pendentes e o mapa só é concluído quando o último pedido
+      // restante também for finalizado.
       const currentSectorObj = sectors.find(s => s.id === sectorId);
-      const isExpedicao = currentSectorObj?.name?.toLowerCase().includes('expedi');
-      if (isExpedicao && os.sourceOrderIds && os.sourceOrderIds.length > 0) {
+      const isCycleEndSector = !!currentSectorObj?.isProductionCycleEnd;
+      if (isCycleEndSector && os.sourceOrderIds && os.sourceOrderIds.length > 0) {
         const orderIds = Array.from(new Set(os.sourceOrderIds));
         const lines: string[] = [`Setor de Expedição — ${os.osNumber}`];
-        const { customerItems, stockItems } = classifyExpedicaoOrders(orderIds);
-        if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → ENTREGA AO CLIENTE`);
+        const { customerItems, stockItems } = classifyExpedicaoOrders(orderIds.map(orderId => ({ orderId })));
+        if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
         if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} pedido(s) → ENTRADA EM ESTOQUE`);
         lines.push('\nConfirmar baixa de expedição?');
         if (!confirm(lines.join('\n'))) return;
         await applyExpedicaoStockUpdate(lotObj, stockItems, customerItems);
+
+        const currentOrderSectors: Record<string, string> = (lotObj as any).metadata?.orderSectors || {};
+        const updatedOrderSectors = { ...currentOrderSectors };
+        orderIds.forEach(oid => { updatedOrderSectors[oid] = ORDER_FINALIZED; });
+
+        const allSI: any[] = (lotObj as any).metadata?.sourceItems
+          || [{ orderId: lotObj.productionOrderId, itemIdx: 0, qty: lotObj.quantity }];
+        const lotObjWithUpdatedSectors = { ...lotObj, metadata: { ...(lotObj as any).metadata, orderSectors: updatedOrderSectors } };
+        const allFinalized = allSI.every((si: any) =>
+          getOrderEffectiveSector(lotObjWithUpdatedSectors, si.orderId, si) === ORDER_FINALIZED
+        );
+
+        if (allFinalized) {
+          await onSaveLot({
+            ...lotObj,
+            finishedAt: Date.now(),
+            metadata: { ...(lotObj as any).metadata, orderSectors: updatedOrderSectors },
+            history: [...(lotObj.history || []), {
+              sectorId, statusId: '', timestamp: Date.now(),
+              userName: userName || 'Usuário', notes: `Mapa finalizado via OS ${os.osNumber}.`,
+            }],
+          });
+          setOsFeedback({ osNumber: os.osNumber, nextSector: 'FINALIZADO', action: 'Mapa de produção finalizado!' });
+        } else {
+          await firebaseService.updateDocument('productionLots', lotObj.id, {
+            metadata: { ...(lotObj as any).metadata, orderSectors: updatedOrderSectors },
+          });
+          setOsFeedback({ osNumber: os.osNumber, nextSector: nextSectorName, action: 'Pedido(s) desta OS finalizado(s) — demais pedidos do mapa permanecem em Expedição.' });
+        }
+        setIsDetailModalOpen(false);
+        setSelectedLot(null);
+        return;
       }
 
       // 3. Count remaining PENDING OS for this lot in this sector
@@ -2287,11 +2678,10 @@ export default function PCPView({
     setSelectedLot(updatedLot);
   };
 
-  const handleScanLotResult = (result: string) => {
+  // O ScannerModal já entrega o resultado parseado (scannerService.parseScanResult),
+  // não a string bruta — reparsear aqui quebraria (.split em um objeto).
+  const handleScanLotResult = async (parsed: any) => {
     setIsScannerOpen(false);
-
-    // Tentar parsear formato estruturado (OS|id, LOT|id, etc.)
-    const parsed = scannerService.parseScanResult(result);
 
     if (parsed?.type === 'OS') {
       const os = serviceOrders?.find(so => so.id === parsed.osId);
@@ -2305,46 +2695,75 @@ export default function PCPView({
       return;
     }
 
+    // Etiqueta de produto genérica (sem lotId/orderId) -> não há pedido/Mapa para abrir.
+    // Sem este aviso explícito, o código cairia no fallback de LOT abaixo e mostraria
+    // "Mapa não encontrado: PRD|..." (ou nada, se o toast passar despercebido).
+    if (parsed?.type === 'PRODUCT' && (!parsed.lotId || !parsed.orderId)) {
+      toast.show(SCAN_ERRORS.noRoute);
+      return;
+    }
+
+    // Etiqueta de molde de solado -> não corresponde a um Mapa/pedido de produção.
+    if (parsed?.type === 'SOLE') {
+      toast.show(SCAN_ERRORS.sole);
+      return;
+    }
+
     // Etiqueta de pedido vinculado (PRD|...|lotId|orderId|itemIdx) -> abre o Mapa direto no pedido
     if (parsed?.type === 'PRODUCT' && parsed.lotId && parsed.orderId) {
-      const lot = lots.find(l => l.id === parsed.lotId);
-      if (!lot) { toast.show('Mapa não encontrado.'); return; }
+      // Busca local primeiro e, se não encontrar (Mapa ainda não sincronizado
+      // localmente), carrega direto do Firestore — "carrega diretamente" o Mapa
+      // mesmo que a lista local `lots` ainda não tenha esse documento.
+      const lot = await scannerService.findLotById(parsed.lotId, lots);
+      if (!lot) { toast.show(SCAN_ERRORS.lotNotFound(parsed.lotId)); return; }
 
       const allSourceItems: any[] = (lot as any).metadata?.sourceItems || [
         { orderId: lot.productionOrderId, itemIdx: 0, qty: lot.quantity }
       ];
       const currentSectorId = lot.route && lot.route[lot.currentSectorIndex];
-      const orderSectorsMap: Record<string, string> = (lot as any).metadata?.orderSectors || {};
-      const sourceItems = allSourceItems.filter((si: any) => {
-        const destSector = orderSectorsMap[si.orderId];
-        return !destSector || destSector === currentSectorId;
-      });
+      const sourceItems = allSourceItems.filter((si: any) =>
+        getOrderEffectiveSector(lot, si.orderId, si) === currentSectorId
+      );
 
       const itemIdxNum = parsed.itemIdx !== undefined && parsed.itemIdx !== '' ? Number(parsed.itemIdx) : undefined;
-      const si = sourceItems.find((s: any) => s.orderId === parsed.orderId && (itemIdxNum === undefined || s.itemIdx === itemIdxNum))
+      const matchesTarget = (s: any) => s.orderId === parsed.orderId && (itemIdxNum === undefined || s.itemIdx === itemIdxNum);
+      const si = sourceItems.find(matchesTarget)
         || sourceItems.find((s: any) => s.orderId === parsed.orderId);
 
       setSelectedLot(lot);
       setIsDetailModalOpen(true);
+      // Limpa filtros deixados por uma sessão anterior do modal, que poderiam
+      // esconder o card do pedido recém-escaneado.
+      setSourceFilterModel('');
+      setSourceFilterColor('');
       if (si) {
         const idx = sourceItems.indexOf(si);
         const focusKey = `${parsed.orderId}-${idx}`;
         setExpandedSourceItems(prev => new Set(prev).add(focusKey));
         setScanFocusKey(focusKey);
+      } else {
+        // O pedido escaneado não está no setor atual do Mapa — foi direcionado
+        // individualmente para outro setor. Avisa o usuário onde ele está.
+        const movedItem = allSourceItems.find(matchesTarget) || allSourceItems.find((s: any) => s.orderId === parsed.orderId);
+        const movedSectorId = movedItem ? getOrderEffectiveSector(lot, movedItem.orderId, movedItem) : undefined;
+        const movedSectorName = movedSectorId ? sectors.find(s => s.id === movedSectorId)?.name : undefined;
+        toast.show(movedSectorName
+          ? `Este pedido já foi direcionado para o setor "${movedSectorName}".`
+          : 'Pedido não encontrado neste Mapa.');
       }
       return;
     }
 
-    // Formato LOT|id ou fallback JSON/id direto -> abre o Mapa direto no pedido vinculado
-    let lotId = parsed?.type === 'LOT' ? parsed.lotId : '';
-    if (!lotId) {
-      try { lotId = JSON.parse(result)?.id || result; } catch { lotId = result; }
-    }
-
+    // Formato LOT|id -> abre o Mapa direto no pedido vinculado
+    const lotId = parsed?.type === 'LOT' ? parsed.lotId : '';
     if (!lotId) { toast.show('QR Code inválido'); return; }
 
-    const lot = lots.find(l => l.id === lotId || l.orderNumber === lotId);
-    if (!lot) { toast.show('Mapa não encontrado: ' + lotId); return; }
+    let lot = lots.find(l => l.id === lotId || l.orderNumber === lotId);
+    if (!lot) {
+      // Mapa ainda não sincronizado localmente -> tenta carregar direto do Firestore.
+      lot = (await scannerService.findLotById(lotId, lots)) || undefined;
+    }
+    if (!lot) { toast.show(SCAN_ERRORS.lotNotFound(lotId)); return; }
 
     setSelectedLot(lot);
     setIsDetailModalOpen(true);
@@ -2353,11 +2772,9 @@ export default function PCPView({
       { orderId: lot.productionOrderId, itemIdx: 0, qty: lot.quantity }
     ];
     const currentSectorId = lot.route && lot.route[lot.currentSectorIndex];
-    const orderSectorsMap: Record<string, string> = (lot as any).metadata?.orderSectors || {};
-    const sourceItems = allSourceItems.filter((si: any) => {
-      const destSector = orderSectorsMap[si.orderId];
-      return !destSector || destSector === currentSectorId;
-    });
+    const sourceItems = allSourceItems.filter((si: any) =>
+      getOrderEffectiveSector(lot, si.orderId, si) === currentSectorId
+    );
     const firstItem = sourceItems[0];
     if (firstItem) {
       const idx = sourceItems.indexOf(firstItem);
@@ -2398,6 +2815,26 @@ export default function PCPView({
       });
     }
     return filtered;
+  };
+
+  /** Soma qty/grade/produtos de um subconjunto de `sourceItems` de um mapa (um grupo por setor de `getLotPendingSectorGroups`). */
+  const computeSectionGroup = (lot: ProductionLot, sectionItems: any[]): { qty: number; grade: Record<string, number> | null; products: Product[] } => {
+    const qty = sectionItems.reduce((acc: number, si: any) => acc + (si.qty || 0), 0);
+    const grade: Record<string, number> = {};
+    sectionItems.forEach((si: any) => {
+      const ord = productionOrders.find(o => o.id === si.orderId);
+      if (!ord) return;
+      const ordItem: any = si.itemIdx !== undefined ? ord.items[si.itemIdx] : ord.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+      if (!ordItem?.sizes) return;
+      Object.entries(ordItem.sizes).forEach(([sz, sd]: any) => {
+        const q = Number(sd.toProduction) || 0;
+        if (q > 0) grade[sz] = (grade[sz] || 0) + q;
+      });
+    });
+    const sectionProducts = Array.from(new Map(
+      sectionItems.map((si: any) => [si.productId, products.find(p => p.id === si.productId)])
+    ).values()).filter(Boolean) as Product[];
+    return { qty, grade: Object.keys(grade).length > 0 ? grade : null, products: sectionProducts };
   };
 
   const generatePCPPDF = async () => {
@@ -2466,8 +2903,8 @@ export default function PCPView({
         return y + 20;
       };
 
-      const addGradeTable = (lot: any, startY: number) => {
-        const pairs = lot.pairs || {};
+      const addGradeTable = (lot: any, startY: number, gradeOverride?: Record<string, number> | null) => {
+        const pairs = gradeOverride || lot.pairs || {};
         const sizes = Object.keys(pairs).sort((a: string, b: string) => Number(a) - Number(b));
         if (!sizes.length) return startY;
         const product = products.find(p => p.id === lot.productId);
@@ -2520,7 +2957,8 @@ export default function PCPView({
             const orderLots2 = lots.filter(l => order.lotIds?.includes(l.id));
             const sectorLabel = [...new Set(orderLots2.map(l => {
               if (l.finishedAt) return 'Concluído';
-              const sid = l.route?.[l.currentSectorIndex];
+              const sid = getOrderEffectiveSector(l, order.id);
+              if (sid === ORDER_FINALIZED) return 'Concluído';
               return sectors.find(s => s.id === sid)?.name || 'Sem Setor';
             }))].join(', ');
             drawCard(y, 9);
@@ -2575,33 +3013,52 @@ export default function PCPView({
           }
         }
       } else if (shareReportType === 'sector') {
-        const sectorMap = new Map<string, { name: string; lots: typeof filtered }>();
+        type SectorEntry = { lot: typeof filtered[number]; items: any[] | null };
+        const sectorMap = new Map<string, { name: string; entries: SectorEntry[] }>();
         filtered.forEach(lot => {
-          const sid = lot.route?.[lot.currentSectorIndex] || '__none__';
-          const sec = sectors.find(s => s.id === sid);
-          if (!sectorMap.has(sid)) sectorMap.set(sid, { name: sec?.name || 'Sem Setor', lots: [] });
-          sectorMap.get(sid)!.lots.push(lot);
+          const pendingGroups = getLotPendingSectorGroups(lot);
+          const isSplit = pendingGroups.size > 1;
+          pendingGroups.forEach((groupItems, sid) => {
+            const sec = sectors.find(s => s.id === sid);
+            if (!sectorMap.has(sid)) sectorMap.set(sid, { name: sec?.name || 'Sem Setor', entries: [] });
+            sectorMap.get(sid)!.entries.push({ lot, items: isSplit ? groupItems : null });
+          });
         });
         let first = true;
-        for (const [, { name: secName, lots: secLots }] of sectorMap) {
+        for (const [, { name: secName, entries }] of sectorMap) {
           if (!first) doc.addPage();
           first = false;
           let y = addHeader();
-          y = addSectionLabel(secName.toUpperCase(), `${secLots.length} mapa(s)  ·  ${secLots.reduce((s, l) => s + (l.quantity || 0), 0)} pares`, y);
+          const secTotal = entries.reduce((s, { lot, items }) => s + (items ? computeSectionGroup(lot, items).qty : lot.quantity), 0);
+          y = addSectionLabel(secName.toUpperCase(), `${entries.length} mapa(s)  ·  ${secTotal} pares`, y);
           const head = ['MAPA', 'PRODUTO / REF', 'COR', ...(shareOpts.customer ? ['CLIENTE'] : []), ...(shareOpts.dates ? ['ENTREGA'] : []), 'TOTAL'];
-          const body = secLots.map(lot => {
+          const body = entries.map(({ lot, items }) => {
             const p = products.find(pr => pr.id === lot.productId);
             const v = p?.variations?.find(va => va.id === lot.variationId);
             const lotAny = lot as any;
             const isMulti = lotAny.groups && lotAny.groups.length > 1;
             const ref = shareOpts.refs && p?.reference ? `${p.reference} · ` : '';
+            const section = items ? computeSectionGroup(lot, items) : null;
+            let prodLabel: string, colorLabel: string;
+            if (section && section.products.length > 1) {
+              prodLabel = `${section.products.length} modelos`;
+              colorLabel = '—';
+            } else if (section && section.products.length === 1) {
+              const sp = section.products[0];
+              const spRef = shareOpts.refs && sp.reference ? `${sp.reference} · ` : '';
+              prodLabel = `${spRef}${sp.name}`;
+              colorLabel = '—';
+            } else {
+              prodLabel = isMulti ? `${lotAny.groups.length} modelos` : `${ref}${p?.name || '—'}`;
+              colorLabel = isMulti ? '—' : (v?.colorName || '—');
+            }
             return [
               `MAPA ${lot.orderNumber}`,
-              isMulti ? `${lotAny.groups.length} modelos` : `${ref}${p?.name || '—'}`,
-              isMulti ? '—' : (v?.colorName || '—'),
+              prodLabel,
+              colorLabel,
               ...(shareOpts.customer ? [lot.customerName || '—'] : []),
               ...(shareOpts.dates ? [lot.deliveryDate ? new Date(lot.deliveryDate).toLocaleDateString('pt-BR') : '—'] : []),
-              `${lot.quantity} par`,
+              `${section ? section.qty : lot.quantity} par`,
             ];
           });
           const tY0 = y;
@@ -2611,9 +3068,9 @@ export default function PCPView({
           (doc as any).roundedRect(M, tY0 - 0.5, W - M * 2, tY1 - tY0 + 1, R, R, 'D');
           y = tY1 + 8;
           if (shareOpts.grades) {
-            for (const lot of secLots) {
+            for (const { lot, items } of entries) {
               if (y > 255) { doc.addPage(); y = addHeader() + 4; }
-              y = addGradeTable(lot, y);
+              y = addGradeTable(lot, y, items ? computeSectionGroup(lot, items).grade : null);
             }
           }
         }
@@ -2624,8 +3081,9 @@ export default function PCPView({
         const body = filtered.map(lot => {
           const p = products.find(pr => pr.id === lot.productId);
           const v = p?.variations?.find(va => va.id === lot.variationId);
-          const sid = lot.route?.[lot.currentSectorIndex];
-          const sec = sectors.find(s => s.id === sid);
+          const sectorNames = Array.from(getLotPendingSectorGroups(lot).keys())
+            .map(sid => sectors.find(s => s.id === sid)?.name || sid)
+            .join(', ');
           const ref = shareOpts.refs && p?.reference ? `${p.reference} · ` : '';
           const lotAny2 = lot as any;
           const isMulti = lotAny2.groups && lotAny2.groups.length > 1;
@@ -2635,7 +3093,7 @@ export default function PCPView({
             isMulti ? '—' : (v?.colorName || '—'),
             ...(shareOpts.customer ? [lot.customerName || '—'] : []),
             ...(shareOpts.dates ? [lot.deliveryDate ? new Date(lot.deliveryDate).toLocaleDateString('pt-BR') : '—'] : []),
-            sec?.name || '—', `${lot.quantity}`,
+            sectorNames || '—', `${lot.quantity}`,
           ];
         });
         const tY0b = y;
@@ -2752,19 +3210,29 @@ export default function PCPView({
       };
       const items: CanvasItem[] = [];
 
-      const buildLotItems = (lot: (typeof filtered)[0], extraSub?: string) => {
+      const buildLotItems = (lot: (typeof filtered)[0], extraSub?: string, section?: { qty: number; grade: Record<string, number> | null; products: Product[] } | null) => {
         const p = products.find(pr => pr.id === lot.productId);
         const v = p?.variations?.find(va => va.id === lot.variationId);
         const ref = shareOpts.refs && p?.reference ? `${p.reference} · ` : '';
         const cust = shareOpts.customer && lot.customerName ? `  ·  ${lot.customerName}` : '';
+        let prodSub: string;
+        if (section && section.products.length > 1) {
+          prodSub = `${section.products.length} modelos`;
+        } else if (section && section.products.length === 1) {
+          const sp = section.products[0];
+          const spRef = shareOpts.refs && sp.reference ? `${sp.reference} · ` : '';
+          prodSub = `${spRef}${sp.name}`;
+        } else {
+          prodSub = `${ref}${p?.name || '—'}  /  ${v?.colorName || '—'}`;
+        }
         items.push({
           type: 'lot',
           text: `MAPA ${lot.orderNumber}`,
-          sub: `${ref}${p?.name || '—'}  /  ${v?.colorName || '—'}${cust}${extraSub || ''}`,
-          qty: `${lot.quantity} par`,
+          sub: `${prodSub}${cust}${extraSub || ''}`,
+          qty: `${section ? section.qty : lot.quantity} par`,
         });
         if (shareOpts.grades) {
-          const pairs = (lot.pairs || {}) as Record<string, number>;
+          const pairs = (section ? section.grade : lot.pairs) || {} as Record<string, number>;
           const sizes = Object.keys(pairs).sort((a, b) => Number(a) - Number(b));
           if (sizes.length) items.push({ type: 'grade', sizes, pairsMap: pairs });
         }
@@ -2790,7 +3258,8 @@ export default function PCPView({
             const sectorSub3 = orderLots3.length > 0
               ? '  ·  ' + [...new Set(orderLots3.map(l => {
                   if (l.finishedAt) return 'Concluído';
-                  const sid = l.route?.[l.currentSectorIndex];
+                  const sid = getOrderEffectiveSector(l, order.id);
+                  if (sid === ORDER_FINALIZED) return 'Concluído';
                   return sectors.find(s => s.id === sid)?.name || 'Sem Setor';
                 }))].join(', ')
               : '';
@@ -2817,23 +3286,29 @@ export default function PCPView({
           items.push({ type: 'spacer' });
         }
       } else if (shareReportType === 'sector') {
-        const sectorMap = new Map<string, { name: string; lots: typeof filtered }>();
+        type SectorEntry = { lot: typeof filtered[number]; sectionItems: any[] | null };
+        const sectorMap = new Map<string, { name: string; entries: SectorEntry[] }>();
         filtered.forEach(lot => {
-          const sid = lot.route?.[lot.currentSectorIndex] || '__none__';
-          const sec = sectors.find(s => s.id === sid);
-          if (!sectorMap.has(sid)) sectorMap.set(sid, { name: sec?.name || 'Sem Setor', lots: [] });
-          sectorMap.get(sid)!.lots.push(lot);
+          const pendingGroups = getLotPendingSectorGroups(lot);
+          const isSplit = pendingGroups.size > 1;
+          pendingGroups.forEach((groupItems, sid) => {
+            const sec = sectors.find(s => s.id === sid);
+            if (!sectorMap.has(sid)) sectorMap.set(sid, { name: sec?.name || 'Sem Setor', entries: [] });
+            sectorMap.get(sid)!.entries.push({ lot, sectionItems: isSplit ? groupItems : null });
+          });
         });
-        for (const [, { name, lots: sl }] of sectorMap) {
-          items.push({ type: 'section', text: name, sub: `${sl.length} mapas · ${sl.reduce((s, l) => s + (l.quantity || 0), 0)} pares` });
-          sl.forEach(lot => buildLotItems(lot));
+        for (const [, { name, entries }] of sectorMap) {
+          const total = entries.reduce((s, { lot, sectionItems }) => s + (sectionItems ? computeSectionGroup(lot, sectionItems).qty : lot.quantity), 0);
+          items.push({ type: 'section', text: name, sub: `${entries.length} mapas · ${total} pares` });
+          entries.forEach(({ lot, sectionItems }) => buildLotItems(lot, '', sectionItems ? computeSectionGroup(lot, sectionItems) : null));
           items.push({ type: 'spacer' });
         }
       } else {
         filtered.forEach(lot => {
-          const sid = lot.route?.[lot.currentSectorIndex];
-          const sec = sectors.find(s => s.id === sid);
-          buildLotItems(lot, sec ? `  ·  ${sec.name}` : '');
+          const sectorNames = Array.from(getLotPendingSectorGroups(lot).keys())
+            .map(sid => sectors.find(s => s.id === sid)?.name || sid)
+            .join(', ');
+          buildLotItems(lot, sectorNames ? `  ·  ${sectorNames}` : '');
         });
       }
 
@@ -3155,6 +3630,13 @@ export default function PCPView({
               <span className="w-2.5 h-2.5 rounded-full bg-rose-500" title="Há necessidades de compra em outra origem (Mapas/Pedidos)" />
             )}
           </button>
+          <button
+            type="button"
+            onClick={() => { setActiveTab('solados'); setSelectedSectorId(null); }}
+            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'solados' ? 'bg-white dark:bg-slate-800 text-cyan-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
+          >
+            <Footprints size={14} className="text-cyan-500 shrink-0" /> Solados
+          </button>
         </div>
       </header>
 
@@ -3224,25 +3706,15 @@ export default function PCPView({
                       </div>
                     </div>
 
-                    <div className={`grid gap-4 mt-auto ${(metric?.arrivedPairs || 0) > 0 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                    <div className="grid gap-4 mt-auto grid-cols-2">
                       <div className="flex flex-col gap-1">
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Pares no Setor</span>
                         <span className={`text-xl font-black ${isDarkMode ? 'text-slate-200' : 'text-slate-900'}`}>{metric?.totalPares || 0}</span>
-                        {(metric?.movedOutPairs || 0) > 0 && (
-                          <span className="text-[8px] font-bold text-emerald-500">↗ {metric!.movedOutPairs} saíram</span>
-                        )}
                       </div>
                       <div className="flex flex-col gap-1">
                         <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">MAPAS WIP</span>
                         <span className={`text-xl font-black ${isDarkMode ? 'text-slate-200' : 'text-slate-900'}`}>{metric?.lotsCount || 0}</span>
                       </div>
-                      {(metric?.arrivedPairs || 0) > 0 && (
-                        <div className="flex flex-col gap-1">
-                          <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Adiantados</span>
-                          <span className="text-xl font-black text-amber-600 dark:text-amber-400">{metric!.arrivedPairs}</span>
-                          <span className="text-[8px] font-bold text-amber-400">{metric!.arrivedOrders} pedido(s)</span>
-                        </div>
-                      )}
                     </div>
 
                     <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
@@ -3442,7 +3914,38 @@ export default function PCPView({
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredActiveLots.filter(l => l.route && l.route[l.currentSectorIndex] === selectedSectorId).map(lot => {
+                {filteredActiveLots.filter(l => l.route && getLotPendingSectorGroups(l).has(selectedSectorId!)).map(lot => {
+                  const pendingGroups = getLotPendingSectorGroups(lot);
+                  const sectionItems = pendingGroups.get(selectedSectorId!) || [];
+                  const isSplit = pendingGroups.size > 1;
+                  const allLotSI: any[] = (lot as any).metadata?.sourceItems || [];
+                  // Mostra os totais/grade do mapa inteiro (lot.quantity/lot.pairs) só quando
+                  // este setor concentra TODOS os sourceItems do mapa. Se parte deles já foi
+                  // finalizada (baixa de Expedição) ou está em outro setor, sectionItems é um
+                  // subconjunto — usar os totais do mapa inteiro mostraria pares que não estão
+                  // mais pendentes aqui (ex.: já entregues).
+                  const useSectionData = isSplit || (allLotSI.length > 0 && sectionItems.length < allLotSI.length);
+                  let sectionQty = lot.quantity;
+                  let sectionGrade: Record<string, number> | null = lot.pairs || null;
+                  let sectionProducts: Product[] = [];
+                  if (useSectionData) {
+                    sectionQty = sectionItems.reduce((acc: number, si: any) => acc + (si.qty || 0), 0);
+                    const grade: Record<string, number> = {};
+                    sectionItems.forEach((si: any) => {
+                      const ord = productionOrders.find(o => o.id === si.orderId);
+                      if (!ord) return;
+                      const ordItem: any = si.itemIdx !== undefined ? ord.items[si.itemIdx] : ord.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+                      if (!ordItem?.sizes) return;
+                      Object.entries(ordItem.sizes).forEach(([sz, sd]: any) => {
+                        const q = Number(sd.toProduction) || 0;
+                        if (q > 0) grade[sz] = (grade[sz] || 0) + q;
+                      });
+                    });
+                    sectionGrade = Object.keys(grade).length > 0 ? grade : null;
+                    sectionProducts = Array.from(new Map(
+                      sectionItems.map((si: any) => [si.productId, products.find(p => p.id === si.productId)])
+                    ).values()).filter(Boolean) as Product[];
+                  }
                   const product = products.find(p => p.id === lot.productId);
                   const variation = product?.variations.find(v => v.id === lot.variationId);
                   const status = flowTags.find(t => t.id === lot.currentStatusId);
@@ -3504,6 +4007,11 @@ export default function PCPView({
                         </div>
                         <div className="flex flex-col items-end gap-1.5">
                           <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-xl">{lot.orderNumber}</span>
+                          {isSplit && (
+                            <span className="text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                              +{pendingGroups.size - 1} também em outro{pendingGroups.size - 1 > 1 ? 's' : ''} setor{pendingGroups.size - 1 > 1 ? 'es' : ''}
+                            </span>
+                          )}
                           {cardOSList.length > 0 ? (
                             <div className="flex items-center gap-1 flex-wrap">
                               {cardOSList.map(os => (
@@ -3526,20 +4034,21 @@ export default function PCPView({
 
                       {(() => {
                         const lotGroups = (lot as any).metadata?.groups;
-                        const isMultiProduct = lotGroups?.length > 1 && !lot.variationId;
-                        if (isMultiProduct) {
-                          const uniqueProds = Array.from(
-                            new Map(lotGroups.map((g: any) => [g.productId, g])).values()
-                          ) as any[];
+                        const multiProductList = isSplit && sectionProducts.length > 1
+                          ? sectionProducts.map(p => ({ productId: p.id, productName: p.name }))
+                          : (!isSplit && lotGroups?.length > 1 && !lot.variationId
+                            ? Array.from(new Map(lotGroups.map((g: any) => [g.productId, g])).values()) as any[]
+                            : null);
+                        if (multiProductList) {
                           return (
                             <div className="flex items-center gap-3 mb-5">
                               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-indigo-900/30' : 'bg-indigo-50'}`}>
                                 <Layers size={20} className="text-indigo-500"/>
                               </div>
                               <div className="flex flex-col min-w-0">
-                                <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">{uniqueProds.length} Modelos</p>
+                                <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">{multiProductList.length} Modelos</p>
                                 <p className="text-sm font-black text-slate-900 dark:text-white uppercase leading-tight line-clamp-2">
-                                  {uniqueProds.map((g: any) => {
+                                  {multiProductList.map((g: any) => {
                                     const p = products.find(pr => pr.id === g.productId);
                                     return p ? (p.reference ? `${p.reference} · ${p.name}` : p.name) : g.productName;
                                   }).join(' • ')}
@@ -3548,11 +4057,13 @@ export default function PCPView({
                             </div>
                           );
                         }
+                        const displayProduct = isSplit && sectionProducts.length === 1 ? sectionProducts[0] : product;
+                        const displayVariation = isSplit && sectionProducts.length === 1 ? undefined : variation;
                         return (
                           <div className="flex items-center gap-4 mb-5">
                             <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/20 transition-colors">
-                              {(variation?.photoUrl || product?.photoUrl) ? (
-                                <img src={variation?.photoUrl || product?.photoUrl} alt="" className="w-full h-full object-cover" />
+                              {(displayVariation?.photoUrl || displayProduct?.photoUrl) ? (
+                                <img src={displayVariation?.photoUrl || displayProduct?.photoUrl} alt="" className="w-full h-full object-cover" />
                               ) : (
                                 <Package size={24} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
                               )}
@@ -3560,9 +4071,9 @@ export default function PCPView({
                             <div className="flex flex-col min-w-0">
                               <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">1 Modelo</p>
                               <p className="text-sm font-black truncate text-slate-900 dark:text-white uppercase leading-tight">
-                                {product ? (product.reference ? `${product.reference} · ${product.name}` : product.name) : '---'}
+                                {displayProduct ? (displayProduct.reference ? `${displayProduct.reference} · ${displayProduct.name}` : displayProduct.name) : '---'}
                               </p>
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">{variation?.colorName}</p>
+                              {displayVariation && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">{displayVariation.colorName}</p>}
                             </div>
                           </div>
                         );
@@ -3571,7 +4082,7 @@ export default function PCPView({
                       <div className="flex items-center justify-between pt-4 border-t border-slate-50 dark:border-slate-800">
                         <div className="flex items-center gap-2">
                           <div className="w-5 h-5 rounded-full border-2 border-white dark:border-slate-700 shadow-sm" style={{ backgroundColor: variation?.color }} />
-                          <span className="text-sm font-black text-slate-700 dark:text-slate-300">{lot.quantity} <span className="text-[10px] text-slate-400 font-bold uppercase">PARES</span></span>
+                          <span className="text-sm font-black text-slate-700 dark:text-slate-300">{sectionQty} <span className="text-[10px] text-slate-400 font-bold uppercase">PARES</span></span>
                         </div>
 
                         {status ? (
@@ -3588,9 +4099,9 @@ export default function PCPView({
                       </div>
 
                       {/* Grade de tamanhos */}
-                      {lot.pairs && (
+                      {sectionGrade && (
                         <div className="flex flex-wrap gap-1.5 mt-3 justify-center">
-                          {Object.entries(lot.pairs)
+                          {Object.entries(sectionGrade)
                             .sort(([a], [b]) => Number(a) - Number(b))
                             .map(([size, qty]) => (
                             <div key={size} className={`flex flex-col items-center min-w-[36px] py-1.5 px-2 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
@@ -3776,105 +4287,8 @@ export default function PCPView({
                     </motion.div>
                   );
                 })}
-                {/* Cards de lotes com pedidos adiantados para este setor */}
-                {filteredActiveLots
-                  .filter(l => {
-                    if (l.route && l.route[l.currentSectorIndex] === selectedSectorId) return false; // já aparece acima
-                    const os: Record<string, string> = (l as any).metadata?.orderSectors || {};
-                    return Object.values(os).some(sid => sid === selectedSectorId);
-                  })
-                  .map(lot => {
-                    const orderSectorsMap: Record<string, string> = (lot as any).metadata?.orderSectors || {};
-                    const lotSI: any[] = (lot as any).metadata?.sourceItems || [];
-                    const advancedSI = lotSI.filter((si: any) => orderSectorsMap[si.orderId] === selectedSectorId);
-                    const totalAdvancedQty = advancedSI.reduce((acc, si: any) => acc + (si.qty || 0), 0);
 
-                    // Calcula grade dos pedidos adiantados
-                    const advancedGrade: Record<string, number> = {};
-                    advancedSI.forEach((si: any) => {
-                      const ord = productionOrders.find(o => o.id === si.orderId);
-                      if (!ord) return;
-                      const ordItem: any = si.itemIdx !== undefined ? ord.items[si.itemIdx] : ord.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
-                      if (!ordItem?.sizes) return;
-                      Object.entries(ordItem.sizes).forEach(([sz, sd]: any) => {
-                        const q = Number(sd.toProduction) || 0;
-                        if (q > 0) advancedGrade[sz] = (advancedGrade[sz] || 0) + q;
-                      });
-                    });
-
-                    // Produtos únicos nos pedidos adiantados
-                    const advancedProducts = Array.from(new Map(
-                      advancedSI.map((si: any) => [si.productId, products.find(p => p.id === si.productId)])
-                    ).values()).filter(Boolean) as any[];
-
-                    const lotCurrentSector = sectors.find(s => s.id === lot.route?.[lot.currentSectorIndex]);
-
-                    return (
-                      <motion.div
-                        key={`adv-${lot.id}`}
-                        layoutId={`adv-${lot.id}`}
-                        className={`p-5 rounded-[2.5rem] border-2 border-dashed flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-amber-700/40' : 'bg-amber-50/40 border-amber-200'}`}
-                      >
-                        {/* Header */}
-                        <div className="flex items-start justify-between">
-                          <div className="flex flex-col gap-1.5">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-white uppercase tracking-widest">
-                                Pedidos Adiantados
-                              </span>
-                              <span className="text-[9px] font-black text-amber-600 dark:text-amber-400">#{lot.orderNumber}</span>
-                            </div>
-                            <p className={`text-xs font-black uppercase truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                              {advancedProducts.map(p => p?.name).join(' · ') || lot.customerName}
-                            </p>
-                            {lotCurrentSector && (
-                              <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
-                                Mapa em: {lotCurrentSector.name}
-                              </p>
-                            )}
-                          </div>
-                          <div className="text-right shrink-0 ml-3">
-                            <span className="text-lg font-black text-amber-600 dark:text-amber-400">{totalAdvancedQty}</span>
-                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Pares</p>
-                          </div>
-                        </div>
-
-                        {/* Grade dos pedidos adiantados */}
-                        {Object.keys(advancedGrade).length > 0 && (
-                          <div className="flex flex-col gap-2">
-                            <p className="text-[8px] font-black text-amber-500 uppercase tracking-widest">Grade neste Setor</p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {Object.entries(advancedGrade)
-                                .sort(([a], [b]) => Number(a) - Number(b))
-                                .map(([sz, qty]) => (
-                                  <div key={sz} className={`flex flex-col items-center min-w-[36px] px-2 py-1.5 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-amber-700/40 text-amber-400' : 'bg-white border-amber-200 text-amber-700'}`}>
-                                    <span className="text-[9px] font-black leading-none">{sz}</span>
-                                    <span className="text-xs font-black leading-none mt-0.5">{qty}</span>
-                                  </div>
-                                ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Botão ver detalhe */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedLot(lot);
-                            setIsDetailModalOpen(true);
-                          }}
-                          className={`w-full flex items-center justify-between py-2.5 px-4 rounded-2xl border transition-all active:scale-95 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'border-amber-700/40 text-amber-400 hover:bg-amber-900/20' : 'border-amber-200 text-amber-700 hover:bg-amber-100/50'}`}
-                        >
-                          <span>{advancedSI.length} pedido(s) aguardando OS</span>
-                          <ChevronRight size={14} />
-                        </button>
-                      </motion.div>
-                    );
-                  })
-                }
-
-                {filteredActiveLots.filter(l => l.route && l.route[l.currentSectorIndex] === selectedSectorId).length === 0 &&
-                  !filteredActiveLots.some(l => Object.values((l as any).metadata?.orderSectors || {}).some((sid: any) => sid === selectedSectorId)) && (
+                {filteredActiveLots.filter(l => l.route && getLotPendingSectorGroups(l).has(selectedSectorId!)).length === 0 && (
                   <div className="col-span-full py-20 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[3rem] flex flex-col items-center justify-center text-slate-300 dark:text-slate-700">
                     <div className="w-20 h-20 rounded-[2.5rem] bg-slate-50 dark:bg-slate-800/50 flex items-center justify-center mb-4">
                       <Clock size={40} className="opacity-20" />
@@ -3890,13 +4304,10 @@ export default function PCPView({
                 type FichaItem = { lot: ProductionLot; si: any; siIdx: number; product: any; variation: any; orderItem: any; order: any; coveringOS?: ServiceOrder };
                 const allFichas: FichaItem[] = [];
                 filteredActiveLots.forEach(lot => {
-                  const orderSectors: Record<string, string> = (lot as any).metadata?.orderSectors || {};
-                  const lotCurrentSector = lot.route && lot.route[lot.currentSectorIndex];
                   const lotSI: any[] = (lot as any).metadata?.sourceItems || [];
 
                   lotSI.forEach((si: any) => {
-                    const orderSector = orderSectors[si.orderId];
-                    const effectiveSector = orderSector || lotCurrentSector;
+                    const effectiveSector = getOrderEffectiveSector(lot, si.orderId, si);
                     if (effectiveSector !== selectedSectorId) return;
 
                     const prod = products.find(p => p.id === si.productId);
@@ -3951,13 +4362,6 @@ export default function PCPView({
                   selByLot.get(f.lot.id)!.push(f);
                 });
 
-                {/* Grupos de mapas que têm pedidos neste setor */}
-                const lotGroups = Array.from(new Map(allFichas.map(f => [f.lot.id, f.lot])).values()) as ProductionLot[];
-                const awaitingLots = lotGroups.filter(lot => {
-                  const lotCurrentSector = lot.route?.[lot.currentSectorIndex];
-                  return lotCurrentSector !== selectedSectorId; // mapa em outro setor
-                });
-
                 return (
                   <div className={`mt-4 rounded-3xl border overflow-hidden ${isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-sky-100 shadow-sm'}`}>
 
@@ -3970,14 +4374,6 @@ export default function PCPView({
                         <Hash size={13} className="text-indigo-500 shrink-0" />
                         <div className="min-w-0">
                           <h3 className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Pedidos Vinculados</h3>
-                          {awaitingLots.length > 0 && (
-                            <p className="text-[8px] font-bold text-amber-500 uppercase tracking-widest mt-0.5 truncate">
-                              {awaitingLots.map(l => {
-                                const sec = sectors.find(s => s.id === l.route?.[l.currentSectorIndex]);
-                                return `Mapa #${l.orderNumber} em ${sec?.name || 'outro setor'}`;
-                              }).join(' · ')}
-                            </p>
-                          )}
                         </div>
                         <span className={`text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 ${isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}>
                           {allFichas.length}
@@ -3996,23 +4392,6 @@ export default function PCPView({
                     {/* Hint when closed */}
                     {!isMainOpen && (
                       <div className={`px-4 pb-3 flex flex-col gap-1.5 border-t ${isDarkMode ? 'border-slate-800' : 'border-sky-50'}`}>
-                        {awaitingLots.length > 0 && (
-                          <div className={`flex items-start gap-2 mt-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-amber-900/20' : 'bg-amber-50'}`}>
-                            <Clock size={11} className="text-amber-500 mt-0.5 shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-[8px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest">Aguardando conclusão em outro setor</p>
-                              {awaitingLots.map(l => {
-                                const sec = sectors.find(s => s.id === l.route?.[l.currentSectorIndex]);
-                                const count = allFichas.filter(f => f.lot.id === l.id).length;
-                                return (
-                                  <p key={l.id} className="text-[8px] font-bold text-amber-500 mt-0.5">
-                                    Mapa <span className="font-black">#{l.orderNumber}</span> — atualmente em <span className="font-black">{sec?.name || 'outro setor'}</span> · {count} pedido(s) adiantados aqui
-                                  </p>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
                         <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest leading-relaxed mt-1">
                           Expandir para selecionar pedidos e criar ordens de serviço
                         </span>
@@ -4121,7 +4500,9 @@ export default function PCPView({
                                   )}
                                   <div className="flex-1 min-w-0">
                                     <p className="text-[10px] font-black uppercase truncate text-slate-800 dark:text-slate-200 leading-none">
-                                      {f.product?.name || f.orderItem?.productName || '—'}
+                                      {f.product
+                                        ? (f.product.reference ? `${f.product.reference} · ${f.product.name}` : f.product.name)
+                                        : (f.orderItem?.productName || '—')}
                                     </p>
                                     <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                       {(f.variation?.colorName || f.orderItem?.variationName) && (
@@ -4184,15 +4565,12 @@ export default function PCPView({
                                     const n = new Set(fichaSelection);
                                     lotSelected.forEach(f => n.delete(`${lotId}::${f.si.orderId}::${f.siIdx}`));
                                     setFichaSelection(n);
-                                    // Verifica se são pedidos adiantados (mapa em outro setor)
+                                    // Pedidos deste mapa cujo setor efetivo difere do setor de origem (route[currentSectorIndex])
                                     const lotCurrentSector = lot.route?.[lot.currentSectorIndex];
-                                    const isAdvanced = lotCurrentSector !== selectedSectorId;
-                                    const preNote = isAdvanced
-                                      ? `Pedidos adiantados do Mapa #${lot.orderNumber} (mapa atualmente em: ${sectors.find(s => s.id === lotCurrentSector)?.name || 'outro setor'})`
-                                      : undefined;
-                                    const sectorOvr = isAdvanced ? selectedSectorId : undefined;
-                                    const qtyOvr = isAdvanced ? qty : undefined;
-                                    handleOpenOSModalForOrder(lot, orderIds, preNote, sectorOvr, qtyOvr);
+                                    const isRedirected = lotCurrentSector !== selectedSectorId;
+                                    const sectorOvr = isRedirected ? selectedSectorId : undefined;
+                                    const qtyOvr = isRedirected ? qty : undefined;
+                                    handleOpenOSModalForOrder(lot, orderIds, undefined, sectorOvr, qtyOvr);
                                   }}
                                   className="w-full py-3 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm shadow-sky-500/30"
                                 >
@@ -5904,6 +6282,57 @@ export default function PCPView({
           </div>
         )}
 
+        {activeTab === 'solados' && (
+          <div className="flex flex-col gap-6">
+            <header className="mb-1">
+              <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Gestão de Solados</h2>
+              <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Pesagem, conferência, estoque e matrizes</p>
+            </header>
+
+            <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+              {[
+                { id: ViewType.PRODUCTION_WEIGHING, label: 'Pesagem e Contagem de Solados', description: 'Bipagem, pesagem e contagem de pares', icon: <Scale size={24} />, color: 'text-violet-600' },
+                { id: ViewType.PRODUCTION_SOLE_RECEIPT, label: 'Conferência de Compras (Solas)', description: 'Receber e conferir solados comprados', icon: <ShoppingCart size={24} />, color: 'text-cyan-600' },
+                { id: ViewType.PRODUCTION_SOLE_STOCK, label: 'Estoque de Solados', description: 'Gerenciamento por modelo, cor e tamanho', icon: <Package size={24} />, color: 'text-emerald-600' },
+              ].map((item, index, array) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onNavigate(item.id)}
+                  className={`w-full flex items-center justify-between p-8 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all active:scale-[0.98] ${index !== array.length - 1 ? (isDarkMode ? "border-b border-slate-800" : "border-b border-slate-50") : ""}`}
+                >
+                  <div className="flex items-center gap-6">
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? "bg-slate-800" : "bg-slate-50"} ${item.color}`}>
+                      {item.icon}
+                    </div>
+                    <div className="text-left">
+                      <p className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>{item.label}</p>
+                      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">{item.description}</p>
+                    </div>
+                  </div>
+                  <ChevronRight size={24} className={isDarkMode ? "text-slate-700" : "text-slate-300"} />
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => onNavigateProduction?.('MATRIZES')}
+                className="w-full flex items-center justify-between p-8 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all active:scale-[0.98]"
+              >
+                <div className="flex items-center gap-6">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? "bg-slate-800" : "bg-slate-50"} text-indigo-500`}>
+                    <Database size={24} />
+                  </div>
+                  <div className="text-left">
+                    <p className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Matrizes</p>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Cadastro de moldes e matrizes de solados</p>
+                  </div>
+                </div>
+                <ChevronRight size={24} className={isDarkMode ? "text-slate-700" : "text-slate-300"} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* ── Centro de Compartilhamento PCP ── */}
         <Modal
           isOpen={isPCPShareModalOpen}
@@ -6683,12 +7112,11 @@ export default function PCPView({
 
                   {/* Row 3: Stats */}
                   {(() => {
-                    const orderSectorsMap: Record<string, string> = (selectedLot as any).metadata?.orderSectors || {};
                     const currentSectorId = selectedLot.route?.[selectedLot.currentSectorIndex];
                     const lotSI: any[] = (selectedLot as any).metadata?.sourceItems || [];
                     const movedOutQty = lotSI.reduce((acc, si: any) => {
-                      const dest = orderSectorsMap[si.orderId];
-                      return dest && dest !== currentSectorId ? acc + (si.qty || 0) : acc;
+                      const dest = getOrderEffectiveSector(selectedLot, si.orderId, si);
+                      return dest !== currentSectorId ? acc + (si.qty || 0) : acc;
                     }, 0);
                     const currentQty = selectedLot.quantity - movedOutQty;
                     return (
@@ -6697,9 +7125,9 @@ export default function PCPView({
                           <span className="text-xl font-black text-indigo-600 dark:text-indigo-400 leading-none">{currentQty}</span>
                           <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Pares</span>
                         </div>
-                        <div className={`flex-1 flex flex-col items-center py-2.5 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-                          <span className="text-[11px] font-black text-slate-700 dark:text-slate-200 leading-none truncate max-w-full px-1">{currentSector?.name || '—'}</span>
-                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Setor Atual</span>
+                        <div className="flex-1 flex flex-col items-center py-2.5 rounded-2xl bg-red-600">
+                          <span className="text-[11px] font-black text-white leading-none truncate max-w-full px-1">{currentSector?.name || '—'}</span>
+                          <span className="text-[8px] font-black text-white uppercase tracking-widest mt-0.5">Setor Atual</span>
                         </div>
                         {nextSector && (
                           <div className={`flex-1 flex flex-col items-center py-2.5 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
@@ -6719,13 +7147,12 @@ export default function PCPView({
 
                   {/* Row 4: Size grid */}
                   {selectedLot.pairs && (() => {
-                    const orderSectorsMap: Record<string, string> = (selectedLot as any).metadata?.orderSectors || {};
                     const lotCurrentSectorId = selectedLot.route?.[selectedLot.currentSectorIndex];
                     const lotSI: any[] = (selectedLot as any).metadata?.sourceItems || [];
                     const deductBySize: Record<string, number> = {};
                     lotSI.forEach((si: any) => {
-                      const destSector = orderSectorsMap[si.orderId];
-                      if (!destSector || destSector === lotCurrentSectorId) return;
+                      const destSector = getOrderEffectiveSector(selectedLot, si.orderId, si);
+                      if (destSector === lotCurrentSectorId) return;
                       const ord = productionOrders.find(o => o.id === si.orderId);
                       if (!ord) return;
                       const ordItem: any = si.itemIdx !== undefined ? ord.items[si.itemIdx] : ord.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
@@ -6762,20 +7189,32 @@ export default function PCPView({
 
                 // OS ativas do lote no setor atual
                 const currentSectorId = selectedLot.route && selectedLot.route[selectedLot.currentSectorIndex];
+                // Setor sob o qual este mapa está sendo visualizado (coluna do Kanban
+                // selecionada) — cada pedido aparece na lista principal apenas se estiver
+                // efetivamente neste setor; os demais aparecem no card "Outros Setores".
+                // Se o setor selecionado não tiver nenhum pedido pendente deste mapa
+                // (ex.: aberto via QR Code, fora do contexto de uma coluna), cai para o
+                // setor-âncora do mapa.
+                const lotPendingGroups = getLotPendingSectorGroups(selectedLot);
+                const viewSectorId = (selectedSectorId && lotPendingGroups.has(selectedSectorId))
+                  ? selectedSectorId
+                  : currentSectorId;
 
-                // Filtra: oculta pedidos já movidos para outro setor
-                const orderSectorsMap: Record<string, string> = (selectedLot as any).metadata?.orderSectors || {};
+                // Mostra apenas os pedidos pendentes que estão, efetivamente, no setor
+                // sendo visualizado (`viewSectorId`).
                 const sourceItems = allSourceItems.filter((si: any) => {
-                  const destSector = orderSectorsMap[si.orderId];
-                  // Mostrar apenas pedidos SEM setor atribuído OU no setor atual do lote
-                  return !destSector || destSector === currentSectorId;
+                  const eff = getOrderEffectiveSector(selectedLot, si.orderId, si);
+                  return eff !== ORDER_FINALIZED && eff === viewSectorId;
                 });
-
-                // Pedidos que foram movidos para outros setores (para info)
-                const movedOutItems = allSourceItems.filter((si: any) => {
-                  const destSector = orderSectorsMap[si.orderId];
-                  return destSector && destSector !== currentSectorId;
+                // Pedidos pendentes que estão em OUTROS setores (divergentes do setor visualizado)
+                const otherSectorItems = allSourceItems.filter((si: any) => {
+                  const eff = getOrderEffectiveSector(selectedLot, si.orderId, si);
+                  return eff !== ORDER_FINALIZED && eff !== viewSectorId;
                 });
+                // Pedidos já finalizados (baixa de Expedição individual) — saíram do fluxo
+                const finalizedOutItems = allSourceItems.filter((si: any) =>
+                  getOrderEffectiveSector(selectedLot, si.orderId, si) === ORDER_FINALIZED
+                );
                 const lotOSList = serviceOrders.filter(so =>
                   (so.lotId === selectedLot.id || (so.lotIds && so.lotIds.includes(selectedLot.id))) &&
                   so.sectorId === currentSectorId &&
@@ -6809,6 +7248,11 @@ export default function PCPView({
                 );
                 const selectedMoveQty = selectedMoveableItems.reduce((acc: number, si: any) => acc + (si.qty || 0), 0);
 
+                // Identidade per-item usada para gravar overrides em `orderSectors` —
+                // pedidos que compartilham `orderId` (ex.: várias cores do mesmo pedido
+                // de compra) são movidos individualmente, sem afetar os demais itens.
+                const toMoveItem = (si: any) => ({ orderId: si.orderId, itemIdx: si.itemIdx, productId: si.productId, variationId: si.variationId });
+
                 // Setores disponíveis: calcula a partir do setor atual dos pedidos (via orderSectors ou setor do lote)
                 const getEffectiveFromSector = () => {
                   // Para pedidos adiantados, usa o setor onde os pedidos estão (via completedOSForOrder)
@@ -6830,6 +7274,12 @@ export default function PCPView({
                   : null;
                 const availableSectors = nextOnlySector ? [nextOnlySector] : [];
                 const selectedQty = selectedItemsList.reduce((acc: number, si: any) => acc + (si.qty || 0), 0);
+                // "Avançar/Finalizar Pedido(s) Selecionados" só finaliza (baixa de
+                // estoque/reserva) — por isso só aparece quando os pedidos selecionados
+                // estão em um setor marcado como "Fim do Ciclo de Produção" (Cadastro de
+                // Setores). Fora dele, "Mover Setor"/"Mudar Setor Manualmente" cobrem o avanço.
+                const selectedEffectiveSectorIds = Array.from(new Set(selectedItemsList.map((si: any) => getOrderEffectiveSector(selectedLot, si.orderId, si))));
+                const canFinalizeSelected = selectedEffectiveSectorIds.length > 0 && selectedEffectiveSectorIds.every(sid => sectors.find(s => s.id === sid)?.isProductionCycleEnd);
                 const allSelected = selectableItems.length > 0 && selectableItems.every((si: any) => {
                   const idx = sourceItems.indexOf(si);
                   return selectedSourceItemKeys.has(`${si.orderId}-${idx}`);
@@ -6914,8 +7364,8 @@ export default function PCPView({
                         <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Pedidos Vinculados</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        {movedOutItems.length > 0 && (
-                          <span className="text-[8px] font-black text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-full uppercase">↗ {movedOutItems.length} em outros</span>
+                        {finalizedOutItems.length > 0 && (
+                          <span className="text-[8px] font-black text-violet-500 bg-violet-50 dark:bg-violet-900/20 px-2 py-0.5 rounded-full uppercase">✓ {finalizedOutItems.length} finalizados</span>
                         )}
                         <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-2.5 py-1 rounded-full uppercase">{sourceItems.length} {sourceItems.length === 1 ? 'pedido' : 'pedidos'}</span>
                       </div>
@@ -7121,6 +7571,26 @@ export default function PCPView({
                                     </p>
                                   );
                                 })()}
+                                {/* Indicador de vínculo quebrado: a venda deste pedido não referencia mais esta OP */}
+                                {(() => {
+                                  if (!order?.saleId) return null;
+                                  const linkedSale = sales.find(s => s.id === order.saleId);
+                                  if (!linkedSale || linkedSale.productionOrderId === order.id) return null;
+                                  return (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRepairSaleLink(order);
+                                      }}
+                                      className="mt-1 flex items-center gap-1 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 hover:bg-rose-200 dark:hover:bg-rose-900/50 transition-all"
+                                      title="A venda perdeu a referência para esta Ordem de Produção. Toque para reparar o vínculo."
+                                    >
+                                      <AlertTriangle size={9} />
+                                      Reparar Vínculo com a Venda
+                                    </button>
+                                  );
+                                })()}
                                 {/* Indicador de roteiro divergente: este modelo segue um caminho diferente do mapa */}
                                 {(() => {
                                   if (!hasCompletedOS) return null;
@@ -7130,14 +7600,14 @@ export default function PCPView({
                                   const correctSectorId = resolved.isFinished ? '' : resolved.sectorId;
                                   const correctSectorName = resolved.isFinished ? 'CONCLUÍDO' : (sectors.find(s => s.id === correctSectorId)?.name || correctSectorId);
                                   const genericNextSectorId = lotRoute[selectedLot.currentSectorIndex + 1] || '';
-                                  const assignedSectorId = orderSectorsMap[si.orderId];
+                                  const assignedSectorId = getOrderEffectiveSector(selectedLot, si.orderId, si);
                                   if (!correctSectorId || correctSectorId === genericNextSectorId || assignedSectorId === correctSectorId) return null;
                                   return (
                                     <button
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleRouteOrderToCorrectSector(selectedLot, si.orderId, correctSectorId, correctSectorName, productName);
+                                        handleRouteOrderToCorrectSector(selectedLot, si, correctSectorId, correctSectorName, productName);
                                       }}
                                       className="mt-1 flex items-center gap-1 text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-all"
                                       title={`Este modelo segue um roteiro de produção diferente — direcionar para "${correctSectorName}"`}
@@ -7319,9 +7789,82 @@ export default function PCPView({
                       })}
                     </div>
 
+                    {/* Pedidos do mapa que estão em OUTROS setores (não o setor visualizado) */}
+                    {otherSectorItems.length > 0 && (
+                      <div className={`rounded-2xl border p-3 flex flex-col gap-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                        <div className="flex items-center justify-between px-1">
+                          <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Pedidos em Outros Setores</span>
+                          <span className="text-[9px] font-black text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/20 px-2.5 py-1 rounded-full uppercase">{otherSectorItems.length} {otherSectorItems.length === 1 ? 'pedido' : 'pedidos'}</span>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          {otherSectorItems.map((si: any, idx: number) => {
+                            const order = productionOrders.find(o => o.id === si.orderId);
+                            const orderItem: any = si.itemIdx !== undefined
+                              ? order?.items[si.itemIdx]
+                              : order?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+                            const resolvedProductId = si.productId || orderItem?.productId;
+                            const resolvedVariationId = si.variationId || orderItem?.variationId;
+                            const product = products.find(p => p.id === resolvedProductId);
+                            const variation = product?.variations.find(v => v.id === resolvedVariationId);
+                            const productName = product?.name || orderItem?.productName || '—';
+                            const productRef = product?.reference || '';
+                            const colorName = variation?.colorName || orderItem?.variationName || '';
+                            const effSector = getOrderEffectiveSector(selectedLot, si.orderId, si);
+                            const secName = sectors.find(s => s.id === effSector)?.name || effSector;
+                            return (
+                            <div key={`${si.orderId}-${idx}`} className={`flex items-center gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-800/60' : 'bg-white border border-slate-100'}`}>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[11px] font-black uppercase truncate text-slate-700 dark:text-slate-200 leading-none">
+                                    {productRef ? `${productRef} ${productName}` : productName}
+                                  </p>
+                                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                    {colorName && (
+                                      <span className="text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">{colorName}</span>
+                                    )}
+                                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Ped. {order?.saleOrderNumber || selectedLot.saleOrderNumber}</span>
+                                  </div>
+                                </div>
+                                <div className="flex flex-col items-end gap-1 shrink-0">
+                                  <span className="text-[8px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                                    {secName}
+                                  </span>
+                                  <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">{si.qty}P</span>
+                                  <button
+                                    type="button"
+                                    title="Mudar o setor deste pedido"
+                                    onClick={() => {
+                                      setMoveSectorModal({
+                                        lotId: selectedLot.id,
+                                        items: [toMoveItem(si)],
+                                        qty: si.qty || 0,
+                                        manual: true,
+                                      });
+                                      setMoveSectorTarget('');
+                                    }}
+                                    className="px-2 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95"
+                                  >
+                                    <ArrowLeftRight size={10} strokeWidth={3} /> Mudar Setor
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Action bar — shown when ≥1 order is selected */}
                     {selectedQty > 0 && (
-                      <div className={`p-4 rounded-2xl border-2 flex flex-col sm:flex-row items-center gap-3 ${isDarkMode ? 'bg-indigo-950/20 border-indigo-700/50' : 'bg-indigo-50 border-indigo-200'}`}>
+                      <div className={`p-4 rounded-2xl border-2 flex flex-col gap-3 ${isDarkMode ? 'bg-indigo-950/20 border-indigo-700/50' : 'bg-indigo-50 border-indigo-200'}`}>
+                        <div className={`p-3 rounded-xl border flex items-start gap-2.5 ${isDarkMode ? 'bg-indigo-900/30 border-indigo-700/40' : 'bg-white border-indigo-200'}`}>
+                          <div className="w-7 h-7 rounded-lg bg-indigo-500 text-white flex items-center justify-center shrink-0">
+                            <Info size={14} />
+                          </div>
+                          <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 leading-snug">
+                            As ações abaixo afetam apenas os <strong className="font-black">pedidos selecionados</strong>, não o mapa inteiro.
+                          </p>
+                        </div>
+                        <div className="flex flex-col gap-3">
                         <div className="flex items-center gap-2 flex-1 min-w-0">
                           <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
                             <Tag size={13} />
@@ -7333,7 +7876,7 @@ export default function PCPView({
                             <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">{selectedQty} pares</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+                        <div className="flex flex-col gap-2 w-full">
                           <button
                             type="button"
                             onClick={() => {
@@ -7351,7 +7894,7 @@ export default function PCPView({
                                 setLabelModalBatchItems(undefined);
                               }
                             }}
-                            className="flex-1 sm:flex-none px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+                            className="w-full px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
                           >
                             <Tag size={12} strokeWidth={3} /> Etiqueta
                           </button>
@@ -7361,10 +7904,149 @@ export default function PCPView({
                               setPendingOsSourceOrderIds(selectedItemsList.map((si: any) => si.orderId));
                               handleOpenOSModal({ ...selectedLot, quantity: selectedQty } as any);
                             }}
-                            className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-slate-600 hover:bg-slate-500' : 'bg-slate-700 hover:bg-slate-800'}`}
+                            className={`w-full px-4 py-2.5 rounded-xl text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-slate-600 hover:bg-slate-500' : 'bg-slate-700 hover:bg-slate-800'}`}
                           >
                             <Hammer size={12} strokeWidth={3} /> Emitir OS
                           </button>
+                          {(() => {
+                            const selectedEffectiveSectors = Array.from(new Set(selectedItemsList.map((si: any) => getOrderEffectiveSector(selectedLot, si.orderId, si))));
+                            const moveFromSectorId = selectedEffectiveSectors.length === 1 ? selectedEffectiveSectors[0] : null;
+                            const moveFromIdx = moveFromSectorId ? (selectedLot.route || []).indexOf(moveFromSectorId) : -1;
+                            const moveNextSector = moveFromIdx >= 0 && moveFromIdx + 1 < (selectedLot.route || []).length
+                              ? sectors.find(s => s.id === selectedLot.route![moveFromIdx + 1])
+                              : null;
+                            if (selectedEffectiveSectors.length === 1 && !moveNextSector) return null;
+                            const mixedSectors = selectedEffectiveSectors.length > 1;
+                            return (
+                              <button
+                                type="button"
+                                disabled={mixedSectors}
+                                title={mixedSectors
+                                  ? 'Os pedidos selecionados estão em setores diferentes — selecione pedidos do mesmo setor para mover juntos.'
+                                  : `Mover pedido(s) selecionado(s) para ${moveNextSector?.name}, sem mover o mapa inteiro`}
+                                onClick={() => {
+                                  if (mixedSectors || !moveNextSector || !moveFromSectorId) return;
+                                  setMoveSectorModal({
+                                    lotId: selectedLot.id,
+                                    items: selectedItemsList.map(toMoveItem),
+                                    qty: selectedQty,
+                                    fromSectorId: moveFromSectorId,
+                                  });
+                                  setMoveSectorTarget(moveNextSector.id);
+                                }}
+                                className={`w-full px-4 py-2.5 rounded-xl text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${mixedSectors ? 'bg-slate-400 opacity-50 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+                              >
+                                <ChevronRight size={12} strokeWidth={3} /> Mover Setor
+                              </button>
+                            );
+                          })()}
+                          <button
+                            type="button"
+                            title="Escolher livremente o setor de destino dos pedidos selecionados, sem seguir o roteiro padrão"
+                            onClick={() => {
+                              setMoveSectorModal({
+                                lotId: selectedLot.id,
+                                items: selectedItemsList.map(toMoveItem),
+                                qty: selectedQty,
+                                manual: true,
+                              });
+                              setMoveSectorTarget('');
+                            }}
+                            className="w-full px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+                          >
+                            <ArrowLeftRight size={12} strokeWidth={3} /> Mudar Setor Manualmente
+                          </button>
+                          {canFinalizeSelected && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const resolved: LotAdvanceItem[] = selectedItemsList.map((si: any, idx: number) => {
+                                const order = productionOrders.find(o => o.id === si.orderId);
+                                const orderItem: any = si.itemIdx !== undefined
+                                  ? order?.items[si.itemIdx]
+                                  : order?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+                                const resolvedProductId = si.productId || orderItem?.productId;
+                                const itemProduct = products.find(p => p.id === resolvedProductId);
+                                const effSector = getOrderEffectiveSector(selectedLot, si.orderId, si);
+                                const resolved = resolveCorrectSectorForProduct(effSector, itemProduct, sectors);
+                                const chosenSectorId = resolved.isFinished ? '' : resolved.sectorId;
+                                return {
+                                  key: `${si.orderId}-${idx}`,
+                                  orderId: si.orderId,
+                                  itemIdx: si.itemIdx,
+                                  variationId: si.variationId,
+                                  productId: resolvedProductId,
+                                  productName: itemProduct?.name || orderItem?.productName || '—',
+                                  colorName: '',
+                                  qty: si.qty || 0,
+                                  suggestedSectorId: chosenSectorId,
+                                  suggestedSectorName: resolved.isFinished ? 'CONCLUÍDO' : (sectors.find(s => s.id === resolved.sectorId)?.name || ''),
+                                  skippedSectorNames: resolved.skippedSectorNames,
+                                  chosenSectorId,
+                                };
+                              });
+                              const toFinalize = resolved.filter(it => it.chosenSectorId === '');
+                              const toMove = resolved.filter(it => it.chosenSectorId !== '');
+                              const lines: string[] = [`Avançar/finalizar ${resolved.length} pedido(s) selecionado(s)?`];
+                              const stockInfo: Record<string, { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string }> = {};
+                              const soleInfo: { moldName: string; colorName: string; rows: { size: string; before: number; after: number }[] }[] = [];
+                              if (toFinalize.length > 0) {
+                                const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalize.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx })));
+                                lines.push('');
+                                if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
+                                if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} pedido(s) → ENTRADA EM ESTOQUE (+ baixa de solados)`);
+                                toFinalize.forEach(it => {
+                                  const isStock = stockItems.some(si => si.orderId === it.orderId && si.itemIdx === it.itemIdx);
+                                  const order = productionOrders.find(o => o.id === it.orderId);
+                                  const customerName = order?.customerName || selectedLot.customerName;
+                                  const info = computeStockProjection(it, { isStock, customerName });
+                                  if (info) stockInfo[it.key] = info;
+                                });
+
+                                // Pré-visualização da baixa em soleStock que `applyExpedicaoStockUpdate`
+                                // executará: agrega o consumo de pares por molde/cor entre todos os
+                                // pedidos finalizados e mostra estoque atual → estoque após a baixa.
+                                const consumptionByKey = new Map<string, { moldId: string; colorId: string; gradeQuantities: Record<string, number> }>();
+                                toFinalize.forEach(it => {
+                                  const resolvedSI = resolveSourceItem(it);
+                                  if (!resolvedSI || resolvedSI.totalQty <= 0) return;
+                                  const { prod, vari, pairs, totalQty } = resolvedSI;
+                                  const consumption = resolveSoleConsumption(prod, vari, pairs, totalQty, soleStock);
+                                  if (!consumption) return;
+                                  const key = `${consumption.moldId}_${consumption.colorId || 'default'}`;
+                                  const existing = consumptionByKey.get(key);
+                                  if (!existing) {
+                                    consumptionByKey.set(key, { moldId: consumption.moldId, colorId: consumption.colorId, gradeQuantities: { ...consumption.gradeQuantities } });
+                                  } else {
+                                    Object.entries(consumption.gradeQuantities).forEach(([gradeKey, qty]) => {
+                                      existing.gradeQuantities[gradeKey] = (existing.gradeQuantities[gradeKey] || 0) + qty;
+                                    });
+                                  }
+                                });
+                                consumptionByKey.forEach(({ moldId, colorId, gradeQuantities }) => {
+                                  const entry = soleStock.find(s => String(s.moldId).trim() === moldId && String(s.colorId || '').trim() === colorId);
+                                  if (!entry) return;
+                                  const rows = Object.entries(gradeQuantities)
+                                    .filter(([k]) => k !== 'pesagem' && k !== 'total')
+                                    .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
+                                    .map(([size, qty]) => ({ size, before: entry.stock[size] || 0, after: Math.max(0, (entry.stock[size] || 0) - (Number(qty) || 0)) }));
+                                  soleInfo.push({ moldName: entry.moldName, colorName: entry.colorName, rows });
+                                });
+                              }
+                              if (toMove.length > 0) {
+                                const bySector = new Map<string, number>();
+                                toMove.forEach(it => bySector.set(it.suggestedSectorName, (bySector.get(it.suggestedSectorName) || 0) + it.qty));
+                                lines.push('');
+                                bySector.forEach((qty, name) => lines.push(`➡ ${qty} par(es) → ${name}`));
+                              }
+                              setFinalizeSelectedConfirm({ lot: selectedLot, items: resolved, lines, stockInfo, soleInfo });
+                            }}
+                            className="w-full px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+                          >
+                            <CheckCircle2 size={12} strokeWidth={3} /> Avançar/Finalizar Pedido(s) Selecionados
+                          </button>
+                          )}
+                        </div>
                         </div>
                       </div>
                     )}
@@ -7388,7 +8070,7 @@ export default function PCPView({
                           onClick={() => {
                             setMoveSectorModal({
                               lotId: selectedLot.id,
-                              orderIds: selectedMoveableItems.map((si: any) => si.orderId),
+                              items: selectedMoveableItems.map(toMoveItem),
                               qty: selectedMoveQty,
                               fromSectorId,
                             });
@@ -7638,7 +8320,23 @@ export default function PCPView({
 
                     {/* Sem OS — mostrar opção de emitir + apontamento */}
                     {!hasActiveOS && (
-                      <>
+                      <div className={`p-5 sm:p-6 rounded-[2rem] border-2 flex flex-col gap-5 ${isDarkMode ? 'bg-slate-900/40 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+                        <div className="flex items-center gap-2 px-1">
+                          <div className="w-7 h-7 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 flex items-center justify-center shrink-0">
+                            <Layers size={15} />
+                          </div>
+                          <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Ações do Mapa</h4>
+                        </div>
+
+                        <div className={`p-4 rounded-2xl border-2 flex items-start gap-3 ${isDarkMode ? 'bg-amber-950/30 border-amber-700/50' : 'bg-amber-50 border-amber-200'}`}>
+                          <div className="w-8 h-8 rounded-xl bg-amber-400 text-white flex items-center justify-center shrink-0 shadow-lg shadow-amber-400/30">
+                            <AlertCircle size={16} strokeWidth={2.5} />
+                          </div>
+                          <p className={`text-[11px] font-bold leading-snug ${isDarkMode ? 'text-amber-200' : 'text-amber-800'}`}>
+                            As opções abaixo afetam o <strong className="font-black">MAPA inteiro</strong> (todos os pedidos vinculados). Para mover ou finalizar pedidos individuais, use a seleção em "Pedidos Vinculados".
+                          </p>
+                        </div>
+
                         <div className="p-5 rounded-[2rem] bg-slate-50 dark:bg-slate-900/30 border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 flex items-center justify-center shrink-0">
@@ -7708,7 +8406,7 @@ export default function PCPView({
                           {nextSector ? (
                             <>Próximo Setor: {nextSector.name} <ArrowRight size={18} /></>
                           ) : (
-                            <>Finalizar Produção <CheckCircle2 size={18} /></>
+                            <>Finalizar Mapa no Setor <CheckCircle2 size={18} /></>
                           )}
                         </button>
 
@@ -7721,7 +8419,7 @@ export default function PCPView({
                           <ArrowLeftRight size={14} />
                           Escolher Setor Manualmente
                         </button>
-                      </>
+                      </div>
                     )}
                   </div>
                 );
@@ -7729,7 +8427,18 @@ export default function PCPView({
 
               {/* History Timeline */}
               <div className="flex flex-col gap-4">
-                <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">Histórico de Movimentação</h4>
+                <button
+                  type="button"
+                  onClick={() => setHistoryExpanded(!historyExpanded)}
+                  className="w-full flex items-center justify-between px-1 py-1 group"
+                >
+                  <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 group-hover:text-slate-500 transition-colors">Histórico de Movimentação</h4>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black text-slate-400">{(selectedLot.history || []).length}</span>
+                    <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 ${historyExpanded ? 'rotate-180' : ''}`} />
+                  </div>
+                </button>
+                {historyExpanded && (
                 <div className="flex flex-col gap-3">
                   {(selectedLot.history || []).slice().sort((a, b) => b.timestamp - a.timestamp).map((h, i) => {
                     const sector = sectors.find(s => s.id === h.sectorId);
@@ -7765,6 +8474,7 @@ export default function PCPView({
                     );
                   })}
                 </div>
+                )}
               </div>
 
               {/* Delete Option */}
@@ -8665,19 +9375,42 @@ export default function PCPView({
       )}
 
       {/* ── Modal: Mover Pedidos para Setor ── */}
-      {moveSectorModal && (
-        <div className="fixed inset-0 z-[400] flex items-end justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className={`w-full max-w-sm rounded-[2rem] p-6 flex flex-col gap-4 shadow-2xl animate-in slide-in-from-bottom-4 duration-300 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+      {moveSectorModal && createPortal(
+        <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" style={{ zIndex: 60000 }}>
+          <div className={`w-full max-w-sm rounded-[2rem] p-6 flex flex-col gap-4 shadow-2xl animate-in zoom-in-95 duration-300 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
             <div>
-              <h3 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Mover para Setor</h3>
+              <h3 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                {moveSectorModal.manual ? 'Mudar Setor Manualmente' : 'Mover para Setor'}
+              </h3>
               <p className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 text-emerald-500`}>
-                {moveSectorModal.orderIds.length} pedido(s) · {moveSectorModal.qty} pares
+                {moveSectorModal.items.length} pedido(s) · {moveSectorModal.qty} pares
               </p>
             </div>
 
             <div className="flex flex-col gap-2">
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Selecione o Setor de Destino</p>
               {(() => {
+                if (moveSectorModal.manual) {
+                  const availSectors = [...sectors].sort((a, b) => a.order - b.order);
+                  return availSectors.map((sec: any) => (
+                    <button
+                      key={sec.id}
+                      type="button"
+                      onClick={() => setMoveSectorTarget(sec.id)}
+                      className={`flex items-center gap-3 p-3.5 rounded-2xl border-2 text-left transition-all active:scale-95 ${
+                        moveSectorTarget === sec.id
+                          ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                          : isDarkMode ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
+                      }`}
+                    >
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: sec.color || '#6366f1' }} />
+                      <span className={`text-[11px] font-black uppercase ${moveSectorTarget === sec.id ? 'text-emerald-600 dark:text-emerald-400' : isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                        {sec.name}
+                      </span>
+                      {moveSectorTarget === sec.id && <CheckSquare size={14} className="text-emerald-500 ml-auto" />}
+                    </button>
+                  ));
+                }
                 const lot = lots.find(l => l.id === moveSectorModal.lotId);
                 // Calcula próximo setor a partir do setor de origem (não do índice atual do lote)
                 const fromSec = moveSectorModal.fromSectorId;
@@ -8719,19 +9452,20 @@ export default function PCPView({
               <button
                 type="button"
                 disabled={!moveSectorTarget}
-                onClick={() => handleMoveOrdersToSector(moveSectorModal.lotId, moveSectorModal.orderIds, moveSectorTarget)}
+                onClick={() => handleMoveOrdersToSector(moveSectorModal.lotId, moveSectorModal.items, moveSectorTarget)}
                 className="flex-1 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 disabled:opacity-40 active:scale-95 transition-all"
               >
                 Confirmar →
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ── OS Completion Feedback Modal ── */}
-      {osFeedback && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-200">
+      {osFeedback && createPortal(
+        <div className="fixed inset-0 flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-200" style={{ zIndex: 60000 }}>
           <div className={`w-full max-w-xs rounded-[2.5rem] p-8 shadow-2xl flex flex-col items-center text-center gap-5 animate-in zoom-in-95 duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
             <div className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl animate-bounce ${
               osFeedback.nextSector === 'FINALIZADO'
@@ -8743,10 +9477,12 @@ export default function PCPView({
 
             <div>
               <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                Ordem de Serviço
+                {osFeedback.type === 'pedido' ? 'Pedido' : 'Ordem de Serviço'}
               </p>
               <h2 className={`text-xl font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                OS Concluída!
+                {osFeedback.type === 'pedido'
+                  ? (osFeedback.nextSector === 'FINALIZADO' ? 'Pedido Finalizado!' : 'Pedido Movido!')
+                  : (osFeedback.nextSector === 'FINALIZADO' ? 'OS Concluída!' : 'OS Movida!')}
               </h2>
               <p className={`text-sm font-black mt-1 ${osFeedback.nextSector === 'FINALIZADO' ? 'text-violet-500' : 'text-emerald-600 dark:text-emerald-400'}`}>
                 {osFeedback.osNumber}
@@ -8765,6 +9501,17 @@ export default function PCPView({
               )}
             </div>
 
+            {osFeedback.details && osFeedback.details.length > 0 && (
+              <div className={`w-full px-4 py-3 rounded-2xl flex flex-col gap-1.5 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                <p className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                  {osFeedback.details.length === 1 ? 'Pedido' : 'Pedidos'}
+                </p>
+                {osFeedback.details.map((d, i) => (
+                  <p key={i} className={`text-[11px] font-bold text-left uppercase ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{d}</p>
+                ))}
+              </div>
+            )}
+
             <button
               type="button"
               onClick={() => setOsFeedback(null)}
@@ -8773,7 +9520,106 @@ export default function PCPView({
               Continuar
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Popup de confirmação: Finalizar Pedido(s) no Setor ── */}
+      {finalizeSelectedConfirm && createPortal(
+        <div className="fixed inset-0 flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-200" style={{ zIndex: 60000 }}>
+          <div className={`w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl flex flex-col items-center text-center gap-5 animate-in zoom-in-95 duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+            <div className="w-20 h-20 rounded-full flex items-center justify-center shadow-xl bg-violet-500 shadow-violet-500/30">
+              <CheckCircle2 size={38} className="text-white" strokeWidth={2.5} />
+            </div>
+
+            <div>
+              <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                Confirmar Ação
+              </p>
+              <h2 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                {finalizeSelectedConfirm.lines[0]}
+              </h2>
+            </div>
+
+            <div className={`w-full px-4 py-3 rounded-2xl flex flex-col gap-1.5 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+              <p className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                {finalizeSelectedConfirm.items.length === 1 ? 'Pedido' : 'Pedidos'}
+              </p>
+              {finalizeSelectedConfirm.items.map((it, i) => {
+                const info = finalizeSelectedConfirm.stockInfo?.[it.key];
+                return (
+                  <div key={i} className="flex flex-col gap-0.5">
+                    <p className={`text-[11px] font-bold text-left uppercase ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                      {describeMoveItem(finalizeSelectedConfirm.lot, it)}
+                    </p>
+                    {info && (
+                      <p className={`text-[10px] font-bold text-left normal-case ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                        → {info.destino} · Estoque atual: <strong>{info.currentQty} {info.unit}</strong>
+                        {info.projectedQty !== info.currentQty && <> · Ficará com: <strong className="text-emerald-600 dark:text-emerald-400">{info.projectedQty} {info.unit}</strong></>}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {finalizeSelectedConfirm.lines.slice(1).some(l => l) && (
+              <div className={`w-full px-4 py-3 rounded-2xl flex flex-col gap-1.5 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                {finalizeSelectedConfirm.lines.slice(1).filter(l => l).map((line, i) => (
+                  <p key={i} className={`text-xs font-bold text-left ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{line}</p>
+                ))}
+              </div>
+            )}
+
+            {finalizeSelectedConfirm.soleInfo && finalizeSelectedConfirm.soleInfo.length > 0 && (
+              <div className={`w-full px-4 py-3 rounded-2xl flex flex-col gap-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                <p className="text-[10px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                  <TrendingDown size={12} strokeWidth={3} /> Estoque de Solados (vai diminuir)
+                </p>
+                {finalizeSelectedConfirm.soleInfo.map((group, gi) => (
+                  <div key={gi} className="flex flex-col gap-1.5">
+                    <p className={`text-[9px] font-black uppercase tracking-widest text-left ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                      {group.moldName}{group.colorName ? ` · ${group.colorName}` : ''}
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.rows.map(row => (
+                        <div key={row.size} className={`px-2.5 py-1.5 rounded-xl border-2 text-center min-w-[52px] ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}>
+                          <p className="text-[10px] font-bold text-black dark:text-white leading-none">{row.size}</p>
+                          <p className="text-[10px] font-black leading-none mt-1 flex items-center justify-center gap-1">
+                            <span className="text-slate-400">{row.before}</span>
+                            <ChevronRight size={10} strokeWidth={3} className="text-slate-300" />
+                            <span className="text-rose-600 dark:text-rose-400">{row.after}</span>
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="w-full flex gap-3">
+              <button
+                type="button"
+                onClick={() => setFinalizeSelectedConfirm(null)}
+                className={`flex-1 py-4 rounded-2xl font-black uppercase tracking-[0.2em] text-[10px] active:scale-95 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleFinalizeSelectedSourceItems(finalizeSelectedConfirm.lot, finalizeSelectedConfirm.items);
+                  setFinalizeSelectedConfirm(null);
+                }}
+                className="flex-1 py-4 rounded-2xl bg-violet-600 text-white font-black uppercase tracking-[0.2em] text-[10px] shadow-lg active:scale-95 transition-all"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* ── Popup de Observação do Lote ── */}
@@ -9050,6 +9896,50 @@ export default function PCPView({
                 className="w-full py-4 rounded-2xl font-black uppercase tracking-widest text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"
               >
                 Agora não
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={!!repairLinkConfirm}
+        onClose={() => setRepairLinkConfirm(null)}
+        title="Reparar Vínculo com a Venda"
+        icon={<AlertTriangle size={20} />}
+        maxWidth="max-w-md"
+      >
+        {repairLinkConfirm && (
+          <div className="flex flex-col gap-5 p-1">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-1">Pedido #{repairLinkConfirm.sale.orderNumber}</p>
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
+                Reapontar o pedido <span className="text-indigo-500">#{repairLinkConfirm.sale.orderNumber}</span> para a Ordem de Produção <span className="text-indigo-500">{repairLinkConfirm.order.orderNumber}</span> (que gerou este mapa)?
+              </p>
+              {repairLinkConfirm.orphanOrder && (
+                <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed mt-3">
+                  {repairLinkConfirm.orphanIsEmpty ? (
+                    <>A Ordem de Produção órfã <span className="text-rose-500">{repairLinkConfirm.orphanOrder.orderNumber}</span> (sem mapas vinculados) será removida.</>
+                  ) : (
+                    <>A Ordem de Produção atual <span className="text-rose-500">{repairLinkConfirm.orphanOrder.orderNumber}</span> também tem mapas — ela será apenas desvinculada da venda, sem ser excluída.</>
+                  )}
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={executeRepairSaleLink}
+                className="w-full py-4 rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-lg transition-all active:scale-[0.98] bg-indigo-600 text-white shadow-indigo-100 dark:shadow-none hover:bg-indigo-700"
+              >
+                Sim, reparar vínculo
+              </button>
+              <button
+                type="button"
+                onClick={() => setRepairLinkConfirm(null)}
+                className="w-full py-4 rounded-2xl font-black uppercase tracking-widest text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"
+              >
+                Cancelar
               </button>
             </div>
           </div>

@@ -1,5 +1,5 @@
-﻿import React, { useState } from "react";
-import { Product, SaleType, ProductionConfigItem, StockPkgAllocation } from "../types";
+import React, { useState, useMemo } from "react";
+import { Product, SaleType, ProductionConfigItem, StockPkgAllocation, StockLot, StockLotRevertPreview } from "../types";
 import {
   Search,
   Package,
@@ -12,15 +12,34 @@ import {
   Plus,
   Trash2,
   ClipboardList,
+  Boxes,
+  User,
+  History,
+  RotateCcw,
 } from "lucide-react";
 import PrintLabelEditorModal from "../components/PrintLabelEditorModal";
+import Modal from "../components/Modal";
 import { toast } from '../utils/toast';
+
+// Capacidade (pares) de uma embalagem avulsa: usa `metadata.capacity` quando
+// configurado; senão recai para o número embutido no nome (ex.: "12 pares
+// avulso a escolha do cliente" => 12), padrão comum em embalagens criadas sem
+// preencher o campo "Capacidade Total".
+function resolvePkgCapacity(pkg?: ProductionConfigItem): number {
+  const explicit = (pkg?.metadata?.capacity as number) || 0;
+  if (explicit > 0) return explicit;
+  const match = pkg?.name?.match(/(\d+)/);
+  return match ? parseInt(match[1], 10) : 0;
+}
 
 interface StockViewProps {
   products: Product[];
   productionConfigs: ProductionConfigItem[];
   onUpdateProduct: (product: Product) => Promise<void>;
   isDarkMode: boolean;
+  stockLots: StockLot[];
+  onPreviewRevertStockLot?: (stockLot: StockLot) => StockLotRevertPreview;
+  onRevertStockLot?: (stockLot: StockLot) => Promise<StockLotRevertPreview>;
 }
 
 export default function StockView({
@@ -28,12 +47,17 @@ export default function StockView({
   productionConfigs,
   onUpdateProduct,
   isDarkMode,
+  stockLots,
+  onPreviewRevertStockLot,
+  onRevertStockLot,
 }: StockViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [editedStocks, setEditedStocks] = useState<Record<string, Product>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [productForLabels, setProductForLabels] = useState<Product | null>(null);
+  const [activeTab, setActiveTab] = useState<'produtos' | 'estoque_pedidos'>('produtos');
+  const [showEntryHistory, setShowEntryHistory] = useState(false);
 
   const packagingItems = productionConfigs.filter(c => c.type === 'PACKAGING');
 
@@ -104,14 +128,16 @@ export default function StockView({
           </div>
 
           {!isEditing ? (
-            <button
-              onClick={handleStartEditing}
-              className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2 active:scale-95"
-              title="Iniciar Balanço de Estoque"
-              aria-label="Entrar no modo de edição de estoque para fazer balanço"
-            >
-              <TrendingUp size={14} strokeWidth={3} /> Fazer Balanço
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleStartEditing}
+                className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2 active:scale-95"
+                title="Iniciar Balanço de Estoque"
+                aria-label="Entrar no modo de edição de estoque para fazer balanço"
+              >
+                <TrendingUp size={14} strokeWidth={3} /> Fazer Balanço
+              </button>
+            </div>
           ) : (
             <div className="flex gap-2">
               <button
@@ -135,18 +161,59 @@ export default function StockView({
           )}
         </div>
 
-        <div className={`p-6 rounded-[2rem] border shadow-xl relative overflow-hidden mb-2 ${
-          isDarkMode
-            ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/30 border-slate-800'
-            : 'bg-gradient-to-br from-indigo-600 via-indigo-600 to-indigo-800 border-indigo-500 text-white'
-        }`}>
-          <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/5 rounded-full blur-2xl pointer-events-none" />
-          <p className={`text-[10px] font-black uppercase tracking-[0.2em] mb-1 ${isDarkMode ? 'text-slate-500' : 'text-indigo-100/70'}`}>Valor Estimado em Estoque</p>
-          <p className={`text-3xl font-black italic tracking-tighter ${isDarkMode ? 'text-white' : 'text-white'}`}>
-            <span className="text-sm not-italic opacity-50 mr-2">R$</span>
-            {products.reduce((acc, p) => acc + (p.variations.reduce((vAcc, v) => vAcc + (Object.values(v.stock) as number[]).reduce((sum, s) => sum + s, 0), 0) * (p.costPrice || 0)), 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
+        {!isEditing && (
+          <button
+            type="button"
+            onClick={() => setShowEntryHistory(true)}
+            className={`w-full flex items-center gap-2 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-900 border border-slate-800 text-slate-300' : 'bg-white border border-slate-100 text-slate-500 shadow-sm'}`}
+            title="Histórico de Entradas em Estoque"
+            aria-label="Abrir histórico de entradas em estoque"
+          >
+            <History size={16} strokeWidth={2.5} className="text-yellow-500" />
+            <span className="text-[10px] font-black uppercase tracking-widest">Histórico de Entradas em Estoque</span>
+          </button>
+        )}
+
+        {/* Toggle de abas: Produtos vs Estoque e Pedidos */}
+        <div className={`flex gap-1 p-1 rounded-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-slate-100'}`}>
+          <button
+            type="button"
+            onClick={() => setActiveTab('produtos')}
+            className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+              activeTab === 'produtos'
+                ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm')
+                : 'text-slate-400'
+            }`}
+          >
+            Produtos
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('estoque_pedidos')}
+            className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+              activeTab === 'estoque_pedidos'
+                ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm')
+                : 'text-slate-400'
+            }`}
+          >
+            Estoque e Pedidos
+          </button>
         </div>
+
+        {activeTab === 'produtos' && (
+          <div className={`p-6 rounded-[2rem] border shadow-xl relative overflow-hidden mb-2 ${
+            isDarkMode
+              ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/30 border-slate-800'
+              : 'bg-gradient-to-br from-indigo-600 via-indigo-600 to-indigo-800 border-indigo-500 text-white'
+          }`}>
+            <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/5 rounded-full blur-2xl pointer-events-none" />
+            <p className={`text-[10px] font-black uppercase tracking-[0.2em] mb-1 ${isDarkMode ? 'text-slate-500' : 'text-indigo-100/70'}`}>Valor Estimado em Estoque</p>
+            <p className={`text-3xl font-black italic tracking-tighter ${isDarkMode ? 'text-white' : 'text-white'}`}>
+              <span className="text-sm not-italic opacity-50 mr-2">R$</span>
+              {products.reduce((acc, p) => acc + (p.variations.reduce((vAcc, v) => vAcc + (p.type === SaleType.WHOLESALE ? (v.stock['WHOLESALE'] || 0) : (Object.values(v.stock) as number[]).reduce((sum, s) => sum + s, 0)), 0) * (p.costPrice || 0)), 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+          </div>
+        )}
 
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
@@ -162,39 +229,468 @@ export default function StockView({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3">
-        {filteredProducts.map((product) => (
-          <StockCard
-            key={product.id}
-            product={isEditing ? editedStocks[product.id] || product : product}
-            packagingItems={packagingItems}
-            isDarkMode={isDarkMode}
-            isEditing={isEditing}
-            onUpdateStock={(variationId, key, value) => updateProductStock(product.id, variationId, key, value)}
-            onUpdatePkgAllocations={(variationId, allocations) => handleUpdatePkgAllocations(product, variationId, allocations)}
-            onPrint={() => setProductForLabels(product)}
-          />
-        ))}
+      {activeTab === 'produtos' && (
+        <div className="grid grid-cols-1 gap-3">
+          {filteredProducts.map((product) => (
+            <StockCard
+              key={product.id}
+              product={isEditing ? editedStocks[product.id] || product : product}
+              packagingItems={packagingItems}
+              isDarkMode={isDarkMode}
+              isEditing={isEditing}
+              onUpdateStock={(variationId, key, value) => updateProductStock(product.id, variationId, key, value)}
+              onUpdatePkgAllocations={(variationId, allocations) => handleUpdatePkgAllocations(product, variationId, allocations)}
+              onPrint={() => setProductForLabels(product)}
+            />
+          ))}
 
-        {productForLabels && (
-          <PrintLabelEditorModal
-            isOpen={!!productForLabels}
-            onClose={() => setProductForLabels(null)}
-            product={productForLabels}
-            isDarkMode={isDarkMode}
-          />
+          {productForLabels && (
+            <PrintLabelEditorModal
+              isOpen={!!productForLabels}
+              onClose={() => setProductForLabels(null)}
+              product={productForLabels}
+              isDarkMode={isDarkMode}
+            />
+          )}
+
+          {filteredProducts.length === 0 && (
+            <div className={`p-10 text-center border-2 border-dashed rounded-3xl ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-400'}`}>
+              <Package size={40} className="mx-auto mb-3 opacity-20" />
+              <p className="text-xs font-bold uppercase tracking-widest">Nenhum produto em estoque</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'estoque_pedidos' && (
+        <StockLotsPanel stockLots={stockLots} isDarkMode={isDarkMode} searchTerm={searchTerm} />
+      )}
+
+      <StockEntryHistoryModal
+        isOpen={showEntryHistory}
+        onClose={() => setShowEntryHistory(false)}
+        stockLots={stockLots}
+        isDarkMode={isDarkMode}
+        onPreviewRevertStockLot={onPreviewRevertStockLot}
+        onRevertStockLot={onRevertStockLot}
+      />
+    </div>
+  );
+}
+
+const StockLotsPanel: React.FC<{
+  stockLots: StockLot[];
+  isDarkMode: boolean;
+  searchTerm: string;
+}> = ({ stockLots, isDarkMode, searchTerm }) => {
+  const term = searchTerm.toLowerCase();
+
+  const filtered = useMemo(() => stockLots.filter(l =>
+    l.productName.toLowerCase().includes(term) ||
+    l.variationName.toLowerCase().includes(term) ||
+    (l.customerName || '').toLowerCase().includes(term)
+  ), [stockLots, term]);
+
+  const emEstoque = filtered.filter(l => l.status === 'EM_ESTOQUE');
+  const reservado = filtered.filter(l => l.status === 'RESERVADO');
+
+  const totalPairs = (lots: StockLot[]) => lots.reduce((s, l) => s + l.totalPairs, 0);
+  // boxQty representa quantas caixas aquela entrada cobre (ex.: 8 caixas de 12 pares).
+  // Entradas sem boxQty (produtos sem embalagem padrão) contam como 1 caixa cada.
+  const totalBoxes = (lots: StockLot[]) => lots.reduce((s, l) => s + (l.boxQty ?? 1), 0);
+
+  return (
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-violet-100 dark:bg-violet-950/30">
+          <h3 className={`text-xs font-black uppercase tracking-widest flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+            <Boxes size={16} className="text-indigo-500" /> Em Estoque
+          </h3>
+          <div className="px-3 py-1.5 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-violet-700 text-white text-center leading-tight">
+            <p>{totalBoxes(emEstoque)} caixa(s)</p>
+            <p>{totalPairs(emEstoque)} pares</p>
+          </div>
+        </div>
+
+        {emEstoque.length === 0 ? (
+          <div className={`p-8 text-center border-2 border-dashed rounded-3xl ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-400'}`}>
+            <Boxes size={32} className="mx-auto mb-2 opacity-20" />
+            <p className="text-xs font-bold uppercase tracking-widest">Nenhuma caixa em estoque livre</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-2">
+            {emEstoque.map(lot => (
+              <StockLotCard key={lot.id} lot={lot} isDarkMode={isDarkMode} />
+            ))}
+          </div>
         )}
+      </div>
 
-        {filteredProducts.length === 0 && (
-          <div className={`p-10 text-center border-2 border-dashed rounded-3xl ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-400'}`}>
-            <Package size={40} className="mx-auto mb-3 opacity-20" />
-            <p className="text-xs font-bold uppercase tracking-widest">Nenhum produto em estoque</p>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-violet-100 dark:bg-violet-950/30">
+          <h3 className={`text-xs font-black uppercase tracking-widest flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+            <User size={16} className="text-sky-500" /> Reservado p/ Pedidos
+          </h3>
+          <div className="px-3 py-1.5 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-violet-700 text-white text-center leading-tight">
+            <p>{totalBoxes(reservado)} caixa(s)</p>
+            <p>{totalPairs(reservado)} pares</p>
+          </div>
+        </div>
+
+        {reservado.length === 0 ? (
+          <div className={`p-8 text-center border-2 border-dashed rounded-3xl ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-400'}`}>
+            <User size={32} className="mx-auto mb-2 opacity-20" />
+            <p className="text-xs font-bold uppercase tracking-widest">Nenhuma caixa reservada</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-2">
+            {reservado.map(lot => (
+              <StockLotCard key={lot.id} lot={lot} isDarkMode={isDarkMode} showCustomer />
+            ))}
           </div>
         )}
       </div>
     </div>
   );
-}
+};
+
+const StockEntryHistoryModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  stockLots: StockLot[];
+  isDarkMode: boolean;
+  onPreviewRevertStockLot?: (stockLot: StockLot) => StockLotRevertPreview;
+  onRevertStockLot?: (stockLot: StockLot) => Promise<StockLotRevertPreview>;
+}> = ({ isOpen, onClose, stockLots, isDarkMode, onPreviewRevertStockLot, onRevertStockLot }) => {
+  const [term, setTerm] = useState('');
+  const [revertTarget, setRevertTarget] = useState<{ lot: StockLot; preview: StockLotRevertPreview } | null>(null);
+  const [revertStatus, setRevertStatus] = useState<'confirm' | 'loading' | 'done'>('confirm');
+
+  const filtered = useMemo(() => {
+    const t = term.toLowerCase();
+    return stockLots
+      .filter(l =>
+        l.productName.toLowerCase().includes(t) ||
+        (l.productReference || '').toLowerCase().includes(t) ||
+        l.variationName.toLowerCase().includes(t) ||
+        (l.customerName || '').toLowerCase().includes(t) ||
+        (l.saleOrderNumber || '').toLowerCase().includes(t) ||
+        (l.productionOrderNumber || '').toLowerCase().includes(t) ||
+        (l.lotOrderNumber || '').toLowerCase().includes(t)
+      )
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }, [stockLots, term]);
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Histórico de Entradas em Estoque" icon={<History size={20} />} maxWidth="max-w-2xl">
+      <div className="flex flex-col gap-4">
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+          <input
+            type="text"
+            placeholder="Buscar por produto, mapa, pedido ou cliente..."
+            value={term}
+            onChange={(e) => setTerm(e.target.value)}
+            aria-label="Buscar no histórico de entradas em estoque"
+            className={`w-full border rounded-xl py-3 pl-11 pr-4 text-[11px] font-bold uppercase tracking-widest outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-100 text-slate-800'}`}
+          />
+        </div>
+
+        <div className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-1">
+          {filtered.length === 0 && (
+            <div className={`p-8 text-center border-2 border-dashed rounded-3xl ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-400'}`}>
+              <History size={32} className="mx-auto mb-2 opacity-20" />
+              <p className="text-xs font-bold uppercase tracking-widest">Nenhuma entrada encontrada</p>
+            </div>
+          )}
+          {filtered.map(lot => {
+            const isStockDestination = !lot.customerName || lot.customerName === 'Estoque';
+            const orderNumber = lot.productionOrderNumber || lot.saleOrderNumber;
+            const sizeEntries = Object.entries(lot.sizeBreakdown || {})
+              .sort(([a], [b]) => parseFloat(a) - parseFloat(b));
+            return (
+              <div key={lot.id} className={`p-4 rounded-2xl border flex flex-col gap-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-tight truncate">
+                    {lot.productReference && <span className="text-indigo-500 mr-1">{lot.productReference}</span>}
+                    {lot.productName} · {lot.variationName}
+                  </p>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest shrink-0">{new Date(lot.createdAt).toLocaleDateString('pt-BR')}</span>
+                </div>
+
+                <div className="flex items-baseline gap-1.5">
+                  {lot.boxQty !== undefined ? (
+                    <>
+                      <span className="text-lg font-black text-indigo-600 dark:text-indigo-400">{lot.boxQty}</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">caixas · {lot.totalPairs} pares</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-lg font-black text-indigo-600 dark:text-indigo-400">{lot.totalPairs}</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">pares</span>
+                    </>
+                  )}
+                </div>
+
+                {sizeEntries.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {sizeEntries.map(([sz, qty]) => (
+                      <div key={sz} className={`px-2.5 py-1.5 rounded-xl border-2 text-center min-w-[36px] ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}>
+                        <p className="text-[7px] font-bold text-slate-400 leading-none">{sz}</p>
+                        <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 leading-none mt-0.5">{qty}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-1.5">
+                  {lot.lotOrderNumber && (
+                    <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                      Mapa #{lot.lotOrderNumber}
+                    </span>
+                  )}
+                  {orderNumber && (
+                    <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+                      Pedido #{orderNumber}
+                    </span>
+                  )}
+                  <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide ${isStockDestination ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400'}`}>
+                    {isStockDestination ? 'Estoque' : lot.customerName}
+                  </span>
+                  {lot.boxQty !== undefined && (
+                    <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400">
+                      {lot.pkgName || 'Avulso'}
+                    </span>
+                  )}
+                </div>
+
+                {onPreviewRevertStockLot && onRevertStockLot && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRevertTarget({ lot, preview: onPreviewRevertStockLot(lot) });
+                      setRevertStatus('confirm');
+                    }}
+                    className="self-end px-2.5 py-1.5 rounded-lg bg-rose-100 hover:bg-rose-200 dark:bg-rose-900/30 dark:hover:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all active:scale-95"
+                  >
+                    <RotateCcw size={12} strokeWidth={3} />
+                    Reverter
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <StockLotRevertModal
+        target={revertTarget}
+        status={revertStatus}
+        isDarkMode={isDarkMode}
+        onCancel={() => { if (revertStatus !== 'loading') setRevertTarget(null); }}
+        onConfirm={async () => {
+          if (!revertTarget || !onRevertStockLot) return;
+          setRevertStatus('loading');
+          await onRevertStockLot(revertTarget.lot);
+          setRevertStatus('done');
+        }}
+        onClose={() => setRevertTarget(null)}
+      />
+    </Modal>
+  );
+};
+
+const StockLotRevertModal: React.FC<{
+  target: { lot: StockLot; preview: StockLotRevertPreview } | null;
+  status: 'confirm' | 'loading' | 'done';
+  isDarkMode: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  onClose: () => void;
+}> = ({ target, status, isDarkMode, onCancel, onConfirm, onClose }) => {
+  if (!target) return null;
+  const { preview } = target;
+
+  return (
+    <Modal
+      isOpen={!!target}
+      onClose={status === 'done' ? onClose : onCancel}
+      title={status === 'done' ? 'Reversão Concluída' : 'Reverter Entrada de Estoque'}
+      icon={<RotateCcw size={20} />}
+      maxWidth="max-w-lg"
+      closeLabel={status === 'done' ? 'Entendido' : 'Voltar'}
+    >
+      <div className="flex flex-col gap-4">
+        <div className={`p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+          <p className={`text-xs font-bold uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+            {preview.productReference && <span className="text-indigo-500 mr-1">{preview.productReference}</span>}
+            {preview.productName} · {preview.variationName}
+          </p>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+            {preview.gradeLabel}
+          </p>
+        </div>
+
+        {status !== 'done' && (
+          <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400 leading-relaxed">
+            Isso vai remover esta entrada do estoque do produto, repor os solados que foram consumidos e devolver o pedido para Expedição. Confira as quantidades abaixo:
+          </p>
+        )}
+
+        {preview.stockReverted && preview.productStockRows.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+              <TrendingDown size={12} strokeWidth={3} /> Estoque do Produto (vai diminuir)
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {preview.productStockRows.map(row => (
+                <div key={row.label} className={`px-2.5 py-1.5 rounded-xl border-2 text-center min-w-[52px] ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}>
+                  <p className="text-[10px] font-bold text-black dark:text-white leading-none">{row.label}</p>
+                  <p className="text-[10px] font-black leading-none mt-1 flex items-center justify-center gap-1">
+                    <span className="text-slate-400">{row.before}</span>
+                    <ChevronRight size={10} strokeWidth={3} className="text-slate-300" />
+                    <span className="text-rose-600 dark:text-rose-400">{row.after}</span>
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {preview.sole && preview.sole.rows.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+              <TrendingUp size={12} strokeWidth={3} /> Estoque de Solados (vai repor) — {preview.sole.moldName} · {preview.sole.colorName}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {preview.sole.rows.map(row => (
+                <div key={row.size} className={`px-2.5 py-1.5 rounded-xl border-2 text-center min-w-[52px] ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}>
+                  <p className="text-[7px] font-bold text-slate-400 leading-none">{row.size}</p>
+                  <p className="text-[10px] font-black leading-none mt-1 flex items-center justify-center gap-1">
+                    <span className="text-slate-400">{row.before}</span>
+                    <ChevronRight size={10} strokeWidth={3} className="text-slate-300" />
+                    <span className="text-emerald-600 dark:text-emerald-400">{row.after}</span>
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {preview.orderReturnedToExpedicao && (
+          <div className="flex items-start gap-2.5">
+            <span className="w-5 h-5 rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
+              <Boxes size={12} strokeWidth={3} />
+            </span>
+            <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300 leading-relaxed">
+              Pedido {preview.orderNumber ? <>#{preview.orderNumber} </> : ''}{status === 'done' ? 'devolvido' : 'será devolvido'} para <span className="font-black">Expedição</span>{preview.lotOrderNumber ? <> no Mapa #{preview.lotOrderNumber}</> : ''}.
+              {preview.lotReopened && (status === 'done' ? ' O mapa foi reaberto.' : ' O mapa será reaberto.')}
+            </p>
+          </div>
+        )}
+
+        {status === 'done' && (
+          <div className="flex items-start gap-2.5">
+            <span className="w-5 h-5 rounded-lg bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+              <RotateCcw size={12} strokeWidth={3} />
+            </span>
+            <p className="text-[11px] font-bold text-slate-600 dark:text-slate-300 leading-relaxed">
+              Reversão concluída com sucesso.
+            </p>
+          </div>
+        )}
+
+        {status !== 'done' && (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={status === 'loading'}
+              className="flex-1 px-4 py-3 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={status === 'loading'}
+              className="flex-1 px-4 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-rose-500/20 disabled:opacity-50 active:scale-95"
+            >
+              {status === 'loading' ? 'Revertendo...' : 'Confirmar Reversão'}
+            </button>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+};
+
+const StockLotCard: React.FC<{
+  lot: StockLot;
+  isDarkMode: boolean;
+  showCustomer?: boolean;
+}> = ({ lot, isDarkMode, showCustomer }) => {
+  const orderNumber = lot.productionOrderNumber || lot.saleOrderNumber;
+  const sizeEntries = Object.entries(lot.sizeBreakdown || {})
+    .sort(([a], [b]) => parseFloat(a) - parseFloat(b));
+
+  return (
+    <div className={`p-4 rounded-2xl border flex flex-col gap-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+      <p className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-tight truncate">
+        {lot.productReference && <span className="text-indigo-500 mr-1">{lot.productReference}</span>}
+        {lot.productName} · {lot.variationName}
+      </p>
+
+      <div className="flex items-baseline gap-1.5">
+        {lot.boxQty !== undefined ? (
+          <>
+            <span className="text-lg font-black text-indigo-600 dark:text-indigo-400">{lot.boxQty}</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">caixas · {lot.totalPairs} pares</span>
+          </>
+        ) : (
+          <>
+            <span className="text-lg font-black text-indigo-600 dark:text-indigo-400">{lot.totalPairs}</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase">pares</span>
+          </>
+        )}
+      </div>
+
+      {sizeEntries.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {sizeEntries.map(([sz, qty]) => (
+            <div key={sz} className={`px-2.5 py-1.5 rounded-xl border-2 text-center min-w-[36px] ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}>
+              <p className="text-[7px] font-bold text-slate-400 leading-none">{sz}</p>
+              <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 leading-none mt-0.5">{qty}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap gap-1.5">
+        {lot.lotOrderNumber && (
+          <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+            Mapa #{lot.lotOrderNumber}
+          </span>
+        )}
+        {orderNumber && (
+          <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+            Pedido #{orderNumber}
+          </span>
+        )}
+        {showCustomer && lot.customerName && (
+          <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400">
+            {lot.customerName}
+          </span>
+        )}
+        {lot.boxQty !== undefined && (
+          <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400">
+            {lot.pkgName || 'Avulso'}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+};
 
 const StockCard: React.FC<{
   product: Product;
@@ -205,6 +701,10 @@ const StockCard: React.FC<{
   onUpdatePkgAllocations: (variationId: string, allocations: StockPkgAllocation[]) => void;
   onPrint: () => void;
 }> = ({ product, packagingItems, isDarkMode, isEditing, onUpdateStock, onUpdatePkgAllocations, onPrint }) => {
+  // Padrão "avulso a escolha do cliente" (sem tamanhos fixos) — referência de
+  // capacidade para alocações avulsas que não correspondem a nenhuma embalagem cadastrada.
+  const avulsoPkg = packagingItems.find(p => p.metadata?.mode === 'FREE');
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [expandedVars, setExpandedVars] = useState<string[]>([]);
   const [expandedPackaging, setExpandedPackaging] = useState<string[]>([]);
   const [expandedCompositions, setExpandedCompositions] = useState<string[]>([]);
@@ -214,6 +714,7 @@ const StockCard: React.FC<{
     looseQty: number;
     pkgBreakdown?: Record<string, number>;
     pkgSizes?: string[];
+    pkgCapacity: number;
     sizeInput: Record<string, number>;
   } | null>(null);
   const [allocPopup, setAllocPopup] = useState<{
@@ -227,7 +728,7 @@ const StockCard: React.FC<{
   } | null>(null);
 
   const totalStock = product.variations.reduce((acc, v) => {
-    return acc + (Object.values(v.stock) as number[]).reduce((sum, s) => sum + s, 0);
+    return acc + (product.type === SaleType.WHOLESALE ? (v.stock['WHOLESALE'] || 0) : (Object.values(v.stock) as number[]).reduce((sum, s) => sum + s, 0));
   }, 0);
 
   const isLowStock = totalStock <= product.minStockInBoxes * 12;
@@ -248,7 +749,12 @@ const StockCard: React.FC<{
     <div className={`p-5 rounded-[2.5rem] border shadow-sm flex flex-col gap-5 transition-all ${isEditing ? 'ring-2 ring-indigo-500/20' : ''} ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
 
       {/* Cabeçalho do produto */}
-      <div className="flex items-start justify-between gap-3">
+      <button
+        type="button"
+        onClick={() => setIsCollapsed(v => !v)}
+        className="flex items-start justify-between gap-3 text-left"
+        aria-label={isCollapsed ? `Expandir ${product.reference}` : `Recolher ${product.reference}`}
+      >
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700 overflow-hidden shrink-0">
             {product.photoUrl
@@ -260,12 +766,20 @@ const StockCard: React.FC<{
             <h3 className="text-base font-bold text-slate-900 dark:text-white uppercase tracking-tight">{product.name}</h3>
           </div>
         </div>
-        <div className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 shrink-0 ${isLowStock ? 'bg-rose-50 text-rose-500 dark:bg-rose-900/20' : 'bg-emerald-50 text-emerald-500 dark:bg-emerald-900/20'}`}>
-          {isLowStock ? <TrendingDown size={13} /> : <TrendingUp size={13} />}
-          {isLowStock ? 'Baixo' : 'OK'}
+        <div className="flex items-center gap-2 shrink-0">
+          <div className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 ${isLowStock ? 'bg-rose-50 text-rose-500 dark:bg-rose-900/20' : 'bg-emerald-50 text-emerald-500 dark:bg-emerald-900/20'}`}>
+            {isLowStock ? <TrendingDown size={13} /> : <TrendingUp size={13} />}
+            {isLowStock ? 'Baixo' : 'OK'}
+          </div>
+          {isCollapsed
+            ? <ChevronRight size={18} className="text-orange-500" />
+            : <ChevronDown size={18} className="text-orange-500" />
+          }
         </div>
-      </div>
+      </button>
 
+      {!isCollapsed && (
+      <>
       {/* Totais */}
       <div className="grid grid-cols-2 gap-4 py-5 border-y border-slate-100 dark:border-slate-800">
         <div className="flex flex-col gap-3">
@@ -274,7 +788,7 @@ const StockCard: React.FC<{
             <p className={`text-3xl font-black italic tracking-tighter ${isLowStock ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>
               {totalStock}
             </p>
-            <p className="text-xs font-bold text-slate-400 uppercase mt-0.5">{product.type === SaleType.WHOLESALE ? 'GRADES' : 'UNIDADES'}</p>
+            <p className="text-xs font-bold text-slate-400 uppercase mt-0.5">{product.type === SaleType.WHOLESALE ? 'CAIXAS' : 'UNIDADES'}</p>
           </div>
           <button
             type="button"
@@ -318,20 +832,41 @@ const StockCard: React.FC<{
                 <button
                   type="button"
                   onClick={() => toggleVar(v.id)}
-                  className="w-full flex items-center justify-between px-4 py-4 active:opacity-70 transition-opacity"
+                  className="w-full flex items-start justify-between px-4 py-4 active:opacity-70 transition-opacity"
                   aria-label={`${isExpanded ? 'Recolher' : 'Expandir'} variação ${v.colorName}`}
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="w-5 h-5 rounded-full border-2 border-white dark:border-slate-600 shadow-sm shrink-0" style={{ backgroundColor: v.color }} />
-                    <div className="text-left">
+                    <div className="text-left min-w-0 flex-1">
                       <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none mb-0.5">{product.reference}</p>
                       <span className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">{v.colorName}</span>
+                      {product.type === SaleType.WHOLESALE && (allocations.some(a => a.qty > 0) || boxQty - totalAllocated > 0) && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {allocations.filter(a => a.qty > 0).map((a, i) => {
+                            const pkg = packagingItems.find(p => p.id === a.pkgId);
+                            return (
+                              <div key={i} className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400 max-w-full overflow-hidden">
+                                <span className="text-[9px] font-black uppercase tracking-wide truncate min-w-0">{pkg?.name || 'Avulso'}</span>
+                                <span className="text-[9px] font-black uppercase tracking-wide shrink-0">{a.qty} CX</span>
+                              </div>
+                            );
+                          })}
+                          {boxQty - totalAllocated > 0 && (
+                            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-lg bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 max-w-full overflow-hidden">
+                              <span className="text-[9px] font-black uppercase tracking-wide truncate min-w-0">Avulso</span>
+                              <span className="text-[9px] font-black uppercase tracking-wide shrink-0">{boxQty - totalAllocated} CX</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <p className="text-base font-black text-indigo-600 dark:text-indigo-400 leading-none">{varStock}</p>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase">{product.type === SaleType.WHOLESALE ? 'GR' : 'UN'}</p>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex items-center gap-1">
+                      <span className="text-base font-black text-indigo-600 dark:text-indigo-400 leading-none">
+                        {product.type === SaleType.WHOLESALE ? boxQty : varStock}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase">{product.type === SaleType.WHOLESALE ? 'CX' : 'UN'}</span>
                     </div>
                     {isExpanded
                       ? <ChevronDown size={16} className="text-indigo-400 shrink-0" />
@@ -404,7 +939,7 @@ const StockCard: React.FC<{
                           ) : (
                             <div className="flex items-baseline gap-1.5">
                               <span className="text-xl font-black text-slate-900 dark:text-white">{boxQty}</span>
-                              <span className="text-xs font-bold text-slate-400 uppercase">grades</span>
+                              <span className="text-xs font-bold text-slate-400 uppercase">caixas</span>
                             </div>
                           )}
                         </div>
@@ -561,18 +1096,26 @@ const StockCard: React.FC<{
                                       </>
                                     )}
 
-                                    {/* Composição manual para embalagens sem breakdown (avulso) */}
-                                    {alloc.qty > 0 && (!pkgBreakdown || pkgSizes.length === 0) && (
-                                      <div className="flex flex-col gap-2">
-                                        {alloc.customBreakdown && Object.keys(alloc.customBreakdown).length > 0 ? (
-                                          <>
+                                    {/* Composição manual para embalagens sem breakdown (avulso) — grade sempre visível */}
+                                    {alloc.qty > 0 && (!pkgBreakdown || pkgSizes.length === 0) && (() => {
+                                      const hasCustom = !!alloc.customBreakdown && Object.keys(alloc.customBreakdown).length > 0;
+                                      const refPkg = packagingItems.find(p => (p.metadata?.sizes as string[] | undefined)?.length);
+                                      const refSizes = refPkg?.metadata?.sizes as string[] | undefined;
+                                      const breakdownEntries: [string, number][] = hasCustom
+                                        ? Object.entries(alloc.customBreakdown!)
+                                        : (refSizes || []).map(s => [s, 0] as [string, number]);
+                                      const visibleEntries = breakdownEntries.filter(([, qty]) => qty > 0);
+
+                                      return (
+                                        <div className="flex flex-col gap-2">
+                                          {visibleEntries.length > 0 && (
                                             <div className={`rounded-xl overflow-hidden border ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                                               <div className={`grid grid-cols-3 px-4 py-2 text-xs font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-600'}`}>
                                                 <span>Tam</span>
                                                 <span className="text-center">Por Grade</span>
                                                 <span className="text-right text-indigo-500">Total</span>
                                               </div>
-                                              {Object.entries(alloc.customBreakdown).map(([size, perGrade]) => (
+                                              {visibleEntries.map(([size, perGrade]) => (
                                                 <div key={size} className={`grid grid-cols-3 px-4 py-2.5 text-sm border-t ${isDarkMode ? 'border-slate-800 bg-slate-900 text-white' : 'border-slate-100 bg-white text-slate-900'}`}>
                                                   <span className="font-black">{size}</span>
                                                   <span className="text-center font-bold text-slate-500">{perGrade}</span>
@@ -582,44 +1125,44 @@ const StockCard: React.FC<{
                                               <div className={`grid grid-cols-3 px-4 py-2.5 border-t ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
                                                 <span className={`text-xs font-black uppercase col-span-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>Total Pares</span>
                                                 <span className="text-right text-sm font-black text-indigo-500">
-                                                  {Object.values(alloc.customBreakdown).reduce((s, q) => s + q, 0) * alloc.qty}
+                                                  {visibleEntries.reduce((s, [, q]) => s + q, 0) * alloc.qty}
                                                 </span>
                                               </div>
                                             </div>
+                                          )}
+                                          {hasCustom ? (
                                             <button
                                               type="button"
                                               onClick={() => {
-                                                setAllocPopup({ varId: v.id, allocIdx: idx, pkgId: alloc.pkgId, pkgName: pkg?.name || 'Avulso', qty: alloc.qty, pkgCapacity: (pkg?.metadata?.capacity as number) || 0, sizeInput: { ...alloc.customBreakdown! } });
+                                                setAllocPopup({ varId: v.id, allocIdx: idx, pkgId: alloc.pkgId, pkgName: pkg?.name || 'Avulso', qty: alloc.qty, pkgCapacity: resolvePkgCapacity(pkg || avulsoPkg), sizeInput: { ...alloc.customBreakdown! } });
                                               }}
                                               className="flex items-center gap-1.5 text-xs font-black text-slate-400 hover:text-indigo-500 transition-colors w-fit"
                                             >
                                               <ClipboardList size={12} /> Editar composição
                                             </button>
-                                          </>
-                                        ) : (
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const refPkg = packagingItems.find(p => (p.metadata?.sizes as string[] | undefined)?.length);
-                                              const refSizes = refPkg?.metadata?.sizes as string[] | undefined;
-                                              setAllocPopup({
-                                                varId: v.id,
-                                                allocIdx: idx,
-                                                pkgId: alloc.pkgId,
-                                                pkgName: pkg?.name || 'Avulso',
-                                                qty: alloc.qty,
-                                                pkgCapacity: (pkg?.metadata?.capacity as number) || 0,
-                                                sizeInput: refSizes ? Object.fromEntries(refSizes.map(s => [s, 0])) : {},
-                                              });
-                                            }}
-                                            className={`flex items-center gap-2 text-xs font-black px-3 py-2 rounded-xl border transition-colors w-fit ${isDarkMode ? 'border-slate-600 text-slate-400 hover:border-indigo-500 hover:text-indigo-400' : 'border-slate-300 text-slate-500 hover:border-indigo-300 hover:text-indigo-600'}`}
-                                          >
-                                            <ClipboardList size={13} />
-                                            Informar composição por tamanho
-                                          </button>
-                                        )}
-                                      </div>
-                                    )}
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setAllocPopup({
+                                                  varId: v.id,
+                                                  allocIdx: idx,
+                                                  pkgId: alloc.pkgId,
+                                                  pkgName: pkg?.name || 'Avulso',
+                                                  qty: alloc.qty,
+                                                  pkgCapacity: resolvePkgCapacity(pkg || avulsoPkg || refPkg),
+                                                  sizeInput: refSizes ? Object.fromEntries(refSizes.map(s => [s, 0])) : {},
+                                                });
+                                              }}
+                                              className={`flex items-center gap-2 text-xs font-black px-3 py-2 rounded-xl border transition-colors w-fit ${isDarkMode ? 'border-slate-600 text-slate-400 hover:border-indigo-500 hover:text-indigo-400' : 'border-slate-300 text-slate-500 hover:border-indigo-300 hover:text-indigo-600'}`}
+                                            >
+                                              <ClipboardList size={13} />
+                                              Informar composição por tamanho
+                                            </button>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
                                   </div>
                                 );
                               })}
@@ -644,7 +1187,7 @@ const StockCard: React.FC<{
                                   <div className={`flex items-center justify-between text-xs font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                                     <span>Total alocado</span>
                                     <span className={`font-black ${totalAllocated === boxQty ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-500'}`}>
-                                      {totalAllocated} / {boxQty} grades
+                                      {totalAllocated} / {boxQty} caixas
                                     </span>
                                   </div>
 
@@ -663,6 +1206,7 @@ const StockCard: React.FC<{
                                           looseQty: boxQty - totalAllocated,
                                           pkgBreakdown: firstPkgWithBreakdown?.metadata?.sizeQuantities as Record<string, number> | undefined,
                                           pkgSizes: refSizes,
+                                          pkgCapacity: resolvePkgCapacity(avulsoPkg || firstPkgWithBreakdown),
                                           sizeInput: refSizes ? Object.fromEntries(refSizes.map(s => [s, 0])) : {},
                                         });
                                       }}
@@ -697,11 +1241,13 @@ const StockCard: React.FC<{
           })}
         </div>
       </div>
+      </>
+      )}
 
       {/* Popup — registro de grades avulsas */}
       {gradePopup && (
         <div
-          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 px-4 pb-4 sm:pb-0"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
           onClick={() => setGradePopup(null)}
         >
           <div
@@ -730,12 +1276,29 @@ const StockCard: React.FC<{
 
             {/* Corpo com scroll */}
             <div className="flex flex-col gap-4 px-6 pb-2 overflow-y-auto">
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">
-                Registre a composição por tamanho de{gradePopup.looseQty > 1 ? ' cada' : ' a'} grade avulsa para controle interno.
-              </p>
+              {(() => {
+                const totalPairsInput = Object.values(gradePopup.sizeInput).reduce((s, q) => s + q, 0);
+                const capacity = gradePopup.pkgCapacity;
+                const atCapacity = capacity > 0 && totalPairsInput >= capacity;
+                return (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-bold">
+                        Registre a composição por tamanho de{gradePopup.looseQty > 1 ? ' cada' : ' a'} grade avulsa para controle interno.
+                      </p>
+                      {capacity > 0 && (
+                        <span className={`text-xs font-black px-2.5 py-1 rounded-full shrink-0 ml-3 ${
+                          atCapacity
+                            ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400'
+                            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+                        }`}>
+                          {totalPairsInput}/{capacity} pares
+                        </span>
+                      )}
+                    </div>
 
-              {/* Formulário de tamanhos */}
-              {Object.keys(gradePopup.sizeInput).length > 0 ? (
+                    {/* Formulário de tamanhos */}
+                    {Object.keys(gradePopup.sizeInput).length > 0 ? (
                 <div className={`rounded-xl overflow-hidden border ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                   <div className={`grid grid-cols-3 px-4 py-2 text-xs font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-600'}`}>
                     <span>Tamanho</span>
@@ -754,8 +1317,15 @@ const StockCard: React.FC<{
                         <span className="w-6 text-center text-sm font-black text-slate-900 dark:text-white">{qty}</span>
                         <button
                           type="button"
-                          onClick={() => setGradePopup(prev => prev ? { ...prev, sizeInput: { ...prev.sizeInput, [size]: qty + 1 } } : null)}
-                          className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center text-xs font-black hover:bg-indigo-200 transition-all"
+                          disabled={atCapacity}
+                          onClick={() => setGradePopup(prev => {
+                            if (!prev) return null;
+                            const cap = prev.pkgCapacity;
+                            const total = Object.values(prev.sizeInput).reduce((s, q) => s + q, 0);
+                            if (cap > 0 && total >= cap) return prev;
+                            return { ...prev, sizeInput: { ...prev.sizeInput, [size]: (prev.sizeInput[size] || 0) + 1 } };
+                          })}
+                          className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center text-xs font-black hover:bg-indigo-200 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                         >+</button>
                       </div>
                       <span className="text-right text-sm font-black text-amber-500">{qty * gradePopup.looseQty}</span>
@@ -763,17 +1333,20 @@ const StockCard: React.FC<{
                   ))}
                   <div className={`grid grid-cols-3 px-4 py-2.5 border-t ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
                     <span className={`text-xs font-black uppercase col-span-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>Total Pares</span>
-                    <span className="text-right text-sm font-black text-amber-500">
-                      {Object.values(gradePopup.sizeInput).reduce((s, q) => s + q, 0) * gradePopup.looseQty}
+                    <span className={`text-right text-sm font-black ${atCapacity ? 'text-emerald-500' : 'text-amber-500'}`}>
+                      {totalPairsInput * gradePopup.looseQty}
                     </span>
                   </div>
                 </div>
-              ) : (
+                    ) : (
                 <div className={`p-4 rounded-xl text-center ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
                   <p className="text-xs text-slate-500 font-bold mb-3">Nenhum tamanho de referência disponível.</p>
                   <p className="text-[10px] text-slate-400">Configure uma embalagem padrão para este produto para ter tamanhos disponíveis.</p>
                 </div>
-              )}
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             {/* Botões fixos no rodapé */}
@@ -844,7 +1417,7 @@ const StockCard: React.FC<{
                 aria-label="Selecionar padrão de embalagem"
                 onChange={e => {
                   const selectedPkg = packagingItems.find(p => p.id === e.target.value);
-                  const newCapacity = (selectedPkg?.metadata?.capacity as number) || 0;
+                  const newCapacity = resolvePkgCapacity(selectedPkg);
                   const newSizes = selectedPkg?.metadata?.sizes as string[] | undefined;
                   setAllocPopup(prev => prev ? {
                     ...prev,
@@ -912,7 +1485,13 @@ const StockCard: React.FC<{
                               <button
                                 type="button"
                                 disabled={atCapacity}
-                                onClick={() => setAllocPopup(prev => prev ? { ...prev, sizeInput: { ...prev.sizeInput, [size]: qty + 1 } } : null)}
+                                onClick={() => setAllocPopup(prev => {
+                                  if (!prev) return null;
+                                  const cap = prev.pkgCapacity;
+                                  const total = Object.values(prev.sizeInput).reduce((s, q) => s + q, 0);
+                                  if (cap > 0 && total >= cap) return prev;
+                                  return { ...prev, sizeInput: { ...prev.sizeInput, [size]: (prev.sizeInput[size] || 0) + 1 } };
+                                })}
                                 className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 flex items-center justify-center text-xs font-black hover:bg-indigo-200 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
                               >+</button>
                             </div>

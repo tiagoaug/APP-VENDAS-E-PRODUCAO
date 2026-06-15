@@ -1,4 +1,4 @@
-import { Product, ProductionLot, Sector, ServiceOrder } from '../types';
+import { Product, ProductionLot, ProductionOrder, Sale, Sector, ServiceOrder } from '../types';
 
 export type SectorAdvanceResult = {
   /** Index in `route` the lot should move to. */
@@ -95,6 +95,58 @@ export function resolveCorrectSectorForProduct(
     skippedSectorNames.push(allSectors.find(s => s.id === canonicalOrder[i])?.name || canonicalOrder[i]);
   }
   return { sectorId: '', isFinished: true, skippedSectorNames };
+}
+
+/** Special value in `metadata.orderSectors[orderId/itemKey]` meaning this order/item has
+ * already received "baixa" from Expedição individually and left the production flow. */
+export const ORDER_FINALIZED = '__FINALIZADO__';
+
+/**
+ * Stable per-item key for `metadata.orderSectors` overrides. A single order/pedido can
+ * contribute multiple `sourceItems` to a lot (e.g. several colors of the same model) —
+ * keying overrides by this composite key lets each of those move independently, instead
+ * of an override on one item affecting every item that shares the same `orderId`.
+ */
+export function getSourceItemKey(si: { orderId: string; itemIdx?: number; productId?: string; variationId?: string }): string {
+  if (si.itemIdx !== undefined) return `${si.orderId}::${si.itemIdx}`;
+  return `${si.orderId}::${si.productId || ''}-${si.variationId || ''}`;
+}
+
+/**
+ * Resolves the sector an individual order/item within a lot is currently in: its
+ * per-item `metadata.orderSectors` override (when `si` is given), falling back to a
+ * legacy order-level override (`orderSectors[orderId]`, from before per-item overrides
+ * existed), and finally to the lot's anchor sector (`route[currentSectorIndex]`).
+ */
+export function getOrderEffectiveSector(
+  lot: Pick<ProductionLot, 'route' | 'currentSectorIndex' | 'metadata'>,
+  orderId: string,
+  si?: { itemIdx?: number; productId?: string; variationId?: string },
+): string {
+  const orderSectors = (lot.metadata as any)?.orderSectors || {};
+  if (si) {
+    const itemKey = getSourceItemKey({ orderId, ...si });
+    if (orderSectors[itemKey] !== undefined) return orderSectors[itemKey];
+  }
+  return orderSectors[orderId] || lot.route?.[lot.currentSectorIndex] || '';
+}
+
+/**
+ * Groups a lot's non-finalized `sourceItems` by their effective sector
+ * (`getOrderEffectiveSector`). Used to determine which Kanban columns a lot
+ * should appear in, and how its quantity/grade splits across them.
+ */
+export function getLotPendingSectorGroups(lot: ProductionLot): Map<string, any[]> {
+  const sourceItems: any[] = (lot as any).metadata?.sourceItems
+    || [{ orderId: lot.productionOrderId || lot.id, itemIdx: 0, qty: lot.quantity }];
+  const groups = new Map<string, any[]>();
+  sourceItems.forEach(si => {
+    const sec = getOrderEffectiveSector(lot, si.orderId, si);
+    if (sec === ORDER_FINALIZED) return;
+    if (!groups.has(sec)) groups.set(sec, []);
+    groups.get(sec)!.push(si);
+  });
+  return groups;
 }
 
 /**
@@ -277,4 +329,31 @@ export function computeOSAdvanceOutcome(
     routeDivergence,
     divergentOrders,
   };
+}
+
+/**
+ * Whether a sale's linked production has already progressed past creation —
+ * i.e. at least one of its Mapas (`ProductionLot`s) has moved through a
+ * sector ("baixa"), is past its starting sector, or has finished.
+ *
+ * Once this is true, the sale can no longer be deleted/estornada normally:
+ * production keeps running, so deleting it would orphan the Mapa. Instead it
+ * should only be cancelled (with estorno) — `applyExpedicaoStockUpdate`
+ * (PCPView) already redirects boxes produced for a `CANCELLED` sale to the
+ * general stock instead of reserving them for it.
+ *
+ * Returns `false` when no Mapa exists yet for the sale's Pedido de Produção —
+ * in that case the sale (and its still-untouched Pedido de Produção/Mapas, if
+ * any) can be deleted and reverted normally.
+ */
+export function saleProductionHasProgressed(
+  sale: Pick<Sale, 'productionOrderId'>,
+  productionOrders: ProductionOrder[],
+  lots: ProductionLot[],
+): boolean {
+  if (!sale.productionOrderId) return false;
+  const po = productionOrders.find(p => p.id === sale.productionOrderId);
+  if (!po || po.lotIds.length === 0) return false;
+  const poLots = lots.filter(l => po.lotIds.includes(l.id));
+  return poLots.some(l => (l.history && l.history.length > 0) || l.currentSectorIndex > 0 || !!l.finishedAt);
 }

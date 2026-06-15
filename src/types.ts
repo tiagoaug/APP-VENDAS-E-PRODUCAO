@@ -462,6 +462,7 @@ export enum ViewType {
   MODULES_CONFIG = 'MODULES_CONFIG',
   PRODUCTION_WEIGHING = 'PRODUCTION_WEIGHING',
   PRODUCTION_SOLE_PURCHASE = 'PRODUCTION_SOLE_PURCHASE',
+  PRODUCTION_SOLE_RECEIPT = 'PRODUCTION_SOLE_RECEIPT',
   PRODUCTION_SOLE_STOCK = 'PRODUCTION_SOLE_STOCK',
   PRODUCTION_PALMILHA_STOCK = 'PRODUCTION_PALMILHA_STOCK',
   PRODUCTION_PALMILHA_PURCHASE = 'PRODUCTION_PALMILHA_PURCHASE',
@@ -518,6 +519,7 @@ export type Sector = {
   defaultServiceValue?: number;
   defaultServiceProviderId?: string;
   defaultServiceProviderName?: string;
+  isProductionCycleEnd?: boolean; // marca este setor como "fim do ciclo de produção": habilita a finalização (baixa de estoque/reserva) por pedido, independente do nome do setor
 };
 
 export type ProductionScreenType = 'MENU' | 'SECTORS' | 'FLOW_TAGS' | 'UNIDADES' | 'FACAS' | 'INFESTO' | 'PRAZOS' | 'FICHAS' | 'EMBALAGENS' | 'INSUMOS' | 'MATRIZES' | 'PECAS';
@@ -690,6 +692,7 @@ export type ProductionOrderItem = {
   totalQuantity: number;
   fromStockQty: number;
   toProductionQty: number;
+  pkgId?: string; // id do ProductionConfigItem (PACKAGING) usado para montar a grade deste item, se houver
   notes?: string;
 };
 
@@ -764,6 +767,71 @@ export type ProductionLot = {
     sourceItems?: Array<{ orderId: string; variationId?: string; variationName?: string; productName?: string }>;
     [key: string]: unknown;
   };
+};
+
+export type StockLotStatus = 'EM_ESTOQUE' | 'RESERVADO' | 'ENTREGUE';
+
+// Registro individual de uma caixa/lote produzido — granularidade "por grade/caixa".
+// Preserva a composição exata de tamanhos (grade) e o destino (estoque livre vs.
+// reservado para uma venda específica).
+export type StockLot = {
+  id: string;
+  productId: string;
+  productName: string;
+  productReference?: string; // referência do produto (denormalizado, ex: "300")
+  variationId: string;
+  variationName: string; // nome da cor (denormalizado)
+
+  sizeBreakdown: Record<string, number>; // ex: {"37": 2, "38": 4, "39": 2}
+  totalPairs: number;
+  gradeLabel: string; // ex: "37x2-38x4-39x2"
+
+  status: StockLotStatus;
+
+  // Rastreabilidade da produção
+  lotId: string;
+  lotOrderNumber?: string;
+  productionOrderId?: string;
+  productionOrderNumber?: string; // nº do pedido de produção (denormalizado, ex: "P-0123")
+  itemIdx?: number;
+
+  // Vínculo com venda (RESERVADO / ENTREGUE)
+  saleId?: string;
+  saleOrderNumber?: string;
+  customerName?: string;
+
+  // Caixas/embalagem (produtos ATACADO, registrado em applyExpedicaoStockUpdate)
+  boxQty?: number; // quantidade de CAIXAS desta entrada (conversão pares -> caixas)
+  pkgId?: string; // id do ProductionConfigItem (PACKAGING) usado na conversão, se houver
+  pkgName?: string; // nome da embalagem (denormalizado); ausente => "Avulso"
+
+  createdAt: number;
+  deliveredAt?: number;
+  updatedAt?: number;
+};
+
+// Pré-visualização (e resumo, após executar) do que reverter um StockLot vai
+// desfazer: usado para exibir um popup de devolução com os valores de
+// estoque (produto e solados) antes/depois.
+export type StockLotRevertPreview = {
+  productName: string;
+  productReference?: string;
+  variationName: string;
+  gradeLabel: string;
+  totalPairs: number;
+  boxQty?: number;
+  pkgName?: string;
+  stockReverted: boolean; // true se houve baixa do estoque do produto (status EM_ESTOQUE)
+  productStockRows: { label: string; before: number; after: number }[];
+  sole?: {
+    moldName: string;
+    colorName: string;
+    rows: { size: string; before: number; after: number }[];
+  };
+  lotOrderNumber?: string;
+  orderNumber?: string;
+  orderReturnedToExpedicao: boolean;
+  lotReopened: boolean;
 };
 
 export interface ServiceOrder {

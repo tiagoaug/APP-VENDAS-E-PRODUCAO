@@ -1272,6 +1272,24 @@ export default function ProductionConfigView({
           </div>
 
           <button
+            type="button"
+            onClick={() => setEditingSector(prev => prev ? { ...prev, isProductionCycleEnd: !prev.isProductionCycleEnd } : null)}
+            className={`p-4 rounded-2xl border-2 flex items-center gap-4 transition-all text-left ${editingSector?.isProductionCycleEnd
+              ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20'
+              : (isDarkMode ? 'border-slate-800 bg-slate-900 text-slate-500' : 'border-slate-100 bg-white text-slate-400')
+              }`}
+          >
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${editingSector?.isProductionCycleEnd ? 'bg-indigo-600 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-slate-100 text-slate-400')}`}>
+              <CheckCircle2 size={18} />
+            </div>
+            <div className="flex flex-col gap-0.5">
+              <span className={`text-[11px] font-black uppercase tracking-tight ${editingSector?.isProductionCycleEnd ? 'text-indigo-900 dark:text-white' : ''}`}>Fim do Ciclo de Produção</span>
+              <span className="text-[10px] font-bold normal-case tracking-normal opacity-80">Ao chegar aqui, o pedido pode ser finalizado individualmente (baixa de estoque/reserva), sem depender do nome do setor.</span>
+            </div>
+            {editingSector?.isProductionCycleEnd && <div className="ml-auto w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0"><Check size={12} className="text-white" strokeWidth={4} /></div>}
+          </button>
+
+          <button
             type="submit"
             className="w-full py-5 rounded-[2rem] bg-indigo-600 text-white font-black uppercase tracking-[0.2em] text-xs shadow-xl shadow-indigo-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-3 mt-4"
           >
@@ -3041,6 +3059,27 @@ function GenericConfigList({
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Padrão *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: FEMININO 33-40" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Grade</label><div className={`flex gap-2 p-1.5 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FIXED' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(!editingItem?.metadata?.mode || editingItem?.metadata?.mode === 'FIXED') ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Fixa</button><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FREE' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingItem?.metadata?.mode === 'FREE' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Livre</button></div></div>
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Capacidade Total (Pares) *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir capacidade total" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.capacity || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2 ml-2">
+                  <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-500"><Factory size={16} /></div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Grade de Produção Padrão</label>
+                </div>
+                <select
+                  value={editingItem?.metadata?.productionGradeId || ''}
+                  onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, productionGradeId: e.target.value || undefined } } : null)}
+                  title="Grade de Produção Padrão"
+                  aria-label="Selecionar grade de produção padrão"
+                  className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
+                >
+                  <option value="">Nenhuma</option>
+                  {grids.filter(g => g.type === GridType.FORMA || !g.type).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+                <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-2">
+                  Escolha para qual Grade de Produção (Escalonamento) esta embalagem é o padrão de fabricação dos estoques. Produtos cadastrados com essa grade de produção usarão automaticamente esta embalagem para converter os pares produzidos em caixas no Estoque.
+                </p>
+              </div>
+
               {editingItem?.metadata?.mode !== 'FREE' && (
                 <div className="flex flex-col gap-6">
                   <div className="flex items-center justify-between mb-2 ml-2">

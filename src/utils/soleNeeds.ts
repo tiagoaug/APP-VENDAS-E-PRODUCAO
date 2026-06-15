@@ -1,4 +1,4 @@
-import { ProductionLot, Product, SoleStockEntry, PurchaseRequest, Purchase, SolePurchaseItem } from '../types';
+import { ProductionLot, Product, Variation, SoleStockEntry, PurchaseRequest, Purchase, SolePurchaseItem } from '../types';
 
 export type SoleReservation = {
   moldId: string;
@@ -7,6 +7,109 @@ export type SoleReservation = {
 };
 
 export type SoleReservationsMap = Record<string, SoleReservation>; // key = `${moldId}_${colorId || 'default'}`
+
+export type SoleConsumption = {
+  moldId: string;
+  colorId: string; // '' = sem soleColorId (bucket 'default')
+  gradeQuantities: Record<string, number>; // gradeKey -> pares consumidos
+};
+
+// Resolve, para um produto/variação + grade de pares (cabedal), quantos pares de
+// sola são consumidos por molde/cor/numeração (grade do soleStock). Usado tanto
+// para calcular reservas de mapas ativos (computeSoleMapaReservations) quanto para
+// dar baixa real no estoque de solados quando um pedido conclui na Expedição.
+export function resolveSoleConsumption(
+  product: Product,
+  variation: Variation,
+  pairs: Record<string, number>,
+  unitQty: number,
+  soleStock: SoleStockEntry[]
+): SoleConsumption | null {
+  const resolvedMoldId = String(product.moldId || '').trim();
+  if (!resolvedMoldId) return null;
+
+  const stockEntries = soleStock.filter(s => String(s.moldId).trim() === resolvedMoldId);
+  const hasStockEntries = stockEntries.length > 0;
+  const sizeToGrade: Record<string, string> = {};
+  stockEntries.forEach(entry => {
+    Object.keys(entry.stock).forEach(k => {
+      const key = String(k).trim();
+      if (key === 'pesagem' || key === 'total') return;
+      const parts = key.split('-').map(p => Math.round(parseFloat(p.trim())));
+      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        for (let i = parts[0]; i <= parts[1]; i++) {
+          sizeToGrade[String(i)] = key;
+        }
+        sizeToGrade[key] = key;
+      } else {
+        sizeToGrade[key] = key;
+      }
+    });
+  });
+  const getGradeForSize = (size: string): string | null => {
+    if (sizeToGrade[size]) return sizeToGrade[size];
+    if (hasStockEntries) return null;
+    return size;
+  };
+
+  const variationMapping: Record<string, string> | null =
+    (variation.soleMapping && Object.keys(variation.soleMapping).length > 0) ? variation.soleMapping : null;
+  const productMapping: Record<string, string> | null =
+    (product.soleMapping && Object.keys(product.soleMapping).length > 0) ? product.soleMapping : null;
+
+  const isMappingUsable = (m: Record<string, string> | null) =>
+    !!m && Object.values(m).some(v => getGradeForSize(String(v).trim()));
+
+  let sizeMapping: Record<string, string> | null = null;
+  if (isMappingUsable(variationMapping)) {
+    sizeMapping = variationMapping;
+  } else if (isMappingUsable(productMapping)) {
+    sizeMapping = productMapping;
+  }
+
+  const effectivePairs: Record<string, number> = { ...(pairs || {}) };
+  if (Object.keys(effectivePairs).length === 0 && unitQty > 0) {
+    let sizesToMap: string[];
+    if (sizeMapping) {
+      sizesToMap = Object.keys(sizeMapping);
+    } else {
+      const validSizes = new Set<string>();
+      stockEntries.forEach(e => {
+        Object.keys(e.stock).forEach(k => {
+          const key = String(k).trim();
+          if (key === 'pesagem' || key === 'total') return;
+          const parts = key.split('-').map(p => Math.round(parseFloat(p.trim())));
+          if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+            for (let n = parts[0]; n <= parts[1]; n++) validSizes.add(String(n));
+          } else if (parts.length === 1 && !isNaN(parts[0])) {
+            validSizes.add(key);
+          }
+        });
+      });
+      sizesToMap = Array.from(validSizes);
+    }
+
+    if (sizesToMap.length > 0) {
+      const qtyPerSize = Math.floor(unitQty / sizesToMap.length);
+      const remainder = unitQty % sizesToMap.length;
+      sizesToMap.forEach((size, idx) => {
+        effectivePairs[size] = qtyPerSize + (idx < remainder ? 1 : 0);
+      });
+    }
+  }
+
+  const colorId = String(variation.soleColorId || '').trim();
+  const gradeQuantities: Record<string, number> = {};
+  Object.entries(effectivePairs).forEach(([cabedalSize, qty]) => {
+    if (qty <= 0) return;
+    const soleSize = (sizeMapping?.[cabedalSize] ? String(sizeMapping[cabedalSize]).trim() : '') || cabedalSize;
+    const gradeKey = getGradeForSize(soleSize);
+    if (!gradeKey) return;
+    gradeQuantities[gradeKey] = (gradeQuantities[gradeKey] || 0) + qty;
+  });
+
+  return { moldId: resolvedMoldId, colorId, gradeQuantities };
+}
 
 // Subconjunto SOLE/LOTS de PCPView.buildPurchaseNeeds (src/views/PCPView.tsx, linhas ~252, ~409-756):
 // calcula apenas a quantidade de pares de sola já reservada pelos mapas de produção ativos,
@@ -17,35 +120,6 @@ export function computeSoleMapaReservations(
   soleStock: SoleStockEntry[]
 ): SoleReservationsMap {
   const activeLots = lots.filter(l => !l.finishedAt);
-
-  const sizeToGradeCache: Record<string, Record<string, string>> = {};
-  const moldHasStockEntries: Record<string, boolean> = {};
-  const getGradeForSize = (moldId: string, size: string): string | null => {
-    const mId = String(moldId).trim();
-    if (!sizeToGradeCache[mId]) {
-      sizeToGradeCache[mId] = {};
-      const entries = soleStock.filter(s => String(s.moldId).trim() === mId);
-      moldHasStockEntries[mId] = entries.length > 0;
-      entries.forEach(entry => {
-        Object.keys(entry.stock).forEach(k => {
-          const key = String(k).trim();
-          if (key === 'pesagem' || key === 'total') return;
-          const parts = key.split('-').map(p => Math.round(parseFloat(p.trim())));
-          if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-            for (let i = parts[0]; i <= parts[1]; i++) {
-              sizeToGradeCache[mId][String(i)] = key;
-            }
-            sizeToGradeCache[mId][key] = key;
-          } else {
-            sizeToGradeCache[mId][key] = key;
-          }
-        });
-      });
-    }
-    if (sizeToGradeCache[mId][size]) return sizeToGradeCache[mId][size];
-    if (moldHasStockEntries[mId]) return null;
-    return size;
-  };
 
   type ConsumptionUnit = {
     productId: string;
@@ -83,69 +157,16 @@ export function computeSoleMapaReservations(
   units.forEach(({ productId, variationId, pairs: groupPairs, quantity: unitQty }) => {
     const groupProduct = products.find(p => p.id === productId);
     const variation = groupProduct?.variations.find(v => v.id === variationId);
-    if (!variation) return;
+    if (!groupProduct || !variation) return;
 
-    const resolvedMoldId = String(groupProduct?.moldId || '').trim();
-    if (!resolvedMoldId) return;
+    const consumption = resolveSoleConsumption(groupProduct, variation, groupPairs, unitQty, soleStock);
+    if (!consumption) return;
 
-    const variationMapping: Record<string, string> | null =
-      (variation.soleMapping && Object.keys(variation.soleMapping).length > 0) ? variation.soleMapping : null;
-    const productMapping: Record<string, string> | null =
-      (groupProduct?.soleMapping && Object.keys(groupProduct.soleMapping).length > 0) ? groupProduct.soleMapping : null;
-
-    const isMappingUsable = (m: Record<string, string> | null) =>
-      !!m && Object.values(m).some(v => getGradeForSize(resolvedMoldId, String(v).trim()));
-
-    let sizeMapping: Record<string, string> | null = null;
-    if (isMappingUsable(variationMapping)) {
-      sizeMapping = variationMapping;
-    } else if (isMappingUsable(productMapping)) {
-      sizeMapping = productMapping;
-    }
-
-    const effectivePairs: Record<string, number> = { ...(groupPairs || {}) };
-    if (Object.keys(effectivePairs).length === 0 && unitQty > 0) {
-      let sizesToMap: string[];
-      if (sizeMapping) {
-        sizesToMap = Object.keys(sizeMapping);
-      } else {
-        const stockEntries = soleStock.filter(s => String(s.moldId).trim() === resolvedMoldId);
-        const validSizes = new Set<string>();
-        stockEntries.forEach(e => {
-          Object.keys(e.stock).forEach(k => {
-            const key = String(k).trim();
-            if (key === 'pesagem' || key === 'total') return;
-            const parts = key.split('-').map(p => Math.round(parseFloat(p.trim())));
-            if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-              for (let n = parts[0]; n <= parts[1]; n++) validSizes.add(String(n));
-            } else if (parts.length === 1 && !isNaN(parts[0])) {
-              validSizes.add(key);
-            }
-          });
-        });
-        sizesToMap = Array.from(validSizes);
-      }
-
-      if (sizesToMap.length > 0) {
-        const qtyPerSize = Math.floor(unitQty / sizesToMap.length);
-        const remainder = unitQty % sizesToMap.length;
-        sizesToMap.forEach((size, idx) => {
-          effectivePairs[size] = qtyPerSize + (idx < remainder ? 1 : 0);
-        });
-      }
-    }
-
-    const colorId = String(variation.soleColorId || '').trim();
-    const key = `${resolvedMoldId}_${colorId || 'default'}`;
+    const key = `${consumption.moldId}_${consumption.colorId || 'default'}`;
     if (!result[key]) {
-      result[key] = { moldId: resolvedMoldId, colorId, reservedByGrade: {} };
+      result[key] = { moldId: consumption.moldId, colorId: consumption.colorId, reservedByGrade: {} };
     }
-
-    Object.entries(effectivePairs).forEach(([cabedalSize, qty]) => {
-      if (qty <= 0) return;
-      const soleSize = (sizeMapping?.[cabedalSize] ? String(sizeMapping[cabedalSize]).trim() : '') || cabedalSize;
-      const gradeKey = getGradeForSize(resolvedMoldId, soleSize);
-      if (!gradeKey) return;
+    Object.entries(consumption.gradeQuantities).forEach(([gradeKey, qty]) => {
       result[key].reservedByGrade[gradeKey] = (result[key].reservedByGrade[gradeKey] || 0) + qty;
     });
   });
