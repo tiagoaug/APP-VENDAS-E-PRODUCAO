@@ -234,8 +234,8 @@ export default function SalesView({
       const stockKey = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || '');
       const stockAvailable = (variation?.stock?.[stockKey] as number) || 0;
       const maxFromLots = itemLots.reduce((s, l) => s + (l.boxQty || 1), 0);
-      const maxSeparable = hasReserved
-        ? Math.min(remaining, maxFromLots)
+      const maxSeparable = itemsPopupSale.productionOrderId
+        ? (hasReserved ? Math.min(remaining, maxFromLots) : 0)
         : Math.min(remaining, stockAvailable);
       init[idx] = maxSeparable;
     });
@@ -366,8 +366,21 @@ export default function SalesView({
   const getUnfulfilledStockStatus = (sale: Sale) => {
     const unfulfilled = sale.items.filter(it => it.fulfilled !== true);
     if (unfulfilled.length === 0) return null;
+    // Venda com produção atrelada = grade avulsa feita sob medida para o cliente.
+    // Só conta como "pronto" se já houver lote reservado (saleId) com a grade exata —
+    // nunca pelo estoque agregado, que pode não ter essa composição específica.
+    const saleLots = sale.productionOrderId
+      ? stockLots.filter(l => l.saleId === sale.id && l.status === 'RESERVADO')
+      : [];
     let ready = 0;
     unfulfilled.forEach(item => {
+      if (sale.productionOrderId) {
+        const availableFromLots = saleLots
+          .filter(l => l.productId === item.productId && l.variationId === item.variationId)
+          .reduce((s, l) => s + (l.boxQty || 1), 0);
+        if (availableFromLots >= item.quantity) ready++;
+        return;
+      }
       const variation = getVariationInfo(item.productId, item.variationId);
       const available = item.saleType === SaleType.WHOLESALE
         ? (variation?.stock['WHOLESALE'] || 0)
@@ -1463,9 +1476,11 @@ export default function SalesView({
           const fullVariation = fullProduct?.variations.find(v => v.id === item.variationId);
           const stockKey = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || '');
           const stockAvailable = (fullVariation?.stock?.[stockKey] as number) || 0;
+          // Venda com produção atrelada = grade avulsa feita sob medida para o cliente.
+          // Nunca cai no estoque agregado — só pode vir do lote reservado para esta venda.
           const maxFromLots = itemLots.reduce((sum, l) => sum + (l.boxQty || 1), 0);
-          const maxSeparable = hasReserved
-            ? Math.min(remaining, maxFromLots)
+          const maxSeparable = s.productionOrderId
+            ? (hasReserved ? Math.min(remaining, maxFromLots) : 0)
             : Math.min(remaining, stockAvailable);
 
           return { idx, item, product, variation, unit, separated, remaining, lineTotal, hasReserved, itemLots, stockAvailable, maxSeparable };
@@ -1526,6 +1541,16 @@ export default function SalesView({
                 </button>
               </div>
 
+              {/* Identificação: venda com produção atrelada (separação de cliente) */}
+              {s.productionOrderId && (
+                <div className={`flex items-center gap-2 px-6 py-2.5 shrink-0 border-b ${isDarkMode ? 'bg-orange-900/20 border-slate-800' : 'bg-orange-50 border-orange-100'}`}>
+                  <Factory size={14} className="text-orange-500 shrink-0" />
+                  <span className="text-[9px] font-black uppercase tracking-widest text-orange-600 dark:text-orange-400 leading-tight">
+                    Venda com Produção · Separação de Cliente
+                  </span>
+                </div>
+              )}
+
               {/* Items + separation controls */}
               <div className="overflow-y-auto flex-1 p-4 flex flex-col gap-3 custom-scrollbar">
                 {/* Banner de bloqueio quando entregue */}
@@ -1580,6 +1605,13 @@ export default function SalesView({
                           </span>
                           <span className="ml-auto text-[8px] font-black text-violet-500">
                             {row.itemLots.map(l => l.gradeLabel).join(', ')}
+                          </span>
+                        </div>
+                      ) : s.productionOrderId ? (
+                        <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg mb-2.5 ${isDarkMode ? 'bg-orange-900/20' : 'bg-orange-50'}`}>
+                          <Factory size={10} className="text-orange-500 shrink-0" />
+                          <span className="text-[8px] font-black uppercase tracking-widest text-orange-600 dark:text-orange-400">
+                            Aguardando lotes da produção
                           </span>
                         </div>
                       ) : (

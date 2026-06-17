@@ -1,8 +1,8 @@
-﻿import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Printer, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
   RotateCcw, Eye, EyeOff, Plus, Minus, Settings2, FileText, Tag,
-  Image as ImageIcon, Layers, Check, X, Lock,
+  Image as ImageIcon, Layers, Check, X, Lock, BookmarkPlus, Pencil, Trash2, BookOpen,
 } from 'lucide-react';
 import Modal from './Modal';
 import { Product, Variation, SaleType, LabelLayout, Grid, ProductionLot, ServiceOrder, Sector, SectorNote } from '../types';
@@ -48,6 +48,21 @@ const STORAGE_MODE    = 'lbl_print_mode';
 const STORAGE_SIZE    = 'lbl_print_size';
 const STORAGE_MANUAL  = 'lbl_print_manual';
 const STORAGE_LAYOUTS = 'lbl_print_layouts_v1';
+const STORAGE_PRESETS = 'lbl_custom_presets_v1';
+
+type CustomPreset = {
+  id: string;
+  name: string;
+  dims: [number, number];
+  layout: Layout;
+};
+
+function loadCustomPresets(): CustomPreset[] {
+  try { return JSON.parse(localStorage.getItem(STORAGE_PRESETS) || '[]'); } catch { return []; }
+}
+function saveCustomPresets(presets: CustomPreset[]) {
+  localStorage.setItem(STORAGE_PRESETS, JSON.stringify(presets));
+}
 
 // ─── Default layouts ──────────────────────────────────────────────────────────
 
@@ -166,6 +181,11 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   const [printing, setPrinting]     = useState(false);
   const [exportingJpg, setExportingJpg] = useState(false);
   const [qrPreview, setQrPreview] = useState('');
+
+  // Custom presets — padrões salvos pelo usuário
+  const [customPresets, setCustomPresets] = useState<CustomPreset[]>(loadCustomPresets);
+  const [savePresetModal, setSavePresetModal] = useState<{ open: boolean; name: string }>({ open: false, name: '' });
+  const [renamePreset, setRenamePreset] = useState<{ id: string; name: string } | null>(null);
 
   // Exportação JPG em lote (múltiplos pedidos selecionados)
   const [jpgSpacing, setJpgSpacing]   = useState(2);
@@ -323,6 +343,46 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
     setSelected(null);
   };
   const handleReset = () => { saveLayout(defaultLayout(paperDims)); setSelected(null); };
+
+  // ── Custom Preset Handlers ────────────────────────────────────────────────────
+  const handleSavePreset = (name: string) => {
+    const id = `preset_${Date.now()}`;
+    const newPreset: CustomPreset = { id, name: name.trim() || `Padrão ${customPresets.length + 1}`, dims: [W, H], layout };
+    const updated = [...customPresets, newPreset];
+    setCustomPresets(updated);
+    saveCustomPresets(updated);
+    setSavePresetModal({ open: false, name: '' });
+    toast.show(`Padrão "${newPreset.name}" salvo!`);
+  };
+
+  const handleDeletePreset = (id: string) => {
+    const updated = customPresets.filter(p => p.id !== id);
+    setCustomPresets(updated);
+    saveCustomPresets(updated);
+  };
+
+  const handleRenamePreset = (id: string, newName: string) => {
+    const updated = customPresets.map(p => p.id === id ? { ...p, name: newName.trim() || p.name } : p);
+    setCustomPresets(updated);
+    saveCustomPresets(updated);
+    setRenamePreset(null);
+    toast.show('Padrão renomeado!');
+  };
+
+  const handleLoadPreset = (preset: CustomPreset) => {
+    // Load preset: set size to manual with preset dims and apply saved layout
+    setManualW(preset.dims[0]);
+    setManualH(preset.dims[1]);
+    setSizeKey('manual');
+    localStorage.setItem(STORAGE_MANUAL, JSON.stringify(preset.dims));
+    // Persist the preset layout under the manual key
+    const key = `${preset.dims[0]}x${preset.dims[1]}`;
+    const next = { ...layouts, [key]: preset.layout, manual: preset.layout };
+    setLayouts(next);
+    localStorage.setItem(STORAGE_LAYOUTS, JSON.stringify(next));
+    setSelected(null);
+    toast.show(`Padrão "${preset.name}" carregado!`);
+  };
 
   const handlePrint = async () => {
     setPrinting(true);
@@ -847,10 +907,71 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between px-1">
             <label className="text-[10px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-100">Tamanho da Etiqueta</label>
-            <button type="button" onClick={handleReset} className="text-[9px] font-black text-indigo-500 flex items-center gap-1 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 px-2 py-1 rounded-lg">
-              <RotateCcw size={9}/> Resetar
-            </button>
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={() => setSavePresetModal({ open: true, name: '' })}
+                title="Salvar padrão atual com nome"
+                className={`text-[9px] font-black flex items-center gap-1 px-2 py-1 rounded-lg transition-all ${
+                  dk ? 'text-emerald-400 hover:bg-emerald-900/20' : 'text-emerald-600 hover:bg-emerald-50'
+                }`}>
+                <BookmarkPlus size={10}/> Salvar Padrão
+              </button>
+              <button type="button" onClick={handleReset} className="text-[9px] font-black text-indigo-500 flex items-center gap-1 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 px-2 py-1 rounded-lg">
+                <RotateCcw size={9}/> Resetar
+              </button>
+            </div>
           </div>
+
+          {/* Custom presets row */}
+          {customPresets.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <p className={`text-[9px] font-black uppercase tracking-widest px-1 flex items-center gap-1 ${dk ? 'text-slate-400' : 'text-slate-500'}`}>
+                <BookOpen size={9}/> Meus Padrões
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {customPresets.map(preset => (
+                  <div key={preset.id} className={`flex items-center gap-0 rounded-xl border-2 overflow-hidden transition-all ${
+                    sizeKey === 'manual' && manualW === preset.dims[0] && manualH === preset.dims[1]
+                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                      : dk ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-white'
+                  }`}>
+                    <button
+                      type="button"
+                      onClick={() => handleLoadPreset(preset)}
+                      className={`py-2 px-3 text-[9px] font-black transition-all ${
+                        sizeKey === 'manual' && manualW === preset.dims[0] && manualH === preset.dims[1]
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : dk ? 'text-slate-300' : 'text-slate-600'
+                      }`}
+                      title={`${preset.dims[0]}×${preset.dims[1]} mm`}
+                    >
+                      {preset.name}
+                      <span className={`ml-1 text-[8px] font-bold opacity-60`}>{preset.dims[0]}×{preset.dims[1]}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRenamePreset({ id: preset.id, name: preset.name })}
+                      title="Renomear padrão"
+                      className={`px-1.5 py-2 border-l transition-all ${
+                        dk ? 'border-slate-700 text-slate-500 hover:text-indigo-400 hover:bg-indigo-900/20' : 'border-slate-200 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50'
+                      }`}
+                    >
+                      <Pencil size={10}/>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeletePreset(preset.id)}
+                      title="Excluir padrão"
+                      className={`px-1.5 py-2 border-l transition-all ${
+                        dk ? 'border-slate-700 text-slate-500 hover:text-rose-400 hover:bg-rose-900/20' : 'border-slate-200 text-slate-400 hover:text-rose-500 hover:bg-rose-50'
+                      }`}
+                    >
+                      <Trash2 size={10}/>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {printMode === 'document' ? (
             <div className="flex gap-1.5 flex-wrap">
               {DOC_SIZES.map(opt => { const k=`${opt.dims[0]}x${opt.dims[1]}`; return (
@@ -1290,6 +1411,122 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           </button>
         </div>
       </div>
+
+      {/* ── Modal: Salvar Padrão ── */}
+      {savePresetModal.open && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" onClick={() => setSavePresetModal({ open: false, name: '' })}>
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+          <div
+            className={`relative w-full max-w-xs rounded-3xl shadow-2xl overflow-hidden ${dk ? 'bg-slate-900' : 'bg-white'}`}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className={`px-6 py-5 border-b ${dk ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center text-white shrink-0">
+                  <BookmarkPlus size={18} />
+                </div>
+                <div>
+                  <p className={`text-sm font-black leading-none ${dk ? 'text-white' : 'text-slate-900'}`}>Salvar Padrão</p>
+                  <p className="text-[10px] font-bold text-slate-400 mt-0.5">{W}×{H} mm • {sizeKey === 'manual' ? 'Manual' : sizeKey}</p>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-5 flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className={`text-[10px] font-black uppercase tracking-widest ${dk ? 'text-slate-400' : 'text-slate-500'}`}>Nome do Padrão</label>
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Ex: Etiqueta BOSS Preto, Grade Silk..."
+                  value={savePresetModal.name}
+                  onChange={e => setSavePresetModal(p => ({ ...p, name: e.target.value }))}
+                  onKeyDown={e => { if (e.key === 'Enter') handleSavePreset(savePresetModal.name); }}
+                  maxLength={40}
+                  className={`w-full px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all ${
+                    dk ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-600 focus:border-emerald-500' : 'bg-slate-50 border-slate-200 text-slate-800 placeholder:text-slate-400 focus:border-emerald-400'
+                  }`}
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSavePresetModal({ open: false, name: '' })}
+                  className={`flex-1 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest border-2 transition-all ${
+                    dk ? 'border-slate-700 text-slate-400 hover:border-slate-600' : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                  }`}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSavePreset(savePresetModal.name)}
+                  className="flex-1 py-3.5 rounded-2xl bg-emerald-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Check size={13}/> Salvar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal: Renomear Padrão ── */}
+      {renamePreset && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" onClick={() => setRenamePreset(null)}>
+          <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+          <div
+            className={`relative w-full max-w-xs rounded-3xl shadow-2xl overflow-hidden ${dk ? 'bg-slate-900' : 'bg-white'}`}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className={`px-6 py-5 border-b ${dk ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shrink-0">
+                  <Pencil size={18} />
+                </div>
+                <div>
+                  <p className={`text-sm font-black leading-none ${dk ? 'text-white' : 'text-slate-900'}`}>Renomear Padrão</p>
+                  <p className="text-[10px] font-bold text-slate-400 mt-0.5">Altere o nome deste padrão de etiqueta</p>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-5 flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className={`text-[10px] font-black uppercase tracking-widest ${dk ? 'text-slate-400' : 'text-slate-500'}`}>Novo Nome</label>
+                <input
+                  autoFocus
+                  type="text"
+                  placeholder="Nome do padrão..."
+                  value={renamePreset.name}
+                  onChange={e => setRenamePreset(p => p ? { ...p, name: e.target.value } : null)}
+                  onKeyDown={e => { if (e.key === 'Enter' && renamePreset) handleRenamePreset(renamePreset.id, renamePreset.name); }}
+                  maxLength={40}
+                  className={`w-full px-4 py-3 rounded-2xl border-2 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all ${
+                    dk ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-600 focus:border-indigo-500' : 'bg-slate-50 border-slate-200 text-slate-800 placeholder:text-slate-400 focus:border-indigo-400'
+                  }`}
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRenamePreset(null)}
+                  className={`flex-1 py-3.5 rounded-2xl font-black text-[10px] uppercase tracking-widest border-2 transition-all ${
+                    dk ? 'border-slate-700 text-slate-400 hover:border-slate-600' : 'border-slate-200 text-slate-500 hover:border-slate-300'
+                  }`}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => renamePreset && handleRenamePreset(renamePreset.id, renamePreset.name)}
+                  className="flex-1 py-3.5 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Check size={13}/> Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }

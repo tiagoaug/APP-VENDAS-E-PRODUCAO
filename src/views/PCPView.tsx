@@ -141,6 +141,12 @@ export default function PCPView({
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Set<string>>(new Set());
+  const toggleGroupCollapse = (gk: string) => setCollapsedGroupKeys(prev => {
+    const next = new Set(prev);
+    next.has(gk) ? next.delete(gk) : next.add(gk);
+    return next;
+  });
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'finished' | 'urgent'>('active');
   const [isFilterPopupOpen, setIsFilterPopupOpen] = useState(false);
   const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(false);
@@ -440,6 +446,9 @@ export default function PCPView({
       contributingOrders: string[];
       mappingWarning?: string;
       mappingDiagnostic?: string;
+      // Detalhamento por mapa/pedido: pares contribuídos e subtotal gerado para este material —
+      // permite auditar visualmente a soma sem precisar abrir cada mapa manualmente.
+      sourceBreakdown?: Record<string, { label: string; sourceType: 'LOT' | 'ORDER'; pairs: number; increment: number }>;
     }> = {};
 
     const sizeToGradeCache: Record<string, Record<string, string>> = {};
@@ -589,7 +598,8 @@ export default function PCPView({
             type: 'MATERIAL',
             colorId: colorKey || undefined,
             contributingLots: [],
-            contributingOrders: []
+            contributingOrders: [],
+            sourceBreakdown: {}
           };
         }
         // 'grade' basis: 1 caixa coletiva por grade, não por par
@@ -618,6 +628,15 @@ export default function PCPView({
           : lotMultiplier * cons.quantity;
         materialReqs[key].required += reqIncrement;
         registerContribution(materialReqs[key]);
+
+        // Acumula o detalhamento por mapa/pedido para permitir auditoria visual da conta.
+        const sbKey = `${sourceType}_${unitSourceLabel}`;
+        if (!materialReqs[key].sourceBreakdown) materialReqs[key].sourceBreakdown = {};
+        if (!materialReqs[key].sourceBreakdown![sbKey]) {
+          materialReqs[key].sourceBreakdown![sbKey] = { label: unitSourceLabel, sourceType, pairs: 0, increment: 0 };
+        }
+        materialReqs[key].sourceBreakdown![sbKey].pairs += unitQty;
+        materialReqs[key].sourceBreakdown![sbKey].increment += reqIncrement;
       });
 
       // 2. Soles — a Matriz de Solado (moldId) cadastrada no produto é a fonte canônica de QUAL molde
@@ -5495,9 +5514,20 @@ export default function PCPView({
                     })().map((item) => {
                       const isFirst  = item._idx === 0;
                       const unitNoun = item.type === 'MATERIAL' ? 'cor' : 'variação';
+                      const isGroupCollapsed = collapsedGroupKeys.has(item._gk);
                       const groupHeader = isFirst ? (
-                        <div key={`gh_${item._gk}`} className={`flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-2xl border ${isDarkMode ? 'bg-slate-800 border-slate-600' : 'bg-slate-200 border-slate-300'}`}>
+                        <button
+                          key={`gh_${item._gk}`}
+                          type="button"
+                          onClick={() => toggleGroupCollapse(item._gk)}
+                          title={isGroupCollapsed ? `Expandir grupo ${item._gBaseName}` : `Recolher grupo ${item._gBaseName}`}
+                          aria-label={isGroupCollapsed ? `Expandir grupo ${item._gBaseName}` : `Recolher grupo ${item._gBaseName}`}
+                          className={`w-full flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-2xl border transition-all ${isDarkMode ? 'bg-slate-800 border-slate-600 hover:bg-slate-700' : 'bg-slate-200 border-slate-300 hover:bg-slate-300'}`}
+                        >
                           <div className="flex items-center gap-2 flex-wrap min-w-0">
+                            <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-transform duration-300 ${isGroupCollapsed ? '' : 'rotate-180'} ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-300 text-slate-600'}`}>
+                              <ChevronDown size={14} strokeWidth={3} />
+                            </div>
                             <span className={`text-[10px] font-black uppercase tracking-widest break-words ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item._gBaseName}</span>
                             <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-600 text-slate-100' : 'bg-slate-700 text-white'}`}>{item._size} {item._size === 1 ? unitNoun : `${unitNoun}s`}</span>
                           </div>
@@ -5506,8 +5536,11 @@ export default function PCPView({
                               <p className="text-[8px] font-black uppercase text-slate-400">Total necessário</p>
                               <p className={`text-[11px] font-black ${item._gShortage > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{/m[²2]/i.test(item.unit || '') ? item._gTotal.toFixed(2) : Math.round(item._gTotal)} {item.unit}</p>
                             </div>
+                            {isGroupCollapsed && (
+                              <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-300 text-slate-500'}`}>Recolhido</span>
+                            )}
                           </div>
-                        </div>
+                        </button>
                       ) : null;
                       const fmtQty = (val: number) => /m[²2]/i.test(item.unit || '') ? Number(val).toFixed(2) : String(Math.round(val));
                       const isExpanded = expandedNeedIds.has(item.id);
@@ -5569,9 +5602,13 @@ export default function PCPView({
                           }, 0)
                         : Math.max(0, quickShortage - totalInTransitOuter);
 
+                      // If the group is collapsed, only render the header for the first item
+                      if (isGroupCollapsed && !isFirst) return null;
+
                       return (
                         <React.Fragment key={item.id}>
                           {groupHeader}
+                          {isGroupCollapsed ? null : <>
                         <div
                           className={`rounded-[2rem] border-2 transition-all overflow-hidden ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-white shadow-sm'} ${isExpanded ? 'border-indigo-300 dark:border-indigo-700' : ''}`}
                         >
@@ -5659,9 +5696,13 @@ export default function PCPView({
                                 </span>
                               )}
                             </div>
+                          </button>
 
-                            {/* ── Linha 4: quantidade + botão de ação ── */}
-                            <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+                          {/* ── Linha 4: quantidade + botão de ação (FORA do button para evitar button-in-button) ── */}
+                          <div
+                            className={`flex items-center justify-between px-5 pb-4 pt-1 border-t border-slate-100 dark:border-slate-800 cursor-pointer`}
+                            onClick={() => toggleNeedExpand(item.id)}
+                          >
                               <div>
                                 <p className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none mb-0.5">Falta</p>
                                 <p className="text-2xl font-black text-rose-600 dark:text-rose-400 leading-none">
@@ -5699,8 +5740,7 @@ export default function PCPView({
                                   Solicitar
                                 </button>
                               ) : null}
-                            </div>
-                          </button>
+                          </div>
 
                           {/* ── Conteúdo expansível ── */}
                           {isExpanded && (
@@ -5801,6 +5841,39 @@ export default function PCPView({
                                   <span className={`text-right font-black text-[14px] ${totFalta > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
                                     {totFalta > 0 ? `-${totFalta}` : '✓'}
                                   </span>
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Tabela de detalhamento por mapa/pedido — só para MATERIAL */}
+                          {item.type === 'MATERIAL' && item.sourceBreakdown && Object.keys(item.sourceBreakdown).length > 0 && (() => {
+                            const sources = Object.values(item.sourceBreakdown);
+                            const totalPairs = sources.reduce((s, src) => s + src.pairs, 0);
+                            return (
+                              <div className={`rounded-2xl overflow-hidden border ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                                <div className={`grid grid-cols-4 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                                  <span>Origem</span>
+                                  <span className="text-center">Pares</span>
+                                  <span className="text-center">Consumo/Par</span>
+                                  <span className="text-right">Subtotal</span>
+                                </div>
+                                {sources.map(src => {
+                                  const perUnit = src.pairs > 0 ? src.increment / src.pairs : 0;
+                                  return (
+                                    <div key={`${src.sourceType}_${src.label}`} className={`grid grid-cols-4 px-4 py-3 border-t text-[12px] font-black ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
+                                      <span className={isDarkMode ? 'text-white' : 'text-slate-800'}>{src.sourceType === 'LOT' ? 'Mapa' : 'Pedido'} {src.label}</span>
+                                      <span className="text-center text-slate-400">{fmtQty(src.pairs)}</span>
+                                      <span className="text-center text-slate-400">{perUnit.toLocaleString('pt-BR', { minimumFractionDigits: 4 })}</span>
+                                      <span className={isDarkMode ? 'text-right text-white' : 'text-right text-slate-800'}>{fmtQty(src.increment)} {item.unit}</span>
+                                    </div>
+                                  );
+                                })}
+                                <div className={`grid grid-cols-4 px-4 py-3 border-t-2 text-[12px] font-black ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
+                                  <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Total</span>
+                                  <span className="text-center text-slate-500">{fmtQty(totalPairs)}</span>
+                                  <span />
+                                  <span className={`text-right text-[14px] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{fmtQty(item.required)} {item.unit}</span>
                                 </div>
                               </div>
                             );
@@ -6022,6 +6095,7 @@ export default function PCPView({
                         </div>
                           )}
                         </div>
+                        </>}
                         </React.Fragment>
                       );
                     })}

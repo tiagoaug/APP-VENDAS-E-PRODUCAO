@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Sale, SaleType, Product, StockLot } from '../types';
-import { X, Minus, Plus, Boxes, Package, CheckCircle2 } from 'lucide-react';
+import { X, Minus, Plus, Boxes, Package, CheckCircle2, Factory } from 'lucide-react';
 
 interface Props {
   sale: Sale;
@@ -33,10 +33,14 @@ export default function SeparacaoCaixasModal({ sale, products, stockLots, isDark
       const stockKey = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || '');
       const stockAvailable = variation?.stock?.[stockKey] || 0;
 
-      // Max separable: from reserved lots qty OR from stock qty
+      // Max separable: from reserved lots qty OR from stock qty.
+      // Venda com produção atrelada = grade avulsa feita sob medida para o cliente
+      // (o produto padrão não atendia). Por isso, nunca cai no estoque agregado —
+      // só pode vir do lote reservado para esta venda (mesma composição exata).
+      // Vale para qualquer saleType (caixa fechada ou par avulso).
       const maxFromLots = itemLots.reduce((s, l) => s + (l.boxQty || 1), 0);
-      const maxSeparable = hasReserved
-        ? Math.min(remaining, maxFromLots)
+      const maxSeparable = sale.productionOrderId
+        ? (hasReserved ? Math.min(remaining, maxFromLots) : 0)
         : Math.min(remaining, stockAvailable);
 
       return { idx, item, product, variation, unit, separated, remaining, itemLots, hasReserved, stockAvailable, maxSeparable };
@@ -103,6 +107,16 @@ export default function SeparacaoCaixasModal({ sale, products, stockLots, isDark
           </button>
         </div>
 
+        {/* Identificação: venda com produção atrelada (separação de cliente) */}
+        {sale.productionOrderId && (
+          <div className={`flex items-center gap-2 px-6 py-2.5 shrink-0 border-b ${isDarkMode ? 'bg-orange-900/20 border-slate-800' : 'bg-orange-50 border-orange-100'}`}>
+            <Factory size={14} className="text-orange-500 shrink-0" />
+            <span className="text-[9px] font-black uppercase tracking-widest text-orange-600 dark:text-orange-400 leading-tight">
+              Venda com Produção · Separação de Cliente
+            </span>
+          </div>
+        )}
+
         {/* Items */}
         <div className="overflow-y-auto flex-1 p-4 flex flex-col gap-3 custom-scrollbar">
           {pendingRows.length === 0 && doneRows.length > 0 && (
@@ -140,7 +154,7 @@ export default function SeparacaoCaixasModal({ sale, products, stockLots, isDark
                 </div>
 
                 {/* Source badge */}
-                {row.hasReserved ? (
+                {row.hasReserved && sale.productionOrderId ? (
                   <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg mb-2.5 ${isDarkMode ? 'bg-violet-900/20' : 'bg-violet-50'}`}>
                     <Boxes size={10} className="text-violet-500 shrink-0" />
                     <span className="text-[8px] font-black uppercase tracking-widest text-violet-600 dark:text-violet-400">
@@ -148,6 +162,13 @@ export default function SeparacaoCaixasModal({ sale, products, stockLots, isDark
                     </span>
                     <span className="ml-auto text-[8px] font-black text-violet-500">
                       {row.itemLots.map(l => l.gradeLabel).join(', ')}
+                    </span>
+                  </div>
+                ) : sale.productionOrderId ? (
+                  <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg mb-2.5 ${isDarkMode ? 'bg-orange-900/20' : 'bg-orange-50'}`}>
+                    <Factory size={10} className="text-orange-500 shrink-0" />
+                    <span className="text-[8px] font-black uppercase tracking-widest text-orange-600 dark:text-orange-400">
+                      Aguardando lotes da produção
                     </span>
                   </div>
                 ) : (
