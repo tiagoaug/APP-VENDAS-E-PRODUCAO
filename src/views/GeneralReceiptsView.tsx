@@ -21,6 +21,8 @@ import {
   X,
   Pencil,
   History as HistoryIcon,
+  Footprints,
+  ChevronRight,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -34,6 +36,7 @@ interface GeneralReceiptsViewProps {
   onBack: () => void;
   isDarkMode: boolean;
   onEditPurchase?: (id: string) => void;
+  onOpenSoleReceipt?: () => void;
 }
 
 export default function GeneralReceiptsView({
@@ -44,6 +47,7 @@ export default function GeneralReceiptsView({
   onBack,
   isDarkMode,
   onEditPurchase,
+  onOpenSoleReceipt,
 }: GeneralReceiptsViewProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [supplierFilter, setSupplierFilter] = useState('ALL');
@@ -54,7 +58,14 @@ export default function GeneralReceiptsView({
 
   const [loadingPurchaseId, setLoadingPurchaseId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmRevertId, setConfirmRevertId] = useState<string | null>(null);
+  const [revertingId, setRevertingId] = useState<string | null>(null);
   const [showReceived, setShowReceived] = useState(false);
+  const [expandedReceiptId, setExpandedReceiptId] = useState<string | null>(null);
+  const [receiptSearch, setReceiptSearch] = useState('');
+  const [filterDate, setFilterDate] = useState<string>('');
+  const [confirmItemRevert, setConfirmItemRevert] = useState<{ purchaseId: string; itemIdx: number } | null>(null);
+  const [revertingItemKey, setRevertingItemKey] = useState<string | null>(null);
   const [successToast, setSuccessToast] = useState<{ message: string; details?: string[] } | null>(null);
   const [errorToast, setErrorToast] = useState<string | null>(null);
 
@@ -162,7 +173,13 @@ export default function GeneralReceiptsView({
     try {
       const itemsToReceive = purchase.generalItems || [];
       const stockSuccessList: string[] = [];
-      
+
+      // Mapa local para acumular estoque de materiais que aparecem mais de uma vez
+      // na mesma compra (ex: mesma etiqueta em cores diferentes). Sem isso, cada
+      // iteração leria o valor desatualizado do estado React e a última escrita
+      // sobrescreveria todas as anteriores com o total errado.
+      const localStock = new Map<string, { stock: number; stockByColor: Record<string, number> }>();
+
       // 2. Loop through general items to update production config stocks
       for (let i = 0; i < itemsToReceive.length; i++) {
         const item = itemsToReceive[i];
@@ -172,25 +189,29 @@ export default function GeneralReceiptsView({
         if (item.materialId && receivedQty > 0) {
           const material = productionConfigs.find((c) => c.id === item.materialId);
           if (material) {
-            const currentStock = material.metadata?.stock || 0;
-            const updatedStock = currentStock + receivedQty;
-            
-            let stockByColor = material.metadata?.stockByColor;
-            if (item.colorId) {
-              stockByColor = { ...(stockByColor || {}) };
-              stockByColor[item.colorId] = (stockByColor[item.colorId] || 0) + receivedQty;
+            // Inicializa o acumulador local na primeira vez que esse material aparece
+            if (!localStock.has(item.materialId)) {
+              localStock.set(item.materialId, {
+                stock: material.metadata?.stock || 0,
+                stockByColor: { ...(material.metadata?.stockByColor || {}) },
+              });
             }
-            
-            // Update stock in productionConfigs
+
+            const local = localStock.get(item.materialId)!;
+            local.stock += receivedQty;
+            if (item.colorId) {
+              local.stockByColor[item.colorId] = (local.stockByColor[item.colorId] || 0) + receivedQty;
+            }
+
             await firebaseService.saveDocument('productionConfigs', {
               ...material,
               metadata: {
                 ...material.metadata,
-                stock: updatedStock,
-                ...(stockByColor ? { stockByColor } : {})
+                stock: local.stock,
+                stockByColor: local.stockByColor,
               },
             });
-            
+
             stockSuccessList.push(`${material.name}: +${receivedQty} ${material.metadata?.unitId || 'UN'}`);
           }
         }
@@ -273,6 +294,120 @@ export default function GeneralReceiptsView({
     }
   };
 
+  // Reverter recebimento: desfaz a baixa feita na conferência — devolve o estoque
+  // (total e por cor) de cada item, devolve a solicitação vinculada e marca a compra
+  // como pendente novamente, voltando para a lista de "Aguardando Recebimento".
+  // Observação: como a conferência não guarda a quantidade recebida por item, a
+  // reversão usa a quantidade comprada (item.quantity) — coerente com "Receber Tudo".
+  const handleRevertReceipt = async (purchase: Purchase) => {
+    setRevertingId(purchase.id);
+    setErrorToast(null);
+    try {
+      const items = purchase.generalItems || [];
+      const revertedList: string[] = [];
+
+      // Mesmo acumulador local do confirm: evita que múltiplos itens do mesmo
+      // material leiam o estado React congelado e se sobrescrevam mutuamente.
+      const localStock = new Map<string, { stock: number; stockByColor: Record<string, number> }>();
+
+      for (const item of items) {
+        const qty = item.quantity || 0;
+        if (item.materialId && qty > 0) {
+          const material = productionConfigs.find(c => c.id === item.materialId);
+          if (material) {
+            if (!localStock.has(item.materialId)) {
+              localStock.set(item.materialId, {
+                stock: material.metadata?.stock || 0,
+                stockByColor: { ...(material.metadata?.stockByColor || {}) },
+              });
+            }
+
+            const local = localStock.get(item.materialId)!;
+            local.stock = Math.max(0, local.stock - qty);
+            if (item.colorId) {
+              local.stockByColor[item.colorId] = Math.max(0, (local.stockByColor[item.colorId] || 0) - qty);
+            }
+
+            await firebaseService.saveDocument('productionConfigs', {
+              ...material,
+              metadata: {
+                ...material.metadata,
+                stock: local.stock,
+                stockByColor: local.stockByColor,
+              },
+            });
+
+            revertedList.push(`${material.name}: -${qty} ${material.metadata?.unitId || 'UN'}`);
+          }
+        }
+      }
+
+      // Devolve a quantidade na solicitação de compra vinculada, se houver.
+      const totalQty = items.reduce((sum, it) => sum + (it.quantity || 0), 0);
+      if (purchase.requestId) {
+        const req = purchaseRequests.find(r => r.id === purchase.requestId);
+        if (req) {
+          const newReceivedQty = Math.max(0, (req.receivedQty || 0) - totalQty);
+          await firebaseService.updateDocument('purchaseRequests', req.id, {
+            receivedQty: newReceivedQty,
+            status: newReceivedQty >= req.requiredQty ? 'RECEIVED' : (newReceivedQty > 0 ? 'ORDERED' : 'IN_PROGRESS'),
+            updatedAt: Date.now(),
+          });
+        }
+      }
+
+      // Marca a compra como pendente de recebimento de novo.
+      await firebaseService.saveDocument('purchases', { ...purchase, registerAsReceived: false });
+
+      setConfirmRevertId(null);
+      setSuccessToast({
+        message: 'Recebimento revertido com sucesso!',
+        details: revertedList.length ? revertedList : undefined,
+      });
+      setTimeout(() => setSuccessToast(null), 7000);
+    } catch (err) {
+      console.error('Error during receipt revert:', err);
+      setErrorToast('Ocorreu um erro ao reverter o recebimento. Tente novamente.');
+    } finally {
+      setRevertingId(null);
+    }
+  };
+
+  // Reversão parcial: desfaz apenas um item específico da compra, sem alterar o status da compra
+  const handleRevertItem = async (purchase: Purchase, itemIdx: number) => {
+    const itemKey = `${purchase.id}-${itemIdx}`;
+    setRevertingItemKey(itemKey);
+    setErrorToast(null);
+    try {
+      const item = (purchase.generalItems || [])[itemIdx];
+      if (!item || !item.materialId) return;
+      const qty = item.quantity || 0;
+      if (qty <= 0) return;
+
+      const material = productionConfigs.find(c => c.id === item.materialId);
+      if (!material) return;
+
+      const updatedStock = Math.max(0, (material.metadata?.stock || 0) - qty);
+      const stockByColor = item.colorId
+        ? { ...(material.metadata?.stockByColor || {}), [item.colorId]: Math.max(0, ((material.metadata?.stockByColor || {})[item.colorId] || 0) - qty) }
+        : material.metadata?.stockByColor;
+
+      await firebaseService.saveDocument('productionConfigs', {
+        ...material,
+        metadata: { ...material.metadata, stock: updatedStock, ...(stockByColor ? { stockByColor } : {}) },
+      });
+
+      setConfirmItemRevert(null);
+      setSuccessToast({ message: `Estoque de "${material.name}" revertido: -${qty} ${material.metadata?.unitId || 'UN'}` });
+      setTimeout(() => setSuccessToast(null), 5000);
+    } catch (err) {
+      console.error('Error reverting item:', err);
+      setErrorToast('Erro ao reverter item. Tente novamente.');
+    } finally {
+      setRevertingItemKey(null);
+    }
+  };
+
   return (
     <div className={`flex flex-col min-h-screen pb-20 ${isDarkMode ? 'bg-[#0f172a] text-slate-100' : 'bg-slate-50 text-slate-800'}`}>
 
@@ -280,6 +415,7 @@ export default function GeneralReceiptsView({
       <header className="p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800/40 backdrop-blur-md sticky top-0 z-30">
         <div className="flex items-center gap-4">
           <button
+            type="button"
             onClick={onBack}
             className="w-12 h-12 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800/60 flex items-center justify-center text-slate-400 hover:text-indigo-500 hover:border-indigo-500/20 active:scale-95 transition-all shadow-sm"
             aria-label="Voltar ao menu de estoques"
@@ -316,6 +452,7 @@ export default function GeneralReceiptsView({
               )}
             </div>
             <button
+              type="button"
               onClick={() => setSuccessToast(null)}
               className="text-[10px] font-black uppercase tracking-widest hover:text-emerald-500"
             >
@@ -332,6 +469,7 @@ export default function GeneralReceiptsView({
               <p className="text-[10px] font-bold uppercase tracking-wider mt-1 opacity-90">{errorToast}</p>
             </div>
             <button
+              type="button"
               onClick={() => setErrorToast(null)}
               className="text-[10px] font-black uppercase tracking-widest hover:text-rose-500"
             >
@@ -394,77 +532,261 @@ export default function GeneralReceiptsView({
           </div>
         </section>
 
-        {/* HISTÓRICO POPUP */}
+        {/* HISTÓRICO POPUP — refeito do zero */}
         {showReceived && (
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowReceived(false)} />
-            <div className={`relative w-full max-w-lg max-h-[80vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
-              {/* Header */}
-              <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 dark:border-slate-800 shrink-0">
-                <div>
-                  <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-white">Histórico de Recebimentos</h3>
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">Clique em Reverter para desfazer uma baixa</p>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
+            <button
+              type="button"
+              aria-label="Fechar histórico"
+              className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+              onClick={() => { setShowReceived(false); setConfirmRevertId(null); setConfirmItemRevert(null); setExpandedReceiptId(null); }}
+            />
+            <div className={`relative w-full max-w-lg h-[88vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-200'}`}>
+
+              {/* Cabeçalho do popup */}
+              <div className={`shrink-0 px-4 pt-4 pb-3 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className={`w-8 h-8 shrink-0 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
+                      <HistoryIcon size={15} />
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className={`text-[13px] font-black uppercase tracking-wide leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                        Histórico de Recebimentos
+                      </h2>
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                        {receivedCount} recebimento(s)
+                      </p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => { setShowReceived(false); setExpandedReceiptId(null); }}
+                    className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                    aria-label="Fechar">
+                    <X size={16} />
+                  </button>
                 </div>
-                <button type="button" onClick={() => setShowReceived(false)} className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-all" aria-label="Fechar histórico">
-                  <X size={18} />
-                </button>
+
+                {/* Filtros: busca + data */}
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                    <input type="text" placeholder="Fornecedor ou nº de identificação..."
+                      value={receiptSearch} onChange={e => setReceiptSearch(e.target.value)}
+                      className={`w-full pl-9 pr-8 py-2 rounded-lg text-[11px] font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-400/30 transition-all ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border border-slate-200 text-slate-800 placeholder:text-slate-400'}`}
+                    />
+                    {receiptSearch && (
+                      <button type="button" onClick={() => setReceiptSearch('')} title="Limpar" aria-label="Limpar busca"
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input type="date" title="Filtrar por data" aria-label="Filtrar por data"
+                      value={filterDate} onChange={e => setFilterDate(e.target.value)}
+                      className={`w-[140px] px-2.5 py-2 rounded-lg text-[11px] font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-400/30 transition-all ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-200 text-slate-700'}`}
+                    />
+                  </div>
+                </div>
               </div>
-              {/* List */}
-              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-                {purchases
-                  .filter(p => p.type === PurchaseType.GENERAL && p.registerAsReceived === true)
-                  .sort((a, b) => b.date - a.date)
-                  .map(p => {
-                    const sup = suppliers.find(s => s.id === p.supplierId);
-                    const generalItems = p.generalItems || [];
-                    const formattedDate = p.date ? format(new Date(p.date), 'dd/MM/yyyy', { locale: ptBR }) : '---';
+
+              {/* Lista rolável */}
+              <div className={`flex-1 overflow-y-auto p-3 flex flex-col gap-2.5 ${isDarkMode ? 'bg-slate-950/30' : 'bg-slate-50'}`}>
+                {(() => {
+                  const term = receiptSearch.trim().toLowerCase();
+                  const allReceived = purchases.filter(p => p.type === PurchaseType.GENERAL && p.registerAsReceived === true);
+                  const list = allReceived
+                    .filter(p => {
+                      if (term) {
+                        const sup = suppliers.find(s => s.id === p.supplierId);
+                        const hay = `${sup?.name || ''} ${p.batchNumber || ''} ${p.id || ''}`.toLowerCase();
+                        if (!hay.includes(term)) return false;
+                      }
+                      if (filterDate && p.date && format(new Date(p.date), 'yyyy-MM-dd') !== filterDate) return false;
+                      return true;
+                    })
+                    .sort((a, b) => b.date - a.date);
+
+                  if (allReceived.length === 0) {
                     return (
-                      <div key={p.id} className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                        {/* Header */}
-                        <div className="px-4 pt-3 pb-2 flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-black uppercase tracking-wide text-slate-800 dark:text-white truncate">{sup?.name || 'Fornecedor'}</p>
-                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{formattedDate} · {p.batchNumber} · R$ {p.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
-                              <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-md uppercase tracking-widest">Total</span>
-                            </div>
+                      <div className="flex flex-col items-center justify-center py-16 gap-3">
+                        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-slate-800' : 'bg-white border border-slate-200'}`}>
+                          <HistoryIcon size={22} className="text-slate-400" />
+                        </div>
+                        <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Nenhum recebimento registrado</p>
+                      </div>
+                    );
+                  }
+
+                  if (list.length === 0) {
+                    return (
+                      <div className="flex flex-col items-center justify-center py-12 gap-2">
+                        <Search size={20} className="text-slate-300 dark:text-slate-600" />
+                        <p className="text-[11px] font-black uppercase tracking-widest text-slate-400 text-center px-6">
+                          {filterDate ? `Nada em ${format(new Date(filterDate + 'T12:00:00'), 'dd/MM/yyyy', { locale: ptBR })}` : `Sem resultados para "${receiptSearch}"`}
+                        </p>
+                        <button type="button" onClick={() => { setReceiptSearch(''); setFilterDate(''); }}
+                          className="mt-1 text-[10px] font-black uppercase tracking-widest text-indigo-500 hover:underline">
+                          Limpar filtros
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  return list.map(p => {
+                    const sup = suppliers.find(s => s.id === p.supplierId);
+                    const items = p.generalItems || [];
+                    const dateLabel = p.date ? format(new Date(p.date), 'dd/MM/yyyy', { locale: ptBR }) : '---';
+                    const isOpen = expandedReceiptId === p.id;
+                    const isConfirmingAll = confirmRevertId === p.id;
+                    const isRevertingAll = revertingId === p.id;
+
+                    return (
+                      <div key={p.id} className={`shrink-0 rounded-xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+
+                        {/* Cabeçalho do card: fornecedor + lote + valor */}
+                        <div className="px-3.5 py-2.5">
+                          <div className="flex items-start justify-between gap-2">
+                            <p className={`text-[12px] font-black uppercase leading-tight min-w-0 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                              {sup?.name || 'Fornecedor não informado'}
+                            </p>
+                            {p.batchNumber && (
+                              <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                                {p.batchNumber}
+                              </span>
+                            )}
                           </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
+                          <div className="flex items-center justify-between mt-1">
+                            <span className="text-[10px] font-semibold text-slate-400">
+                              {dateLabel} · {items.length} {items.length === 1 ? 'item' : 'itens'}
+                            </span>
+                            <span className={`text-[13px] font-black ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>
+                              R$ {(p.total || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Barra de ações — cores suaves */}
+                        <div className={`px-2.5 py-2 flex items-center justify-between gap-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                          <button type="button" onClick={() => setExpandedReceiptId(isOpen ? null : p.id)}
+                            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-all active:scale-95 ${isOpen ? (isDarkMode ? 'bg-indigo-500/15 text-indigo-300' : 'bg-indigo-50 text-indigo-600') : (isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600')}`}>
+                            <ChevronDown size={12} strokeWidth={3} className={`transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+                            {isOpen ? 'Fechar' : 'Ver itens'}
+                          </button>
+
+                          <div className="flex items-center gap-1.5">
                             {onEditPurchase && (
-                              <button type="button" onClick={() => { setShowReceived(false); onEditPurchase(p.id); }} className="p-2 rounded-xl text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 active:scale-95 transition-all" title="Editar" aria-label="Editar compra">
-                                <Pencil size={16} />
+                              <button type="button" onClick={() => { setShowReceived(false); onEditPurchase(p.id); }}
+                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+                                <Pencil size={11} /> Editar
+                              </button>
+                            )}
+                            {isConfirmingAll ? (
+                              <div className="flex items-center gap-1.5">
+                                <button type="button" onClick={() => setConfirmRevertId(null)} disabled={isRevertingAll}
+                                  className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+                                  Não
+                                </button>
+                                <button type="button" onClick={() => handleRevertReceipt(p)} disabled={isRevertingAll}
+                                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-all active:scale-95 ${isDarkMode ? 'bg-rose-500/15 text-rose-300' : 'bg-rose-50 text-rose-600'}`}>
+                                  {isRevertingAll ? <RefreshCw size={11} className="animate-spin" /> : <><RefreshCw size={11} /> Confirmar</>}
+                                </button>
+                              </div>
+                            ) : (
+                              <button type="button" onClick={() => { setConfirmRevertId(p.id); setConfirmItemRevert(null); }}
+                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide transition-all active:scale-95 ${isDarkMode ? 'bg-rose-500/10 text-rose-400' : 'bg-rose-50 text-rose-500'}`}>
+                                <RefreshCw size={11} /> Reverter tudo
                               </button>
                             )}
                           </div>
                         </div>
 
-                        {/* General items */}
-                        {generalItems.length > 0 && (
-                          <div className={`mx-3 mb-3 p-3 rounded-xl ${isDarkMode ? 'bg-slate-900/50' : 'bg-white border border-slate-100'}`}>
-                            {generalItems.map((item, idx) => (
-                              <div key={idx} className={`flex items-center justify-between ${idx > 0 ? 'mt-1.5 pt-1.5 border-t border-slate-100 dark:border-slate-800' : ''}`}>
-                                <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 truncate flex-1">{item.description || item.materialId}</span>
-                                <span className="text-[10px] font-black text-slate-500 dark:text-slate-400 ml-2">{item.quantity} {item.unit || 'UN'}</span>
-                              </div>
-                            ))}
+                        {/* Acordeão: itens com reversão individual */}
+                        {isOpen && (
+                          <div className={`border-t ${isDarkMode ? 'border-slate-800 bg-slate-950/40' : 'border-slate-100 bg-slate-50/60'}`}>
+                            {items.length === 0 && (
+                              <p className="px-3.5 py-3 text-[10px] font-semibold text-slate-400 italic">Nenhum item vinculado</p>
+                            )}
+                            {items.map((item, idx) => {
+                              const mat = productionConfigs.find(c => c.id === item.materialId);
+                              const matName = mat?.name || item.description || '—';
+                              const itemKey = `${p.id}-${idx}`;
+                              const isConfirmingItem = confirmItemRevert?.purchaseId === p.id && confirmItemRevert?.itemIdx === idx;
+                              const isRevertingItem = revertingItemKey === itemKey;
+
+                              return (
+                                <div key={idx} className={`px-3.5 py-2 flex items-center justify-between gap-3 ${idx > 0 ? (isDarkMode ? 'border-t border-slate-800/70' : 'border-t border-slate-200/70') : ''}`}>
+                                  <div className="flex-1 min-w-0">
+                                    <p className={`text-[11px] font-bold uppercase leading-snug ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                                      {matName}
+                                    </p>
+                                    <p className="text-[10px] font-medium text-slate-400 mt-0.5">
+                                      {item.quantity ?? '—'} {item.unit || 'UN'}
+                                      {(item as any).colorName ? ` · ${(item as any).colorName}` : ''}
+                                    </p>
+                                  </div>
+                                  {item.materialId && (
+                                    isConfirmingItem ? (
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        <button type="button" onClick={() => setConfirmItemRevert(null)} disabled={isRevertingItem}
+                                          className={`px-2 py-1.5 rounded-lg text-[9px] font-bold uppercase ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+                                          Não
+                                        </button>
+                                        <button type="button" onClick={() => handleRevertItem(p, idx)} disabled={isRevertingItem}
+                                          className={`flex items-center gap-1 px-2 py-1.5 rounded-lg text-[9px] font-bold uppercase transition-all active:scale-95 ${isDarkMode ? 'bg-amber-500/15 text-amber-300' : 'bg-amber-50 text-amber-600'}`}>
+                                          {isRevertingItem ? <RefreshCw size={10} className="animate-spin" /> : <><RefreshCw size={10} /> Sim</>}
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button type="button" onClick={() => { setConfirmItemRevert({ purchaseId: p.id, itemIdx: idx }); setConfirmRevertId(null); }}
+                                        className={`shrink-0 flex items-center gap-1 px-2 py-1.5 rounded-lg text-[9px] font-bold uppercase transition-all active:scale-95 ${isDarkMode ? 'bg-amber-500/10 text-amber-400' : 'bg-amber-50 text-amber-600'}`}>
+                                        <RefreshCw size={10} /> Reverter
+                                      </button>
+                                    )
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
+
                       </div>
                     );
-                  })}
-                {purchases.filter(p => p.type === PurchaseType.GENERAL && p.registerAsReceived === true).length === 0 && (
-                  <p className="text-center text-xs text-slate-400 py-10">Nenhum recebimento registrado ainda.</p>
-                )}
+                  });
+                })()}
               </div>
+
             </div>
           </div>
+        )}
+
+        {/* Card de atalho para a Conferência de Solados (tela própria já existente) */}
+        {onOpenSoleReceipt && (
+          <button
+            type="button"
+            onClick={onOpenSoleReceipt}
+            className={`w-full flex items-center justify-between gap-4 p-5 rounded-[2rem] border shadow-sm transition-all active:scale-[0.99] ${
+              isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-cyan-700/60' : 'bg-white border-slate-100 hover:border-cyan-300'
+            }`}
+          >
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 bg-cyan-50 dark:bg-cyan-950/30 text-cyan-600 dark:text-cyan-400 border border-cyan-100/50 dark:border-cyan-900/30">
+                <Footprints size={22} strokeWidth={2} />
+              </div>
+              <div className="text-left">
+                <p className="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white">Conferência de Solados</p>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Conferir e dar entrada de solados comprados</p>
+              </div>
+            </div>
+            <ChevronRight size={22} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+          </button>
         )}
 
         {/* Purchases List */}
         <section className="flex flex-col gap-4">
           <div className="flex items-center justify-between px-2">
             <h3 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400 leading-none">
-              Compras Aguardando Recebimento ({pendingPurchases.length})
+              Materiais Aguardando Recebimento ({pendingPurchases.length})
             </h3>
           </div>
 

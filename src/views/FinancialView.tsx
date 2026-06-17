@@ -497,13 +497,13 @@ export default function FinancialView({
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-orange-500 text-white text-[10px] font-black uppercase tracking-wide truncate max-w-full">
                             <User size={11} className="shrink-0" /> {supplier?.name || 'Fornecedor Desconhecido'}
                           </span>
-                          <span className="font-black text-sm tracking-tight text-rose-500 shrink-0">
+                          <span className="font-black text-base tracking-tight text-rose-500 shrink-0">
                             R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </div>
                         <div className="flex items-center gap-1.5 flex-wrap mt-1">
                            <Package size={12} className={isDarkMode ? 'text-slate-400' : 'text-slate-400'} />
-                           <h3 className={`font-black text-sm tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                           <h3 className={`font-black text-base uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                               {purchase.type === PurchaseType.REPLENISHMENT ? 'Abastecimento de Estoque' : 'Compra Geral'}
                            </h3>
                            {totalPaid > 0 && <span className="text-[9px] font-black px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-500">Parcial</span>}
@@ -638,14 +638,14 @@ export default function FinancialView({
               >
                 {/* Linha do topo: título sempre visível por completo */}
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className={`font-black text-sm tracking-tight leading-snug flex-1 min-w-0 ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                  <h3 className={`font-black text-base uppercase tracking-tight leading-snug flex-1 min-w-0 ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                     {displayTitle}
                   </h3>
                   {relatedSale && (
-                     <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 text-[7px] font-black tracking-widest shrink-0">Venda</span>
+                     <span className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 text-[9px] font-black tracking-widest shrink-0">Venda</span>
                   )}
                   {relatedPurchase && (
-                     <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 text-[7px] font-black tracking-widest shrink-0">Compra</span>
+                     <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 text-[9px] font-black tracking-widest shrink-0">Compra</span>
                   )}
                 </div>
 
@@ -663,11 +663,11 @@ export default function FinancialView({
                             <div className="mt-1.5 space-y-1">
                               <div className="flex items-center gap-1.5">
                                 <User size={10} className="text-indigo-400" />
-                                <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 tracking-widest">
+                                <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">
                                   {sale.customerName || people.find(p => p.id === sale.customerId)?.name || 'Consumidor'}
                                 </span>
                               </div>
-                              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[8px] font-bold text-slate-400 tracking-widest">
+                              <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px] font-bold text-slate-400 tracking-widest">
                                 <span className="flex items-center gap-1">
                                   <Clipboard size={10} />
                                   Pedido #{sale.orderNumber}
@@ -698,7 +698,7 @@ export default function FinancialView({
                           return (
                             <div className="mt-1.5 space-y-1">
                               <div className="flex items-center gap-1.5">
-                                <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 tracking-widest">
+                                <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">
                                   {supplier?.name || 'Fornecedor'}
                                 </span>
                               </div>
@@ -747,10 +747,10 @@ export default function FinancialView({
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className={`font-black text-sm tracking-tight ${transaction.type === TransactionType.INCOME ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    <p className={`font-black text-base tracking-tight ${transaction.type === TransactionType.INCOME ? 'text-emerald-500' : 'text-rose-500'}`}>
                       {transaction.type === TransactionType.INCOME ? '+' : '-'} R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
-                    <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[8px] font-black tracking-widest mt-1 ${isPending ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500'}`}>
+                    <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black tracking-widest mt-1 ${isPending ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500'}`}>
                       {isPending ? <Clock size={10} /> : <CheckCircle2 size={10} />}
                       {isPending ? 'Pendente' : 'Confirmado'}
                     </div>
@@ -759,11 +759,11 @@ export default function FinancialView({
 
                 <div className="flex items-center justify-between pt-4 border-t border-slate-50 dark:border-slate-800">
                   <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-[9px] text-indigo-400 dark:text-indigo-500 font-bold tracking-widest flex items-center gap-1">
+                    <span className="text-[10px] text-indigo-400 dark:text-indigo-500 font-black uppercase tracking-widest flex items-center gap-1">
                       <Wallet size={10} />
                       {account?.name || 'Conta'}
                     </span>
-                    <span className="text-[9px] text-slate-400 font-bold tracking-widest flex items-center gap-1">
+                    <span className="text-[10px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1">
                       <Calendar size={10} />
                       {format(transaction.date, "dd MMM yyyy", { locale: ptBR })}
                     </span>

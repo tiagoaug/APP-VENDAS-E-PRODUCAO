@@ -22,7 +22,9 @@ import {
   LogOut,
   Accessibility,
   Type,
-  BookOpen
+  BookOpen,
+  Wrench,
+  CheckCircle2
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, AppModulesConfig } from '../types';
 
@@ -39,29 +41,33 @@ interface SettingsViewProps {
   fontSize: FontSize;
   setFontSize: (size: FontSize) => void;
   onLogout: () => void;
+  onFixPkgAllocations: () => Promise<{ fixed: number; total: number }>;
 }
 
-export default function SettingsView({ 
-  onNavigate, 
-  onNavigateProduction, 
-  isDarkMode, 
+export default function SettingsView({
+  onNavigate,
+  onNavigateProduction,
+  isDarkMode,
   appTheme,
   setAppTheme,
-  toggleDarkMode, 
+  toggleDarkMode,
   modulesConfig,
   fontSize,
   setFontSize,
-  onLogout
+  onLogout,
+  onFixPkgAllocations
 }: SettingsViewProps) {
   const [showA11y, setShowA11y] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [fixingAlloc, setFixingAlloc] = useState(false);
+  const [fixAllocResult, setFixAllocResult] = useState<{ fixed: number; total: number } | null>(null);
 
   const menuGroups = [
     {
       title: "Configurações de Negócio",
       items: [
         { id: ViewType.PRODUCTION_ENGINEERING, label: "Modelos / Ficha Técnica", icon: <Package size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'sales' },
-        { id: ViewType.STOCK, label: "Estoque de Produtos", icon: <Boxes size={22} />, color: "text-amber-700 dark:text-amber-500", bg: "bg-amber-50 dark:bg-amber-900/20", module: 'sales' },
+        { id: ViewType.STOCK, label: "Expedição e Estoque", icon: <Boxes size={22} />, color: "text-amber-700 dark:text-amber-500", bg: "bg-amber-50 dark:bg-amber-900/20", module: 'sales' },
         { id: ViewType.COLORS, label: "Paleta de Cores", icon: <Palette size={22} />, color: "text-pink-600 dark:text-pink-400", bg: "bg-pink-50 dark:bg-pink-900/30", module: 'any' },
         { id: ViewType.CATEGORIES, label: "Categorias e Grupos", icon: <Tags size={22} />, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/30", module: 'any' },
         { id: ViewType.PEOPLE, label: "Clientes e Fornecedores", icon: <Users size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'sales' },
@@ -245,6 +251,40 @@ export default function SettingsView({
                 </div>
               </div>
             )}
+
+            {/* ── CORRIGIR ALOCAÇÕES DE EMBALAGEM ── */}
+            <button
+              type="button"
+              title="Corrigir alocações de embalagem inconsistentes"
+              aria-label="Corrigir inconsistências nas alocações de embalagem"
+              disabled={fixingAlloc}
+              onClick={async () => {
+                setFixingAlloc(true);
+                setFixAllocResult(null);
+                try {
+                  const result = await onFixPkgAllocations();
+                  setFixAllocResult(result);
+                } finally {
+                  setFixingAlloc(false);
+                }
+              }}
+              className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800 hover:bg-slate-800/50' : 'border-b border-slate-50 hover:bg-slate-50'} disabled:opacity-60`}
+            >
+              <div className="flex items-center gap-4">
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${fixAllocResult ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400'}`}>
+                  {fixAllocResult ? <CheckCircle2 size={22} /> : <Wrench size={22} />}
+                </div>
+                <div className="text-left">
+                  <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    {fixingAlloc ? 'Corrigindo...' : fixAllocResult ? `${fixAllocResult.fixed} corrigido(s) de ${fixAllocResult.total}` : 'Corrigir Alocações de Embalagem'}
+                  </p>
+                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                    {fixAllocResult ? 'Concluído — estoque consistente' : 'Ajustar inconsistências de estoque × embalagem'}
+                  </p>
+                </div>
+              </div>
+              {!fixingAlloc && !fixAllocResult && <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />}
+            </button>
 
             {/* ── LOGOUT — último item do menu ── */}
             <button

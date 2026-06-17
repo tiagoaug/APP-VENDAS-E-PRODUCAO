@@ -26,6 +26,28 @@ import ExportNoteModal from "../components/ExportNoteModal";
 import { exportPurchase } from "../utils/purchaseExport";
 import { toast } from '../utils/toast';
 
+// Persiste filtros/visualização de Compras entre navegações e recarregamentos —
+// sem isso, sair e voltar para a tela resetava as escolhas (Tipo, Período, Cards,
+// Mostrar Itens) para o padrão.
+function usePersistedState<T>(key: string, defaultValue: T): [T, (v: T | ((prev: T) => T)) => void] {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      return saved !== null ? (JSON.parse(saved) as T) : defaultValue;
+    } catch {
+      return defaultValue;
+    }
+  });
+  const setPersisted = (v: T | ((prev: T) => T)) => {
+    setValue(prev => {
+      const next = typeof v === 'function' ? (v as (p: T) => T)(prev) : v;
+      try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+  return [value, setPersisted];
+}
+
 
 interface PurchasesViewProps {
   purchases: Purchase[];
@@ -53,11 +75,11 @@ export default function PurchasesView({
   const [selectedNote, setSelectedNote] = useState<string | null>(null);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
-  const [typeFilter, setTypeFilter] = useState<'ALL' | PurchaseType>('ALL');
-  const [periodFilter, setPeriodFilter] = useState<string>(''); // YYYY-MM
+  const [typeFilter, setTypeFilter] = usePersistedState<'ALL' | PurchaseType>('purchasesView_typeFilter', 'ALL');
+  const [periodFilter, setPeriodFilter] = usePersistedState<string>('purchasesView_periodFilter', ''); // YYYY-MM
   const [showFilters, setShowFilters] = useState(false);
-  const [expandedCards, setExpandedCards] = useState(true);
-  const [showItems, setShowItems] = useState(true);
+  const [expandedCards, setExpandedCards] = usePersistedState<boolean>('purchasesView_expandedCards', true);
+  const [showItems, setShowItems] = usePersistedState<boolean>('purchasesView_showItems', true);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
 
   const toggleExpand = (id: string) => {
@@ -504,15 +526,29 @@ export default function PurchasesView({
               <div className="flex flex-col gap-3 z-10">
                 <h3 className={`font-black text-[15px] uppercase tracking-tight leading-snug flex items-center justify-between gap-2 ${isDarkMode ? "text-white" : "text-slate-900"}`}>
                   <span className="truncate">{supplier?.name || "Fornecedor"}</span>
-                  {purchase.type === PurchaseType.REPLENISHMENT ? (
-                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-50 dark:bg-indigo-900/30 shrink-0">
-                      <Package size={13} strokeWidth={2.5} className="text-indigo-500" />
-                    </span>
-                  ) : (
-                    <span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800 shrink-0">
-                      <ShoppingCart size={13} strokeWidth={2.5} className="text-slate-400 dark:text-slate-500" />
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {purchase.notes && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); setSelectedNote(purchase.notes || ""); }}
+                        title="Ver Observações"
+                        aria-label="Ver Observações"
+                        className="relative w-6 h-6 flex items-center justify-center rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-500"
+                      >
+                        <Lightbulb size={13} strokeWidth={2.5} className="animate-pulse" />
+                        <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-rose-500 border border-white dark:border-slate-900 rounded-full animate-pulse" />
+                      </button>
+                    )}
+                    {purchase.type === PurchaseType.REPLENISHMENT ? (
+                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-50 dark:bg-indigo-900/30">
+                        <Package size={13} strokeWidth={2.5} className="text-indigo-500" />
+                      </span>
+                    ) : (
+                      <span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 dark:bg-slate-800">
+                        <ShoppingCart size={13} strokeWidth={2.5} className="text-slate-400 dark:text-slate-500" />
+                      </span>
+                    )}
+                  </div>
                 </h3>
 
                 <div className="flex flex-col gap-1.5">
@@ -643,22 +679,6 @@ export default function PurchasesView({
                       {purchase.type === PurchaseType.REPLENISHMENT ? 'Reposição' : purchase.type === PurchaseType.SOLE ? 'Solados' : 'Geral'}
                     </span>
                   </div>
-                  {/* Note Modal Toggle */}
-                  {purchase.notes && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedNote(purchase.notes || "");
-                      }}
-                      title="Ver Observações"
-                      aria-label="Ver Observações"
-                      className="w-12 h-12 flex items-center justify-center rounded-full transition-all active:scale-90 relative bg-[#fffbeb] text-rose-500 shadow-xl shadow-rose-100 dark:bg-rose-950/20 dark:text-rose-400 dark:shadow-none"
-                    >
-                      <Lightbulb size={24} strokeWidth={2.5} className="animate-pulse-lamp" />
-                      <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-rose-500 border-2 border-white dark:border-slate-900 rounded-full" />
-                    </button>
-                  )}
                 </div>
 
                 {/* Actions Group (Floating Island) */}

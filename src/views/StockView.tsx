@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { Product, SaleType, ProductionConfigItem, StockPkgAllocation, StockLot, StockLotRevertPreview } from "../types";
+import { Product, SaleType, ProductionConfigItem, StockPkgAllocation, StockLot, StockLotRevertPreview, Sale, SaleStatus, ProductionOrder } from "../types";
 import {
   Search,
   Package,
@@ -16,6 +16,11 @@ import {
   User,
   History,
   RotateCcw,
+  CheckCircle2,
+  Clock,
+  Truck,
+  Factory,
+  Users,
 } from "lucide-react";
 import PrintLabelEditorModal from "../components/PrintLabelEditorModal";
 import Modal from "../components/Modal";
@@ -40,6 +45,8 @@ interface StockViewProps {
   stockLots: StockLot[];
   onPreviewRevertStockLot?: (stockLot: StockLot) => StockLotRevertPreview;
   onRevertStockLot?: (stockLot: StockLot) => Promise<StockLotRevertPreview>;
+  sales?: Sale[];
+  productionOrders?: ProductionOrder[];
 }
 
 export default function StockView({
@@ -50,13 +57,15 @@ export default function StockView({
   stockLots,
   onPreviewRevertStockLot,
   onRevertStockLot,
+  sales = [],
+  productionOrders = [],
 }: StockViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [editedStocks, setEditedStocks] = useState<Record<string, Product>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [productForLabels, setProductForLabels] = useState<Product | null>(null);
-  const [activeTab, setActiveTab] = useState<'produtos' | 'estoque_pedidos'>('produtos');
+  const [activeTab, setActiveTab] = useState<'estoque' | 'clientes' | 'lotes'>('clientes');
   const [showEntryHistory, setShowEntryHistory] = useState(false);
 
   const packagingItems = productionConfigs.filter(c => c.type === 'PACKAGING');
@@ -103,18 +112,55 @@ export default function StockView({
       const variation = product.variations.find(v => v.id === variationId);
       if (variation) {
         variation.stock[key] = value;
+
+        // When WHOLESALE stock decreases, trim pkg allocations so totalAllocated never exceeds boxQty
+        if (key === 'WHOLESALE') {
+          const allocs = variation.stockPkgAllocations || [];
+          const totalAlloc = allocs.reduce((s, a) => s + a.qty, 0);
+          if (value < totalAlloc) {
+            let excess = totalAlloc - value;
+            const trimmed = allocs.map(a => ({ ...a }));
+            for (let i = trimmed.length - 1; i >= 0 && excess > 0; i--) {
+              const cut = Math.min(trimmed[i].qty, excess);
+              trimmed[i].qty -= cut;
+              excess -= cut;
+            }
+            variation.stockPkgAllocations = trimmed.filter(a => a.qty > 0);
+          }
+        }
       }
       return newStocks;
     });
   };
 
   const handleUpdatePkgAllocations = async (product: Product, variationId: string, allocations: StockPkgAllocation[]) => {
+    // Cap allocations so totalAllocated never exceeds boxQty
+    const variation = product.variations.find(v => v.id === variationId);
+    const boxQty = variation?.stock['WHOLESALE'] ?? 0;
+    const totalAlloc = allocations.reduce((s, a) => s + a.qty, 0);
+    let safeAllocations = allocations;
+    if (totalAlloc > boxQty) {
+      let excess = totalAlloc - boxQty;
+      safeAllocations = allocations.map(a => ({ ...a }));
+      for (let i = safeAllocations.length - 1; i >= 0 && excess > 0; i--) {
+        const cut = Math.min(safeAllocations[i].qty, excess);
+        safeAllocations[i].qty -= cut;
+        excess -= cut;
+      }
+      safeAllocations = safeAllocations.filter(a => a.qty > 0);
+    }
+
     const updated: Product = {
       ...product,
       variations: product.variations.map(v =>
-        v.id === variationId ? { ...v, stockPkgAllocations: allocations } : v
+        v.id === variationId ? { ...v, stockPkgAllocations: safeAllocations } : v
       )
     };
+    // Durante o balanço, sincroniza editedStocks para que o salvar não sobrescreva
+    // as mudanças de embalagem feitas no mesmo período.
+    if (isEditing) {
+      setEditedStocks(prev => ({ ...prev, [updated.id]: updated }));
+    }
     await onUpdateProduct(updated);
   };
 
@@ -123,8 +169,8 @@ export default function StockView({
       <div className="flex flex-col gap-3 pt-4">
         <div className="flex items-center justify-between mb-2">
           <div>
-            <h2 className={`text-xl font-black uppercase tracking-tighter ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Estoque</h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Balanço e Inventário</p>
+            <h2 className={`text-xl font-black uppercase tracking-tighter ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Expedição e Estoque</h2>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pedidos de Clientes · Inventário</p>
           </div>
 
           {!isEditing ? (
@@ -174,33 +220,44 @@ export default function StockView({
           </button>
         )}
 
-        {/* Toggle de abas: Produtos vs Estoque e Pedidos */}
+        {/* Toggle de abas */}
         <div className={`flex gap-1 p-1 rounded-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-slate-100'}`}>
           <button
             type="button"
-            onClick={() => setActiveTab('produtos')}
+            onClick={() => setActiveTab('clientes')}
             className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              activeTab === 'produtos'
+              activeTab === 'clientes'
                 ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm')
                 : 'text-slate-400'
             }`}
           >
-            Produtos
+            Clientes
           </button>
           <button
             type="button"
-            onClick={() => setActiveTab('estoque_pedidos')}
+            onClick={() => setActiveTab('estoque')}
             className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              activeTab === 'estoque_pedidos'
+              activeTab === 'estoque'
                 ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm')
                 : 'text-slate-400'
             }`}
           >
-            Estoque e Pedidos
+            Estoque
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('lotes')}
+            className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+              activeTab === 'lotes'
+                ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm')
+                : 'text-slate-400'
+            }`}
+          >
+            Lotes
           </button>
         </div>
 
-        {activeTab === 'produtos' && (
+        {activeTab === 'estoque' && (
           <div className={`p-6 rounded-[2rem] border shadow-xl relative overflow-hidden mb-2 ${
             isDarkMode
               ? 'bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/30 border-slate-800'
@@ -229,7 +286,18 @@ export default function StockView({
         </div>
       </div>
 
-      {activeTab === 'produtos' && (
+      {activeTab === 'clientes' && (
+        <PedidosClientesPanel
+          sales={sales}
+          stockLots={stockLots}
+          productionOrders={productionOrders}
+          products={products}
+          isDarkMode={isDarkMode}
+          searchTerm={searchTerm}
+        />
+      )}
+
+      {activeTab === 'estoque' && (
         <div className="grid grid-cols-1 gap-3">
           {filteredProducts.map((product) => (
             <StockCard
@@ -239,7 +307,7 @@ export default function StockView({
               isDarkMode={isDarkMode}
               isEditing={isEditing}
               onUpdateStock={(variationId, key, value) => updateProductStock(product.id, variationId, key, value)}
-              onUpdatePkgAllocations={(variationId, allocations) => handleUpdatePkgAllocations(product, variationId, allocations)}
+              onUpdatePkgAllocations={(variationId, allocations) => handleUpdatePkgAllocations(isEditing ? (editedStocks[product.id] || product) : product, variationId, allocations)}
               onPrint={() => setProductForLabels(product)}
             />
           ))}
@@ -262,7 +330,7 @@ export default function StockView({
         </div>
       )}
 
-      {activeTab === 'estoque_pedidos' && (
+      {activeTab === 'lotes' && (
         <StockLotsPanel stockLots={stockLots} isDarkMode={isDarkMode} searchTerm={searchTerm} />
       )}
 
@@ -277,6 +345,216 @@ export default function StockView({
     </div>
   );
 }
+
+// ─── Pedidos de Clientes ────────────────────────────────────────────────────
+
+const PedidosClientesPanel: React.FC<{
+  sales: Sale[];
+  stockLots: StockLot[];
+  productionOrders: ProductionOrder[];
+  products: Product[];
+  isDarkMode: boolean;
+  searchTerm: string;
+}> = ({ sales, stockLots, productionOrders, products, isDarkMode, searchTerm }) => {
+  const term = searchTerm.toLowerCase();
+
+  // RESERVADO lots grouped by saleId
+  const reservedBySale = useMemo(() => {
+    const map = new Map<string, StockLot[]>();
+    stockLots.filter(l => l.status === 'RESERVADO' && l.saleId).forEach(l => {
+      const arr = map.get(l.saleId!) || [];
+      arr.push(l);
+      map.set(l.saleId!, arr);
+    });
+    return map;
+  }, [stockLots]);
+
+  // Customer orders: all non-cancelled SALE status orders, excluding explicit STOCK destination
+  const customerSales = useMemo(() => {
+    return sales
+      .filter(s =>
+        s.status === SaleStatus.SALE &&
+        s.saleDestination !== 'STOCK' &&
+        (
+          !term ||
+          (s.customerName || '').toLowerCase().includes(term) ||
+          (s.orderNumber || '').toLowerCase().includes(term)
+        )
+      )
+      .sort((a, b) => b.date - a.date);
+  }, [sales, term]);
+
+  const prontos = customerSales.filter(s =>
+    s.deliveryStatus !== 'DELIVERED' && (reservedBySale.get(s.id) || []).length > 0
+  );
+  const aguardando = customerSales.filter(s =>
+    s.deliveryStatus !== 'DELIVERED' && (reservedBySale.get(s.id) || []).length === 0
+  );
+  const entregues = customerSales.filter(s => s.deliveryStatus === 'DELIVERED');
+
+  const SaleRow: React.FC<{ sale: Sale }> = ({ sale }) => {
+    const lots = reservedBySale.get(sale.id) || [];
+    const po = productionOrders.find(o => o.id === sale.productionOrderId);
+    const totalBoxes = lots.reduce((s, l) => s + (l.boxQty ?? 1), 0);
+    const totalPairs = lots.reduce((s, l) => s + l.totalPairs, 0);
+    const isDelivered = sale.deliveryStatus === 'DELIVERED';
+    const isReady = !isDelivered && lots.length > 0;
+    const isWaiting = !isDelivered && lots.length === 0;
+
+    return (
+      <div className={`p-3 rounded-2xl border ${
+        isDelivered
+          ? (isDarkMode ? 'bg-slate-800/30 border-slate-700/50' : 'bg-slate-50 border-slate-100')
+          : isReady
+            ? (isDarkMode ? 'bg-emerald-900/15 border-emerald-800/40' : 'bg-emerald-50 border-emerald-100')
+            : (isDarkMode ? 'bg-orange-900/15 border-orange-800/30' : 'bg-orange-50 border-orange-100')
+      }`}>
+        {/* Header */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-lg ${
+                isDelivered
+                  ? 'bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                  : isReady
+                    ? 'bg-emerald-500 text-white'
+                    : 'bg-orange-400 text-white'
+              }`}>
+                {isDelivered ? 'Entregue' : isReady ? 'Pronto para Expedir' : 'Aguardando'}
+              </span>
+              <span className="text-[9px] font-bold text-slate-400">#{sale.orderNumber}</span>
+            </div>
+            <p className={`text-[12px] font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+              {sale.customerName || 'Cliente não informado'}
+            </p>
+          </div>
+          <div className="text-right shrink-0">
+            {isReady && (
+              <div className="flex flex-col items-end">
+                <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400">{totalBoxes} cx</span>
+                <span className="text-[9px] font-bold text-slate-400">{totalPairs} pares</span>
+              </div>
+            )}
+            {isWaiting && po && (
+              <span className="text-[9px] font-black uppercase tracking-widest text-orange-500">
+                {po.status === 'IN_PRODUCTION' ? 'Em Produção' : 'Ag. Produção'}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Lot details (when ready) */}
+        {isReady && lots.length > 0 && (
+          <div className="mt-2 flex flex-col gap-1">
+            {lots.map(lot => {
+              const prod = products.find(p => p.id === lot.productId);
+              return (
+                <div key={lot.id} className={`flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl ${isDarkMode ? 'bg-emerald-900/20' : 'bg-emerald-100/60'}`}>
+                  <div className="min-w-0">
+                    <p className={`text-[10px] font-black uppercase truncate ${isDarkMode ? 'text-emerald-300' : 'text-emerald-800'}`}>
+                      {prod?.reference ? `${prod.reference} · ` : ''}{lot.productName}
+                    </p>
+                    <p className="text-[8px] font-bold text-emerald-600 dark:text-emerald-500 mt-0.5">
+                      {lot.variationName} · {lot.gradeLabel}
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-300 shrink-0">
+                    {lot.boxQty ?? 1} cx
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Production order link */}
+        {po && !isDelivered && (
+          <div className={`mt-2 flex items-center gap-1.5 px-2 py-1 rounded-lg ${isDarkMode ? 'bg-slate-800/60' : 'bg-white/70'}`}>
+            <Factory size={10} className="text-indigo-500 shrink-0" />
+            <span className="text-[8px] font-black uppercase tracking-widest text-indigo-500">
+              OP #{po.orderNumber} · {po.status === 'COMPLETED' ? 'Concluída' : po.status === 'IN_PRODUCTION' ? 'Em Produção' : 'Pendente'}
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const Section: React.FC<{ title: string; icon: React.ReactNode; color: string; items: Sale[]; defaultOpen?: boolean }> = ({
+    title, icon, color, items, defaultOpen = true
+  }) => {
+    const [open, setOpen] = useState(defaultOpen);
+    return (
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          className={`flex items-center justify-between gap-3 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100 shadow-sm'}`}
+        >
+          <h3 className={`text-xs font-black uppercase tracking-widest flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+            <span className={color}>{icon}</span> {title}
+          </h3>
+          <div className="flex items-center gap-2">
+            <span className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+              {items.length}
+            </span>
+            {open ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />}
+          </div>
+        </button>
+        {open && (
+          items.length === 0 ? (
+            <div className={`p-8 text-center border-2 border-dashed rounded-3xl ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-400'}`}>
+              <p className="text-xs font-bold uppercase tracking-widest">Nenhum pedido</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {items.map(s => <SaleRow key={s.id} sale={s} />)}
+            </div>
+          )
+        )}
+      </div>
+    );
+  };
+
+  if (customerSales.length === 0 && !term) {
+    return (
+      <div className={`p-12 text-center border-2 border-dashed rounded-3xl ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-400'}`}>
+        <Users size={40} className="mx-auto mb-3 opacity-20" />
+        <p className="text-xs font-bold uppercase tracking-widest">Nenhum pedido de cliente</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Section
+        title="Prontos para Expedir"
+        icon={<Truck size={16} />}
+        color="text-emerald-500"
+        items={prontos}
+        defaultOpen={true}
+      />
+      <Section
+        title="Aguardando Produção"
+        icon={<Clock size={16} />}
+        color="text-orange-500"
+        items={aguardando}
+        defaultOpen={true}
+      />
+      {entregues.length > 0 && (
+        <Section
+          title="Entregues"
+          icon={<CheckCircle2 size={16} />}
+          color="text-slate-400"
+          items={entregues}
+          defaultOpen={false}
+        />
+      )}
+    </div>
+  );
+};
+
+// ─── Lotes em Estoque ────────────────────────────────────────────────────────
 
 const StockLotsPanel: React.FC<{
   stockLots: StockLot[];
@@ -957,6 +1235,11 @@ const StockCard: React.FC<{
                               <span className={`text-xs font-black uppercase tracking-widest ${allocations.length > 0 ? 'text-violet-700 dark:text-violet-400' : 'text-slate-500'}`}>
                                 Embalagens
                               </span>
+                              {isEditing && (
+                                <span className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">
+                                  Editável
+                                </span>
+                              )}
                               {allocations.length > 0 && (
                                 <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
                                   totalAllocated === boxQty

@@ -108,7 +108,7 @@ export default function SoleNeedsFormModal({ isOpen, onClose, isDarkMode, soleSt
       );
     } else {
       lines.push(
-        "Se houver déficit, gere o card de pedido sugerido (propose_sole_purchase_registration) para eu poder copiar/exportar."
+        "Se houver déficit, gere JÁ NESTA MESMA RESPOSTA o card de pedido sugerido (propose_sole_purchase_registration) com todos os tamanhos em déficit. NÃO pergunte se deve gerar e NÃO peça confirmação — gere o card diretamente, junto com o resumo, para eu poder abrir o formulário/copiar/exportar."
       );
     }
 

@@ -241,9 +241,12 @@ export default function PurchaseFormView({
   const [generateTransaction, setGenerateTransaction] = useState(
     existing?.generateTransaction !== undefined ? existing?.generateTransaction : true
   );
+  // Compras de materiais não são mais recebidas direto no formulário — a entrada no
+  // estoque (e por cor) é feita na tela "Recebimento de Compras". Por isso o padrão é
+  // "não recebido". O estado segue sendo usado apenas pelo toggle de solados ("Já foi
+  // entregue?").
   const [registerAsReceived, setRegisterAsReceived] = useState(
-    existing?.registerAsReceived !== undefined ? existing.registerAsReceived
-      : (initialParams?.items?.length || initialParams?.type === PurchaseType.SOLE ? false : true)
+    existing?.registerAsReceived !== undefined ? existing.registerAsReceived : false
   );
   const [isProductionOrder, setIsProductionOrder] = useState(existing?.isProductionOrder ?? false);
   const [isSaving, setIsSaving] = useState(false);
@@ -327,7 +330,7 @@ export default function PurchaseFormView({
   }, [supplierId, people, sellerId]);
 
   // Calculator Modal State
-  const [calcModal, setCalcModal] = useState<{ isOpen: boolean; field: 'blocks' | 'generalItems'; index: number; value: number } | null>(null);
+  const [calcModal, setCalcModal] = useState<{ isOpen: boolean; field: 'blocks' | 'generalItems' | 'generalItemsQty'; index: number; value: number } | null>(null);
 
   const [showChecks, setShowChecks] = useState<boolean>(
     existing?.checks && existing.checks.length > 0 ? true : false,
@@ -811,14 +814,30 @@ export default function PurchaseFormView({
     return items;
   }, [blocks, products, packagingPerVar, productionConfigs]);
 
-  const openCalculator = (index: number, type: 'blocks' | 'generalItems') => {
+  const openCalculator = (index: number, type: 'blocks' | 'generalItems' | 'generalItemsQty') => {
     let value = 0;
-    if(type === 'generalItems') {
+    if (type === 'generalItems') {
       value = generalItems[index].value || 0;
+    } else if (type === 'generalItemsQty') {
+      value = generalItems[index].quantity || 0;
     } else {
       value = blocks[index].cost || 0;
     }
     setCalcModal({ isOpen: true, field: type, index, value });
+  };
+
+  // Duplica um item de compra geral logo após o original (mesmo material, cor,
+  // quantidade e valor) — cada cópia recebe um id próprio.
+  const duplicateGeneralItem = (index: number, count: number) => {
+    const source = generalItems[index];
+    if (!source || count < 1) return;
+    const copies: GeneralPurchaseItem[] = [];
+    for (let i = 0; i < count; i++) {
+      copies.push({ ...source, id: generateId() });
+    }
+    const next = [...generalItems];
+    next.splice(index + 1, 0, ...copies);
+    setGeneralItems(next);
   };
 
   return (
@@ -1200,34 +1219,56 @@ export default function PurchaseFormView({
                         </select>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => removeGeneralItem(index)}
-                      className="mt-5 p-3 bg-rose-50 dark:bg-rose-900/30 text-rose-500 rounded-xl hover:bg-rose-100 transition-colors"
-                      aria-label="Remover item"
-                      title="Remover"
-                    >
-                      <Trash2 size={16} strokeWidth={2.5} />
-                    </button>
+                    <div className="mt-5 flex flex-col gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => duplicateGeneralItem(index, 1)}
+                        className="p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl hover:bg-indigo-100 transition-colors"
+                        aria-label="Duplicar item"
+                        title="Duplicar item"
+                      >
+                        <Copy size={16} strokeWidth={2.5} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeGeneralItem(index)}
+                        className="p-3 bg-rose-50 dark:bg-rose-900/30 text-rose-500 rounded-xl hover:bg-rose-100 transition-colors"
+                        aria-label="Remover item"
+                        title="Remover"
+                      >
+                        <Trash2 size={16} strokeWidth={2.5} />
+                      </button>
+                    </div>
                   </div>
 
                   {/* Linha 1: Quantidade + Valor Unitário */}
                   <div className="flex gap-2 items-end">
                     {/* Quantidade */}
-                    <div className="flex flex-col gap-1 w-28">
+                    <div className="flex flex-col gap-1 flex-1">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white ml-1">
                         Qtd{unitLabel ? ` (${unitLabel})` : ''}
                       </p>
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.001"
-                        title="Quantidade"
-                        placeholder="0"
-                        className={`w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-3 py-3 text-[13px] font-black text-center text-slate-800 dark:text-slate-100 outline-none`}
-                        value={item.quantity ?? ''}
-                        onChange={(e) => updateGeneralItem(index, { quantity: parseFloat(e.target.value) || 0 })}
-                      />
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          step="0.001"
+                          title="Quantidade"
+                          placeholder="0"
+                          className={`w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-3 py-3 text-[13px] font-black text-center text-slate-800 dark:text-slate-100 outline-none`}
+                          value={item.quantity ?? ''}
+                          onChange={(e) => updateGeneralItem(index, { quantity: parseFloat(e.target.value) || 0 })}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => openCalculator(index, 'generalItemsQty')}
+                          className="w-11 shrink-0 flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 rounded-2xl hover:bg-indigo-100 transition-colors"
+                          aria-label="Calculadora da quantidade"
+                          title="Calculadora da quantidade"
+                        >
+                          <Calculator size={16} strokeWidth={2.5} />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Valor Unitário */}
@@ -1460,7 +1501,8 @@ export default function PurchaseFormView({
       {/* Items List (only for Replenishment) */}
       {type === PurchaseType.REPLENISHMENT && (
         <section>
-          {/* Prazo e Prioridade */}
+          {/* Prazo e Prioridade — aparece apenas quando o Pedido de Produção (OP) está ativo */}
+          {isProductionOrder && (
           <div className="flex flex-col gap-3 p-4 rounded-3xl border border-dashed border-indigo-500/30 dark:border-indigo-500/20 bg-indigo-50/10 dark:bg-indigo-950/10 mb-4">
             <div className="flex items-center justify-between">
               <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-1 tracking-widest leading-none">Prazo e Prioridade</label>
@@ -1496,6 +1538,7 @@ export default function PurchaseFormView({
                 className={`flex-1 bg-transparent font-black text-xs outline-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`} />
             </div>
           </div>
+          )}
 
           {/* OP Toggle — Ordem de Produção para Estoque */}
           <button
@@ -1608,33 +1651,33 @@ export default function PurchaseFormView({
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         type="button"
                         onClick={() => toggleBlockExpanded(block.id)}
-                        className="p-2 text-slate-300 dark:text-slate-600 hover:text-indigo-500 transition-colors transform active:scale-90"
+                        className="w-9 h-9 rounded-xl flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-90 transition-all"
                         aria-label="Expandir/Recolher item"
                         title="Ver detalhes"
                       >
-                        {isExpanded ? <ChevronUp size={20} strokeWidth={2.5} /> : <ChevronDown size={20} strokeWidth={2.5} />}
+                        {isExpanded ? <ChevronUp size={18} strokeWidth={2.5} /> : <ChevronDown size={18} strokeWidth={2.5} />}
                       </button>
                       <button
                         type="button"
                         onClick={() => { setDuplicateTarget({ index }); setDuplicateCount(1); }}
-                        className="p-2 text-slate-300 dark:text-slate-600 hover:text-indigo-500 transition-colors transform active:scale-90"
+                        className="w-9 h-9 rounded-xl flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 active:scale-90 transition-all"
                         aria-label="Duplicar item"
                         title="Duplicar"
                       >
-                        <Copy size={18} strokeWidth={2.5} />
+                        <Copy size={17} strokeWidth={2.5} />
                       </button>
                       <button
                         type="button"
                         onClick={() => removeBlock(index)}
-                        className="p-2 text-slate-200 dark:text-slate-700 hover:text-rose-500 transition-colors transform active:scale-90"
+                        className="w-9 h-9 rounded-xl flex items-center justify-center bg-rose-50 dark:bg-rose-900/30 text-rose-500 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 active:scale-90 transition-all"
                         aria-label="Remover item da lista"
                         title="Remover"
                       >
-                        <Trash2 size={18} strokeWidth={2.5} />
+                        <Trash2 size={17} strokeWidth={2.5} />
                       </button>
                     </div>
                   </div>
@@ -2020,69 +2063,22 @@ export default function PurchaseFormView({
         </label>
       </div>
 
-      {/* Toggle: Registrar como Recebido — só aparece quando vem de solicitação ou tem materiais */}
-      {(initialParams?.requestId || generalItems.some(i => i.materialId)) && (
-        <div
-          className={`p-6 rounded-[2.5rem] border shadow-sm flex items-center justify-between mt-2 ${
-            registerAsReceived
-              ? isDarkMode ? 'bg-indigo-950/30 border-indigo-800' : 'bg-indigo-50 border-indigo-100'
-              : isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'
-          }`}
-        >
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${registerAsReceived ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
-              <Package size={18} strokeWidth={2.5} />
-            </div>
-            <div>
-              <p className="text-[10px] uppercase tracking-widest font-black text-slate-800 dark:text-white">Registrar como Recebido</p>
-              <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-tight mt-0.5 max-w-[200px]">
-                Dar baixa no estoque e na solicitação
-              </p>
-            </div>
+      {/* Aviso: materiais entram no estoque pela tela de Recebimento de Compras */}
+      {generalItems.some(i => i.materialId) && (
+        <div className={`p-4 rounded-[2rem] border flex items-center gap-3 mt-2 ${
+          isDarkMode ? 'bg-amber-950/20 border-amber-800/60' : 'bg-amber-50 border-amber-200'
+        }`}>
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400">
+            <Clock size={18} strokeWidth={2.5} />
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              className="sr-only peer"
-              checked={registerAsReceived}
-              onChange={(e) => setRegisterAsReceived(e.target.checked)}
-              aria-label="Registrar como recebido no estoque"
-            />
-            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600 dark:peer-checked:bg-indigo-500 border-2 border-transparent"></div>
-          </label>
+          <div>
+            <p className="text-[10px] uppercase tracking-widest font-black text-amber-700 dark:text-amber-400">Pendente de Recebimento</p>
+            <p className="text-[9px] font-bold text-amber-600/80 dark:text-amber-500 uppercase tracking-widest leading-tight mt-0.5">
+              A entrada no estoque (por cor) é feita em "Recebimento de Compras"
+            </p>
+          </div>
         </div>
       )}
-
-      <div className="mt-6 mx-2 flex items-center justify-between bg-slate-900 dark:bg-slate-800 p-4 rounded-[2rem] shadow-xl z-40 animate-in slide-in-from-bottom-5">
-        <div className="pl-3">
-          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest leading-none mb-1">
-            Total
-          </p>
-          <p className="text-2xl font-black text-white leading-none">
-            R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={onCancel}
-            className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-rose-500 transition-colors"
-            aria-label="Cancelar"
-            title="Cancelar"
-          >
-            <Trash2 size={20} strokeWidth={2.5} />
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={isSaving}
-            className={`h-12 px-6 rounded-full font-black uppercase tracking-widest text-[11px] flex items-center gap-2 transition-all ${isSaving ? 'bg-slate-400 text-white cursor-wait' : 'bg-white text-slate-900 hover:bg-emerald-400 hover:text-white'}`}
-            aria-label="Finalizar compra"
-            title="Finalizar"
-          >
-            <Save size={16} strokeWidth={3} className={isSaving ? 'animate-spin' : ''} /> {isSaving ? 'Salvando...' : 'Finalizar'}
-          </button>
-        </div>
-      </div>
 
       <CalculatorModal
         isOpen={!!calcModal}
@@ -2092,6 +2088,7 @@ export default function PurchaseFormView({
         onResult={(res) => {
             if (!calcModal) return;
             if (calcModal.field === 'generalItems') updateGeneralItem(calcModal.index, { value: res });
+            if (calcModal.field === 'generalItemsQty') updateGeneralItem(calcModal.index, { quantity: res });
             if (calcModal.field === 'blocks') updateBlock(calcModal.index, { cost: res });
         }}
       />
@@ -2149,6 +2146,38 @@ export default function PurchaseFormView({
           </div>
         </section>
       )}
+
+      {/* Card TOTAL — fica após a Cesta de Itens */}
+      <div className="mt-6 mx-2 flex items-center justify-between bg-slate-900 dark:bg-slate-800 p-4 rounded-[2rem] shadow-xl z-40 animate-in slide-in-from-bottom-5">
+        <div className="pl-3">
+          <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest leading-none mb-1">
+            Total
+          </p>
+          <p className="text-2xl font-black text-white leading-none">
+            R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={onCancel}
+            className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-rose-500 transition-colors"
+            aria-label="Cancelar"
+            title="Cancelar"
+          >
+            <Trash2 size={20} strokeWidth={2.5} />
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={isSaving}
+            className={`h-12 px-6 rounded-full font-black uppercase tracking-widest text-[11px] flex items-center gap-2 transition-all ${isSaving ? 'bg-slate-400 text-white cursor-wait' : 'bg-white text-slate-900 hover:bg-emerald-400 hover:text-white'}`}
+            aria-label="Finalizar compra"
+            title="Finalizar"
+          >
+            <Save size={16} strokeWidth={3} className={isSaving ? 'animate-spin' : ''} /> {isSaving ? 'Salvando...' : 'Finalizar'}
+          </button>
+        </div>
+      </div>
 
       {/* Modal de duplicação de modelo — escolhe quantas cópias serão criadas */}
       {duplicateTarget !== null && (() => {

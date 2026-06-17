@@ -276,6 +276,7 @@ export type SaleItem = {
   price: number;    // preço por grade (atacado) ou por par (varejo)
   unitPrice?: number; // preço por par (atacado)
   fulfilled?: boolean; // true = estoque já abatido; false/undefined = aguardando estoque
+  boxesSeparated?: number; // qtd já separada fisicamente (cx para atacado, pares para varejo)
 };
 
 export type SaleExtraItem = {

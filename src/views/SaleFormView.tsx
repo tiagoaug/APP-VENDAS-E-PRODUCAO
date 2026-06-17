@@ -256,6 +256,13 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
   const [partialPaymentAccountId, setPartialPaymentAccountId] = useState('');
   const [partialPaymentNote, setPartialPaymentNote] = useState('');
   const [expandedBlocks, setExpandedBlocks] = useState<string[]>([]);
+  // Itens da "Cesta de Pedidos" expandidos (acordeão por item — fechado por padrão).
+  const [expandedCart, setExpandedCart] = useState<Set<string>>(new Set());
+  const toggleCartItem = (key: string) => setExpandedCart(prev => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
   const [showProductModal, setShowProductModal] = useState(false);
   const [notes, setNotes] = useState('');
   const [productSearchQuery, setProductSearchQuery] = useState("");
@@ -487,7 +494,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       });
     }
 
-    setExpandedBlocks([...expandedBlocks, newBlockId]);
+    // Todo item entra com o acordeão FECHADO (com ou sem OP). O usuário expande o
+    // card manualmente para configurar/conferir quando necessário.
     setShowProductModal(false);
     setProductSearchQuery("");
   };
@@ -1336,7 +1344,31 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               />
           </div>
 
-          {/* SLA + Prazo + OP */}
+          {/* Pedido de Produção (OP) — abaixo de Observações, card azul claro com degradê */}
+          {hasProduction && (
+            <button type="button"
+              onClick={() => setIsProductionOrder(v => !v)}
+              title={isProductionOrder ? 'Desativar OP' : 'Ativar pedido de produção'}
+              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl border-2 transition-all mt-4 ${isProductionOrder
+                ? 'bg-gradient-to-br from-sky-400 to-sky-600 border-sky-400 text-white shadow-lg shadow-sky-400/25'
+                : 'bg-gradient-to-br from-sky-50 to-sky-100 dark:from-sky-950/40 dark:to-sky-900/20 border-sky-200 dark:border-sky-800/40 text-sky-700 dark:text-sky-300 hover:from-sky-100 hover:to-sky-200'}`}>
+              <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isProductionOrder ? 'bg-white/20' : 'bg-white dark:bg-slate-800'}`}>
+                <Factory size={15} strokeWidth={2.5} className={isProductionOrder ? 'text-white' : 'text-sky-500'} />
+              </div>
+              <div className="text-left flex-1">
+                <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${isProductionOrder ? 'text-white' : ''}`}>Pedido de Produção (OP)</p>
+                <p className={`text-[9px] font-bold mt-0.5 leading-none ${isProductionOrder ? 'text-sky-50' : 'text-sky-600/70 dark:text-sky-400/70'}`}>
+                  {isProductionOrder ? `${blocks.length} produto(s) selecionado(s)` : 'Gera mapa de produção e roteiro de fabricação'}
+                </p>
+              </div>
+              <div className={`w-8 h-4 rounded-full relative shrink-0 transition-all ${isProductionOrder ? 'bg-white/30' : 'bg-sky-200 dark:bg-sky-800'}`}>
+                <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${isProductionOrder ? 'left-4' : 'left-0.5'}`} />
+              </div>
+            </button>
+          )}
+
+          {/* Prazo e Prioridade — aparece apenas com o Pedido de Produção ativo */}
+          {isProductionOrder && (
           <div className="flex flex-col gap-3 p-4 rounded-3xl border border-dashed border-indigo-500/30 dark:border-indigo-500/20 bg-indigo-50/10 dark:bg-indigo-950/10 mt-4">
             <div className="flex items-center justify-between">
               <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-1 tracking-widest leading-none">Prazo e Prioridade</label>
@@ -1371,26 +1403,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                 title="Data de entrega" aria-label="Data de entrega"
                 className={`flex-1 bg-transparent font-black text-xs outline-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`} />
             </div>
-            {hasProduction && (
-              <button type="button"
-                onClick={() => setIsProductionOrder(v => !v)}
-                title={isProductionOrder ? 'Desativar OP' : 'Ativar pedido de produção'}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all ${isProductionOrder ? 'bg-sky-500 border-sky-400 text-white shadow-lg shadow-sky-400/20' : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400 hover:border-sky-700 hover:text-sky-400' : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-sky-300 hover:text-sky-600'}`}>
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isProductionOrder ? 'bg-white/20' : isDarkMode ? 'bg-slate-700' : 'bg-white'}`}>
-                  <Factory size={14} strokeWidth={2.5} className={isProductionOrder ? 'text-white' : 'text-sky-500'} />
-                </div>
-                <div className="text-left flex-1">
-                  <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${isProductionOrder ? 'text-white' : ''}`}>Pedido de Produção (OP)</p>
-                  <p className={`text-[9px] font-bold mt-0.5 leading-none ${isProductionOrder ? 'text-sky-100' : 'text-slate-400'}`}>
-                    {isProductionOrder ? `${blocks.length} produto(s) selecionado(s)` : 'Gera mapa de produção e roteiro de fabricação'}
-                  </p>
-                </div>
-                <div className={`w-8 h-4 rounded-full relative shrink-0 transition-all ${isProductionOrder ? 'bg-white/30' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
-                  <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${isProductionOrder ? 'left-4' : 'left-0.5'}`} />
-                </div>
-              </button>
-            )}
           </div>
+          )}
         </div>
       </div>
 
@@ -1495,6 +1509,9 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
 
                 {isExpanded && (
                   <div className="p-5 pt-0 border-t border-slate-50 dark:border-slate-800 mt-2">
+                    {/* Configuração de grade/preços — apenas em Pedido de Produção.
+                        Em venda simples (sem OP) a cesta é simplificada: cor + quantidade + preço. */}
+                    {isProductionOrder && (
                     <div className="flex flex-col gap-3 mt-4 mb-5">
                       {/* Modalidade */}
                       <div className="flex flex-col gap-1.5">
@@ -1590,6 +1607,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                         })()}
                       </div>
                     </div>
+                    )}
 
                     {/* Padrão de Embalagem do Bloco (nível produto — aplica a todas as variações) */}
                     {hasProduction && isProductionOrder && block.saleType === SaleType.WHOLESALE && (() => {
@@ -1647,7 +1665,10 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                         // For Retail, we might want to iterate sizes if they want specific sizes.
                         // But let's keep it simple: if Retail, show sizes.
                         
-                        if (block.saleType === SaleType.RETAIL && grid) {
+                        // Em venda simples (sem OP) não mostramos numerações/grade — apenas
+                        // cor + quantidade (entrada de atacado). A grade por tamanho do varejo
+                        // só aparece dentro de um Pedido de Produção.
+                        if (block.saleType === SaleType.RETAIL && grid && isProductionOrder) {
                           return (
                             <div key={v.id} className="space-y-2">
                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{v.colorName}</p>
@@ -1894,14 +1915,17 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
           <div className="divide-y divide-slate-50 dark:divide-slate-800">
             {cartItems.map((item, i) => {
               const toProd = item.pkgConfig ? item.pkgConfig.grandTotal - (item.pkgConfig.fromStockTotal * item.quantity) : 0;
+              const cartKey = `${item.blockId}-${item.variationId}-${i}`;
+              const cartOpen = expandedCart.has(cartKey);
               return (
-                <div key={`${item.blockId}-${item.variationId}-${i}`} className={`px-5 py-3.5 flex gap-3 ${isDarkMode ? 'hover:bg-slate-800/30' : 'hover:bg-slate-50/70'} transition-colors`}>
+                <div key={cartKey} className={`px-5 py-3.5 flex gap-3 ${isDarkMode ? 'hover:bg-slate-800/30' : 'hover:bg-slate-50/70'} transition-colors`}>
                   {/* Indicador de cor */}
                   <div className="w-1.5 self-stretch rounded-full bg-indigo-400 shrink-0" />
 
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
+                    {/* Cabeçalho do item — clique para abrir/fechar o acordeão */}
+                    <button type="button" onClick={() => toggleCartItem(cartKey)} className="w-full flex items-start justify-between gap-2 text-left">
+                      <div className="min-w-0">
                         <p className={`text-[11px] font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                           {item.productName}
                           {item.reference && <span className="text-slate-400 font-bold ml-1 text-[9px]">#{item.reference}</span>}
@@ -1911,16 +1935,26 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                           {item.size && ` · TAM ${item.size}`}
                         </p>
                       </div>
-                      <div className="text-right shrink-0">
-                        <p className={`text-sm font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{item.quantity}</p>
-                        <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">
-                          {item.saleType === SaleType.WHOLESALE ? 'grades' : 'pares'}
-                        </p>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="text-right">
+                          <p className={`text-sm font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{item.quantity}</p>
+                          <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">
+                            {item.saleType === SaleType.WHOLESALE ? 'grades' : 'pares'}
+                          </p>
+                        </div>
+                        <ChevronDown size={16} className={`text-slate-400 transition-transform duration-200 ${cartOpen ? 'rotate-180' : ''}`} />
                       </div>
-                    </div>
+                    </button>
+
+                    {/* Resumo (sempre visível): valor total do item */}
+                    {!cartOpen && item.price > 0 && (
+                      <p className={`mt-1.5 text-[10px] font-black text-right ${isDarkMode ? 'text-white' : 'text-slate-700'}`}>
+                        R$ {(item.price * item.quantity).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                    )}
 
                     {/* Info de embalagem (modo produção) */}
-                    {item.pkgConfig && (
+                    {cartOpen && item.pkgConfig && (
                       <div className={`mt-2 p-2.5 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="flex items-center gap-1.5">
@@ -1973,7 +2007,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                     )}
 
                     {/* Valor */}
-                    {item.price > 0 && (
+                    {cartOpen && item.price > 0 && (
                       <div className="mt-1.5 flex items-center gap-3 text-[8px] font-black">
                         <span className="text-slate-400">R$ {item.price.toFixed(2)}/grade</span>
                         {item.unitPrice && item.pkgConfig && (

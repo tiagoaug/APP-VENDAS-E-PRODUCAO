@@ -11,7 +11,7 @@ import {
   Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart,
   DollarSign, Hammer, FileText, CheckSquare, Scissors, Printer, Share2, Truck,
   QrCode, ScanLine, Hash, Lock, ChevronDown, List, ArrowLeftRight, MessageSquare, Eye,
-  Footprints, Scale, Database, TrendingDown
+  Footprints, Scale, Database, TrendingDown, Zap
 } from 'lucide-react';
 import {
   ProductionLot, Product, Sector,
@@ -160,6 +160,7 @@ export default function PCPView({
   const [selectedLots, setSelectedLots] = useState<ProductionLot[]>([]);
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [selectedLotIds, setSelectedLotIds] = useState<string[]>([]);
+  const [showQuickActions, setShowQuickActions] = useState(false);
   const [selectedSectorId, setSelectedSectorId] = useState<string | null>(initialSectorId ?? null);
   const [isSectorSwitcherOpen, setIsSectorSwitcherOpen] = useState(false);
   // Override manual de setor: escapatória para quando o cálculo automático erra
@@ -3478,71 +3479,8 @@ export default function PCPView({
           </div>
         </div>
 
-        {/* Linha 2: Ações rápidas — card único com acordeão */}
-        <div className={`rounded-[2rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-          <button
-            type="button"
-            onClick={() => setIsQuickActionsOpen(!isQuickActionsOpen)}
-            className={`w-full flex items-center justify-between gap-2 px-5 py-3.5 text-[10px] font-black uppercase tracking-widest transition-colors ${isDarkMode ? 'text-slate-300 hover:bg-slate-800/60' : 'text-slate-600 hover:bg-slate-50'}`}
-          >
-            <span className="flex items-center gap-2">
-              <Settings2 size={14} className="text-indigo-500" /> Ações Rápidas
-              {(statusFilter !== 'all' || cuttingAreaLotsCount > 0) && (
-                <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
-              )}
-            </span>
-            <ChevronDown size={15} className={`text-slate-400 transition-transform duration-200 ${isQuickActionsOpen ? 'rotate-180' : ''}`} />
-          </button>
-          <AnimatePresence>
-            {isQuickActionsOpen && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="overflow-hidden"
-              >
-                <div className={`grid grid-cols-2 sm:grid-cols-4 gap-2 px-3 pb-3 pt-1 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                  <button
-                    type="button"
-                    onClick={() => setIsScannerOpen(true)}
-                    className={`flex items-center justify-center gap-2 h-12 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 border ${isDarkMode ? 'bg-sky-900/30 border-sky-800/40 text-sky-400' : 'bg-sky-50 border-sky-100 text-sky-600'}`}
-                  >
-                    <Camera size={15} strokeWidth={2.5} /> Escanear
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsFilterPopupOpen(!isFilterPopupOpen)}
-                    className={`relative flex items-center justify-center gap-2 h-12 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 border ${isDarkMode ? 'bg-sky-900/30 border-sky-800/40 text-sky-400' : 'bg-sky-50 border-sky-100 text-sky-600'}`}
-                  >
-                    <Filter size={15} strokeWidth={2.5} /> Filtros
-                    {statusFilter !== 'all' && <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsPCPShareModalOpen(true)}
-                    title="Centro de Compartilhamento PCP"
-                    className="flex items-center justify-center gap-2 h-12 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 bg-orange-500 text-white shadow-sm shadow-orange-500/30"
-                  >
-                    <Share2 size={15} strokeWidth={2.5} /> Compartilhar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsCuttingAreaOpen(true)}
-                    title="Área de Corte"
-                    className={`relative flex items-center justify-center gap-2 h-12 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all active:scale-95 border ${isDarkMode ? 'bg-indigo-900/30 border-indigo-800/40 text-indigo-400' : 'bg-indigo-50 border-indigo-100 text-indigo-600'}`}
-                  >
-                    <Scissors size={15} strokeWidth={2.5} /> Área de Corte
-                    {cuttingAreaLotsCount > 0 && (
-                      <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[8px] font-black flex items-center justify-center">
-                        {cuttingAreaLotsCount}
-                      </span>
-                    )}
-                  </button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        {/* As Ações Rápidas (Escanear, Filtros, Compartilhar, Mapas) ficam agora no
+            popup do 6º ícone ("Ações") da navegação. */}
 
         {/* Filter Popup/Section */}
         <AnimatePresence>
@@ -3553,92 +3491,187 @@ export default function PCPView({
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden mb-6"
             >
-              <div className={`p-8 rounded-[2.5rem] border-2 flex flex-col gap-6 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-xl'}`}>
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Filtrar MAPAS por Status</h4>
-                  <button onClick={() => { setStatusFilter('all'); setIsFilterPopupOpen(false); }} className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Limpar Filtros</button>
-                </div>
-                
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    { id: 'all', label: 'Todos os MAPAS' },
-                    { id: 'active', label: 'Em Produção (WIP)' },
-                    { id: 'finished', label: 'Concluídos / Expedidos' },
-                    { id: 'urgent', label: 'Atrasos e Urgências' }
-                  ].map(f => (
+              <div className={`p-5 rounded-[2rem] border flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-xl'}`}>
+                <div className="flex items-center justify-between px-1">
+                  <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Filtrar Mapas por Status</h4>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => { setStatusFilter('all'); setIsFilterPopupOpen(false); }} className="text-[10px] font-black text-rose-500 uppercase tracking-widest hover:text-rose-600">Limpar</button>
                     <button
-                      key={f.id}
-                      onClick={() => setStatusFilter(f.id as 'all' | 'active' | 'finished' | 'urgent')}
-                      className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                        statusFilter === f.id
-                          ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
-                          : isDarkMode ? 'bg-slate-800 text-slate-400 border border-slate-700' : 'bg-slate-50 text-slate-500 border border-slate-100'
-                      }`}
+                      type="button"
+                      onClick={() => setIsFilterPopupOpen(false)}
+                      title="Recolher filtros"
+                      aria-label="Recolher filtros"
+                      className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-400 hover:text-slate-600'}`}
                     >
-                      {f.label}
+                      <X size={16} strokeWidth={2.5} />
                     </button>
-                  ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { id: 'all', label: 'Todos os Mapas', icon: <List size={18} strokeWidth={2.5} />, active: 'bg-slate-700 shadow-lg shadow-slate-700/25', idle: isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500' },
+                    { id: 'active', label: 'Em Produção (WIP)', icon: <Factory size={18} strokeWidth={2.5} />, active: 'bg-indigo-600 shadow-lg shadow-indigo-600/25', idle: isDarkMode ? 'bg-indigo-900/30 text-indigo-400' : 'bg-indigo-50 text-indigo-500' },
+                    { id: 'finished', label: 'Concluídos / Expedidos', icon: <CheckCircle2 size={18} strokeWidth={2.5} />, active: 'bg-emerald-600 shadow-lg shadow-emerald-600/25', idle: isDarkMode ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-50 text-emerald-500' },
+                    { id: 'urgent', label: 'Atrasos e Urgências', icon: <AlertTriangle size={18} strokeWidth={2.5} />, active: 'bg-rose-600 shadow-lg shadow-rose-600/25', idle: isDarkMode ? 'bg-rose-900/30 text-rose-400' : 'bg-rose-50 text-rose-500' },
+                  ].map(f => {
+                    const isActive = statusFilter === f.id;
+                    return (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => { setStatusFilter(f.id as 'all' | 'active' | 'finished' | 'urgent'); setIsFilterPopupOpen(false); }}
+                        className={`flex flex-col items-start gap-2.5 p-4 rounded-2xl border transition-all active:scale-[0.97] ${
+                          isActive
+                            ? `${f.active} text-white border-transparent`
+                            : isDarkMode ? 'bg-slate-800/40 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-100 text-slate-600 hover:border-slate-200 shadow-sm'
+                        }`}
+                      >
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isActive ? 'bg-white/20 text-white' : f.idle}`}>
+                          {f.icon}
+                        </div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-left leading-tight">{f.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Tabs */}
-        <div className="grid grid-cols-2 sm:flex gap-1.5 p-1 bg-slate-100 dark:bg-slate-900 rounded-2xl w-full sm:w-fit sm:self-center">
-          <button
-            type="button"
-            onClick={() => { setActiveTab('monitor'); setSelectedSectorId(null); }}
-            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'monitor' ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
-          >
-            <LayoutDashboard size={14} className="text-indigo-500 shrink-0" /> Monitor WIP
-          </button>
-          <button
-            type="button"
-            onClick={() => { setActiveTab('lots'); setSelectedSectorId(null); }}
-            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'lots' ? 'bg-white dark:bg-slate-800 text-emerald-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
-          >
-            <ListTodo size={14} className="text-emerald-500 shrink-0" /> MAPAS
-          </button>
-          <button
-            type="button"
-            onClick={() => { setActiveTab('orders'); setSelectedSectorId(null); }}
-            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'orders' ? 'bg-white dark:bg-slate-800 text-violet-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
-          >
-            <ClipboardList size={14} className="text-violet-500 shrink-0" /> Pedidos
-            {pendingOrders.length > 0 && (
-              <span className="w-4 h-4 rounded-full bg-violet-500 text-white text-[8px] font-black flex items-center justify-center">
-                {pendingOrders.length}
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => { setActiveTab('needs'); setSelectedSectorId(null); }}
-            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'needs' ? 'bg-white dark:bg-slate-800 text-amber-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
-          >
-            <AlertCircle size={14} className="text-amber-500 shrink-0" /> Necessidades
-            {purchaseNeeds.length > 0 ? (
-              <span className={`w-4 h-4 rounded-full text-white text-[8px] font-black flex items-center justify-center ${
-                purchaseNeeds.some(i => i.type === 'MATERIAL' ? i.required > i.stock : i.sizeShortages ? Object.values(i.sizeShortages).some((s: any) => s.required > s.stock) : false)
-                  ? 'bg-rose-500' : 'bg-indigo-400'
-              }`}>
-                {purchaseNeeds.length}
-              </span>
-            ) : hasAnyPurchaseNeed && (
-              // Há necessidades em outra origem (Mapas/Pedidos) que não a exibida no filtro atual
-              <span className="w-2.5 h-2.5 rounded-full bg-rose-500" title="Há necessidades de compra em outra origem (Mapas/Pedidos)" />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => { setActiveTab('solados'); setSelectedSectorId(null); }}
-            className={`flex items-center justify-center gap-2 px-3 py-2.5 sm:px-5 sm:py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'solados' ? 'bg-white dark:bg-slate-800 text-cyan-600 shadow-sm' : 'text-slate-500 dark:text-slate-400'}`}
-          >
-            <Footprints size={14} className="text-cyan-500 shrink-0" /> Solados
-          </button>
+        {/* Navegação — card único com 6 divisões (5 entradas + Ações Rápidas) */}
+        <div className={`w-full rounded-2xl overflow-hidden border ${isDarkMode ? 'border-slate-800' : 'border-slate-100 shadow-sm'}`}>
+          <div className={`grid grid-cols-3 sm:grid-cols-6 gap-px ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+            {/* Monitor */}
+            <button
+              type="button"
+              onClick={() => { setActiveTab('monitor'); setSelectedSectorId(null); }}
+              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 ${activeTab === 'monitor' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
+            >
+              <LayoutDashboard size={15} strokeWidth={2.5} className={`shrink-0 ${activeTab === 'monitor' ? 'text-white' : 'text-indigo-500'}`} />
+              <span className="text-[9px] font-black uppercase tracking-wide truncate">Monitor</span>
+            </button>
+            {/* Área de Corte (no lugar de Mapas) */}
+            <button
+              type="button"
+              onClick={() => setIsCuttingAreaOpen(true)}
+              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
+            >
+              <Scissors size={15} strokeWidth={2.5} className="shrink-0 text-indigo-500" />
+              <span className="text-[9px] font-black uppercase tracking-wide truncate">Corte</span>
+              {cuttingAreaLotsCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-1 rounded-full bg-rose-500 text-white text-[8px] font-black flex items-center justify-center">
+                  {cuttingAreaLotsCount}
+                </span>
+              )}
+            </button>
+            {/* Pedidos */}
+            <button
+              type="button"
+              onClick={() => { setActiveTab('orders'); setSelectedSectorId(null); }}
+              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 ${activeTab === 'orders' ? 'bg-violet-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
+            >
+              <ClipboardList size={15} strokeWidth={2.5} className={`shrink-0 ${activeTab === 'orders' ? 'text-white' : 'text-violet-500'}`} />
+              <span className="text-[9px] font-black uppercase tracking-wide truncate">Pedidos</span>
+              {pendingOrders.length > 0 && (
+                <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-1 rounded-full text-[8px] font-black flex items-center justify-center ${activeTab === 'orders' ? 'bg-white text-violet-600' : 'bg-violet-500 text-white'}`}>
+                  {pendingOrders.length}
+                </span>
+              )}
+            </button>
+            {/* Necessidades */}
+            <button
+              type="button"
+              onClick={() => { setActiveTab('needs'); setSelectedSectorId(null); }}
+              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 ${activeTab === 'needs' ? 'bg-amber-500 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
+            >
+              <AlertCircle size={15} strokeWidth={2.5} className={`shrink-0 ${activeTab === 'needs' ? 'text-white' : 'text-amber-500'}`} />
+              <span className="text-[9px] font-black uppercase tracking-wide truncate">Necessid.</span>
+              {purchaseNeeds.length > 0 ? (
+                <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-1 rounded-full text-[8px] font-black flex items-center justify-center ${
+                  activeTab === 'needs'
+                    ? 'bg-white text-amber-600'
+                    : (purchaseNeeds.some(i => i.type === 'MATERIAL' ? i.required > i.stock : i.sizeShortages ? Object.values(i.sizeShortages).some((s: any) => s.required > s.stock) : false) ? 'bg-rose-500 text-white' : 'bg-indigo-400 text-white')
+                }`}>
+                  {purchaseNeeds.length}
+                </span>
+              ) : hasAnyPurchaseNeed && (
+                <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-rose-500" title="Há necessidades de compra em outra origem (Mapas/Pedidos)" />
+              )}
+            </button>
+            {/* Solados */}
+            <button
+              type="button"
+              onClick={() => { setActiveTab('solados'); setSelectedSectorId(null); }}
+              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 ${activeTab === 'solados' ? 'bg-cyan-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
+            >
+              <Footprints size={15} strokeWidth={2.5} className={`shrink-0 ${activeTab === 'solados' ? 'text-white' : 'text-cyan-500'}`} />
+              <span className="text-[9px] font-black uppercase tracking-wide truncate">Solados</span>
+            </button>
+            {/* Ações Rápidas (no lugar de Enviar) — abre popup centralizado */}
+            <button
+              type="button"
+              onClick={() => setShowQuickActions(true)}
+              className={`relative flex items-center justify-center gap-1.5 py-3 px-2 transition-all active:scale-95 ${showQuickActions ? 'bg-rose-500 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-600'}`}
+            >
+              <Zap size={15} strokeWidth={2.5} className={`shrink-0 ${showQuickActions ? 'text-white' : 'text-rose-500'}`} />
+              <span className="text-[9px] font-black uppercase tracking-wide truncate">Ações</span>
+            </button>
+          </div>
         </div>
       </header>
+
+      {/* Popup centralizado — Ações Rápidas */}
+      {showQuickActions && (
+        <div className="fixed inset-0 z-[300000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setShowQuickActions(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+          >
+            <div className="p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-rose-500/20 text-rose-400' : 'bg-rose-50 text-rose-500'}`}>
+                  <Zap size={22} strokeWidth={2.5} />
+                </div>
+                <div>
+                  <h3 className={`text-lg font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Ações Rápidas</h3>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">Atalhos da produção</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQuickActions(false)}
+                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}
+                aria-label="Fechar" title="Fechar"
+              >
+                <X size={20} strokeWidth={2.5} />
+              </button>
+            </div>
+            <div className="p-5 grid grid-cols-2 gap-3">
+              {[
+                { label: 'Escanear', icon: <Camera size={20} />, color: 'text-sky-500', bg: isDarkMode ? 'bg-sky-500/10' : 'bg-sky-50', run: () => setIsScannerOpen(true) },
+                { label: 'Filtros', icon: <Filter size={20} />, color: 'text-violet-500', bg: isDarkMode ? 'bg-violet-500/10' : 'bg-violet-50', run: () => setIsFilterPopupOpen(true), dot: statusFilter !== 'all' },
+                { label: 'Compartilhar', icon: <Share2 size={20} />, color: 'text-orange-500', bg: isDarkMode ? 'bg-orange-500/10' : 'bg-orange-50', run: () => setIsPCPShareModalOpen(true) },
+                { label: 'Mapas', icon: <ListTodo size={20} />, color: 'text-emerald-500', bg: isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50', run: () => { setActiveTab('lots'); setSelectedSectorId(null); } },
+              ].map((action) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  onClick={() => { setShowQuickActions(false); action.run(); }}
+                  className={`relative flex flex-col items-center justify-center gap-2.5 p-4 rounded-2xl border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800/40 border-slate-700 hover:border-slate-600' : 'bg-white border-slate-100 hover:border-slate-200 shadow-sm'}`}
+                >
+                  {action.dot && <span className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full bg-sky-500" />}
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${action.bg} ${action.color}`}>
+                    {action.icon}
+                  </div>
+                  <span className={`text-[9px] font-black uppercase tracking-widest text-center leading-tight ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{action.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {activeTab === 'monitor' && (
         <div className="flex flex-col gap-8">
@@ -3673,53 +3706,62 @@ export default function PCPView({
                     key={sector.id}
                     onClick={() => setSelectedSectorId(sector.id)}
                     title={`Ver detalhes do setor ${sector.name}`}
-                    className={`group relative p-8 rounded-[2.5rem] border-2 transition-all flex flex-col gap-6 text-left hover:scale-[1.02] active:scale-95 overflow-hidden ${
-                      isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white shadow-sm shadow-slate-200/50'
+                    className={`group relative rounded-[2rem] border transition-all flex flex-col text-left hover:-translate-y-1 active:scale-[0.98] overflow-hidden ${
+                      isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-100 shadow-sm shadow-slate-200/60 hover:shadow-xl hover:shadow-slate-200/60'
                     }`}
-                    style={{ borderColor: `${sector.color}45` }}
                   >
-                    {/* Colored top accent bar */}
-                    <div className="absolute top-0 left-0 right-0 h-1.5" style={{ backgroundColor: sector.color }} />
-                    {/* Status Badges */}
-                    <div className="absolute top-6 right-6 flex gap-2">
-                      {metric?.delayedCount > 0 && (
-                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500 text-white rounded-full shadow-lg shadow-rose-500/30 animate-pulse">
-                          <Clock size={10} strokeWidth={3} />
-                          <span className="text-[9px] font-black uppercase tracking-widest">{metric.delayedCount}</span>
+                    {/* Brilho sutil da cor do setor */}
+                    <div className="absolute -top-20 -right-16 w-44 h-44 rounded-full blur-3xl opacity-[0.18] pointer-events-none" style={{ backgroundColor: sector.color }} />
+                    {/* Barra superior com a cor do setor */}
+                    <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: sector.color }} />
+
+                    <div className="relative p-6 flex flex-col gap-5">
+                      {/* Header: ícone + nome + badges */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-md" style={{ background: `linear-gradient(135deg, ${sector.color}, ${sector.color}bb)`, color: '#fff', boxShadow: `0 8px 20px -6px ${sector.color}88` }}>
+                            <Factory size={24} strokeWidth={2.2} />
+                          </div>
+                          <div className="min-w-0">
+                            <h3 className="text-[15px] font-black uppercase tracking-wide leading-tight text-slate-900 dark:text-white">{sector.name}</h3>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Setor de Produção</span>
+                          </div>
                         </div>
-                      )}
-                      {metric?.urgentCount > 0 && (
-                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-white rounded-full shadow-lg shadow-amber-500/30">
-                          <AlertCircle size={10} strokeWidth={3} />
-                          <span className="text-[9px] font-black uppercase tracking-widest">{metric.urgentCount}</span>
+                        <div className="flex gap-1.5 shrink-0">
+                          {metric?.delayedCount > 0 && (
+                            <div className="flex items-center gap-1 px-2.5 py-1 bg-rose-500 text-white rounded-full shadow-lg shadow-rose-500/30 animate-pulse">
+                              <Clock size={9} strokeWidth={3} />
+                              <span className="text-[9px] font-black tracking-widest">{metric.delayedCount}</span>
+                            </div>
+                          )}
+                          {metric?.urgentCount > 0 && (
+                            <div className="flex items-center gap-1 px-2.5 py-1 bg-amber-500 text-white rounded-full shadow-lg shadow-amber-500/30">
+                              <AlertCircle size={9} strokeWidth={3} />
+                              <span className="text-[9px] font-black tracking-widest">{metric.urgentCount}</span>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
+                      </div>
 
-                    <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 shadow-lg" style={{ backgroundColor: `${sector.color}22`, color: sector.color }}>
-                        <Factory size={28} />
+                      {/* Estatísticas em tiles */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className={`rounded-2xl px-4 py-3 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
+                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Pares no Setor</span>
+                          <p className={`text-2xl font-black leading-none mt-1.5 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{metric?.totalPares || 0}</p>
+                        </div>
+                        <div className={`rounded-2xl px-4 py-3 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
+                          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Mapas WIP</span>
+                          <p className={`text-2xl font-black leading-none mt-1.5 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{metric?.lotsCount || 0}</p>
+                        </div>
                       </div>
-                      <div className="flex flex-col">
-                        <h3 className="text-lg font-black uppercase tracking-wider leading-tight text-slate-900 dark:text-white">{sector.name}</h3>
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Setor de Produção</span>
-                      </div>
-                    </div>
 
-                    <div className="grid gap-4 mt-auto grid-cols-2">
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Pares no Setor</span>
-                        <span className={`text-xl font-black ${isDarkMode ? 'text-slate-200' : 'text-slate-900'}`}>{metric?.totalPares || 0}</span>
+                      {/* Rodapé: ação */}
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: sector.color }}>Ver Detalhes</span>
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center transition-transform group-hover:translate-x-1" style={{ backgroundColor: `${sector.color}1f`, color: sector.color }}>
+                          <ChevronRight size={16} strokeWidth={2.5} />
+                        </div>
                       </div>
-                      <div className="flex flex-col gap-1">
-                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">MAPAS WIP</span>
-                        <span className={`text-xl font-black ${isDarkMode ? 'text-slate-200' : 'text-slate-900'}`}>{metric?.lotsCount || 0}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
-                      <span className="text-[10px] font-black uppercase tracking-widest group-hover:translate-x-1 transition-transform" style={{ color: sector.color }}>Ver Detalhes</span>
-                      <ChevronRight size={16} style={{ color: sector.color }} />
                     </div>
                   </button>
                 );
@@ -4006,7 +4048,6 @@ export default function PCPView({
                           </div>
                         </div>
                         <div className="flex flex-col items-end gap-1.5">
-                          <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 px-3 py-1.5 rounded-xl">{lot.orderNumber}</span>
                           {isSplit && (
                             <span className="text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                               +{pendingGroups.size - 1} também em outro{pendingGroups.size - 1 > 1 ? 's' : ''} setor{pendingGroups.size - 1 > 1 ? 'es' : ''}
@@ -4028,9 +4069,11 @@ export default function PCPView({
                         </div>
                       </div>
 
-                      <p className={`text-center text-[9px] font-black uppercase tracking-[0.2em] mb-3 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                        {sectors.find(s => s.id === selectedSectorId)?.name}
-                      </p>
+                      <div className="flex justify-center mb-3">
+                        <span className="px-3 py-1 rounded-full bg-rose-500 text-white text-[9px] font-black uppercase tracking-[0.2em] shadow-sm shadow-rose-500/20">
+                          {sectors.find(s => s.id === selectedSectorId)?.name}
+                        </span>
+                      </div>
 
                       {(() => {
                         const lotGroups = (lot as any).metadata?.groups;
@@ -7015,7 +7058,6 @@ export default function PCPView({
         {selectedLot && (() => {
           const product = products.find(p => p.id === selectedLot.productId);
           const variation = product?.variations.find(v => v.id === selectedLot.variationId);
-          const currentSector = sectors.find(s => s.id === (selectedLot.route && selectedLot.route[selectedLot.currentSectorIndex]));
           // Prévia consistente com o que a confirmação de avanço (e o avanço em si) vão
           // decidir: resolve o destino de cada modelo pelo SEU PRÓPRIO roteiro — não o
           // do "modelo principal" do mapa — e prevê para onde a maior parte das peças vai.
@@ -7125,20 +7167,10 @@ export default function PCPView({
                           <span className="text-xl font-black text-indigo-600 dark:text-indigo-400 leading-none">{currentQty}</span>
                           <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Pares</span>
                         </div>
-                        <div className="flex-1 flex flex-col items-center py-2.5 rounded-2xl bg-red-600">
-                          <span className="text-[11px] font-black text-white leading-none truncate max-w-full px-1">{currentSector?.name || '—'}</span>
-                          <span className="text-[8px] font-black text-white uppercase tracking-widest mt-0.5">Setor Atual</span>
-                        </div>
-                        {nextSector && (
-                          <div className={`flex-1 flex flex-col items-center py-2.5 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-                            <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400 leading-none truncate max-w-full px-1">{nextSector.name}</span>
-                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Próximo</span>
-                          </div>
-                        )}
                         {movedOutQty > 0 && (
                           <div className={`flex-1 flex flex-col items-center py-2.5 rounded-2xl ${isDarkMode ? 'bg-emerald-900/20' : 'bg-emerald-50'}`}>
                             <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400 leading-none">+{movedOutQty}</span>
-                            <span className="text-[8px] font-black text-emerald-400 uppercase tracking-widest mt-0.5">Outros</span>
+                            <span className="text-[8px] font-black text-emerald-400 uppercase tracking-widest mt-0.5">Outros Setores</span>
                           </div>
                         )}
                       </div>
@@ -7619,6 +7651,19 @@ export default function PCPView({
                                 })()}
                               </div>
                               <div className="flex flex-col items-end gap-0.5 shrink-0">
+                                {(() => {
+                                  // Setor onde ESTE pedido está (cápsula vermelha) — a informação
+                                  // de setor vive no pedido, não no mapa.
+                                  const effSec = getOrderEffectiveSector(selectedLot, si.orderId, si);
+                                  const secName = effSec === ORDER_FINALIZED
+                                    ? 'Finalizado'
+                                    : (sectors.find(s => s.id === effSec)?.name || effSec || '—');
+                                  return (
+                                    <span className="text-[8px] font-black px-2 py-0.5 rounded-full uppercase bg-rose-500 text-white tracking-widest shadow-sm shadow-rose-500/20">
+                                      {secName}
+                                    </span>
+                                  );
+                                })()}
                                 <span className="text-[8px] font-black px-2 py-0.5 rounded-full uppercase bg-violet-600 text-white tracking-widest shadow-sm shadow-violet-500/30">
                                   MAPA{selectedLot.orderNumber}
                                 </span>
@@ -8333,7 +8378,7 @@ export default function PCPView({
                             <AlertCircle size={16} strokeWidth={2.5} />
                           </div>
                           <p className={`text-[11px] font-bold leading-snug ${isDarkMode ? 'text-amber-200' : 'text-amber-800'}`}>
-                            As opções abaixo afetam o <strong className="font-black">MAPA inteiro</strong> (todos os pedidos vinculados). Para mover ou finalizar pedidos individuais, use a seleção em "Pedidos Vinculados".
+                            Para <strong className="font-black">mover ou finalizar</strong> pedidos, selecione-os em "Pedidos Vinculados" — cada pedido muda de setor individualmente. Abaixo você pode emitir a Ordem de Serviço do mapa.
                           </p>
                         </div>
 
@@ -8360,65 +8405,6 @@ export default function PCPView({
                           </button>
                         </div>
 
-                        <div className="flex flex-col gap-4">
-                          <div className="flex items-center justify-between px-1">
-                            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Apontamento de Produção</h4>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-black text-slate-500 uppercase">{currentSector?.name}</span>
-                              <ChevronRight size={14} className="text-slate-300" />
-                              <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">{nextSector?.name || 'CONCLUÍDO'}</span>
-                            </div>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div className="flex flex-col gap-2">
-                              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Status / Operação</label>
-                              <ComboBox
-                                options={flowTags.map(t => ({ id: t.id, name: t.name }))}
-                                value={selectedLot.currentStatusId || ''}
-                                onChange={(id) => setSelectedLot({ ...selectedLot, currentStatusId: id })}
-                                placeholder="Selecionar operação..."
-                                isDarkMode={isDarkMode}
-                                icon={<ClipboardList size={18} />}
-                              />
-                            </div>
-                            <div className="flex flex-col gap-2">
-                              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Anotações do Setor</label>
-                              <input
-                                type="text"
-                                className={`w-full px-5 py-4 rounded-xl border-2 font-bold text-xs outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
-                                placeholder="Opcional: perdas, observações..."
-                                id="lot-notes-input"
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const notesInput = document.getElementById('lot-notes-input') as HTMLInputElement;
-                            openSectorChangeConfirm(selectedLot, selectedLot.currentStatusId || '', notesInput.value);
-                          }}
-                          className={`w-full py-5 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-95 ${
-                            nextSector ? 'bg-indigo-600 text-white shadow-indigo-600/20' : 'bg-emerald-600 text-white shadow-emerald-600/20'
-                          }`}
-                        >
-                          {nextSector ? (
-                            <>Próximo Setor: {nextSector.name} <ArrowRight size={18} /></>
-                          ) : (
-                            <>Finalizar Mapa no Setor <CheckCircle2 size={18} /></>
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => setManualSectorPicker({ lot: selectedLot })}
-                          title="Use caso o setor calculado automaticamente esteja incorreto (ex: pedidos adiantados, modelos com roteiros diferentes)"
-                          className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 border transition-all hover:scale-[1.01] active:scale-95 ${isDarkMode ? 'border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-slate-200' : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}
-                        >
-                          <ArrowLeftRight size={14} />
-                          Escolher Setor Manualmente
-                        </button>
                       </div>
                     )}
                   </div>
@@ -9527,12 +9513,12 @@ export default function PCPView({
       {/* ── Popup de confirmação: Finalizar Pedido(s) no Setor ── */}
       {finalizeSelectedConfirm && createPortal(
         <div className="fixed inset-0 flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-200" style={{ zIndex: 60000 }}>
-          <div className={`w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl flex flex-col items-center text-center gap-5 animate-in zoom-in-95 duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
-            <div className="w-20 h-20 rounded-full flex items-center justify-center shadow-xl bg-violet-500 shadow-violet-500/30">
+          <div className={`w-full max-w-sm max-h-[90vh] rounded-[2.5rem] p-8 shadow-2xl flex flex-col items-center text-center gap-5 animate-in zoom-in-95 duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+            <div className="shrink-0 w-20 h-20 rounded-full flex items-center justify-center shadow-xl bg-violet-500 shadow-violet-500/30">
               <CheckCircle2 size={38} className="text-white" strokeWidth={2.5} />
             </div>
 
-            <div>
+            <div className="shrink-0">
               <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                 Confirmar Ação
               </p>
@@ -9541,6 +9527,7 @@ export default function PCPView({
               </h2>
             </div>
 
+            <div className="w-full flex-1 min-h-0 overflow-y-auto flex flex-col gap-5 -mx-1 px-1">
             <div className={`w-full px-4 py-3 rounded-2xl flex flex-col gap-1.5 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
               <p className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                 {finalizeSelectedConfirm.items.length === 1 ? 'Pedido' : 'Pedidos'}
@@ -9597,8 +9584,9 @@ export default function PCPView({
                 ))}
               </div>
             )}
+            </div>
 
-            <div className="w-full flex gap-3">
+            <div className="shrink-0 w-full flex gap-3">
               <button
                 type="button"
                 onClick={() => setFinalizeSelectedConfirm(null)}

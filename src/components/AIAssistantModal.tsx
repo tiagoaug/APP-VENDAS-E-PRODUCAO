@@ -94,14 +94,32 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
       userMessage.images = [{ mediaType: attachedImage.mediaType, data: attachedImage.data }];
     }
 
+    // Mensagem exibida no chat (limpa) e mensagem enviada à IA (com a instrução-guia
+    // quando há foto). Assim o balão do usuário não fica poluído com o texto técnico.
     const newMessages: AIChatMessage[] = [...messages, userMessage];
+
+    // Foto para cadastrar compras: orienta a IA a, JÁ NESTA PRIMEIRA RESPOSTA, ler o
+    // documento e gerar o formulário preenchido (mesmo raciocínio do "Planejar" de
+    // solados), sem perguntar/pedir confirmação.
+    const apiMessages: AIChatMessage[] = attachedImage
+      ? [
+          ...messages,
+          {
+            ...userMessage,
+            content:
+              (content ? content + "\n\n" : "") +
+              "Analise a imagem enviada. Se for um documento de COMPRA (nota, pedido, etiqueta ou ficha de compra de materiais/insumos ou de solados), extraia os dados e gere JÁ NESTA MESMA RESPOSTA o card de cadastro de compra preenchido para eu conferir e abrir o formulário: use propose_purchase_registration para materiais/compra geral ou propose_sole_purchase_registration para solados. NÃO pergunte e NÃO peça confirmação — gere o card diretamente. Se for um cadastro de pessoa (cliente/fornecedor), gere o card com propose_person_registration. Não invente dados que não estejam legíveis na imagem.",
+          },
+        ]
+      : newMessages;
+
     setMessages(newMessages);
     setInput("");
     setAttachedImage(null);
     setIsLoading(true);
 
     try {
-      const response = await sendAIChatMessage(newMessages);
+      const response = await sendAIChatMessage(apiMessages);
       setMessages([...newMessages, { role: "assistant", content: response.text, formProposal: response.formProposal }]);
       setLastUsage(response.usage);
     } catch (err: any) {
@@ -551,7 +569,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
                         className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-black uppercase tracking-widest transition-colors"
                       >
                         <ShoppingCart size={14} />
-                        Abrir pedido preenchido
+                        Abrir formulário preenchido
                       </button>
                       <div className={`grid ${exportGridColsClass} gap-2`}>
                         <button

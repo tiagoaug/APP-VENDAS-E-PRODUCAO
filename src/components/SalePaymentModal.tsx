@@ -1,9 +1,10 @@
 ﻿import React, { useState, useMemo } from 'react';
 import { Sale, Account, PaymentMethod, SalePayment, TransactionType, PaymentStatus, Person } from '../types';
-import { X, DollarSign, Calendar, Wallet, History, Clipboard, CheckCircle2, ChevronRight, AlertCircle, Copy, CreditCard, Trash2, RotateCcw, Pencil } from 'lucide-react';
+import { X, DollarSign, Calendar, Wallet, History, Clipboard, CheckCircle2, ChevronRight, AlertCircle, Copy, CreditCard, Trash2, RotateCcw, Pencil, Calculator } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '../utils/toast';
+import CalculatorPopover from './CalculatorPopover';
 
 interface SalePaymentModalProps {
   isOpen: boolean;
@@ -34,6 +35,8 @@ export default function SalePaymentModal({
 }: SalePaymentModalProps) {
   const [viewMode, setViewMode] = useState<'PAYMENT' | 'HISTORY'>(initialMode);
   const [amount, setAmount] = useState<string>('');
+  const [showCalc, setShowCalc] = useState(false);
+  const setQuitarTudo = () => setAmount(remaining.toFixed(2));
   const [accountId, setAccountId] = useState(accounts[0]?.id || '');
   const [paymentMethodId, setPaymentMethodId] = useState(paymentMethods[0]?.id || '');
   const [note, setNote] = useState('');
@@ -124,7 +127,7 @@ export default function SalePaymentModal({
 
   const startEdit = (payment: SalePayment) => {
     setEditingPaymentId(payment.id);
-    setAmount(payment.amount.toString());
+    setAmount(payment.amount.toFixed(2));
     setAccountId(payment.accountId);
     setPaymentMethodId(payment.paymentMethodId);
     setNote(payment.note || '');
@@ -132,6 +135,7 @@ export default function SalePaymentModal({
   };
 
   return (
+    <>
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
       <div className={`w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
         
@@ -141,9 +145,11 @@ export default function SalePaymentModal({
             <h2 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
               {viewMode === 'PAYMENT' ? 'Registrar Recebimento' : 'Histórico de Recebimentos'}
             </h2>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Cliente: {customer?.name || sale.customerName || "---"}</p>
+            <span className="inline-flex items-center mt-1 px-3 py-1 rounded-full bg-slate-900 text-white text-[9px] font-black uppercase tracking-widest">
+              {customer?.name || sale.customerName || "---"}
+            </span>
           </div>
-          <button onClick={onClose} className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-50 dark:bg-slate-800 text-slate-400">
+          <button type="button" onClick={onClose} title="Fechar" aria-label="Fechar" className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-50 dark:bg-slate-800 text-slate-400">
             <X size={20} />
           </button>
         </div>
@@ -188,31 +194,45 @@ export default function SalePaymentModal({
                 <AlertCircle size={32} className="text-rose-500/30" />
               </div>
 
+              {remaining > 0 && (
+                <button
+                  type="button"
+                  onClick={setQuitarTudo}
+                  className={`w-full p-4 rounded-3xl flex items-center justify-between transition-all active:scale-[0.98] ${isDarkMode ? 'bg-emerald-900/30 hover:bg-emerald-900/50' : 'bg-emerald-50 hover:bg-emerald-100'}`}
+                >
+                  <p className="text-[11px] font-black text-emerald-500 uppercase tracking-widest">Clique aqui para quitar tudo</p>
+                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-emerald-500/20' : 'bg-emerald-500/10'}`}>
+                    <CheckCircle2 size={22} className="text-emerald-500" strokeWidth={2.5} />
+                  </div>
+                </button>
+              )}
+
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <div className="flex items-center justify-between ml-1 mb-2">
-                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block">Valor do Recebimento</label>
-                    <button 
-                      type="button"
-                      onClick={() => setAmount(remaining.toFixed(2))}
-                      className="text-[9px] font-black uppercase text-indigo-500 tracking-widest hover:text-indigo-600 transition-colors flex items-center gap-1"
-                    >
-                      <CheckCircle2 size={10} />
-                      Quitar Total
-                    </button>
-                  </div>
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 mb-2 block">
+                    Valor do Recebimento
+                  </label>
                   <div className="relative">
                     <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                    <input 
+                    <input
                       type="number"
                       step="0.01"
                       required
                       autoFocus
                       placeholder="0,00"
-                      className={`w-full border-none rounded-2xl py-4 pl-12 pr-4 text-xl font-black font-mono tracking-tight focus:ring-4 focus:ring-indigo-500/10 ${isDarkMode ? 'bg-slate-800 text-white placeholder:text-slate-700' : 'bg-slate-50 text-slate-900 placeholder:text-slate-200'}`}
+                      className={`w-full border-none rounded-2xl py-4 pl-12 pr-14 text-xl font-black font-mono tracking-tight focus:ring-4 focus:ring-indigo-500/10 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-moz-appearance]:textfield ${isDarkMode ? 'bg-slate-800 text-white placeholder:text-slate-700' : 'bg-slate-50 text-slate-900 placeholder:text-slate-200'}`}
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
                     />
+                    <button
+                      type="button"
+                      title="Abrir calculadora"
+                      aria-label="Abrir calculadora"
+                      onClick={() => setShowCalc(true)}
+                      className={`absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-xl flex items-center justify-center transition-all active:scale-90 ${isDarkMode ? 'bg-slate-700 text-indigo-400 hover:bg-slate-600' : 'bg-indigo-50 text-indigo-500 hover:bg-indigo-100'}`}
+                    >
+                      <Calculator size={16} strokeWidth={2.5} />
+                    </button>
                   </div>
                 </div>
 
@@ -222,6 +242,7 @@ export default function SalePaymentModal({
                     <div className="relative">
                       <Wallet className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                       <select
+                        title="Conta de Destino"
                         className={`w-full border-none rounded-2xl py-3.5 pl-12 pr-4 text-xs font-black uppercase tracking-widest focus:ring-4 focus:ring-indigo-500/10 appearance-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
                         value={accountId}
                         onChange={(e) => setAccountId(e.target.value)}
@@ -238,6 +259,7 @@ export default function SalePaymentModal({
                     <div className="relative">
                       <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                       <select
+                        title="Método de Pagamento"
                         className={`w-full border-none rounded-2xl py-3.5 pl-12 pr-4 text-xs font-black uppercase tracking-widest focus:ring-4 focus:ring-indigo-500/10 appearance-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
                         value={paymentMethodId}
                         onChange={(e) => setPaymentMethodId(e.target.value)}
@@ -254,8 +276,8 @@ export default function SalePaymentModal({
                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 mb-2 block">Observação (Opcional)</label>
                     <input 
                       type="text"
-                      placeholder="EX: RECEBIMENTO PARCIAL EM DINHEIRO"
-                      className={`w-full border-none rounded-2xl py-3.5 px-4 text-[11px] font-black uppercase tracking-widest focus:ring-4 focus:ring-indigo-500/10 ${isDarkMode ? 'bg-slate-800 text-white placeholder:text-slate-700' : 'bg-slate-50 text-slate-900 placeholder:text-slate-200'}`}
+                      placeholder="Ex: Recebimento em dinheiro"
+                      className={`w-full border-none rounded-2xl py-3.5 px-4 text-[11px] font-black uppercase tracking-widest focus:ring-4 focus:ring-indigo-500/10 placeholder:text-[12px] placeholder:font-medium placeholder:normal-case placeholder:tracking-normal ${isDarkMode ? 'bg-slate-800 text-white placeholder:text-slate-500' : 'bg-slate-50 text-slate-900 placeholder:text-slate-400'}`}
                       value={note}
                       onChange={(e) => setNote(e.target.value)}
                     />
@@ -375,5 +397,13 @@ export default function SalePaymentModal({
         </div>
       </div>
     </div>
+
+    {showCalc && (
+      <CalculatorPopover
+        onApply={(val) => { setAmount(val.toFixed(2)); setShowCalc(false); }}
+        onClose={() => setShowCalc(false)}
+      />
+    )}
+    </>
   );
 }

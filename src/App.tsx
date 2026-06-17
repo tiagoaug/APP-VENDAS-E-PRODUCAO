@@ -897,6 +897,84 @@ export default function App() {
     }
   };
 
+  // "Transferir para Estoque" — cancela a venda e converte os lotes RESERVADO dessa
+  // venda em EM_ESTOQUE, incrementando o estoque de produtos. Não estorna transações
+  // financeiras (use handleCancelSaleWithRevert para reverter tudo).
+  const handleTransferSaleToStock = async (saleId: string) => {
+    const sale = sales.find(s => s.id === saleId);
+    if (!sale) return;
+
+    const reservedLots = stockLots.filter(l => l.saleId === saleId && l.status === 'RESERVADO');
+    if (reservedLots.length === 0) {
+      toast.show('Nenhum lote produzido reservado para transferir.');
+      return;
+    }
+
+    try {
+      const productUpdates = new Map<string, any>();
+      const getProd = (id: string) => {
+        if (productUpdates.has(id)) return productUpdates.get(id);
+        const p = products.find(pr => pr.id === id);
+        if (!p) return null;
+        const cloned = JSON.parse(JSON.stringify(p));
+        productUpdates.set(id, cloned);
+        return cloned;
+      };
+
+      // Incrementa estoque do produto para cada lote RESERVADO
+      for (const lot of reservedLots) {
+        const prod = getProd(lot.productId);
+        if (!prod) continue;
+        const variation = prod.variations.find((v: any) => v.id === lot.variationId);
+        if (!variation) continue;
+
+        if (prod.type === SaleType.WHOLESALE) {
+          const boxQty = lot.boxQty || 0;
+          variation.stock['WHOLESALE'] = (variation.stock['WHOLESALE'] || 0) + boxQty;
+          if (lot.pkgId && boxQty > 0) {
+            const allocations = [...(variation.stockPkgAllocations || [])];
+            const idx = allocations.findIndex((a: any) => a.pkgId === lot.pkgId);
+            if (idx >= 0) {
+              allocations[idx] = { ...allocations[idx], qty: allocations[idx].qty + boxQty };
+            } else {
+              allocations.push({ pkgId: lot.pkgId, qty: boxQty });
+            }
+            variation.stockPkgAllocations = allocations;
+          }
+        } else {
+          Object.entries(lot.sizeBreakdown).forEach(([size, qty]) => {
+            variation.stock[size] = (variation.stock[size] || 0) + (qty as number);
+          });
+        }
+      }
+
+      // Salva os produtos atualizados
+      for (const [, prod] of productUpdates) {
+        await firebaseService.saveDocument('products', prod);
+      }
+
+      // Converte lotes RESERVADO → EM_ESTOQUE removendo vínculo com a venda
+      const now = Date.now();
+      for (const lot of reservedLots) {
+        await firebaseService.updateDocument('stockLots', lot.id, {
+          status: 'EM_ESTOQUE',
+          saleId: null,
+          saleOrderNumber: null,
+          customerName: null,
+          updatedAt: now,
+        });
+      }
+
+      // Cancela a venda
+      await firebaseService.updateDocument('sales', saleId, { status: SaleStatus.CANCELLED });
+
+      toast.show(`Pedido cancelado. ${reservedLots.length} lote(s) transferidos para o estoque.`);
+    } catch (e: any) {
+      console.error(e);
+      toast.show('Erro ao transferir para estoque: ' + (e.message || e));
+    }
+  };
+
   const handleCancelOnlySale = async (id: string) => {
     const sale = sales.find(s => s.id === id);
     if (!sale) return;
@@ -946,6 +1024,232 @@ export default function App() {
     } catch (e: any) {
       console.error(e);
       toast.show('Erro ao liberar pedido: ' + (e.message || e));
+    }
+  };
+
+  // "Expedir" — dá baixa no ESTOQUE GERAL (variation.stock) dos itens da venda que
+  // ainda não foram abatidos (fulfilled !== true) e que têm estoque suficiente.
+  // Marca esses itens como fulfilled; se todos forem atendidos, marca como entregue.
+  const handleExpediteSale = async (saleId: string) => {
+    const sale = sales.find(s => s.id === saleId);
+    if (!sale) return;
+    try {
+      const productUpdates = new Map<string, any>();
+      const getProd = (id: string) => {
+        if (productUpdates.has(id)) return productUpdates.get(id);
+        const p = products.find(pr => pr.id === id);
+        if (!p) return null;
+        const cloned = JSON.parse(JSON.stringify(p));
+        productUpdates.set(id, cloned);
+        return cloned;
+      };
+
+      let anyExpedited = false;
+      const newItems = sale.items.map(item => {
+        if (item.fulfilled === true) return item;
+        const prod = getProd(item.productId);
+        if (!prod) return item;
+        const variation = prod.variations.find((v: any) => v.id === item.variationId);
+        if (!variation) return item;
+        const key = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
+        const available = variation.stock?.[key] || 0;
+        if (available >= item.quantity) {
+          variation.stock[key] = available - item.quantity;
+          anyExpedited = true;
+          return { ...item, fulfilled: true };
+        }
+        return item;
+      });
+
+      if (!anyExpedited) {
+        toast.show('Nenhum item com estoque suficiente para expedir.');
+        return;
+      }
+
+      for (const [, prod] of productUpdates) {
+        await firebaseService.saveDocument('products', prod);
+      }
+
+      const allFulfilled = newItems.every(it => it.fulfilled === true);
+      await firebaseService.updateDocument('sales', saleId, {
+        items: newItems,
+        ...(allFulfilled ? { deliveryStatus: 'DELIVERED', deliveredAt: Date.now() } : {}),
+      });
+
+      toast.show(allFulfilled
+        ? 'Venda expedida — estoque baixado e pedido entregue.'
+        : 'Itens disponíveis expedidos — estoque baixado.');
+    } catch (e: any) {
+      console.error(e);
+      toast.show('Erro ao expedir: ' + (e.message || e));
+    }
+  };
+
+  // "Reverter Expedição" — desfaz a baixa: devolve ao estoque geral as quantidades dos
+  // itens já abatidos (fulfilled === true) e marca-os como aguardando estoque novamente.
+  const handleRevertExpedition = async (saleId: string) => {
+    const sale = sales.find(s => s.id === saleId);
+    if (!sale) return;
+    try {
+      const productUpdates = new Map<string, any>();
+      const getProd = (id: string) => {
+        if (productUpdates.has(id)) return productUpdates.get(id);
+        const p = products.find(pr => pr.id === id);
+        if (!p) return null;
+        const cloned = JSON.parse(JSON.stringify(p));
+        productUpdates.set(id, cloned);
+        return cloned;
+      };
+
+      let anyReverted = false;
+      const newItems = sale.items.map(item => {
+        if (item.fulfilled !== true) return item;
+        const prod = getProd(item.productId);
+        if (!prod) return item;
+        const variation = prod.variations.find((v: any) => v.id === item.variationId);
+        if (!variation) return item;
+        const key = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
+        variation.stock[key] = (variation.stock?.[key] || 0) + item.quantity;
+        anyReverted = true;
+        return { ...item, fulfilled: false };
+      });
+
+      if (!anyReverted) {
+        toast.show('Não há itens expedidos para reverter.');
+        return;
+      }
+
+      for (const [, prod] of productUpdates) {
+        await firebaseService.saveDocument('products', prod);
+      }
+
+      await firebaseService.updateDocument('sales', saleId, {
+        items: newItems,
+        deliveryStatus: 'PENDING',
+      });
+
+      toast.show('Expedição revertida — estoque devolvido.');
+    } catch (e: any) {
+      console.error(e);
+      toast.show('Erro ao reverter expedição: ' + (e.message || e));
+    }
+  };
+
+  // "Separar Caixas" — registra a separação física por item.
+  // Para itens SEM lotes RESERVADO vinculados: abate do estoque geral do produto.
+  // Para itens COM lotes RESERVADO (produção casada): apenas atualiza boxesSeparated
+  // (o estoque nunca foi creditado ao produto nesses casos).
+  const handleFixPkgAllocations = async (): Promise<{ fixed: number; total: number }> => {
+    let fixed = 0;
+    const total = products.length;
+    for (const product of products) {
+      let changed = false;
+      const updatedVariations = product.variations.map((v: any) => {
+        const boxQty: number = v.stock?.['WHOLESALE'] ?? 0;
+        const allocs: any[] = v.stockPkgAllocations || [];
+        const totalAlloc = allocs.reduce((s: number, a: any) => s + a.qty, 0);
+        if (totalAlloc > boxQty) {
+          let excess = totalAlloc - boxQty;
+          const trimmed = allocs.map((a: any) => ({ ...a }));
+          for (let i = trimmed.length - 1; i >= 0 && excess > 0; i--) {
+            const cut = Math.min(trimmed[i].qty, excess);
+            trimmed[i].qty -= cut;
+            excess -= cut;
+          }
+          changed = true;
+          return { ...v, stockPkgAllocations: trimmed.filter((a: any) => a.qty > 0) };
+        }
+        return v;
+      });
+      if (changed) {
+        await firebaseService.saveDocument('products', { ...product, variations: updatedVariations });
+        fixed++;
+      }
+    }
+    return { fixed, total };
+  };
+
+  const handleSepararCaixas = async (
+    saleId: string,
+    separations: { itemIdx: number; quantity: number }[]
+  ) => {
+    const sale = sales.find(s => s.id === saleId);
+    if (!sale) return;
+    try {
+      const productUpdates = new Map<string, any>();
+      const getProd = (id: string) => {
+        if (productUpdates.has(id)) return productUpdates.get(id);
+        const p = products.find(pr => pr.id === id);
+        if (!p) return null;
+        const cloned = JSON.parse(JSON.stringify(p));
+        productUpdates.set(id, cloned);
+        return cloned;
+      };
+
+      const reservedLots = stockLots.filter(l => l.saleId === saleId && l.status === 'RESERVADO');
+      const newItems = sale.items.map((item, idx) => ({ ...item }));
+
+      for (const sep of separations) {
+        if (sep.quantity <= 0) continue;
+        const item = newItems[sep.itemIdx];
+        if (!item) continue;
+
+        const itemReservedLots = reservedLots.filter(
+          l => l.productId === item.productId && l.variationId === item.variationId
+        );
+
+        if (itemReservedLots.length === 0) {
+          // Sem lotes reservados: abate do estoque geral
+          const prod = getProd(item.productId);
+          if (prod) {
+            const variation = prod.variations.find((v: any) => v.id === item.variationId);
+            if (variation) {
+              const key = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
+              const available = variation.stock?.[key] || 0;
+              const newQty = Math.max(0, available - sep.quantity);
+              variation.stock[key] = newQty;
+
+              // Trim pkg allocations so totalAllocated never exceeds new boxQty
+              if (key === 'WHOLESALE') {
+                const allocs: any[] = variation.stockPkgAllocations || [];
+                const totalAlloc = allocs.reduce((s: number, a: any) => s + a.qty, 0);
+                if (newQty < totalAlloc) {
+                  let excess = totalAlloc - newQty;
+                  const trimmed = allocs.map((a: any) => ({ ...a }));
+                  for (let i = trimmed.length - 1; i >= 0 && excess > 0; i--) {
+                    const cut = Math.min(trimmed[i].qty, excess);
+                    trimmed[i].qty -= cut;
+                    excess -= cut;
+                  }
+                  variation.stockPkgAllocations = trimmed.filter((a: any) => a.qty > 0);
+                }
+              }
+            }
+          }
+        }
+        // Com lotes reservados: sem alteração no estoque (nunca foi creditado ao produto)
+
+        const newSeparated = (item.boxesSeparated || 0) + sep.quantity;
+        newItems[sep.itemIdx] = {
+          ...item,
+          boxesSeparated: newSeparated,
+          fulfilled: newSeparated >= item.quantity ? true : item.fulfilled,
+        };
+      }
+
+      for (const [, prod] of productUpdates) {
+        await firebaseService.saveDocument('products', prod);
+      }
+
+      const allSeparated = newItems.every(it => (it.boxesSeparated || 0) >= it.quantity);
+      await firebaseService.updateDocument('sales', saleId, { items: newItems });
+
+      toast.show(allSeparated
+        ? 'Todos os itens separados — pedido pronto para expedição.'
+        : 'Separação registrada com sucesso.');
+    } catch (e: any) {
+      console.error(e);
+      toast.show('Erro ao registrar separação: ' + (e.message || e));
     }
   };
 
@@ -1555,10 +1859,11 @@ export default function App() {
           }
         }
 
-        // Read refs for stock revert
+        // Read refs for stock revert — compras com OP não creditam estoque ao salvar,
+        // então não há estoque a reverter na exclusão.
         const productRefsMap = new Map<string, any>();
         const productDocsMap = new Map<string, any>();
-        if (purchase.type === PurchaseType.REPLENISHMENT && purchase.items) {
+        if (purchase.type === PurchaseType.REPLENISHMENT && !purchase.isProductionOrder && purchase.items) {
           for (const item of purchase.items) {
             if (!productRefsMap.has(item.productId)) {
               const pRef = doc(db, `users/${uid}/products`, item.productId);
@@ -1579,7 +1884,7 @@ export default function App() {
         }
 
         // Writes: revert stock
-        if (purchase.type === PurchaseType.REPLENISHMENT && purchase.items) {
+        if (purchase.type === PurchaseType.REPLENISHMENT && !purchase.isProductionOrder && purchase.items) {
           for (const item of purchase.items) {
             const pDoc = productDocsMap.get(item.productId);
             if (pDoc?.exists()) {
@@ -1632,10 +1937,30 @@ export default function App() {
         }
       }
 
-      // Non-critical: remove production order if no lots exist
+      // Non-critical: remove the Production Order and its still-PENDING Mapas (the
+      // purchase that originated them was excluded). Mapas that already progressed in
+      // production (baixa em algum setor) are preserved — só os ainda pendentes são
+      // excluídos, como esperado ao cancelar uma compra de estoque não produzida.
       const order = pcpLinks?.order;
-      if (order && (!pcpLinks?.orderLots || pcpLinks.orderLots.length === 0)) {
-        await firebaseService.deleteDocument("productionOrders", order.id);
+      if (order) {
+        const lots = pcpLinks?.orderLots || [];
+        const hasProgressed = (l: ProductionLot) =>
+          (l.history && l.history.length > 0) || l.currentSectorIndex > 0 || !!l.finishedAt;
+        const pendingLots = lots.filter(l => !hasProgressed(l));
+
+        for (const l of pendingLots) {
+          await firebaseService.deleteDocument("productionLots", l.id);
+        }
+
+        if (lots.every(l => !hasProgressed(l))) {
+          // Nenhum mapa com progresso → remove a OP inteira.
+          await firebaseService.deleteDocument("productionOrders", order.id);
+        } else {
+          // Mantém a OP, apenas removendo das suas referências os mapas pendentes excluídos.
+          await firebaseService.updateDocument("productionOrders", order.id, {
+            lotIds: (order.lotIds || []).filter(id => !pendingLots.some(pl => pl.id === id)),
+          });
+        }
       }
     } catch (err) {
       console.error('Error during purchase deletion:', err);
@@ -2152,6 +2477,7 @@ export default function App() {
             fontSize={fontSize}
             setFontSize={setFontSize}
             onLogout={logout}
+            onFixPkgAllocations={handleFixPkgAllocations}
           />
         );
       case ViewType.PRODUCTS:
@@ -2642,7 +2968,9 @@ export default function App() {
                 };
 
                 // 1. REVERT OLD STOCK if it was REPLENISHMENT
-                if (prevPurchase && prevPurchase.type === PurchaseType.REPLENISHMENT && prevPurchase.items) {
+                // OBS: compras com "Pedido de Produção (OP)" NÃO creditam estoque ao salvar
+                // (o estoque entra pela produção/Expedição), então também não revertem aqui.
+                if (prevPurchase && prevPurchase.type === PurchaseType.REPLENISHMENT && !prevPurchase.isProductionOrder && prevPurchase.items) {
                   for (const item of prevPurchase.items) {
                     const updatedProduct = getProductForUpdate(item.productId);
                     if (updatedProduct) {
@@ -2663,7 +2991,9 @@ export default function App() {
                 }
 
                 // 2. APPLY NEW STOCK if it is REPLENISHMENT
-                if (purchase.type === PurchaseType.REPLENISHMENT && purchase.items) {
+                // Compras com OP (produção para estoque) NÃO entram aqui — a entrada no
+                // estoque ocorre quando a produção é finalizada na Expedição.
+                if (purchase.type === PurchaseType.REPLENISHMENT && !purchase.isProductionOrder && purchase.items) {
                   for (const item of purchase.items) {
                     const updatedProduct = getProductForUpdate(item.productId);
                     if (updatedProduct) {
@@ -2681,7 +3011,8 @@ export default function App() {
                 }
 
                 // AUTO-FULFILL: Atender itens pendentes (CONFIRMED e SALE c/ itens sem estoque)
-                if (purchase.type === PurchaseType.REPLENISHMENT && purchase.items) {
+                // Não roda para OP — nada foi produzido ainda ao salvar a compra.
+                if (purchase.type === PurchaseType.REPLENISHMENT && !purchase.isProductionOrder && purchase.items) {
                   const pendingSales = sales
                     .filter(s =>
                       s.status === SaleStatus.CONFIRMED ||
@@ -2781,37 +3112,10 @@ export default function App() {
                   await firebaseService.updateDocument("accounts", acc.id, { balance: acc.balance });
                 }
 
-                // Update material stock + PurchaseRequest only if user confirmed
-                if (purchase.registerAsReceived && purchase.type === PurchaseType.GENERAL && purchase.generalItems) {
-                  for (const gi of purchase.generalItems) {
-                    if (gi.materialId && gi.quantity && gi.quantity > 0) {
-                      const mat = productionConfigs.find(c => c.id === gi.materialId);
-                      if (mat) {
-                        const currentStock = mat.metadata?.stock || 0;
-                        await firebaseService.saveDocument("productionConfigs", {
-                          ...mat,
-                          metadata: { ...mat.metadata, stock: currentStock + gi.quantity },
-                        });
-                      }
-                    }
-                  }
-
-                  if (currentParams?.requestId) {
-                    const req = purchaseRequests.find(r => r.id === currentParams.requestId);
-                    if (req) {
-                      const purchasedQty = purchase.generalItems.reduce(
-                        (sum, gi) => sum + (gi.quantity || 0), 0
-                      );
-                      const newReceivedQty = (req.receivedQty || 0) + purchasedQty;
-                      const isFullyReceived = newReceivedQty >= req.requiredQty;
-                      await firebaseService.updateDocument("purchaseRequests", req.id, {
-                        receivedQty: newReceivedQty,
-                        status: isFullyReceived ? 'RECEIVED' : 'ORDERED',
-                        updatedAt: Date.now(),
-                      });
-                    }
-                  }
-                } else if (currentParams?.requestId) {
+                // O estoque de materiais (inclusive por cor) é creditado exclusivamente
+                // na tela "Recebimento de Compras" (conferência) — nunca direto ao salvar
+                // a compra. Aqui só marcamos a solicitação vinculada como "em andamento".
+                if (currentParams?.requestId) {
                   const req = purchaseRequests.find(r => r.id === currentParams.requestId);
                   if (req && req.status === 'PENDING') {
                     await firebaseService.updateDocument("purchaseRequests", req.id, {
@@ -2845,6 +3149,30 @@ export default function App() {
             onDelete={handleDeleteSale}
             onCancelOnly={handleCancelOnlySale}
             onCancelAndRevert={handleCancelSaleWithRevert}
+            onAddStockBalance={async (adjustments) => {
+              // Balanço de estoque a partir da demanda dos orçamentos: incrementa o
+              // estoque das variações (atacado em caixas/WHOLESALE; varejo por tamanho).
+              // Agrupa por produto para salvar cada produto uma única vez.
+              const byProduct = new Map<string, { productId: string; variationId: string; key: string; amount: number }[]>();
+              for (const adj of adjustments) {
+                if (adj.amount <= 0) continue;
+                if (!byProduct.has(adj.productId)) byProduct.set(adj.productId, []);
+                byProduct.get(adj.productId)!.push(adj);
+              }
+              for (const [productId, adjs] of byProduct) {
+                const product = products.find((p) => p.id === productId);
+                if (!product) continue;
+                const updated = JSON.parse(JSON.stringify(product));
+                for (const adj of adjs) {
+                  const v = updated.variations.find((vv: any) => vv.id === adj.variationId);
+                  if (!v) continue;
+                  v.stock = v.stock || {};
+                  v.stock[adj.key] = (v.stock[adj.key] || 0) + adj.amount;
+                }
+                await firebaseService.saveDocument("products", updated);
+              }
+              toast.show("Estoque atualizado com a demanda dos orçamentos.");
+            }}
             onConvert={async (id) => {
               const sale = sales.find((s) => s.id === id);
               if (!sale) return;
@@ -3294,6 +3622,10 @@ export default function App() {
             initialSearchQuery={searchContext}
             stockLots={stockLots}
             onReleaseSale={handleReleaseSale}
+            onExpediteSale={handleExpediteSale}
+            onRevertExpedition={handleRevertExpedition}
+            onSepararCaixas={handleSepararCaixas}
+            onTransferToStock={handleTransferSaleToStock}
             onNavigateStock={() => navigateTo(ViewType.STOCK)}
             productionConfigs={productionConfigs}
           />
@@ -3490,6 +3822,8 @@ export default function App() {
             stockLots={stockLots}
             onPreviewRevertStockLot={buildStockLotRevertPreview}
             onRevertStockLot={handleRevertStockLot}
+            sales={sales}
+            productionOrders={productionOrders}
           />
         );
       case ViewType.SALE_FORM:
@@ -3696,35 +4030,7 @@ export default function App() {
         );
       case ViewType.PRODUCTION_MENU:
         return (
-          <div className="flex flex-col gap-8 pb-32">
-            <header className="flex flex-col gap-3 px-2">
-              <motion.div 
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="w-16 h-16 rounded-[1.8rem] bg-indigo-600 text-white flex items-center justify-center shadow-xl shadow-indigo-500/20"
-              >
-                <Factory size={32} strokeWidth={2.5} />
-              </motion.div>
-              <div>
-                <motion.h2 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.1 }}
-                  className="text-3xl font-black uppercase tracking-tight text-slate-900 dark:text-white"
-                >
-                  Produção
-                </motion.h2>
-                <motion.p 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
-                  className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-1"
-                >
-                  Módulo de Produção
-                </motion.p>
-              </div>
-            </header>
-
+          <div className="flex flex-col gap-6 pb-32">
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-3">
                 <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Gestão de Fábrica e PCP</h3>
@@ -3882,6 +4188,25 @@ export default function App() {
               } catch (e) {
                 console.error(e);
                 toast.show("Erro ao excluir modelo.");
+              }
+            }}
+            onDuplicate={async (id) => {
+              try {
+                const original = products.find(p => p.id === id);
+                if (!original) return;
+                const { id: _id, ...rest } = original;
+                const copy = {
+                  ...rest,
+                  name: `${rest.name} (Cópia)`,
+                  reference: `${rest.reference}-C`,
+                  createdAt: Date.now(),
+                  updatedAt: Date.now(),
+                };
+                await firebaseService.saveDocument("products", copy);
+                toast.show("Engenharia duplicada com sucesso!");
+              } catch (e) {
+                console.error(e);
+                toast.show("Erro ao duplicar modelo.");
               }
             }}
             onToggleStatus={async (id, status) => {
@@ -4061,7 +4386,7 @@ export default function App() {
                 { id: ViewType.PRODUCTION_STOCK, label: 'Estoques Gerais', description: 'Matéria-prima, adesivos e insumos', icon: <PackageOpen size={24} />, color: 'text-emerald-600' },
                 { id: ViewType.PRODUCTION_SOLE_STOCK, label: 'Estoque de Solados', description: 'Gerenciamento por modelo, cor e tamanho', icon: <Package size={24} />, color: 'text-indigo-600' },
                 { id: ViewType.PRODUCTION_PALMILHA_STOCK, label: 'Estoque de Palmilhas', description: 'Montagem e Acabamento, por faca e cor', icon: <Footprints size={24} />, color: 'text-rose-600' },
-                { id: ViewType.STOCK, label: 'Estoque de Produtos', description: 'Produtos prontos — por modelo, cor e tamanho', icon: <Boxes size={24} />, color: 'text-amber-700' },
+                { id: ViewType.STOCK, label: 'Expedição e Estoque', description: 'Produtos prontos — pedidos de clientes e estoque', icon: <Boxes size={24} />, color: 'text-amber-700' },
                 { id: ViewType.PRODUCTION_GENERAL_RECEIPT, label: 'Recebimento de Compras', description: 'Dar entrada de materiais comprados no estoque', icon: <ClipboardList size={24} />, color: 'text-amber-600' },
               ].map((item, index, array) => (
                 <button
@@ -4094,6 +4419,7 @@ export default function App() {
             onBack={goBack}
             isDarkMode={isDarkMode}
             onEditPurchase={(id) => navigateTo(ViewType.PURCHASE_FORM, id)}
+            onOpenSoleReceipt={() => navigateTo(ViewType.PRODUCTION_SOLE_RECEIPT)}
           />
         );
       case ViewType.PRODUCTION_SOLE_RECEIPT:
@@ -4194,7 +4520,7 @@ export default function App() {
       case ViewType.PRODUCTS:
         return "Produção de Produtos";
       case ViewType.STOCK:
-        return "Controle de Estoque";
+        return "Expedição e Estoque";
       case ViewType.PEOPLE:
         return "Cadastros de Pessoas";
       case ViewType.CATEGORIES:
@@ -4351,11 +4677,22 @@ export default function App() {
     >
       <ToastContainer />
       {/* Header */}
-      <header className={`flex items-center justify-between px-4 pt-10 pb-4 border-b sticky top-0 z-10 shrink-0 ${
-        appTheme === 'light' ? 'bg-white border-slate-100' : 
-        appTheme === 'industrial' ? 'bg-[#f3f4f6] border-gray-300' : 
-        'bg-slate-950 border-slate-800/60'
+      <header className={`sticky top-0 z-10 shrink-0 px-4 pt-10 pb-3 ${
+        appTheme === 'light' ? 'bg-gradient-to-b from-slate-50 to-white' :
+        appTheme === 'industrial' ? 'bg-gradient-to-b from-gray-100 to-gray-50' :
+        'bg-gradient-to-b from-slate-800 to-slate-950'
       }`}>
+        <div className={`relative flex items-center justify-between px-4 py-2.5 rounded-[1.75rem] overflow-hidden ${
+          appTheme === 'light'
+            ? 'bg-gradient-to-b from-white to-slate-100 border border-slate-200/60'
+            : appTheme === 'industrial'
+            ? 'bg-gradient-to-b from-gray-50 to-gray-200 border border-gray-300'
+            : 'bg-gradient-to-b from-slate-700 to-slate-900 border border-slate-600/40'
+        } shadow-[0_8px_32px_rgba(0,0,0,0.14),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.07)]`}>
+          {/* 3D top highlight */}
+          <div className="absolute top-0 left-6 right-6 h-[1px] rounded-full bg-gradient-to-r from-transparent via-white to-transparent opacity-90 pointer-events-none" />
+          {/* 3D bottom shadow */}
+          <div className="absolute bottom-0 left-8 right-8 h-[1px] rounded-full bg-gradient-to-r from-transparent via-black/10 to-transparent pointer-events-none" />
         <div className="flex items-center gap-3">
           {history.length > 1 && (
             <button
@@ -4408,6 +4745,7 @@ export default function App() {
           >
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
           </motion.button>
+        </div>
         </div>
       </header>
 
@@ -4527,77 +4865,78 @@ export default function App() {
       </Modal>
 
       {/* Bottom Tab Navigation */}
-      <nav className={`fixed bottom-0 left-0 right-0 border-t flex items-center justify-around py-3 px-2 pb-6 z-40 ${
-        appTheme === 'light' ? 'bg-white border-slate-100' : 
-        appTheme === 'industrial' ? 'bg-[#f3f4f6] border-gray-300' : 
-        'bg-slate-950 border-slate-900'
-      }`}>
-        <TabItem
-          icon={<LayoutDashboard size={22} />}
-          label="Home"
-          active={activeTab === "dashboard"}
-          onClick={() => resetTo(ViewType.DASHBOARD)}
-          colorClass="text-indigo-600 dark:text-indigo-400"
-          appTheme={appTheme}
-        />
-        {modulesConfig.sales && (
-          <>
+      <nav className={`fixed bottom-0 left-0 right-0 z-40 flex items-end justify-center pb-5 px-4 pointer-events-none`}>
+        <div className={`relative flex items-center justify-around w-full max-w-md px-2 py-2 rounded-[2rem] overflow-hidden pointer-events-auto ${
+          appTheme === 'light'
+            ? 'bg-gradient-to-b from-white to-slate-100 border border-slate-200/60'
+            : appTheme === 'industrial'
+            ? 'bg-gradient-to-b from-gray-50 to-gray-200 border border-gray-300'
+            : 'bg-gradient-to-b from-slate-700 to-slate-900 border border-slate-600/40'
+        } shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>
+          {/* 3D top highlight streak */}
+          <div className="absolute top-0 left-4 right-4 h-[1px] rounded-full bg-gradient-to-r from-transparent via-white to-transparent opacity-90 pointer-events-none" />
+          {/* 3D bottom shadow line */}
+          <div className="absolute bottom-0 left-6 right-6 h-[1px] rounded-full bg-gradient-to-r from-transparent via-black/10 to-transparent pointer-events-none" />
+          <TabItem
+            icon={<LayoutDashboard size={20} />}
+            label="Home"
+            active={activeTab === "dashboard"}
+            onClick={() => resetTo(ViewType.DASHBOARD)}
+            appTheme={appTheme}
+          />
+          {modulesConfig.sales && (
+            <>
+              <TabItem
+                icon={<ShoppingCart size={20} />}
+                label="Compras"
+                active={activeTab === "purchases"}
+                onClick={() => resetTo(ViewType.PURCHASES)}
+                appTheme={appTheme}
+              />
+              <TabItem
+                icon={<ShoppingBag size={20} />}
+                label="Vendas"
+                active={activeTab === "sales"}
+                onClick={() => resetTo(ViewType.SALES)}
+                appTheme={appTheme}
+              />
+            </>
+          )}
+          {modulesConfig.sales && modulesConfig.production && (
             <TabItem
-              icon={<ShoppingCart size={22} />}
-              label="Compras"
-              active={activeTab === "purchases"}
-              onClick={() => resetTo(ViewType.PURCHASES)}
-              colorClass="text-cyan-500 dark:text-cyan-400"
+              icon={<Factory size={20} />}
+              label="Prod."
+              active={activeTab === "production"}
+              onClick={() => resetTo(ViewType.PRODUCTION_MENU)}
               appTheme={appTheme}
             />
+          )}
+          {modulesConfig.sales && (
             <TabItem
-              icon={<ShoppingBag size={22} />}
-              label="Vendas"
-              active={activeTab === "sales"}
-              onClick={() => resetTo(ViewType.SALES)}
-              colorClass="text-emerald-500 dark:text-emerald-400"
+              icon={<DollarSign size={20} />}
+              label="Finan."
+              active={activeTab === "financial"}
+              onClick={() => resetTo(ViewType.FINANCIAL)}
               appTheme={appTheme}
             />
-          </>
-        )}
-        {modulesConfig.sales && modulesConfig.production && (
+          )}
+          {modulesConfig.personal && (
+            <TabItem
+              icon={<UserIcon size={20} />}
+              label="Pessoal"
+              active={activeTab === "personal"}
+              onClick={() => resetTo(ViewType.PERSONAL_FINANCIAL)}
+              appTheme={appTheme}
+            />
+          )}
           <TabItem
-            icon={<Factory size={22} />}
-            label="Prod."
-            active={activeTab === "production"}
-            onClick={() => resetTo(ViewType.PRODUCTION_MENU)}
-            colorClass="text-indigo-600 dark:text-indigo-400"
+            icon={<Settings size={20} />}
+            label="Mais"
+            active={activeTab === "settings"}
+            onClick={() => resetTo(ViewType.SETTINGS)}
             appTheme={appTheme}
           />
-        )}
-        {modulesConfig.sales && (
-          <TabItem
-            icon={<DollarSign size={22} />}
-            label="Finan."
-            active={activeTab === "financial"}
-            onClick={() => resetTo(ViewType.FINANCIAL)}
-            colorClass="text-amber-500 dark:text-amber-400"
-            appTheme={appTheme}
-          />
-        )}
-        {modulesConfig.personal && (
-          <TabItem
-            icon={<UserIcon size={22} />}
-            label="Pessoal"
-            active={activeTab === "personal"}
-            onClick={() => resetTo(ViewType.PERSONAL_FINANCIAL)}
-            colorClass="text-amber-600 dark:text-amber-500"
-            appTheme={appTheme}
-          />
-        )}
-        <TabItem
-          icon={<Settings size={22} />}
-          label="Mais"
-          active={activeTab === "settings"}
-          onClick={() => resetTo(ViewType.SETTINGS)}
-          colorClass="text-slate-500 dark:text-slate-400"
-          appTheme={appTheme}
-        />
+        </div>
       </nav>
       <AccountModal
         isOpen={isAccountModalOpen}
@@ -4756,40 +5095,43 @@ function TabItem({
   label,
   active,
   onClick,
-  colorClass,
   appTheme
 }: {
   icon: ReactNode;
   label: string;
   active: boolean;
   onClick: () => void;
-  colorClass: string;
+  colorClass?: string;
   appTheme: 'light' | 'dark' | 'industrial';
 }) {
-  const iconColor = appTheme === 'industrial' ? 'text-gray-500' : colorClass;
-  const activeBg = appTheme === 'light' ? "bg-slate-100" : 
-                   appTheme === 'industrial' ? "bg-gray-300" : 
-                   "bg-white/10";
+  const isDark = appTheme === 'dark';
+  const isIndustrial = appTheme === 'industrial';
 
   return (
     <button
       onClick={onClick}
       title={label}
       aria-label={`Ir para ${label}`}
-      className={`flex flex-col items-center justify-center p-1 min-w-[50px] h-[60px] transition-all rounded-[15px] ${
-        active ? activeBg : "bg-transparent"
-      }`}
+      className="flex flex-col items-center justify-center gap-0.5 flex-1 py-2 transition-all"
     >
-      <div
-        className={`transition-all ${active ? iconColor : (appTheme === 'industrial' ? 'text-gray-400' : iconColor + ' opacity-70')} ${active ? "scale-110" : ""}`}
-      >
-        {icon}
+      <div className={`w-10 h-7 flex items-center justify-center rounded-xl transition-all ${
+        active
+          ? isDark ? 'bg-indigo-500/20' : isIndustrial ? 'bg-gray-200' : 'bg-indigo-50'
+          : 'bg-transparent'
+      }`}>
+        <span className={`transition-all ${
+          active
+            ? isDark ? 'text-indigo-400' : isIndustrial ? 'text-gray-700' : 'text-indigo-600'
+            : isDark ? 'text-slate-500' : isIndustrial ? 'text-gray-400' : 'text-slate-400'
+        }`}>
+          {icon}
+        </span>
       </div>
-      <span
-        className={`text-[11px] font-black tracking-tighter mt-0.5 transition-all ${
-          appTheme === 'industrial' ? 'text-black' : (active ? iconColor : iconColor + ' opacity-70')
-        } ${active ? "opacity-100" : (appTheme === 'industrial' ? "opacity-60" : "opacity-70")}`}
-      >
+      <span className={`text-[10px] font-bold tracking-tight transition-all ${
+        active
+          ? isDark ? 'text-indigo-400' : isIndustrial ? 'text-gray-700' : 'text-indigo-600'
+          : isDark ? 'text-slate-500' : isIndustrial ? 'text-gray-400' : 'text-slate-400'
+      }`}>
         {label}
       </span>
     </button>
