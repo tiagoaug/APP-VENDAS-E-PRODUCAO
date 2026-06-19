@@ -1,4 +1,4 @@
-﻿import { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Sale, Product, ProductionOrder, ProductionOrderItem,
   ProductionLot, SaleType, Sector, Grid
@@ -25,6 +25,7 @@ interface ProductionOrderModalProps {
   sectors: Sector[];
   existingOrdersCount: number;
   existingLotsCount: number;
+  lots: ProductionLot[];
   isDarkMode: boolean;
   onConfirm: (
     order: ProductionOrder,
@@ -37,7 +38,7 @@ type Mode = 'FULL' | 'PARTIAL';
 
 export default function ProductionOrderModal({
   isOpen, onClose, sale, products, grids, sectors,
-  existingOrdersCount, existingLotsCount,
+  existingOrdersCount, existingLotsCount, lots,
   isDarkMode, onConfirm
 }: ProductionOrderModalProps) {
   const [step, setStep] = useState<1 | 2>(1);
@@ -71,12 +72,28 @@ export default function ProductionOrderModal({
       const key = `${item.productId}-${item.variationId}`;
       if (!map.has(key)) {
         const stock: Record<string, number> = {};
+        
+        // Add production lots stock
+        const getProdStock = (sizeOrWholesale: string) => {
+          let pStock = 0;
+          lots?.forEach((lot: ProductionLot) => {
+            if (lot.productId !== item.productId || lot.variationId !== item.variationId) return;
+            if (lot.status === 'COMPLETED' || lot.status === 'CANCELLED' || lot.finishedAt) return;
+            if (sizeOrWholesale === 'WHOLESALE') {
+              pStock += (lot.gradesQty !== undefined ? lot.gradesQty : (lot.quantity > 50 ? Math.round(lot.quantity / 12) : lot.quantity));
+            } else if (lot.pairs && lot.pairs[sizeOrWholesale]) {
+              pStock += lot.pairs[sizeOrWholesale];
+            }
+          });
+          return pStock;
+        };
+
         if (item.saleType === SaleType.RETAIL) {
           Object.entries(variation.stock).forEach(([s, q]) => {
-            if (s !== 'WHOLESALE') stock[s] = q;
+            if (s !== 'WHOLESALE') stock[s] = q + getProdStock(s);
           });
         } else {
-          stock['__all__'] = variation.stock['WHOLESALE'] || 0;
+          stock['__all__'] = (variation.stock['WHOLESALE'] || 0) + getProdStock('WHOLESALE');
         }
         map.set(key, {
           productId: item.productId,

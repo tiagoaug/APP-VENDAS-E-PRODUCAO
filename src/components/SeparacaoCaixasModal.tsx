@@ -136,12 +136,17 @@ export default function SeparacaoCaixasModal({ sale, products, stockLots, isDark
                 {/* Product header */}
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="min-w-0">
-                    <p className={`text-[12px] font-black uppercase tracking-tight leading-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                      {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
-                    </p>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">
-                      {row.variation?.colorName}{row.item.size ? ` · Nº ${row.item.size}` : ''}
-                    </p>
+                    <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-900 dark:bg-slate-700 text-white text-[9px] font-black uppercase tracking-widest">
+                        {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
+                        {row.variation?.colorName && ` · ${row.variation.colorName}`}
+                      </span>
+                    </div>
+                    {row.item.size && (
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">
+                        Nº {row.item.size}
+                      </p>
+                    )}
                   </div>
                   <div className="text-right shrink-0">
                     <p className={`text-[11px] font-black uppercase tracking-widest ${row.separated > 0 ? 'text-indigo-500' : 'text-slate-400'}`}>
@@ -235,12 +240,17 @@ export default function SeparacaoCaixasModal({ sale, products, stockLots, isDark
               className={`p-3 rounded-2xl border flex items-center justify-between gap-2 ${isDarkMode ? 'bg-emerald-900/10 border-emerald-800/30' : 'bg-emerald-50 border-emerald-100'}`}
             >
               <div className="min-w-0">
-                <p className={`text-[11px] font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-emerald-300' : 'text-emerald-800'}`}>
-                  {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
-                </p>
-                <p className="text-[9px] font-bold text-emerald-500 mt-0.5 uppercase tracking-widest">
-                  {row.variation?.colorName}{row.item.size ? ` · Nº ${row.item.size}` : ''}
-                </p>
+                <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-900 dark:bg-slate-700 text-white text-[9px] font-black uppercase tracking-widest">
+                    {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
+                    {row.variation?.colorName && ` · ${row.variation.colorName}`}
+                  </span>
+                </div>
+                {row.item.size && (
+                  <p className="text-[9px] font-bold text-emerald-500 mt-0.5 uppercase tracking-widest">
+                    Nº {row.item.size}
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <CheckCircle2 size={14} className="text-emerald-500" strokeWidth={2.5} />

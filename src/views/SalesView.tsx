@@ -1,4 +1,4 @@
-﻿import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, ProductionConfigItem } from '../types';
 import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus } from 'lucide-react';
@@ -110,7 +110,8 @@ export default function SalesView({
   const [expandedCards, setExpandedCards] = usePersistedToggle('salesView_expandedCards', false);
   const [showProducts, setShowProducts] = usePersistedToggle('salesView_showProducts', true);
   const [showGradeBreakdown, setShowGradeBreakdown] = usePersistedToggle('salesView_showGradeBreakdown', false);
-  const [showBalanceButton, setShowBalanceButton] = usePersistedToggle('salesView_showBalanceButton', true);
+  const [showSeparationInfo, setShowSeparationInfo] = usePersistedToggle('salesView_showSeparationInfo', true);
+  const [showSummaryBar, setShowSummaryBar] = usePersistedToggle('salesView_showSummaryBar', true);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [paymentModalSale, setPaymentModalSale] = useState<Sale | null>(null);
   const [paymentModalMode, setPaymentModalMode] = useState<'PAYMENT' | 'HISTORY'>('PAYMENT');
@@ -122,34 +123,50 @@ export default function SalesView({
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [saleToDelete, setSaleToDelete] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
-  // Balanço de estoque a partir da demanda dos orçamentos
-  const [showStockBalance, setShowStockBalance] = useState(false);
-  const [balanceAdjust, setBalanceAdjust] = useState<Record<string, number>>({});
-  const [showBalanceConfirm, setShowBalanceConfirm] = useState(false);
-  const [savingBalance, setSavingBalance] = useState(false);
+  const [showCrossCheckCard, setShowCrossCheckCard] = usePersistedToggle('salesView_showCrossCheckCard', false);
 
-  // Demanda agregada dos ORÇAMENTOS (QUOTE), por produto + variação + chave de estoque
-  // (atacado = 'WHOLESALE'/caixas; varejo = tamanho). Soma as quantidades pedidas.
-  const stockDemand = useMemo(() => {
+  const crossCheckData = useMemo(() => {
     const map = new Map<string, {
       key: string; productId: string; variationId: string; stockKey: string;
       productName: string; reference: string; colorName: string;
-      isWholesale: boolean; demand: number; current: number;
+      isWholesale: boolean; demand: number; stock: number; production: number;
+      sources: { saleId: string; orderNumber: string; status: SaleStatus; demand: number; }[];
     }>();
+
+    const excludedOPs = new Set<string>();
+
+    // 1. Somar Demanda Pendente (desconsiderando cancelados e os que já possuem OP)
     sales.forEach((sale) => {
-      if (sale.status !== SaleStatus.QUOTE) return;
+      if (sale.status === SaleStatus.CANCELLED) return;
+      if (sale.productionOrderId) {
+        excludedOPs.add(sale.productionOrderId);
+        return;
+      }
+
       sale.items.forEach((item) => {
-        if (!item.quantity || item.quantity <= 0) return;
+        if (item.fulfilled) return;
+        const pendingDemand = item.quantity - (item.boxesSeparated || 0);
+        if (pendingDemand <= 0) return;
+
         const product = products.find((p) => p.id === item.productId);
         if (!product) return;
         const variation = product.variations.find((v) => v.id === item.variationId);
         const isWholesale = item.saleType === SaleType.WHOLESALE;
         const stockKey = isWholesale ? 'WHOLESALE' : (item.size || '');
         if (!stockKey) return;
+        
         const mapKey = `${item.productId}::${item.variationId}::${stockKey}`;
+        const sourceInfo = { saleId: sale.id, orderNumber: sale.orderNumber, status: sale.status, demand: pendingDemand };
+        
         const existing = map.get(mapKey);
         if (existing) {
-          existing.demand += item.quantity;
+          existing.demand += pendingDemand;
+          const existingSource = existing.sources.find(s => s.saleId === sale.id);
+          if (existingSource) {
+            existingSource.demand += pendingDemand;
+          } else {
+            existing.sources.push(sourceInfo);
+          }
         } else {
           map.set(mapKey, {
             key: mapKey,
@@ -160,50 +177,52 @@ export default function SalesView({
             reference: product.reference || '',
             colorName: variation?.colorName || '',
             isWholesale,
-            demand: item.quantity,
-            current: variation?.stock?.[stockKey] || 0,
+            demand: pendingDemand,
+            stock: variation?.stock?.[stockKey] || 0,
+            production: 0,
+            sources: [sourceInfo],
           });
         }
       });
     });
+
+    // 2. Somar Produção (desconsiderando lotes que pertencem às OPs excluídas acima)
+    lots.forEach((lot) => {
+      if (lot.status === 'COMPLETED' || lot.status === 'CANCELLED' || lot.finishedAt) return;
+      
+      // Se o lote pertence a uma OP de uma venda que não debita estoque (já tem OP própria), não somar como produção livre
+      const lotOpId = lot.productionOrderId;
+      if (lotOpId && excludedOPs.has(lotOpId)) return;
+
+      const product = products.find(p => p.id === lot.productId);
+      if (!product) return;
+      
+      const mapKeyWholesale = `${lot.productId}::${lot.variationId}::WHOLESALE`;
+      const isWholesaleInDemand = map.has(mapKeyWholesale);
+      
+      if (isWholesaleInDemand) {
+         const qty = lot.gradesQty !== undefined ? lot.gradesQty : (lot.quantity > 50 ? Math.round(lot.quantity / 12) : lot.quantity);
+         const existing = map.get(mapKeyWholesale)!;
+         existing.production += qty;
+      } else if (lot.pairs) {
+         Object.entries(lot.pairs).forEach(([size, qty]) => {
+           if (qty <= 0) return;
+           const mapKeySize = `${lot.productId}::${lot.variationId}::${size}`;
+           const existing = map.get(mapKeySize);
+           if (existing) {
+             existing.production += qty;
+           }
+         });
+      }
+    });
+
     return Array.from(map.values()).sort((a, b) =>
       (a.reference || a.productName).localeCompare(b.reference || b.productName) ||
       a.colorName.localeCompare(b.colorName) ||
       a.stockKey.localeCompare(b.stockKey)
     );
-  }, [sales, products]);
+  }, [sales, products, lots]);
 
-  // Ao abrir o modal, semeia os ajustes com a quantidade demandada de cada item.
-  useEffect(() => {
-    if (showStockBalance) {
-      const init: Record<string, number> = {};
-      stockDemand.forEach((d) => { init[d.key] = d.demand; });
-      setBalanceAdjust(init);
-      setShowBalanceConfirm(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showStockBalance]);
-
-  const balancePreview = useMemo(
-    () => stockDemand
-      .map((d) => ({ ...d, amount: Math.max(0, Math.floor(balanceAdjust[d.key] ?? 0)) }))
-      .filter((d) => d.amount > 0),
-    [stockDemand, balanceAdjust]
-  );
-
-  const handleConfirmBalance = async () => {
-    if (balancePreview.length === 0) { setShowBalanceConfirm(false); return; }
-    setSavingBalance(true);
-    try {
-      await onAddStockBalance(
-        balancePreview.map((d) => ({ productId: d.productId, variationId: d.variationId, key: d.stockKey, amount: d.amount }))
-      );
-      setShowBalanceConfirm(false);
-      setShowStockBalance(false);
-    } finally {
-      setSavingBalance(false);
-    }
-  };
   const [productionOrderSale, setProductionOrderSale] = useState<Sale | null>(null);
   const [itemsPopupSale, setItemsPopupSale] = useState<Sale | null>(null);
   // Popup de expedição: pré-visualiza as baixas no estoque antes de confirmar.
@@ -287,7 +306,16 @@ export default function SalesView({
     const trackedSales = sales.filter(s => s.status === SaleStatus.SALE);
     const delivered = trackedSales.filter(s => s.deliveryStatus === 'DELIVERED').length;
     const pending = trackedSales.length - delivered;
-    return { delivered, pending };
+    
+    const totalPendingAmount = sales
+      .filter(s => s.status !== SaleStatus.QUOTE && s.status !== SaleStatus.CANCELLED)
+      .reduce((sum, s) => {
+        const totalPaid = (s.paymentHistory || []).reduce((acc, p) => acc + (p.amount || 0), 0);
+        const remaining = s.total - totalPaid;
+        return sum + (remaining > 0 ? remaining : 0);
+      }, 0);
+      
+    return { delivered, pending, totalPendingAmount };
   }, [sales]);
 
   // Lotes RESERVADO (caixas já produzidas, com a grade exata, aguardando "Liberar
@@ -366,28 +394,38 @@ export default function SalesView({
   const getUnfulfilledStockStatus = (sale: Sale) => {
     const unfulfilled = sale.items.filter(it => it.fulfilled !== true);
     if (unfulfilled.length === 0) return null;
-    // Venda com produção atrelada = grade avulsa feita sob medida para o cliente.
-    // Só conta como "pronto" se já houver lote reservado (saleId) com a grade exata —
-    // nunca pelo estoque agregado, que pode não ter essa composição específica.
+    
     const saleLots = sale.productionOrderId
       ? stockLots.filter(l => l.saleId === sale.id && l.status === 'RESERVADO')
       : [];
+      
     let ready = 0;
+    let allReady = true;
+
     unfulfilled.forEach(item => {
+      const needed = item.quantity - (item.boxesSeparated || 0);
+      if (needed <= 0) return;
+
       if (sale.productionOrderId) {
         const availableFromLots = saleLots
           .filter(l => l.productId === item.productId && l.variationId === item.variationId)
           .reduce((s, l) => s + (l.boxQty || 1), 0);
-        if (availableFromLots >= item.quantity) ready++;
+          
+        if (availableFromLots > 0) ready++;
+        if (availableFromLots < needed) allReady = false;
         return;
       }
+      
       const variation = getVariationInfo(item.productId, item.variationId);
       const available = item.saleType === SaleType.WHOLESALE
         ? (variation?.stock['WHOLESALE'] || 0)
         : (variation?.stock[item.size || ''] || 0);
-      if (available >= item.quantity) ready++;
+        
+      if (available > 0) ready++;
+      if (available < needed) allReady = false;
     });
-    return { total: unfulfilled.length, ready, allReady: ready === unfulfilled.length };
+
+    return { total: unfulfilled.length, ready, allReady };
   };
 
   // Disponibilidade de estoque para um item específico (já abatido, disponível p/ separar, ou indisponível).
@@ -515,14 +553,14 @@ export default function SalesView({
       })()}
       <div className="flex flex-col gap-4">
         <div className={`flex w-full rounded-2xl overflow-hidden border divide-x ${isDarkMode ? 'bg-slate-900 border-slate-800 divide-slate-800' : 'bg-white border-slate-100 shadow-sm divide-slate-100'}`}>
-          {showBalanceButton && (
+          {showCrossCheckCard !== undefined && (
             <button
-              onClick={() => setShowStockBalance(true)}
-              className={`flex-1 h-12 px-3 flex items-center justify-center gap-2 transition-all duration-300 ${isDarkMode ? 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800/50' : 'text-slate-400 hover:text-emerald-600 hover:bg-slate-50'}`}
-              title="Repor estoque com a demanda dos orçamentos"
+              onClick={() => setShowCrossCheckCard(v => !v)}
+              className={`flex-1 h-12 px-3 flex items-center justify-center gap-2 transition-all duration-300 ${isDarkMode ? 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800/50' : 'text-slate-400 hover:text-emerald-600 hover:bg-slate-50'} ${showCrossCheckCard ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : ''}`}
+              title="Cruzamento de Demanda x Estoque e Produção"
             >
-              <PackagePlus size={18} strokeWidth={2.5} className="text-emerald-500" />
-              <span className="text-[10px] font-black tracking-[0.15em]">Balanço</span>
+              <PackagePlus size={18} strokeWidth={2.5} className={showCrossCheckCard ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-500'} />
+              <span className="text-[10px] font-black tracking-[0.15em]">Cruzamento</span>
             </button>
           )}
           <button
@@ -550,6 +588,104 @@ export default function SalesView({
           </button>
         </div>
 
+        {/* Card de Cruzamento de Demanda x Estoque/Produção */}
+        {showCrossCheckCard && (
+          <div className={`p-4 rounded-[2rem] border shadow-sm animate-in fade-in slide-in-from-top-4 duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <div className="flex items-center justify-between mb-4 px-2">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>
+                  <PackagePlus size={20} strokeWidth={2.5} />
+                </div>
+                <div>
+                  <h3 className={`text-[14px] font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Cruzamento de Estoque</h3>
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1">Vendas vs Físico vs Produção</p>
+                </div>
+              </div>
+              <button onClick={() => setShowCrossCheckCard(false)} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all">
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-1">
+              {crossCheckData.length === 0 && (
+                <p className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400 py-6">Nenhuma demanda nas vendas visíveis.</p>
+              )}
+              {crossCheckData.map((d) => {
+                const balance = d.stock + d.production - d.demand;
+                const isDeficit = balance < 0;
+                const unit = d.isWholesale ? 'cx' : 'pr';
+                
+                return (
+                  <div key={d.key} className={`p-3 rounded-2xl border flex flex-col gap-2 ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50' : 'bg-slate-50/50 border-slate-100'}`}>
+                    <div className="flex items-center justify-between min-w-0">
+                      <div className="min-w-0 pr-2">
+                        <p className={`text-[12px] font-black uppercase tracking-tight truncate flex items-center gap-1 ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                          <span>{d.reference ? `${d.reference} , ` : ''}{d.productName} , </span>
+                          <span className={`font-black text-black dark:text-white`}>{d.colorName || 'Sem cor'}</span>
+                          {!d.isWholesale && (
+                            <span className="text-[10px] font-bold tracking-widest text-slate-400 ml-1">
+                              (Tam {d.stockKey})
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <div className={`shrink-0 flex items-center justify-center min-w-[3rem] h-8 px-2 rounded-xl border ${isDeficit ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-900/20 dark:border-rose-800/50 dark:text-rose-400' : 'bg-emerald-50 border-emerald-100 text-emerald-600 dark:bg-emerald-900/20 dark:border-emerald-800/50 dark:text-emerald-400'}`}>
+                        <span className="text-[12px] font-black">{balance > 0 ? '+' : ''}{balance}</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest ml-1 opacity-70">{unit}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-700/50">
+                      <div className="flex-1 flex flex-col items-center justify-center py-1 rounded-lg bg-white dark:bg-slate-800">
+                        <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Demanda</span>
+                        <span className="text-[11px] font-black text-slate-700 dark:text-slate-300">{d.demand}</span>
+                      </div>
+                      <div className="text-slate-300 dark:text-slate-600 text-[10px] font-black">vs</div>
+                      <div className="flex-1 flex flex-col items-center justify-center py-1 rounded-lg bg-white dark:bg-slate-800">
+                        <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Estoque</span>
+                        <span className="text-[11px] font-black text-amber-600 dark:text-amber-500">{d.stock}</span>
+                      </div>
+                      <div className="text-slate-300 dark:text-slate-600 text-[10px] font-black">+</div>
+                      <div className="flex-1 flex flex-col items-center justify-center py-1 rounded-lg bg-white dark:bg-slate-800">
+                        <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Produção</span>
+                        <span className="text-[11px] font-black text-sky-600 dark:text-sky-500">{d.production}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1 mt-1 pt-1.5 border-t border-slate-100 dark:border-slate-700/50">
+                      {d.sources.map(s => (
+                        <button
+                          key={s.saleId}
+                          onClick={() => {
+                            const el = document.getElementById(`sale-card-${s.saleId}`);
+                            if (el) {
+                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                el.classList.add('ring-4', 'ring-indigo-500', 'transition-all', 'duration-300');
+                                setTimeout(() => el.classList.remove('ring-4', 'ring-indigo-500'), 2000);
+                                if (!expandedIds.includes(s.saleId)) {
+                                  setExpandedIds(prev => [...prev, s.saleId]);
+                                }
+                            }
+                          }}
+                          className={`text-[9px] font-black tracking-widest px-1.5 py-0.5 rounded-md flex items-center gap-1 transition-all hover:scale-105 active:scale-95 cursor-pointer ${
+                            s.status === SaleStatus.QUOTE ? 'bg-indigo-50 text-indigo-600 border border-indigo-100 dark:bg-indigo-900/20 dark:border-indigo-800/50 dark:text-indigo-400' :
+                            s.status === SaleStatus.CONFIRMED ? 'bg-amber-50 text-amber-600 border border-amber-100 dark:bg-amber-900/20 dark:border-amber-800/50 dark:text-amber-400' :
+                            'bg-emerald-50 text-emerald-600 border border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-800/50 dark:text-emerald-400'
+                          }`}
+                          title={`Ir para ${s.status === SaleStatus.QUOTE ? 'Orçamento' : s.status === SaleStatus.CONFIRMED ? 'Pedido' : 'Venda'} ${s.orderNumber}`}
+                        >
+                          <span>#{s.orderNumber}</span>
+                          <span className="opacity-70">({s.demand}{unit})</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Search - Always Visible */}
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} strokeWidth={2.5} />
@@ -570,27 +706,36 @@ export default function SalesView({
           )}
         </div>
 
-        {/* Métricas de Entrega — fechadas automaticamente quando o PCP conclui a expedição do pedido */}
-        {(deliveryStats.delivered > 0 || deliveryStats.pending > 0) && (
-          <div className="flex items-center gap-3">
-            <div className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-              <div className="w-9 h-9 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                <Truck size={16} strokeWidth={2.5} />
+        {/* Métricas de Entrega e Valores */}
+        {showSummaryBar && (deliveryStats.delivered > 0 || deliveryStats.pending > 0 || deliveryStats.totalPendingAmount > 0) && (
+          <div className={`flex items-stretch justify-between px-2 py-3 rounded-[2rem] border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            
+            <div className="flex-1 flex flex-col items-center justify-center gap-1.5 border-r border-slate-100 dark:border-slate-800">
+              <div className="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                <Truck size={14} strokeWidth={2.5} />
               </div>
-              <div className="leading-none">
-                <p className={`text-[14px] font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{deliveryStats.delivered}</p>
-                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mt-1">Entregues</p>
-              </div>
+              <p className={`text-[13px] font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{deliveryStats.delivered}</p>
+              <p className="text-[7px] font-black uppercase tracking-widest text-slate-400 text-center">Entregues</p>
             </div>
-            <div className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-              <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                <Clock size={16} strokeWidth={2.5} />
+
+            <div className="flex-1 flex flex-col items-center justify-center gap-1.5 border-r border-slate-100 dark:border-slate-800">
+              <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                <Clock size={14} strokeWidth={2.5} />
               </div>
-              <div className="leading-none">
-                <p className={`text-[14px] font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{deliveryStats.pending}</p>
-                <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mt-1">Aguardando Entrega</p>
-              </div>
+              <p className={`text-[13px] font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{deliveryStats.pending}</p>
+              <p className="text-[7px] font-black uppercase tracking-widest text-slate-400 text-center px-1">Aguardando<br/>Entrega</p>
             </div>
+
+            <div className="flex-1 flex flex-col items-center justify-center gap-1.5">
+              <div className="w-8 h-8 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center">
+                <DollarSign size={14} strokeWidth={2.5} />
+              </div>
+              <p className={`text-[13px] font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                R$ {deliveryStats.totalPendingAmount.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </p>
+              <p className="text-[7px] font-black uppercase tracking-widest text-slate-400 text-center">A Receber</p>
+            </div>
+
           </div>
         )}
       </div>
@@ -612,42 +757,56 @@ export default function SalesView({
 
             {/* Tipo de Venda */}
             <div className="flex flex-col gap-2">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Tipo de Venda</p>
-              <div className={`flex p-1 rounded-2xl border gap-1 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                {(['ALL', 'RETAIL', 'WHOLESALE'] as const).map((v) => (
-                  <button key={v} onClick={() => setFilter(v)}
-                    className={`flex-1 py-2 rounded-xl text-[10px] font-black tracking-wider transition-all ${filter === v ? 'bg-indigo-600 text-white shadow-sm' : isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-700'}`}>
-                    {v === 'ALL' ? 'Todos' : v === 'RETAIL' ? 'Varejo' : 'Atacado'}
-                  </button>
-                ))}
+              <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">Tipo de Venda</p>
+              <div className={`flex p-1 rounded-2xl border gap-1 shadow-inner ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50' : 'bg-slate-50 border-slate-100'}`}>
+                {(['ALL', 'RETAIL', 'WHOLESALE'] as const).map((v) => {
+                  const active = filter === v;
+                  return (
+                    <button key={v} onClick={() => setFilter(v)}
+                      className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider transition-all ${active ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700/50' : 'text-slate-500 hover:text-slate-800 hover:bg-white shadow-sm'}`}>
+                      {v === 'ALL' ? 'Todos' : v === 'RETAIL' ? 'Varejo' : 'Atacado'}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
             {/* Status de Pagamento */}
-            <div className="flex flex-col gap-2">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Pagamento</p>
-              <div className={`flex p-1 rounded-2xl border gap-1 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                {(['ALL', 'PENDING', 'PAID'] as const).map((v) => (
-                  <button key={v} onClick={() => setPaymentFilter(v)}
-                    className={`flex-1 py-2 rounded-xl text-[10px] font-black tracking-wider transition-all ${paymentFilter === v ? 'bg-indigo-600 text-white shadow-sm' : isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-700'}`}>
-                    {v === 'ALL' ? 'Todos' : v === 'PENDING' ? 'Pendente' : 'Pago'}
-                  </button>
-                ))}
+            <div className="flex flex-col gap-2 mt-2">
+              <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">Pagamento</p>
+              <div className={`flex p-1 rounded-2xl border gap-1 shadow-inner ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50' : 'bg-slate-50 border-slate-100'}`}>
+                {(['ALL', 'PENDING', 'PAID'] as const).map((v) => {
+                  const active = paymentFilter === v;
+                  return (
+                    <button key={v} onClick={() => setPaymentFilter(v)}
+                      className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider transition-all ${active ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700/50' : 'text-slate-500 hover:text-slate-800 hover:bg-white shadow-sm'}`}>
+                      {v === 'ALL' ? 'Todos' : v === 'PENDING' ? 'Pendente' : 'Pago'}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
             {/* Status do Pedido */}
-            <div className="flex flex-col gap-2">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Status do Pedido</p>
+            <div className="flex flex-col gap-2 mt-2">
+              <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">Status do Pedido</p>
               <div className="flex gap-2 flex-wrap">
                 {([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE, SaleStatus.CANCELLED] as const).map((s) => {
                   const active = selectedStatuses.includes(s);
                   const label = s === SaleStatus.SALE ? 'Venda' : s === SaleStatus.CONFIRMED ? 'Pedido' : s === SaleStatus.QUOTE ? 'Orçamento' : 'Cancelado';
-                  const color = s === SaleStatus.SALE ? (active ? 'bg-indigo-600 text-white' : '') : s === SaleStatus.CONFIRMED ? (active ? 'bg-sky-500 text-white' : '') : s === SaleStatus.QUOTE ? (active ? 'bg-amber-500 text-white' : '') : (active ? 'bg-rose-500 text-white' : '');
+                  
+                  let activeClass = '';
+                  if (s === SaleStatus.SALE) activeClass = 'bg-gradient-to-b from-slate-500 to-slate-600 shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20 text-white border-transparent';
+                  else if (s === SaleStatus.CONFIRMED) activeClass = 'bg-gradient-to-b from-slate-400 to-slate-500 shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20 text-white border-transparent';
+                  else if (s === SaleStatus.QUOTE) activeClass = 'bg-gradient-to-b from-slate-300 to-slate-400 dark:from-slate-600 dark:to-slate-700 shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20 text-slate-700 dark:text-white border-transparent';
+                  else activeClass = 'bg-gradient-to-b from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-800 shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20 text-slate-600 dark:text-slate-300 border-transparent line-through decoration-slate-400';
+                  
+                  const inactiveClass = isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm';
+
                   return (
                     <button key={s}
                       onClick={() => setSelectedStatuses(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
-                      className={`px-4 py-2 rounded-xl text-[10px] font-black tracking-wider border transition-all ${active ? `${color} border-transparent shadow-sm` : isDarkMode ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
+                      className={`px-4 py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${active ? activeClass : inactiveClass}`}>
                       {label}
                     </button>
                   );
@@ -656,32 +815,37 @@ export default function SalesView({
             </div>
 
             {/* Visualização */}
-            <div className="flex flex-col gap-2">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Visualização</p>
+            <div className="flex flex-col gap-2 mt-2">
+              <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">Visualização</p>
               <div className="flex gap-2">
                 <button onClick={() => setExpandedCards(v => !v)}
-                  className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${expandedCards ? 'bg-indigo-600 text-white border-transparent shadow-sm' : isDarkMode ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
+                  className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${expandedCards ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
                   {expandedCards ? 'Cards Expandidos' : 'Cards Compactos'}
                 </button>
                 <button onClick={() => setShowProducts(v => !v)}
-                  className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${showProducts ? 'bg-indigo-600 text-white border-transparent shadow-sm' : isDarkMode ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
+                  className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${showProducts ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
                   {showProducts ? 'Mostrar Produtos' : 'Ocultar Produtos'}
                 </button>
               </div>
               <button onClick={() => setShowGradeBreakdown(v => !v)}
-                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${showGradeBreakdown ? 'bg-indigo-600 text-white border-transparent shadow-sm' : isDarkMode ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${showGradeBreakdown ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
                 {showGradeBreakdown ? 'Ocultar Padrão de Embalagem' : 'Mostrar Padrão de Embalagem'}
               </button>
-              <button onClick={() => setShowBalanceButton(v => !v)}
-                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showBalanceButton ? 'bg-emerald-600 text-white border-transparent shadow-sm' : isDarkMode ? 'border-slate-700 text-slate-400' : 'border-slate-200 text-slate-500'}`}>
-                <PackagePlus size={14} strokeWidth={2.5} />
-                {showBalanceButton ? 'Botão Balanço Visível' : 'Botão Balanço Oculto'}
+              <button onClick={() => setShowSeparationInfo(v => !v)}
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showSeparationInfo ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
+                <Boxes size={14} strokeWidth={2.5} />
+                {showSeparationInfo ? 'Avisos de Separação Visíveis' : 'Avisos de Separação Ocultos'}
+              </button>
+              <button onClick={() => setShowSummaryBar(v => !v)}
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showSummaryBar ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
+                <DollarSign size={14} strokeWidth={2.5} />
+                {showSummaryBar ? 'Barra de Valores Visível' : 'Barra de Valores Oculta'}
               </button>
             </div>
 
             <button
-              onClick={() => { setFilter('ALL'); setPaymentFilter('ALL'); setSelectedStatuses([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]); setExpandedCards(false); setShowProducts(true); setShowGradeBreakdown(false); setShowBalanceButton(true); }}
-              className="mt-1 w-full py-3 rounded-2xl text-[10px] font-black tracking-widest text-rose-500 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all"
+              onClick={() => { setFilter('ALL'); setPaymentFilter('ALL'); setSelectedStatuses([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]); setExpandedCards(false); setShowProducts(true); setShowGradeBreakdown(false); setShowSeparationInfo(true); setShowSummaryBar(true); }}
+              className="mt-1 w-full py-3 rounded-2xl text-[10px] font-black tracking-widest text-rose-500 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all shadow-sm bg-white dark:bg-slate-900"
             >
               Limpar Filtros
             </button>
@@ -696,7 +860,7 @@ export default function SalesView({
           const isExpanded = expandedCards || expandedIds.includes(sale.id);
 
           return (
-            <div key={sale.id} className={`p-6 rounded-[2.5rem] border shadow-xl dark:shadow-none flex flex-col gap-6 relative overflow-hidden group transition-all duration-300 hover:shadow-2xl ${
+            <div id={`sale-card-${sale.id}`} key={sale.id} className={`p-6 rounded-[2.5rem] border shadow-xl dark:shadow-none flex flex-col gap-6 relative overflow-hidden group transition-all duration-300 hover:shadow-2xl ${
               sale.status === SaleStatus.CANCELLED
                 ? 'bg-slate-900 border-slate-800 opacity-60 grayscale-[0.5]'
                 : isDarkMode
@@ -787,24 +951,6 @@ export default function SalesView({
 
                   {/* Badges de estoque + expand */}
                   <div className="flex flex-row flex-wrap items-center justify-end gap-1.5 shrink-0">
-
-                  {/* Badge Itens aguardando estoque — indica se já há estoque na grade vendida */}
-                  {sale.status === SaleStatus.SALE && (() => {
-                    const stockStatus = getUnfulfilledStockStatus(sale);
-                    if (!stockStatus) return null;
-                    if (stockStatus.allReady) {
-                      return (
-                        <span className="text-[8px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400 flex items-center gap-1">
-                          <CheckCircle2 size={9} /> Estoque pronto p/ expedir
-                        </span>
-                      );
-                    }
-                    return (
-                      <span className="text-[8px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400 flex items-center gap-1">
-                        <Clock size={9} /> Aguard. estoque ({stockStatus.ready}/{stockStatus.total})
-                      </span>
-                    );
-                  })()}
 
                   {/* Badge Caixas prontas — produção concluída, aguardando "Liberar Pedido" */}
                   {sale.status === SaleStatus.SALE && sale.deliveryStatus !== 'DELIVERED' && (reservedLotsBySale.get(sale.id) || []).length > 0 && (
@@ -907,7 +1053,7 @@ export default function SalesView({
                                 <Boxes size={12} className="text-slate-400" strokeWidth={3} />
                               </div>
                               <p className={`text-[11px] font-bold tracking-wide ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                                {sale.items.length} {sale.items.length === 1 ? 'item' : 'itens'} · Aguardando separação
+                                Aguardando separação
                               </p>
                             </div>
                           );
@@ -953,6 +1099,55 @@ export default function SalesView({
                 </div>
                 </div>
               )}
+
+              {showSeparationInfo && sale.status === SaleStatus.SALE && (() => {
+                const stockStatus = getUnfulfilledStockStatus(sale);
+                if (!stockStatus) return null;
+                
+                if (stockStatus.allReady) {
+                  return (
+                    <div className="mb-4 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/30 flex items-start gap-2.5 z-10">
+                      <CheckCircle2 size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+                      <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 leading-snug">
+                        <span className="font-black uppercase tracking-widest text-[8px] block mb-1">Status de Separação</span>
+                        No estoque tem caixas disponíveis que se encaixam nesse pedido e você consegue fechá-lo completo.
+                      </p>
+                    </div>
+                  );
+                }
+                
+                if (stockStatus.ready > 0) {
+                  return (
+                    <div className="mb-4 flex flex-col gap-2 z-10">
+                      <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 flex items-start gap-2.5">
+                        <Clock size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                        <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 leading-snug">
+                          <span className="font-black uppercase tracking-widest text-[8px] block mb-1">Aviso de Estoque</span>
+                          Aguardando estoque para este pedido. ({stockStatus.ready}/{stockStatus.total})
+                        </p>
+                      </div>
+                      
+                      <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/30 flex items-start gap-2.5">
+                        <Boxes size={16} className="text-emerald-500 shrink-0 mt-0.5" />
+                        <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 leading-snug">
+                          <span className="font-black uppercase tracking-widest text-[8px] block mb-1">Produtos Disponíveis</span>
+                          Tem caixas em estoque disponíveis para separação. Gostaria de separá-las?
+                        </p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="mb-4 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 flex items-start gap-2.5 z-10">
+                    <Clock size={16} className="text-slate-400 shrink-0 mt-0.5" />
+                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 leading-snug">
+                      <span className="font-black uppercase tracking-widest text-[8px] block mb-1">Aviso de Estoque</span>
+                      Aguardando estoque para este pedido. ({stockStatus.ready}/{stockStatus.total})
+                    </p>
+                  </div>
+                );
+              })()}
 
               {/* Financial Summary Card */}
               <div className={`flex items-center justify-between px-4 py-2.5 rounded-2xl z-10 ${
@@ -1138,7 +1333,7 @@ export default function SalesView({
                                   <Truck size={16} /> Expedir / Baixar
                                 </button>
                               ) : null}
-                              {sale.status === SaleStatus.SALE && sale.items.some(it => it.fulfilled === true) && (
+                              {sale.status === SaleStatus.SALE && (sale.items.some(it => it.fulfilled === true) || sale.items.some(it => (it.boxesSeparated || 0) > 0)) && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setRevertSale(sale); setActiveMenuId(null); }}
                                   className="w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all active:scale-[0.98]"
@@ -1212,158 +1407,7 @@ export default function SalesView({
         title={exportModal.sale?.status === SaleStatus.QUOTE ? "Exportar Orçamento" : exportModal.sale?.status === SaleStatus.CONFIRMED ? "Exportar Pedido" : "Exportar Venda"}
       />
 
-      {/* Modal — Balanço de Estoque (demanda dos orçamentos) */}
-      {showStockBalance && (
-        <div className="fixed inset-0 z-[300000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className={`w-full max-w-lg max-h-[90vh] flex flex-col rounded-[2.5rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
-            {/* Header */}
-            <div className="p-6 flex items-start justify-between shrink-0 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-3">
-                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>
-                  <PackagePlus size={22} strokeWidth={2.5} />
-                </div>
-                <div>
-                  <h3 className={`text-lg font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Balanço de Estoque</h3>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">Demanda agrupada dos orçamentos</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowStockBalance(false)}
-                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}
-                aria-label="Fechar"
-                title="Fechar"
-              >
-                <X size={20} strokeWidth={2.5} />
-              </button>
-            </div>
 
-            {/* Lista rolável */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-              {stockDemand.length === 0 && (
-                <p className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400 py-10">Nenhum item em orçamentos.</p>
-              )}
-              {stockDemand.map((d) => {
-                const amount = balanceAdjust[d.key] ?? d.demand;
-                const unit = d.isWholesale ? 'cx' : 'pares';
-                return (
-                  <div key={d.key} className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <div className="min-w-0">
-                        <p className={`text-[12px] font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                          {d.reference ? `${d.reference} · ` : ''}{d.productName}
-                        </p>
-                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">
-                          {d.colorName || 'Sem cor'}{d.isWholesale ? '' : ` · Tam ${d.stockKey}`} · Estoque atual: {d.current} {unit}
-                        </p>
-                      </div>
-                      <span className="shrink-0 text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">
-                        Orçamento: {d.demand} {unit}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Somar</span>
-                      <div className="flex items-center flex-1 justify-end bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-1">
-                        <button
-                          type="button"
-                          onClick={() => setBalanceAdjust((prev) => ({ ...prev, [d.key]: Math.max(0, (prev[d.key] ?? d.demand) - 1) }))}
-                          className="w-8 h-8 rounded-lg bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-500 active:scale-90 transition-all"
-                          aria-label="Diminuir" title="Diminuir"
-                        >
-                          <Minus size={14} strokeWidth={3} />
-                        </button>
-                        <input
-                          type="number"
-                          min={0}
-                          value={amount === 0 ? '' : amount}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => setBalanceAdjust((prev) => ({ ...prev, [d.key]: Math.max(0, parseInt(e.target.value) || 0) }))}
-                          className="w-14 text-center border-none p-0 text-sm font-black text-slate-800 dark:text-white focus:ring-0 bg-transparent"
-                          aria-label="Quantidade a somar" title="Quantidade a somar"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setBalanceAdjust((prev) => ({ ...prev, [d.key]: (prev[d.key] ?? d.demand) + 1 }))}
-                          className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center active:scale-90 transition-all"
-                          aria-label="Aumentar" title="Aumentar"
-                        >
-                          <Plus size={14} strokeWidth={3} />
-                        </button>
-                      </div>
-                      <span className="text-[9px] font-black uppercase text-slate-400 w-8 text-center shrink-0">{unit}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Footer */}
-            <div className={`p-5 shrink-0 border-t border-slate-100 dark:border-slate-800 ${isDarkMode ? 'bg-slate-800/30' : 'bg-slate-50/50'}`}>
-              <button
-                type="button"
-                disabled={balancePreview.length === 0}
-                onClick={() => setShowBalanceConfirm(true)}
-                className={`w-full py-4 rounded-2xl text-[12px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${
-                  balancePreview.length === 0 ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20'
-                }`}
-              >
-                <PackagePlus size={18} /> Somar ao Estoque ({balancePreview.length})
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Popup de confirmação — estoque atual → após adição */}
-      {showBalanceConfirm && (
-        <div className="fixed inset-0 z-[300001] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className={`w-full max-w-md max-h-[85vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
-            <div className="p-5 shrink-0 border-b border-slate-100 dark:border-slate-800 text-center">
-              <h3 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Confirmar Adição ao Estoque</h3>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">Estoque atual → após a adição</p>
-            </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-              {balancePreview.map((d) => {
-                const unit = d.isWholesale ? 'cx' : 'pares';
-                return (
-                  <div key={d.key} className={`p-3 rounded-2xl border flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                    <div className="min-w-0">
-                      <p className={`text-[11px] font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                        {d.reference ? `${d.reference} · ` : ''}{d.colorName || d.productName}{d.isWholesale ? '' : ` · Tam ${d.stockKey}`}
-                      </p>
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-emerald-500 mt-0.5">+ {d.amount} {unit}</p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-sm font-black text-slate-400">{d.current}</span>
-                      <span className="text-slate-300 dark:text-slate-600">→</span>
-                      <span className="text-base font-black text-emerald-600 dark:text-emerald-400">{d.current + d.amount}</span>
-                      <span className="text-[9px] font-black uppercase text-slate-400">{unit}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className={`p-5 shrink-0 border-t border-slate-100 dark:border-slate-800 flex gap-3 ${isDarkMode ? 'bg-slate-800/30' : 'bg-slate-50/50'}`}>
-              <button
-                type="button"
-                onClick={() => setShowBalanceConfirm(false)}
-                disabled={savingBalance}
-                className={`flex-1 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-700 border border-slate-100'}`}
-              >
-                Voltar
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmBalance}
-                disabled={savingBalance}
-                className="flex-[1.5] py-4 rounded-2xl bg-emerald-600 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 active:scale-95 transition-all flex items-center justify-center gap-2"
-              >
-                <Check size={16} strokeWidth={3} /> {savingBalance ? 'Salvando...' : 'Confirmar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Popup — Resumo Simples do Pedido */}
       {simplePreviewSale && (() => {
@@ -1412,17 +1456,17 @@ export default function SalesView({
                       className={`flex items-center justify-between px-5 py-3.5 gap-3 ${!isLast ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
                     >
                       <div className="min-w-0 flex-1">
-                        <p className={`text-[12px] font-black uppercase leading-tight truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
-                          {product?.reference && <span className="text-slate-400">{product.reference} · </span>}{product?.name}
-                        </p>
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-900 dark:bg-slate-700 text-white text-[9px] font-black uppercase tracking-widest">
-                            {variation?.colorName}
+                            {product?.reference && `${product.reference} · `}{product?.name}
+                            {variation?.colorName && ` · ${variation.colorName}`}
                           </span>
-                          {item.size && (
-                            <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Nº {item.size}</span>
-                          )}
                         </div>
+                        {item.size && (
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Nº {item.size}</span>
+                          </div>
+                        )}
                       </div>
                       <div className="text-right shrink-0">
                         <p className={`text-[12px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -1574,17 +1618,17 @@ export default function SalesView({
                       {/* Product header */}
                       <div className="flex items-start justify-between gap-2 mb-2">
                         <div className="min-w-0">
-                          <p className={`text-[12px] font-black uppercase tracking-tight leading-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                            {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
-                          </p>
-                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-900 dark:bg-slate-700 text-white text-[9px] font-black uppercase tracking-widest">
-                              {row.variation?.colorName}
+                          <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[10px] font-black uppercase tracking-wider">
+                              {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
+                              {row.variation?.colorName && ` · ${row.variation.colorName}`}
                             </span>
-                            {row.item.size && (
-                              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Nº {row.item.size}</span>
-                            )}
                           </div>
+                          {row.item.size && (
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Nº {row.item.size}</span>
+                            </div>
+                          )}
                         </div>
                         <div className="text-right shrink-0">
                           <p className={`text-[11px] font-black uppercase tracking-widest ${row.separated > 0 ? 'text-indigo-500' : 'text-slate-400'}`}>
@@ -1681,12 +1725,17 @@ export default function SalesView({
                     className={`p-3 rounded-2xl border flex items-center justify-between gap-2 ${isDarkMode ? 'bg-emerald-900/10 border-emerald-800/30' : 'bg-emerald-50 border-emerald-100'}`}
                   >
                     <div className="min-w-0">
-                      <p className={`text-[11px] font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-emerald-300' : 'text-emerald-800'}`}>
-                        {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
-                      </p>
-                      <p className="text-[9px] font-bold text-emerald-500 mt-0.5 uppercase tracking-widest">
-                        {row.variation?.colorName}{row.item.size ? ` · Nº ${row.item.size}` : ''}
-                      </p>
+                      <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[9px] font-black uppercase tracking-wider">
+                          {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
+                          {row.variation?.colorName && ` · ${row.variation.colorName}`}
+                        </span>
+                      </div>
+                      {row.item.size && (
+                        <p className="text-[9px] font-bold text-emerald-500 mt-0.5 uppercase tracking-widest">
+                          Nº {row.item.size}
+                        </p>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <CheckCircle2 size={14} className="text-emerald-500" strokeWidth={2.5} />
@@ -1719,31 +1768,52 @@ export default function SalesView({
                     )}
                   </div>
                 </div>
-                <div className="flex gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setItemsPopupSale(null)}
-                    disabled={processingPopupSep}
-                    className={`flex-1 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-700 border border-slate-100'}`}
-                  >
-                    Fechar
-                  </button>
-                  {pendingRows.length > 0 && !isDelivered && (
-                    <button
-                      type="button"
-                      disabled={processingPopupSep || toApply.length === 0}
-                      onClick={handleConfirmSep}
-                      className={`flex-[1.5] py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${
-                        toApply.length === 0
-                          ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-not-allowed'
-                          : 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
-                      }`}
-                    >
-                      <Boxes size={16} strokeWidth={2.5} />
-                      {processingPopupSep ? 'Separando...' : `Separar (${totalToSeparate} ${totalToSeparate === 1 ? 'cx' : 'cx'})`}
-                    </button>
-                  )}
-                </div>
+                {(() => {
+                  const hasSeparated = s.items.some(it => it.fulfilled === true || (it.boxesSeparated || 0) > 0);
+                  return (
+                    <div className={`flex items-stretch rounded-2xl overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800' : 'bg-white border border-slate-200'}`}>
+                      <button
+                        type="button"
+                        onClick={() => setItemsPopupSale(null)}
+                        disabled={processingPopupSep}
+                        className={`flex-[0.8] py-4 text-[10px] font-black uppercase tracking-widest transition-all border-r ${isDarkMode ? 'text-slate-300 hover:bg-slate-700 border-slate-700' : 'text-slate-600 hover:bg-slate-50 border-slate-100'}`}
+                      >
+                        Fechar
+                      </button>
+                      
+                      <button
+                        type="button"
+                        disabled={processingPopupSep || !hasSeparated}
+                        onClick={() => {
+                          setItemsPopupSale(null);
+                          setRevertSale(s);
+                        }}
+                        className={`flex-1 py-4 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all border-r ${
+                          !hasSeparated
+                            ? (isDarkMode ? 'text-slate-600 border-slate-700 bg-slate-800/50 cursor-not-allowed' : 'text-slate-300 border-slate-100 bg-slate-50 cursor-not-allowed')
+                            : (isDarkMode ? 'text-amber-500 hover:bg-amber-500/10 border-slate-700' : 'text-amber-600 hover:bg-amber-50 border-slate-100')
+                        }`}
+                      >
+                        <RotateCcw size={14} strokeWidth={2.5} />
+                        Reverter
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={processingPopupSep || toApply.length === 0 || isDelivered}
+                        onClick={handleConfirmSep}
+                        className={`flex-[1.2] py-4 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all ${
+                          toApply.length === 0 || isDelivered
+                            ? (isDarkMode ? 'text-slate-600 bg-slate-800/50 cursor-not-allowed' : 'text-slate-300 bg-slate-50 cursor-not-allowed')
+                            : 'bg-indigo-600 text-white hover:bg-indigo-700'
+                        }`}
+                      >
+                        <Boxes size={14} strokeWidth={2.5} />
+                        {processingPopupSep ? '...' : `Separar (${totalToSeparate})`}
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -1814,14 +1884,15 @@ export default function SalesView({
       {revertSale && (() => {
         const s = revertSale;
         const rows = s.items
-          .filter(it => it.fulfilled === true)
+          .filter(it => it.fulfilled === true || (it.boxesSeparated || 0) > 0)
           .map((it, idx) => {
             const product = getProductInfo(it.productId);
             const variation = getVariationInfo(it.productId, it.variationId);
             const unit = it.saleType === SaleType.WHOLESALE ? 'grade(s)' : 'par(es)';
             const key = it.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (it.size || 'WHOLESALE');
             const current = (variation?.stock[key] || 0);
-            return { idx, product, variation, it, unit, current, after: current + it.quantity };
+            const qtyToRestore = (it.boxesSeparated || 0) > 0 ? it.boxesSeparated! : it.quantity;
+            return { idx, product, variation, it, unit, current, after: current + qtyToRestore, qtyToRestore };
           });
         return (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onClick={() => setRevertSale(null)}>
@@ -1838,7 +1909,7 @@ export default function SalesView({
                   <div key={r.idx} className={`p-3 rounded-2xl border flex items-center justify-between gap-2 ${isDarkMode ? 'bg-amber-900/15 border-amber-800/40' : 'bg-amber-50 border-amber-100'}`}>
                     <div className="min-w-0">
                       <p className={`text-[11px] font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{r.product?.reference} {r.product?.name}</p>
-                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">{r.variation?.colorName}{r.it.size ? ` · Nº ${r.it.size}` : ''} · {r.it.quantity} {r.unit}</p>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">{r.variation?.colorName}{r.it.size ? ` · Nº ${r.it.size}` : ''} · {r.qtyToRestore} {r.unit} (devolvidos)</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="text-sm font-black text-slate-400">{r.current}</span>
@@ -1998,6 +2069,7 @@ export default function SalesView({
           sectors={sectors}
           existingOrdersCount={productionOrders.length}
           existingLotsCount={lots.length}
+          lots={lots}
           isDarkMode={isDarkMode}
           onConfirm={async (order, newLots, deductions) => {
             await onCreateProductionOrder(order, newLots, deductions);
@@ -2005,6 +2077,7 @@ export default function SalesView({
           }}
         />
       )}
+
     </div>
   );
 }

@@ -277,6 +277,7 @@ export type SaleItem = {
   unitPrice?: number; // preço por par (atacado)
   fulfilled?: boolean; // true = estoque já abatido; false/undefined = aguardando estoque
   boxesSeparated?: number; // qtd já separada fisicamente (cx para atacado, pares para varejo)
+  separatedPkgAllocations?: StockPkgAllocation[]; // snapshot das alocações de embalagem consumidas na separação (para restaurar no revert)
 };
 
 export type SaleExtraItem = {
@@ -860,6 +861,7 @@ export interface ServiceOrder {
   createdAt: number;
   finishedAt?: number;
   sourceOrderIds?: string[]; // Order IDs covered by this OS (for per-order OS tracking)
+  sourceItemKeys?: string[]; // Specific source item keys (e.g. lotId::orderId::siIdx) covered by this OS
   // Print extras
   productPhotoUrl?: string; // URL of the product/variation photo for label printing
   sizeGrid?: string;        // Human-readable size range, e.g. "37-38-39-40-41"

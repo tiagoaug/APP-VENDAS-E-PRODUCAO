@@ -1,0 +1,31 @@
+﻿                                  setFichaSelection(n);
+                                }}
+                                className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                              />
+                            )}
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                              {selectable.length} disponíve{selectable.length === 1 ? 'l' : 'is'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* FILTRAR accordion */}
+                        <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                          <button type="button"
+                            onClick={() => { const n = new Set(fichaListOpen); isFilterOpen ? n.delete(filterKey) : n.add(filterKey); setFichaListOpen(n); }}
+                            className={`w-full flex items-center gap-2 px-4 py-2.5 transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}`}
+                          >
+                            <Filter size={12} className="text-slate-400" />
+                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex-1 text-left">Filtrar</span>
+                            {(activeFilt.model || activeFilt.color) && (
+                              <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-indigo-500 text-white">Ativo</span>
+                            )}
+                            <ChevronDown size={13} className={`text-slate-400 transition-transform duration-200 ${isFilterOpen ? 'rotate-180' : ''}`} />
+                          </button>
+                          {isFilterOpen && (
+                            <div className={`px-4 pb-3 pt-2 border-t flex flex-wrap gap-1.5 ${isDarkMode ? 'border-slate-800 bg-slate-950/30' : 'border-slate-100 bg-slate-50/60'}`}>
+                              {uniqueModels.map(m => (
+                                <button type="button" key={m}
+                                  onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, model: activeFilt.model === m ? '' : m } }))}
+                                  className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all border ${activeFilt.model === m ? 'bg-indigo-600 text-white border-indigo-600' : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-600 border-slate-200'}`}
+                                >{m}</button>

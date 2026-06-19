@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
+import {
   Plus, Search, ChevronRight, Filter,
   Factory, LayoutDashboard, ListTodo,
   History, MoreVertical, ArrowRight,
@@ -11,7 +11,7 @@ import {
   Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart,
   DollarSign, Hammer, FileText, CheckSquare, Scissors, Printer, Share2, Truck,
   QrCode, ScanLine, Hash, Lock, ChevronDown, List, ArrowLeftRight, MessageSquare, Eye,
-  Footprints, Scale, Database, TrendingDown, Zap
+  Footprints, Scale, Database, TrendingDown, Zap, Palette
 } from 'lucide-react';
 import {
   ProductionLot, Product, Sector,
@@ -42,6 +42,8 @@ import CuttingAreaPanel from '../components/CuttingProjectionPanel';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
 import { getMaterialStockForColor } from '../utils/materialStock';
+import ExportNoteModal from '../components/ExportNoteModal';
+import { generatePCPShareExport, PCPShareItem } from '../utils/pcpShareExport';
 
 // Um modelo (pedido/produto) que compõe um mapa, com o setor que SEU PRÓPRIO roteiro
 // de produção indica como próximo passo (`suggestedSectorId`) e o setor finalmente
@@ -132,6 +134,15 @@ export default function PCPView({
   sales = [],
 }: PCPViewProps) {
   const [activeTab, setActiveTab] = useState<'monitor' | 'lots' | 'orders' | 'needs' | 'solados'>(initialTab);
+  const [mapBadgeBg, setMapBadgeBg] = useState(() => localStorage.getItem('pcp_map_badge_bg') || '#7c3aed');
+  const [mapBadgeText, setMapBadgeText] = useState(() => localStorage.getItem('pcp_map_badge_text') || '#ffffff');
+  const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
+  const updateMapBadgeColors = (bg: string, text: string) => {
+    setMapBadgeBg(bg);
+    setMapBadgeText(text);
+    localStorage.setItem('pcp_map_badge_bg', bg);
+    localStorage.setItem('pcp_map_badge_text', text);
+  };
   const [requestingId, setRequestingId] = useState<string | null>(null);
   const [isRequestingBatch, setIsRequestingBatch] = useState(false);
   const [inTransitPopupItem, setInTransitPopupItem] = useState<any | null>(null);
@@ -151,7 +162,6 @@ export default function PCPView({
   const [isFilterPopupOpen, setIsFilterPopupOpen] = useState(false);
   const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedLot, setSelectedLot] = useState<ProductionLot | null>(null);
   // Mantém o snapshot do mapa aberto no modal de detalhe em sincronia com a
@@ -172,7 +182,13 @@ export default function PCPView({
   // Override manual de setor: escapatória para quando o cálculo automático erra
   // (ex.: pedidos adiantados / mapas com modelos de roteiros diferentes fazem o
   // mapa "pular" setores). Permite escolher diretamente o setor de destino do mapa.
-  const [manualSectorPicker, setManualSectorPicker] = useState<{ lot: ProductionLot } | null>(null);
+  const [manualSectorPicker, setManualSectorPicker] = useState<{ lot?: ProductionLot; fichas?: any[] } | null>(null);
+  const [manualSectorMoveConfirm, setManualSectorMoveConfirm] = useState<{
+    lot?: ProductionLot;
+    fichas?: any[];
+    targetSectorId: string;
+    targetSectorName: string;
+  } | null>(null);
   const [lotNotesPopup, setLotNotesPopup] = useState<{ lot: ProductionLot } | null>(null);
   // Confirmação de avanço de setor: mostra cada modelo do mapa, sua quantidade e o
   // setor para onde será movido (resolvido pelo roteiro de produção do PRÓPRIO modelo,
@@ -206,6 +222,7 @@ export default function PCPView({
 
   // ── Centro de Compartilhamento PCP ──────────────────────────────────────────
   const [isPCPShareModalOpen, setIsPCPShareModalOpen] = useState(false);
+  const [shareModal, setShareModal] = useState<{ isOpen: boolean; format: 'pdf' | 'jpg'; selectedItems: any[] }>({ isOpen: false, format: 'pdf', selectedItems: [] });
   const [shareReportType, setShareReportType] = useState<'sector' | 'lot' | 'customer'>('sector');
   const [shareFilterSectors, setShareFilterSectors] = useState<Set<string>>(new Set());
   const [shareFilterStatus, setShareFilterStatus] = useState<'active' | 'finished' | 'all'>('active');
@@ -276,7 +293,7 @@ export default function PCPView({
   // Filtered and organized data
   const filteredLots = useMemo(() => {
     let list = lots;
-    
+
     if (statusFilter === 'active') list = list.filter(l => !l.finishedAt);
     if (statusFilter === 'finished') list = list.filter(l => !!l.finishedAt);
     if (statusFilter === 'urgent') list = list.filter(l => (l.prioridade === 'URGENTE' || l.prioridade === 'ALTA') && !l.finishedAt);
@@ -294,7 +311,7 @@ export default function PCPView({
   }, [lots, products, searchTerm, statusFilter]);
 
   const activeLots = useMemo(() => lots.filter(l => !l.finishedAt), [lots]);
-  
+
   const filteredActiveLots = useMemo(() => {
     return filteredLots.filter(l => !l.finishedAt);
   }, [filteredLots]);
@@ -383,7 +400,7 @@ export default function PCPView({
   }, [lots, productionOrders]);
 
   // State para seleção de itens de pedidos para formar um mapa (carrinho)
-  const [selectedOrderItems, setSelectedOrderItems] = useState<{orderId: string, itemIdx: number}[]>([]);
+  const [selectedOrderItems, setSelectedOrderItems] = useState<{ orderId: string, itemIdx: number }[]>([]);
 
   // Seleção de fichas individuais para emissão de OS (key = `${lotId}::${orderId}::${idx}`)
   const [fichaSelection, setFichaSelection] = useState<Set<string>>(new Set());
@@ -430,11 +447,11 @@ export default function PCPView({
   // alguma necessidade em qualquer origem" usada no indicador da aba (independe do filtro ativo).
   const buildPurchaseNeeds = (sourceFilter: 'LOTS' | 'ORDERS' | 'BOTH' | 'SELECTED_ORDERS', selectedOrderIds?: Set<string>) => {
     const materialReqs: Record<string, {
-      id: string; 
-      name: string; 
-      required: number; 
-      stock: number; 
-      minStock: number; 
+      id: string;
+      name: string;
+      required: number;
+      stock: number;
+      minStock: number;
       unit: string;
       type: 'MATERIAL' | 'SOLE';
       materialId?: string;
@@ -966,20 +983,16 @@ export default function PCPView({
     return result.sort((a, b) => b.totalQty - a.totalQty);
   }, [pendingItems, groupingMode, mapSuggestionSearch, comboReferences, products, suggestionFilterOrderIds]);
 
-  // Lot Creation State
-  const [newLot, setNewLot] = useState<Partial<ProductionLot>>({
-    prioridade: 'NORMAL',
-    quantity: 0
-  });
+
 
   // Helper for deadline days based on productionConfigs (type === 'DEADLINE')
   const getDefaultDaysForDeadline = (deadlineName: string): number => {
     const cleanName = (deadlineName || '').toUpperCase().trim();
-    const matchedConfig = (productionConfigs || []).find(c => 
-      c.type === 'DEADLINE' && 
-      (c.name.toUpperCase().trim() === cleanName || 
-       (cleanName === 'ALTA' && c.name.toUpperCase().trim() === 'PADRÃO') || 
-       (cleanName === 'URGENTE' && c.name.toUpperCase().trim() === 'URGENTE'))
+    const matchedConfig = (productionConfigs || []).find(c =>
+      c.type === 'DEADLINE' &&
+      (c.name.toUpperCase().trim() === cleanName ||
+        (cleanName === 'ALTA' && c.name.toUpperCase().trim() === 'PADRÃO') ||
+        (cleanName === 'URGENTE' && c.name.toUpperCase().trim() === 'URGENTE'))
     );
     if (matchedConfig && typeof matchedConfig.metadata?.days === 'number') {
       return matchedConfig.metadata.days;
@@ -1006,17 +1019,7 @@ export default function PCPView({
     return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])).getTime();
   };
 
-  // Automatically calculate custom delivery date when creating a brand new lot and modal opens
-  useEffect(() => {
-    if (isCreateModalOpen && !newLot.id && !newLot.deliveryDate) {
-      const defaultDays = getDefaultDaysForDeadline(newLot.prioridade || 'NORMAL');
-      const calculatedDate = Date.now() + defaultDays * 24 * 60 * 60 * 1000;
-      setNewLot(prev => ({
-        ...prev,
-        deliveryDate: calculatedDate
-      }));
-    }
-  }, [isCreateModalOpen]);
+
 
   // Após escanear um QR e abrir o Mapa direto em um pedido vinculado, rola até o card expandido
   useEffect(() => {
@@ -1090,86 +1093,7 @@ export default function PCPView({
     return (productionConfigs || []).filter(c => c.type === 'DEADLINE');
   }, [productionConfigs]);
 
-  const priorityOptions = useMemo(() => {
-    if (deadlineConfigs.length > 0) {
-      return deadlineConfigs.map(c => c.name.toUpperCase().trim());
-    }
-    return ['NORMAL', 'ALTA', 'URGENTE'];
-  }, [deadlineConfigs]);
 
-  const handlePriorityChange = (p: string) => {
-    const defaultDays = getDefaultDaysForDeadline(p);
-    const calculatedDate = Date.now() + defaultDays * 24 * 60 * 60 * 1000;
-    setNewLot(prev => ({
-      ...prev,
-      prioridade: p,
-      deliveryDate: calculatedDate
-    }));
-  };
-
-  const handleCreateLot = async () => {
-    if (!newLot.productId || !newLot.variationId || !newLot.quantity) {
-      toast.show('Preencha os campos obrigatórios.');
-      return;
-    }
-
-    // Validação: Uma OP só pode estar em um mapa ativo (ignorando o lote atual se for edição)
-    if (newLot.productionOrderId) {
-      const existingLot = lots.find(l => l.productionOrderId === newLot.productionOrderId && !l.finishedAt && l.id !== newLot.id);
-      if (existingLot) {
-        toast.show(`Esta OP já possui um mapa em andamento (${existingLot.orderNumber}). Não é possível criar múltiplos mapas para a mesma OP.`);
-        return;
-      }
-    }
-
-    const product = products.find(p => p.id === newLot.productId);
-    if (!product) return;
-
-    if (newLot.id) {
-      // MODO EDIÇÃO
-      const existingLot = lots.find(l => l.id === newLot.id);
-      if (!existingLot) return;
-
-      await onSaveLot({
-        ...existingLot,
-        productId: newLot.productId,
-        variationId: newLot.variationId,
-        quantity: newLot.quantity,
-        prioridade: newLot.prioridade || 'NORMAL',
-        deliveryDate: newLot.deliveryDate || undefined,
-      } as ProductionLot);
-    } else {
-      // MODO CRIAÇÃO
-      const lot: ProductionLot = {
-        id: generateId(),
-        orderNumber: `MAPA #${String(lots.length + 1).padStart(3, '0')}`,
-        productId: newLot.productId,
-        variationId: newLot.variationId,
-        quantity: newLot.quantity,
-        route: product.productionRoute || sectors.map(s => s.id),
-        currentSectorIndex: 0,
-        prioridade: newLot.prioridade || 'NORMAL',
-        history: [{
-          sectorId: (product.productionRoute || sectors.map(s => s.id))[0],
-          statusId: '',
-          timestamp: Date.now(),
-          userName: userName,
-          notes: newLot.productionOrderId ? `Criado via ${newLot.productionOrderId}` : 'MAPA criado'
-        }],
-        createdAt: Date.now(),
-        ...(newLot.saleId && { saleId: newLot.saleId }),
-        ...(newLot.productionOrderId && { productionOrderId: newLot.productionOrderId }),
-        ...(newLot.customerName && { customerName: newLot.customerName }),
-        ...(newLot.deliveryDate && { deliveryDate: newLot.deliveryDate }),
-        ...(newLot.saleOrderNumber && { saleOrderNumber: newLot.saleOrderNumber }),
-      };
-
-      await onSaveLot(lot);
-    }
-
-    setIsCreateModalOpen(false);
-    setNewLot({ prioridade: 'NORMAL', quantity: 0 });
-  };
 
   // Bloqueia avanço do mapa inteiro se houver OS pendente
   const hasPendingOS = (lot: ProductionLot): boolean => {
@@ -1201,7 +1125,7 @@ export default function PCPView({
     return [
       [productRef, productName, colorName].filter(Boolean).join(' '),
       orderNumber ? `Ped. ${orderNumber}` : '',
-      qty ? `${qty}P` : '',
+      qty ? `${qty} ${qty === 1 ? 'par' : 'pares'}` : '',
     ].filter(Boolean).join(' · ');
   };
 
@@ -1593,16 +1517,9 @@ export default function PCPView({
     setSelectedLot(revertedLot);
   };
 
-  // Override manual: move o mapa diretamente para o setor escolhido pelo usuário,
-  // ignorando o cálculo automático do "próximo setor". Existe como escapatória para
-  // quando esse cálculo erra — por exemplo, mapas com pedidos adiantados (parte em
-  // um setor, parte em outro) ou modelos com roteiros diferentes podem fazer o
-  // cálculo "pular" vários setores de uma vez. Insere o setor na rota do mapa caso
-  // ele ainda não esteja lá, garantindo que `currentSectorIndex` continue válido.
   const handleManualSectorOverride = async (lot: ProductionLot, targetSectorId: string) => {
     const targetSector = sectors.find(s => s.id === targetSectorId);
     if (!targetSector) return;
-    if (!confirm(`Mover o mapa #${lot.orderNumber} manualmente para o setor "${targetSector.name}"?\n\nUse esta opção apenas se o setor calculado automaticamente estiver incorreto.`)) return;
 
     const newRoute = ensureSectorInRoute(lot.route || [], targetSectorId, sectors);
     const updatedLot: ProductionLot = {
@@ -1625,7 +1542,71 @@ export default function PCPView({
     await onSaveLot(updatedLot);
     setSelectedLot(updatedLot);
     setManualSectorPicker(null);
+    setManualSectorMoveConfirm(null);
     setOsFeedback({ osNumber: `Mapa #${lot.orderNumber}`, nextSector: targetSector.name, action: 'Setor alterado manualmente com sucesso.' });
+  };
+
+  const handleManualFichasSectorOverride = async (fichas: any[], targetSectorId: string) => {
+    const targetSector = sectors.find(s => s.id === targetSectorId);
+    if (!targetSector) return;
+
+    try {
+      // Group selected fichas by lot, because they can belong to different lots
+      const fichasByLot = new Map<string, any[]>();
+      fichas.forEach(f => {
+        if (!fichasByLot.has(f.lot.id)) fichasByLot.set(f.lot.id, []);
+        fichasByLot.get(f.lot.id)!.push(f);
+      });
+
+      // Save each lot update
+      for (const [lotId, lotFichas] of fichasByLot.entries()) {
+        const lot = lotFichas[0].lot;
+        
+        // Ensure targetSectorId is in lot.route
+        const newRoute = ensureSectorInRoute(lot.route || [], targetSectorId, sectors);
+
+        const currentOrderSectors: Record<string, string> = (lot as any).metadata?.orderSectors || {};
+        const updatedOrderSectors = { ...currentOrderSectors };
+        
+        lotFichas.forEach(f => {
+          const itemKey = getSourceItemKey(f.si);
+          updatedOrderSectors[itemKey] = targetSectorId;
+        });
+
+        const updatedLot: ProductionLot = {
+          ...lot,
+          route: newRoute,
+          metadata: {
+            ...(lot as any).metadata,
+            orderSectors: updatedOrderSectors
+          },
+          history: [
+            ...(lot.history || []),
+            {
+              sectorId: lot.route?.[lot.currentSectorIndex] || '',
+              statusId: '',
+              timestamp: Date.now(),
+              userName: userName || 'Usuário',
+              notes: `${lotFichas.length} pedido(s) movidos manualmente para "${targetSector.name}".`,
+            }
+          ]
+        };
+
+        await onSaveLot(updatedLot);
+      }
+
+      setFichaSelection(new Set());
+      setManualSectorPicker(null);
+      setManualSectorMoveConfirm(null);
+      setOsFeedback({
+        osNumber: `${fichas.length} Pedido(s)`,
+        nextSector: targetSector.name,
+        action: 'Setor de pedidos alterado manualmente com sucesso.'
+      });
+    } catch (e) {
+      console.error(e);
+      toast.show("Erro ao mover pedidos: " + (e instanceof Error ? e.message : String(e)));
+    }
   };
 
   const handleOpenOSModal = (lotsToProcess: ProductionLot | ProductionLot[], _sectorOverride?: string, _qtyOverride?: number) => {
@@ -1679,7 +1660,7 @@ export default function PCPView({
     // _sectorOverride tem prioridade pois é passado diretamente (evita problema de timing do state)
     const effectiveSectorId = _sectorOverride || pendingOsSectorOverride || (lot.route && lot.route[lot.currentSectorIndex]);
     const currentSector = sectors.find(s => s.id === effectiveSectorId);
-    
+
     if (currentSector && currentSector.defaultServiceProviderId) {
       setOsProviderId(currentSector.defaultServiceProviderId);
       setOsProviderManualName(currentSector.defaultServiceProviderName || '');
@@ -1720,8 +1701,8 @@ export default function PCPView({
     const defAccount = accounts.find(a => a.isDefault) || accounts[0];
     setOsAccountId(defAccount?.id || '');
 
-    const prodCategory = categories.find(c => 
-      c.type === 'EXPENSE' && 
+    const prodCategory = categories.find(c =>
+      c.type === 'EXPENSE' &&
       (c.name.toLowerCase().includes('produ') || c.name.toLowerCase().includes('mão') || c.name.toLowerCase().includes('obra') || c.name.toLowerCase().includes('servi'))
     ) || categories.find(c => c.type === 'EXPENSE');
     setOsCategoryId(prodCategory?.id || '');
@@ -1768,7 +1749,7 @@ export default function PCPView({
     const product = products.find(p => p.id === firstLot.productId);
     const variation = product?.variations.find(v => v.id === firstLot.variationId);
 
-    const providerName = osProviderId 
+    const providerName = osProviderId
       ? (people.find(p => p.id === osProviderId)?.name || osProviderManualName)
       : osProviderManualName;
 
@@ -2498,13 +2479,12 @@ export default function PCPView({
 
 
   // Open OS modal pre-configured for a specific order (per-ficha creation)
-  const handleOpenOSModalForOrder = (lot: ProductionLot, orderIds: string[], preNote?: string, sectorOverride?: string, qtyOverride?: number) => {
+  const handleOpenOSModalForOrder = (lotsToProcess: ProductionLot | ProductionLot[], orderIds: string[], preNote?: string, sectorOverride?: string, qtyOverride?: number) => {
     setPendingOsSourceOrderIds(orderIds);
     if (preNote) setOsNotes(preNote);
     if (sectorOverride) setPendingOsSectorOverride(sectorOverride);
     if (qtyOverride !== undefined) setPendingOsQuantityOverride(qtyOverride);
-    // Passa valores diretamente para evitar problema de timing do React state
-    handleOpenOSModal(lot, sectorOverride, qtyOverride);
+    handleOpenOSModal(lotsToProcess, sectorOverride, qtyOverride);
   };
 
   // Desfazer OS in PCPView — deletes OS + all sibling OS + the lot (frees orders)
@@ -2665,9 +2645,9 @@ export default function PCPView({
 
     const lotMetadata = (lot as any).metadata;
     const items = lotMetadata?.sourceItems || [];
-    
+
     const isOnlyItem = (items.length <= 1 && (!lot.productionOrderId || lot.productionOrderId === orderId));
-    
+
     if (isOnlyItem) {
       await onDeleteLot(lot.id);
       setIsDetailModalOpen(false);
@@ -2870,14 +2850,14 @@ export default function PCPView({
 
       // Paleta moderna
       const C = {
-        indigo: [79, 70, 229] as [number,number,number],
-        indigoLight: [238, 242, 255] as [number,number,number],
-        dark: [15, 23, 42] as [number,number,number],
-        mid: [71, 85, 105] as [number,number,number],
-        muted: [148, 163, 184] as [number,number,number],
-        line: [226, 232, 240] as [number,number,number],
-        rowAlt: [249, 250, 251] as [number,number,number],
-        white: [255, 255, 255] as [number,number,number],
+        indigo: [79, 70, 229] as [number, number, number],
+        indigoLight: [238, 242, 255] as [number, number, number],
+        dark: [15, 23, 42] as [number, number, number],
+        mid: [71, 85, 105] as [number, number, number],
+        muted: [148, 163, 184] as [number, number, number],
+        line: [226, 232, 240] as [number, number, number],
+        rowAlt: [249, 250, 251] as [number, number, number],
+        white: [255, 255, 255] as [number, number, number],
       };
 
       const addHeader = () => {
@@ -2901,7 +2881,7 @@ export default function PCPView({
       };
 
       const R = 2.5; // raio dos cantos arredondados
-      const BG = [248, 250, 252] as [number,number,number]; // fundo card
+      const BG = [248, 250, 252] as [number, number, number]; // fundo card
 
       // Desenha card com cantos arredondados e fundo levíssimo
       const drawCard = (y: number, h: number) => {
@@ -3010,7 +2990,7 @@ export default function PCPView({
             }
             if (shareOpts.grades) {
               for (const item of order.items) {
-                const itemSzs = Object.entries(item.sizes || {}).filter(([,v]) => v.toProduction > 0).sort(([a],[b]) => Number(a)-Number(b));
+                const itemSzs = Object.entries(item.sizes || {}).filter(([, v]) => v.toProduction > 0).sort(([a], [b]) => Number(a) - Number(b));
                 if (!itemSzs.length) continue;
                 if (y > 255) { doc.addPage(); y = addHeader() + 4; }
                 const p2 = products.find(pr => pr.id === item.productId);
@@ -3019,7 +2999,7 @@ export default function PCPView({
                 doc.text(`Grade · ${p2?.name || '—'} · ${v2?.colorName || item.variationName || '—'}`, M + 4, y);
                 y += 3.5;
                 autoTable(doc, {
-                  startY: y, head: [itemSzs.map(([sz]) => sz)], body: [itemSzs.map(([,v]) => String(v.toProduction))],
+                  startY: y, head: [itemSzs.map(([sz]) => sz)], body: [itemSzs.map(([, v]) => String(v.toProduction))],
                   margin: { left: M + 4, right: M },
                   styles: { fontSize: 7.5, cellPadding: 1.8, halign: 'center' as const, lineColor: C.line, lineWidth: 0.2 },
                   headStyles: { fillColor: C.indigoLight, textColor: C.indigo, fontStyle: 'bold' as const },
@@ -3277,11 +3257,11 @@ export default function PCPView({
             const orderLots3 = lots.filter(l => order.lotIds?.includes(l.id));
             const sectorSub3 = orderLots3.length > 0
               ? '  ·  ' + [...new Set(orderLots3.map(l => {
-                  if (l.finishedAt) return 'Concluído';
-                  const sid = getOrderEffectiveSector(l, order.id);
-                  if (sid === ORDER_FINALIZED) return 'Concluído';
-                  return sectors.find(s => s.id === sid)?.name || 'Sem Setor';
-                }))].join(', ')
+                if (l.finishedAt) return 'Concluído';
+                const sid = getOrderEffectiveSector(l, order.id);
+                if (sid === ORDER_FINALIZED) return 'Concluído';
+                return sectors.find(s => s.id === sid)?.name || 'Sem Setor';
+              }))].join(', ')
               : '';
             for (const item of order.items) {
               const p3 = products.find(pr => pr.id === item.productId);
@@ -3294,7 +3274,7 @@ export default function PCPView({
                 qty: `${item.toProductionQty || 0} par`,
               });
               if (shareOpts.grades) {
-                const itemSzs3 = Object.entries(item.sizes || {}).filter(([,v]) => v.toProduction > 0).sort(([a],[b]) => Number(a)-Number(b));
+                const itemSzs3 = Object.entries(item.sizes || {}).filter(([, v]) => v.toProduction > 0).sort(([a], [b]) => Number(a) - Number(b));
                 if (itemSzs3.length) {
                   const pairsMap3: Record<string, number> = {};
                   itemSzs3.forEach(([sz, v]) => { pairsMap3[sz] = v.toProduction; });
@@ -3343,7 +3323,7 @@ export default function PCPView({
       const H = HEADER_H
         + items.reduce((s, it) =>
           s + (it.type === 'section' ? 46 : it.type === 'spacer' ? 20 : it.type === 'grade' ? gradeH(it) : LOT_H)
-        , PAD)
+          , PAD)
         + FOOTER_H + PAD;
 
       const canvas = document.createElement('canvas');
@@ -3540,11 +3520,10 @@ export default function PCPView({
                         key={f.id}
                         type="button"
                         onClick={() => { setStatusFilter(f.id as 'all' | 'active' | 'finished' | 'urgent'); setIsFilterPopupOpen(false); }}
-                        className={`flex flex-col items-start gap-2.5 p-4 rounded-2xl border transition-all active:scale-[0.97] ${
-                          isActive
+                        className={`flex flex-col items-start gap-2.5 p-4 rounded-2xl border transition-all active:scale-[0.97] ${isActive
                             ? `${f.active} text-white border-transparent`
                             : isDarkMode ? 'bg-slate-800/40 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-100 text-slate-600 hover:border-slate-200 shadow-sm'
-                        }`}
+                          }`}
                       >
                         <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isActive ? 'bg-white/20 text-white' : f.idle}`}>
                           {f.icon}
@@ -3608,11 +3587,10 @@ export default function PCPView({
               <AlertCircle size={15} strokeWidth={2.5} className={`shrink-0 ${activeTab === 'needs' ? 'text-white' : 'text-amber-500'}`} />
               <span className="text-[9px] font-black uppercase tracking-wide truncate">Necessid.</span>
               {purchaseNeeds.length > 0 ? (
-                <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-1 rounded-full text-[8px] font-black flex items-center justify-center ${
-                  activeTab === 'needs'
+                <span className={`absolute top-1.5 right-1.5 min-w-[15px] h-[15px] px-1 rounded-full text-[8px] font-black flex items-center justify-center ${activeTab === 'needs'
                     ? 'bg-white text-amber-600'
                     : (purchaseNeeds.some(i => i.type === 'MATERIAL' ? i.required > i.stock : i.sizeShortages ? Object.values(i.sizeShortages).some((s: any) => s.required > s.stock) : false) ? 'bg-rose-500 text-white' : 'bg-indigo-400 text-white')
-                }`}>
+                  }`}>
                   {purchaseNeeds.length}
                 </span>
               ) : hasAnyPurchaseNeed && (
@@ -3671,8 +3649,9 @@ export default function PCPView({
               {[
                 { label: 'Escanear', icon: <Camera size={20} />, color: 'text-sky-500', bg: isDarkMode ? 'bg-sky-500/10' : 'bg-sky-50', run: () => setIsScannerOpen(true) },
                 { label: 'Filtros', icon: <Filter size={20} />, color: 'text-violet-500', bg: isDarkMode ? 'bg-violet-500/10' : 'bg-violet-50', run: () => setIsFilterPopupOpen(true), dot: statusFilter !== 'all' },
-                { label: 'Compartilhar', icon: <Share2 size={20} />, color: 'text-orange-500', bg: isDarkMode ? 'bg-orange-500/10' : 'bg-orange-50', run: () => setIsPCPShareModalOpen(true) },
+                { label: 'Compartilhar', icon: <Share2 size={20} />, color: 'text-orange-500', bg: isDarkMode ? 'bg-orange-500/10' : 'bg-orange-50', run: () => setShareModal({ isOpen: true, format: 'pdf', selectedItems: filteredActiveLots }) },
                 { label: 'Mapas', icon: <ListTodo size={20} />, color: 'text-emerald-500', bg: isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50', run: () => { setActiveTab('lots'); setSelectedSectorId(null); } },
+                { label: 'Cor Mapa', icon: <Palette size={20} />, color: 'text-indigo-500', bg: isDarkMode ? 'bg-indigo-500/10' : 'bg-indigo-50', run: () => setIsColorPickerOpen(true) },
               ].map((action) => (
                 <button
                   key={action.label}
@@ -3725,9 +3704,8 @@ export default function PCPView({
                     key={sector.id}
                     onClick={() => setSelectedSectorId(sector.id)}
                     title={`Ver detalhes do setor ${sector.name}`}
-                    className={`group relative rounded-[2rem] border transition-all flex flex-col text-left hover:-translate-y-1 active:scale-[0.98] overflow-hidden ${
-                      isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-100 shadow-sm shadow-slate-200/60 hover:shadow-xl hover:shadow-slate-200/60'
-                    }`}
+                    className={`group relative rounded-[2rem] border transition-all flex flex-col text-left hover:-translate-y-1 active:scale-[0.98] overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-100 shadow-sm shadow-slate-200/60 hover:shadow-xl hover:shadow-slate-200/60'
+                      }`}
                   >
                     {/* Brilho sutil da cor do setor */}
                     <div className="absolute -top-20 -right-16 w-44 h-44 rounded-full blur-3xl opacity-[0.18] pointer-events-none" style={{ backgroundColor: sector.color }} />
@@ -3840,11 +3818,10 @@ export default function PCPView({
                               setIsMultiSelectMode(false);
                               setSelectedLotIds([]);
                             }}
-                            className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-left transition-all ${
-                              sector.id === selectedSectorId
+                            className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-left transition-all ${sector.id === selectedSectorId
                                 ? 'bg-orange-500 text-white'
                                 : isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-50'
-                            }`}
+                              }`}
                           >
                             <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: sector.color }} />
                             {sector.name}
@@ -3863,13 +3840,12 @@ export default function PCPView({
                       setIsMultiSelectMode(!isMultiSelectMode);
                       setSelectedLotIds([]);
                     }}
-                    className={`px-4 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-2 relative ${
-                      isMultiSelectMode
+                    className={`px-4 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-2 relative ${isMultiSelectMode
                         ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25 ring-4 ring-rose-500/30 animate-pulse'
                         : isDarkMode
-                        ? 'bg-slate-900 text-slate-400 border border-slate-800 hover:border-indigo-500/50'
-                        : 'bg-white text-slate-500 border border-slate-100 shadow-sm hover:border-indigo-300'
-                    }`}
+                          ? 'bg-slate-900 text-slate-400 border border-slate-800 hover:border-indigo-500/50'
+                          : 'bg-white text-slate-500 border border-slate-100 shadow-sm hover:border-indigo-300'
+                      }`}
                   >
                     {isMultiSelectMode && (
                       <span className="relative flex h-2 w-2 mr-1">
@@ -3896,1421 +3872,777 @@ export default function PCPView({
               {(
                 <>
                   {isMultiSelectMode && selectedLotIds.length > 0 && (
-                <div className={`p-5 rounded-[2rem] border-2 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all ${isDarkMode ? 'bg-slate-900 border-indigo-950/50 text-white' : 'bg-indigo-50/50 border-indigo-100/50 text-indigo-950 shadow-sm'}`}>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/20 shrink-0">
-                      <CheckSquare size={20} />
-                    </div>
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-wider">{selectedLotIds.length} Mapa(s) Selecionado(s)</p>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                        Total: {filteredActiveLots.filter(l => selectedLotIds.includes(l.id)).reduce((acc, l) => acc + (l.quantity || 0), 0)} Pares
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                    <button
-                      onClick={() => {
-                        const lotsToEmit = filteredActiveLots.filter(l => selectedLotIds.includes(l.id));
-                        handleOpenOSModal(lotsToEmit);
-                      }}
-                      className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
-                    >
-                      Emitir OS em Grupo
-                    </button>
-                    
-                    <button
-                      onClick={async () => {
-                        const lotsToAdvance = filteredActiveLots.filter(l => selectedLotIds.includes(l.id));
-                        const blockedLots = lotsToAdvance.filter(l => hasPendingOS(l));
-                        if (blockedLots.length > 0) {
-                          toast.show(`${blockedLots.length} mapa(s) têm OS pendentes e não podem ser avançados:\n${blockedLots.map(l => `• Mapa #${l.orderNumber}`).join('\n')}\n\nConclua as OS antes de avançar.`);
-                          return;
-                        }
-                        if (confirm(`Deseja avançar os ${selectedLotIds.length} lotes selecionados de uma vez?`)) {
-                          // Em vez de mover todos silenciosamente (o que pode pular setores
-                          // como BORDADO em mapas com modelos de roteiros diferentes),
-                          // enfileira a confirmação — mostrando, mapa por mapa, cada
-                          // pedido/modelo, sua quantidade e o setor de destino, com
-                          // chance de ajustar manualmente antes de confirmar o avanço.
-                          queueLotAdvanceConfirms(lotsToAdvance.map(lot => ({
-                            lot,
-                            nextStatusId: lot.currentStatusId || '',
-                            notes: 'Avanço em lote (Massa).',
-                          })));
-                          setSelectedLotIds([]);
-                          setIsMultiSelectMode(false);
-                        }
-                      }}
-                      className={`flex-1 sm:flex-none px-5 py-3 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${
-                        isDarkMode ? 'border-slate-800 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-100'
-                      }`}
-                    >
-                      Avançar em Massa
-                    </button>
+                    <div className={`p-5 rounded-[2rem] border-2 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all ${isDarkMode ? 'bg-slate-900 border-indigo-950/50 text-white' : 'bg-indigo-50/50 border-indigo-100/50 text-indigo-950 shadow-sm'}`}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/20 shrink-0">
+                          <CheckSquare size={20} />
+                        </div>
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-wider">{selectedLotIds.length} Mapa(s) Selecionado(s)</p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                            Total: {filteredActiveLots.filter(l => selectedLotIds.includes(l.id)).reduce((acc, l) => acc + (l.quantity || 0), 0)} Pares
+                          </p>
+                        </div>
+                      </div>
 
-                    <button
-                      onClick={async () => {
-                        if (confirm(`Tem certeza de que deseja EXCLUIR e CANCELAR todos os ${selectedLotIds.length} mapas selecionados?`)) {
-                          try {
-                            for (const id of selectedLotIds) {
-                              await onDeleteLot(id);
+                      <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                        <button
+                          onClick={() => {
+                            const lotsToEmit = filteredActiveLots.filter(l => selectedLotIds.includes(l.id));
+                            handleOpenOSModal(lotsToEmit);
+                          }}
+                          className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+                        >
+                          Emitir OS em Grupo
+                        </button>
+
+                        <button
+                          onClick={async () => {
+                            const lotsToAdvance = filteredActiveLots.filter(l => selectedLotIds.includes(l.id));
+                            const blockedLots = lotsToAdvance.filter(l => hasPendingOS(l));
+                            if (blockedLots.length > 0) {
+                              toast.show(`${blockedLots.length} mapa(s) têm OS pendentes e não podem ser avançados:\n${blockedLots.map(l => `• Mapa #${l.orderNumber}`).join('\n')}\n\nConclua as OS antes de avançar.`);
+                              return;
                             }
-                            setSelectedLotIds([]);
-                            setIsMultiSelectMode(false);
-                            toast.show("Mapas excluídos com sucesso!");
-                          } catch (e) {
-                            console.error(e);
-                            toast.show("Erro ao excluir mapas: " + (e instanceof Error ? e.message : String(e)));
-                          }
-                        }
-                      }}
-                      className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-900/30 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
-                    >
-                      Excluir Mapas
-                    </button>
-                  </div>
-                </div>
-              )}
+                            if (confirm(`Deseja avançar os ${selectedLotIds.length} lotes selecionados de uma vez?`)) {
+                              // Em vez de mover todos silenciosamente (o que pode pular setores
+                              // como BORDADO em mapas com modelos de roteiros diferentes),
+                              // enfileira a confirmação — mostrando, mapa por mapa, cada
+                              // pedido/modelo, sua quantidade e o setor de destino, com
+                              // chance de ajustar manualmente antes de confirmar o avanço.
+                              queueLotAdvanceConfirms(lotsToAdvance.map(lot => ({
+                                lot,
+                                nextStatusId: lot.currentStatusId || '',
+                                notes: 'Avanço em lote (Massa).',
+                              })));
+                              setSelectedLotIds([]);
+                              setIsMultiSelectMode(false);
+                            }
+                          }}
+                          className={`flex-1 sm:flex-none px-5 py-3 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'border-slate-800 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-100'
+                            }`}
+                        >
+                          Avançar em Massa
+                        </button>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredActiveLots.filter(l => l.route && getLotPendingSectorGroups(l).has(selectedSectorId!)).map(lot => {
-                  const pendingGroups = getLotPendingSectorGroups(lot);
-                  const sectionItems = pendingGroups.get(selectedSectorId!) || [];
-                  const isSplit = pendingGroups.size > 1;
-                  const allLotSI: any[] = (lot as any).metadata?.sourceItems || [];
-                  // Mostra os totais/grade do mapa inteiro (lot.quantity/lot.pairs) só quando
-                  // este setor concentra TODOS os sourceItems do mapa. Se parte deles já foi
-                  // finalizada (baixa de Expedição) ou está em outro setor, sectionItems é um
-                  // subconjunto — usar os totais do mapa inteiro mostraria pares que não estão
-                  // mais pendentes aqui (ex.: já entregues).
-                  const useSectionData = isSplit || (allLotSI.length > 0 && sectionItems.length < allLotSI.length);
-                  let sectionQty = lot.quantity;
-                  let sectionGrade: Record<string, number> | null = lot.pairs || null;
-                  let sectionProducts: Product[] = [];
-                  if (useSectionData) {
-                    sectionQty = sectionItems.reduce((acc: number, si: any) => acc + (si.qty || 0), 0);
-                    const grade: Record<string, number> = {};
-                    sectionItems.forEach((si: any) => {
-                      const ord = productionOrders.find(o => o.id === si.orderId);
-                      if (!ord) return;
-                      const ordItem: any = si.itemIdx !== undefined ? ord.items[si.itemIdx] : ord.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
-                      if (!ordItem?.sizes) return;
-                      Object.entries(ordItem.sizes).forEach(([sz, sd]: any) => {
-                        const q = Number(sd.toProduction) || 0;
-                        if (q > 0) grade[sz] = (grade[sz] || 0) + q;
+                        <button
+                          onClick={async () => {
+                            if (confirm(`Tem certeza de que deseja EXCLUIR e CANCELAR todos os ${selectedLotIds.length} mapas selecionados?`)) {
+                              try {
+                                for (const id of selectedLotIds) {
+                                  await onDeleteLot(id);
+                                }
+                                setSelectedLotIds([]);
+                                setIsMultiSelectMode(false);
+                                toast.show("Mapas excluídos com sucesso!");
+                              } catch (e) {
+                                console.error(e);
+                                toast.show("Erro ao excluir mapas: " + (e instanceof Error ? e.message : String(e)));
+                              }
+                            }
+                          }}
+                          className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-900/30 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
+                        >
+                          Excluir Mapas
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+
+                  {/* ── Pedidos Vinculados — padrão idêntico ao setor de Corte ── */}
+                  {(() => {
+                    type FichaItem = { lot: ProductionLot; si: any; siIdx: number; product: any; variation: any; orderItem: any; order: any; coveringOS?: ServiceOrder };
+                    const allFichas: FichaItem[] = [];
+                    filteredActiveLots.forEach(lot => {
+                      const lotSI: any[] = (lot as any).metadata?.sourceItems || [];
+
+                      lotSI.forEach((si: any) => {
+                        const effectiveSector = getOrderEffectiveSector(lot, si.orderId, si);
+                        if (effectiveSector !== selectedSectorId) return;
+
+                        const prod = products.find(p => p.id === si.productId);
+                        const vari = prod?.variations.find((v: any) => v.id === si.variationId);
+                        const ord = productionOrders.find(o => o.id === si.orderId);
+                        const ordItem: any = si.itemIdx !== undefined ? ord?.items[si.itemIdx] : ord?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+                        const coveringOS = serviceOrders.find(os =>
+                          (os.lotId === lot.id || (os.lotIds && os.lotIds.includes(lot.id))) &&
+                          os.sectorId === selectedSectorId &&
+                          os.sourceOrderIds && os.sourceOrderIds.some(id => id === si.orderId || id.startsWith(`${si.orderId}::`))
+                        ) || serviceOrders.find(os =>
+                          (os.lotId === lot.id || (os.lotIds && os.lotIds.includes(lot.id))) &&
+                          os.sectorId === selectedSectorId &&
+                          (!os.sourceOrderIds || os.sourceOrderIds.length === 0)
+                        );
+                        const siIdx = lotSI.indexOf(si);
+                        allFichas.push({ lot, si, siIdx, product: prod, variation: vari, orderItem: ordItem, order: ord, coveringOS });
                       });
                     });
-                    sectionGrade = Object.keys(grade).length > 0 ? grade : null;
-                    sectionProducts = Array.from(new Map(
-                      sectionItems.map((si: any) => [si.productId, products.find(p => p.id === si.productId)])
-                    ).values()).filter(Boolean) as Product[];
-                  }
-                  const product = products.find(p => p.id === lot.productId);
-                  const variation = product?.variations.find(v => v.id === lot.variationId);
-                  const status = flowTags.find(t => t.id === lot.currentStatusId);
-                  const lastMove = (lot.history && lot.history.length > 0) 
-                    ? lot.history[lot.history.length - 1]?.timestamp || lot.createdAt 
-                    : lot.createdAt;
-                  const isDelayed = Date.now() - lastMove > 24 * 60 * 60 * 1000;
-                  const isSelected = selectedLotIds.includes(lot.id);
-                  const cardOSList = serviceOrders.filter(so =>
-                    (so.lotId === lot.id || (so.lotIds && so.lotIds.includes(lot.id))) &&
-                    so.sectorId === selectedSectorId &&
-                    so.status === 'PENDING'
-                  );
-                  const cardOS = cardOSList[0] ?? null;
+                    if (allFichas.length === 0) return null;
 
-                  return (
-                    <motion.div
-                      layoutId={lot.id}
-                      key={lot.id}
-                      onClick={() => {
-                        if (isMultiSelectMode) {
-                          setSelectedLotIds(prev => 
-                            prev.includes(lot.id) 
-                              ? prev.filter(id => id !== lot.id) 
-                              : [...prev, lot.id]
-                          );
-                        } else {
-                          setSelectedLot(lot);
-                          setIsDetailModalOpen(true);
-                        }
-                      }}
-                      className={`group p-6 rounded-[2.5rem] border-2 shadow-sm cursor-pointer hover:scale-[1.02] active:scale-95 transition-all ${
-                        isMultiSelectMode && isSelected
-                          ? 'border-indigo-600 bg-indigo-50/10 dark:bg-indigo-950/10'
-                          : isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          {isMultiSelectMode && (
-                            <div className={`w-5 h-5 rounded-lg flex items-center justify-center border-2 transition-all shrink-0 ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/30' : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800'}`}>
-                              {isSelected && <CheckCircle2 size={12} strokeWidth={4} />}
+                    // ── State helpers (using fichaListOpen / fichaFilters keyed by '__pedidos__')
+                    const mainKey = `__pedidos__${selectedSectorId}`;
+                    const filterKey = `__filter__${selectedSectorId}`;
+                    const isMainOpen = !fichaListOpen.has(mainKey + '_closed');
+                    const isFilterOpen = fichaListOpen.has(filterKey);
+                    const activeFilt = fichaFilters[mainKey] || { model: '', color: '' };
+
+                    // Unique models and colors across all fichas
+                    const uniqueModels = Array.from(new Set(allFichas.map(f => f.product?.name || f.orderItem?.productName || '').filter(Boolean)));
+                    const uniqueColors = Array.from(new Set(allFichas.map(f => f.variation?.colorName || f.orderItem?.variationName || '').filter(Boolean)));
+
+                    // Filtered fichas
+                    const filteredFichas = allFichas.filter(f => {
+                      const m = f.product?.name || f.orderItem?.productName || '';
+                      const c = f.variation?.colorName || f.orderItem?.variationName || '';
+                      if (activeFilt.model && m !== activeFilt.model) return false;
+                      if (activeFilt.color && c !== activeFilt.color) return false;
+                      return true;
+                    });
+
+                    // Selectable = fichas with no pending OS
+                    const selectable = filteredFichas.filter(f => !f.coveringOS || f.coveringOS.status !== 'PENDING');
+                    const selected = selectable.filter(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
+                    const allSelected = selectable.length > 0 && selectable.every(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
+                    const selectedQty = selected.reduce((s, f) => s + (f.si.qty || 0), 0);
+
+                    // Group selected fichas by lot for multi-lot OS emission
+                    const selByLot = new Map<string, FichaItem[]>();
+                    selected.forEach(f => {
+                      if (!selByLot.has(f.lot.id)) selByLot.set(f.lot.id, []);
+                      selByLot.get(f.lot.id)!.push(f);
+                    });
+
+                    return (
+                      <div className={`mt-4 rounded-3xl border overflow-hidden ${isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-sky-100 shadow-sm'}`}>
+
+                        {/* ── Cabeçalho acordeão ── */}
+                        <button type="button"
+                          onClick={() => { const n = new Set(fichaListOpen); isMainOpen ? n.add(mainKey + '_closed') : n.delete(mainKey + '_closed'); setFichaListOpen(n); }}
+                          className={`w-full flex items-center justify-between p-4 transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-sky-50/50'}`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <Hash size={13} className="text-indigo-500 shrink-0" />
+                            <div className="min-w-0">
+                              <h3 className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Pedidos Vinculados</h3>
                             </div>
-                          )}
-                          <div className="flex flex-col gap-1.5">
-                            <span className={`px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest w-fit ${
-                              lot.prioridade === 'URGENTE' ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20' :
-                              lot.prioridade === 'ALTA' ? 'bg-amber-500 text-white' :
-                              isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
-                            }`}>
-                              {lot.prioridade}
+                            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 ${isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}>
+                              {allFichas.length}
                             </span>
-                            {isDelayed && (
-                              <span className="text-[8px] font-black text-rose-500 uppercase tracking-widest flex items-center gap-1">
-                                <Clock size={10} /> Atrasado há {Math.floor((Date.now() - lastMove) / (1000 * 60 * 60))}h
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {fichaSelection.size > 0 && (
+                              <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-emerald-500 text-white">
+                                {fichaSelection.size} sel.
                               </span>
                             )}
+                            <ChevronDown size={15} className={`text-slate-400 transition-transform duration-200 ${isMainOpen ? 'rotate-180' : ''}`} />
                           </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-1.5">
-                          {isSplit && (
-                            <span className="text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                              +{pendingGroups.size - 1} também em outro{pendingGroups.size - 1 > 1 ? 's' : ''} setor{pendingGroups.size - 1 > 1 ? 'es' : ''}
+                        </button>
+
+                        {/* Hint when closed */}
+                        {!isMainOpen && (
+                          <div className={`px-4 pb-3 flex flex-col gap-1.5 border-t ${isDarkMode ? 'border-slate-800' : 'border-sky-50'}`}>
+                            <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest leading-relaxed mt-1">
+                              Expandir para selecionar pedidos e criar ordens de serviço
                             </span>
-                          )}
-                          {cardOSList.length > 0 ? (
-                            <div className="flex items-center gap-1 flex-wrap">
-                              {cardOSList.map(os => (
-                                <span key={os.id} className="flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-500 text-white text-[8px] font-black uppercase tracking-widest">
-                                  <Hammer size={9}/> {os.osNumber}
+                          </div>
+                        )}
+
+                        {isMainOpen && (
+                          <div className="p-4 pt-0 flex flex-col gap-3">
+                            <p className="text-[9px] text-slate-400 uppercase font-bold">{filteredFichas.length} fichas · {selectable.length} disponíveis</p>
+
+                            {/* Select-all row */}
+                            <div className="flex items-center justify-between pt-1">
+                              <div className="flex items-center gap-2">
+                                {selectable.length > 0 && (
+                                  <input type="checkbox"
+                                    title="Selecionar todos os pedidos disponíveis"
+                                    checked={allSelected}
+                                    onChange={() => {
+                                      const n = new Set(fichaSelection);
+                                      if (allSelected) {
+                                        selectable.forEach(f => n.delete(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
+                                      } else {
+                                        selectable.forEach(f => n.add(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
+                                      }
+                                      setFichaSelection(n);
+                                    }}
+                                    className="w-4 h-4 accent-indigo-600 cursor-pointer"
+                                  />
+                                )}
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                  {selectable.length} disponíve{selectable.length === 1 ? 'l' : 'is'}
                                 </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-slate-100 text-slate-400'}`}>
-                              Sem OS
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex justify-center mb-3">
-                        <span className="px-3 py-1 rounded-full bg-rose-500 text-white text-[9px] font-black uppercase tracking-[0.2em] shadow-sm shadow-rose-500/20">
-                          {sectors.find(s => s.id === selectedSectorId)?.name}
-                        </span>
-                      </div>
-
-                      {(() => {
-                        const lotGroups = (lot as any).metadata?.groups;
-                        const multiProductList = isSplit && sectionProducts.length > 1
-                          ? sectionProducts.map(p => ({ productId: p.id, productName: p.name }))
-                          : (!isSplit && lotGroups?.length > 1 && !lot.variationId
-                            ? Array.from(new Map(lotGroups.map((g: any) => [g.productId, g])).values()) as any[]
-                            : null);
-                        if (multiProductList) {
-                          return (
-                            <div className="flex items-center gap-3 mb-5">
-                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-indigo-900/30' : 'bg-indigo-50'}`}>
-                                <Layers size={20} className="text-indigo-500"/>
-                              </div>
-                              <div className="flex flex-col min-w-0">
-                                <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">{multiProductList.length} Modelos</p>
-                                <p className="text-sm font-black text-slate-900 dark:text-white uppercase leading-tight line-clamp-2">
-                                  {multiProductList.map((g: any) => {
-                                    const p = products.find(pr => pr.id === g.productId);
-                                    return p ? (p.reference ? `${p.reference} · ${p.name}` : p.name) : g.productName;
-                                  }).join(' • ')}
-                                </p>
                               </div>
                             </div>
-                          );
-                        }
-                        const displayProduct = isSplit && sectionProducts.length === 1 ? sectionProducts[0] : product;
-                        const displayVariation = isSplit && sectionProducts.length === 1 ? undefined : variation;
-                        return (
-                          <div className="flex items-center gap-4 mb-5">
-                            <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center shrink-0 overflow-hidden group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/20 transition-colors">
-                              {(displayVariation?.photoUrl || displayProduct?.photoUrl) ? (
-                                <img src={displayVariation?.photoUrl || displayProduct?.photoUrl} alt="" className="w-full h-full object-cover" />
-                              ) : (
-                                <Package size={24} className="text-slate-400 group-hover:text-indigo-500 transition-colors" />
-                              )}
-                            </div>
-                            <div className="flex flex-col min-w-0">
-                              <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest">1 Modelo</p>
-                              <p className="text-sm font-black truncate text-slate-900 dark:text-white uppercase leading-tight">
-                                {displayProduct ? (displayProduct.reference ? `${displayProduct.reference} · ${displayProduct.name}` : displayProduct.name) : '---'}
-                              </p>
-                              {displayVariation && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-0.5">{displayVariation.colorName}</p>}
-                            </div>
-                          </div>
-                        );
-                      })()}
 
-                      <div className="flex items-center justify-between pt-4 border-t border-slate-50 dark:border-slate-800">
-                        <div className="flex items-center gap-2">
-                          <div className="w-5 h-5 rounded-full border-2 border-white dark:border-slate-700 shadow-sm" style={{ backgroundColor: variation?.color }} />
-                          <span className="text-sm font-black text-slate-700 dark:text-slate-300">{sectionQty} <span className="text-[10px] text-slate-400 font-bold uppercase">PARES</span></span>
-                        </div>
-
-                        {status ? (
-                          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${isDarkMode ? 'bg-indigo-900/20 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
-                            <Clock size={12} />
-                            <span className="text-[10px] font-black uppercase tracking-wider">{status.name}</span>
-                          </div>
-                        ) : (
-                          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-slate-50 text-slate-400'}`}>
-                            <div className="w-1.5 h-1.5 rounded-full bg-current opacity-50" />
-                            <span className="text-[10px] font-black uppercase tracking-wider">Aguardando</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Grade de tamanhos */}
-                      {sectionGrade && (
-                        <div className="flex flex-wrap gap-1.5 mt-3 justify-center">
-                          {Object.entries(sectionGrade)
-                            .sort(([a], [b]) => Number(a) - Number(b))
-                            .map(([size, qty]) => (
-                            <div key={size} className={`flex flex-col items-center min-w-[36px] py-1.5 px-2 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                              <span className="text-[11px] font-black text-slate-500 dark:text-slate-400 leading-none">{size}</span>
-                              <span className="text-[15px] font-black text-slate-900 dark:text-white leading-none mt-0.5">{qty as number}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Ações do card: OS, Baixa, Imprimir, Etiqueta */}
-                      <div className="mt-3 flex flex-col gap-2" onClick={e => e.stopPropagation()}>
-                        {/* Linha 1: OS info + Baixa rápida + QR Baixa */}
-                        {cardOS ? (
-                          <div className="flex items-center gap-2">
-                            <div className={`flex-1 text-[9px] font-bold truncate ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                              {cardOS.providerName} • R$ {cardOS.totalValue.toFixed(2)}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleCompleteOS(cardOS)}
-                              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500 text-white text-[9px] font-black uppercase tracking-widest shadow-sm shadow-emerald-500/20 active:scale-95 transition-all shrink-0"
-                            >
-                              <CheckSquare size={11}/> Baixa
-                            </button>
-                            {/* QR Baixa — abre scanner com a OS pré-selecionada */}
-                            <button
-                              type="button"
-                              title="Baixa por QR Code"
-                              onClick={() => {
-                                setQrBaixaModal({ sectorId: selectedSectorId!, preselectedOS: cardOS });
-                                setQrBaixaManualCode('');
-                                setQrBaixaConfirm(null);
-                              }}
-                              className={`flex items-center gap-1 px-2.5 py-2 rounded-xl active:scale-95 transition-all border shrink-0 text-[9px] font-black uppercase tracking-widest ${
-                                isDarkMode
-                                  ? 'bg-violet-950/40 border-violet-700/40 text-violet-400 hover:bg-violet-900/50'
-                                  : 'bg-violet-50 border-violet-200 text-violet-600 hover:bg-violet-100'
-                              }`}
-                            >
-                              <QrCode size={12} /> Baixa QR
-                            </button>
-                          </div>
-                        ) : (
-                          /* Sem OS — botão Emitir OS + QR scan para buscar OS existente */
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedLot(lot);
-                                setSelectedSourceItemKeys(new Set());
-                                setIsDetailModalOpen(true);
-                              }}
-                              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all border ${
-                                isDarkMode
-                                  ? 'bg-indigo-950/40 border-indigo-700/50 text-indigo-400 hover:bg-indigo-900/50'
-                                  : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
-                              }`}
-                            >
-                              <Hammer size={11}/> Emitir OS
-                            </button>
-                            <button
-                              type="button"
-                              title="Baixa por QR Code"
-                              onClick={() => {
-                                setQrBaixaModal({ sectorId: selectedSectorId!, preselectedOS: null });
-                                setQrBaixaManualCode('');
-                                setQrBaixaConfirm(null);
-                              }}
-                              className={`flex items-center gap-1 px-2.5 py-2 rounded-xl active:scale-95 transition-all border shrink-0 text-[9px] font-black uppercase tracking-widest ${
-                                isDarkMode
-                                  ? 'bg-violet-950/40 border-violet-700/40 text-violet-400 hover:bg-violet-900/50'
-                                  : 'bg-violet-50 border-violet-200 text-violet-600 hover:bg-violet-100'
-                              }`}
-                            >
-                              <QrCode size={12} /> Baixa QR
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Linha 2: Compartilhar — popup PDF/JPG */}
-                        <div className="relative">
-                          <button
-                            type="button"
-                            disabled={isShareExporting}
-                            onClick={() => setSharePopupLotId(sharePopupLotId === lot.id ? null : lot.id)}
-                            className={`w-full flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all border disabled:opacity-50 ${
-                              isDarkMode
-                                ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-                                : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                            }`}
-                          >
-                            {isShareExporting && sharePopupLotId === lot.id
-                              ? <span className="animate-spin text-sm leading-none">⏳</span>
-                              : <Share2 size={11}/>
-                            } Compartilhar
-                          </button>
-
-                          {sharePopupLotId === lot.id && (
-                            <>
-                              <div className="fixed inset-0 z-40" onClick={() => setSharePopupLotId(null)} />
-                              <div className={`absolute bottom-full left-0 mb-1.5 rounded-2xl shadow-2xl border z-50 p-2 flex flex-col gap-1 min-w-[190px] ${
-                                isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'
-                              }`}>
-                                <p className={`text-[8px] font-black uppercase tracking-widest px-2 pb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Ficha Técnica</p>
-                                <button type="button" onClick={() => { setSharePopupLotId(null); handleShareLotSheet(lot, product, variation, cardOS, 'pdf', false); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'}`}>
-                                  <Share2 size={11} className="shrink-0" /> PDF — Impressão
-                                </button>
-                                <button type="button" onClick={() => { setSharePopupLotId(null); handleShareLotSheet(lot, product, variation, cardOS, 'jpg', false); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'}`}>
-                                  <Share2 size={11} className="shrink-0" /> JPG — Imagem
-                                </button>
-                                {cardOS && (
-                                  <>
-                                    <div className={`my-1 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`} />
-                                    <p className={`text-[8px] font-black uppercase tracking-widest px-2 pb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Ficha + OS</p>
-                                    <button type="button" onClick={() => { setSharePopupLotId(null); handleShareLotSheet(lot, product, variation, cardOS, 'pdf', true); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-emerald-400 hover:bg-slate-800' : 'text-emerald-600 hover:bg-emerald-50'}`}>
-                                      <Share2 size={11} className="shrink-0" /> PDF — Com OS
-                                    </button>
-                                    <button type="button" onClick={() => { setSharePopupLotId(null); handleShareLotSheet(lot, product, variation, cardOS, 'jpg', true); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-emerald-400 hover:bg-slate-800' : 'text-emerald-600 hover:bg-emerald-50'}`}>
-                                      <Share2 size={11} className="shrink-0" /> JPG — Com OS
-                                    </button>
-                                  </>
+                            {/* FILTRAR accordion */}
+                            <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                              <button type="button"
+                                onClick={() => { const n = new Set(fichaListOpen); isFilterOpen ? n.delete(filterKey) : n.add(filterKey); setFichaListOpen(n); }}
+                                className={`w-full flex items-center gap-2 px-4 py-2.5 transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}`}
+                              >
+                                <Filter size={12} className="text-slate-400" />
+                                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex-1 text-left">Filtrar</span>
+                                {(activeFilt.model || activeFilt.color) && (
+                                  <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-indigo-500 text-white">Ativo</span>
                                 )}
-                              </div>
-                            </>
-                          )}
-                        </div>
-
-                        {/* Linha 3: Baixar etiqueta */}
-                        {product && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setLabelModalProduct(product);
-                              setLabelModalLot(lot);
-                              // Build sizeGrid: lot.pairs first, then production order totals as fallback
-                              let sg = '';
-                              const pairsEntries = Object.entries(lot.pairs || {}).filter(([, q]) => q > 0);
-                              if (pairsEntries.length > 0) {
-                                sg = pairsEntries
-                                  .sort(([a], [b]) => Number(a) - Number(b))
-                                  .map(([sz, q]) => `${sz}x${q}`)
-                                  .join('-');
-                              } else {
-                                const sourceItems = (lot as any).metadata?.sourceItems ||
-                                  (lot.productionOrderId ? [{ orderId: lot.productionOrderId, itemIdx: 0 }] : []);
-                                const fallback: Record<string, number> = {};
-                                sourceItems.forEach((si: any) => {
-                                  const order = productionOrders.find(o => o.id === si.orderId);
-                                  if (!order) return;
-                                  const item = order.items[si.itemIdx ?? 0];
-                                  if (!item?.sizes) return;
-                                  Object.entries(item.sizes).forEach(([size, sd]: any) => {
-                                    const qty = sd.toProduction || sd.total || 0;
-                                    if (qty > 0) fallback[size] = (fallback[size] || 0) + qty;
-                                  });
-                                });
-                                if (Object.keys(fallback).length > 0) {
-                                  sg = Object.entries(fallback)
-                                    .sort(([a], [b]) => Number(a) - Number(b))
-                                    .map(([sz, q]) => `${sz}x${q}`)
-                                    .join('-');
-                                }
-                              }
-                              setLabelModalSizeGrid(sg);
-                              // Mapa de um único pedido: embute o roteamento no QR da etiqueta
-                              if (variation && lot.productionOrderId) {
-                                setLabelModalBatchItems([{ product, variation, sizeGrid: sg, lotId: lot.id, orderId: lot.productionOrderId, itemIdx: 0 }]);
-                              } else {
-                                setLabelModalBatchItems(undefined);
-                              }
-                            }}
-                            className={`w-full flex items-center justify-center gap-1.5 px-2 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest active:scale-95 transition-all border ${
-                              isDarkMode
-                                ? 'bg-amber-950/30 border-amber-700/40 text-amber-400 hover:bg-amber-900/40'
-                                : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'
-                            }`}
-                          >
-                            <Tag size={11}/> Baixar Etiqueta
-                          </button>
-                        )}
-                      </div>
-                    </motion.div>
-                  );
-                })}
-
-                {filteredActiveLots.filter(l => l.route && getLotPendingSectorGroups(l).has(selectedSectorId!)).length === 0 && (
-                  <div className="col-span-full py-20 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[3rem] flex flex-col items-center justify-center text-slate-300 dark:text-slate-700">
-                    <div className="w-20 h-20 rounded-[2.5rem] bg-slate-50 dark:bg-slate-800/50 flex items-center justify-center mb-4">
-                      <Clock size={40} className="opacity-20" />
-                    </div>
-                    <p className="text-xs font-black uppercase tracking-widest">Sem mapas ativos neste setor</p>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-2">Novos mapas aparecerão aqui conforme a produção avançar</p>
-                  </div>
-                )}
-              </div>
-
-              {/* ── Pedidos Vinculados — padrão idêntico ao setor de Corte ── */}
-              {(() => {
-                type FichaItem = { lot: ProductionLot; si: any; siIdx: number; product: any; variation: any; orderItem: any; order: any; coveringOS?: ServiceOrder };
-                const allFichas: FichaItem[] = [];
-                filteredActiveLots.forEach(lot => {
-                  const lotSI: any[] = (lot as any).metadata?.sourceItems || [];
-
-                  lotSI.forEach((si: any) => {
-                    const effectiveSector = getOrderEffectiveSector(lot, si.orderId, si);
-                    if (effectiveSector !== selectedSectorId) return;
-
-                    const prod = products.find(p => p.id === si.productId);
-                    const vari = prod?.variations.find((v: any) => v.id === si.variationId);
-                    const ord = productionOrders.find(o => o.id === si.orderId);
-                    const ordItem: any = si.itemIdx !== undefined ? ord?.items[si.itemIdx] : ord?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
-                    const coveringOS = serviceOrders.find(os =>
-                      (os.lotId === lot.id || (os.lotIds && os.lotIds.includes(lot.id))) &&
-                      os.sectorId === selectedSectorId &&
-                      os.sourceOrderIds && os.sourceOrderIds.includes(si.orderId)
-                    ) || serviceOrders.find(os =>
-                      (os.lotId === lot.id || (os.lotIds && os.lotIds.includes(lot.id))) &&
-                      os.sectorId === selectedSectorId &&
-                      (!os.sourceOrderIds || os.sourceOrderIds.length === 0)
-                    );
-                    const siIdx = lotSI.indexOf(si);
-                    allFichas.push({ lot, si, siIdx, product: prod, variation: vari, orderItem: ordItem, order: ord, coveringOS });
-                  });
-                });
-                if (allFichas.length === 0) return null;
-
-                // ── State helpers (using fichaListOpen / fichaFilters keyed by '__pedidos__')
-                const mainKey = `__pedidos__${selectedSectorId}`;
-                const filterKey = `__filter__${selectedSectorId}`;
-                const isMainOpen = fichaListOpen.has(mainKey);
-                const isFilterOpen = fichaListOpen.has(filterKey);
-                const activeFilt = fichaFilters[mainKey] || { model: '', color: '' };
-
-                // Unique models and colors across all fichas
-                const uniqueModels = Array.from(new Set(allFichas.map(f => f.product?.name || f.orderItem?.productName || '').filter(Boolean)));
-                const uniqueColors = Array.from(new Set(allFichas.map(f => f.variation?.colorName || f.orderItem?.variationName || '').filter(Boolean)));
-
-                // Filtered fichas
-                const filteredFichas = allFichas.filter(f => {
-                  const m = f.product?.name || f.orderItem?.productName || '';
-                  const c = f.variation?.colorName || f.orderItem?.variationName || '';
-                  if (activeFilt.model && m !== activeFilt.model) return false;
-                  if (activeFilt.color && c !== activeFilt.color) return false;
-                  return true;
-                });
-
-                // Selectable = fichas with no pending OS
-                const selectable = filteredFichas.filter(f => !f.coveringOS || f.coveringOS.status !== 'PENDING');
-                const selected = selectable.filter(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
-                const allSelected = selectable.length > 0 && selectable.every(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
-                const selectedQty = selected.reduce((s, f) => s + (f.si.qty || 0), 0);
-
-                // Group selected fichas by lot for multi-lot OS emission
-                const selByLot = new Map<string, FichaItem[]>();
-                selected.forEach(f => {
-                  if (!selByLot.has(f.lot.id)) selByLot.set(f.lot.id, []);
-                  selByLot.get(f.lot.id)!.push(f);
-                });
-
-                return (
-                  <div className={`mt-4 rounded-3xl border overflow-hidden ${isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-sky-100 shadow-sm'}`}>
-
-                    {/* ── Cabeçalho acordeão ── */}
-                    <button type="button"
-                      onClick={() => { const n = new Set(fichaListOpen); isMainOpen ? n.delete(mainKey) : n.add(mainKey); setFichaListOpen(n); }}
-                      className={`w-full flex items-center justify-between p-4 transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-sky-50/50'}`}
-                    >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
-                        <Hash size={13} className="text-indigo-500 shrink-0" />
-                        <div className="min-w-0">
-                          <h3 className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Pedidos Vinculados</h3>
-                        </div>
-                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 ${isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}>
-                          {allFichas.length}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {fichaSelection.size > 0 && (
-                          <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-emerald-500 text-white">
-                            {fichaSelection.size} sel.
-                          </span>
-                        )}
-                        <ChevronDown size={15} className={`text-slate-400 transition-transform duration-200 ${isMainOpen ? 'rotate-180' : ''}`} />
-                      </div>
-                    </button>
-
-                    {/* Hint when closed */}
-                    {!isMainOpen && (
-                      <div className={`px-4 pb-3 flex flex-col gap-1.5 border-t ${isDarkMode ? 'border-slate-800' : 'border-sky-50'}`}>
-                        <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest leading-relaxed mt-1">
-                          Expandir para selecionar pedidos e criar ordens de serviço
-                        </span>
-                      </div>
-                    )}
-
-                    {isMainOpen && (
-                      <div className="p-4 pt-0 flex flex-col gap-3">
-                        <p className="text-[9px] text-slate-400 uppercase font-bold">{filteredFichas.length} fichas · {selectable.length} disponíveis</p>
-
-                        {/* Select-all row */}
-                        <div className="flex items-center justify-between pt-1">
-                          <div className="flex items-center gap-2">
-                            {selectable.length > 0 && (
-                              <input type="checkbox"
-                                title="Selecionar todos os pedidos disponíveis"
-                                checked={allSelected}
-                                onChange={() => {
-                                  const n = new Set(fichaSelection);
-                                  if (allSelected) {
-                                    selectable.forEach(f => n.delete(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
-                                  } else {
-                                    selectable.forEach(f => n.add(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
-                                  }
-                                  setFichaSelection(n);
-                                }}
-                                className="w-4 h-4 accent-indigo-600 cursor-pointer"
-                              />
-                            )}
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                              {selectable.length} disponíve{selectable.length === 1 ? 'l' : 'is'}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* FILTRAR accordion */}
-                        <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
-                          <button type="button"
-                            onClick={() => { const n = new Set(fichaListOpen); isFilterOpen ? n.delete(filterKey) : n.add(filterKey); setFichaListOpen(n); }}
-                            className={`w-full flex items-center gap-2 px-4 py-2.5 transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}`}
-                          >
-                            <Filter size={12} className="text-slate-400" />
-                            <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex-1 text-left">Filtrar</span>
-                            {(activeFilt.model || activeFilt.color) && (
-                              <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-indigo-500 text-white">Ativo</span>
-                            )}
-                            <ChevronDown size={13} className={`text-slate-400 transition-transform duration-200 ${isFilterOpen ? 'rotate-180' : ''}`} />
-                          </button>
-                          {isFilterOpen && (
-                            <div className={`px-4 pb-3 pt-2 border-t flex flex-wrap gap-1.5 ${isDarkMode ? 'border-slate-800 bg-slate-950/30' : 'border-slate-100 bg-slate-50/60'}`}>
-                              {uniqueModels.map(m => (
-                                <button type="button" key={m}
-                                  onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, model: activeFilt.model === m ? '' : m } }))}
-                                  className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all border ${activeFilt.model === m ? 'bg-indigo-600 text-white border-indigo-600' : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-600 border-slate-200'}`}
-                                >{m}</button>
-                              ))}
-                              {uniqueColors.map(c => (
-                                <button type="button" key={c}
-                                  onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, color: activeFilt.color === c ? '' : c } }))}
-                                  className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all border ${activeFilt.color === c ? 'bg-amber-500 text-white border-amber-500' : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-600 border-slate-200'}`}
-                                >{c}</button>
-                              ))}
-                              {(activeFilt.model || activeFilt.color) && (
-                                <button type="button" title="Limpar filtros"
-                                  onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { model: '', color: '' } }))}
-                                  className="text-[9px] font-black uppercase text-slate-400 hover:text-slate-700 px-2"
-                                >✕ Limpar</button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Ficha cards — flat list */}
-                        <div className="flex flex-col gap-1.5">
-                          {filteredFichas.map((f) => {
-                            const itemKey = `${f.lot.id}::${f.si.orderId}::${f.siIdx}`;
-                            const hasOS = !!f.coveringOS && f.coveringOS.status === 'PENDING';
-                            const isChecked = fichaSelection.has(itemKey);
-                            const gradeKey = `grade-${itemKey}`;
-                            const gradeOpen = fichaItemExpanded.has(gradeKey);
-                            const szEntries = (f.orderItem?.sizes)
-                              ? Object.entries(f.orderItem.sizes as Record<string, any>)
-                                  .filter(([, s]) => (s?.toProduction || 0) > 0)
-                                  .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
-                              : [];
-                            return (
-                              <div key={itemKey} className={`rounded-2xl border overflow-hidden transition-all ${
-                                hasOS
-                                  ? isDarkMode ? 'bg-emerald-950/30 border-emerald-700/50' : 'bg-emerald-50 border-emerald-200'
-                                  : isChecked
-                                    ? isDarkMode ? 'bg-indigo-950/30 border-indigo-700' : 'bg-indigo-50 border-indigo-200'
-                                    : isDarkMode ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50 border-slate-100'
-                              }`}>
-                                <div className="flex items-center gap-2 px-3 py-2.5">
-                                  {hasOS ? (
-                                    <div className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
-                                      <div className="w-2 h-2 rounded-full bg-white" />
-                                    </div>
-                                  ) : (
-                                    <input type="checkbox"
-                                      title="Selecionar este pedido"
-                                      checked={isChecked}
-                                      onChange={() => { const n = new Set(fichaSelection); isChecked ? n.delete(itemKey) : n.add(itemKey); setFichaSelection(n); }}
-                                      className="w-4 h-4 accent-indigo-600 cursor-pointer shrink-0"
-                                    />
+                                <ChevronDown size={13} className={`text-slate-400 transition-transform duration-200 ${isFilterOpen ? 'rotate-180' : ''}`} />
+                              </button>
+                              {isFilterOpen && (
+                                <div className={`px-4 pb-3 pt-2 border-t flex flex-wrap gap-1.5 ${isDarkMode ? 'border-slate-800 bg-slate-950/30' : 'border-slate-100 bg-slate-50/60'}`}>
+                                  {uniqueModels.map(m => (
+                                    <button type="button" key={m}
+                                      onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, model: activeFilt.model === m ? '' : m } }))}
+                                      className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all border ${activeFilt.model === m ? 'bg-indigo-600 text-white border-indigo-600' : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-600 border-slate-200'}`}
+                                    >{m}</button>
+                                  ))}
+                                  {uniqueColors.map(c => (
+                                    <button type="button" key={c}
+                                      onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, color: activeFilt.color === c ? '' : c } }))}
+                                      className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all border ${activeFilt.color === c ? 'bg-amber-500 text-white border-amber-500' : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-600 border-slate-200'}`}
+                                    >{c}</button>
+                                  ))}
+                                  {(activeFilt.model || activeFilt.color) && (
+                                    <button type="button" title="Limpar filtros"
+                                      onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { model: '', color: '' } }))}
+                                      className="text-[9px] font-black uppercase text-slate-400 hover:text-slate-700 px-2"
+                                    >✕ Limpar</button>
                                   )}
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-[10px] font-black uppercase truncate text-slate-800 dark:text-slate-200 leading-none">
-                                      {f.product
-                                        ? (f.product.reference ? `${f.product.reference} · ${f.product.name}` : f.product.name)
-                                        : (f.orderItem?.productName || '—')}
-                                    </p>
-                                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                      {(f.variation?.colorName || f.orderItem?.variationName) && (
-                                        <span className="text-[8px] font-bold text-slate-400 uppercase">{f.variation?.colorName || f.orderItem?.variationName}</span>
-                                      )}
-                                      <span className="text-[7px] text-slate-400 uppercase">· Ped. {f.order?.saleOrderNumber || '—'}</span>
-                                      {f.coveringOS && (
-                                        <span className={`text-[7px] font-black uppercase ${f.coveringOS.status === 'COMPLETED' ? 'text-emerald-500' : 'text-sky-500'}`}>
-                                          {f.coveringOS.osNumber}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <div className="flex flex-col items-end gap-0.5 shrink-0">
-                                    <span className="text-[7px] font-black px-2 py-0.5 rounded-full uppercase bg-violet-600 text-white tracking-widest">
-                                      MAPA{f.lot.orderNumber}
-                                    </span>
-                                    <div className="flex items-center gap-1">
-                                      <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">{f.si.qty}P</span>
-                                      {szEntries.length > 0 && (
-                                        <button type="button"
-                                          title={gradeOpen ? 'Recolher grade' : 'Ver grade'}
-                                          onClick={() => { const n = new Set(fichaItemExpanded); gradeOpen ? n.delete(gradeKey) : n.add(gradeKey); setFichaItemExpanded(n); }}
-                                          className="p-0.5 rounded-lg text-slate-400 hover:text-slate-600 transition-all"
-                                        >
-                                          <ChevronDown size={12} className={`transition-transform duration-200 ${gradeOpen ? 'rotate-180' : ''}`} />
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
                                 </div>
-                                {gradeOpen && szEntries.length > 0 && (
-                                  <div className={`px-3 pb-2.5 pt-1 border-t flex flex-wrap gap-1.5 ${isDarkMode ? 'border-slate-800 bg-slate-950/50' : 'border-slate-100 bg-white/60'}`}>
-                                    {szEntries.map(([sz, s]) => (
-                                      <div key={sz} className={`px-2.5 py-1.5 rounded-xl border-2 text-center min-w-[36px] ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-100'}`}>
-                                        <p className="text-[7px] font-bold text-slate-400 leading-none">{sz}</p>
-                                        <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 leading-none mt-0.5">{s?.toProduction ?? s}</p>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
+                              )}
+                            </div>
 
-                        {/* Emitir OS — grouped by lot */}
-                        {selected.length > 0 && (
-                          <div className="flex flex-col gap-2">
-                            {Array.from(selByLot.entries()).map(([lotId, lotSelected]) => {
-                              const lot = allFichas.find(f => f.lot.id === lotId)?.lot;
-                              if (!lot) return null;
-                              const nextSId = lot.route?.[lot.currentSectorIndex + 1] || '';
-                              const nextSName = sectors.find(s => s.id === nextSId)?.name || 'CONCLUÍDO';
-                              const qty = lotSelected.reduce((s, f) => s + (f.si.qty || 0), 0);
-                              return (
-                                <button type="button" key={lotId}
+                            {/* Ficha cards — flat list */}
+                            <div className="flex flex-col gap-1.5">
+                              {filteredFichas.map((f) => {
+                                const itemKey = `${f.lot.id}::${f.si.orderId}::${f.siIdx}`;
+                                const hasOS = !!f.coveringOS && f.coveringOS.status === 'PENDING';
+                                const isChecked = fichaSelection.has(itemKey);
+                                const gradeKey = `grade-${itemKey}`;
+                                const gradeOpen = fichaItemExpanded.has(gradeKey);
+                                const szEntries = (f.orderItem?.sizes)
+                                  ? Object.entries(f.orderItem.sizes as Record<string, any>)
+                                    .filter(([, s]) => (s?.toProduction || 0) > 0)
+                                    .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
+                                  : [];
+                                const orderItem = f.orderItem;
+                                const product = f.product;
+                                const variation = f.variation;
+                                const productName = product?.name || orderItem?.productName || '-';
+                                const productRef = product?.reference || '';
+                                const colorName = variation?.colorName || orderItem?.variationName || '';
+                                const completedOS = serviceOrders.find((so: any) => so.sourceOrderIds?.includes(f.si.orderId) && so.status === 'COMPLETED');
+                                const hasCompletedOS = !!completedOS;
+
+                                return (
+                                  <div key={itemKey} id={`pedido-card-${itemKey}`} className={`rounded-2xl border overflow-hidden transition-all ${hasOS
+                                      ? (isDarkMode ? 'bg-amber-950/20 border-amber-700/40' : 'bg-amber-50 border-amber-200')
+                                      : hasCompletedOS
+                                        ? (isDarkMode ? 'bg-emerald-950/20 border-emerald-700/40' : 'bg-emerald-50/60 border-emerald-200')
+                                        : isChecked
+                                          ? (isDarkMode ? 'bg-indigo-950/30 border-indigo-700' : 'bg-indigo-50 border-indigo-200')
+                                          : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm')
+                                    }`}>
+                                    {/* Cabeçalho */}
+                                    <div className="p-3 flex items-center gap-3">
+                                      {hasOS ? (
+                                        <div className="w-4 h-4 rounded-full bg-amber-400 flex items-center justify-center shrink-0" title="OS pendente">
+                                          <div className="w-2 h-2 rounded-full bg-white" />
+                                        </div>
+                                      ) : hasCompletedOS ? (
+                                        <input
+                                          type="checkbox"
+                                          title="Selecionar para mover de setor"
+                                          checked={isChecked}
+                                          onChange={() => {
+                                            const n = new Set(fichaSelection);
+                                            isChecked ? n.delete(itemKey) : n.add(itemKey);
+                                            setFichaSelection(n);
+                                          }}
+                                          className="w-4 h-4 accent-emerald-500 cursor-pointer shrink-0"
+                                        />
+                                      ) : (
+                                        <input
+                                          type="checkbox"
+                                          title="Selecionar para mover de setor"
+                                          checked={isChecked}
+                                          onChange={() => {
+                                            const n = new Set(fichaSelection);
+                                            isChecked ? n.delete(itemKey) : n.add(itemKey);
+                                            setFichaSelection(n);
+                                          }}
+                                          className="w-4 h-4 accent-indigo-600 cursor-pointer shrink-0"
+                                        />
+                                      )}
+
+                                      <div className="min-w-0 flex-1 cursor-pointer" onClick={() => { const n = new Set(fichaItemExpanded); gradeOpen ? n.delete(gradeKey) : n.add(gradeKey); setFichaItemExpanded(n); }}>
+                                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                                          <div className="flex flex-wrap items-center gap-1.5">
+                                            <span className="text-[9px] font-black px-2 py-0.5 rounded-full uppercase bg-black text-white dark:bg-slate-800 dark:text-white tracking-wider leading-none shrink-0">
+                                              {`${productRef || productName}${colorName ? ` ${colorName}` : ''}`.trim()}
+                                            </span>
+                                            {(() => {
+                                              const effSec = getOrderEffectiveSector(f.lot, f.si.orderId, f.si);
+                                              const secName = effSec === ORDER_FINALIZED
+                                                ? 'Finalizado'
+                                                : (sectors.find(s => s.id === effSec)?.name || effSec || '—');
+                                              return (
+                                                <span className="text-[9px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 leading-none shrink-0">
+                                                  {secName}
+                                                </span>
+                                              );
+                                            })()}
+                                          </div>
+                                          <span
+                                            className="text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest leading-none shrink-0"
+                                            style={{
+                                              backgroundColor: mapBadgeBg,
+                                              color: mapBadgeText,
+                                              boxShadow: `0 1px 2px ${mapBadgeBg}40`
+                                            }}
+                                          >
+                                            MAPA{f.lot.orderNumber}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                          <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">
+                                            PED. {f.lot.orderNumber}
+                                          </span>
+                                          <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">
+                                            {f.order?.customerName || 'ESTOQUE'}
+                                          </span>
+                                          <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400">
+                                            · {f.si.qty} {f.si.qty === 1 ? 'par' : 'pares'}
+                                          </span>
+                                        </div>
+                                      </div>
+
+                                    </div>
+
+                                    {/* ── Rodapé (Sempre visível) ── */}
+                                    <div className="px-3 pb-3 pt-1.5 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between gap-3">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const n = new Set(fichaItemExpanded);
+                                          gradeOpen ? n.delete(gradeKey) : n.add(gradeKey);
+                                          setFichaItemExpanded(n);
+                                        }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-all text-[9px] font-black uppercase tracking-wider"
+                                      >
+                                        <ChevronDown size={12} className={`transition-transform duration-200 ${gradeOpen ? 'rotate-180' : ''}`} />
+                                        {gradeOpen ? 'Recolher' : 'Grade / Detalhes'}
+                                      </button>
+                                    </div>
+
+                                    {/* Corpo (expandido) */}
+                                    {gradeOpen && (
+                                      <div className={`p-4 border-t flex flex-col gap-4 ${isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-100 bg-slate-50/50'}`}>
+                                        {/* Grade */}
+                                        {szEntries.length > 0 && (
+                                          <div className="flex flex-col gap-2">
+                                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Grade de Produção</p>
+                                            <div className="flex flex-wrap gap-1.5 justify-center sm:justify-start px-2 py-3 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800">
+                                              {szEntries.map(([sz, s]) => (
+                                                <div key={sz} className={`flex flex-col items-center justify-center min-w-[32px] sm:min-w-[40px] px-2 py-1.5 rounded-xl border ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
+                                                  <span className="text-[9px] font-black text-slate-400 mb-0.5 leading-none">{sz}</span>
+                                                  <span className="text-sm font-black text-slate-800 dark:text-white leading-none">{s?.toProduction ?? s}</span>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Infos do Pedido */}
+                                        <div className="grid grid-cols-3 gap-4 px-2">
+                                          <div>
+                                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Cliente</p>
+                                            <p className="text-[10px] font-black text-slate-700 dark:text-slate-200 uppercase truncate">{f.order?.customerName || 'Estoque'}</p>
+                                          </div>
+                                          <div>
+                                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Entrega</p>
+                                            <p className="text-[10px] font-black text-slate-700 dark:text-slate-200 uppercase">
+                                              {f.order?.deliveryDate ? new Date(f.order.deliveryDate).toLocaleDateString('pt-BR') : '-'}
+                                            </p>
+                                          </div>
+                                          <div>
+                                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Total</p>
+                                            <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">{f.si.qty} pares</p>
+                                          </div>
+                                        </div>
+
+                                        {/* Instruções */}
+                                        {variation?.sectorNotes && Object.keys(variation.sectorNotes).length > 0 && (
+                                          <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-indigo-950/20 border-indigo-900/50' : 'bg-indigo-50/50 border-indigo-100'}`}>
+                                            <p className="text-[9px] font-black uppercase tracking-widest text-indigo-500/70 dark:text-indigo-400/70 mb-3 px-1">
+                                              Instruções por Setor
+                                            </p>
+                                            <div className="flex flex-col gap-3">
+                                              {Object.entries(variation.sectorNotes)
+                                                .filter(([sid, notes]) => Array.isArray(notes) && notes.some((n: any) => n.text?.trim()))
+                                                .map(([sid, notes]) => {
+                                                  const sn = sectors.find(s => s.id === sid);
+                                                  return (
+                                                    <div key={sid} className="flex flex-col">
+                                                      <div className="flex items-center gap-1.5 mb-1">
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                                                        <span className="text-[9px] font-black text-orange-600 dark:text-orange-400 uppercase tracking-widest">{sn?.name || 'Setor'}</span>
+                                                      </div>
+                                                      <div className="pl-3 ml-[3px] border-l-2 border-indigo-200 dark:border-indigo-800 flex flex-col gap-2">
+                                                        {(notes as any[]).filter(n => n.text?.trim()).map((n, nidx) => (
+                                                          <div key={nidx} className="flex flex-col">
+                                                            <span className="text-[8px] font-bold text-indigo-400 uppercase tracking-widest mb-0.5">
+                                                              {n.label || `${sn?.name} ${productRef} ${colorName}`}
+                                                            </span>
+                                                            <span className="text-[11px] font-bold text-indigo-900 dark:text-indigo-200 leading-snug">
+                                                              {n.text}
+                                                            </span>
+                                                          </div>
+                                                        ))}
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                })}
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        <hr className={`border-dashed ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`} />
+
+                                        {/* Ações */}
+                                        <div className="flex flex-col gap-2">
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Etiqueta Deste Pedido</span>
+                                            <div className="flex items-center gap-2">
+                                              <button type="button"
+                                                onClick={() => {
+                                                  const resolvedProductId = f.si.productId || f.orderItem?.productId;
+                                                  const resolvedVariationId = f.si.variationId || f.orderItem?.variationId;
+                                                  const itemProduct = products.find(p => p.id === resolvedProductId);
+                                                  const itemVariation = itemProduct?.variations.find(v => v.id === resolvedVariationId);
+                                                  if (itemProduct && itemVariation && f.orderItem?.sizes) {
+                                                    const szStr = Object.entries(f.orderItem.sizes as Record<string, { toProduction: number }>)
+                                                      .filter(([, s]) => s.toProduction > 0)
+                                                      .sort(([a], [b]) => Number(a) - Number(b))
+                                                      .map(([sz, s]) => `${sz}x${s.toProduction}`)
+                                                      .join('-');
+
+                                                    if (szStr) {
+                                                      setLabelModalBatchItems([{ product: itemProduct, variation: itemVariation, sizeGrid: szStr, lotId: f.lot.id, orderId: f.si.orderId, itemIdx: f.siIdx }]);
+                                                    }
+                                                  }
+                                                }}
+                                                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest transition-all shadow-md shadow-indigo-500/20 flex items-center gap-2"
+                                              >
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                                                Imprimir / Compartilhar
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ficha do Pedido</span>
+                                            <button type="button"
+                                              onClick={() => setShareModal({ isOpen: true, format: 'pdf', selectedItems: [f] })}
+                                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${isDarkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-slate-600 text-white hover:bg-slate-700'}`}
+                                            >
+                                              <Share2 size={14} /> Compartilhar Ficha
+                                            </button>
+                                          </div>
+
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Emitir OS — grouped by lot */}
+                            {selected.length > 0 && (
+                              <div className="flex flex-col gap-2">
+                                <button type="button"
                                   onClick={() => {
-                                    const orderIds = lotSelected.map(f => f.si.orderId);
-                                    const n = new Set(fichaSelection);
-                                    lotSelected.forEach(f => n.delete(`${lotId}::${f.si.orderId}::${f.siIdx}`));
-                                    setFichaSelection(n);
-                                    // Pedidos deste mapa cujo setor efetivo difere do setor de origem (route[currentSectorIndex])
-                                    const lotCurrentSector = lot.route?.[lot.currentSectorIndex];
-                                    const isRedirected = lotCurrentSector !== selectedSectorId;
-                                    const sectorOvr = isRedirected ? selectedSectorId : undefined;
-                                    const qtyOvr = isRedirected ? qty : undefined;
-                                    handleOpenOSModalForOrder(lot, orderIds, undefined, sectorOvr, qtyOvr);
+                                    const selectedFichasData = filteredFichas.filter(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
+                                    setShareModal({ isOpen: true, format: 'pdf', selectedItems: selectedFichasData });
                                   }}
-                                  className="w-full py-3 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm shadow-sky-500/30"
+                                  className="w-full py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm shadow-orange-500/20"
                                 >
-                                  <Hammer size={13} /> Emitir OS — {lotSelected.length} {lotSelected.length === 1 ? 'Pedido' : 'Pedidos'} ({qty}P) · MAPA{lot.orderNumber}
+                                  <Share2 size={13} /> Compartilhar {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'} ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
                                 </button>
-                              );
-                            })}
+
+                                <button type="button"
+                                  onClick={() => {
+                                    const selectedFichasData = filteredFichas.filter(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
+                                    setManualSectorPicker({ fichas: selectedFichasData });
+                                  }}
+                                  className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm shadow-violet-500/20"
+                                >
+                                  <ArrowLeftRight size={13} /> Mudar Setor Manualmente — {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'}
+                                </button>
+
+                                {selByLot.size > 1 && (
+                                  <button type="button"
+                                    onClick={() => {
+                                      const uniqueLots = Array.from(selByLot.keys()).map(id => allFichas.find(f => f.lot.id === id)?.lot).filter(Boolean) as ProductionLot[];
+                                      const orderIds = selected.map(f => `${f.lot.id}::${f.si.orderId}::${f.siIdx}`);
+                                      
+                                      const n = new Set(fichaSelection);
+                                      selected.forEach(f => n.delete(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
+                                      setFichaSelection(n);
+
+                                      const firstLot = uniqueLots[0];
+                                      const lotCurrentSector = firstLot.route?.[firstLot.currentSectorIndex];
+                                      const isRedirected = lotCurrentSector !== selectedSectorId;
+                                      const sectorOvr = isRedirected ? selectedSectorId : undefined;
+                                      const qtyOvr = isRedirected ? selectedQty : undefined;
+
+                                      handleOpenOSModalForOrder(uniqueLots, orderIds, undefined, sectorOvr, qtyOvr);
+                                    }}
+                                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm shadow-emerald-500/30"
+                                  >
+                                    <Hammer size={13} /> Emitir OS Unificada — {selected.length} Pedidos ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
+                                  </button>
+                                )}
+
+                                {selByLot.size === 1 && Array.from(selByLot.entries()).map(([lotId, lotSelected]) => {
+                                  const lot = allFichas.find(f => f.lot.id === lotId)?.lot;
+                                  if (!lot) return null;
+                                  const qty = lotSelected.reduce((s, f) => s + (f.si.qty || 0), 0);
+                                  return (
+                                    <button type="button" key={lotId}
+                                      onClick={() => {
+                                        const orderIds = lotSelected.map(f => `${f.lot.id}::${f.si.orderId}::${f.siIdx}`);
+                                        const n = new Set(fichaSelection);
+                                        lotSelected.forEach(f => n.delete(`${lotId}::${f.si.orderId}::${f.siIdx}`));
+                                        setFichaSelection(n);
+                                        const lotCurrentSector = lot.route?.[lot.currentSectorIndex];
+                                        const isRedirected = lotCurrentSector !== selectedSectorId;
+                                        const sectorOvr = isRedirected ? selectedSectorId : undefined;
+                                        const qtyOvr = isRedirected ? qty : undefined;
+                                        handleOpenOSModalForOrder(lot, orderIds, undefined, sectorOvr, qtyOvr);
+                                      }}
+                                      className="w-full py-3 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm shadow-sky-500/30"
+                                    >
+                                      <Hammer size={13} /> Emitir OS — {lotSelected.length} {lotSelected.length === 1 ? 'Pedido' : 'Pedidos'} ({qty} {qty === 1 ? 'par' : 'pares'}) · MAPA{lot.orderNumber}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* OS emitidas neste setor */}
+                            {serviceOrders
+                              .filter(os => os.sectorId === selectedSectorId && os.status === 'PENDING' &&
+                                filteredActiveLots.some(l => os.lotId === l.id))
+                              .map(os => {
+                                const lot = filteredActiveLots.find(l => os.lotId === l.id) ?? null;
+                                const nextSId = (lot?.route?.length ?? 0) > (lot?.currentSectorIndex ?? 0) + 1
+                                  ? (lot?.route?.[(lot?.currentSectorIndex ?? 0) + 1] ?? '')
+                                  : '';
+                                const nextSName = sectors.find(s => s.id === nextSId)?.name ?? 'CONCLUÍDO';
+                                return (
+                                  <div key={os.id} className={`rounded-2xl border flex items-center gap-2 px-3 py-2.5 ${isDarkMode ? 'bg-sky-950/20 border-sky-700/40' : 'bg-sky-50 border-sky-200'}`}>
+                                    {lot && (
+                                      <span
+                                        className="text-[7px] font-black px-1.5 py-0.5 rounded uppercase shrink-0"
+                                        style={{
+                                          backgroundColor: mapBadgeBg,
+                                          color: mapBadgeText,
+                                          boxShadow: `0 1px 2px ${mapBadgeBg}30`
+                                        }}
+                                      >
+                                        MAPA{lot.orderNumber}
+                                      </span>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <span className={`text-[10px] font-black uppercase ${isDarkMode ? 'text-sky-400' : 'text-sky-700'}`}>{os.osNumber}</span>
+                                      {os.providerName ? <p className="text-[9px] text-slate-400 truncate">{os.providerName}</p> : null}
+                                    </div>
+                                    <button type="button" onClick={() => handleCompleteOS(os)}
+                                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shrink-0 bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 hover:bg-emerald-600">
+                                      <CheckCircle2 size={12} /> Baixa → {nextSName}
+                                    </button>
+                                  </div>
+                                );
+                              })
+                            }
+
                           </div>
                         )}
-
-                        {/* OS emitidas neste setor */}
-                        {serviceOrders
-                          .filter(os => os.sectorId === selectedSectorId && os.status === 'PENDING' &&
-                            filteredActiveLots.some(l => os.lotId === l.id))
-                          .map(os => {
-                            const lot = filteredActiveLots.find(l => os.lotId === l.id) ?? null;
-                            const nextSId = (lot?.route?.length ?? 0) > (lot?.currentSectorIndex ?? 0) + 1
-                              ? (lot?.route?.[(lot?.currentSectorIndex ?? 0) + 1] ?? '')
-                              : '';
-                            const nextSName = sectors.find(s => s.id === nextSId)?.name ?? 'CONCLUÍDO';
-                            return (
-                              <div key={os.id} className={`rounded-2xl border flex items-center gap-2 px-3 py-2.5 ${isDarkMode ? 'bg-sky-950/20 border-sky-700/40' : 'bg-sky-50 border-sky-200'}`}>
-                                {lot && <span className="text-[7px] font-black px-1.5 py-0.5 rounded bg-violet-600 text-white uppercase shrink-0">MAPA{lot.orderNumber}</span>}
-                                <div className="flex-1 min-w-0">
-                                  <span className={`text-[10px] font-black uppercase ${isDarkMode ? 'text-sky-400' : 'text-sky-700'}`}>{os.osNumber}</span>
-                                  {os.providerName ? <p className="text-[9px] text-slate-400 truncate">{os.providerName}</p> : null}
-                                </div>
-                                <button type="button" onClick={() => handleCompleteOS(os)}
-                                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shrink-0 bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 hover:bg-emerald-600">
-                                  <CheckCircle2 size={12} /> Baixa → {nextSName}
-                                </button>
-                              </div>
-                            );
-                          })
-                        }
-
                       </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </>
-          )}
+                    );
+                  })()}
+                </>
+              )}
             </div>
           )}
         </div>
       )}
 
-        {activeTab === 'orders' && (
+      {activeTab === 'orders' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 h-full min-h-[600px] pb-20">
           {/* Main List: Grouped by Product/Color */}
           <div className="lg:col-span-8 flex flex-col gap-6">
-             <div className="flex items-center justify-between px-2">
-                <div>
-                  <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Sugestões de Mapas</h3>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Itens agrupados por modelo e cor</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Layers size={14} className="text-indigo-500" />
-                  <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{groupedPendingItems.length} Grupos</span>
-                </div>
-             </div>
-
-             {/* Busca por digitação + sugestão de agrupamento */}
-             <div className="flex items-center gap-2 px-2">
-                <div className="relative flex-1">
-                  <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={mapSuggestionSearch}
-                    onChange={e => setMapSuggestionSearch(e.target.value)}
-                    placeholder="Buscar por modelo, referência ou cor..."
-                    className={`w-full pl-9 pr-3 py-2.5 rounded-2xl text-xs font-bold outline-none transition-all border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white placeholder:text-slate-600 focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-800 placeholder:text-slate-400 focus:border-indigo-400'}`}
-                  />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsGroupingConfigOpen(true)}
-                  title="Configurar sugestão de agrupamento"
-                  className={`relative w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-all active:scale-95 border ${
-                    groupingMode !== 'REF_COLOR' || suggestionFilterOrderIds.size > 0
-                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-600/20'
-                      : (isDarkMode ? 'bg-orange-950/40 border-orange-900/50 text-orange-400 hover:border-orange-700' : 'bg-orange-50 border-orange-200 text-orange-400 hover:border-orange-300')
-                  }`}
-                >
-                  <Filter size={15} />
-                  {(groupingMode !== 'REF_COLOR' || suggestionFilterOrderIds.size > 0) && (
-                    <span className="filter-pulse-badge absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full ring-2 ring-white dark:ring-slate-950 text-[9px] font-black text-white flex items-center justify-center px-0.5">
-                      {suggestionFilterOrderIds.size > 0 ? suggestionFilterOrderIds.size : ''}
-                    </span>
-                  )}
-                </button>
-             </div>
-
-             {/* Popup de configuração de sugestão de agrupamento */}
-             <Modal isOpen={isGroupingConfigOpen} onClose={() => setIsGroupingConfigOpen(false)} title="Sugestão de Agrupamento" icon={<Layers size={18} />} maxWidth="max-w-md">
-                <div className="p-6 flex flex-col gap-3">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
-                    Escolha como os pedidos pendentes devem ser agrupados em "Sugestões de Mapas"
-                  </p>
-                  {[
-                    { id: 'REF_COMBO' as const, label: 'Combinações de referências', desc: 'Escolha referências cadastradas (ex: 200 e 300) para combiná-las em um mesmo grupo de sugestão.' },
-                    { id: 'REF_COLOR' as const, label: 'Mesma referência, com agrupamento de cor', desc: 'Padrão: um grupo por modelo e cor.' },
-                    { id: 'REF_ONLY' as const, label: 'Mesma referência, sem agrupamento de cor', desc: 'Reúne todas as cores de um mesmo modelo em um único grupo.' },
-                    { id: 'TOTAL' as const, label: 'Total', desc: 'Reúne todos os pedidos pendentes em um único grupo geral.' },
-                  ].map(opt => (
-                    <React.Fragment key={opt.id}>
-                      <button
-                        type="button"
-                        onClick={() => setGroupingMode(opt.id)}
-                        className={`text-left p-4 rounded-2xl border-2 transition-all ${groupingMode === opt.id ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' : 'border-transparent bg-slate-50 dark:bg-slate-800/50 hover:border-slate-200 dark:hover:border-slate-700'}`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${groupingMode === opt.id ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 dark:border-slate-600'}`}>
-                            {groupingMode === opt.id && <div className="w-2 h-2 rounded-full bg-white" />}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-xs font-black uppercase text-slate-800 dark:text-slate-100 leading-tight">{opt.label}</p>
-                            <p className="text-[10px] font-bold text-slate-400 mt-0.5 leading-snug normal-case">{opt.desc}</p>
-                          </div>
-                        </div>
-                      </button>
-
-                      {opt.id === 'REF_COMBO' && groupingMode === 'REF_COMBO' && (
-                        <div className={`-mt-1 ml-8 p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest normal-case mb-2">
-                            Selecione as referências a combinar (ex: 200 e 300):
-                          </p>
-                          {availableReferences.length === 0 ? (
-                            <p className="text-[10px] font-bold text-slate-400 normal-case">Nenhuma referência cadastrada nos pedidos pendentes.</p>
-                          ) : (
-                            <div className="flex flex-wrap gap-1.5">
-                              {availableReferences.map(ref => {
-                                const active = comboReferences.includes(ref);
-                                return (
-                                  <button
-                                    key={ref}
-                                    type="button"
-                                    onClick={() => setComboReferences(prev => active ? prev.filter(r => r !== ref) : [...prev, ref])}
-                                    className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 ${
-                                      active
-                                        ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
-                                        : (isDarkMode ? 'bg-slate-900 text-slate-400 border border-slate-700' : 'bg-white text-slate-500 border border-slate-200')
-                                    }`}
-                                  >
-                                    {ref}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-                          {comboReferences.length === 1 && (
-                            <p className="text-[9px] font-bold text-amber-500 uppercase tracking-widest normal-case mt-2">Selecione ao menos mais uma referência para formar uma combinação.</p>
-                          )}
-                        </div>
-                      )}
-                    </React.Fragment>
-                  ))}
-                  {/* Divisor */}
-                  <div className={`my-1 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`} />
-
-                  {/* Opção: Filtrar por pedidos específicos */}
-                  <button
-                    type="button"
-                    onClick={() => setIsOrderFilterOpen(v => !v)}
-                    className={`text-left p-4 rounded-2xl border-2 transition-all ${suggestionFilterOrderIds.size > 0 || isOrderFilterOpen ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' : 'border-transparent bg-slate-50 dark:bg-slate-800/50 hover:border-slate-200 dark:hover:border-slate-700'}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${suggestionFilterOrderIds.size > 0 || isOrderFilterOpen ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 dark:border-slate-600'}`}>
-                        {(suggestionFilterOrderIds.size > 0 || isOrderFilterOpen) && <div className="w-2 h-2 rounded-full bg-white" />}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs font-black uppercase text-slate-800 dark:text-slate-100 leading-tight">Filtrar por pedidos específicos</p>
-                          {suggestionFilterOrderIds.size > 0 && (
-                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-indigo-600 text-white shrink-0">
-                              {suggestionFilterOrderIds.size}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[10px] font-bold text-slate-400 mt-0.5 leading-snug normal-case">
-                          Mostre sugestões apenas dos pedidos selecionados.
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-
-                  {isOrderFilterOpen && (
-                    <div className={`-mt-1 ml-8 rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-white border-slate-200'}`}>
-                      {pendingOrders.length === 0 ? (
-                        <div className="px-4 py-4 text-center text-xs text-slate-400">Nenhum pedido pendente.</div>
-                      ) : (
-                        <div className="flex flex-col divide-y divide-slate-100 dark:divide-slate-700 max-h-52 overflow-y-auto">
-                          {pendingOrders.map(order => {
-                            const isSelected = suggestionFilterOrderIds.has(order.id);
-                            const orderItems = pendingItems.filter(i => i.orderId === order.id);
-                            const totalPairs = orderItems.reduce((s, i) => s + (i.toProductionQty || 0), 0);
-                            return (
-                              <button
-                                key={order.id}
-                                type="button"
-                                onClick={() => setSuggestionFilterOrderIds(prev => {
-                                  const next = new Set(prev);
-                                  if (next.has(order.id)) next.delete(order.id);
-                                  else next.add(order.id);
-                                  return next;
-                                })}
-                                className={`flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${isSelected ? (isDarkMode ? 'bg-indigo-900/40' : 'bg-indigo-50') : (isDarkMode ? 'hover:bg-slate-700/50' : 'hover:bg-slate-50')}`}
-                              >
-                                <div className={`w-4 h-4 rounded flex-shrink-0 border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-indigo-600 border-indigo-600' : (isDarkMode ? 'border-slate-600' : 'border-slate-300')}`}>
-                                  {isSelected && (
-                                    <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 10" stroke="currentColor" strokeWidth={2.5}>
-                                      <path d="M1.5 5l2.5 2.5 4.5-4.5" strokeLinecap="round" strokeLinejoin="round" />
-                                    </svg>
-                                  )}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                                      #{order.saleOrderNumber || order.orderNumber}
-                                    </span>
-                                    {order.customerName && (
-                                      <span className="text-[10px] font-bold text-slate-400 truncate">— {order.customerName}</span>
-                                    )}
-                                  </div>
-                                  <div className="flex items-center gap-2 mt-0.5">
-                                    <span className="text-[10px] font-bold text-indigo-500">{totalPairs} pares</span>
-                                    {order.createdAt && (
-                                      <span className="text-[10px] text-slate-400">
-                                        {new Date(order.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                      {suggestionFilterOrderIds.size > 0 && (
-                        <div className={`px-4 py-2 border-t flex items-center justify-between ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}>
-                          <span className="text-[10px] font-bold text-indigo-500">{suggestionFilterOrderIds.size} pedido{suggestionFilterOrderIds.size > 1 ? 's' : ''} selecionado{suggestionFilterOrderIds.size > 1 ? 's' : ''}</span>
-                          <button
-                            type="button"
-                            onClick={() => setSuggestionFilterOrderIds(new Set())}
-                            className="text-[10px] font-bold text-slate-400 hover:text-rose-500 transition-colors"
-                          >
-                            Limpar
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => setIsGroupingConfigOpen(false)}
-                    className="mt-2 w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest transition-all active:scale-95"
-                  >
-                    Aplicar
-                  </button>
-                </div>
-             </Modal>
-
-             {groupedPendingItems.length === 0 ? (
-                <div className={`py-20 rounded-[3rem] border-2 border-dashed flex flex-col items-center justify-center gap-3 ${isDarkMode ? 'border-slate-800 text-slate-700' : 'border-slate-200 text-slate-300'}`}>
-                  <ClipboardList size={48} className="opacity-20" />
-                  <p className="text-xs font-black uppercase tracking-widest">Nenhum pedido pendente</p>
-                </div>
-             ) : (
-                <div className="flex flex-col gap-4">
-                  {groupedPendingItems.map(group => (
-                    <div key={group.groupKey} className={`p-6 rounded-[2.5rem] border-2 transition-all overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-                        {/* Group Header */}
-                        <div className="flex items-center justify-between mb-6">
-                          <div className="flex items-center gap-4 min-w-0">
-                              <div className="w-14 h-14 rounded-[1.5rem] bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/20 shrink-0">
-                                <Package size={28} />
-                              </div>
-                              <div className="min-w-0">
-                                {group.members.length > 1 ? (
-                                  <>
-                                    <div className="flex flex-wrap items-center gap-1 mb-1">
-                                      {group.members.map((m, idx) => {
-                                        const ref = products.find(p => p.id === m.productId)?.reference;
-                                        const label = ref ? `${ref} ${m.productName}` : m.productName;
-                                        return (
-                                          <span key={idx} className="inline-flex items-center max-w-[220px] px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight truncate bg-amber-400 text-white">
-                                            <span className="truncate">{label}{m.variationName ? ` · ${m.variationName}` : ''}</span>
-                                          </span>
-                                        );
-                                      })}
-                                    </div>
-                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{group.members.length} Modelos</p>
-                                  </>
-                                ) : (
-                                  <>
-                                    <p className="text-base font-black uppercase leading-tight text-slate-900 dark:text-white truncate">
-                                      {(() => {
-                                        const ref = products.find(p => p.id === group.productId)?.reference;
-                                        return ref ? `${ref} ${group.productName}` : group.productName;
-                                      })()}
-                                    </p>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em] mt-0.5">{group.variationName}</p>
-                                  </>
-                                )}
-                              </div>
-                          </div>
-                          <div className="flex items-center gap-6">
-                              <div className="text-right">
-                                <p className="text-lg font-black text-indigo-600 dark:text-indigo-400 leading-none">{group.totalQty} <span className="text-[9px] uppercase tracking-widest text-slate-400">Pares</span></p>
-                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">{group.orders.length} Pedidos</p>
-                              </div>
-                              <button 
-                                onClick={() => {
-                                  const groupItems = group.orders.map(o => ({ orderId: o.orderId, itemIdx: o.itemIdx }));
-                                  setSelectedOrderItems(prev => {
-                                      const filtered = prev.filter(p => !groupItems.some(gi => gi.orderId === p.orderId && gi.itemIdx === p.itemIdx));
-                                      const allSelectedInGroup = groupItems.every(gi => prev.some(p => p.orderId === gi.orderId && p.itemIdx === gi.itemIdx));
-                                      if (allSelectedInGroup) return filtered;
-                                      return [...filtered, ...groupItems];
-                                  });
-                                }}
-                                className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all shadow-lg ${
-                                  group.orders.every(gi => selectedOrderItems.some(p => p.orderId === gi.orderId && p.itemIdx === gi.itemIdx))
-                                  ? 'bg-rose-500 text-white shadow-rose-500/20' 
-                                  : 'bg-indigo-600 text-white shadow-indigo-600/20 active:scale-90'
-                                }`}
-                                title="Selecionar Todos"
-                              >
-                                {group.orders.every(gi => selectedOrderItems.some(p => p.orderId === gi.orderId && p.itemIdx === gi.itemIdx)) ? <X size={20} strokeWidth={3} /> : <Plus size={20} strokeWidth={3} />}
-                              </button>
-
-                          </div>
-                        </div>
-
-                        {/* Orders List in this group */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                          {group.orders.map(item => {
-                              const isSelected = selectedOrderItems.some(s => s.orderId === item.orderId && s.itemIdx === item.itemIdx);
-                              return (
-                                <div
-                                    key={item.uniqueKey}
-                                    onClick={() => {
-                                      if (isSelected) {
-                                          setSelectedOrderItems(prev => prev.filter(s => s.orderId !== item.orderId || s.itemIdx !== item.itemIdx));
-                                      } else {
-                                          setSelectedOrderItems(prev => [...prev, { orderId: item.orderId, itemIdx: item.itemIdx }]);
-                                      }
-                                    }}
-                                    className={`flex flex-col p-4 rounded-2xl border-2 cursor-pointer transition-all ${isSelected ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' : 'border-transparent bg-slate-50 dark:bg-slate-800/50 hover:border-slate-200 dark:hover:border-slate-700'}`}
-                                >
-                                    {/* Top row: checkbox + cliente + badge | hora + lixeira */}
-                                    <div className="flex items-center justify-between mb-2">
-                                      <div className="flex items-center gap-2 min-w-0">
-                                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center border-2 transition-all shrink-0 ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/30' : 'border-slate-300 dark:border-slate-600'}`}>
-                                            {isSelected && <CheckCircle2 size={14} strokeWidth={4} />}
-                                        </div>
-                                        <p className="text-[10px] font-black uppercase text-slate-900 dark:text-white truncate leading-none">{item.customerName}</p>
-                                        <span className="text-[8px] font-bold text-slate-500 px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 rounded-full uppercase tracking-widest shrink-0">#{item.saleOrderNumber}</span>
-                                      </div>
-                                      <div className="flex items-center gap-1.5 shrink-0 ml-2" onClick={e => e.stopPropagation()}>
-                                        {item.orderCreatedAt && (
-                                          <span className="text-[8px] font-bold text-slate-500">
-                                            {new Date(item.orderCreatedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                                          </span>
-                                        )}
-                                        {onDeleteProductionOrder && (
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              const sourcePurchase = item.saleId ? purchases.find(p => p.id === item.saleId) : undefined;
-                                              setOrderDeleteConfirm({
-                                                orderId: item.orderId,
-                                                saleOrderNumber: item.saleOrderNumber,
-                                                hasSourcePurchase: !!sourcePurchase
-                                              });
-                                            }}
-                                            className="p-1 rounded-full bg-rose-50 dark:bg-rose-900/20 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-all"
-                                            title="Excluir pedido"
-                                          >
-                                            <Trash2 size={11} />
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-
-                                    {/* Produto */}
-                                    <div className="flex flex-wrap gap-x-2 gap-y-0.5 mb-2 pl-8">
-                                      <span className="text-[9px] font-black text-slate-900 dark:text-slate-100 uppercase">
-                                        {(() => {
-                                          const ref = products.find(p => p.id === item.productId)?.reference;
-                                          return ref ? `${ref} ${item.productName}` : item.productName;
-                                        })()}
-                                      </span>
-                                      <span className="text-[9px] font-bold text-slate-500 uppercase">{item.variationName}</span>
-                                    </div>
-
-                                    {/* Badge de observação do item */}
-                                    {item.notes && (
-                                      <div className={`flex items-start gap-1.5 mt-1 mb-1 pl-8`}>
-                                        <div className={`flex items-start gap-1.5 px-2.5 py-1.5 rounded-xl text-[9px] font-bold leading-snug ${isDarkMode ? 'bg-amber-900/30 border border-amber-700/40 text-amber-300' : 'bg-amber-50 border border-amber-200 text-amber-700'}`}>
-                                          <MessageSquare size={9} className="text-amber-500 shrink-0 mt-0.5" />
-                                          <span>{item.notes}</span>
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {/* Grade de tamanhos */}
-                                    <div className="flex flex-wrap gap-1 pl-8">
-                                      {Object.entries(item.sizes || {})
-                                        .filter(([_, s]: any) => s.toProduction > 0)
-                                        .map(([size, s]: any) => (
-                                          <div key={size} className="flex flex-col items-center min-w-[28px] p-1 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-700 shadow-sm">
-                                            <span className="text-[9px] font-black text-slate-500 leading-none mb-0.5">{size}</span>
-                                            <span className="text-[11px] font-black text-slate-900 dark:text-white leading-none">{s.toProduction}</span>
-                                          </div>
-                                        ))}
-                                    </div>
-
-                                    {/* Linha inferior: data de entrega + pares */}
-                                    <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 dark:border-slate-700 pl-8">
-                                      <span className={`text-[10px] font-bold uppercase tracking-widest ${item.deliveryDate < Date.now() ? 'text-rose-500' : 'text-slate-500'}`}>
-                                        {new Date(item.deliveryDate).toLocaleDateString('pt-BR')}
-                                      </span>
-                                      <span className="text-sm font-black text-slate-900 dark:text-white">{item.toProductionQty} <span className="text-[9px] font-bold text-slate-400 uppercase">P</span></span>
-                                    </div>
-                                </div>
-                              );
-                          })}
-                        </div>
-                    </div>
-                  ))}
-                </div>
-             )}
-          </div>
-
-          {/* Carrinho Sidebar */}
-          <div className="lg:col-span-4">
-             <div className={`sticky top-6 p-8 rounded-[3rem] border-2 flex flex-col gap-8 min-h-[500px] ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-2xl shadow-indigo-600/5'}`}>
-                <div className="flex items-center gap-4">
-                   <div className="w-14 h-14 rounded-[1.8rem] bg-amber-500 text-white flex items-center justify-center shadow-xl shadow-amber-500/20">
-                      <LayoutDashboard size={28} />
-                   </div>
-                   <div>
-                      <h4 className="text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">Carrinho</h4>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mt-0.5">Novo Mapa de Produção</p>
-                   </div>
-                </div>
-
-                {selectedOrderItems.length === 0 ? (
-                   <div className="flex-1 flex flex-col items-center justify-center text-center gap-4 px-4">
-                      <div className="w-20 h-20 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-300 dark:text-slate-700">
-                         <Plus size={40} className="opacity-20" />
-                      </div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] leading-relaxed max-w-[180px]">Selecione os pedidos ao lado para agrupar em um Mapa</p>
-                   </div>
-                ) : (
-                   <div className="flex-1 flex flex-col gap-8">
-                      {/* Carrinho Summary */}
-                      {(() => {
-                        const selectedData = selectedOrderItems.map(s => pendingItems.find(p => p.orderId === s.orderId && p.itemIdx === s.itemIdx)).filter(Boolean);
-                        const totalPairs = selectedData.reduce((acc, i) => acc + (i?.toProductionQty || 0), 0);
-                        
-                        const groupedByProduct: Record<string, { productId: string, variationId: string, name: string, color: string, qty: number }> = {};
-                        selectedData.forEach(item => {
-                            if (!item) return;
-                            const key = `${item.productId}-${item.variationId}`;
-                            if (!groupedByProduct[key]) {
-                               groupedByProduct[key] = { 
-                                 productId: item.productId, 
-                                 variationId: item.variationId, 
-                                 name: item.productName, 
-                                 color: item.variationName, 
-                                 qty: 0 
-                               };
-                             }
-                            groupedByProduct[key].qty += item.toProductionQty;
-                        });
-
-                        return (
-                            <div className="flex flex-col gap-6">
-                                <div className="p-6 rounded-[2rem] bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-100 dark:border-indigo-800/30">
-                                  <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-2">Total do Mapa</p>
-                                  <p className="text-4xl font-black text-indigo-600 dark:text-indigo-400">{totalPairs} <span className="text-xs uppercase tracking-widest text-indigo-300">Pares</span></p>
-                                </div>
-                                
-                                <div className="flex flex-col gap-3">
-                                  <h5 className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">Conteúdo do Mapa</h5>
-                                  <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                                    {Object.values(groupedByProduct).map((g, idx) => (
-                                      <div key={idx} className="flex items-center justify-between p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm">
-                                          <div className="min-w-0 pr-2">
-                                            <p className="text-[11px] font-black uppercase truncate text-slate-800 dark:text-slate-200 leading-none mb-1">{g.name}</p>
-                                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-2">{g.color}</p>
-                                            
-                                            {/* Aggregated Grid for Sidebar */}
-                                            <div className="flex flex-wrap gap-1">
-                                              {(() => {
-                                                const aggregatedGrid: Record<string, number> = {};
-                                                selectedData.filter(i => i && i.productId === g.productId && i.variationId === g.variationId).forEach(i => {
-                                                  Object.entries(i!.sizes || {}).forEach(([size, s]: any) => {
-                                                    if (s.toProduction > 0) aggregatedGrid[size] = (aggregatedGrid[size] || 0) + s.toProduction;
-                                                  });
-                                                });
-                                                return Object.entries(aggregatedGrid).map(([size, qty]) => (
-                                                  <div key={size} className="flex flex-col items-center min-w-[24px] p-1 bg-slate-50 dark:bg-slate-900/50 rounded border border-slate-100 dark:border-slate-700">
-                                                    <span className="text-[8px] font-black text-slate-400 leading-none mb-0.5">{size}</span>
-                                                    <span className="text-[10px] font-black text-indigo-500 leading-none">{qty}</span>
-                                                  </div>
-                                                ));
-                                              })()}
-                                            </div>
-                                          </div>
-                                          <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 shrink-0">{g.qty} P</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                            </div>
-                        );
-                      })()}
-
-                      <div className="mt-auto flex flex-col gap-4">
-                        <button 
-                            onClick={() => setSelectedOrderItems([])}
-                            className="w-full py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all"
-                        >
-                            Limpar Seleção
-                        </button>
-                        <button 
-                            onClick={handleBatchCreateLots}
-                            className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] text-[11px] font-black uppercase tracking-[0.25em] shadow-2xl shadow-indigo-600/30 hover:scale-[1.02] active:scale-95 transition-all"
-                        >
-                            Criar 1 Mapa com Selecionados
-                        </button>
-
-                    </div>
-                  </div>
-                )}
+            <div className="flex items-center justify-between px-2">
+              <div>
+                <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Sugestões de Mapas</h3>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Itens agrupados por modelo e cor</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Layers size={14} className="text-indigo-500" />
+                <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{groupedPendingItems.length} Grupos</span>
               </div>
             </div>
-          </div>
-        )}
 
-        {activeTab === 'needs' && (
-          <div className="flex flex-col gap-6">
-            <div className={`p-8 rounded-[2.5rem] border-2 shadow-xl ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-              <div className="flex items-center justify-between mb-8">
-                <div>
-                  <h3 className="text-xl font-black uppercase tracking-tight">Necessidades de Materiais</h3>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Requisitos de Produção vs Estoque — Inclui Solados</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {(() => {
-                    const shortages = purchaseNeeds.filter(i =>
-                      i.type === 'MATERIAL'
-                        ? i.required > i.stock
-                        : i.sizeShortages
-                          ? Object.values(i.sizeShortages).some((s: any) => s.required > s.stock)
-                          : i.required > i.stock
-                    );
-                    const solesOk = purchaseNeeds.filter(i => i.type === 'SOLE' && !shortages.includes(i));
-                    return (
-                      <>
-                        {shortages.length > 0 && (
-                          <span className="px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 text-rose-500">
-                            {shortages.length} Falta{shortages.length > 1 ? 's' : ''}
-                          </span>
-                        )}
-                        {solesOk.length > 0 && (
-                          <span className="px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600">
-                            {solesOk.length} Solado{solesOk.length > 1 ? 's' : ''} OK
-                          </span>
-                        )}
-                        {purchaseNeeds.length === 0 && (
-                          <span className="px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-500">
-                            Tudo OK
-                          </span>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
+            {/* Busca por digitação + sugestão de agrupamento */}
+            <div className="flex items-center gap-2 px-2">
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                <input
+                  type="text"
+                  value={mapSuggestionSearch}
+                  onChange={e => setMapSuggestionSearch(e.target.value)}
+                  placeholder="Buscar por modelo, referência ou cor..."
+                  className={`w-full pl-9 pr-3 py-2.5 rounded-2xl text-xs font-bold outline-none transition-all border ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white placeholder:text-slate-600 focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-800 placeholder:text-slate-400 focus:border-indigo-400'}`}
+                />
               </div>
+              <button
+                type="button"
+                onClick={() => setIsGroupingConfigOpen(true)}
+                title="Configurar sugestão de agrupamento"
+                className={`relative w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 transition-all active:scale-95 border ${groupingMode !== 'REF_COLOR' || suggestionFilterOrderIds.size > 0
+                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                    : (isDarkMode ? 'bg-orange-950/40 border-orange-900/50 text-orange-400 hover:border-orange-700' : 'bg-orange-50 border-orange-200 text-orange-400 hover:border-orange-300')
+                  }`}
+              >
+                <Filter size={15} />
+                {(groupingMode !== 'REF_COLOR' || suggestionFilterOrderIds.size > 0) && (
+                  <span className="filter-pulse-badge absolute -top-1 -right-1 min-w-[16px] h-4 rounded-full ring-2 ring-white dark:ring-slate-950 text-[9px] font-black text-white flex items-center justify-center px-0.5">
+                    {suggestionFilterOrderIds.size > 0 ? suggestionFilterOrderIds.size : ''}
+                  </span>
+                )}
+              </button>
+            </div>
 
-              <div className="flex flex-col gap-3 mb-6">
-                <div className="flex flex-col gap-2">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Exibir necessidades de:</span>
-                  <div className="grid grid-cols-2 gap-2">
-                    {([
-                      { key: 'LOTS',            label: 'Mapas',          desc: 'Lotes ativos' },
-                      { key: 'ORDERS',          label: 'Pedidos',        desc: 'Todos pendentes' },
-                      { key: 'BOTH',            label: 'Pedidos + Mapas',desc: 'Combinado' },
-                      { key: 'SELECTED_ORDERS', label: 'Por Pedido',     desc: 'Escolha pedidos' },
-                    ] as { key: 'LOTS' | 'ORDERS' | 'BOTH' | 'SELECTED_ORDERS'; label: string; desc: string }[]).map(opt => {
-                      const active = needsSourceFilter === opt.key;
-                      return (
-                        <button
-                          key={opt.key}
-                          type="button"
-                          onClick={() => {
-                            setNeedsSourceFilter(opt.key);
-                            if (opt.key !== 'SELECTED_ORDERS') setSelectedNeedsOrderIds(new Set());
-                          }}
-                          className={`flex flex-col items-start px-4 py-3 rounded-2xl border-2 transition-all active:scale-95 ${
-                            active
-                              ? 'bg-indigo-600 border-indigo-600 shadow-lg shadow-indigo-600/20'
-                              : (isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-indigo-500/50' : 'bg-white border-slate-200 hover:border-indigo-300')
-                          }`}
-                        >
-                          <span className={`text-[11px] font-black uppercase tracking-widest leading-none ${active ? 'text-white' : (isDarkMode ? 'text-slate-200' : 'text-slate-700')}`}>
-                            {opt.label}
-                          </span>
-                          <span className={`text-[9px] font-bold mt-1 leading-none ${active ? 'text-indigo-200' : 'text-slate-400'}`}>
-                            {opt.desc}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+            {/* Popup de configuração de sugestão de agrupamento */}
+            <Modal isOpen={isGroupingConfigOpen} onClose={() => setIsGroupingConfigOpen(false)} title="Sugestão de Agrupamento" icon={<Layers size={18} />} maxWidth="max-w-md">
+              <div className="p-6 flex flex-col gap-3">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                  Escolha como os pedidos pendentes devem ser agrupados em "Sugestões de Mapas"
+                </p>
+                {[
+                  { id: 'REF_COMBO' as const, label: 'Combinações de referências', desc: 'Escolha referências cadastradas (ex: 200 e 300) para combiná-las em um mesmo grupo de sugestão.' },
+                  { id: 'REF_COLOR' as const, label: 'Mesma referência, com agrupamento de cor', desc: 'Padrão: um grupo por modelo e cor.' },
+                  { id: 'REF_ONLY' as const, label: 'Mesma referência, sem agrupamento de cor', desc: 'Reúne todas as cores de um mesmo modelo em um único grupo.' },
+                  { id: 'TOTAL' as const, label: 'Total', desc: 'Reúne todos os pedidos pendentes em um único grupo geral.' },
+                ].map(opt => (
+                  <React.Fragment key={opt.id}>
+                    <button
+                      type="button"
+                      onClick={() => setGroupingMode(opt.id)}
+                      className={`text-left p-4 rounded-2xl border-2 transition-all ${groupingMode === opt.id ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' : 'border-transparent bg-slate-50 dark:bg-slate-800/50 hover:border-slate-200 dark:hover:border-slate-700'}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${groupingMode === opt.id ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 dark:border-slate-600'}`}>
+                          {groupingMode === opt.id && <div className="w-2 h-2 rounded-full bg-white" />}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-black uppercase text-slate-800 dark:text-slate-100 leading-tight">{opt.label}</p>
+                          <p className="text-[10px] font-bold text-slate-400 mt-0.5 leading-snug normal-case">{opt.desc}</p>
+                        </div>
+                      </div>
+                    </button>
 
-                {needsSourceFilter === 'SELECTED_ORDERS' && (
-                  <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                    <div className={`flex items-center justify-between px-4 py-2.5 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                        Selecionar pedidos
-                      </span>
-                      <div className="flex items-center gap-2">
-                        {selectedNeedsOrderIds.size > 0 && (
-                          <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white">
-                            {selectedNeedsOrderIds.size} selecionado{selectedNeedsOrderIds.size > 1 ? 's' : ''}
-                          </span>
+                    {opt.id === 'REF_COMBO' && groupingMode === 'REF_COMBO' && (
+                      <div className={`-mt-1 ml-8 p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest normal-case mb-2">
+                          Selecione as referências a combinar (ex: 200 e 300):
+                        </p>
+                        {availableReferences.length === 0 ? (
+                          <p className="text-[10px] font-bold text-slate-400 normal-case">Nenhuma referência cadastrada nos pedidos pendentes.</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {availableReferences.map(ref => {
+                              const active = comboReferences.includes(ref);
+                              return (
+                                <button
+                                  key={ref}
+                                  type="button"
+                                  onClick={() => setComboReferences(prev => active ? prev.filter(r => r !== ref) : [...prev, ref])}
+                                  className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 ${active
+                                      ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                                      : (isDarkMode ? 'bg-slate-900 text-slate-400 border border-slate-700' : 'bg-white text-slate-500 border border-slate-200')
+                                    }`}
+                                >
+                                  {ref}
+                                </button>
+                              );
+                            })}
+                          </div>
                         )}
-                        {selectedNeedsOrderIds.size > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setSelectedNeedsOrderIds(new Set())}
-                            className="text-[10px] font-bold text-slate-400 hover:text-rose-500 transition-colors uppercase tracking-widest"
-                          >
-                            Limpar
-                          </button>
+                        {comboReferences.length === 1 && (
+                          <p className="text-[9px] font-bold text-amber-500 uppercase tracking-widest normal-case mt-2">Selecione ao menos mais uma referência para formar uma combinação.</p>
                         )}
                       </div>
+                    )}
+                  </React.Fragment>
+                ))}
+                {/* Divisor */}
+                <div className={`my-1 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`} />
+
+                {/* Opção: Filtrar por pedidos específicos */}
+                <button
+                  type="button"
+                  onClick={() => setIsOrderFilterOpen(v => !v)}
+                  className={`text-left p-4 rounded-2xl border-2 transition-all ${suggestionFilterOrderIds.size > 0 || isOrderFilterOpen ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' : 'border-transparent bg-slate-50 dark:bg-slate-800/50 hover:border-slate-200 dark:hover:border-slate-700'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${suggestionFilterOrderIds.size > 0 || isOrderFilterOpen ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 dark:border-slate-600'}`}>
+                      {(suggestionFilterOrderIds.size > 0 || isOrderFilterOpen) && <div className="w-2 h-2 rounded-full bg-white" />}
                     </div>
-                    {pendingOrders.length === 0 ? (
-                      <div className="px-4 py-5 text-center text-xs text-slate-400">
-                        Nenhum pedido pendente encontrado.
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-black uppercase text-slate-800 dark:text-slate-100 leading-tight">Filtrar por pedidos específicos</p>
+                        {suggestionFilterOrderIds.size > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-indigo-600 text-white shrink-0">
+                            {suggestionFilterOrderIds.size}
+                          </span>
+                        )}
                       </div>
+                      <p className="text-[10px] font-bold text-slate-400 mt-0.5 leading-snug normal-case">
+                        Mostre sugestões apenas dos pedidos selecionados.
+                      </p>
+                    </div>
+                  </div>
+                </button>
+
+                {isOrderFilterOpen && (
+                  <div className={`-mt-1 ml-8 rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-white border-slate-200'}`}>
+                    {pendingOrders.length === 0 ? (
+                      <div className="px-4 py-4 text-center text-xs text-slate-400">Nenhum pedido pendente.</div>
                     ) : (
-                      <div className="flex flex-col divide-y divide-slate-200 dark:divide-slate-700 max-h-64 overflow-y-auto">
+                      <div className="flex flex-col divide-y divide-slate-100 dark:divide-slate-700 max-h-52 overflow-y-auto">
                         {pendingOrders.map(order => {
-                          const isSelected = selectedNeedsOrderIds.has(order.id);
+                          const isSelected = suggestionFilterOrderIds.has(order.id);
                           const orderItems = pendingItems.filter(i => i.orderId === order.id);
                           const totalPairs = orderItems.reduce((s, i) => s + (i.toProductionQty || 0), 0);
                           return (
                             <button
                               key={order.id}
                               type="button"
-                              onClick={() => {
-                                setSelectedNeedsOrderIds(prev => {
-                                  const next = new Set(prev);
-                                  if (next.has(order.id)) next.delete(order.id);
-                                  else next.add(order.id);
-                                  return next;
-                                });
-                              }}
-                              className={`flex items-center gap-3 px-4 py-3 text-left transition-colors ${
-                                isSelected
-                                  ? isDarkMode ? 'bg-indigo-900/40' : 'bg-indigo-50'
-                                  : isDarkMode ? 'hover:bg-slate-700/50' : 'hover:bg-white'
-                              }`}
+                              onClick={() => setSuggestionFilterOrderIds(prev => {
+                                const next = new Set(prev);
+                                if (next.has(order.id)) next.delete(order.id);
+                                else next.add(order.id);
+                                return next;
+                              })}
+                              className={`flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${isSelected ? (isDarkMode ? 'bg-indigo-900/40' : 'bg-indigo-50') : (isDarkMode ? 'hover:bg-slate-700/50' : 'hover:bg-slate-50')}`}
                             >
-                              <div className={`w-4 h-4 rounded flex-shrink-0 border-2 flex items-center justify-center transition-colors ${
-                                isSelected ? 'bg-indigo-600 border-indigo-600' : isDarkMode ? 'border-slate-600' : 'border-slate-300'
-                              }`}>
+                              <div className={`w-4 h-4 rounded flex-shrink-0 border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-indigo-600 border-indigo-600' : (isDarkMode ? 'border-slate-600' : 'border-slate-300')}`}>
                                 {isSelected && (
                                   <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 10" stroke="currentColor" strokeWidth={2.5}>
                                     <path d="M1.5 5l2.5 2.5 4.5-4.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -5318,31 +4650,19 @@ export default function PCPView({
                                 )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                                    Pedido #{order.saleOrderNumber || order.orderNumber}
+                                    #{order.saleOrderNumber || order.orderNumber}
                                   </span>
                                   {order.customerName && (
-                                    <span className="text-[10px] font-bold text-slate-400 truncate">
-                                      — {order.customerName}
-                                    </span>
+                                    <span className="text-[10px] font-bold text-slate-400 truncate">— {order.customerName}</span>
                                   )}
                                 </div>
-                                <div className="flex items-center gap-3 mt-0.5">
-                                  <span className="text-[10px] text-slate-400">
-                                    {orderItems.length} item{orderItems.length !== 1 ? 's' : ''}
-                                  </span>
-                                  <span className="text-[10px] font-bold text-indigo-500">
-                                    {totalPairs} par{totalPairs !== 1 ? 'es' : ''}
-                                  </span>
-                                  {order.deliveryDate && (
-                                    <span className="text-[10px] text-slate-400">
-                                      Entrega: {new Date(order.deliveryDate).toLocaleDateString('pt-BR')}
-                                    </span>
-                                  )}
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-[10px] font-bold text-indigo-500">{totalPairs} pares</span>
                                   {order.createdAt && (
                                     <span className="text-[10px] text-slate-400">
-                                      Criado: {new Date(order.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                      {new Date(order.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                                     </span>
                                   )}
                                 </div>
@@ -5352,357 +4672,831 @@ export default function PCPView({
                         })}
                       </div>
                     )}
-                    {selectedNeedsOrderIds.size === 0 && pendingOrders.length > 0 && (
-                      <div className={`px-4 py-2.5 border-t text-[10px] text-slate-400 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-                        Selecione um ou mais pedidos para ver a necessidade de solados.
+                    {suggestionFilterOrderIds.size > 0 && (
+                      <div className={`px-4 py-2 border-t flex items-center justify-between ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}>
+                        <span className="text-[10px] font-bold text-indigo-500">{suggestionFilterOrderIds.size} pedido{suggestionFilterOrderIds.size > 1 ? 's' : ''} selecionado{suggestionFilterOrderIds.size > 1 ? 's' : ''}</span>
+                        <button
+                          type="button"
+                          onClick={() => setSuggestionFilterOrderIds(new Set())}
+                          className="text-[10px] font-bold text-slate-400 hover:text-rose-500 transition-colors"
+                        >
+                          Limpar
+                        </button>
                       </div>
                     )}
                   </div>
                 )}
+
+                <button
+                  type="button"
+                  onClick={() => setIsGroupingConfigOpen(false)}
+                  className="mt-2 w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-widest transition-all active:scale-95"
+                >
+                  Aplicar
+                </button>
+              </div>
+            </Modal>
+
+            {groupedPendingItems.length === 0 ? (
+              <div className={`py-20 rounded-[3rem] border-2 border-dashed flex flex-col items-center justify-center gap-3 ${isDarkMode ? 'border-slate-800 text-slate-700' : 'border-slate-200 text-slate-300'}`}>
+                <ClipboardList size={48} className="opacity-20" />
+                <p className="text-xs font-black uppercase tracking-widest">Nenhum pedido pendente</p>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {groupedPendingItems.map(group => (
+                  <div key={group.groupKey} className={`p-6 rounded-[2.5rem] border-2 transition-all overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+                    {/* Group Header */}
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="w-14 h-14 rounded-[1.5rem] bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/20 shrink-0">
+                          <Package size={28} />
+                        </div>
+                        <div className="min-w-0">
+                          {group.members.length > 1 ? (
+                            <>
+                              <div className="flex flex-wrap items-center gap-1 mb-1">
+                                {group.members.map((m, idx) => {
+                                  const ref = products.find(p => p.id === m.productId)?.reference;
+                                  const label = ref ? `${ref} ${m.productName}` : m.productName;
+                                  return (
+                                    <span key={idx} className="inline-flex items-center max-w-[220px] px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-tight truncate bg-amber-400 text-white">
+                                      <span className="truncate">{label}{m.variationName ? ` · ${m.variationName}` : ''}</span>
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{group.members.length} Modelos</p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-base font-black uppercase leading-tight text-slate-900 dark:text-white truncate">
+                                {(() => {
+                                  const ref = products.find(p => p.id === group.productId)?.reference;
+                                  return ref ? `${ref} ${group.productName}` : group.productName;
+                                })()}
+                              </p>
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.15em] mt-0.5">{group.variationName}</p>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-6">
+                        <div className="text-right">
+                          <p className="text-lg font-black text-indigo-600 dark:text-indigo-400 leading-none">{group.totalQty} <span className="text-[9px] uppercase tracking-widest text-slate-400">Pares</span></p>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">{group.orders.length} Pedidos</p>
+                        </div>
+                        <button
+                          onClick={() => {
+                            const groupItems = group.orders.map(o => ({ orderId: o.orderId, itemIdx: o.itemIdx }));
+                            setSelectedOrderItems(prev => {
+                              const filtered = prev.filter(p => !groupItems.some(gi => gi.orderId === p.orderId && gi.itemIdx === p.itemIdx));
+                              const allSelectedInGroup = groupItems.every(gi => prev.some(p => p.orderId === gi.orderId && p.itemIdx === gi.itemIdx));
+                              if (allSelectedInGroup) return filtered;
+                              return [...filtered, ...groupItems];
+                            });
+                          }}
+                          className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all shadow-lg ${group.orders.every(gi => selectedOrderItems.some(p => p.orderId === gi.orderId && p.itemIdx === gi.itemIdx))
+                              ? 'bg-rose-500 text-white shadow-rose-500/20'
+                              : 'bg-indigo-600 text-white shadow-indigo-600/20 active:scale-90'
+                            }`}
+                          title="Selecionar Todos"
+                        >
+                          {group.orders.every(gi => selectedOrderItems.some(p => p.orderId === gi.orderId && p.itemIdx === gi.itemIdx)) ? <X size={20} strokeWidth={3} /> : <Plus size={20} strokeWidth={3} />}
+                        </button>
+
+                      </div>
+                    </div>
+
+                    {/* Orders List in this group */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {group.orders.map(item => {
+                        const isSelected = selectedOrderItems.some(s => s.orderId === item.orderId && s.itemIdx === item.itemIdx);
+                        return (
+                          <div
+                            key={item.uniqueKey}
+                            onClick={() => {
+                              if (isSelected) {
+                                setSelectedOrderItems(prev => prev.filter(s => s.orderId !== item.orderId || s.itemIdx !== item.itemIdx));
+                              } else {
+                                setSelectedOrderItems(prev => [...prev, { orderId: item.orderId, itemIdx: item.itemIdx }]);
+                              }
+                            }}
+                            className={`flex flex-col p-4 rounded-2xl border-2 cursor-pointer transition-all ${isSelected ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' : 'border-transparent bg-slate-50 dark:bg-slate-800/50 hover:border-slate-200 dark:hover:border-slate-700'}`}
+                          >
+                            {/* Top row: checkbox + cliente + badge | hora + lixeira */}
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <div className={`w-6 h-6 rounded-lg flex items-center justify-center border-2 transition-all shrink-0 ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/30' : 'border-slate-300 dark:border-slate-600'}`}>
+                                  {isSelected && <CheckCircle2 size={14} strokeWidth={4} />}
+                                </div>
+                                <p className="text-[10px] font-black uppercase text-slate-900 dark:text-white truncate leading-none">{item.customerName}</p>
+                                <span className="text-[8px] font-bold text-slate-500 px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 rounded-full uppercase tracking-widest shrink-0">#{item.saleOrderNumber}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0 ml-2" onClick={e => e.stopPropagation()}>
+                                {item.orderCreatedAt && (
+                                  <span className="text-[8px] font-bold text-slate-500">
+                                    {new Date(item.orderCreatedAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                )}
+                                {onDeleteProductionOrder && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const sourcePurchase = item.saleId ? purchases.find(p => p.id === item.saleId) : undefined;
+                                      setOrderDeleteConfirm({
+                                        orderId: item.orderId,
+                                        saleOrderNumber: item.saleOrderNumber,
+                                        hasSourcePurchase: !!sourcePurchase
+                                      });
+                                    }}
+                                    className="p-1 rounded-full bg-rose-50 dark:bg-rose-900/20 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-all"
+                                    title="Excluir pedido"
+                                  >
+                                    <Trash2 size={11} />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Produto */}
+                            <div className="flex flex-wrap gap-x-2 gap-y-0.5 mb-2 pl-8">
+                              <span className="text-[9px] font-black text-slate-900 dark:text-slate-100 uppercase">
+                                {(() => {
+                                  const ref = products.find(p => p.id === item.productId)?.reference;
+                                  return ref ? `${ref} ${item.productName}` : item.productName;
+                                })()}
+                              </span>
+                              <span className="text-[9px] font-bold text-slate-500 uppercase">{item.variationName}</span>
+                            </div>
+
+                            {/* Badge de observação do item */}
+                            {item.notes && (
+                              <div className={`flex items-start gap-1.5 mt-1 mb-1 pl-8`}>
+                                <div className={`flex items-start gap-1.5 px-2.5 py-1.5 rounded-xl text-[9px] font-bold leading-snug ${isDarkMode ? 'bg-amber-900/30 border border-amber-700/40 text-amber-300' : 'bg-amber-50 border border-amber-200 text-amber-700'}`}>
+                                  <MessageSquare size={9} className="text-amber-500 shrink-0 mt-0.5" />
+                                  <span>{item.notes}</span>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Grade de tamanhos */}
+                            <div className="flex flex-wrap gap-1 pl-8">
+                              {Object.entries(item.sizes || {})
+                                .filter(([_, s]: any) => s.toProduction > 0)
+                                .map(([size, s]: any) => (
+                                  <div key={size} className="flex flex-col items-center min-w-[28px] p-1 bg-white dark:bg-slate-900 rounded-lg border border-slate-100 dark:border-slate-700 shadow-sm">
+                                    <span className="text-[9px] font-black text-slate-500 leading-none mb-0.5">{size}</span>
+                                    <span className="text-[11px] font-black text-slate-900 dark:text-white leading-none">{s.toProduction}</span>
+                                  </div>
+                                ))}
+                            </div>
+
+                            {/* Linha inferior: data de entrega + pares */}
+                            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 dark:border-slate-700 pl-8">
+                              <span className={`text-[10px] font-bold uppercase tracking-widest ${item.deliveryDate < Date.now() ? 'text-rose-500' : 'text-slate-500'}`}>
+                                {new Date(item.deliveryDate).toLocaleDateString('pt-BR')}
+                              </span>
+                              <span className="text-sm font-black text-slate-900 dark:text-white">{item.toProductionQty} <span className="text-[9px] font-bold text-slate-400 uppercase">P</span></span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Carrinho Sidebar */}
+          <div className="lg:col-span-4">
+            <div className={`sticky top-6 p-8 rounded-[3rem] border-2 flex flex-col gap-8 min-h-[500px] ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-2xl shadow-indigo-600/5'}`}>
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-[1.8rem] bg-amber-500 text-white flex items-center justify-center shadow-xl shadow-amber-500/20">
+                  <LayoutDashboard size={28} />
+                </div>
+                <div>
+                  <h4 className="text-lg font-black uppercase tracking-tight text-slate-900 dark:text-white">Carrinho</h4>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mt-0.5">Novo Mapa de Produção</p>
+                </div>
               </div>
 
-              {selectedSoleNeedIds.size > 0 && (
-                <div className={`flex flex-col gap-3 px-5 py-4 mb-4 rounded-2xl border ${isDarkMode ? 'bg-indigo-950/30 border-indigo-800' : 'bg-indigo-50 border-indigo-200'}`}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white">
-                        {selectedSoleNeedIds.size} selecionado{selectedSoleNeedIds.size > 1 ? 's' : ''}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Solicitação agrupada</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedSoleNeedIds(new Set())}
-                      className="px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-                    >
-                      Limpar
-                    </button>
+              {selectedOrderItems.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center gap-4 px-4">
+                  <div className="w-20 h-20 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center text-slate-300 dark:text-slate-700">
+                    <Plus size={40} className="opacity-20" />
                   </div>
-                  <div className="flex flex-col sm:flex-row items-stretch gap-2">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] leading-relaxed max-w-[180px]">Selecione os pedidos ao lado para agrupar em um Mapa</p>
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col gap-8">
+                  {/* Carrinho Summary */}
+                  {(() => {
+                    const selectedData = selectedOrderItems.map(s => pendingItems.find(p => p.orderId === s.orderId && p.itemIdx === s.itemIdx)).filter(Boolean);
+                    const totalPairs = selectedData.reduce((acc, i) => acc + (i?.toProductionQty || 0), 0);
+
+                    const groupedByProduct: Record<string, { productId: string, variationId: string, name: string, color: string, qty: number }> = {};
+                    selectedData.forEach(item => {
+                      if (!item) return;
+                      const key = `${item.productId}-${item.variationId}`;
+                      if (!groupedByProduct[key]) {
+                        groupedByProduct[key] = {
+                          productId: item.productId,
+                          variationId: item.variationId,
+                          name: item.productName,
+                          color: item.variationName,
+                          qty: 0
+                        };
+                      }
+                      groupedByProduct[key].qty += item.toProductionQty;
+                    });
+
+                    return (
+                      <div className="flex flex-col gap-6">
+                        <div className="p-6 rounded-[2rem] bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-100 dark:border-indigo-800/30">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mb-2">Total do Mapa</p>
+                          <p className="text-4xl font-black text-indigo-600 dark:text-indigo-400">{totalPairs} <span className="text-xs uppercase tracking-widest text-indigo-300">Pares</span></p>
+                        </div>
+
+                        <div className="flex flex-col gap-3">
+                          <h5 className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400">Conteúdo do Mapa</h5>
+                          <div className="flex flex-col gap-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                            {Object.values(groupedByProduct).map((g, idx) => (
+                              <div key={idx} className="flex items-center justify-between p-4 rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm">
+                                <div className="min-w-0 pr-2">
+                                  <p className="text-[11px] font-black uppercase truncate text-slate-800 dark:text-slate-200 leading-none mb-1">{g.name}</p>
+                                  <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-2">{g.color}</p>
+
+                                  {/* Aggregated Grid for Sidebar */}
+                                  <div className="flex flex-wrap gap-1">
+                                    {(() => {
+                                      const aggregatedGrid: Record<string, number> = {};
+                                      selectedData.filter(i => i && i.productId === g.productId && i.variationId === g.variationId).forEach(i => {
+                                        Object.entries(i!.sizes || {}).forEach(([size, s]: any) => {
+                                          if (s.toProduction > 0) aggregatedGrid[size] = (aggregatedGrid[size] || 0) + s.toProduction;
+                                        });
+                                      });
+                                      return Object.entries(aggregatedGrid).map(([size, qty]) => (
+                                        <div key={size} className="flex flex-col items-center min-w-[24px] p-1 bg-slate-50 dark:bg-slate-900/50 rounded border border-slate-100 dark:border-slate-700">
+                                          <span className="text-[8px] font-black text-slate-400 leading-none mb-0.5">{size}</span>
+                                          <span className="text-[10px] font-black text-indigo-500 leading-none">{qty}</span>
+                                        </div>
+                                      ));
+                                    })()}
+                                  </div>
+                                </div>
+                                <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 shrink-0">{g.qty} P</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  <div className="mt-auto flex flex-col gap-4">
                     <button
-                      type="button"
-                      onClick={() => {
-                        const selected = purchaseNeeds.filter(n => n.type === 'SOLE' && selectedSoleNeedIds.has(n.id));
-                        if (selected.length === 0) return;
-                        const items = selected.map(need => {
-                          const initialGrid: Record<string, number> = {};
-                          Object.entries(need.sizeShortages || {}).forEach(([grade, s]: any) => {
-                            const falta = Math.max(0, (s.required || 0) - (s.stock || 0));
-                            if (falta > 0) initialGrid[grade] = falta;
-                          });
-                          return { moldId: need.moldId, colorId: need.colorId, initialGrid };
-                        }).filter(it => Object.keys(it.initialGrid).length > 0);
-                        if (items.length === 0) {
-                          toast.show('Nenhuma falta encontrada nos solados selecionados.');
-                          return;
-                        }
-                        if (onNavigate) {
-                          onNavigate(ViewType.PRODUCTION_SOLE_PURCHASE, {
-                            items,
-                            description: `Compra direta via PCP — ${items.length} solado${items.length > 1 ? 's' : ''} agrupados`
-                          });
-                        }
-                        setSelectedSoleNeedIds(new Set());
-                      }}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 active:scale-[0.98] transition-all"
+                      onClick={() => setSelectedOrderItems([])}
+                      className="w-full py-4 rounded-2xl bg-slate-50 dark:bg-slate-800 text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all"
                     >
-                      <ShoppingCart size={14} />
-                      Fazer a Compra
+                      Limpar Seleção
                     </button>
                     <button
-                      type="button"
-                      disabled={isRequestingBatch || !onRequestPurchase}
-                      onClick={async () => {
-                        if (!onRequestPurchase || isRequestingBatch) return;
-                        const selected = purchaseNeeds.filter(n => n.type === 'SOLE' && selectedSoleNeedIds.has(n.id));
-                        if (selected.length === 0) return;
-                        const requests = selected.map(need => {
-                          const sizeBreakdown: Record<string, number> = {};
-                          Object.entries(need.sizeShortages || {}).forEach(([grade, s]: any) => {
-                            const falta = Math.max(0, (s.required || 0) - (s.stock || 0));
-                            if (falta > 0) sizeBreakdown[grade] = falta;
-                          });
-                          return { need, sizeBreakdown };
-                        }).filter(r => Object.keys(r.sizeBreakdown).length > 0);
-                        if (requests.length === 0) {
-                          toast.show('Nenhuma falta encontrada nos solados selecionados.');
-                          return;
-                        }
-                        setIsRequestingBatch(true);
-                        try {
-                          for (const { need, sizeBreakdown } of requests) {
-                            await onRequestPurchase({
-                              requestKey: need.id,
-                              type: 'SOLE',
-                              name: need.name,
-                              unit: 'PAR',
-                              requiredQty: Object.values(sizeBreakdown).reduce((a, b) => a + b, 0),
-                              sizeBreakdown,
-                              status: 'PENDING',
-                              requestedAt: Date.now(),
-                              requestedBy: userName,
-                              contributingLots: need.contributingLots,
-                              moldId: need.moldId,
-                              colorId: need.colorId,
-                            });
-                          }
-                          toast.show(`Solicitação enviada para ${requests.length} solado${requests.length > 1 ? 's' : ''} com sucesso!`);
-                          setSelectedSoleNeedIds(new Set());
-                        } catch (err) {
-                          toast.show('Erro ao enviar solicitação agrupada.');
-                        } finally {
-                          setIsRequestingBatch(false);
-                        }
-                      }}
-                      className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                        isRequestingBatch
-                          ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                          : 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 active:scale-[0.98]'
-                      }`}
+                      onClick={handleBatchCreateLots}
+                      className="w-full py-6 bg-indigo-600 text-white rounded-[2rem] text-[11px] font-black uppercase tracking-[0.25em] shadow-2xl shadow-indigo-600/30 hover:scale-[1.02] active:scale-95 transition-all"
                     >
-                      {isRequestingBatch ? <Loader2 size={14} className="animate-spin" /> : <ClipboardList size={14} />}
-                      Solicitar ao Setor de Compras
+                      Criar 1 Mapa com Selecionados
                     </button>
+
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
 
-              <div className="flex flex-col gap-3">
-                {purchaseNeeds.length === 0 ? (
-                  <div className="py-20 flex flex-col items-center justify-center text-center gap-4">
-                    <div className="w-20 h-20 rounded-[2.5rem] bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
-                      <CheckCircle2 size={40} />
-                    </div>
-                    <div>
-                      <p className="text-sm font-black uppercase text-slate-900 dark:text-white">Produção Garantida</p>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Todo o material necessário para os mapas ativos está disponível em estoque.</p>
+      {activeTab === 'needs' && (
+        <div className="flex flex-col gap-6">
+          <div className={`p-8 rounded-[2.5rem] border-2 shadow-xl ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h3 className="text-xl font-black uppercase tracking-tight">Necessidades de Materiais</h3>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Requisitos de Produção vs Estoque — Inclui Solados</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const shortages = purchaseNeeds.filter(i =>
+                    i.type === 'MATERIAL'
+                      ? i.required > i.stock
+                      : i.sizeShortages
+                        ? Object.values(i.sizeShortages).some((s: any) => s.required > s.stock)
+                        : i.required > i.stock
+                  );
+                  const solesOk = purchaseNeeds.filter(i => i.type === 'SOLE' && !shortages.includes(i));
+                  return (
+                    <>
+                      {shortages.length > 0 && (
+                        <span className="px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 text-rose-500">
+                          {shortages.length} Falta{shortages.length > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {solesOk.length > 0 && (
+                        <span className="px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600">
+                          {solesOk.length} Solado{solesOk.length > 1 ? 's' : ''} OK
+                        </span>
+                      )}
+                      {purchaseNeeds.length === 0 && (
+                        <span className="px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-emerald-50 text-emerald-500">
+                          Tudo OK
+                        </span>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 mb-6">
+              <div className="flex flex-col gap-2">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Exibir necessidades de:</span>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { key: 'LOTS', label: 'Mapas', desc: 'Lotes ativos' },
+                    { key: 'ORDERS', label: 'Pedidos', desc: 'Todos pendentes' },
+                    { key: 'BOTH', label: 'Pedidos + Mapas', desc: 'Combinado' },
+                    { key: 'SELECTED_ORDERS', label: 'Por Pedido', desc: 'Escolha pedidos' },
+                  ] as { key: 'LOTS' | 'ORDERS' | 'BOTH' | 'SELECTED_ORDERS'; label: string; desc: string }[]).map(opt => {
+                    const active = needsSourceFilter === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        onClick={() => {
+                          setNeedsSourceFilter(opt.key);
+                          if (opt.key !== 'SELECTED_ORDERS') setSelectedNeedsOrderIds(new Set());
+                        }}
+                        className={`flex flex-col items-start px-4 py-3 rounded-2xl border-2 transition-all active:scale-95 ${active
+                            ? 'bg-indigo-600 border-indigo-600 shadow-lg shadow-indigo-600/20'
+                            : (isDarkMode ? 'bg-slate-800 border-slate-700 hover:border-indigo-500/50' : 'bg-white border-slate-200 hover:border-indigo-300')
+                          }`}
+                      >
+                        <span className={`text-[11px] font-black uppercase tracking-widest leading-none ${active ? 'text-white' : (isDarkMode ? 'text-slate-200' : 'text-slate-700')}`}>
+                          {opt.label}
+                        </span>
+                        <span className={`text-[9px] font-bold mt-1 leading-none ${active ? 'text-indigo-200' : 'text-slate-400'}`}>
+                          {opt.desc}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {needsSourceFilter === 'SELECTED_ORDERS' && (
+                <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className={`flex items-center justify-between px-4 py-2.5 border-b ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                      Selecionar pedidos
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {selectedNeedsOrderIds.size > 0 && (
+                        <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white">
+                          {selectedNeedsOrderIds.size} selecionado{selectedNeedsOrderIds.size > 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {selectedNeedsOrderIds.size > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedNeedsOrderIds(new Set())}
+                          className="text-[10px] font-bold text-slate-400 hover:text-rose-500 transition-colors uppercase tracking-widest"
+                        >
+                          Limpar
+                        </button>
+                      )}
                     </div>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-3">
-                    {(() => {
-                      // Group same materialId/moldId items together, sorted by group total shortage
-                      const groupMap = new Map<string, typeof purchaseNeeds>();
-                      purchaseNeeds.forEach(item => {
-                        const gk = item.type === 'MATERIAL'
-                          ? (item.materialId || item.id)
-                          : `SOLE_${item.moldId || item.id}`;
-                        if (!groupMap.has(gk)) groupMap.set(gk, []);
-                        groupMap.get(gk)!.push(item);
-                      });
-                      const sortedGroups = Array.from(groupMap.entries()).sort(([, ai], [, bi]) => {
-                        const as_ = ai.reduce((s, i) => s + Math.max(0, i.required - i.stock), 0);
-                        const bs_ = bi.reduce((s, i) => s + Math.max(0, i.required - i.stock), 0);
-                        return bs_ - as_;
-                      });
-                      // Build flat list enriched with group metadata
-                      type Enriched = typeof purchaseNeeds[0] & {
-                        _gk: string; _idx: number; _size: number;
-                        _gTotal: number; _gShortage: number; _gBaseName: string;
-                      };
-                      const flat: Enriched[] = [];
-                      sortedGroups.forEach(([gk, items]) => {
-                        const sorted = [...items].sort((a, b) => (b.required - b.stock) - (a.required - a.stock));
-                        const gTotal = sorted.reduce((s, i) => s + i.required, 0);
-                        const gShortage = sorted.reduce((s, i) => s + Math.max(0, i.required - i.stock), 0);
-                        const gBase = sorted[0].type === 'MATERIAL'
-                          ? (sorted[0].name || '').replace(/ — .*$/, '')
-                          : (sorted[0].name || '').split(' - ')[0];
-                        sorted.forEach((item, idx) => flat.push({ ...item, _gk: gk, _idx: idx, _size: sorted.length, _gTotal: gTotal, _gShortage: gShortage, _gBaseName: gBase }));
-                      });
-                      return flat;
-                    })().map((item) => {
-                      const isFirst  = item._idx === 0;
-                      const unitNoun = item.type === 'MATERIAL' ? 'cor' : 'variação';
-                      const isGroupCollapsed = collapsedGroupKeys.has(item._gk);
-                      const groupHeader = isFirst ? (
-                        <button
-                          key={`gh_${item._gk}`}
-                          type="button"
-                          onClick={() => toggleGroupCollapse(item._gk)}
-                          title={isGroupCollapsed ? `Expandir grupo ${item._gBaseName}` : `Recolher grupo ${item._gBaseName}`}
-                          aria-label={isGroupCollapsed ? `Expandir grupo ${item._gBaseName}` : `Recolher grupo ${item._gBaseName}`}
-                          className={`w-full flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-2xl border transition-all ${isDarkMode ? 'bg-slate-800 border-slate-600 hover:bg-slate-700' : 'bg-slate-200 border-slate-300 hover:bg-slate-300'}`}
-                        >
-                          <div className="flex items-center gap-2 flex-wrap min-w-0">
-                            <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-transform duration-300 ${isGroupCollapsed ? '' : 'rotate-180'} ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-300 text-slate-600'}`}>
-                              <ChevronDown size={14} strokeWidth={3} />
-                            </div>
-                            <span className={`text-[10px] font-black uppercase tracking-widest break-words ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item._gBaseName}</span>
-                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-600 text-slate-100' : 'bg-slate-700 text-white'}`}>{item._size} {item._size === 1 ? unitNoun : `${unitNoun}s`}</span>
-                          </div>
-                          <div className="flex items-center gap-3 shrink-0">
-                            <div className="text-right">
-                              <p className="text-[8px] font-black uppercase text-slate-400">Total necessário</p>
-                              <p className={`text-[11px] font-black ${item._gShortage > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{/m[²2]/i.test(item.unit || '') ? item._gTotal.toFixed(2) : Math.round(item._gTotal)} {item.unit}</p>
-                            </div>
-                            {isGroupCollapsed && (
-                              <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-300 text-slate-500'}`}>Recolhido</span>
-                            )}
-                          </div>
-                        </button>
-                      ) : null;
-                      const fmtQty = (val: number) => /m[²2]/i.test(item.unit || '') ? Number(val).toFixed(2) : String(Math.round(val));
-                      const isExpanded = expandedNeedIds.has(item.id);
-
-                      // Existing purchase request
-                      const existingReqOuter = purchaseRequests.find(r => r.requestKey === item.id && r.status !== 'RECEIVED');
-
-                      // Quick shortage (real stock, no color fallback)
-                      const realGradeStockOuter: Record<string, number> = {};
-                      if (item.type === 'SOLE') {
-                        soleStock
-                          .filter(s => s.moldId === item.moldId && String(s.colorId || '').trim() === String(item.colorId || '').trim())
-                          .forEach(e => {
-                            Object.entries(e.stock).forEach(([k, v]) => {
-                              const key = String(k).trim();
-                              if (key === 'pesagem' || key === 'total') return;
-                              realGradeStockOuter[key] = (realGradeStockOuter[key] || 0) + (Number(v) || 0);
-                            });
-                          });
-                      }
-                      const quickShortage = item.type === 'SOLE' && item.sizeShortages
-                        ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
-                            const req = (item.sizeShortages as any)[grade].required;
-                            const stk = realGradeStockOuter[grade] || 0;
-                            return s + Math.max(0, req - stk);
-                          }, 0)
-                        : Math.max(0, item.required - item.stock);
-
-                      // In-transit quantities for this mold
-                      const inTransitOuter: Record<string, number> = {};
-                      if (item.type === 'SOLE') {
-                        purchases.filter(p => {
-                          if (p.registerAsReceived === true) return false;
-                          const si: any[] = (p as any).soleItems || (p as any).items || [];
-                          return si.some((s: any) => s.moldId);
-                        }).forEach(p => {
-                          const allItems: any[] = (p as any).soleItems || (p as any).items || [];
-                          allItems
-                            .filter((si: any) =>
-                              si.moldId &&
-                              String(si.moldId).trim() === String(item.moldId).trim() &&
-                              String(si.colorId || '').trim() === String(item.colorId || '').trim()
-                            )
-                            .forEach((si: any) => {
-                              Object.entries(si.quantities || {}).forEach(([size, qty]: [string, any]) => {
-                                const q = Number(qty) || 0;
-                                if (q > 0) inTransitOuter[size] = (inTransitOuter[size] || 0) + q;
+                  {pendingOrders.length === 0 ? (
+                    <div className="px-4 py-5 text-center text-xs text-slate-400">
+                      Nenhum pedido pendente encontrado.
+                    </div>
+                  ) : (
+                    <div className="flex flex-col divide-y divide-slate-200 dark:divide-slate-700 max-h-64 overflow-y-auto">
+                      {pendingOrders.map(order => {
+                        const isSelected = selectedNeedsOrderIds.has(order.id);
+                        const orderItems = pendingItems.filter(i => i.orderId === order.id);
+                        const totalPairs = orderItems.reduce((s, i) => s + (i.toProductionQty || 0), 0);
+                        return (
+                          <button
+                            key={order.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedNeedsOrderIds(prev => {
+                                const next = new Set(prev);
+                                if (next.has(order.id)) next.delete(order.id);
+                                else next.add(order.id);
+                                return next;
                               });
-                            });
+                            }}
+                            className={`flex items-center gap-3 px-4 py-3 text-left transition-colors ${isSelected
+                                ? isDarkMode ? 'bg-indigo-900/40' : 'bg-indigo-50'
+                                : isDarkMode ? 'hover:bg-slate-700/50' : 'hover:bg-white'
+                              }`}
+                          >
+                            <div className={`w-4 h-4 rounded flex-shrink-0 border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-indigo-600 border-indigo-600' : isDarkMode ? 'border-slate-600' : 'border-slate-300'
+                              }`}>
+                              {isSelected && (
+                                <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 10 10" stroke="currentColor" strokeWidth={2.5}>
+                                  <path d="M1.5 5l2.5 2.5 4.5-4.5" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                                  Pedido #{order.saleOrderNumber || order.orderNumber}
+                                </span>
+                                {order.customerName && (
+                                  <span className="text-[10px] font-bold text-slate-400 truncate">
+                                    — {order.customerName}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-3 mt-0.5">
+                                <span className="text-[10px] text-slate-400">
+                                  {orderItems.length} item{orderItems.length !== 1 ? 's' : ''}
+                                </span>
+                                <span className="text-[10px] font-bold text-indigo-500">
+                                  {totalPairs} par{totalPairs !== 1 ? 'es' : ''}
+                                </span>
+                                {order.deliveryDate && (
+                                  <span className="text-[10px] text-slate-400">
+                                    Entrega: {new Date(order.deliveryDate).toLocaleDateString('pt-BR')}
+                                  </span>
+                                )}
+                                {order.createdAt && (
+                                  <span className="text-[10px] text-slate-400">
+                                    Criado: {new Date(order.createdAt).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {selectedNeedsOrderIds.size === 0 && pendingOrders.length > 0 && (
+                    <div className={`px-4 py-2.5 border-t text-[10px] text-slate-400 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                      Selecione um ou mais pedidos para ver a necessidade de solados.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {selectedSoleNeedIds.size > 0 && (
+              <div className={`flex flex-col gap-3 px-5 py-4 mb-4 rounded-2xl border ${isDarkMode ? 'bg-indigo-950/30 border-indigo-800' : 'bg-indigo-50 border-indigo-200'}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white">
+                      {selectedSoleNeedIds.size} selecionado{selectedSoleNeedIds.size > 1 ? 's' : ''}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Solicitação agrupada</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSoleNeedIds(new Set())}
+                    className="px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    Limpar
+                  </button>
+                </div>
+                <div className="flex flex-col sm:flex-row items-stretch gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const selected = purchaseNeeds.filter(n => n.type === 'SOLE' && selectedSoleNeedIds.has(n.id));
+                      if (selected.length === 0) return;
+                      const items = selected.map(need => {
+                        const initialGrid: Record<string, number> = {};
+                        Object.entries(need.sizeShortages || {}).forEach(([grade, s]: any) => {
+                          const falta = Math.max(0, (s.required || 0) - (s.stock || 0));
+                          if (falta > 0) initialGrid[grade] = falta;
+                        });
+                        return { moldId: need.moldId, colorId: need.colorId, initialGrid };
+                      }).filter(it => Object.keys(it.initialGrid).length > 0);
+                      if (items.length === 0) {
+                        toast.show('Nenhuma falta encontrada nos solados selecionados.');
+                        return;
+                      }
+                      if (onNavigate) {
+                        onNavigate(ViewType.PRODUCTION_SOLE_PURCHASE, {
+                          items,
+                          description: `Compra direta via PCP — ${items.length} solado${items.length > 1 ? 's' : ''} agrupados`
                         });
                       }
-                      const totalInTransitOuter = Object.values(inTransitOuter).reduce((a, b) => a + b, 0);
-                      const realToComprarOuter = item.type === 'SOLE' && item.sizeShortages
-                        ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
-                            const req = (item.sizeShortages as any)[grade].required;
-                            const stk = realGradeStockOuter[grade] || 0;
-                            const transit = inTransitOuter[grade] || 0;
-                            return s + Math.max(0, req - stk - transit);
-                          }, 0)
-                        : Math.max(0, quickShortage - totalInTransitOuter);
+                      setSelectedSoleNeedIds(new Set());
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 active:scale-[0.98] transition-all"
+                  >
+                    <ShoppingCart size={14} />
+                    Fazer a Compra
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isRequestingBatch || !onRequestPurchase}
+                    onClick={async () => {
+                      if (!onRequestPurchase || isRequestingBatch) return;
+                      const selected = purchaseNeeds.filter(n => n.type === 'SOLE' && selectedSoleNeedIds.has(n.id));
+                      if (selected.length === 0) return;
+                      const requests = selected.map(need => {
+                        const sizeBreakdown: Record<string, number> = {};
+                        Object.entries(need.sizeShortages || {}).forEach(([grade, s]: any) => {
+                          const falta = Math.max(0, (s.required || 0) - (s.stock || 0));
+                          if (falta > 0) sizeBreakdown[grade] = falta;
+                        });
+                        return { need, sizeBreakdown };
+                      }).filter(r => Object.keys(r.sizeBreakdown).length > 0);
+                      if (requests.length === 0) {
+                        toast.show('Nenhuma falta encontrada nos solados selecionados.');
+                        return;
+                      }
+                      setIsRequestingBatch(true);
+                      try {
+                        for (const { need, sizeBreakdown } of requests) {
+                          await onRequestPurchase({
+                            requestKey: need.id,
+                            type: 'SOLE',
+                            name: need.name,
+                            unit: 'PAR',
+                            requiredQty: Object.values(sizeBreakdown).reduce((a, b) => a + b, 0),
+                            sizeBreakdown,
+                            status: 'PENDING',
+                            requestedAt: Date.now(),
+                            requestedBy: userName,
+                            contributingLots: need.contributingLots,
+                            moldId: need.moldId,
+                            colorId: need.colorId,
+                          });
+                        }
+                        toast.show(`Solicitação enviada para ${requests.length} solado${requests.length > 1 ? 's' : ''} com sucesso!`);
+                        setSelectedSoleNeedIds(new Set());
+                      } catch (err) {
+                        toast.show('Erro ao enviar solicitação agrupada.');
+                      } finally {
+                        setIsRequestingBatch(false);
+                      }
+                    }}
+                    className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isRequestingBatch
+                        ? 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                        : 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 active:scale-[0.98]'
+                      }`}
+                  >
+                    {isRequestingBatch ? <Loader2 size={14} className="animate-spin" /> : <ClipboardList size={14} />}
+                    Solicitar ao Setor de Compras
+                  </button>
+                </div>
+              </div>
+            )}
 
-                      // If the group is collapsed, only render the header for the first item
-                      if (isGroupCollapsed && !isFirst) return null;
+            <div className="flex flex-col gap-3">
+              {purchaseNeeds.length === 0 ? (
+                <div className="py-20 flex flex-col items-center justify-center text-center gap-4">
+                  <div className="w-20 h-20 rounded-[2.5rem] bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+                    <CheckCircle2 size={40} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-black uppercase text-slate-900 dark:text-white">Produção Garantida</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Todo o material necessário para os mapas ativos está disponível em estoque.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3">
+                  {(() => {
+                    // Group same materialId/moldId items together, sorted by group total shortage
+                    const groupMap = new Map<string, typeof purchaseNeeds>();
+                    purchaseNeeds.forEach(item => {
+                      const gk = item.type === 'MATERIAL'
+                        ? (item.materialId || item.id)
+                        : `SOLE_${item.moldId || item.id}`;
+                      if (!groupMap.has(gk)) groupMap.set(gk, []);
+                      groupMap.get(gk)!.push(item);
+                    });
+                    const sortedGroups = Array.from(groupMap.entries()).sort(([, ai], [, bi]) => {
+                      const as_ = ai.reduce((s, i) => s + Math.max(0, i.required - i.stock), 0);
+                      const bs_ = bi.reduce((s, i) => s + Math.max(0, i.required - i.stock), 0);
+                      return bs_ - as_;
+                    });
+                    // Build flat list enriched with group metadata
+                    type Enriched = typeof purchaseNeeds[0] & {
+                      _gk: string; _idx: number; _size: number;
+                      _gTotal: number; _gShortage: number; _gBaseName: string;
+                    };
+                    const flat: Enriched[] = [];
+                    sortedGroups.forEach(([gk, items]) => {
+                      const sorted = [...items].sort((a, b) => (b.required - b.stock) - (a.required - a.stock));
+                      const gTotal = sorted.reduce((s, i) => s + i.required, 0);
+                      const gShortage = sorted.reduce((s, i) => s + Math.max(0, i.required - i.stock), 0);
+                      const gBase = sorted[0].type === 'MATERIAL'
+                        ? (sorted[0].name || '').replace(/ — .*$/, '')
+                        : (sorted[0].name || '').split(' - ')[0];
+                      sorted.forEach((item, idx) => flat.push({ ...item, _gk: gk, _idx: idx, _size: sorted.length, _gTotal: gTotal, _gShortage: gShortage, _gBaseName: gBase }));
+                    });
+                    return flat;
+                  })().map((item) => {
+                    const isFirst = item._idx === 0;
+                    const unitNoun = item.type === 'MATERIAL' ? 'cor' : 'variação';
+                    const isGroupCollapsed = collapsedGroupKeys.has(item._gk);
+                    const groupHeader = isFirst ? (
+                      <button
+                        key={`gh_${item._gk}`}
+                        type="button"
+                        onClick={() => toggleGroupCollapse(item._gk)}
+                        title={isGroupCollapsed ? `Expandir grupo ${item._gBaseName}` : `Recolher grupo ${item._gBaseName}`}
+                        aria-label={isGroupCollapsed ? `Expandir grupo ${item._gBaseName}` : `Recolher grupo ${item._gBaseName}`}
+                        className={`w-full flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-2xl border transition-all ${isDarkMode ? 'bg-slate-800 border-slate-600 hover:bg-slate-700' : 'bg-slate-200 border-slate-300 hover:bg-slate-300'}`}
+                      >
+                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                          <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-transform duration-300 ${isGroupCollapsed ? '' : 'rotate-180'} ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-300 text-slate-600'}`}>
+                            <ChevronDown size={14} strokeWidth={3} />
+                          </div>
+                          <span className={`text-[10px] font-black uppercase tracking-widest break-words ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item._gBaseName}</span>
+                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-600 text-slate-100' : 'bg-slate-700 text-white'}`}>{item._size} {item._size === 1 ? unitNoun : `${unitNoun}s`}</span>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="text-right">
+                            <p className="text-[8px] font-black uppercase text-slate-400">Total necessário</p>
+                            <p className={`text-[11px] font-black ${item._gShortage > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{/m[²2]/i.test(item.unit || '') ? item._gTotal.toFixed(2) : Math.round(item._gTotal)} {item.unit}</p>
+                          </div>
+                          {isGroupCollapsed && (
+                            <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-300 text-slate-500'}`}>Recolhido</span>
+                          )}
+                        </div>
+                      </button>
+                    ) : null;
+                    const fmtQty = (val: number) => /m[²2]/i.test(item.unit || '') ? Number(val).toFixed(2) : String(Math.round(val));
+                    const isExpanded = expandedNeedIds.has(item.id);
 
-                      return (
-                        <React.Fragment key={item.id}>
-                          {groupHeader}
-                          {isGroupCollapsed ? null : <>
-                        <div
-                          className={`rounded-[2rem] border-2 transition-all overflow-hidden ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-white shadow-sm'} ${isExpanded ? 'border-indigo-300 dark:border-indigo-700' : ''}`}
-                        >
-                          {/* ── Acordeão Header (clicável) ── */}
-                          <button
-                            type="button"
-                            onClick={() => toggleNeedExpand(item.id)}
-                            title={isExpanded ? `Recolher detalhes de ${item.name}` : `Expandir detalhes de ${item.name}`}
-                            aria-label={isExpanded ? `Recolher detalhes de ${item.name}` : `Expandir detalhes de ${item.name}`}
-                            className={`w-full flex flex-col gap-3 px-5 py-4 text-left transition-colors ${isExpanded ? isDarkMode ? 'bg-indigo-950/30' : 'bg-indigo-50/60' : ''}`}
+                    // Existing purchase request
+                    const existingReqOuter = purchaseRequests.find(r => r.requestKey === item.id && r.status !== 'RECEIVED');
+
+                    // Quick shortage (real stock, no color fallback)
+                    const realGradeStockOuter: Record<string, number> = {};
+                    if (item.type === 'SOLE') {
+                      soleStock
+                        .filter(s => s.moldId === item.moldId && String(s.colorId || '').trim() === String(item.colorId || '').trim())
+                        .forEach(e => {
+                          Object.entries(e.stock).forEach(([k, v]) => {
+                            const key = String(k).trim();
+                            if (key === 'pesagem' || key === 'total') return;
+                            realGradeStockOuter[key] = (realGradeStockOuter[key] || 0) + (Number(v) || 0);
+                          });
+                        });
+                    }
+                    const quickShortage = item.type === 'SOLE' && item.sizeShortages
+                      ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
+                        const req = (item.sizeShortages as any)[grade].required;
+                        const stk = realGradeStockOuter[grade] || 0;
+                        return s + Math.max(0, req - stk);
+                      }, 0)
+                      : Math.max(0, item.required - item.stock);
+
+                    // In-transit quantities for this mold
+                    const inTransitOuter: Record<string, number> = {};
+                    if (item.type === 'SOLE') {
+                      purchases.filter(p => {
+                        if (p.registerAsReceived === true) return false;
+                        const si: any[] = (p as any).soleItems || (p as any).items || [];
+                        return si.some((s: any) => s.moldId);
+                      }).forEach(p => {
+                        const allItems: any[] = (p as any).soleItems || (p as any).items || [];
+                        allItems
+                          .filter((si: any) =>
+                            si.moldId &&
+                            String(si.moldId).trim() === String(item.moldId).trim() &&
+                            String(si.colorId || '').trim() === String(item.colorId || '').trim()
+                          )
+                          .forEach((si: any) => {
+                            Object.entries(si.quantities || {}).forEach(([size, qty]: [string, any]) => {
+                              const q = Number(qty) || 0;
+                              if (q > 0) inTransitOuter[size] = (inTransitOuter[size] || 0) + q;
+                            });
+                          });
+                      });
+                    }
+                    const totalInTransitOuter = Object.values(inTransitOuter).reduce((a, b) => a + b, 0);
+                    const realToComprarOuter = item.type === 'SOLE' && item.sizeShortages
+                      ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
+                        const req = (item.sizeShortages as any)[grade].required;
+                        const stk = realGradeStockOuter[grade] || 0;
+                        const transit = inTransitOuter[grade] || 0;
+                        return s + Math.max(0, req - stk - transit);
+                      }, 0)
+                      : Math.max(0, quickShortage - totalInTransitOuter);
+
+                    // If the group is collapsed, only render the header for the first item
+                    if (isGroupCollapsed && !isFirst) return null;
+
+                    return (
+                      <React.Fragment key={item.id}>
+                        {groupHeader}
+                        {isGroupCollapsed ? null : <>
+                          <div
+                            className={`rounded-[2rem] border-2 transition-all overflow-hidden ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-white shadow-sm'} ${isExpanded ? 'border-indigo-300 dark:border-indigo-700' : ''}`}
                           >
-                            {/* ── Linha 1: checkbox + ícone + tipo + nome + chevron ── */}
-                            <div className="flex items-center gap-3">
-                              {item.type === 'SOLE' && quickShortage > 0 && !existingReqOuter && (
-                                <span
-                                  role="checkbox"
-                                  aria-checked={selectedSoleNeedIds.has(item.id)}
-                                  tabIndex={0}
-                                  onClick={(e) => { e.stopPropagation(); toggleSoleNeedSelection(item.id); }}
-                                  onKeyDown={(e) => { if (e.key === ' ') { e.stopPropagation(); toggleSoleNeedSelection(item.id); } }}
-                                  title="Selecionar para compra agrupada"
-                                  className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition-colors ${
-                                    selectedSoleNeedIds.has(item.id)
-                                      ? 'bg-indigo-600 border-indigo-600 text-white'
-                                      : isDarkMode ? 'border-slate-700 hover:border-indigo-500' : 'border-slate-300 hover:border-indigo-400'
-                                  }`}
-                                >
-                                  {selectedSoleNeedIds.has(item.id) && <CheckCircle2 size={14} strokeWidth={3} />}
-                                </span>
-                              )}
-                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.type === 'SOLE' ? 'bg-indigo-100 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'}`}>
-                                {item.type === 'SOLE' ? <Layers size={18} /> : <Package size={18} />}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className={`text-[10px] font-black uppercase tracking-widest leading-none mb-1 ${item.type === 'SOLE' ? 'text-indigo-500' : 'text-amber-600 dark:text-amber-400'}`}>
-                                  {item.type === 'SOLE' ? 'Solado' : 'Material'}
-                                </p>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  {quickShortage > 0 && (
-                                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
-                                  )}
-                                  <p className={`text-sm font-black uppercase leading-tight ${quickShortage > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}`}>
-                                    {item.type === 'SOLE' ? item.name.split(' - ')[0] : item.name}
+                            {/* ── Acordeão Header (clicável) ── */}
+                            <button
+                              type="button"
+                              onClick={() => toggleNeedExpand(item.id)}
+                              title={isExpanded ? `Recolher detalhes de ${item.name}` : `Expandir detalhes de ${item.name}`}
+                              aria-label={isExpanded ? `Recolher detalhes de ${item.name}` : `Expandir detalhes de ${item.name}`}
+                              className={`w-full flex flex-col gap-3 px-5 py-4 text-left transition-colors ${isExpanded ? isDarkMode ? 'bg-indigo-950/30' : 'bg-indigo-50/60' : ''}`}
+                            >
+                              {/* ── Linha 1: checkbox + ícone + tipo + nome + chevron ── */}
+                              <div className="flex items-center gap-3">
+                                {item.type === 'SOLE' && quickShortage > 0 && !existingReqOuter && (
+                                  <span
+                                    role="checkbox"
+                                    aria-checked={selectedSoleNeedIds.has(item.id)}
+                                    tabIndex={0}
+                                    onClick={(e) => { e.stopPropagation(); toggleSoleNeedSelection(item.id); }}
+                                    onKeyDown={(e) => { if (e.key === ' ') { e.stopPropagation(); toggleSoleNeedSelection(item.id); } }}
+                                    title="Selecionar para compra agrupada"
+                                    className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition-colors ${selectedSoleNeedIds.has(item.id)
+                                        ? 'bg-indigo-600 border-indigo-600 text-white'
+                                        : isDarkMode ? 'border-slate-700 hover:border-indigo-500' : 'border-slate-300 hover:border-indigo-400'
+                                      }`}
+                                  >
+                                    {selectedSoleNeedIds.has(item.id) && <CheckCircle2 size={14} strokeWidth={3} />}
+                                  </span>
+                                )}
+                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.type === 'SOLE' ? 'bg-indigo-100 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+                                  {item.type === 'SOLE' ? <Layers size={18} /> : <Package size={18} />}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-[10px] font-black uppercase tracking-widest leading-none mb-1 ${item.type === 'SOLE' ? 'text-indigo-500' : 'text-amber-600 dark:text-amber-400'}`}>
+                                    {item.type === 'SOLE' ? 'Solado' : 'Material'}
                                   </p>
-                                  {item.type === 'SOLE' && (() => {
-                                    const colorName = item.name.split(' - ').slice(1).join(' - ');
-                                    return colorName ? (
-                                      <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-indigo-950/40 border-indigo-800 text-indigo-300' : 'bg-indigo-50 border-indigo-200 text-indigo-700'}`}>
-                                        {colorName}
-                                      </span>
-                                    ) : null;
-                                  })()}
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    {quickShortage > 0 && (
+                                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
+                                    )}
+                                    <p className={`text-sm font-black uppercase leading-tight ${quickShortage > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}`}>
+                                      {item.type === 'SOLE' ? item.name.split(' - ')[0] : item.name}
+                                    </p>
+                                    {item.type === 'SOLE' && (() => {
+                                      const colorName = item.name.split(' - ').slice(1).join(' - ');
+                                      return colorName ? (
+                                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-indigo-950/40 border-indigo-800 text-indigo-300' : 'bg-indigo-50 border-indigo-200 text-indigo-700'}`}>
+                                          {colorName}
+                                        </span>
+                                      ) : null;
+                                    })()}
+                                  </div>
+                                </div>
+                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                                  <ChevronDown size={16} strokeWidth={2.5} />
                                 </div>
                               </div>
-                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
-                                <ChevronDown size={16} strokeWidth={2.5} />
-                              </div>
-                            </div>
 
-                            {/* ── Linha 3: referência de mapas/pedidos + alerta falta ── */}
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                              <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                                {formatContributingSources(item.contributingLots, item.contributingOrders)}
-                              </span>
-                              {item.mappingWarning && (
-                                <span
-                                  role="button"
-                                  tabIndex={0}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setMappingDiagnosticCopied(false);
-                                    setMappingWarningModal({ itemName: item.name, reason: item.mappingWarning!, diagnostic: item.mappingDiagnostic || '' });
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
+                              {/* ── Linha 3: referência de mapas/pedidos + alerta falta ── */}
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
+                                  {formatContributingSources(item.contributingLots, item.contributingOrders)}
+                                </span>
+                                {item.mappingWarning && (
+                                  <span
+                                    role="button"
+                                    tabIndex={0}
+                                    onClick={(e) => {
                                       e.stopPropagation();
                                       setMappingDiagnosticCopied(false);
                                       setMappingWarningModal({ itemName: item.name, reason: item.mappingWarning!, diagnostic: item.mappingDiagnostic || '' });
-                                    }
-                                  }}
-                                  title="Clique para ver o motivo"
-                                  className="text-[10px] font-black text-amber-500 uppercase tracking-widest underline decoration-dotted cursor-pointer hover:text-amber-600"
-                                >
-                                  ⚠ Cruzamento desatualizado
-                                </span>
-                              )}
-                            </div>
-                          </button>
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter' || e.key === ' ') {
+                                        e.stopPropagation();
+                                        setMappingDiagnosticCopied(false);
+                                        setMappingWarningModal({ itemName: item.name, reason: item.mappingWarning!, diagnostic: item.mappingDiagnostic || '' });
+                                      }
+                                    }}
+                                    title="Clique para ver o motivo"
+                                    className="text-[10px] font-black text-amber-500 uppercase tracking-widest underline decoration-dotted cursor-pointer hover:text-amber-600"
+                                  >
+                                    ⚠ Cruzamento desatualizado
+                                  </span>
+                                )}
+                              </div>
+                            </button>
 
-                          {/* ── Linha 4: quantidade + botão de ação (FORA do button para evitar button-in-button) ── */}
-                          <div
-                            className={`flex items-center justify-between px-5 pb-4 pt-1 border-t border-slate-100 dark:border-slate-800 cursor-pointer`}
-                            onClick={() => toggleNeedExpand(item.id)}
-                          >
+                            {/* ── Linha 4: quantidade + botão de ação (FORA do button para evitar button-in-button) ── */}
+                            <div
+                              className={`flex items-center justify-between px-5 pb-4 pt-1 border-t border-slate-100 dark:border-slate-800 cursor-pointer`}
+                              onClick={() => toggleNeedExpand(item.id)}
+                            >
                               <div>
                                 <p className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none mb-0.5">Falta</p>
                                 <p className="text-2xl font-black text-rose-600 dark:text-rose-400 leading-none">
@@ -5730,589 +5524,635 @@ export default function PCPView({
                                       setIsSoleOrderModalOpen(true);
                                     }
                                   }}
-                                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${
-                                    requestingId === item.id
+                                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${requestingId === item.id
                                       ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-wait'
                                       : 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30'
-                                  }`}
+                                    }`}
                                 >
                                   {requestingId === item.id ? <Loader2 size={12} className="animate-spin" /> : <ArrowUpRight size={12} strokeWidth={3} />}
                                   Solicitar
                                 </button>
                               ) : null}
-                          </div>
+                            </div>
 
-                          {/* ── Conteúdo expansível ── */}
-                          {isExpanded && (
-                          <div className={`px-6 pb-6 pt-2 flex flex-col gap-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                          {/* Badges */}
-                          <div className="flex flex-wrap items-center gap-2">
-                              {item.type !== 'SOLE' && (
-                                <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                  Estoque: {fmtQty(item.stock)} {item.unit}
-                                </span>
-                              )}
-                              {item.type === 'SOLE' && (() => {
-                                const hasSoleShortage = item.sizeShortages
-                                  ? Object.values(item.sizeShortages).some((s: any) => s.required > s.stock)
-                                  : item.required > item.stock;
-                                return (
-                                  <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg border ${
-                                    hasSoleShortage
-                                      ? 'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800'
-                                      : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800'
-                                  }`}>
-                                    {hasSoleShortage ? '⚠ Falta Solado' : '✓ Solado OK'}
+                            {/* ── Conteúdo expansível ── */}
+                            {isExpanded && (
+                              <div className={`px-6 pb-6 pt-2 flex flex-col gap-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                                {/* Badges */}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {item.type !== 'SOLE' && (
+                                    <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-600'}`}>
+                                      Estoque: {fmtQty(item.stock)} {item.unit}
+                                    </span>
+                                  )}
+                                  {item.type === 'SOLE' && (() => {
+                                    const hasSoleShortage = item.sizeShortages
+                                      ? Object.values(item.sizeShortages).some((s: any) => s.required > s.stock)
+                                      : item.required > item.stock;
+                                    return (
+                                      <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg border ${hasSoleShortage
+                                          ? 'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800'
+                                          : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800'
+                                        }`}>
+                                        {hasSoleShortage ? '⚠ Falta Solado' : '✓ Solado OK'}
+                                      </span>
+                                    );
+                                  })()}
+                                  <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
+                                    {formatContributingSources(item.contributingLots, item.contributingOrders)}
                                   </span>
-                                );
-                              })()}
-                              <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
-                                {formatContributingSources(item.contributingLots, item.contributingOrders)}
-                              </span>
+                                </div>
+
+                                {/* Tabela de grades de solado */}
+                                {item.type === 'SOLE' && item.sizeShortages && (() => {
+                                  // Total necessário = soma de todos os tamanhos do mapa para este molde
+                                  const totReq = Object.values(item.sizeShortages as any)
+                                    .reduce((s: number, v: any) => s + v.required, 0) as number;
+
+                                  // Estoque EXCLUSIVO por moldId + colorId (sem fallback para outras cores)
+                                  const gradeStock: Record<string, number> = {};
+                                  soleStock
+                                    .filter(s => s.moldId === item.moldId && String(s.colorId || '').trim() === String(item.colorId || '').trim())
+                                    .forEach(e => {
+                                      Object.entries(e.stock).forEach(([k, v]) => {
+                                        const key = String(k).trim();
+                                        if (key === 'pesagem' || key === 'total') return;
+                                        gradeStock[key] = (gradeStock[key] || 0) + (Number(v) || 0);
+                                      });
+                                    });
+
+                                  const totEst = Object.values(gradeStock).reduce((s, v) => s + v, 0);
+                                  const totFalta = Math.max(0, totReq - totEst);
+
+                                  // Unir chaves do estoque com as chaves de necessidade do PCP
+                                  const allSizes = new Set([
+                                    ...Object.keys(gradeStock),
+                                    ...Object.keys(item.sizeShortages || {})
+                                  ]);
+                                  const gradeKeys = Array.from(allSizes).sort((a, b) => {
+                                    const numA = parseFloat(a);
+                                    const numB = parseFloat(b);
+                                    if (isNaN(numA) || isNaN(numB)) return a.localeCompare(b);
+                                    return numA - numB;
+                                  });
+
+                                  return (
+                                    <div className={`rounded-2xl overflow-hidden border ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                                      {/* Header - 4 Colunas para alinhar com totais */}
+                                      <div className={`grid grid-cols-4 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                                        <span>Grade Sola</span>
+                                        <span className="text-center">Estoque</span>
+                                        <span className="text-center">Necess.</span>
+                                        <span className="text-right">Falta</span>
+                                      </div>
+                                      {gradeKeys.length > 0 ? gradeKeys.map(grade => {
+                                        const stock = gradeStock[grade] || 0;
+                                        const req = item.sizeShortages?.[grade]?.required || 0;
+                                        const shortage = Math.max(0, req - stock);
+
+                                        return (
+                                          <div key={grade} className={`grid grid-cols-4 px-4 py-3 border-t text-[13px] font-black ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
+                                            <span className={isDarkMode ? 'text-white' : 'text-slate-800'}>{grade}</span>
+                                            <span className={`text-center ${stock > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{stock}</span>
+                                            <span className="text-center text-slate-400">{req}</span>
+                                            <span className={`text-right ${shortage > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
+                                              {shortage > 0 ? `-${shortage}` : '✓'}
+                                            </span>
+                                          </div>
+                                        );
+                                      }) : (
+                                        <div className={`px-4 py-3 border-t text-[11px] text-slate-400 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
+                                          Sem grade de sola cadastrada
+                                        </div>
+                                      )}
+                                      {/* Linha de totais */}
+                                      <div className={`grid grid-cols-4 px-4 py-3 border-t-2 text-[12px] font-black ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
+                                        <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Total</span>
+                                        <span className={`text-center font-black ${totEst > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{totEst}</span>
+                                        <span className="text-center text-slate-500">{totReq}</span>
+                                        <span className={`text-right font-black text-[14px] ${totFalta > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
+                                          {totFalta > 0 ? `-${totFalta}` : '✓'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+
+                                {/* Tabela de detalhamento por mapa/pedido — só para MATERIAL */}
+                                {item.type === 'MATERIAL' && item.sourceBreakdown && Object.keys(item.sourceBreakdown).length > 0 && (() => {
+                                  const sources = Object.values(item.sourceBreakdown);
+                                  const totalPairs = sources.reduce((s, src) => s + src.pairs, 0);
+                                  return (
+                                    <div className={`rounded-2xl overflow-hidden border ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                                      <div className={`grid grid-cols-4 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
+                                        <span>Origem</span>
+                                        <span className="text-center">Pares</span>
+                                        <span className="text-center">Consumo/Par</span>
+                                        <span className="text-right">Subtotal</span>
+                                      </div>
+                                      {sources.map(src => {
+                                        const perUnit = src.pairs > 0 ? src.increment / src.pairs : 0;
+                                        return (
+                                          <div key={`${src.sourceType}_${src.label}`} className={`grid grid-cols-4 px-4 py-3 border-t text-[12px] font-black ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
+                                            <span className={isDarkMode ? 'text-white' : 'text-slate-800'}>{src.sourceType === 'LOT' ? 'Mapa' : 'Pedido'} {src.label}</span>
+                                            <span className="text-center text-slate-400">{fmtQty(src.pairs)}</span>
+                                            <span className="text-center text-slate-400">{perUnit.toLocaleString('pt-BR', { minimumFractionDigits: 4 })}</span>
+                                            <span className={isDarkMode ? 'text-right text-white' : 'text-right text-slate-800'}>{fmtQty(src.increment)} {item.unit}</span>
+                                          </div>
+                                        );
+                                      })}
+                                      <div className={`grid grid-cols-4 px-4 py-3 border-t-2 text-[12px] font-black ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
+                                        <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Total</span>
+                                        <span className="text-center text-slate-500">{fmtQty(totalPairs)}</span>
+                                        <span />
+                                        <span className={`text-right text-[14px] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{fmtQty(item.required)} {item.unit}</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+
+                                {/* Rodapé: a comprar + botão solicitar */}
+                                {(() => {
+                                  const existingReq = purchaseRequests.find(r => r.requestKey === item.id && r.status !== 'RECEIVED');
+
+                                  // Estoque real EXCLUSIVO por moldId + colorId (sem fallback para outras cores)
+                                  let realGradeStock: Record<string, number> = {};
+                                  if (item.type === 'SOLE') {
+                                    soleStock
+                                      .filter(s => s.moldId === item.moldId && String(s.colorId || '').trim() === String(item.colorId || '').trim())
+                                      .forEach(e => {
+                                        Object.entries(e.stock).forEach(([k, v]) => {
+                                          const key = String(k).trim();
+                                          if (key === 'pesagem' || key === 'total') return;
+                                          realGradeStock[key] = (realGradeStock[key] || 0) + (Number(v) || 0);
+                                        });
+                                      });
+                                  }
+
+                                  // Falta real usando estoque do soleStock (corrige o bug dos 60 → 7)
+                                  const totalFaltaSole = item.type === 'SOLE' && item.sizeShortages
+                                    ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
+                                      const req = (item.sizeShortages as any)[grade].required;
+                                      const stock = realGradeStock[grade] || 0;
+                                      return s + Math.max(0, req - stock);
+                                    }, 0)
+                                    : Math.max(0, item.required - item.stock);
+
+                                  const displayQty = item.type === 'SOLE' ? totalFaltaSole : item.required;
+                                  const displayLabel = item.type === 'SOLE' ? 'A Comprar' : 'Necessário';
+
+                                  // Verifica compras de solado pendentes para este molde (qualquer cor ou cor específica)
+                                  const inTransitQtys: Record<string, number> = {};
+                                  const inTransitByColor: Record<string, { colorName: string; qtys: Record<string, number> }> = {};
+                                  if (item.type === 'SOLE') {
+                                    purchases
+                                      .filter(p => {
+                                        if (p.registerAsReceived === true) return false;
+                                        // Aceita qualquer tipo de compra que tenha itens de solado
+                                        const si: any[] = (p as any).soleItems || (p as any).items || [];
+                                        return si.some((s: any) => s.moldId);
+                                      })
+                                      .forEach(p => {
+                                        const allItems: any[] = (p as any).soleItems || (p as any).items || [];
+                                        allItems
+                                          .filter((si: any) => {
+                                            if (!si.moldId) return false;
+                                            if (String(si.moldId).trim() !== String(item.moldId).trim()) return false;
+                                            if (!item.colorId) return true;
+                                            if (si.colorId && String(si.colorId).trim() === String(item.colorId).trim()) return true;
+                                            const needColor = item.name?.split(' - ')[1]?.toUpperCase().trim() || '';
+                                            if (needColor && si.colorName?.toUpperCase().trim() === needColor) return true;
+                                            return false;
+                                          })
+                                          .forEach((si: any) => {
+                                            const colorKey = si.colorName || si.colorId || 'Padrão';
+                                            if (!inTransitByColor[colorKey]) {
+                                              inTransitByColor[colorKey] = { colorName: colorKey, qtys: {} };
+                                            }
+                                            Object.entries(si.quantities || {}).forEach(([size, qty]: [string, any]) => {
+                                              const qtyNum = Number(qty) || 0;
+                                              if (qtyNum > 0) {
+                                                inTransitQtys[size] = (inTransitQtys[size] || 0) + qtyNum;
+                                                inTransitByColor[colorKey].qtys[size] = (inTransitByColor[colorKey].qtys[size] || 0) + qtyNum;
+                                              }
+                                            });
+                                          });
+                                      });
+                                  }
+                                  const totalInTransit = Object.values(inTransitQtys).reduce((a, b) => a + b, 0);
+
+                                  const STATUS_LABEL: Record<string, string> = {
+                                    PENDING: 'Solicitado',
+                                    IN_PROGRESS: 'Em Andamento',
+                                    ORDERED: 'Pedido Feito',
+                                  };
+                                  const STATUS_COLOR: Record<string, string> = {
+                                    PENDING: 'bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700',
+                                    IN_PROGRESS: 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700',
+                                    ORDERED: 'bg-indigo-100 text-indigo-700 border-indigo-300 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-700',
+                                  };
+
+                                  // Cruzamento: saldo real a comprar descontando o que está em trânsito
+                                  const realToComprar = item.type === 'SOLE' && item.sizeShortages
+                                    ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
+                                      const req = (item.sizeShortages as any)[grade].required;
+                                      const stock = realGradeStock[grade] || 0;
+                                      const transit = inTransitQtys[grade] || 0;
+                                      return s + Math.max(0, req - stock - transit);
+                                    }, 0)
+                                    : Math.max(0, displayQty - totalInTransit);
+
+                                  return (
+                                    <div className={`pt-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+
+                                      {/* Tabela inline de cruzamento — só para SOLE com trânsito */}
+                                      {totalInTransit > 0 && item.type === 'SOLE' && item.sizeShortages && (
+                                        <div className={`mb-3 rounded-xl overflow-hidden border ${isDarkMode ? 'border-amber-800/50 bg-amber-950/20' : 'border-amber-200 bg-amber-50/60'}`}>
+                                          {/* Header aviso */}
+                                          <div className={`flex items-center gap-2 px-3 py-2 border-b ${isDarkMode ? 'border-amber-800/40' : 'border-amber-200'}`}>
+                                            <ShoppingCart size={12} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                                            <span className="text-[9px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400">
+                                              {totalInTransit} par(es) em trânsito — aguardando recebimento
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => setInTransitPopupItem({ item, inTransitQtys, inTransitByColor, realGradeStock, totalFaltaSole, totalInTransit })}
+                                              className="ml-auto text-[9px] font-black text-amber-600 dark:text-amber-400 underline hover:no-underline"
+                                              title="Ver detalhes"
+                                            >
+                                              Detalhes
+                                            </button>
+                                          </div>
+                                          {/* Mini tabela cruzada */}
+                                          <div className={`grid grid-cols-4 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                                            <span>Grade</span>
+                                            <span className="text-center text-rose-500">Falta</span>
+                                            <span className="text-center text-amber-500">Trânsito</span>
+                                            <span className="text-right text-emerald-500">Saldo</span>
+                                          </div>
+                                          {Object.keys(item.sizeShortages).sort((a, b) => parseFloat(a) - parseFloat(b)).map(grade => {
+                                            const req = (item.sizeShortages as any)[grade].required;
+                                            const stock = realGradeStock[grade] || 0;
+                                            const falta = Math.max(0, req - stock);
+                                            const transit = inTransitQtys[grade] || 0;
+                                            const saldo = Math.max(0, falta - transit);
+                                            if (falta === 0 && transit === 0) return null;
+                                            return (
+                                              <div key={grade} className={`grid grid-cols-4 px-3 py-2 border-t text-xs font-black ${isDarkMode ? 'border-amber-900/40 bg-slate-900/40' : 'border-amber-100 bg-white/60'}`}>
+                                                <span className={isDarkMode ? 'text-white' : 'text-slate-700'}>{grade}</span>
+                                                <span className={`text-center ${falta > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{falta > 0 ? `-${falta}` : '✓'}</span>
+                                                <span className={`text-center ${transit > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>{transit > 0 ? `+${transit}` : '—'}</span>
+                                                <span className={`text-right ${saldo > 0 ? 'text-rose-600 font-black' : 'text-emerald-500'}`}>{saldo > 0 ? `-${saldo}` : '✓'}</span>
+                                              </div>
+                                            );
+                                          })}
+                                          {realToComprar === 0 && (
+                                            <div className={`px-3 py-2 border-t text-[9px] font-black text-emerald-600 dark:text-emerald-400 ${isDarkMode ? 'border-amber-900/40 bg-emerald-950/20' : 'border-amber-100 bg-emerald-50/60'}`}>
+                                              ✓ As compras em trânsito cobrem toda a necessidade. Aguarde o recebimento.
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      <div className="flex items-center justify-between">
+                                        <div>
+                                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">
+                                            {totalInTransit > 0 ? 'Saldo Real a Comprar' : displayLabel}
+                                          </p>
+                                          <p className={`text-2xl font-black leading-none ${realToComprar > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
+                                            {fmtQty(totalInTransit > 0 ? realToComprar : displayQty)}
+                                            <span className="text-[11px] text-slate-400 ml-1">{item.unit}</span>
+                                          </p>
+                                        </div>
+                                        {existingReq ? (
+                                          <span className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest border ${STATUS_COLOR[existingReq.status] || ''}`}>
+                                            <CheckCircle2 size={13} strokeWidth={3} />
+                                            {STATUS_LABEL[existingReq.status] || existingReq.status}
+                                          </span>
+                                        ) : totalInTransit > 0 && realToComprar === 0 ? (
+                                          <div className="flex flex-col items-end gap-1">
+                                            <span className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-amber-950/30 border-amber-700/50 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+                                              <ShoppingCart size={12} />
+                                              Em Trânsito
+                                            </span>
+                                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Aguarde o recebimento</span>
+                                          </div>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            disabled={requestingId === item.id}
+                                            onClick={async () => {
+                                              if (!onRequestPurchase || requestingId) return;
+                                              if (item.type === 'SOLE') {
+                                                setSelectedSoleNeed(item);
+                                                setExtraSoleQty({});
+                                                setIsSoleOrderModalOpen(true);
+                                                return;
+                                              }
+                                              setRequestingId(item.id);
+                                              try {
+                                                await onRequestPurchase({
+                                                  requestKey: item.id,
+                                                  type: 'MATERIAL',
+                                                  name: item.name,
+                                                  unit: item.unit,
+                                                  requiredQty: Math.max(0, item.required - item.stock),
+                                                  status: 'PENDING',
+                                                  requestedAt: Date.now(),
+                                                  requestedBy: userName,
+                                                  contributingLots: item.contributingLots,
+                                                  materialId: item.materialId,
+                                                });
+                                                toast.show(`Solicitação de ${item.name} enviada com sucesso!`);
+                                              } catch (err) {
+                                                toast.show('Erro ao enviar solicitação.');
+                                              } finally {
+                                                setRequestingId(null);
+                                              }
+                                            }}
+                                            className={`px-5 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg transition-all flex items-center gap-2 ${requestingId === item.id
+                                                ? 'bg-slate-200 text-slate-400 cursor-wait'
+                                                : 'bg-indigo-600 text-white shadow-indigo-500/20 hover:scale-105 active:scale-95'
+                                              }`}
+                                          >
+                                            {requestingId === item.id ? <Loader2 size={14} className="animate-spin" /> : <ArrowUpRight size={14} strokeWidth={3} />}
+                                            {requestingId === item.id ? 'Enviando...' : 'Solicitar'}
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+                            )}
                           </div>
+                        </>}
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
 
-                          {/* Tabela de grades de solado */}
-                          {item.type === 'SOLE' && item.sizeShortages && (() => {
-                            // Total necessário = soma de todos os tamanhos do mapa para este molde
-                            const totReq = Object.values(item.sizeShortages as any)
-                              .reduce((s: number, v: any) => s + v.required, 0) as number;
+          {palmilhaItems.length > 0 && (
+            <div className={`p-8 rounded-[2.5rem] border-2 shadow-xl ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-xl font-black uppercase tracking-tight">Palmilhas</h3>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Reserva dos Mapas vs Estoque de Palmilhas</p>
+                </div>
+                <span className="px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 text-rose-500">
+                  {palmilhaItems.length} Falta{palmilhaItems.length > 1 ? 's' : ''}
+                </span>
+              </div>
 
-                            // Estoque EXCLUSIVO por moldId + colorId (sem fallback para outras cores)
-                            const gradeStock: Record<string, number> = {};
-                            soleStock
-                              .filter(s => s.moldId === item.moldId && String(s.colorId || '').trim() === String(item.colorId || '').trim())
-                              .forEach(e => {
-                                Object.entries(e.stock).forEach(([k, v]) => {
-                                  const key = String(k).trim();
-                                  if (key === 'pesagem' || key === 'total') return;
-                                  gradeStock[key] = (gradeStock[key] || 0) + (Number(v) || 0);
-                                });
-                              });
+              {([
+                { key: 'MONTAGEM', label: 'Palmilha de Montagem', items: palmilhaMontagemItems },
+                { key: 'ACABAMENTO', label: 'Palmilha de Acabamento', items: palmilhaAcabamentoItems },
+              ] as { key: 'MONTAGEM' | 'ACABAMENTO'; label: string; items: typeof palmilhaItems }[]).map(group => {
+                if (group.items.length === 0) return null;
+                return (
+                  <div key={group.key} className="flex flex-col gap-3 mb-6 last:mb-0">
+                    <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                      <Footprints size={14} /> {group.label}
+                    </h4>
+                    {group.items.map(item => {
+                      const needId = `palmilha_${item.toolId}_${item.colorId || 'default'}`;
+                      const isExpanded = expandedNeedIds.has(needId);
+                      const gradeKeys = Object.keys(item.sizeShortages).sort((a, b) => {
+                        const numA = parseFloat(a);
+                        const numB = parseFloat(b);
+                        if (isNaN(numA) || isNaN(numB)) return a.localeCompare(b);
+                        return numA - numB;
+                      });
 
-                            const totEst = Object.values(gradeStock).reduce((s, v) => s + v, 0);
-                            const totFalta = Math.max(0, totReq - totEst);
-                            
-                            // Unir chaves do estoque com as chaves de necessidade do PCP
-                            const allSizes = new Set([
-                              ...Object.keys(gradeStock),
-                              ...Object.keys(item.sizeShortages || {})
-                            ]);
-                            const gradeKeys = Array.from(allSizes).sort((a, b) => {
-                              const numA = parseFloat(a);
-                              const numB = parseFloat(b);
-                              if (isNaN(numA) || isNaN(numB)) return a.localeCompare(b);
-                              return numA - numB;
-                            });
+                      return (
+                        <div
+                          key={needId}
+                          className={`rounded-[2rem] border-2 transition-all overflow-hidden ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-white shadow-sm'} ${isExpanded ? 'border-rose-300 dark:border-rose-700' : ''}`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => toggleNeedExpand(needId)}
+                            title={isExpanded ? `Recolher detalhes de ${item.toolName}` : `Expandir detalhes de ${item.toolName}`}
+                            aria-label={isExpanded ? `Recolher detalhes de ${item.toolName}` : `Expandir detalhes de ${item.toolName}`}
+                            className={`w-full flex flex-col gap-3 px-5 py-4 text-left transition-colors ${isExpanded ? isDarkMode ? 'bg-rose-950/30' : 'bg-rose-50/60' : ''}`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-rose-100 text-rose-500 dark:bg-rose-900/30 dark:text-rose-400">
+                                <Footprints size={18} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1 text-rose-500">
+                                  {item.subtype === 'MONTAGEM' ? 'Palmilha Montagem' : 'Palmilha Acabamento'}
+                                </p>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
+                                  <p className="text-sm font-black uppercase leading-tight text-rose-600 dark:text-rose-400">
+                                    {item.toolName}
+                                  </p>
+                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-rose-950/40 border-rose-800 text-rose-300' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
+                                    {item.colorName}
+                                  </span>
+                                  {item.silkSector && (
+                                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border" style={{ borderColor: item.silkSector.color, color: item.silkSector.color }}>
+                                      SILK · {item.silkSector.name}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180 bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                                <ChevronDown size={16} strokeWidth={2.5} />
+                              </div>
+                            </div>
 
-                            return (
+                            <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+                              <div>
+                                <p className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none mb-0.5">Falta</p>
+                                <p className="text-2xl font-black text-rose-600 dark:text-rose-400 leading-none">
+                                  {Math.round(item.totalShortage)} <span className="text-xs font-bold text-slate-400">PAR</span>
+                                </p>
+                              </div>
+                              {item.silkCostEstimate > 0 && (
+                                <div className="text-right">
+                                  <p className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none mb-0.5">Custo SILK Estimado</p>
+                                  <p className="text-sm font-black text-violet-600 dark:text-violet-400 leading-none">
+                                    R$ {item.silkCostEstimate.toFixed(2)}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          </button>
+
+                          {isExpanded && (
+                            <div className={`px-6 pb-6 pt-2 flex flex-col gap-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
                               <div className={`rounded-2xl overflow-hidden border ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
-                                {/* Header - 4 Colunas para alinhar com totais */}
                                 <div className={`grid grid-cols-4 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
-                                  <span>Grade Sola</span>
+                                  <span>Grade</span>
                                   <span className="text-center">Estoque</span>
                                   <span className="text-center">Necess.</span>
                                   <span className="text-right">Falta</span>
                                 </div>
-                                {gradeKeys.length > 0 ? gradeKeys.map(grade => {
-                                  const stock = gradeStock[grade] || 0;
-                                  const req = item.sizeShortages?.[grade]?.required || 0;
-                                  const shortage = Math.max(0, req - stock);
-                                  
+                                {gradeKeys.map(grade => {
+                                  const s = item.sizeShortages[grade];
+                                  const shortage = Math.max(0, s.required - s.stock - s.pending);
                                   return (
                                     <div key={grade} className={`grid grid-cols-4 px-4 py-3 border-t text-[13px] font-black ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
                                       <span className={isDarkMode ? 'text-white' : 'text-slate-800'}>{grade}</span>
-                                      <span className={`text-center ${stock > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{stock}</span>
-                                      <span className="text-center text-slate-400">{req}</span>
+                                      <span className={`text-center ${s.stock > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{s.stock}</span>
+                                      <span className="text-center text-slate-400">{s.required}</span>
                                       <span className={`text-right ${shortage > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
                                         {shortage > 0 ? `-${shortage}` : '✓'}
                                       </span>
                                     </div>
                                   );
-                                }) : (
-                                  <div className={`px-4 py-3 border-t text-[11px] text-slate-400 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
-                                    Sem grade de sola cadastrada
-                                  </div>
-                                )}
-                                {/* Linha de totais */}
-                                <div className={`grid grid-cols-4 px-4 py-3 border-t-2 text-[12px] font-black ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
-                                  <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Total</span>
-                                  <span className={`text-center font-black ${totEst > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{totEst}</span>
-                                  <span className="text-center text-slate-500">{totReq}</span>
-                                  <span className={`text-right font-black text-[14px] ${totFalta > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
-                                    {totFalta > 0 ? `-${totFalta}` : '✓'}
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          })()}
-
-                          {/* Tabela de detalhamento por mapa/pedido — só para MATERIAL */}
-                          {item.type === 'MATERIAL' && item.sourceBreakdown && Object.keys(item.sourceBreakdown).length > 0 && (() => {
-                            const sources = Object.values(item.sourceBreakdown);
-                            const totalPairs = sources.reduce((s, src) => s + src.pairs, 0);
-                            return (
-                              <div className={`rounded-2xl overflow-hidden border ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
-                                <div className={`grid grid-cols-4 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
-                                  <span>Origem</span>
-                                  <span className="text-center">Pares</span>
-                                  <span className="text-center">Consumo/Par</span>
-                                  <span className="text-right">Subtotal</span>
-                                </div>
-                                {sources.map(src => {
-                                  const perUnit = src.pairs > 0 ? src.increment / src.pairs : 0;
-                                  return (
-                                    <div key={`${src.sourceType}_${src.label}`} className={`grid grid-cols-4 px-4 py-3 border-t text-[12px] font-black ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
-                                      <span className={isDarkMode ? 'text-white' : 'text-slate-800'}>{src.sourceType === 'LOT' ? 'Mapa' : 'Pedido'} {src.label}</span>
-                                      <span className="text-center text-slate-400">{fmtQty(src.pairs)}</span>
-                                      <span className="text-center text-slate-400">{perUnit.toLocaleString('pt-BR', { minimumFractionDigits: 4 })}</span>
-                                      <span className={isDarkMode ? 'text-right text-white' : 'text-right text-slate-800'}>{fmtQty(src.increment)} {item.unit}</span>
-                                    </div>
-                                  );
                                 })}
                                 <div className={`grid grid-cols-4 px-4 py-3 border-t-2 text-[12px] font-black ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
                                   <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Total</span>
-                                  <span className="text-center text-slate-500">{fmtQty(totalPairs)}</span>
-                                  <span />
-                                  <span className={`text-right text-[14px] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{fmtQty(item.required)} {item.unit}</span>
+                                  <span className={`text-center font-black ${item.totalStock > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{item.totalStock}</span>
+                                  <span className="text-center text-slate-500">{item.totalRequired}</span>
+                                  <span className="text-right font-black text-[14px] text-rose-600">-{item.totalShortage}</span>
                                 </div>
                               </div>
-                            );
-                          })()}
 
-                          {/* Rodapé: a comprar + botão solicitar */}
-                          {(() => {
-                            const existingReq = purchaseRequests.find(r => r.requestKey === item.id && r.status !== 'RECEIVED');
-
-                            // Estoque real EXCLUSIVO por moldId + colorId (sem fallback para outras cores)
-                            let realGradeStock: Record<string, number> = {};
-                            if (item.type === 'SOLE') {
-                              soleStock
-                                .filter(s => s.moldId === item.moldId && String(s.colorId || '').trim() === String(item.colorId || '').trim())
-                                .forEach(e => {
-                                  Object.entries(e.stock).forEach(([k, v]) => {
-                                    const key = String(k).trim();
-                                    if (key === 'pesagem' || key === 'total') return;
-                                    realGradeStock[key] = (realGradeStock[key] || 0) + (Number(v) || 0);
-                                  });
-                                });
-                            }
-
-                            // Falta real usando estoque do soleStock (corrige o bug dos 60 → 7)
-                            const totalFaltaSole = item.type === 'SOLE' && item.sizeShortages
-                              ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
-                                  const req = (item.sizeShortages as any)[grade].required;
-                                  const stock = realGradeStock[grade] || 0;
-                                  return s + Math.max(0, req - stock);
-                                }, 0)
-                              : Math.max(0, item.required - item.stock);
-
-                            const displayQty = item.type === 'SOLE' ? totalFaltaSole : item.required;
-                            const displayLabel = item.type === 'SOLE' ? 'A Comprar' : 'Necessário';
-
-                            // Verifica compras de solado pendentes para este molde (qualquer cor ou cor específica)
-                            const inTransitQtys: Record<string, number> = {};
-                            const inTransitByColor: Record<string, { colorName: string; qtys: Record<string, number> }> = {};
-                            if (item.type === 'SOLE') {
-                              purchases
-                                .filter(p => {
-                                  if (p.registerAsReceived === true) return false;
-                                  // Aceita qualquer tipo de compra que tenha itens de solado
-                                  const si: any[] = (p as any).soleItems || (p as any).items || [];
-                                  return si.some((s: any) => s.moldId);
-                                })
-                                .forEach(p => {
-                                  const allItems: any[] = (p as any).soleItems || (p as any).items || [];
-                                  allItems
-                                    .filter((si: any) => {
-                                      if (!si.moldId) return false;
-                                      if (String(si.moldId).trim() !== String(item.moldId).trim()) return false;
-                                      if (!item.colorId) return true;
-                                      if (si.colorId && String(si.colorId).trim() === String(item.colorId).trim()) return true;
-                                      const needColor = item.name?.split(' - ')[1]?.toUpperCase().trim() || '';
-                                      if (needColor && si.colorName?.toUpperCase().trim() === needColor) return true;
-                                      return false;
-                                    })
-                                    .forEach((si: any) => {
-                                      const colorKey = si.colorName || si.colorId || 'Padrão';
-                                      if (!inTransitByColor[colorKey]) {
-                                        inTransitByColor[colorKey] = { colorName: colorKey, qtys: {} };
-                                      }
-                                      Object.entries(si.quantities || {}).forEach(([size, qty]: [string, any]) => {
-                                        const qtyNum = Number(qty) || 0;
-                                        if (qtyNum > 0) {
-                                          inTransitQtys[size] = (inTransitQtys[size] || 0) + qtyNum;
-                                          inTransitByColor[colorKey].qtys[size] = (inTransitByColor[colorKey].qtys[size] || 0) + qtyNum;
-                                        }
-                                      });
+                              <div className="flex items-center justify-end pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const initialGrid: Record<string, number> = {};
+                                    gradeKeys.forEach(grade => {
+                                      const s = item.sizeShortages[grade];
+                                      const shortage = Math.max(0, s.required - s.stock - s.pending);
+                                      if (shortage > 0) initialGrid[grade] = shortage;
                                     });
-                                });
-                            }
-                            const totalInTransit = Object.values(inTransitQtys).reduce((a, b) => a + b, 0);
-
-                            const STATUS_LABEL: Record<string, string> = {
-                              PENDING: 'Solicitado',
-                              IN_PROGRESS: 'Em Andamento',
-                              ORDERED: 'Pedido Feito',
-                            };
-                            const STATUS_COLOR: Record<string, string> = {
-                              PENDING: 'bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700',
-                              IN_PROGRESS: 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700',
-                              ORDERED: 'bg-indigo-100 text-indigo-700 border-indigo-300 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-700',
-                            };
-
-                            // Cruzamento: saldo real a comprar descontando o que está em trânsito
-                            const realToComprar = item.type === 'SOLE' && item.sizeShortages
-                              ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
-                                  const req = (item.sizeShortages as any)[grade].required;
-                                  const stock = realGradeStock[grade] || 0;
-                                  const transit = inTransitQtys[grade] || 0;
-                                  return s + Math.max(0, req - stock - transit);
-                                }, 0)
-                              : Math.max(0, displayQty - totalInTransit);
-
-                            return (
-                              <div className={`pt-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-
-                                {/* Tabela inline de cruzamento — só para SOLE com trânsito */}
-                                {totalInTransit > 0 && item.type === 'SOLE' && item.sizeShortages && (
-                                  <div className={`mb-3 rounded-xl overflow-hidden border ${isDarkMode ? 'border-amber-800/50 bg-amber-950/20' : 'border-amber-200 bg-amber-50/60'}`}>
-                                    {/* Header aviso */}
-                                    <div className={`flex items-center gap-2 px-3 py-2 border-b ${isDarkMode ? 'border-amber-800/40' : 'border-amber-200'}`}>
-                                      <ShoppingCart size={12} className="text-amber-600 dark:text-amber-400 shrink-0" />
-                                      <span className="text-[9px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400">
-                                        {totalInTransit} par(es) em trânsito — aguardando recebimento
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => setInTransitPopupItem({ item, inTransitQtys, inTransitByColor, realGradeStock, totalFaltaSole, totalInTransit })}
-                                        className="ml-auto text-[9px] font-black text-amber-600 dark:text-amber-400 underline hover:no-underline"
-                                        title="Ver detalhes"
-                                      >
-                                        Detalhes
-                                      </button>
-                                    </div>
-                                    {/* Mini tabela cruzada */}
-                                    <div className={`grid grid-cols-4 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                                      <span>Grade</span>
-                                      <span className="text-center text-rose-500">Falta</span>
-                                      <span className="text-center text-amber-500">Trânsito</span>
-                                      <span className="text-right text-emerald-500">Saldo</span>
-                                    </div>
-                                    {Object.keys(item.sizeShortages).sort((a, b) => parseFloat(a) - parseFloat(b)).map(grade => {
-                                      const req = (item.sizeShortages as any)[grade].required;
-                                      const stock = realGradeStock[grade] || 0;
-                                      const falta = Math.max(0, req - stock);
-                                      const transit = inTransitQtys[grade] || 0;
-                                      const saldo = Math.max(0, falta - transit);
-                                      if (falta === 0 && transit === 0) return null;
-                                      return (
-                                        <div key={grade} className={`grid grid-cols-4 px-3 py-2 border-t text-xs font-black ${isDarkMode ? 'border-amber-900/40 bg-slate-900/40' : 'border-amber-100 bg-white/60'}`}>
-                                          <span className={isDarkMode ? 'text-white' : 'text-slate-700'}>{grade}</span>
-                                          <span className={`text-center ${falta > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{falta > 0 ? `-${falta}` : '✓'}</span>
-                                          <span className={`text-center ${transit > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>{transit > 0 ? `+${transit}` : '—'}</span>
-                                          <span className={`text-right ${saldo > 0 ? 'text-rose-600 font-black' : 'text-emerald-500'}`}>{saldo > 0 ? `-${saldo}` : '✓'}</span>
-                                        </div>
-                                      );
-                                    })}
-                                    {realToComprar === 0 && (
-                                      <div className={`px-3 py-2 border-t text-[9px] font-black text-emerald-600 dark:text-emerald-400 ${isDarkMode ? 'border-amber-900/40 bg-emerald-950/20' : 'border-amber-100 bg-emerald-50/60'}`}>
-                                        ✓ As compras em trânsito cobrem toda a necessidade. Aguarde o recebimento.
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-
-                                <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">
-                                    {totalInTransit > 0 ? 'Saldo Real a Comprar' : displayLabel}
-                                  </p>
-                                  <p className={`text-2xl font-black leading-none ${realToComprar > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
-                                    {fmtQty(totalInTransit > 0 ? realToComprar : displayQty)}
-                                    <span className="text-[11px] text-slate-400 ml-1">{item.unit}</span>
-                                  </p>
-                                </div>
-                                {existingReq ? (
-                                  <span className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest border ${STATUS_COLOR[existingReq.status] || ''}`}>
-                                    <CheckCircle2 size={13} strokeWidth={3} />
-                                    {STATUS_LABEL[existingReq.status] || existingReq.status}
-                                  </span>
-                                ) : totalInTransit > 0 && realToComprar === 0 ? (
-                                  <div className="flex flex-col items-end gap-1">
-                                    <span className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-amber-950/30 border-amber-700/50 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
-                                      <ShoppingCart size={12} />
-                                      Em Trânsito
-                                    </span>
-                                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Aguarde o recebimento</span>
-                                  </div>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    disabled={requestingId === item.id}
-                                    onClick={async () => {
-                                      if (!onRequestPurchase || requestingId) return;
-                                      if (item.type === 'SOLE') {
-                                        setSelectedSoleNeed(item);
-                                        setExtraSoleQty({});
-                                        setIsSoleOrderModalOpen(true);
-                                        return;
-                                      }
-                                      setRequestingId(item.id);
-                                      try {
-                                        await onRequestPurchase({
-                                          requestKey: item.id,
-                                          type: 'MATERIAL',
-                                          name: item.name,
-                                          unit: item.unit,
-                                          requiredQty: Math.max(0, item.required - item.stock),
-                                          status: 'PENDING',
-                                          requestedAt: Date.now(),
-                                          requestedBy: userName,
-                                          contributingLots: item.contributingLots,
-                                          materialId: item.materialId,
-                                        });
-                                        toast.show(`Solicitação de ${item.name} enviada com sucesso!`);
-                                      } catch (err) {
-                                        toast.show('Erro ao enviar solicitação.');
-                                      } finally {
-                                        setRequestingId(null);
-                                      }
-                                    }}
-                                    className={`px-5 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg transition-all flex items-center gap-2 ${
-                                      requestingId === item.id
-                                        ? 'bg-slate-200 text-slate-400 cursor-wait'
-                                        : 'bg-indigo-600 text-white shadow-indigo-500/20 hover:scale-105 active:scale-95'
-                                    }`}
-                                  >
-                                    {requestingId === item.id ? <Loader2 size={14} className="animate-spin" /> : <ArrowUpRight size={14} strokeWidth={3} />}
-                                    {requestingId === item.id ? 'Enviando...' : 'Solicitar'}
-                                  </button>
-                                )}
-                                </div>
+                                    onNavigate(ViewType.PRODUCTION_PALMILHA_PURCHASE, {
+                                      items: [{
+                                        toolId: item.toolId,
+                                        toolName: item.toolName,
+                                        subtype: item.subtype,
+                                        colorId: item.colorId,
+                                        colorName: item.colorName,
+                                        initialGrid
+                                      }],
+                                      description: `Pedido formulado a partir das Necessidades — ${item.toolName} (${item.colorName})`
+                                    });
+                                  }}
+                                  className="flex items-center gap-1.5 px-5 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg transition-all bg-rose-600 text-white shadow-rose-500/20 hover:scale-105 active:scale-95"
+                                >
+                                  <ArrowUpRight size={14} strokeWidth={3} /> Formular Pedido
+                                </button>
                               </div>
-                            );
-                          })()}
-                        </div>
+                            </div>
                           )}
                         </div>
-                        </>}
-                        </React.Fragment>
                       );
                     })}
                   </div>
-                )}
-              </div>
+                );
+              })}
             </div>
+          )}
+        </div>
+      )}
 
-            {palmilhaItems.length > 0 && (
-              <div className={`p-8 rounded-[2.5rem] border-2 shadow-xl ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h3 className="text-xl font-black uppercase tracking-tight">Palmilhas</h3>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">Reserva dos Mapas vs Estoque de Palmilhas</p>
-                  </div>
-                  <span className="px-3 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 text-rose-500">
-                    {palmilhaItems.length} Falta{palmilhaItems.length > 1 ? 's' : ''}
-                  </span>
-                </div>
-
-                {([
-                  { key: 'MONTAGEM', label: 'Palmilha de Montagem', items: palmilhaMontagemItems },
-                  { key: 'ACABAMENTO', label: 'Palmilha de Acabamento', items: palmilhaAcabamentoItems },
-                ] as { key: 'MONTAGEM' | 'ACABAMENTO'; label: string; items: typeof palmilhaItems }[]).map(group => {
-                  if (group.items.length === 0) return null;
-                  return (
-                    <div key={group.key} className="flex flex-col gap-3 mb-6 last:mb-0">
-                      <h4 className="text-[11px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-                        <Footprints size={14} /> {group.label}
-                      </h4>
-                      {group.items.map(item => {
-                        const needId = `palmilha_${item.toolId}_${item.colorId || 'default'}`;
-                        const isExpanded = expandedNeedIds.has(needId);
-                        const gradeKeys = Object.keys(item.sizeShortages).sort((a, b) => {
-                          const numA = parseFloat(a);
-                          const numB = parseFloat(b);
-                          if (isNaN(numA) || isNaN(numB)) return a.localeCompare(b);
-                          return numA - numB;
-                        });
-
-                        return (
-                          <div
-                            key={needId}
-                            className={`rounded-[2rem] border-2 transition-all overflow-hidden ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-white shadow-sm'} ${isExpanded ? 'border-rose-300 dark:border-rose-700' : ''}`}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => toggleNeedExpand(needId)}
-                              title={isExpanded ? `Recolher detalhes de ${item.toolName}` : `Expandir detalhes de ${item.toolName}`}
-                              aria-label={isExpanded ? `Recolher detalhes de ${item.toolName}` : `Expandir detalhes de ${item.toolName}`}
-                              className={`w-full flex flex-col gap-3 px-5 py-4 text-left transition-colors ${isExpanded ? isDarkMode ? 'bg-rose-950/30' : 'bg-rose-50/60' : ''}`}
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-rose-100 text-rose-500 dark:bg-rose-900/30 dark:text-rose-400">
-                                  <Footprints size={18} />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-[10px] font-black uppercase tracking-widest leading-none mb-1 text-rose-500">
-                                    {item.subtype === 'MONTAGEM' ? 'Palmilha Montagem' : 'Palmilha Acabamento'}
-                                  </p>
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
-                                    <p className="text-sm font-black uppercase leading-tight text-rose-600 dark:text-rose-400">
-                                      {item.toolName}
-                                    </p>
-                                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-rose-950/40 border-rose-800 text-rose-300' : 'bg-rose-50 border-rose-200 text-rose-700'}`}>
-                                      {item.colorName}
-                                    </span>
-                                    {item.silkSector && (
-                                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border" style={{ borderColor: item.silkSector.color, color: item.silkSector.color }}>
-                                        SILK · {item.silkSector.name}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180 bg-rose-100 dark:bg-rose-900/40 text-rose-600 dark:text-rose-400' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
-                                  <ChevronDown size={16} strokeWidth={2.5} />
-                                </div>
-                              </div>
-
-                              <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
-                                <div>
-                                  <p className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none mb-0.5">Falta</p>
-                                  <p className="text-2xl font-black text-rose-600 dark:text-rose-400 leading-none">
-                                    {Math.round(item.totalShortage)} <span className="text-xs font-bold text-slate-400">PAR</span>
-                                  </p>
-                                </div>
-                                {item.silkCostEstimate > 0 && (
-                                  <div className="text-right">
-                                    <p className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none mb-0.5">Custo SILK Estimado</p>
-                                    <p className="text-sm font-black text-violet-600 dark:text-violet-400 leading-none">
-                                      R$ {item.silkCostEstimate.toFixed(2)}
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-                            </button>
-
-                            {isExpanded && (
-                              <div className={`px-6 pb-6 pt-2 flex flex-col gap-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                                <div className={`rounded-2xl overflow-hidden border ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
-                                  <div className={`grid grid-cols-4 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
-                                    <span>Grade</span>
-                                    <span className="text-center">Estoque</span>
-                                    <span className="text-center">Necess.</span>
-                                    <span className="text-right">Falta</span>
-                                  </div>
-                                  {gradeKeys.map(grade => {
-                                    const s = item.sizeShortages[grade];
-                                    const shortage = Math.max(0, s.required - s.stock - s.pending);
-                                    return (
-                                      <div key={grade} className={`grid grid-cols-4 px-4 py-3 border-t text-[13px] font-black ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
-                                        <span className={isDarkMode ? 'text-white' : 'text-slate-800'}>{grade}</span>
-                                        <span className={`text-center ${s.stock > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{s.stock}</span>
-                                        <span className="text-center text-slate-400">{s.required}</span>
-                                        <span className={`text-right ${shortage > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
-                                          {shortage > 0 ? `-${shortage}` : '✓'}
-                                        </span>
-                                      </div>
-                                    );
-                                  })}
-                                  <div className={`grid grid-cols-4 px-4 py-3 border-t-2 text-[12px] font-black ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
-                                    <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Total</span>
-                                    <span className={`text-center font-black ${item.totalStock > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{item.totalStock}</span>
-                                    <span className="text-center text-slate-500">{item.totalRequired}</span>
-                                    <span className="text-right font-black text-[14px] text-rose-600">-{item.totalShortage}</span>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center justify-end pt-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const initialGrid: Record<string, number> = {};
-                                      gradeKeys.forEach(grade => {
-                                        const s = item.sizeShortages[grade];
-                                        const shortage = Math.max(0, s.required - s.stock - s.pending);
-                                        if (shortage > 0) initialGrid[grade] = shortage;
-                                      });
-                                      onNavigate(ViewType.PRODUCTION_PALMILHA_PURCHASE, {
-                                        items: [{
-                                          toolId: item.toolId,
-                                          toolName: item.toolName,
-                                          subtype: item.subtype,
-                                          colorId: item.colorId,
-                                          colorName: item.colorName,
-                                          initialGrid
-                                        }],
-                                        description: `Pedido formulado a partir das Necessidades — ${item.toolName} (${item.colorName})`
-                                      });
-                                    }}
-                                    className="flex items-center gap-1.5 px-5 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg transition-all bg-rose-600 text-white shadow-rose-500/20 hover:scale-105 active:scale-95"
-                                  >
-                                    <ArrowUpRight size={14} strokeWidth={3} /> Formular Pedido
-                                  </button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
+      {activeTab === 'lots' && (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1">
+              <Search size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Buscar por mapa, modelo ou referência..."
+                className={`w-full pl-14 pr-6 py-5 rounded-[2rem] border-2 transition-all outline-none text-sm font-black uppercase tracking-wider ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-600 shadow-sm'}`}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            {filteredLots.length > 0 && (
+              <button
+                onClick={async () => {
+                  if (confirm(`Deseja excluir TODOS os ${filteredLots.length} mapas e voltar os pedidos para pendentes?`)) {
+                    for (const lot of filteredLots) {
+                      await onDeleteLot(lot.id);
+                    }
+                  }
+                }}
+                className="px-6 py-5 rounded-[2rem] bg-rose-50 dark:bg-rose-900/20 text-rose-500 border-2 border-rose-100 dark:border-rose-900/30 hover:bg-rose-100 transition-all flex items-center gap-2"
+                title="Limpar todos os mapas"
+              >
+                <Trash2 size={18} />
+                <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Limpar Tudo</span>
+              </button>
             )}
           </div>
-        )}
 
-        {activeTab === 'lots' && (
-          <div className="flex flex-col gap-4">
-            <div className="flex items-center gap-3">
-              <div className="relative flex-1">
-                <Search size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Buscar por mapa, modelo ou referência..."
-                  className={`w-full pl-14 pr-6 py-5 rounded-[2rem] border-2 transition-all outline-none text-sm font-black uppercase tracking-wider ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-600 shadow-sm'}`}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              {filteredLots.length > 0 && (
-                <button
-                  onClick={async () => {
-                    if (confirm(`Deseja excluir TODOS os ${filteredLots.length} mapas e voltar os pedidos para pendentes?`)) {
-                      for (const lot of filteredLots) {
-                        await onDeleteLot(lot.id);
-                      }
-                    }
-                  }}
-                  className="px-6 py-5 rounded-[2rem] bg-rose-50 dark:bg-rose-900/20 text-rose-500 border-2 border-rose-100 dark:border-rose-900/30 hover:bg-rose-100 transition-all flex items-center gap-2"
-                  title="Limpar todos os mapas"
-                >
-                  <Trash2 size={18} />
-                  <span className="text-[10px] font-black uppercase tracking-widest hidden sm:inline">Limpar Tudo</span>
-                </button>
-              )}
+          {/* Barra de Filtros de Status (Pills e Checkboxes) */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1 py-2 border-b border-slate-100 dark:border-slate-800/40 pb-4">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: 'active', label: 'Em Produção', count: lots.filter(l => !l.finishedAt).length, activeClass: 'bg-indigo-600 text-white border-transparent', idleClass: isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 shadow-sm' },
+                { id: 'finished', label: 'Produzidos', count: lots.filter(l => !!l.finishedAt).length, activeClass: 'bg-emerald-600 text-white border-transparent', idleClass: isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 shadow-sm' },
+                { id: 'urgent', label: 'Urgentes', count: lots.filter(l => !l.finishedAt && (l.prioridade === 'URGENTE' || l.prioridade === 'ALTA')).length, activeClass: 'bg-rose-600 text-white border-transparent', idleClass: isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 shadow-sm' },
+                { id: 'all', label: 'Todos', count: lots.length, activeClass: 'bg-slate-700 text-white border-transparent', idleClass: isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700 hover:border-slate-600' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 shadow-sm' }
+              ].map(f => {
+                const isActive = statusFilter === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setStatusFilter(f.id as any)}
+                    className={`px-3.5 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1.5 active:scale-[0.98] ${isActive ? f.activeClass : f.idleClass}`}
+                  >
+                    <span>{f.label}</span>
+                    <span className={`px-1.5 py-0.5 rounded-full text-[8px] font-bold ${isActive ? 'bg-white/20 text-white' : isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-500'}`}>
+                      {f.count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="grid grid-cols-1 gap-3">
-              {[...filteredLots].sort((a, b) => (b.finishedAt || 0) - (a.finishedAt || 0) || b.createdAt - a.createdAt).map(lot => {
-                const product = products.find(p => p.id === lot.productId);
-                const variation = product?.variations.find(v => v.id === lot.variationId);
-                const sector = sectors.find(s => s.id === (lot.route && lot.route[lot.currentSectorIndex]));
-                const isFinished = !!lot.finishedAt;
+            <div className="flex flex-wrap items-center gap-4 text-[10px] font-black uppercase tracking-widest text-slate-400 sm:self-center">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={statusFilter === 'active'}
+                  onChange={(e) => setStatusFilter(e.target.checked ? 'active' : 'all')}
+                  className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
+                />
+                <span>Ocultar Concluídos</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={statusFilter === 'finished'}
+                  onChange={(e) => setStatusFilter(e.target.checked ? 'finished' : 'all')}
+                  className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
+                />
+                <span>Ocultar Em Produção</span>
+              </label>
+            </div>
+          </div>
 
-                return (
-                  <div
-                    key={lot.id}
-                    onClick={() => {
-                      setSelectedLot(lot);
-                      setIsDetailModalOpen(true);
-                    }}
-                    className={`relative p-5 rounded-3xl border flex items-center gap-4 transition-all cursor-pointer ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
-                  >
-                    {/* Lixeira no canto superior direito */}
+          <div className="grid grid-cols-1 gap-3">
+            {[...filteredLots].sort((a, b) => (b.finishedAt || 0) - (a.finishedAt || 0) || b.createdAt - a.createdAt).map(lot => {
+              const product = products.find(p => p.id === lot.productId);
+              const variation = product?.variations.find(v => v.id === lot.variationId);
+              const sector = sectors.find(s => s.id === (lot.route && lot.route[lot.currentSectorIndex]));
+              const isFinished = !!lot.finishedAt;
+
+              return (
+                <div
+                  key={lot.id}
+                  onClick={() => {
+                    setSelectedLot(lot);
+                    setIsDetailModalOpen(true);
+                  }}
+                  className={`relative p-5 rounded-3xl border flex items-center gap-4 transition-all cursor-pointer ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
+                >
+                  {/* Botão de Ação no canto superior direito */}
+                  <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
                     <button
                       type="button"
                       onClick={(e) => {
@@ -6321,438 +6161,446 @@ export default function PCPView({
                           onDeleteLot(lot.id);
                         }
                       }}
-                      className="absolute top-3 right-3 p-2 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/40 hover:text-rose-600 transition-all z-10"
+                      className="p-2 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/40 hover:text-rose-600 transition-all"
                       title="Excluir Mapa"
                     >
                       <Trash2 size={14} />
                     </button>
+                  </div>
 
-                    <div className="flex items-center gap-4 flex-1 min-w-0 pr-10">
-                      <div className="flex flex-col min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isFinished ? 'bg-emerald-500 text-white' : 'bg-indigo-600 text-white'}`}>
-                            {isFinished ? <CheckCircle2 size={13} strokeWidth={3} /> : <Factory size={13} />}
-                          </div>
-                          <span className="text-sm font-black text-slate-900 dark:text-white uppercase leading-none">MAPA {lot.orderNumber}</span>
-                          {isFinished && <span className="text-[8px] font-black uppercase tracking-widest bg-emerald-500 text-white px-2 py-0.5 rounded-md">Finalizado</span>}
-                          {lot.productionOrderId && (() => {
-                            const linkedOrder = productionOrders.find(o => o.id === lot.productionOrderId);
-                            if (!linkedOrder) return (
-                              <span className="text-[8px] font-black uppercase tracking-widest bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 px-2 py-0.5 rounded-md">OP</span>
-                            );
-                            const linkedSale = linkedOrder.saleId ? sales?.find(s => s.id === linkedOrder.saleId) : undefined;
-                            const isStockOrder = linkedOrder.customerName === 'Estoque' || linkedSale?.saleDestination === 'STOCK';
-                            if (linkedOrder.status === 'COMPLETED') {
-                              return isStockOrder ? (
-                                <span className="text-[8px] font-black uppercase tracking-widest bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-md flex items-center gap-1">
-                                  <Package size={9} /> Produzido
-                                </span>
-                              ) : (
-                                <span className="text-[8px] font-black uppercase tracking-widest bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 px-2 py-0.5 rounded-md flex items-center gap-1">
-                                  <Truck size={9} /> Entregue
-                                </span>
-                              );
-                            }
-                            return (
-                              <span className="text-[8px] font-black uppercase tracking-widest bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 px-2 py-0.5 rounded-md">
-                                {linkedOrder.orderNumber}
+                  <div className="flex items-center gap-4 flex-1 min-w-0 pr-10">
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isFinished ? 'bg-emerald-500 text-white' : 'bg-indigo-600 text-white'}`}>
+                          {isFinished ? <CheckCircle2 size={13} strokeWidth={3} /> : <Factory size={13} />}
+                        </div>
+                        <span className="text-sm font-black text-slate-900 dark:text-white uppercase leading-none">MAPA {lot.orderNumber}</span>
+                        {isFinished && <span className="text-[8px] font-black uppercase tracking-widest bg-emerald-500 text-white px-2 py-0.5 rounded-md">Finalizado</span>}
+                        {lot.productionOrderId && (() => {
+                          const linkedOrder = productionOrders.find(o => o.id === lot.productionOrderId);
+                          if (!linkedOrder) return (
+                            <span className="text-[8px] font-black uppercase tracking-widest bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 px-2 py-0.5 rounded-md">OP</span>
+                          );
+                          const linkedSale = linkedOrder.saleId ? sales?.find(s => s.id === linkedOrder.saleId) : undefined;
+                          const isStockOrder = linkedOrder.customerName === 'Estoque' || linkedSale?.saleDestination === 'STOCK';
+                          if (linkedOrder.status === 'COMPLETED') {
+                            return isStockOrder ? (
+                              <span className="text-[8px] font-black uppercase tracking-widest bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                <Package size={9} /> Produzido
+                              </span>
+                            ) : (
+                              <span className="text-[8px] font-black uppercase tracking-widest bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                <Truck size={9} /> Entregue
                               </span>
                             );
-                          })()}
-                        </div>
-                        <p className="text-[13px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-tight">
-                          {product ? (product.reference ? `${product.reference} · ${product.name}` : product.name) : '---'} • {variation?.colorName}
-                        </p>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{lot.quantity} PARES</span>
-                          {lot.customerName && <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase truncate max-w-[150px]"> • {lot.customerName}</span>}
-                        </div>
-                        
-                        {/* Grade do Pedido (Grid) */}
-                        {lot.pairs && (
-                          <div className="flex flex-wrap gap-1 mt-3">
-                            {Object.entries(lot.pairs).map(([size, qty]) => (
-                              <div key={size} className="flex flex-col items-center min-w-[36px] p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-md">
-                                <span className="text-[11px] font-black text-slate-600 dark:text-slate-400 leading-none mb-1">{size}</span>
-                                <span className="text-sm font-black text-indigo-600 dark:text-indigo-400 leading-none">{qty as number}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                          }
+                          return (
+                            <span className="text-[8px] font-black uppercase tracking-widest bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 px-2 py-0.5 rounded-md">
+                              {linkedOrder.orderNumber}
+                            </span>
+                          );
+                        })()}
 
-                        {lot.deliveryDate && (
-                          <div className="flex items-center gap-2 mt-3">
-                            <CalendarClock size={14} className={lot.deliveryDate < Date.now() ? 'text-rose-500' : 'text-slate-400'} />
-                            <p className={`text-[13px] font-black uppercase tracking-widest ${lot.deliveryDate < Date.now() ? 'text-rose-500' : 'text-slate-500'}`}>
-                              Entrega: {new Date(lot.deliveryDate).toLocaleDateString('pt-BR')}
-                            </p>
-                          </div>
-                        )}
+                        {/* Botão de Paleta (Configurar Cor do Mapa) no local do print */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setIsColorPickerOpen(true);
+                          }}
+                          className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 hover:text-indigo-600 transition-all flex items-center gap-1 shrink-0 ml-1 border border-indigo-100 dark:border-indigo-900/30 shadow-sm"
+                          title="Configurar Cor do Mapa"
+                        >
+                          <Palette size={10} />
+                          <span className="text-[8px] font-black uppercase tracking-widest">Cor do Mapa</span>
+                        </button>
                       </div>
-                    </div>
+                      <p className="text-[13px] font-black text-slate-700 dark:text-slate-300 uppercase tracking-tight">
+                        {product ? (product.reference ? `${product.reference} · ${product.name}` : product.name) : '---'} • {variation?.colorName}
+                      </p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{lot.quantity} PARES</span>
+                        {lot.customerName && <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase truncate max-w-[150px]"> • {lot.customerName}</span>}
+                      </div>
 
-                    <ChevronRight size={18} className="text-slate-300 shrink-0" />
+                      {/* Grade do Pedido (Grid) */}
+                      {lot.pairs && (
+                        <div className="flex flex-wrap gap-1 mt-3">
+                          {Object.entries(lot.pairs).map(([size, qty]) => (
+                            <div key={size} className="flex flex-col items-center min-w-[36px] p-2 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-md">
+                              <span className="text-[11px] font-black text-slate-600 dark:text-slate-400 leading-none mb-1">{size}</span>
+                              <span className="text-sm font-black text-indigo-600 dark:text-indigo-400 leading-none">{qty as number}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {lot.deliveryDate && (
+                        <div className="flex items-center gap-2 mt-3">
+                          <CalendarClock size={14} className={lot.deliveryDate < Date.now() ? 'text-rose-500' : 'text-slate-400'} />
+                          <p className={`text-[13px] font-black uppercase tracking-widest ${lot.deliveryDate < Date.now() ? 'text-rose-500' : 'text-slate-500'}`}>
+                            Entrega: {new Date(lot.deliveryDate).toLocaleDateString('pt-BR')}
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                );
-              })}
-            </div>
+
+                  <ChevronRight size={18} className="text-slate-300 shrink-0" />
+                </div>
+              );
+            })}
           </div>
-        )}
+        </div>
+      )}
 
-        {activeTab === 'solados' && (
-          <div className="flex flex-col gap-6">
-            <header className="mb-1">
-              <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Gestão de Solados</h2>
-              <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Pesagem, conferência, estoque e matrizes</p>
-            </header>
+      {activeTab === 'solados' && (
+        <div className="flex flex-col gap-6">
+          <header className="mb-1">
+            <h2 className="text-2xl font-black text-slate-900 dark:text-white uppercase tracking-tight">Gestão de Solados</h2>
+            <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">Pesagem, conferência, estoque e matrizes</p>
+          </header>
 
-            <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
-              {[
-                { id: ViewType.PRODUCTION_WEIGHING, label: 'Pesagem e Contagem de Solados', description: 'Bipagem, pesagem e contagem de pares', icon: <Scale size={24} />, color: 'text-violet-600' },
-                { id: ViewType.PRODUCTION_SOLE_RECEIPT, label: 'Conferência de Compras (Solas)', description: 'Receber e conferir solados comprados', icon: <ShoppingCart size={24} />, color: 'text-cyan-600' },
-                { id: ViewType.PRODUCTION_SOLE_STOCK, label: 'Estoque de Solados', description: 'Gerenciamento por modelo, cor e tamanho', icon: <Package size={24} />, color: 'text-emerald-600' },
-              ].map((item, index, array) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onNavigate(item.id)}
-                  className={`w-full flex items-center justify-between p-8 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all active:scale-[0.98] ${index !== array.length - 1 ? (isDarkMode ? "border-b border-slate-800" : "border-b border-slate-50") : ""}`}
-                >
-                  <div className="flex items-center gap-6">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? "bg-slate-800" : "bg-slate-50"} ${item.color}`}>
-                      {item.icon}
-                    </div>
-                    <div className="text-left">
-                      <p className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>{item.label}</p>
-                      <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">{item.description}</p>
-                    </div>
-                  </div>
-                  <ChevronRight size={24} className={isDarkMode ? "text-slate-700" : "text-slate-300"} />
-                </button>
-              ))}
+          <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+            {[
+              { id: ViewType.PRODUCTION_WEIGHING, label: 'Pesagem e Contagem de Solados', description: 'Bipagem, pesagem e contagem de pares', icon: <Scale size={24} />, color: 'text-violet-600' },
+              { id: ViewType.PRODUCTION_SOLE_RECEIPT, label: 'Conferência de Compras (Solas)', description: 'Receber e conferir solados comprados', icon: <ShoppingCart size={24} />, color: 'text-cyan-600' },
+              { id: ViewType.PRODUCTION_SOLE_STOCK, label: 'Estoque de Solados', description: 'Gerenciamento por modelo, cor e tamanho', icon: <Package size={24} />, color: 'text-emerald-600' },
+            ].map((item, index, array) => (
               <button
+                key={item.id}
                 type="button"
-                onClick={() => onNavigateProduction?.('MATRIZES')}
-                className="w-full flex items-center justify-between p-8 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all active:scale-[0.98]"
+                onClick={() => onNavigate(item.id)}
+                className={`w-full flex items-center justify-between p-8 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all active:scale-[0.98] ${index !== array.length - 1 ? (isDarkMode ? "border-b border-slate-800" : "border-b border-slate-50") : ""}`}
               >
                 <div className="flex items-center gap-6">
-                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? "bg-slate-800" : "bg-slate-50"} text-indigo-500`}>
-                    <Database size={24} />
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? "bg-slate-800" : "bg-slate-50"} ${item.color}`}>
+                    {item.icon}
                   </div>
                   <div className="text-left">
-                    <p className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Matrizes</p>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Cadastro de moldes e matrizes de solados</p>
+                    <p className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>{item.label}</p>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">{item.description}</p>
                   </div>
                 </div>
                 <ChevronRight size={24} className={isDarkMode ? "text-slate-700" : "text-slate-300"} />
               </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => onNavigateProduction?.('MATRIZES')}
+              className="w-full flex items-center justify-between p-8 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all active:scale-[0.98]"
+            >
+              <div className="flex items-center gap-6">
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? "bg-slate-800" : "bg-slate-50"} text-indigo-500`}>
+                  <Database size={24} />
+                </div>
+                <div className="text-left">
+                  <p className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Matrizes</p>
+                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Cadastro de moldes e matrizes de solados</p>
+                </div>
+              </div>
+              <ChevronRight size={24} className={isDarkMode ? "text-slate-700" : "text-slate-300"} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Centro de Compartilhamento PCP ── */}
+      <Modal
+        isOpen={isPCPShareModalOpen}
+        onClose={() => setIsPCPShareModalOpen(false)}
+        title="Centro de Compartilhamento PCP"
+        maxWidth="max-w-xl"
+      >
+        <div className="flex flex-col gap-5">
+
+          {/* Tipo de relatório */}
+          <div className="flex flex-col gap-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 px-1">Tipo de Relatório</p>
+            <div className={`flex rounded-2xl p-1 gap-1 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+              {([
+                { id: 'sector', label: 'Por Setor' },
+                { id: 'lot', label: 'Por Mapa' },
+                { id: 'customer', label: 'Por Cliente' },
+              ] as const).map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setShareReportType(t.id)}
+                  className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${shareReportType === t.id
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+                      : isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
           </div>
-        )}
 
-        {/* ── Centro de Compartilhamento PCP ── */}
-        <Modal
-          isOpen={isPCPShareModalOpen}
-          onClose={() => setIsPCPShareModalOpen(false)}
-          title="Centro de Compartilhamento PCP"
-          maxWidth="max-w-xl"
-        >
-          <div className="flex flex-col gap-5">
-
-            {/* Tipo de relatório */}
-            <div className="flex flex-col gap-2">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 px-1">Tipo de Relatório</p>
-              <div className={`flex rounded-2xl p-1 gap-1 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
-                {([
-                  { id: 'sector', label: 'Por Setor' },
-                  { id: 'lot',    label: 'Por Mapa'  },
-                  { id: 'customer', label: 'Por Cliente' },
-                ] as const).map(t => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setShareReportType(t.id)}
-                    className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                      shareReportType === t.id
-                        ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
-                        : isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'
+          {/* Status */}
+          <div className="flex flex-col gap-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 px-1">Status dos Mapas</p>
+            <div className="flex gap-2 flex-wrap">
+              {([
+                { id: 'active', label: 'Em Produção' },
+                { id: 'finished', label: 'Concluídos' },
+                { id: 'all', label: 'Todos' },
+              ] as const).map(s => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setShareFilterStatus(s.id)}
+                  className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${shareFilterStatus === s.id
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                      : isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-white text-slate-500 border-slate-200'
                     }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
+                >
+                  {s.label}
+                </button>
+              ))}
             </div>
+          </div>
 
-            {/* Status */}
+          {/* Filtro por setor */}
+          {sectors.length > 0 && (
             <div className="flex flex-col gap-2">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 px-1">Status dos Mapas</p>
-              <div className="flex gap-2 flex-wrap">
-                {([
-                  { id: 'active',   label: 'Em Produção' },
-                  { id: 'finished', label: 'Concluídos'  },
-                  { id: 'all',      label: 'Todos'       },
-                ] as const).map(s => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => setShareFilterStatus(s.id)}
-                    className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
-                      shareFilterStatus === s.id
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                        : isDarkMode ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-white text-slate-500 border-slate-200'
-                    }`}
-                  >
-                    {s.label}
-                  </button>
-                ))}
+              <div className="flex items-center justify-between px-1">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Setores</p>
+                <button
+                  type="button"
+                  onClick={() => setShareFilterSectors(new Set())}
+                  className="text-[9px] font-black text-indigo-500 uppercase tracking-widest"
+                >
+                  {shareFilterSectors.size === 0 ? 'Todos selecionados' : `${shareFilterSectors.size} filtrado(s) — limpar`}
+                </button>
               </div>
-            </div>
-
-            {/* Filtro por setor */}
-            {sectors.length > 0 && (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center justify-between px-1">
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Setores</p>
-                  <button
-                    type="button"
-                    onClick={() => setShareFilterSectors(new Set())}
-                    className="text-[9px] font-black text-indigo-500 uppercase tracking-widest"
-                  >
-                    {shareFilterSectors.size === 0 ? 'Todos selecionados' : `${shareFilterSectors.size} filtrado(s) — limpar`}
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {sectors.map(sec => {
-                    const active = shareFilterSectors.size === 0 || shareFilterSectors.has(sec.id);
-                    const color = sec.color || '#6366f1';
-                    return (
-                      <button
-                        key={sec.id}
-                        type="button"
-                        onClick={() => {
-                          setShareFilterSectors(prev => {
-                            const next = new Set(prev.size === 0 ? sectors.map(s => s.id) : prev);
-                            if (next.has(sec.id)) { next.delete(sec.id); if (next.size === sectors.length) return new Set(); }
-                            else next.add(sec.id);
-                            return next;
-                          });
-                        }}
-                        className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${
-                          active
-                            ? isDarkMode ? 'bg-indigo-900/30 border-indigo-700 text-indigo-300' : 'bg-indigo-50 border-indigo-200 text-indigo-700'
-                            : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-500' : 'bg-white border-slate-200 text-slate-400'
-                        }`}
-                      >
-                        <span
-                          className="w-4 h-4 rounded-md flex items-center justify-center shrink-0 transition-colors border-2"
-                          style={active ? { background: color, borderColor: color } : { borderColor: isDarkMode ? '#475569' : '#cbd5e1' }}
-                        >
-                          {active && <CheckCircle2 size={10} className="text-white" strokeWidth={3} />}
-                        </span>
-                        <span className="text-[10px] font-black uppercase tracking-widest leading-tight">
-                          {sec.name}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Busca com sugestões */}
-            <div className="flex flex-col gap-1.5">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 px-1">Buscar por Produto / Cliente / Mapa</p>
-              <div className="relative">
-                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={shareSearch}
-                  onChange={e => setShareSearch(e.target.value)}
-                  placeholder="Ex: BOSS, Cliente XYZ, 003..."
-                  className={`w-full pl-9 pr-4 py-2.5 rounded-xl text-sm font-bold border outline-none focus:ring-2 focus:ring-indigo-500/20 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-600' : 'bg-slate-50 border-slate-200 text-slate-800 placeholder:text-slate-400'}`}
-                />
-                {shareSearch && (
-                  <button type="button" onClick={() => setShareSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" title="Limpar busca" aria-label="Limpar busca">
-                    <X size={14} />
-                  </button>
-                )}
-                {/* Sugestões */}
-                {shareSearch.trim().length > 0 && (() => {
-                  const q = shareSearch.toLowerCase();
-                  const suggestions: { label: string; kind: 'map' | 'product' | 'customer' }[] = [];
-                  const seen = new Set<string>();
-                  lots.forEach(l => {
-                    const p = products.find(pr => pr.id === l.productId);
-                    const order = l.productionOrderId ? productionOrders.find(o => o.id === l.productionOrderId) : undefined;
-                    // Número do mapa
-                    if (l.orderNumber?.toLowerCase().includes(q)) {
-                      const k = `map:${l.orderNumber}`;
-                      if (!seen.has(k)) { seen.add(k); suggestions.push({ label: `MAPA ${l.orderNumber}`, kind: 'map' }); }
-                    }
-                    // Produto
-                    if (p?.name?.toLowerCase().includes(q)) {
-                      const k = `prod:${p.id}`;
-                      if (!seen.has(k)) { seen.add(k); suggestions.push({ label: p.name, kind: 'product' }); }
-                    }
-                    if (p?.reference?.toLowerCase().includes(q)) {
-                      const k = `ref:${p.id}`;
-                      if (!seen.has(k)) { seen.add(k); suggestions.push({ label: p.reference!, kind: 'product' }); }
-                    }
-                    // Cliente (no lote ou no pedido vinculado)
-                    const custName = l.customerName || order?.customerName;
-                    if (custName && custName.toLowerCase().includes(q)) {
-                      const k = `cust:${custName}`;
-                      if (!seen.has(k)) { seen.add(k); suggestions.push({ label: custName, kind: 'customer' }); }
-                    }
-                    ((l as any).groups || []).forEach((g: any) => {
-                      const go = g.productionOrderId ? productionOrders.find((o: any) => o.id === g.productionOrderId) : undefined;
-                      const gCust = g.customerName || go?.customerName;
-                      if (gCust && gCust.toLowerCase().includes(q)) {
-                        const k = `cust:${gCust}`;
-                        if (!seen.has(k)) { seen.add(k); suggestions.push({ label: gCust, kind: 'customer' }); }
-                      }
-                    });
-                  });
-                  if (!suggestions.length) return null;
-                  return (
-                    <div className={`absolute top-full left-0 right-0 mt-1 rounded-xl border shadow-xl z-50 overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                      {suggestions.slice(0, 6).map((s, i) => (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => setShareSearch(s.kind === 'map' ? s.label.replace('MAPA ', '') : s.label)}
-                          className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-50'} ${i > 0 ? (isDarkMode ? 'border-t border-slate-700' : 'border-t border-slate-100') : ''}`}
-                        >
-                          <span className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md ${
-                            s.kind === 'map' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
-                            : s.kind === 'product' ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'
-                            : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
-                          }`}>
-                            {s.kind === 'map' ? 'Mapa' : s.kind === 'product' ? 'Produto' : 'Cliente'}
-                          </span>
-                          <span className={`text-[13px] font-bold truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{s.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-
-            {/* Opções de conteúdo */}
-            <div className="flex flex-col gap-2">
-              <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 px-1">Incluir no Relatório</p>
               <div className="grid grid-cols-2 gap-2">
-                {([
-                  { key: 'grades',   label: 'Grade Completa (tamanhos)' },
-                  { key: 'totals',   label: 'Totais por Setor'          },
-                  { key: 'dates',    label: 'Datas de Entrega'          },
-                  { key: 'refs',     label: 'Referência do Produto'     },
-                  { key: 'customer', label: 'Nome do Cliente'           },
-                ] as const).map(opt => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => setShareOpts(prev => ({ ...prev, [opt.key]: !prev[opt.key] }))}
-                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${
-                      shareOpts[opt.key]
-                        ? isDarkMode ? 'bg-indigo-900/30 border-indigo-700 text-indigo-300' : 'bg-indigo-50 border-indigo-200 text-indigo-700'
-                        : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-500' : 'bg-white border-slate-200 text-slate-400'
-                    }`}
-                  >
-                    <span className={`w-4 h-4 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors ${shareOpts[opt.key] ? 'bg-indigo-600 border-indigo-600' : isDarkMode ? 'border-slate-600' : 'border-slate-300'}`}>
-                      {shareOpts[opt.key] && <CheckCircle2 size={10} className="text-white" strokeWidth={3} />}
-                    </span>
-                    <span className="text-[10px] font-black uppercase tracking-widest leading-tight">{opt.label}</span>
-                  </button>
-                ))}
+                {sectors.map(sec => {
+                  const active = shareFilterSectors.size === 0 || shareFilterSectors.has(sec.id);
+                  const color = sec.color || '#6366f1';
+                  return (
+                    <button
+                      key={sec.id}
+                      type="button"
+                      onClick={() => {
+                        setShareFilterSectors(prev => {
+                          const next = new Set(prev.size === 0 ? sectors.map(s => s.id) : prev);
+                          if (next.has(sec.id)) { next.delete(sec.id); if (next.size === sectors.length) return new Set(); }
+                          else next.add(sec.id);
+                          return next;
+                        });
+                      }}
+                      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${active
+                          ? isDarkMode ? 'bg-indigo-900/30 border-indigo-700 text-indigo-300' : 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                          : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-500' : 'bg-white border-slate-200 text-slate-400'
+                        }`}
+                    >
+                      <span
+                        className="w-4 h-4 rounded-md flex items-center justify-center shrink-0 transition-colors border-2"
+                        style={active ? { background: color, borderColor: color } : { borderColor: isDarkMode ? '#475569' : '#cbd5e1' }}
+                      >
+                        {active && <CheckCircle2 size={10} className="text-white" strokeWidth={3} />}
+                      </span>
+                      <span className="text-[10px] font-black uppercase tracking-widest leading-tight">
+                        {sec.name}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
+          )}
 
-            {/* Resumo + botão pré-visualizar */}
-            {(() => {
-              const preview = getShareData();
-              const totalPairs = preview.reduce((s, l) => s + (l.quantity || 0), 0);
-              const sectorSet = new Set(preview.map(l => l.route?.[l.currentSectorIndex]).filter(Boolean));
-              return (
-                <div className={`p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Prévia do Conteúdo</p>
-                    {preview.length > 0 && (
+          {/* Busca com sugestões */}
+          <div className="flex flex-col gap-1.5">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 px-1">Buscar por Produto / Cliente / Mapa</p>
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={shareSearch}
+                onChange={e => setShareSearch(e.target.value)}
+                placeholder="Ex: BOSS, Cliente XYZ, 003..."
+                className={`w-full pl-9 pr-4 py-2.5 rounded-xl text-sm font-bold border outline-none focus:ring-2 focus:ring-indigo-500/20 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-600' : 'bg-slate-50 border-slate-200 text-slate-800 placeholder:text-slate-400'}`}
+              />
+              {shareSearch && (
+                <button type="button" onClick={() => setShareSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600" title="Limpar busca" aria-label="Limpar busca">
+                  <X size={14} />
+                </button>
+              )}
+              {/* Sugestões */}
+              {shareSearch.trim().length > 0 && (() => {
+                const q = shareSearch.toLowerCase();
+                const suggestions: { label: string; kind: 'map' | 'product' | 'customer' }[] = [];
+                const seen = new Set<string>();
+                lots.forEach(l => {
+                  const p = products.find(pr => pr.id === l.productId);
+                  const order = l.productionOrderId ? productionOrders.find(o => o.id === l.productionOrderId) : undefined;
+                  // Número do mapa
+                  if (l.orderNumber?.toLowerCase().includes(q)) {
+                    const k = `map:${l.orderNumber}`;
+                    if (!seen.has(k)) { seen.add(k); suggestions.push({ label: `MAPA ${l.orderNumber}`, kind: 'map' }); }
+                  }
+                  // Produto
+                  if (p?.name?.toLowerCase().includes(q)) {
+                    const k = `prod:${p.id}`;
+                    if (!seen.has(k)) { seen.add(k); suggestions.push({ label: p.name, kind: 'product' }); }
+                  }
+                  if (p?.reference?.toLowerCase().includes(q)) {
+                    const k = `ref:${p.id}`;
+                    if (!seen.has(k)) { seen.add(k); suggestions.push({ label: p.reference!, kind: 'product' }); }
+                  }
+                  // Cliente (no lote ou no pedido vinculado)
+                  const custName = l.customerName || order?.customerName;
+                  if (custName && custName.toLowerCase().includes(q)) {
+                    const k = `cust:${custName}`;
+                    if (!seen.has(k)) { seen.add(k); suggestions.push({ label: custName, kind: 'customer' }); }
+                  }
+                  ((l as any).groups || []).forEach((g: any) => {
+                    const go = g.productionOrderId ? productionOrders.find((o: any) => o.id === g.productionOrderId) : undefined;
+                    const gCust = g.customerName || go?.customerName;
+                    if (gCust && gCust.toLowerCase().includes(q)) {
+                      const k = `cust:${gCust}`;
+                      if (!seen.has(k)) { seen.add(k); suggestions.push({ label: gCust, kind: 'customer' }); }
+                    }
+                  });
+                });
+                if (!suggestions.length) return null;
+                return (
+                  <div className={`absolute top-full left-0 right-0 mt-1 rounded-xl border shadow-xl z-50 overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                    {suggestions.slice(0, 6).map((s, i) => (
                       <button
+                        key={i}
                         type="button"
-                        onClick={() => setSharePreviewOpen(true)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 border ${isDarkMode ? 'bg-indigo-900/30 border-indigo-700 text-indigo-300 hover:bg-indigo-900/50' : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'}`}
+                        onClick={() => setShareSearch(s.kind === 'map' ? s.label.replace('MAPA ', '') : s.label)}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors ${isDarkMode ? 'hover:bg-slate-700' : 'hover:bg-slate-50'} ${i > 0 ? (isDarkMode ? 'border-t border-slate-700' : 'border-t border-slate-100') : ''}`}
                       >
-                        <Eye size={10} strokeWidth={2.5} /> Pré-visualizar
+                        <span className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md ${s.kind === 'map' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
+                            : s.kind === 'product' ? 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300'
+                              : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+                          }`}>
+                          {s.kind === 'map' ? 'Mapa' : s.kind === 'product' ? 'Produto' : 'Cliente'}
+                        </span>
+                        <span className={`text-[13px] font-bold truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{s.label}</span>
                       </button>
-                    )}
+                    ))}
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="text-center">
-                      <p className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{preview.length}</p>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Mapas</p>
-                    </div>
-                    <div className="text-center">
-                      <p className="text-2xl font-black text-indigo-500">{totalPairs}</p>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pares</p>
-                    </div>
-                    <div className="text-center">
-                      <p className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{sectorSet.size}</p>
-                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Setores</p>
-                    </div>
-                  </div>
-                  {preview.length === 0 && (
-                    <p className="text-[10px] text-slate-400 text-center mt-3 italic">Nenhum mapa corresponde aos filtros</p>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* Opções de conteúdo */}
+          <div className="flex flex-col gap-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 px-1">Incluir no Relatório</p>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { key: 'grades', label: 'Grade Completa (tamanhos)' },
+                { key: 'totals', label: 'Totais por Setor' },
+                { key: 'dates', label: 'Datas de Entrega' },
+                { key: 'refs', label: 'Referência do Produto' },
+                { key: 'customer', label: 'Nome do Cliente' },
+              ] as const).map(opt => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setShareOpts(prev => ({ ...prev, [opt.key]: !prev[opt.key] }))}
+                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${shareOpts[opt.key]
+                      ? isDarkMode ? 'bg-indigo-900/30 border-indigo-700 text-indigo-300' : 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                      : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-500' : 'bg-white border-slate-200 text-slate-400'
+                    }`}
+                >
+                  <span className={`w-4 h-4 rounded-md border-2 flex items-center justify-center shrink-0 transition-colors ${shareOpts[opt.key] ? 'bg-indigo-600 border-indigo-600' : isDarkMode ? 'border-slate-600' : 'border-slate-300'}`}>
+                    {shareOpts[opt.key] && <CheckCircle2 size={10} className="text-white" strokeWidth={3} />}
+                  </span>
+                  <span className="text-[10px] font-black uppercase tracking-widest leading-tight">{opt.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Resumo + botão pré-visualizar */}
+          {(() => {
+            const preview = getShareData();
+            const totalPairs = preview.reduce((s, l) => s + (l.quantity || 0), 0);
+            const sectorSet = new Set(preview.map(l => l.route?.[l.currentSectorIndex]).filter(Boolean));
+            return (
+              <div className={`p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Prévia do Conteúdo</p>
+                  {preview.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSharePreviewOpen(true)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 border ${isDarkMode ? 'bg-indigo-900/30 border-indigo-700 text-indigo-300 hover:bg-indigo-900/50' : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'}`}
+                    >
+                      <Eye size={10} strokeWidth={2.5} /> Pré-visualizar
+                    </button>
                   )}
                 </div>
-              );
-            })()}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="text-center">
+                    <p className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{preview.length}</p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Mapas</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-black text-indigo-500">{totalPairs}</p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Pares</p>
+                  </div>
+                  <div className="text-center">
+                    <p className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{sectorSet.size}</p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Setores</p>
+                  </div>
+                </div>
+                {preview.length === 0 && (
+                  <p className="text-[10px] text-slate-400 text-center mt-3 italic">Nenhum mapa corresponde aos filtros</p>
+                )}
+              </div>
+            );
+          })()}
 
-            {/* Botões de exportação */}
-            <div className="flex gap-3">
-              <button
-                type="button"
-                disabled={!!shareGenerating || getShareData().length === 0}
-                onClick={generatePCPPDF}
-                className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 ${
-                  !!shareGenerating || getShareData().length === 0
-                    ? 'opacity-40 cursor-not-allowed ' + (isDarkMode ? 'bg-slate-700 text-slate-500' : 'bg-slate-100 text-slate-400')
-                    : 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+          {/* Botões de exportação */}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              disabled={!!shareGenerating || getShareData().length === 0}
+              onClick={generatePCPPDF}
+              className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 ${!!shareGenerating || getShareData().length === 0
+                  ? 'opacity-40 cursor-not-allowed ' + (isDarkMode ? 'bg-slate-700 text-slate-500' : 'bg-slate-100 text-slate-400')
+                  : 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
                 }`}
-              >
-                {shareGenerating === 'pdf'
-                  ? <><Loader2 size={14} className="animate-spin" /> Gerando...</>
-                  : <><FileText size={14} strokeWidth={3} /> Gerar PDF</>
-                }
-              </button>
-              <button
-                type="button"
-                disabled={!!shareGenerating || getShareData().length === 0}
-                onClick={generatePCPImage}
-                className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 ${
-                  !!shareGenerating || getShareData().length === 0
-                    ? 'opacity-40 cursor-not-allowed ' + (isDarkMode ? 'bg-slate-700 text-slate-500' : 'bg-slate-100 text-slate-400')
-                    : isDarkMode ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20' : 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
+            >
+              {shareGenerating === 'pdf'
+                ? <><Loader2 size={14} className="animate-spin" /> Gerando...</>
+                : <><FileText size={14} strokeWidth={3} /> Gerar PDF</>
+              }
+            </button>
+            <button
+              type="button"
+              disabled={!!shareGenerating || getShareData().length === 0}
+              onClick={generatePCPImage}
+              className={`flex-1 flex items-center justify-center gap-2 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 ${!!shareGenerating || getShareData().length === 0
+                  ? 'opacity-40 cursor-not-allowed ' + (isDarkMode ? 'bg-slate-700 text-slate-500' : 'bg-slate-100 text-slate-400')
+                  : isDarkMode ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/20' : 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
                 }`}
-              >
-                {shareGenerating === 'image'
-                  ? <><Loader2 size={14} className="animate-spin" /> Gerando...</>
-                  : <><Share2 size={14} strokeWidth={3} /> Gerar Imagem</>
-                }
-              </button>
-            </div>
-
+            >
+              {shareGenerating === 'image'
+                ? <><Loader2 size={14} className="animate-spin" /> Gerando...</>
+                : <><Share2 size={14} strokeWidth={3} /> Gerar Imagem</>
+              }
+            </button>
           </div>
-        </Modal>
 
-        {/* ── Popup Pré-visualização do Relatório PCP ── */}
-        {sharePreviewOpen && createPortal(
-          <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 70000 }}>
-            {/* Overlay */}
-            <div className="absolute inset-0 bg-black/60" onClick={() => setSharePreviewOpen(false)} />
-            {/* Popup centralizado */}
+        </div>
+      </Modal>
+
+      {/* ── Popup Pré-visualização do Relatório PCP ── */}
+      {sharePreviewOpen && createPortal(
+        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 70000 }}>
+          {/* Overlay */}
+          <div className="absolute inset-0 bg-black/60" onClick={() => setSharePreviewOpen(false)} />
+          {/* Popup centralizado */}
           <div className="relative w-full flex flex-col rounded-3xl overflow-hidden shadow-2xl" style={{ height: '94vh', maxWidth: 560, background: '#f4f6fb' }}>
 
             {/* ── Topo ── */}
@@ -6881,7 +6729,7 @@ export default function PCPView({
                       <div key={order.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 mb-2">
                         <div className="flex items-start justify-between gap-2 mb-1">
                           <span className="text-[12px] font-black text-indigo-600">PEDIDO {order.saleOrderNumber}</span>
-                          <span className="text-[11px] font-black text-indigo-400 shrink-0">{totalPairs} par</span>
+                          <span className="text-[11px] font-black text-indigo-400 shrink-0">{totalPairs} {totalPairs === 1 ? 'par' : 'pares'}</span>
                         </div>
                         {order.items.map((item, i) => {
                           const p = products.find(pr => pr.id === item.productId);
@@ -6895,7 +6743,7 @@ export default function PCPView({
                                 <p className="text-[12px] font-bold text-slate-700 leading-snug">
                                   {shareOpts.refs && p?.reference ? `${p.reference} · ` : ''}{p?.name || item.productName || '—'}{v?.colorName || item.variationName ? ` · ${v?.colorName || item.variationName}` : ''}
                                 </p>
-                                <span className="text-[11px] font-black text-slate-500 shrink-0">{item.toProductionQty}p</span>
+                                <span className="text-[11px] font-black text-slate-500 shrink-0">{item.toProductionQty} {item.toProductionQty === 1 ? 'par' : 'pares'}</span>
                               </div>
                               {shareOpts.grades && itemGrade.length > 0 && (
                                 <div className="flex flex-wrap gap-1 mt-1.5">
@@ -6985,142 +6833,11 @@ export default function PCPView({
               </button>
             </div>
           </div>
-          </div>,
-          document.body
-        )}
+        </div>,
+        document.body
+      )}
 
-        {/* Modal Criar MAPA */}
-      <Modal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        title="Iniciar Novo MAPA de Produção"
-        maxWidth="max-w-2xl"
-      >
-        <div className="flex flex-col gap-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Produto / Modelo</label>
-              <ComboBox
-                options={products.map(p => ({ id: p.id, name: `${p.reference} - ${p.name}` }))}
-                value={newLot.productId || ''}
-                onChange={(id) => {
-                  const p = products.find(prod => prod.id === id);
-                  setNewLot({ ...newLot, productId: id, variationId: p?.variations[0]?.id || '' });
-                }}
-                placeholder="Selecionar produto..."
-                isDarkMode={isDarkMode}
-                icon={<Package size={18} />}
-              />
-            </div>
-            
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Cor / Variação</label>
-              <ComboBox
-                options={(() => {
-                  const product = products.find(p => p.id === newLot.productId);
-                  return product?.variations.map(v => ({ id: v.id, name: v.colorName })) || [];
-                })()}
-                value={newLot.variationId || ''}
-                onChange={(id) => setNewLot({ ...newLot, variationId: id })}
-                placeholder="Selecionar cor..."
-                isDarkMode={isDarkMode}
-                icon={<Tag size={18} />}
-              />
-            </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Quantidade (Pares)</label>
-              <input
-                type="number"
-                className={`w-full px-6 py-4 rounded-2xl border-2 font-black text-sm outline-none transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
-                value={newLot.quantity || ''}
-                onChange={(e) => setNewLot({ ...newLot, quantity: parseInt(e.target.value) || 0 })}
-                placeholder="0"
-              />
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Prioridade</label>
-              <div className="flex flex-wrap gap-2">
-                {priorityOptions.map(p => {
-                  const isActive = newLot.prioridade === p;
-                  return (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => handlePriorityChange(p)}
-                      className={`flex-1 min-w-[85px] py-3 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border-2 ${
-                        isActive 
-                          ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/20 scale-[1.02]' 
-                          : isDarkMode 
-                            ? 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200' 
-                            : 'bg-slate-50 border-transparent text-slate-500 hover:bg-slate-100'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-6">
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Prazo de Entrega (Personalizado)</label>
-              <div className="relative flex items-center">
-                <CalendarClock size={18} className="absolute left-4 text-slate-400" />
-                <input
-                  type="date"
-                  title="Prazo de Entrega"
-                  aria-label="Prazo de Entrega Personalizado"
-                  className={`w-full pl-12 pr-6 py-4 rounded-2xl border-2 font-black text-sm outline-none transition-all ${
-                    isDarkMode
-                      ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500 [color-scheme:dark]'
-                      : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'
-                  }`}
-                  value={formatDateForInput(newLot.deliveryDate)}
-                  onChange={(e) => {
-                    const parsed = parseDateFromInput(e.target.value);
-                    setNewLot({ ...newLot, deliveryDate: parsed });
-                  }}
-                />
-              </div>
-              {(() => {
-                const currentPriority = newLot.prioridade || 'NORMAL';
-                const cleanPriorityName = currentPriority.toUpperCase().trim();
-                const matchedConfig = (productionConfigs || []).find(c => 
-                  c.type === 'DEADLINE' && 
-                  (c.name.toUpperCase().trim() === cleanPriorityName || 
-                   (cleanPriorityName === 'ALTA' && c.name.toUpperCase().trim() === 'PADRÃO') || 
-                   (cleanPriorityName === 'URGENTE' && c.name.toUpperCase().trim() === 'URGENTE'))
-                );
-                const defaultDays = matchedConfig?.metadata?.days ?? (currentPriority === 'URGENTE' ? 3 : currentPriority === 'ALTA' ? 7 : 15);
-                
-                return (
-                  <div className="flex items-center gap-2 px-1">
-                    <span className={`w-2 h-2 rounded-full ${
-                      currentPriority === 'URGENTE' ? 'bg-rose-500 animate-pulse' : currentPriority === 'ALTA' ? 'bg-amber-500' : 'bg-green-500'
-                    }`} />
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      Prazo Padrão ({currentPriority}): {defaultDays} dias
-                    </span>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-
-          <button
-            onClick={handleCreateLot}
-            className="w-full mt-4 py-5 bg-indigo-600 text-white rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-600/20 hover:scale-[1.02] active:scale-95 transition-all"
-          >
-            Confirmar Abertura de MAPA
-          </button>
-        </div>
-      </Modal>
 
       {/* Modal Detalhe / Apontamento */}
       <Modal
@@ -7175,19 +6892,11 @@ export default function PCPView({
                     </div>
                     <div className="flex items-center gap-1.5">
                       {selectedLot.prioridade && (
-                        <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full ${
-                          selectedLot.prioridade === 'URGENTE' ? 'bg-rose-500 text-white' :
-                          selectedLot.prioridade === 'ALTA' ? 'bg-amber-400 text-white' :
-                          'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
-                        }`}>{selectedLot.prioridade}</span>
+                        <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-full ${selectedLot.prioridade === 'URGENTE' ? 'bg-rose-500 text-white' :
+                            selectedLot.prioridade === 'ALTA' ? 'bg-amber-400 text-white' :
+                              'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                          }`}>{selectedLot.prioridade}</span>
                       )}
-                      <button onClick={() => {
-                        setNewLot({ id: selectedLot.id, productId: selectedLot.productId, variationId: selectedLot.variationId, quantity: selectedLot.quantity, prioridade: selectedLot.prioridade, productionOrderId: selectedLot.productionOrderId, customerName: selectedLot.customerName, deliveryDate: selectedLot.deliveryDate, saleId: selectedLot.saleId, saleOrderNumber: selectedLot.saleOrderNumber });
-                        setIsDetailModalOpen(false); setIsCreateModalOpen(true);
-                      }} title="Editar Mapa"
-                        className="p-2 rounded-xl transition-all bg-amber-400 hover:bg-amber-500 text-white active:scale-95">
-                        <Edit2 size={13} strokeWidth={3} />
-                      </button>
                     </div>
                   </div>
 
@@ -7328,14 +7037,14 @@ export default function PCPView({
                 );
                 // OS pendentes (bloqueiam criação de nova OS)
                 const getOrderOS = (orderId: string) => lotOSList.find(so =>
-                  so.sourceOrderIds && so.sourceOrderIds.length > 0 && so.sourceOrderIds.includes(orderId)
+                  so.sourceOrderIds && so.sourceOrderIds.length > 0 && so.sourceOrderIds.some(id => id === orderId || id.startsWith(`${orderId}::`))
                 );
 
                 // OS concluída NO SETOR ATUAL, com o pedido explicitamente listado
                 const completedOSForOrder = (orderId: string) => serviceOrders.find(so =>
                   so.sourceOrderIds &&
                   so.sourceOrderIds.length > 0 &&
-                  so.sourceOrderIds.includes(orderId) &&
+                  so.sourceOrderIds.some(id => id === orderId || id.startsWith(`${orderId}::`)) &&
                   (so.lotId === selectedLot.id || so.lotIds?.includes(selectedLot.id)) &&
                   so.sectorId === currentSectorId &&
                   so.status === 'COMPLETED'
@@ -7364,10 +7073,10 @@ export default function PCPView({
                   // Para pedidos adiantados, usa o setor onde os pedidos estão (via completedOSForOrder)
                   const completedOs = selectedMoveableItems.length > 0
                     ? serviceOrders.find(so =>
-                        so.sourceOrderIds?.includes(selectedMoveableItems[0]?.si?.orderId) &&
-                        (so.lotId === selectedLot.id || so.lotIds?.includes(selectedLot.id)) &&
-                        so.status === 'COMPLETED'
-                      )
+                      so.sourceOrderIds?.includes(selectedMoveableItems[0]?.si?.orderId) &&
+                      (so.lotId === selectedLot.id || so.lotIds?.includes(selectedLot.id)) &&
+                      so.status === 'COMPLETED'
+                    )
                     : null;
                   if (completedOs?.sectorId) return completedOs.sectorId;
                   return currentSectorId || selectedLot.route?.[selectedLot.currentSectorIndex] || '';
@@ -7606,20 +7315,19 @@ export default function PCPView({
 
                         const sizeEntries = orderItem
                           ? Object.entries(orderItem.sizes as Record<string, { toProduction: number }>)
-                              .filter(([, s]) => s.toProduction > 0)
-                              .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
+                            .filter(([, s]) => s.toProduction > 0)
+                            .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
                           : [];
 
                         return (
-                          <div key={idx} id={`pedido-card-${key}`} className={`rounded-2xl border overflow-hidden transition-all ${
-                            hasOS
+                          <div key={idx} id={`pedido-card-${key}`} className={`rounded-2xl border overflow-hidden transition-all ${hasOS
                               ? (isDarkMode ? 'bg-amber-950/20 border-amber-700/40' : 'bg-amber-50 border-amber-200')
                               : hasCompletedOS
                                 ? (isDarkMode ? 'bg-emerald-950/20 border-emerald-700/40' : 'bg-emerald-50/60 border-emerald-200')
                                 : isChecked
                                   ? (isDarkMode ? 'bg-indigo-950/30 border-indigo-700' : 'bg-indigo-50 border-indigo-200')
                                   : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm')
-                          }`}>
+                            }`}>
                             {/* ── Cabeçalho (sempre visível) ── */}
                             <div className="p-3 flex items-center gap-3">
                               {hasOS ? (
@@ -7652,16 +7360,39 @@ export default function PCPView({
                                 />
                               )}
                               <div className="min-w-0 flex-1">
-                                {/* Linha 1: Referência + Nome */}
-                                <p className="text-[11px] font-black uppercase truncate text-slate-800 dark:text-slate-200 leading-none">
-                                  {productRef ? `${productRef} ${productName}` : productName}
-                                </p>
-                                {/* Linha 2: Cor + Pedido */}
+                                {/* Linha 1: Referência + Nome + Cor + Setor */}
+                                 <div className="flex items-center justify-between gap-2 mb-1.5">
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <span className="text-[9px] font-black px-2 py-0.5 rounded-full uppercase bg-black text-white dark:bg-slate-800 dark:text-white tracking-wider leading-none shrink-0">
+                                      {`${productRef || productName}${colorName ? ` ${colorName}` : ''}`.trim()}
+                                    </span>
+                                    {(() => {
+                                      const effSec = getOrderEffectiveSector(selectedLot, si.orderId, si);
+                                      const secName = effSec === ORDER_FINALIZED
+                                        ? 'Finalizado'
+                                        : (sectors.find(s => s.id === effSec)?.name || effSec || '—');
+                                      return (
+                                        <span className="text-[9px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 leading-none shrink-0">
+                                          {secName}
+                                        </span>
+                                      );
+                                    })()}
+                                  </div>
+                                  <span
+                                    className="text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest leading-none shrink-0"
+                                    style={{
+                                      backgroundColor: mapBadgeBg,
+                                      color: mapBadgeText,
+                                      boxShadow: `0 1px 2px ${mapBadgeBg}40`
+                                    }}
+                                  >
+                                    MAPA{selectedLot.orderNumber}
+                                  </span>
+                                </div>
+                                {/* Linha 2: Pedido */}
                                 <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                  {colorName && (
-                                    <span className="text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">{colorName}</span>
-                                  )}
                                   <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Ped. {order?.saleOrderNumber || selectedLot.saleOrderNumber}</span>
+                                  <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400">· {si.qty} {si.qty === 1 ? 'par' : 'pares'}</span>
                                   {hasOS && (
                                     <span className="text-[8px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">· {orderOS!.osNumber}</span>
                                   )}
@@ -7724,51 +7455,80 @@ export default function PCPView({
                                   );
                                 })()}
                               </div>
-                              <div className="flex flex-col items-end gap-0.5 shrink-0">
-                                {(() => {
-                                  // Setor onde ESTE pedido está (cápsula vermelha) — a informação
-                                  // de setor vive no pedido, não no mapa.
-                                  const effSec = getOrderEffectiveSector(selectedLot, si.orderId, si);
-                                  const secName = effSec === ORDER_FINALIZED
-                                    ? 'Finalizado'
-                                    : (sectors.find(s => s.id === effSec)?.name || effSec || '—');
-                                  return (
-                                    <span className="text-[8px] font-black px-2 py-0.5 rounded-full uppercase bg-rose-500 text-white tracking-widest shadow-sm shadow-rose-500/20">
-                                      {secName}
-                                    </span>
-                                  );
-                                })()}
-                                <span className="text-[8px] font-black px-2 py-0.5 rounded-full uppercase bg-violet-600 text-white tracking-widest shadow-sm shadow-violet-500/30">
-                                  MAPA{selectedLot.orderNumber}
-                                </span>
-                                <div className="flex items-center gap-1">
-                                  <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">{si.qty}P</span>
-                                  <button
-                                    type="button"
-                                    title={isExpanded ? 'Recolher' : 'Expandir grade'}
-                                    aria-label={isExpanded ? 'Recolher pedido' : 'Expandir pedido'}
-                                    onClick={() => {
-                                      const next = new Set(expandedSourceItems);
-                                      isExpanded ? next.delete(key) : next.add(key);
-                                      setExpandedSourceItems(next);
-                                    }}
-                                    className={`p-1 rounded-lg transition-all ${isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-300 hover:text-slate-600'}`}
-                                  >
-                                    <ChevronDown size={13} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
-                                  </button>
-                                </div>
-                                {hasOS ? (
-                                  <>
-                                    <button type="button" onClick={() => handleEditOS(orderOS!)} className="p-1.5 rounded-lg bg-amber-400 hover:bg-amber-500 text-white transition-all active:scale-95" title="Editar OS"><Edit2 size={13} /></button>
-                                    <button type="button" onClick={() => handleDeleteOS(orderOS!)} className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-300 hover:text-rose-500 transition-all" title="Excluir OS"><Trash2 size={13} /></button>
-                                  </>
-                                ) : (
-                                  selectedLot.currentSectorIndex === 0 && !selectedLot.finishedAt && (
-                                    <button type="button" onClick={() => handleRemoveItemFromLot(selectedLot, si.orderId)} className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-300 hover:text-rose-500 transition-all" title="Retirar do Mapa"><MinusCircle size={14} /></button>
-                                  )
-                                )}
-                              </div>
                             </div>
+
+                            {/* ── Rodapé (Sempre visível) ── */}
+                             <div className="px-3 pb-3 pt-1.5 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between gap-3">
+                               <button
+                                 type="button"
+                                 onClick={() => {
+                                   const next = new Set(expandedSourceItems);
+                                   isExpanded ? next.delete(key) : next.add(key);
+                                   setExpandedSourceItems(next);
+                                 }}
+                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-all text-[9px] font-black uppercase tracking-wider"
+                               >
+                                 <ChevronDown size={12} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                                 {isExpanded ? 'Recolher' : 'Grade / Detalhes'}
+                               </button>
+
+                               <div className="flex flex-wrap items-center gap-1.5">
+                                 {/* Botão Mudar Setor */}
+                                 <button
+                                   type="button"
+                                   title="Mudar o setor deste pedido"
+                                   onClick={(e) => {
+                                     e.stopPropagation();
+                                     setMoveSectorModal({
+                                       lotId: selectedLot.id,
+                                       items: [toMoveItem(si)],
+                                       qty: si.qty || 0,
+                                       manual: true,
+                                     });
+                                     setMoveSectorTarget('');
+                                   }}
+                                   className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95"
+                                 >
+                                   <ArrowLeftRight size={11} strokeWidth={3} /> Mudar Setor
+                                 </button>
+
+                                 {hasOS && (
+                                   <>
+                                     <button
+                                       type="button"
+                                       onClick={() => handleEditOS(orderOS!)}
+                                       className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-500 text-white text-[9px] font-black uppercase tracking-wider transition-all active:scale-95"
+                                     >
+                                       <Edit2 size={11} />
+                                       Editar OS
+                                     </button>
+                                     <button
+                                       type="button"
+                                       onClick={() => handleDeleteOS(orderOS!)}
+                                       className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[9px] font-black uppercase tracking-wider transition-all"
+                                     >
+                                       <Trash2 size={11} />
+                                       Excluir OS
+                                     </button>
+                                   </>
+                                 )}
+                               </div>
+                             </div>
+
+                             {/* ── Linha exclusiva de Ação de Remoção ── */}
+                             {!selectedLot.finishedAt && (
+                               <div className="px-3 pb-3 pt-1.5 border-t border-slate-100 dark:border-slate-800/60 flex justify-end">
+                                 <button
+                                   type="button"
+                                   title="Retirar este pedido do mapa"
+                                   onClick={() => handleRemoveItemFromLot(selectedLot, si.orderId)}
+                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[9px] font-black uppercase tracking-wider transition-all active:scale-95"
+                                 >
+                                   <MinusCircle size={12} />
+                                   Retirar do Mapa
+                                 </button>
+                               </div>
+                             )}
 
                             {/* ── Expanded: grade + info completa ── */}
                             {isExpanded && (
@@ -7869,37 +7629,37 @@ export default function PCPView({
                                   </div>
                                 )}
                                 {product && (
-                                <div className={`relative flex items-center justify-between gap-2 pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
-                                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Ficha do Pedido</p>
-                                  <button
-                                    type="button"
-                                    disabled={isPedidoShareExporting}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setSharePedidoPopupKey(sharePedidoPopupKey === key ? null : key);
-                                    }}
-                                    className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-slate-600 text-white hover:bg-slate-700 transition-all active:scale-95 disabled:opacity-50"
-                                  >
-                                    {isPedidoShareExporting && sharePedidoPopupKey === key
-                                      ? <span className="animate-spin text-xs leading-none">⏳</span>
-                                      : <Share2 size={11} />}
-                                    Compartilhar Ficha
-                                  </button>
-                                  {sharePedidoPopupKey === key && (
-                                    <>
-                                      <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setSharePedidoPopupKey(null); }} />
-                                      <div className={`absolute bottom-full right-0 mb-1.5 rounded-2xl shadow-2xl border z-50 p-2 flex flex-col gap-1 min-w-[190px] ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-                                        <p className={`text-[8px] font-black uppercase tracking-widest px-2 pb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Ficha do Pedido</p>
-                                        <button type="button" onClick={(e) => { e.stopPropagation(); setSharePedidoPopupKey(null); handleSharePedidoSheet(selectedLot, product, variation, order, sizeEntries.map(([sz, s]) => [sz, s.toProduction] as [string, number]), si.qty, 'pdf'); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'}`}>
-                                          <Share2 size={11} className="shrink-0" /> PDF — Impressão
-                                        </button>
-                                        <button type="button" onClick={(e) => { e.stopPropagation(); setSharePedidoPopupKey(null); handleSharePedidoSheet(selectedLot, product, variation, order, sizeEntries.map(([sz, s]) => [sz, s.toProduction] as [string, number]), si.qty, 'jpg'); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'}`}>
-                                          <Share2 size={11} className="shrink-0" /> JPG — Imagem
-                                        </button>
-                                      </div>
-                                    </>
-                                  )}
-                                </div>
+                                  <div className={`relative flex items-center justify-between gap-2 pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Ficha do Pedido</p>
+                                    <button
+                                      type="button"
+                                      disabled={isPedidoShareExporting}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSharePedidoPopupKey(sharePedidoPopupKey === key ? null : key);
+                                      }}
+                                      className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-slate-600 text-white hover:bg-slate-700 transition-all active:scale-95 disabled:opacity-50"
+                                    >
+                                      {isPedidoShareExporting && sharePedidoPopupKey === key
+                                        ? <span className="animate-spin text-xs leading-none">⏳</span>
+                                        : <Share2 size={11} />}
+                                      Compartilhar Ficha
+                                    </button>
+                                    {sharePedidoPopupKey === key && (
+                                      <>
+                                        <div className="fixed inset-0 z-40" onClick={(e) => { e.stopPropagation(); setSharePedidoPopupKey(null); }} />
+                                        <div className={`absolute bottom-full right-0 mb-1.5 rounded-2xl shadow-2xl border z-50 p-2 flex flex-col gap-1 min-w-[190px] ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                          <p className={`text-[8px] font-black uppercase tracking-widest px-2 pb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Ficha do Pedido</p>
+                                          <button type="button" onClick={(e) => { e.stopPropagation(); setSharePedidoPopupKey(null); handleSharePedidoSheet(selectedLot, product, variation, order, sizeEntries.map(([sz, s]) => [sz, s.toProduction] as [string, number]), si.qty, 'pdf'); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'}`}>
+                                            <Share2 size={11} className="shrink-0" /> PDF — Impressão
+                                          </button>
+                                          <button type="button" onClick={(e) => { e.stopPropagation(); setSharePedidoPopupKey(null); handleSharePedidoSheet(selectedLot, product, variation, order, sizeEntries.map(([sz, s]) => [sz, s.toProduction] as [string, number]), si.qty, 'jpg'); }} className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-wide transition-all active:scale-95 text-left ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'}`}>
+                                            <Share2 size={11} className="shrink-0" /> JPG — Imagem
+                                          </button>
+                                        </div>
+                                      </>
+                                    )}
+                                  </div>
                                 )}
                               </div>
                             )}
@@ -7915,6 +7675,7 @@ export default function PCPView({
                           <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Pedidos em Outros Setores</span>
                           <span className="text-[9px] font-black text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/20 px-2.5 py-1 rounded-full uppercase">{otherSectorItems.length} {otherSectorItems.length === 1 ? 'pedido' : 'pedidos'}</span>
                         </div>
+
                         <div className="flex flex-col gap-1.5">
                           {otherSectorItems.map((si: any, idx: number) => {
                             const order = productionOrders.find(o => o.id === si.orderId);
@@ -7930,41 +7691,185 @@ export default function PCPView({
                             const colorName = variation?.colorName || orderItem?.variationName || '';
                             const effSector = getOrderEffectiveSector(selectedLot, si.orderId, si);
                             const secName = sectors.find(s => s.id === effSector)?.name || effSector;
+
+                            const key = `${si.orderId}-${idx}-other`;
+                            const isExpanded = expandedSourceItems.has(key);
+                            const sizeEntries = orderItem
+                              ? Object.entries(orderItem.sizes as Record<string, { toProduction: number }>)
+                                .filter(([, s]) => s.toProduction > 0)
+                                .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
+                              : [];
+
                             return (
-                            <div key={`${si.orderId}-${idx}`} className={`flex items-center gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-800/60' : 'bg-white border border-slate-100'}`}>
-                                <div className="min-w-0 flex-1">
-                                  <p className="text-[11px] font-black uppercase truncate text-slate-700 dark:text-slate-200 leading-none">
-                                    {productRef ? `${productRef} ${productName}` : productName}
-                                  </p>
-                                  <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                    {colorName && (
-                                      <span className="text-[9px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">{colorName}</span>
-                                    )}
-                                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Ped. {order?.saleOrderNumber || selectedLot.saleOrderNumber}</span>
+                              <div key={`${si.orderId}-${idx}`} className={`rounded-2xl border overflow-hidden transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+                                {/* ── Cabeçalho (sempre visível) ── */}
+                                <div className="p-3 flex items-center gap-3">
+                                  <div className="w-1" />
+                                  <div className="min-w-0 flex-1">
+                                    {/* Linha 1: Referência + Nome + Cor + Setor */}
+                                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        <span className="text-[9px] font-black px-2 py-0.5 rounded-full uppercase bg-black text-white dark:bg-slate-800 dark:text-white tracking-wider leading-none shrink-0">
+                                          {`${productRef || productName}${colorName ? ` ${colorName}` : ''}`.trim()}
+                                        </span>
+                                        <span className="text-[9px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 leading-none shrink-0">
+                                          {secName}
+                                        </span>
+                                      </div>
+                                      <span
+                                        className="text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest leading-none shrink-0"
+                                        style={{
+                                          backgroundColor: mapBadgeBg,
+                                          color: mapBadgeText,
+                                          boxShadow: `0 1px 2px ${mapBadgeBg}40`
+                                        }}
+                                      >
+                                        MAPA{selectedLot.orderNumber}
+                                      </span>
+                                    </div>
+                                    {/* Linha 2: Pedido */}
+                                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                      <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Ped. {order?.saleOrderNumber || selectedLot.saleOrderNumber}</span>
+                                      <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400">· {si.qty} {si.qty === 1 ? 'par' : 'pares'}</span>
+                                    </div>
+                                    {/* Linha 3: Origem do pedido — Cliente ou Estoque */}
+                                    {(() => {
+                                      const custName = (order?.customerName || selectedLot.customerName || '').trim();
+                                      if (!custName) return null;
+                                      const isStock = custName.toUpperCase() === 'ESTOQUE';
+                                      return (
+                                        <p className="text-[8px] font-black text-slate-900 dark:text-white uppercase tracking-widest mt-0.5 truncate">
+                                          {isStock ? 'Estoque' : `Cliente: ${custName}`}
+                                        </p>
+                                      );
+                                    })()}
                                   </div>
                                 </div>
-                                <div className="flex flex-col items-end gap-1 shrink-0">
-                                  <span className="text-[8px] font-black uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                                    {secName}
-                                  </span>
-                                  <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">{si.qty}P</span>
+
+                                {/* ── Rodapé (Sempre visível) ── */}
+                                <div className="px-3 pb-3 pt-1.5 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between gap-3">
                                   <button
                                     type="button"
-                                    title="Mudar o setor deste pedido"
                                     onClick={() => {
-                                      setMoveSectorModal({
-                                        lotId: selectedLot.id,
-                                        items: [toMoveItem(si)],
-                                        qty: si.qty || 0,
-                                        manual: true,
-                                      });
-                                      setMoveSectorTarget('');
+                                      const next = new Set(expandedSourceItems);
+                                      isExpanded ? next.delete(key) : next.add(key);
+                                      setExpandedSourceItems(next);
                                     }}
-                                    className="px-2 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 text-white text-[8px] font-black uppercase tracking-widest flex items-center gap-1 transition-all active:scale-95"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-all text-[9px] font-black uppercase tracking-wider"
                                   >
-                                    <ArrowLeftRight size={10} strokeWidth={3} /> Mudar Setor
+                                    <ChevronDown size={12} className={`transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+                                    {isExpanded ? 'Recolher' : 'Grade / Detalhes'}
                                   </button>
+
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      title="Mudar o setor deste pedido"
+                                      onClick={() => {
+                                        setMoveSectorModal({
+                                          lotId: selectedLot.id,
+                                          items: [toMoveItem(si)],
+                                          qty: si.qty || 0,
+                                          manual: true,
+                                        });
+                                        setMoveSectorTarget('');
+                                      }}
+                                      className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95"
+                                    >
+                                      <ArrowLeftRight size={11} strokeWidth={3} /> Mudar Setor
+                                    </button>
+                                  </div>
                                 </div>
+
+                                {/* ── Linha exclusiva de Ação de Remoção ── */}
+                                {!selectedLot.finishedAt && (
+                                  <div className="px-3 pb-3 pt-1.5 border-t border-slate-100 dark:border-slate-800/60 flex justify-end">
+                                    <button
+                                      type="button"
+                                      title="Retirar este pedido do mapa"
+                                      onClick={() => handleRemoveItemFromLot(selectedLot, si.orderId)}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[9px] font-black uppercase tracking-wider transition-all active:scale-95"
+                                    >
+                                      <MinusCircle size={12} />
+                                      Retirar do Mapa
+                                    </button>
+                                  </div>
+                                )}
+
+                                {/* ── Expanded: grade + info completa ── */}
+                                {isExpanded && (
+                                  <div className={`px-3 pb-3 pt-1 border-t flex flex-col gap-3 ${isDarkMode ? 'border-slate-800 bg-slate-950/50' : 'border-slate-100 bg-slate-50/60'}`}>
+                                    {sizeEntries.length > 0 && (
+                                      <div>
+                                        <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-2">Grade de Produção</p>
+                                        <div className="flex flex-wrap gap-2 justify-center">
+                                          {sizeEntries.map(([size, s]) => (
+                                            <div key={size} className={`flex flex-col items-center min-w-[38px] py-1.5 px-2 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                              <p className="text-[11px] font-black text-slate-500 dark:text-slate-400 leading-none">{size}</p>
+                                              <p className="text-[16px] font-black text-slate-900 dark:text-white leading-none mt-0.5">{s.toProduction}</p>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                                      {order?.customerName && (
+                                        <div>
+                                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Cliente</p>
+                                          <p className="text-[10px] font-black text-slate-700 dark:text-slate-300 uppercase">{order.customerName}</p>
+                                        </div>
+                                      )}
+                                      {order?.deliveryDate && (
+                                        <div>
+                                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Entrega</p>
+                                          <p className="text-[10px] font-black text-slate-700 dark:text-slate-300">{new Date(order.deliveryDate).toLocaleDateString('pt-BR')}</p>
+                                        </div>
+                                      )}
+                                      <div>
+                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Total</p>
+                                        <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400">{si.qty} pares</p>
+                                      </div>
+                                    </div>
+                                    {order?.notes && (
+                                      <div className={`flex items-start gap-2 px-3 py-2.5 rounded-xl ${isDarkMode ? 'bg-amber-900/20 border border-amber-700/30' : 'bg-amber-50 border border-amber-200'}`}>
+                                        <MessageSquare size={12} className="text-amber-500 shrink-0 mt-0.5" />
+                                        <div>
+                                          <p className="text-[8px] font-black text-amber-500 uppercase tracking-widest mb-0.5">Observação do Pedido</p>
+                                          <p className={`text-[11px] font-bold leading-snug ${isDarkMode ? 'text-amber-200' : 'text-amber-800'}`}>{order.notes}</p>
+                                        </div>
+                                      </div>
+                                    )}
+                                    {variation?.sectorNotes && Object.keys(variation.sectorNotes).length > 0 && (() => {
+                                      const secEntries = Object.entries(variation.sectorNotes)
+                                        .map(([sid, notes]) => ({ sid, notes: (notes as SectorNote[]).filter(n => n.text) }))
+                                        .filter(({ notes }) => notes.length > 0);
+                                      if (secEntries.length === 0) return null;
+                                      return (
+                                        <div className={`flex flex-col gap-2 px-3 py-2.5 rounded-xl ${isDarkMode ? 'bg-indigo-900/20 border border-indigo-700/30' : 'bg-indigo-50 border border-indigo-200'}`}>
+                                          <p className="text-[8px] font-black text-indigo-500 uppercase tracking-widest">Instruções por Setor</p>
+                                          {secEntries.map(({ sid, notes }) => {
+                                            const sec = sectors.find(s => s.id === sid);
+                                            if (!sec) return null;
+                                            return (
+                                              <div key={sid} className="flex flex-col gap-0.5">
+                                                <div className="flex items-center gap-1.5">
+                                                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: sec.color || '#6366f1' }} />
+                                                  <span className="text-[8px] font-black uppercase tracking-widest" style={{ color: sec.color || '#6366f1' }}>{sec.name}</span>
+                                                </div>
+                                                {notes.map(note => (
+                                                  <div key={note.id} className={`ml-3.5 pl-2 border-l-2 ${isDarkMode ? 'border-indigo-700/40' : 'border-indigo-200'}`}>
+                                                    {note.name && <p className="text-[8px] font-black text-indigo-400 uppercase tracking-widest">{note.name}</p>}
+                                                    <p className={`text-[11px] font-bold leading-snug ${isDarkMode ? 'text-indigo-200' : 'text-indigo-800'}`}>{note.text}</p>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      );
+                                    })()}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -7984,188 +7889,188 @@ export default function PCPView({
                           </p>
                         </div>
                         <div className="flex flex-col gap-3">
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
-                            <Tag size={13} />
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <div className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                              <Tag size={13} />
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-black text-indigo-700 dark:text-indigo-300 uppercase leading-none">
+                                {selectedItemsList.length} {selectedItemsList.length === 1 ? 'pedido' : 'pedidos'} selecionado{selectedItemsList.length > 1 ? 's' : ''}
+                              </p>
+                              <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">{selectedQty} pares</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-[10px] font-black text-indigo-700 dark:text-indigo-300 uppercase leading-none">
-                              {selectedItemsList.length} {selectedItemsList.length === 1 ? 'pedido' : 'pedidos'} selecionado{selectedItemsList.length > 1 ? 's' : ''}
-                            </p>
-                            <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest">{selectedQty} pares</p>
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-2 w-full">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const items = computeBatchItems();
-                              if (items.length > 0) {
-                                setLabelModalProduct(items[0].product);
-                                setLabelModalLot(null);
-                                setLabelModalSizeGrid(items[0].sizeGrid);
-                                setLabelModalBatchItems(items.length > 1 ? items : [items[0]]);
-                              } else {
-                                if (!product) return;
-                                setLabelModalProduct(product);
-                                setLabelModalLot(null);
-                                setLabelModalSizeGrid(computeSizeGrid());
-                                setLabelModalBatchItems(undefined);
-                              }
-                            }}
-                            className="w-full px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
-                          >
-                            <Tag size={12} strokeWidth={3} /> Etiqueta
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPendingOsSourceOrderIds(selectedItemsList.map((si: any) => si.orderId));
-                              handleOpenOSModal({ ...selectedLot, quantity: selectedQty } as any);
-                            }}
-                            className={`w-full px-4 py-2.5 rounded-xl text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-slate-600 hover:bg-slate-500' : 'bg-slate-700 hover:bg-slate-800'}`}
-                          >
-                            <Hammer size={12} strokeWidth={3} /> Emitir OS
-                          </button>
-                          {(() => {
-                            const selectedEffectiveSectors = Array.from(new Set(selectedItemsList.map((si: any) => getOrderEffectiveSector(selectedLot, si.orderId, si))));
-                            const moveFromSectorId = selectedEffectiveSectors.length === 1 ? selectedEffectiveSectors[0] : null;
-                            const moveFromIdx = moveFromSectorId ? (selectedLot.route || []).indexOf(moveFromSectorId) : -1;
-                            const moveNextSector = moveFromIdx >= 0 && moveFromIdx + 1 < (selectedLot.route || []).length
-                              ? sectors.find(s => s.id === selectedLot.route![moveFromIdx + 1])
-                              : null;
-                            if (selectedEffectiveSectors.length === 1 && !moveNextSector) return null;
-                            const mixedSectors = selectedEffectiveSectors.length > 1;
-                            return (
+                          <div className="flex flex-col gap-2 w-full">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const items = computeBatchItems();
+                                if (items.length > 0) {
+                                  setLabelModalProduct(items[0].product);
+                                  setLabelModalLot(null);
+                                  setLabelModalSizeGrid(items[0].sizeGrid);
+                                  setLabelModalBatchItems(items.length > 1 ? items : [items[0]]);
+                                } else {
+                                  if (!product) return;
+                                  setLabelModalProduct(product);
+                                  setLabelModalLot(null);
+                                  setLabelModalSizeGrid(computeSizeGrid());
+                                  setLabelModalBatchItems(undefined);
+                                }
+                              }}
+                              className="w-full px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+                            >
+                              <Tag size={12} strokeWidth={3} /> Etiqueta
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPendingOsSourceOrderIds(selectedItemsList.map((si: any, idx: number) => `${si.orderId}::${si.itemIdx !== undefined ? si.itemIdx : idx}`));
+                                handleOpenOSModal({ ...selectedLot, quantity: selectedQty } as any);
+                              }}
+                              className={`w-full px-4 py-2.5 rounded-xl text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-slate-600 hover:bg-slate-500' : 'bg-slate-700 hover:bg-slate-800'}`}
+                            >
+                              <Hammer size={12} strokeWidth={3} /> Emitir OS
+                            </button>
+                            {(() => {
+                              const selectedEffectiveSectors = Array.from(new Set(selectedItemsList.map((si: any) => getOrderEffectiveSector(selectedLot, si.orderId, si))));
+                              const moveFromSectorId = selectedEffectiveSectors.length === 1 ? selectedEffectiveSectors[0] : null;
+                              const moveFromIdx = moveFromSectorId ? (selectedLot.route || []).indexOf(moveFromSectorId) : -1;
+                              const moveNextSector = moveFromIdx >= 0 && moveFromIdx + 1 < (selectedLot.route || []).length
+                                ? sectors.find(s => s.id === selectedLot.route![moveFromIdx + 1])
+                                : null;
+                              if (selectedEffectiveSectors.length === 1 && !moveNextSector) return null;
+                              const mixedSectors = selectedEffectiveSectors.length > 1;
+                              return (
+                                <button
+                                  type="button"
+                                  disabled={mixedSectors}
+                                  title={mixedSectors
+                                    ? 'Os pedidos selecionados estão em setores diferentes — selecione pedidos do mesmo setor para mover juntos.'
+                                    : `Mover pedido(s) selecionado(s) para ${moveNextSector?.name}, sem mover o mapa inteiro`}
+                                  onClick={() => {
+                                    if (mixedSectors || !moveNextSector || !moveFromSectorId) return;
+                                    setMoveSectorModal({
+                                      lotId: selectedLot.id,
+                                      items: selectedItemsList.map(toMoveItem),
+                                      qty: selectedQty,
+                                      fromSectorId: moveFromSectorId,
+                                    });
+                                    setMoveSectorTarget(moveNextSector.id);
+                                  }}
+                                  className={`w-full px-4 py-2.5 rounded-xl text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${mixedSectors ? 'bg-slate-400 opacity-50 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+                                >
+                                  <ChevronRight size={12} strokeWidth={3} /> Mover Setor
+                                </button>
+                              );
+                            })()}
+                            <button
+                              type="button"
+                              title="Escolher livremente o setor de destino dos pedidos selecionados, sem seguir o roteiro padrão"
+                              onClick={() => {
+                                setMoveSectorModal({
+                                  lotId: selectedLot.id,
+                                  items: selectedItemsList.map(toMoveItem),
+                                  qty: selectedQty,
+                                  manual: true,
+                                });
+                                setMoveSectorTarget('');
+                              }}
+                              className="w-full px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+                            >
+                              <ArrowLeftRight size={12} strokeWidth={3} /> Mudar Setor Manualmente
+                            </button>
+                            {canFinalizeSelected && (
                               <button
                                 type="button"
-                                disabled={mixedSectors}
-                                title={mixedSectors
-                                  ? 'Os pedidos selecionados estão em setores diferentes — selecione pedidos do mesmo setor para mover juntos.'
-                                  : `Mover pedido(s) selecionado(s) para ${moveNextSector?.name}, sem mover o mapa inteiro`}
                                 onClick={() => {
-                                  if (mixedSectors || !moveNextSector || !moveFromSectorId) return;
-                                  setMoveSectorModal({
-                                    lotId: selectedLot.id,
-                                    items: selectedItemsList.map(toMoveItem),
-                                    qty: selectedQty,
-                                    fromSectorId: moveFromSectorId,
+                                  const resolved: LotAdvanceItem[] = selectedItemsList.map((si: any, idx: number) => {
+                                    const order = productionOrders.find(o => o.id === si.orderId);
+                                    const orderItem: any = si.itemIdx !== undefined
+                                      ? order?.items[si.itemIdx]
+                                      : order?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+                                    const resolvedProductId = si.productId || orderItem?.productId;
+                                    const itemProduct = products.find(p => p.id === resolvedProductId);
+                                    const effSector = getOrderEffectiveSector(selectedLot, si.orderId, si);
+                                    const resolved = resolveCorrectSectorForProduct(effSector, itemProduct, sectors);
+                                    const chosenSectorId = resolved.isFinished ? '' : resolved.sectorId;
+                                    return {
+                                      key: `${si.orderId}-${idx}`,
+                                      orderId: si.orderId,
+                                      itemIdx: si.itemIdx,
+                                      variationId: si.variationId,
+                                      productId: resolvedProductId,
+                                      productName: itemProduct?.name || orderItem?.productName || '—',
+                                      colorName: '',
+                                      qty: si.qty || 0,
+                                      suggestedSectorId: chosenSectorId,
+                                      suggestedSectorName: resolved.isFinished ? 'CONCLUÍDO' : (sectors.find(s => s.id === resolved.sectorId)?.name || ''),
+                                      skippedSectorNames: resolved.skippedSectorNames,
+                                      chosenSectorId,
+                                    };
                                   });
-                                  setMoveSectorTarget(moveNextSector.id);
-                                }}
-                                className={`w-full px-4 py-2.5 rounded-xl text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${mixedSectors ? 'bg-slate-400 opacity-50 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'}`}
-                              >
-                                <ChevronRight size={12} strokeWidth={3} /> Mover Setor
-                              </button>
-                            );
-                          })()}
-                          <button
-                            type="button"
-                            title="Escolher livremente o setor de destino dos pedidos selecionados, sem seguir o roteiro padrão"
-                            onClick={() => {
-                              setMoveSectorModal({
-                                lotId: selectedLot.id,
-                                items: selectedItemsList.map(toMoveItem),
-                                qty: selectedQty,
-                                manual: true,
-                              });
-                              setMoveSectorTarget('');
-                            }}
-                            className="w-full px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
-                          >
-                            <ArrowLeftRight size={12} strokeWidth={3} /> Mudar Setor Manualmente
-                          </button>
-                          {canFinalizeSelected && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const resolved: LotAdvanceItem[] = selectedItemsList.map((si: any, idx: number) => {
-                                const order = productionOrders.find(o => o.id === si.orderId);
-                                const orderItem: any = si.itemIdx !== undefined
-                                  ? order?.items[si.itemIdx]
-                                  : order?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
-                                const resolvedProductId = si.productId || orderItem?.productId;
-                                const itemProduct = products.find(p => p.id === resolvedProductId);
-                                const effSector = getOrderEffectiveSector(selectedLot, si.orderId, si);
-                                const resolved = resolveCorrectSectorForProduct(effSector, itemProduct, sectors);
-                                const chosenSectorId = resolved.isFinished ? '' : resolved.sectorId;
-                                return {
-                                  key: `${si.orderId}-${idx}`,
-                                  orderId: si.orderId,
-                                  itemIdx: si.itemIdx,
-                                  variationId: si.variationId,
-                                  productId: resolvedProductId,
-                                  productName: itemProduct?.name || orderItem?.productName || '—',
-                                  colorName: '',
-                                  qty: si.qty || 0,
-                                  suggestedSectorId: chosenSectorId,
-                                  suggestedSectorName: resolved.isFinished ? 'CONCLUÍDO' : (sectors.find(s => s.id === resolved.sectorId)?.name || ''),
-                                  skippedSectorNames: resolved.skippedSectorNames,
-                                  chosenSectorId,
-                                };
-                              });
-                              const toFinalize = resolved.filter(it => it.chosenSectorId === '');
-                              const toMove = resolved.filter(it => it.chosenSectorId !== '');
-                              const lines: string[] = [`Avançar/finalizar ${resolved.length} pedido(s) selecionado(s)?`];
-                              const stockInfo: Record<string, { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string }> = {};
-                              const soleInfo: { moldName: string; colorName: string; rows: { size: string; before: number; after: number }[] }[] = [];
-                              if (toFinalize.length > 0) {
-                                const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalize.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx })));
-                                lines.push('');
-                                if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
-                                if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} pedido(s) → ENTRADA EM ESTOQUE (+ baixa de solados)`);
-                                toFinalize.forEach(it => {
-                                  const isStock = stockItems.some(si => si.orderId === it.orderId && si.itemIdx === it.itemIdx);
-                                  const order = productionOrders.find(o => o.id === it.orderId);
-                                  const customerName = order?.customerName || selectedLot.customerName;
-                                  const info = computeStockProjection(it, { isStock, customerName });
-                                  if (info) stockInfo[it.key] = info;
-                                });
+                                  const toFinalize = resolved.filter(it => it.chosenSectorId === '');
+                                  const toMove = resolved.filter(it => it.chosenSectorId !== '');
+                                  const lines: string[] = [`Avançar/finalizar ${resolved.length} pedido(s) selecionado(s)?`];
+                                  const stockInfo: Record<string, { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string }> = {};
+                                  const soleInfo: { moldName: string; colorName: string; rows: { size: string; before: number; after: number }[] }[] = [];
+                                  if (toFinalize.length > 0) {
+                                    const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalize.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx })));
+                                    lines.push('');
+                                    if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
+                                    if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} pedido(s) → ENTRADA EM ESTOQUE (+ baixa de solados)`);
+                                    toFinalize.forEach(it => {
+                                      const isStock = stockItems.some(si => si.orderId === it.orderId && si.itemIdx === it.itemIdx);
+                                      const order = productionOrders.find(o => o.id === it.orderId);
+                                      const customerName = order?.customerName || selectedLot.customerName;
+                                      const info = computeStockProjection(it, { isStock, customerName });
+                                      if (info) stockInfo[it.key] = info;
+                                    });
 
-                                // Pré-visualização da baixa em soleStock que `applyExpedicaoStockUpdate`
-                                // executará: agrega o consumo de pares por molde/cor entre todos os
-                                // pedidos finalizados e mostra estoque atual → estoque após a baixa.
-                                const consumptionByKey = new Map<string, { moldId: string; colorId: string; gradeQuantities: Record<string, number> }>();
-                                toFinalize.forEach(it => {
-                                  const resolvedSI = resolveSourceItem(it);
-                                  if (!resolvedSI || resolvedSI.totalQty <= 0) return;
-                                  const { prod, vari, pairs, totalQty } = resolvedSI;
-                                  const consumption = resolveSoleConsumption(prod, vari, pairs, totalQty, soleStock);
-                                  if (!consumption) return;
-                                  const key = `${consumption.moldId}_${consumption.colorId || 'default'}`;
-                                  const existing = consumptionByKey.get(key);
-                                  if (!existing) {
-                                    consumptionByKey.set(key, { moldId: consumption.moldId, colorId: consumption.colorId, gradeQuantities: { ...consumption.gradeQuantities } });
-                                  } else {
-                                    Object.entries(consumption.gradeQuantities).forEach(([gradeKey, qty]) => {
-                                      existing.gradeQuantities[gradeKey] = (existing.gradeQuantities[gradeKey] || 0) + qty;
+                                    // Pré-visualização da baixa em soleStock que `applyExpedicaoStockUpdate`
+                                    // executará: agrega o consumo de pares por molde/cor entre todos os
+                                    // pedidos finalizados e mostra estoque atual → estoque após a baixa.
+                                    const consumptionByKey = new Map<string, { moldId: string; colorId: string; gradeQuantities: Record<string, number> }>();
+                                    toFinalize.forEach(it => {
+                                      const resolvedSI = resolveSourceItem(it);
+                                      if (!resolvedSI || resolvedSI.totalQty <= 0) return;
+                                      const { prod, vari, pairs, totalQty } = resolvedSI;
+                                      const consumption = resolveSoleConsumption(prod, vari, pairs, totalQty, soleStock);
+                                      if (!consumption) return;
+                                      const key = `${consumption.moldId}_${consumption.colorId || 'default'}`;
+                                      const existing = consumptionByKey.get(key);
+                                      if (!existing) {
+                                        consumptionByKey.set(key, { moldId: consumption.moldId, colorId: consumption.colorId, gradeQuantities: { ...consumption.gradeQuantities } });
+                                      } else {
+                                        Object.entries(consumption.gradeQuantities).forEach(([gradeKey, qty]) => {
+                                          existing.gradeQuantities[gradeKey] = (existing.gradeQuantities[gradeKey] || 0) + qty;
+                                        });
+                                      }
+                                    });
+                                    consumptionByKey.forEach(({ moldId, colorId, gradeQuantities }) => {
+                                      const entry = soleStock.find(s => String(s.moldId).trim() === moldId && String(s.colorId || '').trim() === colorId);
+                                      if (!entry) return;
+                                      const rows = Object.entries(gradeQuantities)
+                                        .filter(([k]) => k !== 'pesagem' && k !== 'total')
+                                        .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
+                                        .map(([size, qty]) => ({ size, before: entry.stock[size] || 0, after: Math.max(0, (entry.stock[size] || 0) - (Number(qty) || 0)) }));
+                                      soleInfo.push({ moldName: entry.moldName, colorName: entry.colorName, rows });
                                     });
                                   }
-                                });
-                                consumptionByKey.forEach(({ moldId, colorId, gradeQuantities }) => {
-                                  const entry = soleStock.find(s => String(s.moldId).trim() === moldId && String(s.colorId || '').trim() === colorId);
-                                  if (!entry) return;
-                                  const rows = Object.entries(gradeQuantities)
-                                    .filter(([k]) => k !== 'pesagem' && k !== 'total')
-                                    .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
-                                    .map(([size, qty]) => ({ size, before: entry.stock[size] || 0, after: Math.max(0, (entry.stock[size] || 0) - (Number(qty) || 0)) }));
-                                  soleInfo.push({ moldName: entry.moldName, colorName: entry.colorName, rows });
-                                });
-                              }
-                              if (toMove.length > 0) {
-                                const bySector = new Map<string, number>();
-                                toMove.forEach(it => bySector.set(it.suggestedSectorName, (bySector.get(it.suggestedSectorName) || 0) + it.qty));
-                                lines.push('');
-                                bySector.forEach((qty, name) => lines.push(`➡ ${qty} par(es) → ${name}`));
-                              }
-                              setFinalizeSelectedConfirm({ lot: selectedLot, items: resolved, lines, stockInfo, soleInfo });
-                            }}
-                            className="w-full px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
-                          >
-                            <CheckCircle2 size={12} strokeWidth={3} /> Avançar/Finalizar Pedido(s) Selecionados
-                          </button>
-                          )}
-                        </div>
+                                  if (toMove.length > 0) {
+                                    const bySector = new Map<string, number>();
+                                    toMove.forEach(it => bySector.set(it.suggestedSectorName, (bySector.get(it.suggestedSectorName) || 0) + it.qty));
+                                    lines.push('');
+                                    bySector.forEach((qty, name) => lines.push(`➡ ${qty} par(es) → ${name}`));
+                                  }
+                                  setFinalizeSelectedConfirm({ lot: selectedLot, items: resolved, lines, stockInfo, soleInfo });
+                                }}
+                                className="w-full px-4 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+                              >
+                                <CheckCircle2 size={12} strokeWidth={3} /> Avançar/Finalizar Pedido(s) Selecionados
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )}
@@ -8228,9 +8133,9 @@ export default function PCPView({
                           // Parse size grid: "38x22-39x44-40x66" → [{sz,qty}]
                           const sizeEntries = os.sizeGrid
                             ? os.sizeGrid.split('-').map(tok => {
-                                const [sz, q] = tok.split('x');
-                                return { sz: sz || tok, qty: q ? parseInt(q) : null };
-                              }).filter(e => e.sz)
+                              const [sz, q] = tok.split('x');
+                              return { sz: sz || tok, qty: q ? parseInt(q) : null };
+                            }).filter(e => e.sz)
                             : [];
                           // Source orders for this OS
                           const osSourceOrders = (os.sourceOrderIds || [])
@@ -8242,196 +8147,195 @@ export default function PCPView({
                             .filter(Boolean) as any[];
 
                           return (
-                          <div key={os.id} className="rounded-[2rem] bg-indigo-50/50 dark:bg-indigo-950/20 border-2 border-indigo-500/20 overflow-hidden flex flex-col">
-                            <div className="p-6 flex flex-col gap-4">
-                              {/* Header */}
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25 shrink-0">
-                                  <Hammer size={18} />
+                            <div key={os.id} className="rounded-[2rem] bg-indigo-50/50 dark:bg-indigo-950/20 border-2 border-indigo-500/20 overflow-hidden flex flex-col">
+                              <div className="p-6 flex flex-col gap-4">
+                                {/* Header */}
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/25 shrink-0">
+                                    <Hammer size={18} />
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <h5 className="text-xs font-black text-indigo-950 dark:text-indigo-200 leading-none mb-1">{os.osNumber}</h5>
+                                    <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest leading-none truncate">
+                                      {os.type === 'INTERNAL' ? 'Interna' : 'Terceirizada'} • {os.providerName}
+                                    </p>
+                                  </div>
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                  <h5 className="text-xs font-black text-indigo-950 dark:text-indigo-200 leading-none mb-1">{os.osNumber}</h5>
-                                  <p className="text-[9px] font-bold text-indigo-400 uppercase tracking-widest leading-none truncate">
-                                    {os.type === 'INTERNAL' ? 'Interna' : 'Terceirizada'} • {os.providerName}
-                                  </p>
+
+                                {/* Actions */}
+                                <div className="flex items-center gap-2">
+                                  <button type="button" onClick={() => {
+                                    const printNextSectorName = selectedLot ? computeOSAdvanceOutcome(os, selectedLot, products, sectors).nextSectorName : 'CONCLUÍDO';
+                                    setPrintOSData({ os, nextSectorName: printNextSectorName });
+                                    setIsPrintOSModalOpen(true);
+                                  }} className="flex-1 text-[11px] font-black uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 py-2.5 rounded-xl transition-all text-center">Imprimir</button>
+                                  <button type="button" onClick={() => handleEditOS(os)} className="flex-1 text-[11px] font-black uppercase text-white bg-amber-400 hover:bg-amber-500 py-2.5 rounded-xl transition-all text-center active:scale-95">Editar</button>
+                                  <button type="button" onClick={() => handleDeleteOS(os)} className="flex-1 text-[11px] font-black uppercase text-rose-500 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 py-2.5 rounded-xl transition-all text-center">Excluir</button>
                                 </div>
-                              </div>
 
-                              {/* Actions */}
-                              <div className="flex items-center gap-2">
-                                <button type="button" onClick={() => {
-                                  const printNextSectorName = selectedLot ? computeOSAdvanceOutcome(os, selectedLot, products, sectors).nextSectorName : 'CONCLUÍDO';
-                                  setPrintOSData({ os, nextSectorName: printNextSectorName });
-                                  setIsPrintOSModalOpen(true);
-                                }} className="flex-1 text-[11px] font-black uppercase text-emerald-600 bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 py-2.5 rounded-xl transition-all text-center">Imprimir</button>
-                                <button type="button" onClick={() => handleEditOS(os)} className="flex-1 text-[11px] font-black uppercase text-white bg-amber-400 hover:bg-amber-500 py-2.5 rounded-xl transition-all text-center active:scale-95">Editar</button>
-                                <button type="button" onClick={() => handleDeleteOS(os)} className="flex-1 text-[11px] font-black uppercase text-rose-500 bg-rose-50 dark:bg-rose-950/20 hover:bg-rose-100 py-2.5 rounded-xl transition-all text-center">Excluir</button>
-                              </div>
-
-                              {/* Stats */}
-                              <div className="grid grid-cols-3 gap-3 bg-white dark:bg-slate-900/50 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-950 shadow-sm">
-                                <div className="flex flex-col">
-                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Pares</span>
-                                  <span className="text-xs font-black text-slate-800 dark:text-slate-200">{os.quantity} prs</span>
+                                {/* Stats */}
+                                <div className="grid grid-cols-3 gap-3 bg-white dark:bg-slate-900/50 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-950 shadow-sm">
+                                  <div className="flex flex-col">
+                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Pares</span>
+                                    <span className="text-xs font-black text-slate-800 dark:text-slate-200">{os.quantity} prs</span>
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Vlr / Par</span>
+                                    <span className="text-xs font-black text-slate-800 dark:text-slate-200">R$ {os.valuePerPair.toFixed(2)}</span>
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Total OS</span>
+                                    <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">R$ {os.totalValue.toFixed(2)}</span>
+                                  </div>
                                 </div>
-                                <div className="flex flex-col">
-                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Vlr / Par</span>
-                                  <span className="text-xs font-black text-slate-800 dark:text-slate-200">R$ {os.valuePerPair.toFixed(2)}</span>
-                                </div>
-                                <div className="flex flex-col">
-                                  <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Total OS</span>
-                                  <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">R$ {os.totalValue.toFixed(2)}</span>
-                                </div>
-                              </div>
 
-                              {os.notes && (
-                                <div className="p-3 bg-indigo-50/30 dark:bg-indigo-950/10 rounded-xl border border-indigo-100/50 dark:border-indigo-950/50 text-[10px] font-medium italic text-indigo-900/80 dark:text-indigo-300">
-                                  Obs: {os.notes}
-                                </div>
-                              )}
-
-                              {/* Ver Itens toggle */}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const next = new Set(expandedOSIds);
-                                  osExpanded ? next.delete(os.id) : next.add(os.id);
-                                  setExpandedOSIds(next);
-                                }}
-                                className={`w-full py-3 rounded-2xl border-2 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${
-                                  osExpanded
-                                    ? (isDarkMode ? 'border-violet-700/50 bg-violet-900/20 text-violet-400' : 'border-violet-200 bg-violet-50 text-violet-600')
-                                    : (isDarkMode ? 'border-slate-700 bg-slate-800/50 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500')
-                                }`}
-                              >
-                                <List size={13} />
-                                {osExpanded ? 'Ocultar Itens' : 'Ver Itens da O.S'}
-                                <ChevronDown size={13} className={`transition-transform duration-200 ${osExpanded ? 'rotate-180' : ''}`} />
-                              </button>
-
-                              <button type="button" onClick={() => handleCompleteOS(os)}
-                                className="w-full py-5 rounded-[2rem] bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-600/25 flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-95">
-                                <CheckSquare size={18} /> Concluir OS & Baixar Setor
-                              </button>
-                            </div>
-
-                            {/* ── Painel expandido: fichas + grade ── */}
-                            {osExpanded && (
-                              <div className={`px-4 pb-5 pt-3 border-t flex flex-col gap-3 ${isDarkMode ? 'border-indigo-900/50 bg-indigo-950/30' : 'border-indigo-100 bg-white/60'}`}>
-                                {/* Mapas cobertos */}
-                                {osLots.length > 0 && (
-                                  <div className="flex items-center gap-2 flex-wrap mb-1">
-                                    <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Mapa:</span>
-                                    {osLots.map((l: any) => (
-                                      <span key={l.id} className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>{l.orderNumber}</span>
-                                    ))}
+                                {os.notes && (
+                                  <div className="p-3 bg-indigo-50/30 dark:bg-indigo-950/10 rounded-xl border border-indigo-100/50 dark:border-indigo-950/50 text-[10px] font-medium italic text-indigo-900/80 dark:text-indigo-300">
+                                    Obs: {os.notes}
                                   </div>
                                 )}
 
-                                {/* Fichas selecionadas — uma linha por produto+variação */}
-                                {(() => {
-                                  const itemMap: Record<string, { productId: string; variationId: string; sizeQtys: Record<string, number>; totalQty: number; orderNums: string[] }> = {};
+                                {/* Ver Itens toggle */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = new Set(expandedOSIds);
+                                    osExpanded ? next.delete(os.id) : next.add(os.id);
+                                    setExpandedOSIds(next);
+                                  }}
+                                  className={`w-full py-3 rounded-2xl border-2 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${osExpanded
+                                      ? (isDarkMode ? 'border-violet-700/50 bg-violet-900/20 text-violet-400' : 'border-violet-200 bg-violet-50 text-violet-600')
+                                      : (isDarkMode ? 'border-slate-700 bg-slate-800/50 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500')
+                                    }`}
+                                >
+                                  <List size={13} />
+                                  {osExpanded ? 'Ocultar Itens' : 'Ver Itens da O.S'}
+                                  <ChevronDown size={13} className={`transition-transform duration-200 ${osExpanded ? 'rotate-180' : ''}`} />
+                                </button>
 
-                                  // Usa metadata.sourceItems do lote para iterar exatamente os itens incluídos (sem duplicatas)
-                                  const lotSI: any[] = (selectedLot as any).metadata?.sourceItems || [];
-                                  // Filtra pelos orderIds desta OS (set para lookup rápido)
-                                  const osOrderIdSet = new Set(os.sourceOrderIds || []);
-                                  const relevantSI = osOrderIdSet.size > 0
-                                    ? lotSI.filter((si: any) => osOrderIdSet.has(si.orderId))
-                                    : lotSI;
-
-                                  if (relevantSI.length > 0) {
-                                    relevantSI.forEach((si: any) => {
-                                      const ord = productionOrders.find(o => o.id === si.orderId);
-                                      if (!ord) return;
-                                      const ordItem: any = si.itemIdx !== undefined
-                                        ? ord.items[si.itemIdx]
-                                        : ord.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
-                                      if (!ordItem) return;
-                                      const k = `${si.productId}-${si.variationId}`;
-                                      if (!itemMap[k]) itemMap[k] = { productId: si.productId, variationId: si.variationId, sizeQtys: {}, totalQty: 0, orderNums: [] };
-                                      Object.entries(ordItem.sizes || {}).forEach(([sz, s]: any) => {
-                                        const qty = Number(s.toProduction) || 0;
-                                        if (qty > 0) {
-                                          itemMap[k].sizeQtys[sz] = (itemMap[k].sizeQtys[sz] || 0) + qty;
-                                          itemMap[k].totalQty += qty;
-                                        }
-                                      });
-                                      if (!itemMap[k].orderNums.includes(ord.saleOrderNumber)) itemMap[k].orderNums.push(ord.saleOrderNumber);
-                                    });
-                                  } else {
-                                    // Fallback: sizeGrid do próprio OS
-                                    const k = `${os.productId}-${os.variationId}`;
-                                    const sizes: Record<string, number> = {};
-                                    sizeEntries.forEach(({ sz, qty }) => { if (qty) sizes[sz] = qty; });
-                                    itemMap[k] = { productId: os.productId, variationId: os.variationId, sizeQtys: sizes, totalQty: os.quantity, orderNums: [] };
-                                  }
-
-                                  const entries = Object.entries(itemMap);
-                                  if (entries.length === 0) return null;
-                                  return (
-                                    <div className="flex flex-col gap-2">
-                                      <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 px-1">Fichas Selecionadas · {entries.length} item(s)</p>
-                                      {entries.map(([k, item]) => {
-                                        const prod = products.find(p => p.id === item.productId);
-                                        const vari = prod?.variations.find(v => v.id === item.variationId);
-                                        const colorName = vari?.colorName || '';
-                                        const isItemExp = expandedOSItemKeys.has(`${os.id}-${k}`);
-                                        const szEntries = Object.entries(item.sizeQtys).sort(([a], [b]) => parseFloat(a) - parseFloat(b));
-                                        return (
-                                          <div key={k} className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-                                            {/* Minimizado: referência + cor + total */}
-                                            <button
-                                              type="button"
-                                              title="Expandir grade"
-                                              aria-label="Expandir grade de tamanhos"
-                                              onClick={() => {
-                                                const next = new Set(expandedOSItemKeys);
-                                                isItemExp ? next.delete(`${os.id}-${k}`) : next.add(`${os.id}-${k}`);
-                                                setExpandedOSItemKeys(next);
-                                              }}
-                                              className="w-full flex items-center gap-3 px-3 py-2.5 text-left"
-                                            >
-                                              <div className="w-8 h-8 rounded-xl overflow-hidden shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                                                {(vari?.photoUrl || prod?.photoUrl)
-                                                  ? <img src={vari?.photoUrl || prod?.photoUrl} alt="" className="w-full h-full object-cover"/>
-                                                  : <Package size={14} className="text-slate-400"/>}
-                                              </div>
-                                              <div className="flex-1 min-w-0">
-                                                <p className="text-[10px] font-black uppercase text-slate-800 dark:text-white leading-none truncate">
-                                                  {prod?.reference && <span className="text-indigo-500 mr-1">{prod.reference}</span>}
-                                                  {prod?.name || os.productName}
-                                                </p>
-                                                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide mt-0.5">
-                                                  {colorName || '—'} · {item.totalQty}p
-                                                  {item.orderNums.length > 0 && <span className="ml-1 text-slate-300">· Ped. {item.orderNums.join(', ')}</span>}
-                                                </p>
-                                              </div>
-                                              <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform duration-200 ${isItemExp ? 'rotate-180' : ''}`} />
-                                            </button>
-                                            {/* Expandido: grade de tamanhos */}
-                                            {isItemExp && szEntries.length > 0 && (
-                                              <div className={`px-3 pb-3 pt-1 border-t ${isDarkMode ? 'border-slate-800 bg-slate-950/50' : 'border-slate-100 bg-slate-50/60'}`}>
-                                                <p className="text-[7px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Grade de Tamanhos</p>
-                                                <div className="flex flex-wrap gap-1.5">
-                                                  {szEntries.map(([sz, qty]) => (
-                                                    <div key={sz} className={`px-2.5 py-1.5 rounded-xl border-2 text-center min-w-[38px] ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-                                                      <p className="text-[7px] font-bold text-slate-400 leading-none">{sz}</p>
-                                                      <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 leading-none mt-0.5">{qty}p</p>
-                                                    </div>
-                                                  ))}
-                                                </div>
-                                              </div>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  );
-                                })()}
+                                <button type="button" onClick={() => handleCompleteOS(os)}
+                                  className="w-full py-5 rounded-[2rem] bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black uppercase tracking-[0.2em] shadow-xl shadow-indigo-600/25 flex items-center justify-center gap-3 transition-all hover:scale-[1.02] active:scale-95">
+                                  <CheckSquare size={18} /> Concluir OS & Baixar Setor
+                                </button>
                               </div>
-                            )}
-                          </div>
+
+                              {/* ── Painel expandido: fichas + grade ── */}
+                              {osExpanded && (
+                                <div className={`px-4 pb-5 pt-3 border-t flex flex-col gap-3 ${isDarkMode ? 'border-indigo-900/50 bg-indigo-950/30' : 'border-indigo-100 bg-white/60'}`}>
+                                  {/* Mapas cobertos */}
+                                  {osLots.length > 0 && (
+                                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                                      <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Mapa:</span>
+                                      {osLots.map((l: any) => (
+                                        <span key={l.id} className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>{l.orderNumber}</span>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {/* Fichas selecionadas — uma linha por produto+variação */}
+                                  {(() => {
+                                    const itemMap: Record<string, { productId: string; variationId: string; sizeQtys: Record<string, number>; totalQty: number; orderNums: string[] }> = {};
+
+                                    // Usa metadata.sourceItems do lote para iterar exatamente os itens incluídos (sem duplicatas)
+                                    const lotSI: any[] = (selectedLot as any).metadata?.sourceItems || [];
+                                    // Filtra pelos orderIds desta OS (set para lookup rápido)
+                                    const osOrderIdSet = new Set(os.sourceOrderIds || []);
+                                    const relevantSI = osOrderIdSet.size > 0
+                                      ? lotSI.filter((si: any) => osOrderIdSet.has(si.orderId))
+                                      : lotSI;
+
+                                    if (relevantSI.length > 0) {
+                                      relevantSI.forEach((si: any) => {
+                                        const ord = productionOrders.find(o => o.id === si.orderId);
+                                        if (!ord) return;
+                                        const ordItem: any = si.itemIdx !== undefined
+                                          ? ord.items[si.itemIdx]
+                                          : ord.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+                                        if (!ordItem) return;
+                                        const k = `${si.productId}-${si.variationId}`;
+                                        if (!itemMap[k]) itemMap[k] = { productId: si.productId, variationId: si.variationId, sizeQtys: {}, totalQty: 0, orderNums: [] };
+                                        Object.entries(ordItem.sizes || {}).forEach(([sz, s]: any) => {
+                                          const qty = Number(s.toProduction) || 0;
+                                          if (qty > 0) {
+                                            itemMap[k].sizeQtys[sz] = (itemMap[k].sizeQtys[sz] || 0) + qty;
+                                            itemMap[k].totalQty += qty;
+                                          }
+                                        });
+                                        if (!itemMap[k].orderNums.includes(ord.saleOrderNumber)) itemMap[k].orderNums.push(ord.saleOrderNumber);
+                                      });
+                                    } else {
+                                      // Fallback: sizeGrid do próprio OS
+                                      const k = `${os.productId}-${os.variationId}`;
+                                      const sizes: Record<string, number> = {};
+                                      sizeEntries.forEach(({ sz, qty }) => { if (qty) sizes[sz] = qty; });
+                                      itemMap[k] = { productId: os.productId, variationId: os.variationId, sizeQtys: sizes, totalQty: os.quantity, orderNums: [] };
+                                    }
+
+                                    const entries = Object.entries(itemMap);
+                                    if (entries.length === 0) return null;
+                                    return (
+                                      <div className="flex flex-col gap-2">
+                                        <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 px-1">Fichas Selecionadas · {entries.length} item(s)</p>
+                                        {entries.map(([k, item]) => {
+                                          const prod = products.find(p => p.id === item.productId);
+                                          const vari = prod?.variations.find(v => v.id === item.variationId);
+                                          const colorName = vari?.colorName || '';
+                                          const isItemExp = expandedOSItemKeys.has(`${os.id}-${k}`);
+                                          const szEntries = Object.entries(item.sizeQtys).sort(([a], [b]) => parseFloat(a) - parseFloat(b));
+                                          return (
+                                            <div key={k} className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+                                              {/* Minimizado: referência + cor + total */}
+                                              <button
+                                                type="button"
+                                                title="Expandir grade"
+                                                aria-label="Expandir grade de tamanhos"
+                                                onClick={() => {
+                                                  const next = new Set(expandedOSItemKeys);
+                                                  isItemExp ? next.delete(`${os.id}-${k}`) : next.add(`${os.id}-${k}`);
+                                                  setExpandedOSItemKeys(next);
+                                                }}
+                                                className="w-full flex items-center gap-3 px-3 py-2.5 text-left"
+                                              >
+                                                <div className="w-8 h-8 rounded-xl overflow-hidden shrink-0 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                                                  {(vari?.photoUrl || prod?.photoUrl)
+                                                    ? <img src={vari?.photoUrl || prod?.photoUrl} alt="" className="w-full h-full object-cover" />
+                                                    : <Package size={14} className="text-slate-400" />}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                  <p className="text-[10px] font-black uppercase text-slate-800 dark:text-white leading-none truncate">
+                                                    {prod?.reference && <span className="text-indigo-500 mr-1">{prod.reference}</span>}
+                                                    {prod?.name || os.productName}
+                                                  </p>
+                                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wide mt-0.5">
+                                                    {colorName || '—'} · {item.totalQty} {item.totalQty === 1 ? 'par' : 'pares'}
+                                                    {item.orderNums.length > 0 && <span className="ml-1 text-slate-300">· Ped. {item.orderNums.join(', ')}</span>}
+                                                  </p>
+                                                </div>
+                                                <ChevronDown size={14} className={`text-slate-400 shrink-0 transition-transform duration-200 ${isItemExp ? 'rotate-180' : ''}`} />
+                                              </button>
+                                              {/* Expandido: grade de tamanhos */}
+                                              {isItemExp && szEntries.length > 0 && (
+                                                <div className={`px-3 pb-3 pt-1 border-t ${isDarkMode ? 'border-slate-800 bg-slate-950/50' : 'border-slate-100 bg-slate-50/60'}`}>
+                                                  <p className="text-[7px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Grade de Tamanhos</p>
+                                                  <div className="flex flex-wrap gap-1.5">
+                                                    {szEntries.map(([sz, qty]) => (
+                                                      <div key={sz} className={`px-2.5 py-1.5 rounded-xl border-2 text-center min-w-[38px] ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                                        <p className="text-[7px] font-bold text-slate-400 leading-none">{sz}</p>
+                                                        <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 leading-none mt-0.5">{qty} {qty === 1 ? 'par' : 'pares'}</p>
+                                                      </div>
+                                                    ))}
+                                                  </div>
+                                                </div>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                              )}
+                            </div>
                           );
                         })}
                       </div>
@@ -8499,41 +8403,41 @@ export default function PCPView({
                   </div>
                 </button>
                 {historyExpanded && (
-                <div className="flex flex-col gap-3">
-                  {(selectedLot.history || []).slice().sort((a, b) => b.timestamp - a.timestamp).map((h, i) => {
-                    const sector = sectors.find(s => s.id === h.sectorId);
-                    const tag = flowTags.find(t => t.id === h.statusId);
-                    const canRevert = i === 0 && (selectedLot.history?.length || 0) > 0;
-                    return (
-                      <div key={i} className={`p-4 rounded-2xl border flex flex-col gap-2 ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
-                        <div className="flex items-center gap-4">
-                          <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${i === 0 ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-400'}`}>
-                            {i === 0 ? <Clock size={17} /> : <History size={17} />}
+                  <div className="flex flex-col gap-3">
+                    {(selectedLot.history || []).slice().sort((a, b) => b.timestamp - a.timestamp).map((h, i) => {
+                      const sector = sectors.find(s => s.id === h.sectorId);
+                      const tag = flowTags.find(t => t.id === h.statusId);
+                      const canRevert = i === 0 && (selectedLot.history?.length || 0) > 0;
+                      return (
+                        <div key={i} className={`p-4 rounded-2xl border flex flex-col gap-2 ${isDarkMode ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                          <div className="flex items-center gap-4">
+                            <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${i === 0 ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-400'}`}>
+                              {i === 0 ? <Clock size={17} /> : <History size={17} />}
+                            </div>
+                            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                              <span className="text-xs font-black uppercase text-slate-700 dark:text-slate-300 leading-tight">{sector?.name || '---'}</span>
+                              <span className="text-[9px] font-bold text-slate-400">{new Date(h.timestamp).toLocaleString()}</span>
+                            </div>
                           </div>
-                          <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-                            <span className="text-xs font-black uppercase text-slate-700 dark:text-slate-300 leading-tight">{sector?.name || '---'}</span>
-                            <span className="text-[9px] font-bold text-slate-400">{new Date(h.timestamp).toLocaleString()}</span>
+                          <div className="flex items-center gap-2 pl-[52px] flex-wrap">
+                            <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest shrink-0">{tag?.name || 'MIGRAÇÃO'}</span>
+                            {h.notes && <span className="text-[10px] text-slate-400 font-bold italic truncate">• {h.notes}</span>}
                           </div>
+                          {canRevert && (
+                            <button
+                              type="button"
+                              onClick={() => handleRevertLot(selectedLot)}
+                              title="Reverter esta movimentação"
+                              className="self-end flex items-center gap-1 px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-all"
+                            >
+                              <History size={13} />
+                              Reverter
+                            </button>
+                          )}
                         </div>
-                        <div className="flex items-center gap-2 pl-[52px] flex-wrap">
-                          <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest shrink-0">{tag?.name || 'MIGRAÇÃO'}</span>
-                          {h.notes && <span className="text-[10px] text-slate-400 font-bold italic truncate">• {h.notes}</span>}
-                        </div>
-                        {canRevert && (
-                          <button
-                            type="button"
-                            onClick={() => handleRevertLot(selectedLot)}
-                            title="Reverter esta movimentação"
-                            className="self-end flex items-center gap-1 px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-all"
-                          >
-                            <History size={13} />
-                            Reverter
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
                 )}
               </div>
 
@@ -8559,7 +8463,7 @@ export default function PCPView({
           );
         })()}
       </Modal>
-      <ScannerModal 
+      <ScannerModal
         isOpen={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onScan={handleScanLotResult}
@@ -8680,14 +8584,14 @@ export default function PCPView({
 
           // Monta rangeMap com estoque direto por faixa
           const modalRangeMap: Record<string, { stock: number; min: number; max: number }> = {};
-          
+
           // Pre-populate with mold sizes
           moldSizes.forEach(size => {
             const parts = String(size).split('-').map(p => parseFloat(p.trim()));
-            modalRangeMap[size] = { 
-              stock: 0, 
-              min: parts[0], 
-              max: parts.length === 2 ? parts[1] : parts[0] 
+            modalRangeMap[size] = {
+              stock: 0,
+              min: parts[0],
+              max: parts.length === 2 ? parts[1] : parts[0]
             };
           });
 
@@ -8721,12 +8625,12 @@ export default function PCPView({
                 const parts = sz.split('-').map((p: string) => parseFloat(p.trim()));
                 const nMin = parts[0];
                 const nMax = parts.length === 2 ? parts[1] : parts[0];
-                
+
                 // Se houver qualquer interseção entre a grade da necessidade e a grade do estoque
-                const hasIntersection = (nMin >= range.min && nMin <= range.max) || 
-                                       (nMax >= range.min && nMax <= range.max) ||
-                                       (range.min >= nMin && range.min <= nMax);
-                
+                const hasIntersection = (nMin >= range.min && nMin <= range.max) ||
+                  (nMax >= range.min && nMax <= range.max) ||
+                  (range.min >= nMin && range.min <= nMax);
+
                 if (hasIntersection) required += s.required;
               });
               const falta = Math.max(0, required - range.stock);
@@ -8735,7 +8639,7 @@ export default function PCPView({
             })
             .filter(r => r.required > 0 || r.stock > 0 || extraSoleQty[r.rangeKey] > 0);
 
-          const totalFalta  = gradeRows.reduce((s, r) => s + r.falta, 0);
+          const totalFalta = gradeRows.reduce((s, r) => s + r.falta, 0);
           const totalPedido = gradeRows.reduce((s, r) => s + r.total, 0);
 
           return (
@@ -8834,11 +8738,10 @@ export default function PCPView({
                     setIsSoleOrderModalOpen(false);
                   }}
                   disabled={totalPedido === 0}
-                  className={`w-full py-5 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] flex items-center justify-center gap-3 shadow-xl transition-all ${
-                    totalPedido > 0
+                  className={`w-full py-5 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] flex items-center justify-center gap-3 shadow-xl transition-all ${totalPedido > 0
                       ? 'bg-emerald-600 text-white shadow-emerald-500/20 hover:bg-emerald-700 active:scale-[0.99]'
                       : 'bg-slate-200 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                  }`}
+                    }`}
                 >
                   <ShoppingCart size={18} />
                   Lançar Compra Agora
@@ -8847,19 +8750,19 @@ export default function PCPView({
                 <button
                   type="button"
                   disabled={totalPedido === 0 || requestingId === selectedSoleNeed.id}
-                   onClick={async () => {
-                    console.log('[PCPView] Solicitar button clicked', { 
-                      needId: selectedSoleNeed.id, 
-                      total: totalPedido 
+                  onClick={async () => {
+                    console.log('[PCPView] Solicitar button clicked', {
+                      needId: selectedSoleNeed.id,
+                      total: totalPedido
                     });
-                    
+
                     if (!onRequestPurchase || requestingId) return;
-                    
+
                     const finalOrder: Record<string, number> = {};
                     gradeRows.forEach(row => {
                       if (row.total > 0) finalOrder[row.rangeKey] = row.total;
                     });
-                    
+
                     if (Object.keys(finalOrder).length === 0) {
                       toast.show('O pedido está vazio.');
                       return;
@@ -8892,11 +8795,10 @@ export default function PCPView({
                       setRequestingId(null);
                     }
                   }}
-                  className={`w-full py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${
-                    totalPedido > 0 && requestingId !== selectedSoleNeed.id
+                  className={`w-full py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${totalPedido > 0 && requestingId !== selectedSoleNeed.id
                       ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 active:scale-[0.98]'
                       : 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                  }`}
+                    }`}
                 >
                   {requestingId === selectedSoleNeed.id ? (
                     <>
@@ -8925,38 +8827,44 @@ export default function PCPView({
       >
         <div className="flex flex-col gap-6 p-1">
           {/* OS Header Info */}
-          {selectedLot && (
+          {(selectedLot || selectedLots.length > 0) && (
             <div className={`p-4 rounded-2xl flex flex-col gap-2 ${isDarkMode ? 'bg-slate-900' : 'bg-slate-50'}`}>
               {(() => {
+                const targetLots = selectedLots.length > 0 ? selectedLots : (selectedLot ? [selectedLot] : []);
+                const mainLot = selectedLot || targetLots[0];
+                if (!mainLot) return null;
+
                 const hasSelectedOrders = pendingOsSourceOrderIds.length > 0;
                 const isAdvancedOS = !!pendingOsSectorOverride && hasSelectedOrders;
-                const effectiveQty = pendingOsQuantityOverride ?? selectedLot.quantity;
+                
+                const allSourceItems = targetLots.flatMap(l => (l as any).metadata?.sourceItems || []);
+
+                const effectiveQty = pendingOsQuantityOverride ?? targetLots.reduce((acc, l) => acc + (l.quantity || 0), 0);
                 const effectiveSector = pendingOsSectorOverride
                   ? sectors.find(s => s.id === pendingOsSectorOverride)?.name
-                  : sectors.find(s => s.id === (selectedLot.route && selectedLot.route[selectedLot.currentSectorIndex]))?.name;
+                  : sectors.find(s => s.id === (mainLot.route && mainLot.route[mainLot.currentSectorIndex]))?.name;
 
-                // Produtos e cores dos pedidos selecionados
                 const selectedOrderProducts = hasSelectedOrders ? Array.from(new Set(
                   pendingOsSourceOrderIds.map(oid => {
-                    const si = ((selectedLot as any).metadata?.sourceItems || []).find((s: any) => s.orderId === oid);
+                    const [realOrderId] = oid.split('::');
+                    const si = allSourceItems.find((s: any) => s.orderId === oid || s.orderId === realOrderId);
                     const prod = si ? products.find(p => p.id === si.productId) : null;
                     const vari = prod?.variations.find((v: any) => v.id === si?.variationId);
                     return prod ? `${prod.name}${vari?.colorName ? ' · ' + vari.colorName : ''}` : null;
                   }).filter(Boolean)
                 )) : [];
 
-                // Quantidade total dos pedidos selecionados
                 const selectedOrderQty = hasSelectedOrders
-                  ? ((selectedLot as any).metadata?.sourceItems || [])
-                      .filter((si: any) => pendingOsSourceOrderIds.includes(si.orderId))
-                      .reduce((acc: number, si: any) => acc + (si.qty || 0), 0)
+                  ? allSourceItems
+                    .filter((si: any, idx: number) => pendingOsSourceOrderIds.includes(si.orderId) || pendingOsSourceOrderIds.includes(`${si.orderId}::${si.itemIdx !== undefined ? si.itemIdx : idx}`))
+                    .reduce((acc: number, si: any) => acc + (si.qty || 0), 0)
                   : effectiveQty;
 
                 return (
                   <>
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                        {isAdvancedOS ? 'Pedidos Adiantados — Mapa' : 'Mapa de Produção'}
+                        {targetLots.length > 1 ? 'Emissão Multi-Mapa' : (isAdvancedOS ? 'Pedidos Adiantados — Mapa' : 'Mapa de Produção')}
                       </span>
                       <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">
                         Qtd: {hasSelectedOrders ? selectedOrderQty : effectiveQty} Pares
@@ -8965,15 +8873,15 @@ export default function PCPView({
                     <h4 className="text-sm font-black text-slate-800 dark:text-slate-200">
                       {selectedOrderProducts.length > 0
                         ? selectedOrderProducts.slice(0, 3).join(', ') + (selectedOrderProducts.length > 3 ? ` +${selectedOrderProducts.length - 3}` : '')
-                        : (selectedLot.customerName || 'Lote sem cliente')
-                      } — #{selectedLot.orderNumber}
+                        : (targetLots.length > 1 ? `${targetLots.length} Mapas selecionados` : (mainLot.customerName || 'Lote sem cliente'))
+                      } {targetLots.length === 1 ? `— #${mainLot.orderNumber}` : `(${targetLots.map(l => `#${l.orderNumber}`).join(', ')})`}
                     </h4>
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                      {hasSelectedOrders ? `${pendingOsSourceOrderIds.length} pedido(s)` : `Ref: ${products.find(p => p.id === selectedLot.productId)?.reference || '---'}`} • Setor: {effectiveSector || '---'}
+                      {hasSelectedOrders ? `${pendingOsSourceOrderIds.length} pedido(s)` : (targetLots.length > 1 ? `${targetLots.length} mapas` : `Ref: ${products.find(p => p.id === mainLot.productId)?.reference || '---'}`)} • Setor: {effectiveSector || '---'}
                     </p>
-                    {isAdvancedOS && (
+                    {isAdvancedOS && targetLots.length === 1 && (
                       <p className="text-[9px] font-bold text-amber-500 uppercase tracking-widest">
-                        Mapa atualmente em: {sectors.find(s => s.id === (selectedLot.route && selectedLot.route[selectedLot.currentSectorIndex]))?.name || '---'}
+                        Mapa atualmente em: {sectors.find(s => s.id === (mainLot.route && mainLot.route[mainLot.currentSectorIndex]))?.name || '---'}
                       </p>
                     )}
                   </>
@@ -9002,26 +8910,24 @@ export default function PCPView({
                 <button
                   type="button"
                   onClick={() => setOsType('INTERNAL')}
-                  className={`py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-                    osType === 'INTERNAL'
+                  className={`py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${osType === 'INTERNAL'
                       ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
                       : isDarkMode
-                      ? 'bg-slate-900 text-slate-400 hover:text-slate-200'
-                      : 'bg-slate-100 text-slate-500 hover:text-slate-800'
-                  }`}
+                        ? 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                        : 'bg-slate-100 text-slate-500 hover:text-slate-800'
+                    }`}
                 >
                   Interno
                 </button>
                 <button
                   type="button"
                   onClick={() => setOsType('OUTSOURCED')}
-                  className={`py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${
-                    osType === 'OUTSOURCED'
+                  className={`py-3 px-4 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${osType === 'OUTSOURCED'
                       ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
                       : isDarkMode
-                      ? 'bg-slate-900 text-slate-400 hover:text-slate-200'
-                      : 'bg-slate-100 text-slate-500 hover:text-slate-800'
-                  }`}
+                        ? 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                        : 'bg-slate-100 text-slate-500 hover:text-slate-800'
+                    }`}
                 >
                   Terceirizado
                 </button>
@@ -9104,8 +9010,8 @@ export default function PCPView({
                   const displayQty = pendingOsQuantityOverride ??
                     (pendingOsSourceOrderIds.length > 0
                       ? ((selectedLot as any).metadata?.sourceItems || [])
-                          .filter((si: any) => pendingOsSourceOrderIds.includes(si.orderId))
-                          .reduce((acc: number, si: any) => acc + (si.qty || 0), 0)
+                        .filter((si: any, idx: number) => pendingOsSourceOrderIds.includes(si.orderId) || pendingOsSourceOrderIds.includes(`${si.orderId}::${si.itemIdx !== undefined ? si.itemIdx : idx}`))
+                        .reduce((acc: number, si: any) => acc + (si.qty || 0), 0)
                       : (selectedLot?.quantity ?? 0));
                   return `R$ ${(displayQty * osValuePerPair).toFixed(2)}`;
                 })()}
@@ -9161,11 +9067,10 @@ export default function PCPView({
             <button
               type="button"
               onClick={() => setIsOSModalOpen(false)}
-              className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all ${
-                isDarkMode 
-                  ? 'border-slate-800 text-slate-400 hover:bg-slate-900' 
+              className={`flex-1 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all ${isDarkMode
+                  ? 'border-slate-800 text-slate-400 hover:bg-slate-900'
                   : 'border-slate-200 text-slate-500 hover:bg-slate-50'
-              }`}
+                }`}
             >
               Cancelar
             </button>
@@ -9173,11 +9078,10 @@ export default function PCPView({
               type="button"
               disabled={isSavingOS || (!osProviderId && !osProviderManualName)}
               onClick={handleSaveOS}
-              className={`flex-[2] py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 transition-all ${
-                isSavingOS || (!osProviderId && !osProviderManualName)
+              className={`flex-[2] py-4 rounded-[2rem] text-xs font-black uppercase tracking-[0.2em] shadow-xl flex items-center justify-center gap-3 transition-all ${isSavingOS || (!osProviderId && !osProviderManualName)
                   ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                   : 'bg-indigo-600 text-white shadow-indigo-600/20 hover:bg-indigo-700 hover:scale-[1.01] active:scale-95'
-              }`}
+                }`}
             >
               {isSavingOS ? (
                 <>
@@ -9366,13 +9270,12 @@ export default function PCPView({
                           setQrBaixaShowWebCamera(true);
                         }
                       }}
-                      className={`w-full flex flex-col items-center justify-center gap-3 py-8 rounded-2xl border-2 border-dashed transition-all active:scale-98 ${
-                        qrBaixaScanning
+                      className={`w-full flex flex-col items-center justify-center gap-3 py-8 rounded-2xl border-2 border-dashed transition-all active:scale-98 ${qrBaixaScanning
                           ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20 animate-pulse'
                           : isDarkMode
                             ? 'border-violet-700/50 bg-violet-950/10 hover:bg-violet-950/25 text-violet-400'
                             : 'border-violet-200 bg-violet-50/50 hover:bg-violet-50 text-violet-600'
-                      }`}
+                        }`}
                     >
                       <div className="relative">
                         <ScanLine size={40} className={qrBaixaScanning ? 'animate-bounce' : ''} />
@@ -9410,11 +9313,10 @@ export default function PCPView({
                         onChange={e => setQrBaixaManualCode(e.target.value.toUpperCase())}
                         onKeyDown={e => { if (e.key === 'Enter' && qrBaixaManualCode.trim()) handleQrBaixaResolve(qrBaixaManualCode); }}
                         placeholder="Ex: OS-0003"
-                        className={`w-full pl-8 pr-3 py-3 rounded-2xl text-xs font-black uppercase tracking-widest outline-none border-2 transition-colors ${
-                          isDarkMode
+                        className={`w-full pl-8 pr-3 py-3 rounded-2xl text-xs font-black uppercase tracking-widest outline-none border-2 transition-colors ${isDarkMode
                             ? 'bg-slate-950 border-slate-800 text-white focus:border-violet-500 placeholder:text-slate-700'
                             : 'bg-white border-slate-200 text-slate-900 focus:border-violet-500 placeholder:text-slate-300'
-                        }`}
+                          }`}
                       />
                     </div>
                     <button
@@ -9457,11 +9359,10 @@ export default function PCPView({
                       key={sec.id}
                       type="button"
                       onClick={() => setMoveSectorTarget(sec.id)}
-                      className={`flex items-center gap-3 p-3.5 rounded-2xl border-2 text-left transition-all active:scale-95 ${
-                        moveSectorTarget === sec.id
+                      className={`flex items-center gap-3 p-3.5 rounded-2xl border-2 text-left transition-all active:scale-95 ${moveSectorTarget === sec.id
                           ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
                           : isDarkMode ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
-                      }`}
+                        }`}
                     >
                       <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: sec.color || '#6366f1' }} />
                       <span className={`text-[11px] font-black uppercase ${moveSectorTarget === sec.id ? 'text-emerald-600 dark:text-emerald-400' : isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
@@ -9485,11 +9386,10 @@ export default function PCPView({
                     key={sec.id}
                     type="button"
                     onClick={() => setMoveSectorTarget(sec.id)}
-                    className={`flex items-center gap-3 p-3.5 rounded-2xl border-2 text-left transition-all active:scale-95 ${
-                      moveSectorTarget === sec.id
+                    className={`flex items-center gap-3 p-3.5 rounded-2xl border-2 text-left transition-all active:scale-95 ${moveSectorTarget === sec.id
                         ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
                         : isDarkMode ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
-                    }`}
+                      }`}
                   >
                     <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: sec.color || '#6366f1' }} />
                     <span className={`text-[11px] font-black uppercase ${moveSectorTarget === sec.id ? 'text-emerald-600 dark:text-emerald-400' : isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
@@ -9527,11 +9427,10 @@ export default function PCPView({
       {osFeedback && createPortal(
         <div className="fixed inset-0 flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-200" style={{ zIndex: 60000 }}>
           <div className={`w-full max-w-xs rounded-[2.5rem] p-8 shadow-2xl flex flex-col items-center text-center gap-5 animate-in zoom-in-95 duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
-            <div className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl animate-bounce ${
-              osFeedback.nextSector === 'FINALIZADO'
+            <div className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl animate-bounce ${osFeedback.nextSector === 'FINALIZADO'
                 ? 'bg-violet-500 shadow-violet-500/30'
                 : 'bg-emerald-500 shadow-emerald-500/30'
-            }`}>
+              }`}>
               <CheckSquare size={38} className="text-white" strokeWidth={2.5} />
             </div>
 
@@ -9602,62 +9501,62 @@ export default function PCPView({
             </div>
 
             <div className="w-full flex-1 min-h-0 overflow-y-auto flex flex-col gap-5 -mx-1 px-1">
-            <div className={`w-full px-4 py-3 rounded-2xl flex flex-col gap-1.5 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-              <p className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                {finalizeSelectedConfirm.items.length === 1 ? 'Pedido' : 'Pedidos'}
-              </p>
-              {finalizeSelectedConfirm.items.map((it, i) => {
-                const info = finalizeSelectedConfirm.stockInfo?.[it.key];
-                return (
-                  <div key={i} className="flex flex-col gap-0.5">
-                    <p className={`text-[11px] font-bold text-left uppercase ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
-                      {describeMoveItem(finalizeSelectedConfirm.lot, it)}
-                    </p>
-                    {info && (
-                      <p className={`text-[10px] font-bold text-left normal-case ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                        → {info.destino} · Estoque atual: <strong>{info.currentQty} {info.unit}</strong>
-                        {info.projectedQty !== info.currentQty && <> · Ficará com: <strong className="text-emerald-600 dark:text-emerald-400">{info.projectedQty} {info.unit}</strong></>}
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {finalizeSelectedConfirm.lines.slice(1).some(l => l) && (
               <div className={`w-full px-4 py-3 rounded-2xl flex flex-col gap-1.5 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                {finalizeSelectedConfirm.lines.slice(1).filter(l => l).map((line, i) => (
-                  <p key={i} className={`text-xs font-bold text-left ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{line}</p>
-                ))}
-              </div>
-            )}
-
-            {finalizeSelectedConfirm.soleInfo && finalizeSelectedConfirm.soleInfo.length > 0 && (
-              <div className={`w-full px-4 py-3 rounded-2xl flex flex-col gap-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
-                <p className="text-[10px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
-                  <TrendingDown size={12} strokeWidth={3} /> Estoque de Solados (vai diminuir)
+                <p className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                  {finalizeSelectedConfirm.items.length === 1 ? 'Pedido' : 'Pedidos'}
                 </p>
-                {finalizeSelectedConfirm.soleInfo.map((group, gi) => (
-                  <div key={gi} className="flex flex-col gap-1.5">
-                    <p className={`text-[9px] font-black uppercase tracking-widest text-left ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                      {group.moldName}{group.colorName ? ` · ${group.colorName}` : ''}
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {group.rows.map(row => (
-                        <div key={row.size} className={`px-2.5 py-1.5 rounded-xl border-2 text-center min-w-[52px] ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}>
-                          <p className="text-[10px] font-bold text-black dark:text-white leading-none">{row.size}</p>
-                          <p className="text-[10px] font-black leading-none mt-1 flex items-center justify-center gap-1">
-                            <span className="text-slate-400">{row.before}</span>
-                            <ChevronRight size={10} strokeWidth={3} className="text-slate-300" />
-                            <span className="text-rose-600 dark:text-rose-400">{row.after}</span>
-                          </p>
-                        </div>
-                      ))}
+                {finalizeSelectedConfirm.items.map((it, i) => {
+                  const info = finalizeSelectedConfirm.stockInfo?.[it.key];
+                  return (
+                    <div key={i} className="flex flex-col gap-0.5">
+                      <p className={`text-[11px] font-bold text-left uppercase ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                        {describeMoveItem(finalizeSelectedConfirm.lot, it)}
+                      </p>
+                      {info && (
+                        <p className={`text-[10px] font-bold text-left normal-case ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                          → {info.destino} · Estoque atual: <strong>{info.currentQty} {info.unit}</strong>
+                          {info.projectedQty !== info.currentQty && <> · Ficará com: <strong className="text-emerald-600 dark:text-emerald-400">{info.projectedQty} {info.unit}</strong></>}
+                        </p>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-            )}
+
+              {finalizeSelectedConfirm.lines.slice(1).some(l => l) && (
+                <div className={`w-full px-4 py-3 rounded-2xl flex flex-col gap-1.5 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                  {finalizeSelectedConfirm.lines.slice(1).filter(l => l).map((line, i) => (
+                    <p key={i} className={`text-xs font-bold text-left ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{line}</p>
+                  ))}
+                </div>
+              )}
+
+              {finalizeSelectedConfirm.soleInfo && finalizeSelectedConfirm.soleInfo.length > 0 && (
+                <div className={`w-full px-4 py-3 rounded-2xl flex flex-col gap-2 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+                    <TrendingDown size={12} strokeWidth={3} /> Estoque de Solados (vai diminuir)
+                  </p>
+                  {finalizeSelectedConfirm.soleInfo.map((group, gi) => (
+                    <div key={gi} className="flex flex-col gap-1.5">
+                      <p className={`text-[9px] font-black uppercase tracking-widest text-left ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                        {group.moldName}{group.colorName ? ` · ${group.colorName}` : ''}
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {group.rows.map(row => (
+                          <div key={row.size} className={`px-2.5 py-1.5 rounded-xl border-2 text-center min-w-[52px] ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}>
+                            <p className="text-[10px] font-bold text-black dark:text-white leading-none">{row.size}</p>
+                            <p className="text-[10px] font-black leading-none mt-1 flex items-center justify-center gap-1">
+                              <span className="text-slate-400">{row.before}</span>
+                              <ChevronRight size={10} strokeWidth={3} className="text-slate-300" />
+                              <span className="text-rose-600 dark:text-rose-400">{row.after}</span>
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="shrink-0 w-full flex gap-3">
@@ -9735,7 +9634,11 @@ export default function PCPView({
             <div className="flex items-center justify-between px-1">
               <div>
                 <h3 className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-200' : 'text-slate-900'}`}>Escolher Setor Manualmente</h3>
-                <p className={`text-[9px] font-bold mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Mapa #{manualSectorPicker.lot.orderNumber} — use apenas se o cálculo automático estiver errado</p>
+                <p className={`text-[9px] font-bold mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                  {manualSectorPicker.lot
+                    ? `Mapa #${manualSectorPicker.lot.orderNumber} — use apenas se o cálculo automático estiver errado`
+                    : `${manualSectorPicker.fichas?.length} pedido(s) selecionado(s)`}
+                </p>
               </div>
               <button
                 type="button"
@@ -9748,18 +9651,27 @@ export default function PCPView({
             </div>
             <div className="flex flex-col gap-1 max-h-[60vh] overflow-y-auto custom-scrollbar">
               {sectors.map(sector => {
-                const isCurrent = manualSectorPicker.lot.route?.[manualSectorPicker.lot.currentSectorIndex] === sector.id;
+                const isCurrent = manualSectorPicker.lot
+                  ? manualSectorPicker.lot.route?.[manualSectorPicker.lot.currentSectorIndex] === sector.id
+                  : false;
                 return (
                   <button
                     key={sector.id}
                     type="button"
                     disabled={isCurrent}
-                    onClick={() => handleManualSectorOverride(manualSectorPicker.lot, sector.id)}
-                    className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-left transition-all ${
-                      isCurrent
+                    onClick={() => {
+                      setManualSectorMoveConfirm({
+                        lot: manualSectorPicker.lot,
+                        fichas: manualSectorPicker.fichas,
+                        targetSectorId: sector.id,
+                        targetSectorName: sector.name,
+                      });
+                      setManualSectorPicker(null);
+                    }}
+                    className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-left transition-all ${isCurrent
                         ? `cursor-not-allowed opacity-40 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`
                         : isDarkMode ? 'text-slate-300 hover:bg-orange-500 hover:text-white' : 'text-slate-600 hover:bg-orange-500 hover:text-white'
-                    }`}
+                      }`}
                   >
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: sector.color }} />
                     {sector.name}
@@ -9767,6 +9679,122 @@ export default function PCPView({
                   </button>
                 );
               })}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {manualSectorMoveConfirm && createPortal(
+        <div
+          className="fixed inset-0 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-150"
+          style={{ zIndex: 60001 }}
+          onClick={() => setManualSectorMoveConfirm(null)}
+        >
+          <div
+            className={`w-full max-w-md rounded-[2rem] border shadow-2xl p-6 flex flex-col gap-4 animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-800'}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2 text-indigo-500">
+                <ArrowLeftRight size={18} />
+                <h3 className="text-[12px] font-black uppercase tracking-widest">Confirmar Movimentação Manual</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setManualSectorMoveConfirm(null)}
+                className={`p-1.5 rounded-full transition-all shrink-0 ${isDarkMode ? 'text-slate-500 hover:bg-slate-800 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Target Sector info */}
+            <div className={`p-4 rounded-2xl flex items-center gap-3.5 ${isDarkMode ? 'bg-slate-800/40 border border-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-indigo-500/10 text-indigo-500 shrink-0">
+                <ArrowLeftRight size={18} />
+              </div>
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 leading-none">Mover para o Setor</p>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: sectors.find(s => s.id === manualSectorMoveConfirm.targetSectorId)?.color || '#ccc' }} />
+                  <span className="text-sm font-black uppercase tracking-wider">{manualSectorMoveConfirm.targetSectorName}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Content Details */}
+            <div className="flex flex-col gap-2.5">
+              {manualSectorMoveConfirm.lot ? (
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Mapa Selecionado</p>
+                  <p className="text-sm font-bold text-indigo-500 mt-0.5">Mapa #{manualSectorMoveConfirm.lot.orderNumber}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+                    Todo o conteúdo do mapa será movido de forma manual.
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">
+                    Pedidos Selecionados ({manualSectorMoveConfirm.fichas?.length})
+                  </p>
+                  <div className="flex flex-col gap-1.5 max-h-[180px] overflow-y-auto custom-scrollbar pr-1">
+                    {manualSectorMoveConfirm.fichas?.map((f, idx) => {
+                      return (
+                        <div
+                          key={idx}
+                          className={`flex items-center justify-between p-2 rounded-xl text-xs font-bold ${isDarkMode ? 'bg-slate-800/20 hover:bg-slate-800/40' : 'bg-slate-50/50 hover:bg-slate-100/50'}`}
+                        >
+                          <div className="min-w-0 flex-1 pr-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[10px] font-black text-slate-400">PED {f.si.orderId.substring(0, 6)}</span>
+                              <span className="text-slate-300 dark:text-slate-700">·</span>
+                              <span className="truncate">{f.product?.reference || '---'}</span>
+                            </div>
+                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider truncate mt-0.5">{f.variation?.colorName || '---'}</p>
+                          </div>
+                          <span className="text-[10px] font-black px-2 py-0.5 bg-indigo-500/10 text-indigo-500 rounded-full shrink-0">
+                            {f.si.qty} {f.si.qty === 1 ? 'par' : 'pares'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Warning Alert */}
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-start gap-2.5 mt-1">
+              <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={14} />
+              <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400/90 leading-normal">
+                Use esta opção apenas se o cálculo automático do PCP estiver incorreto.
+              </p>
+            </div>
+
+            {/* Actions */}
+            <div className="flex flex-col gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (manualSectorMoveConfirm.lot) {
+                    handleManualSectorOverride(manualSectorMoveConfirm.lot, manualSectorMoveConfirm.targetSectorId);
+                  } else if (manualSectorMoveConfirm.fichas) {
+                    handleManualFichasSectorOverride(manualSectorMoveConfirm.fichas, manualSectorMoveConfirm.targetSectorId);
+                  }
+                }}
+                className="w-full py-3.5 rounded-2xl font-black uppercase tracking-widest text-[11px] shadow-lg transition-all active:scale-[0.98] bg-indigo-600 text-white shadow-indigo-100 dark:shadow-none hover:bg-indigo-700"
+              >
+                Sim, mover pedido(s)
+              </button>
+              <button
+                type="button"
+                onClick={() => setManualSectorMoveConfirm(null)}
+                className="w-full py-3.5 rounded-2xl font-black uppercase tracking-widest text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all"
+              >
+                Cancelar
+              </button>
             </div>
           </div>
         </div>,
@@ -9829,11 +9857,10 @@ export default function PCPView({
                         title={`Setor de destino para ${item.productName}`}
                         value={item.chosenSectorId}
                         onChange={(e) => updateSectorChoiceItem(item.key, e.target.value)}
-                        className={`flex-1 min-w-0 text-[10px] font-black uppercase tracking-widest rounded-xl px-3 py-2 border outline-none transition-all ${
-                          isOverridden
+                        className={`flex-1 min-w-0 text-[10px] font-black uppercase tracking-widest rounded-xl px-3 py-2 border outline-none transition-all ${isOverridden
                             ? 'border-orange-500 text-orange-500 bg-orange-500/10'
                             : isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-200' : 'border-slate-200 bg-white text-slate-700'
-                        }`}
+                          }`}
                       >
                         <option value="">CONCLUÍDO (finalizar)</option>
                         {sectors.map(sector => (
@@ -9906,7 +9933,7 @@ export default function PCPView({
                   ta.style.opacity = '0';
                   document.body.appendChild(ta);
                   ta.select();
-                  try { document.execCommand('copy'); } catch {}
+                  try { document.execCommand('copy'); } catch { }
                   document.body.removeChild(ta);
                 }
                 setMappingDiagnosticCopied(true);
@@ -10006,6 +10033,295 @@ export default function PCPView({
             </div>
           </div>
         )}
+      </Modal>
+
+      <ExportNoteModal
+        isOpen={shareModal.isOpen}
+        onClose={() => setShareModal(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList) => {
+          const { selectedItems } = shareModal;
+
+          const uniqueLots = Array.from(new Set(selectedItems.map((f: any) => f.lot.id)))
+            .map((id: any) => lots.find((l: any) => l.id === id))
+            .filter(Boolean) as any[];
+
+          const items: PCPShareItem[] = selectedItems.map((f: any) => {
+            const order = productionOrders.find(o => o.id === f.si.orderId);
+            const ordItem = f.siIdx !== undefined
+              ? order?.items[f.siIdx]
+              : order?.items.find((i: any) => i.productId === f.si.productId && i.variationId === f.si.variationId);
+
+            const prod = products.find(p => p.id === (ordItem?.productId || f.si.productId));
+            const vari = prod?.variations.find((v: any) => v.id === (ordItem?.variationId || f.si.variationId));
+
+            const sizes = Object.entries(ordItem?.sizes || {})
+              .map(([sz, sData]: [string, any]) => ({ size: sz, qty: Number(sData.toProduction) || 0 }))
+              .filter(s => s.qty > 0)
+              .sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
+
+            const totalQty = sizes.reduce((acc, s) => acc + s.qty, 0);
+
+            const secEntries = Object.entries(vari?.sectorNotes || {})
+              .map(([sid, notes]) => ({ sid, notes: (notes as any[]).filter(n => n.text).map(n => n.text) }))
+              .filter(({ notes }) => notes.length > 0)
+              .map(({ sid, notes }) => {
+                const sectorName = sectors.find(s => s.id === sid)?.name || 'Setor Desconhecido';
+                return { sectorName, notes };
+              });
+
+            return {
+              orderNumber: order?.saleOrderNumber || f.si.orderId.substring(0, 6),
+              reference: prod?.reference || prod?.name || '---',
+              color: vari?.colorName || '---',
+              totalPairs: totalQty,
+              sizeGrid: sizes,
+              sectorNotes: secEntries
+            };
+          });
+
+          let finalItems = items;
+          if (groupMode !== 'none') {
+            const groupedMap = new Map<string, PCPShareItem>();
+            for (const item of items) {
+              const key = groupMode === 'ref' ? item.reference : `${item.reference}::${item.color}`;
+              if (groupedMap.has(key)) {
+                const existing = groupedMap.get(key)!;
+                existing.totalPairs += item.totalPairs;
+                if (groupMode === 'ref') {
+                  if (existing.color !== 'Várias' && existing.color !== item.color) {
+                    existing.color = 'Várias';
+                  }
+                }
+                existing.orderNumber = existing.orderNumber.includes(',') ? existing.orderNumber : `${existing.orderNumber}, ${item.orderNumber}`;
+
+                const sizeMap = new Map<string, number>();
+                for (const s of existing.sizeGrid) sizeMap.set(s.size, s.qty);
+                for (const s of item.sizeGrid) sizeMap.set(s.size, (sizeMap.get(s.size) || 0) + s.qty);
+                existing.sizeGrid = Array.from(sizeMap.entries()).map(([size, qty]) => ({ size, qty })).sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
+              } else {
+                groupedMap.set(key, { ...item });
+              }
+            }
+            finalItems = Array.from(groupedMap.values());
+            for (const fi of finalItems) {
+              if (fi.orderNumber.includes(',')) fi.orderNumber = 'Vários';
+            }
+          }
+
+          const lotNumbers = uniqueLots.map(l => l.orderNumber).filter(Boolean).join(', ');
+
+          const success = await generatePCPShareExport({
+            lotNumber: lotNumbers || 'Vários',
+            items: finalItems,
+            additionalNote: note,
+            isDarkMode,
+            showTotalGrid,
+            showMaterials,
+            showItemGrid,
+            showSectorNotes,
+            showOrderList
+          }, format);
+
+          if (success) {
+            setShareModal(prev => ({ ...prev, isOpen: false }));
+          }
+        }}
+        onPreview={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList) => {
+          const { selectedItems } = shareModal;
+
+          const uniqueLots = Array.from(new Set(selectedItems.map((f: any) => f.lot.id)))
+            .map((id: any) => lots.find((l: any) => l.id === id))
+            .filter(Boolean) as any[];
+
+          const items: PCPShareItem[] = selectedItems.map((f: any) => {
+            const order = productionOrders.find(o => o.id === f.si.orderId);
+            const ordItem = f.siIdx !== undefined
+              ? order?.items[f.siIdx]
+              : order?.items.find((i: any) => i.productId === f.si.productId && i.variationId === f.si.variationId);
+
+            const prod = products.find(p => p.id === (ordItem?.productId || f.si.productId));
+            const vari = prod?.variations.find((v: any) => v.id === (ordItem?.variationId || f.si.variationId));
+
+            const sizes = Object.entries(ordItem?.sizes || {})
+              .map(([sz, sData]: [string, any]) => ({ size: sz, qty: Number(sData.toProduction) || 0 }))
+              .filter(s => s.qty > 0)
+              .sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
+
+            const totalQty = sizes.reduce((acc, s) => acc + s.qty, 0);
+
+            const secEntries = Object.entries(vari?.sectorNotes || {})
+              .map(([sid, notes]) => ({ sid, notes: (notes as any[]).filter(n => n.text).map(n => n.text) }))
+              .filter(({ notes }) => notes.length > 0)
+              .map(({ sid, notes }) => {
+                const sectorName = sectors.find(s => s.id === sid)?.name || 'Setor Desconhecido';
+                return { sectorName, notes };
+              });
+
+            return {
+              orderNumber: order?.saleOrderNumber || f.si.orderId.substring(0, 6),
+              reference: prod?.reference || prod?.name || '---',
+              color: vari?.colorName || '---',
+              totalPairs: totalQty,
+              sizeGrid: sizes,
+              sectorNotes: secEntries
+            };
+          });
+
+          let finalItems = items;
+          if (groupMode !== 'none') {
+            const groupedMap = new Map<string, PCPShareItem>();
+            for (const item of items) {
+              const key = groupMode === 'ref' ? item.reference : `${item.reference}::${item.color}`;
+              if (groupedMap.has(key)) {
+                const existing = groupedMap.get(key)!;
+                existing.totalPairs += item.totalPairs;
+                if (groupMode === 'ref') {
+                  if (existing.color !== 'Várias' && existing.color !== item.color) {
+                    existing.color = 'Várias';
+                  }
+                }
+                existing.orderNumber = existing.orderNumber.includes(',') ? existing.orderNumber : `${existing.orderNumber}, ${item.orderNumber}`;
+
+                const sizeMap = new Map<string, number>();
+                for (const s of existing.sizeGrid) sizeMap.set(s.size, s.qty);
+                for (const s of item.sizeGrid) sizeMap.set(s.size, (sizeMap.get(s.size) || 0) + s.qty);
+                existing.sizeGrid = Array.from(sizeMap.entries()).map(([size, qty]) => ({ size, qty })).sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
+              } else {
+                groupedMap.set(key, { ...item });
+              }
+            }
+            finalItems = Array.from(groupedMap.values());
+            for (const fi of finalItems) {
+              if (fi.orderNumber.includes(',')) fi.orderNumber = 'Vários';
+            }
+          }
+
+          const lotNumbers = uniqueLots.map(l => l.orderNumber).filter(Boolean).join(', ');
+
+          return await generatePCPShareExport({
+            lotNumber: lotNumbers || 'Vários',
+            items: finalItems,
+            additionalNote: note,
+            isDarkMode,
+            showTotalGrid,
+            showMaterials,
+            showItemGrid,
+            showSectorNotes,
+            showOrderList
+          }, format, true);
+        }}
+        isDarkMode={isDarkMode}
+        initialFormat={shareModal.format}
+        title="Central de Compartilhamento - PCP"
+        showGroupingToggle={true}
+        showPCPTotalGridToggle={true}
+        showMaterialsToggle={true}
+        showItemGridToggle={true}
+        showSectorNotesToggle={true}
+        showOrderListToggle={true}
+      />
+
+      <Modal
+        isOpen={isColorPickerOpen}
+        onClose={() => setIsColorPickerOpen(false)}
+        title="Cor do Badge de Mapa"
+        icon={<Palette size={20} />}
+        maxWidth="max-w-md"
+      >
+        <div className="flex flex-col gap-5 p-1">
+          <div>
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
+              Defina a cor de fundo e do texto para o identificador do mapa (ex: MAPA009) exibido em setores e mapas.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pré-visualização</label>
+            <div className="flex justify-center py-6 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800">
+              <span
+                className="text-[11px] font-black px-3.5 py-1.5 rounded-full uppercase tracking-widest shadow-lg"
+                style={{
+                  backgroundColor: mapBadgeBg,
+                  color: mapBadgeText,
+                  boxShadow: `0 4px 12px ${mapBadgeBg}30`
+                }}
+              >
+                MAPA 009
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2.5">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cor de Fundo (RGB)</label>
+            <div className="flex items-center gap-3">
+              <input
+                type="color"
+                value={mapBadgeBg}
+                onChange={(e) => updateMapBadgeColors(e.target.value, mapBadgeText)}
+                className="w-10 h-10 rounded-xl cursor-pointer border-2 border-slate-200 dark:border-slate-700 bg-transparent shrink-0"
+                title="Escolher cor personalizada"
+              />
+              <div className="flex flex-wrap gap-2 max-w-[320px]">
+                {[
+                  // Cores Vibrantes/Escuras
+                  '#7c3aed', '#4f46e5', '#2563eb', '#0891b2', '#0d9488',
+                  '#059669', '#16a34a', '#65a30d', '#ca8a04', '#d97706',
+                  '#ea580c', '#b45309', '#dc2626', '#e11d48', '#db2777',
+                  '#c026d3', '#9333ea', '#000000', '#475569', '#0f172a',
+                  // Cores Claras/Pastéis
+                  '#ddd6fe', '#c7d2fe', '#bfdbfe', '#c5f2f7', '#ccfbf1',
+                  '#d1fae5', '#dcfce7', '#fef08a', '#fed7aa', '#fee2e2',
+                  '#fce7f3', '#fae8ff', '#f3f4f6', '#ffffff'
+                ].map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => updateMapBadgeColors(c, mapBadgeText)}
+                    className={`w-7 h-7 rounded-lg border transition-all ${mapBadgeBg === c ? 'border-indigo-500 scale-110 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-700 hover:scale-105'}`}
+                    style={{ backgroundColor: c }}
+                    title={c}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cor do Texto</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => updateMapBadgeColors(mapBadgeBg, '#ffffff')}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${mapBadgeText === '#ffffff'
+                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                }`}
+              >
+                <div className="w-3.5 h-3.5 rounded-full bg-white border border-slate-300 shrink-0" />
+                Texto Branco
+              </button>
+              <button
+                type="button"
+                onClick={() => updateMapBadgeColors(mapBadgeBg, '#000000')}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${mapBadgeText === '#000000'
+                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                }`}
+              >
+                <div className="w-3.5 h-3.5 rounded-full bg-black shrink-0" />
+                Texto Preto
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsColorPickerOpen(false)}
+            className="w-full mt-2 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
+          >
+            Confirmar Cor
+          </button>
+        </div>
       </Modal>
     </div>
   );

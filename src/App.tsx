@@ -309,6 +309,7 @@ export default function App() {
       { id: 'activity', label: 'Atividade Recente', visible: true, order: 15, module: 'any' },
       { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 16, module: 'sales' },
       { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 17, module: 'production' },
+      { id: 'production_stock_control', label: 'Controle de Estoques', visible: true, order: 17.5, module: 'production' },
       { id: 'factory_config', label: 'Configurações de Fábrica', visible: true, order: 22, module: 'production' },
       { id: 'personal_balance', label: 'Saldo Pessoal', visible: true, order: 18, module: 'personal' },
       { id: 'print_center', label: 'Central de Impressões', visible: true, order: 19, module: 'any' },
@@ -370,6 +371,12 @@ export default function App() {
     // Migration: ensure qr_scanner card is present
     if (config.cards && !config.cards.find((c: any) => c.id === 'qr_scanner')) {
       config.cards.push({ id: 'qr_scanner', label: 'Scanner Rápido', visible: true, order: config.cards.length, module: 'any' });
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+
+    // Migration: ensure production_stock_control is present
+    if (config.cards && !config.cards.find((c: any) => c.id === 'production_stock_control')) {
+      config.cards.push({ id: 'production_stock_control', label: 'Controle de Estoques', visible: true, order: 17.5, module: 'production' });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
 
@@ -1087,6 +1094,8 @@ export default function App() {
 
   // "Reverter Expedição" — desfaz a baixa: devolve ao estoque geral as quantidades dos
   // itens já abatidos (fulfilled === true) e marca-os como aguardando estoque novamente.
+  // Para itens WHOLESALE: também restaura stockPkgAllocations a partir do snapshot
+  // separatedPkgAllocations salvo na separação, e zera boxesSeparated.
   const handleRevertExpedition = async (saleId: string) => {
     const sale = sales.find(s => s.id === saleId);
     if (!sale) return;
@@ -1103,15 +1112,48 @@ export default function App() {
 
       let anyReverted = false;
       const newItems = sale.items.map(item => {
-        if (item.fulfilled !== true) return item;
-        const prod = getProd(item.productId);
-        if (!prod) return item;
-        const variation = prod.variations.find((v: any) => v.id === item.variationId);
-        if (!variation) return item;
-        const key = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
-        variation.stock[key] = (variation.stock?.[key] || 0) + item.quantity;
+        const hasSeparation = item.fulfilled === true || (item.boxesSeparated || 0) > 0;
+        if (!hasSeparation) return item;
+
+        // Calcula exatamente quanto foi separado (e portanto precisa voltar pro estoque)
+        const qtyToRestore = (item.boxesSeparated || 0) > 0 ? item.boxesSeparated! : (item.fulfilled ? item.quantity : 0);
+
+        if (qtyToRestore > 0) {
+          const prod = getProd(item.productId);
+          if (prod) {
+            const variation = prod.variations.find((v: any) => v.id === item.variationId);
+            if (variation) {
+              const key = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
+              variation.stock[key] = (variation.stock?.[key] || 0) + qtyToRestore;
+
+              // Restaura embalagens (stockPkgAllocations) para itens WHOLESALE
+              if (key === 'WHOLESALE' && item.separatedPkgAllocations && item.separatedPkgAllocations.length > 0) {
+                const currentAllocs: any[] = variation.stockPkgAllocations || [];
+                const restored = [...currentAllocs];
+                for (const ca of item.separatedPkgAllocations) {
+                  const isAvulsa = ca.pkgId === 'AVULSA';
+                  if (!isAvulsa) {
+                    const idx = restored.findIndex((a: any) => a.pkgId === ca.pkgId);
+                    if (idx >= 0) {
+                      restored[idx] = { ...restored[idx], qty: restored[idx].qty + ca.qty };
+                      continue;
+                    }
+                  }
+                  restored.push({ ...ca });
+                }
+                variation.stockPkgAllocations = restored;
+              }
+            }
+          }
+        }
+
         anyReverted = true;
-        return { ...item, fulfilled: false };
+        return {
+          ...item,
+          fulfilled: false,
+          boxesSeparated: 0,
+          separatedPkgAllocations: undefined,
+        };
       });
 
       if (!anyReverted) {
@@ -1128,7 +1170,7 @@ export default function App() {
         deliveryStatus: 'PENDING',
       });
 
-      toast.show('Expedição revertida — estoque devolvido.');
+      toast.show('Expedição revertida — estoque e embalagens restaurados.');
     } catch (e: any) {
       console.error(e);
       toast.show('Erro ao reverter expedição: ' + (e.message || e));
@@ -1198,6 +1240,9 @@ export default function App() {
           l => l.productId === item.productId && l.variationId === item.variationId
         );
 
+        // Snapshot das alocações consumidas (para restaurar no revert)
+        let consumedAllocations: any[] = [];
+
         if (itemReservedLots.length === 0) {
           // Sem lotes reservados: abate do estoque geral
           const prod = getProd(item.productId);
@@ -1210,18 +1255,29 @@ export default function App() {
               variation.stock[key] = newQty;
 
               // Trim pkg allocations so totalAllocated never exceeds new boxQty
+              // AND save a snapshot of what was consumed for later revert
               if (key === 'WHOLESALE') {
-                const allocs: any[] = variation.stockPkgAllocations || [];
-                const totalAlloc = allocs.reduce((s: number, a: any) => s + a.qty, 0);
+                const allocsBefore: any[] = (variation.stockPkgAllocations || []).map((a: any) => ({ ...a }));
+                const totalAlloc = allocsBefore.reduce((s: number, a: any) => s + a.qty, 0);
                 if (newQty < totalAlloc) {
                   let excess = totalAlloc - newQty;
-                  const trimmed = allocs.map((a: any) => ({ ...a }));
+                  const trimmed = allocsBefore.map((a: any) => ({ ...a }));
                   for (let i = trimmed.length - 1; i >= 0 && excess > 0; i--) {
                     const cut = Math.min(trimmed[i].qty, excess);
                     trimmed[i].qty -= cut;
                     excess -= cut;
                   }
-                  variation.stockPkgAllocations = trimmed.filter((a: any) => a.qty > 0);
+                  const allocsAfter = trimmed.filter((a: any) => a.qty > 0);
+                  variation.stockPkgAllocations = allocsAfter;
+
+                  // Calcula o diff por índice (order-preserving) — garante corretude
+                  // mesmo com múltiplas entradas AVULSA de customBreakdown distintos
+                  consumedAllocations = trimmed
+                    .map((after: any, i: number) => ({
+                      ...allocsBefore[i], // preserva pkgId, customBreakdown, etc.
+                      qty: allocsBefore[i].qty - after.qty, // = quanto foi removido neste slot
+                    }))
+                    .filter((a: any) => a.qty > 0);
                 }
               }
             }
@@ -1230,10 +1286,25 @@ export default function App() {
         // Com lotes reservados: sem alteração no estoque (nunca foi creditado ao produto)
 
         const newSeparated = (item.boxesSeparated || 0) + sep.quantity;
+        // Acumula o snapshot de alocações consumidas (merge com possíveis separações parciais anteriores)
+        const prevConsumed: any[] = item.separatedPkgAllocations || [];
+        const mergedConsumed = [...prevConsumed];
+        for (const ca of consumedAllocations) {
+          // Avulsas: append sempre (cada uma tem customBreakdown distinto)
+          // Padrões: merge por pkgId (soma qty)
+          const isAvulsa = ca.pkgId === 'AVULSA';
+          if (!isAvulsa) {
+            const idx = mergedConsumed.findIndex((x: any) => x.pkgId === ca.pkgId);
+            if (idx >= 0) { mergedConsumed[idx] = { ...mergedConsumed[idx], qty: mergedConsumed[idx].qty + ca.qty }; continue; }
+          }
+          mergedConsumed.push({ ...ca });
+        }
+
         newItems[sep.itemIdx] = {
           ...item,
           boxesSeparated: newSeparated,
           fulfilled: newSeparated >= item.quantity ? true : item.fulfilled,
+          ...(mergedConsumed.length > 0 ? { separatedPkgAllocations: mergedConsumed } : {}),
         };
       }
 
@@ -1241,11 +1312,14 @@ export default function App() {
         await firebaseService.saveDocument('products', prod);
       }
 
-      const allSeparated = newItems.every(it => (it.boxesSeparated || 0) >= it.quantity);
-      await firebaseService.updateDocument('sales', saleId, { items: newItems });
+      const allFulfilled = newItems.every(it => it.fulfilled === true);
+      await firebaseService.updateDocument('sales', saleId, {
+        items: newItems,
+        ...(allFulfilled ? { deliveryStatus: 'DELIVERED', deliveredAt: Date.now() } : {}),
+      });
 
-      toast.show(allSeparated
-        ? 'Todos os itens separados — pedido pronto para expedição.'
+      toast.show(allFulfilled
+        ? 'Todos os itens separados — estoque baixado e pedido entregue.'
         : 'Separação registrada com sucesso.');
     } catch (e: any) {
       console.error(e);
@@ -3222,8 +3296,11 @@ export default function App() {
 
                   transaction.set(saleRef, updatedSale);
 
-                  // B. Deduct Inventory
+                  // B. Deduct Inventory — apenas itens RETAIL (por tamanho)
+                  // Itens WHOLESALE (caixas) aguardam a separação física via "Separar Caixas"
                   for (const item of sale.items) {
+                    const isWholesaleItem = item.saleType === SaleType.WHOLESALE || (!item.size && item.saleType !== SaleType.RETAIL);
+                    if (isWholesaleItem) continue; // não abate automaticamente caixas
                     const productDoc = productDocsMap.get(item.productId);
                     
                     if (productDoc && productDoc.exists()) {
@@ -3897,10 +3974,15 @@ export default function App() {
                 return null;
               };
 
-              // REVERT OLD STOCK if it was already a SALE — only items that were fulfilled
+              // REVERT OLD STOCK if it was already a SALE — only fulfilled RETAIL items
+              // (WHOLESALE/caixa items are never auto-deducted at registration: they
+              //  wait for manual separation via "Separar Caixas")
               if (prevSale && prevSale.status === SaleStatus.SALE) {
                 for (const item of prevSale.items) {
                    if (item.fulfilled === false) continue; // não foi abatido, nada a reverter
+                   // Itens WHOLESALE não foram auto-abatidos, não há o que reverter
+                   const isWholesaleItem = item.saleType === SaleType.WHOLESALE || (!item.size);
+                   if (isWholesaleItem) continue;
                    const updatedProduct = getProductForUpdate(item.productId);
                    if (updatedProduct) {
                      const variationIndex = updatedProduct.variations.findIndex((v: any) => v.id === item.variationId);
@@ -3913,12 +3995,16 @@ export default function App() {
                 }
               }
 
-              // APPLY NEW STOCK if it is a SALE — por item, respeitando disponibilidade
+              // APPLY NEW STOCK if it is a SALE — apenas itens RETAIL (por tamanho)
+              // Itens WHOLESALE (caixas) aguardam a separação física via "Separar Caixas"
               if (sale.status === SaleStatus.SALE) {
                 const newItems = sale.items.map(item => ({ ...item }));
                 for (let i = 0; i < newItems.length; i++) {
                   const item = newItems[i];
                   if (item.fulfilled === true) continue; // já abatido anteriormente
+                  // Itens WHOLESALE não são auto-abatidos: aguardam separação manual
+                  const isWholesaleItem = item.saleType === SaleType.WHOLESALE || (!item.size && item.saleType !== SaleType.RETAIL);
+                  if (isWholesaleItem) { newItems[i] = { ...item, fulfilled: false }; continue; }
                   const updatedProduct = getProductForUpdate(item.productId);
                   if (!updatedProduct) { newItems[i] = { ...item, fulfilled: false }; continue; }
                   const variationIndex = updatedProduct.variations.findIndex((v: any) => v.id === item.variationId);

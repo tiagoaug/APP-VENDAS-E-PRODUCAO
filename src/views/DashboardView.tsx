@@ -1,7 +1,7 @@
-﻿import { useState, useMemo, ReactNode } from "react";
+import { useState, useMemo, ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Sale, Purchase, Product, Variation, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig, SaleType } from "../types";
-import { Share2, TrendingUp, TrendingDown, Package, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings, Sparkles, ScanLine, QrCode, Trash2 } from "lucide-react";
+import { Share2, TrendingUp, TrendingDown, Package, PackageOpen, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings, Sparkles, ScanLine, QrCode, Trash2 } from "lucide-react";
 import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { jsPDF } from 'jspdf';
@@ -575,6 +575,7 @@ export default function DashboardView({
         // Strict Modular Gating
         if (card.id === 'personal_balance' && !modulesConfig.personal) return null;
         if (card.id === 'engineering_config' && !modulesConfig.production) return null;
+        if (card.id === 'production_stock_control' && !modulesConfig.production) return null;
         
         // Sales-dependent cards
         const salesDependent = [
@@ -1125,6 +1126,67 @@ export default function DashboardView({
                     bg="bg-blue-50"
                     isDarkMode={isDarkMode}
                     onClick={() => onNavigateProduction('INSUMOS')}
+                    isLast={true}
+                  />
+                </div>
+              </div>
+            );
+
+          case "production_stock_control":
+            return (
+              <div key="production_stock_control" className={`p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex flex-col gap-4 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+                <div className={`flex items-center justify-between pb-3 border-b ${isDarkMode ? "border-slate-800" : "border-slate-100"}`}>
+                  <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-sm font-black uppercase tracking-tight text-emerald-500 dark:text-emerald-400">Controle de Estoques</span>
+                  <div className={`p-2 rounded-xl ${isDarkMode ? 'bg-slate-800 text-emerald-400' : 'bg-emerald-50 text-emerald-500'}`}>
+                    <Boxes size={16} />
+                  </div>
+                </div>
+                
+                <div className={`rounded-3xl border overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
+                  <ConfigMenuItem
+                    icon={<PackageOpen size={20} />}
+                    label="Estoques Gerais"
+                    desc="Matéria-prima, adesivos e insumos"
+                    color="text-emerald-600"
+                    bg="bg-emerald-50"
+                    isDarkMode={isDarkMode}
+                    onClick={() => onNavigate(ViewType.PRODUCTION_STOCK)}
+                  />
+                  <ConfigMenuItem
+                    icon={<Package size={20} />}
+                    label="Estoque de Solados"
+                    desc="Gerenciamento por modelo, cor e tamanho"
+                    color="text-indigo-600"
+                    bg="bg-indigo-50"
+                    isDarkMode={isDarkMode}
+                    onClick={() => onNavigate(ViewType.PRODUCTION_SOLE_STOCK)}
+                  />
+                  <ConfigMenuItem
+                    icon={<Footprints size={20} />}
+                    label="Estoque de Palmilhas"
+                    desc="Montagem e Acabamento, por faca e cor"
+                    color="text-rose-600"
+                    bg="bg-rose-50"
+                    isDarkMode={isDarkMode}
+                    onClick={() => onNavigate(ViewType.PRODUCTION_PALMILHA_STOCK)}
+                  />
+                  <ConfigMenuItem
+                    icon={<Boxes size={20} />}
+                    label="Expedição e Estoque"
+                    desc="Produtos prontos — pedidos de clientes e estoque"
+                    color="text-amber-700"
+                    bg="bg-amber-50"
+                    isDarkMode={isDarkMode}
+                    onClick={() => onNavigate(ViewType.STOCK)}
+                  />
+                  <ConfigMenuItem
+                    icon={<ClipboardList size={20} />}
+                    label="Recebimento de Compras"
+                    desc="Dar entrada de materiais comprados no estoque"
+                    color="text-amber-600"
+                    bg="bg-amber-50"
+                    isDarkMode={isDarkMode}
+                    onClick={() => onNavigate(ViewType.PRODUCTION_GENERAL_RECEIPT)}
                     isLast={true}
                   />
                 </div>

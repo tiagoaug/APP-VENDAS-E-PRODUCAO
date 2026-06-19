@@ -627,6 +627,22 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       }
     }
     
+    let productionStock = 0;
+    lots.forEach((lot) => {
+      if (lot.productId !== productId || lot.variationId !== variationId) return;
+      if (lot.status === 'COMPLETED' || lot.status === 'CANCELLED' || lot.finishedAt) return;
+      
+      if (stockKey === 'WHOLESALE') {
+        productionStock += (lot.gradesQty !== undefined ? lot.gradesQty : (lot.quantity > 50 ? Math.round(lot.quantity / 12) : lot.quantity));
+      } else {
+        if (lot.pairs && lot.pairs[stockKey]) {
+          productionStock += lot.pairs[stockKey];
+        }
+      }
+    });
+
+    currentStock += productionStock;
+
     // Fallback to sum of sizes if WHOLESALE is explicitly 0 but sizes have values (unlikely but possible)
     if (stockKey === 'WHOLESALE' && currentStock === 0) {
       let totalSum = Object.values(variation.stock).reduce((a, b) => a + (Number(b) || 0), 0);
@@ -634,7 +650,15 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
          const existingItemsTotal = existingSale.items.filter(i => i.productId === productId && i.variationId === variationId).reduce((acc, i) => acc + i.quantity, 0);
          totalSum += existingItemsTotal;
       }
-      return totalSum >= quantity;
+      
+      // Also add fallback production stock summing
+      lots.forEach((lot) => {
+        if (lot.productId !== productId || lot.variationId !== variationId) return;
+        if (lot.status === 'COMPLETED' || lot.status === 'CANCELLED' || lot.finishedAt) return;
+        productionStock += (lot.gradesQty !== undefined ? lot.gradesQty : (lot.quantity > 50 ? Math.round(lot.quantity / 12) : lot.quantity));
+      });
+
+      return (totalSum + productionStock) >= quantity;
     }
 
     return currentStock >= quantity;
@@ -691,8 +715,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       if (!confirm('Alguns itens estão com estoque insuficiente. Deseja continuar?')) return;
     }
 
-    // Valida que todos os blocos de atacado tenham embalagem selecionada
-    const wholesaleBlocksWithoutPkg = blocks.filter(b => b.saleType === SaleType.WHOLESALE && !b.blockPkgId);
+    // Valida que todos os blocos de atacado tenham embalagem selecionada apenas se for Pedido de Produção
+    const wholesaleBlocksWithoutPkg = blocks.filter(b => b.saleType === SaleType.WHOLESALE && !b.blockPkgId && isProductionOrder);
     if (wholesaleBlocksWithoutPkg.length > 0) {
       const names = wholesaleBlocksWithoutPkg
         .map(b => products.find(p => p.id === b.productId)?.name || 'Modelo')
@@ -1677,13 +1701,26 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                                   const variationKey = `${v.id}-${size}`;
                                   const varState = block.variations[variationKey] || { quantity: 0, price: block.price, size };
                                   const stock = v.stock[size] || 0;
-                                  const hasStock = stock > 0;
+                                  
+                                  let prodStock = 0;
+                                  lots.forEach((lot) => {
+                                    if (lot.productId !== product.id || lot.variationId !== v.id) return;
+                                    if (lot.status === 'COMPLETED' || lot.status === 'CANCELLED' || lot.finishedAt) return;
+                                    if (lot.pairs && lot.pairs[size]) {
+                                      prodStock += lot.pairs[size];
+                                    }
+                                  });
+                                  
+                                  const hasStock = (stock + prodStock) > 0;
 
                                   return (
                                     <div key={variationKey} className={`p-3 rounded-2xl border flex flex-col gap-2 ${varState.quantity > 0 ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800' : 'bg-slate-50/50 dark:bg-slate-800/30 border-transparent'}`}>
                                       <div className="flex justify-between items-center text-[9px] font-black uppercase tracking-tight">
                                         <span className="text-slate-700 dark:text-slate-200">TAM. {size}</span>
-                                        <span className={stock > 0 ? 'text-emerald-500' : 'text-rose-500'}>{stock} prs</span>
+                                        <div className="flex flex-col items-end">
+                                          <span className={(stock + prodStock) > 0 ? 'text-emerald-500' : 'text-rose-500'}>{stock} prs</span>
+                                          {prodStock > 0 && <span className="text-[8px] text-sky-500">(+{prodStock} prod)</span>}
+                                        </div>
                                       </div>
                                       <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-1">
                                         <button 
@@ -1726,7 +1763,16 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                         // Wholesale: just by color
                         const variationKey = v.id;
                         const varState = block.variations[variationKey] || { quantity: 0, price: block.price };
-                        const stock = Object.values(v.stock).reduce((a, b) => a + b, 0);
+                        const stock = block.saleType === SaleType.WHOLESALE 
+                                      ? (v.stock['WHOLESALE'] || 0) 
+                                      : Object.values(v.stock).reduce((a, b) => a + (Number(b) || 0), 0);
+
+                        let prodStock = 0;
+                        lots.forEach((lot) => {
+                          if (lot.productId !== product.id || lot.variationId !== v.id) return;
+                          if (lot.status === 'COMPLETED' || lot.status === 'CANCELLED' || lot.finishedAt) return;
+                          prodStock += (lot.gradesQty || lot.quantity || 0);
+                        });
 
                         const varPkgKey = `${block.id}-${v.id}`;
                         const varPkg = packagingPerVar[varPkgKey];
@@ -1741,8 +1787,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                               <div className="flex items-center gap-2">
                                 <div className="flex-1 min-w-0">
                                   <p className="text-[11px] font-black uppercase text-slate-700 dark:text-slate-200 break-words leading-tight">{v.colorName}</p>
-                                  <p className={`text-[9px] font-bold uppercase tracking-widest mt-0.5 ${stock > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                    Estoque: {stock} grades
+                                  <p className={`text-[9px] font-bold uppercase tracking-widest mt-0.5 ${(stock + prodStock) > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                    Estoque: {stock} grades {prodStock > 0 && <span className="text-sky-500">(+{prodStock} em prod.)</span>}
                                   </p>
                                 </div>
                                 <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-1 shrink-0">
@@ -2809,6 +2855,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             sectors={sectors}
             existingOrdersCount={productionOrders.length}
             existingLotsCount={lots.length}
+            lots={lots}
             isDarkMode={isDarkMode}
             onConfirm={async (order, newLots, deductions) => {
               await onCreateProductionOrder(order, newLots, deductions);

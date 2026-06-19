@@ -96,7 +96,7 @@ export default function PurchasesView({
     setExportModal({ isOpen: true, purchase, format });
   };
 
-  const handleConfirmExport = async (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupItems: boolean) => {
+  const handleConfirmExport = async (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref') => {
     if (!exportModal.purchase) return;
 
     try {
@@ -107,7 +107,7 @@ export default function PurchasesView({
         additionalNote: note,
         isDarkMode,
         showFinancialValues,
-        grouped: groupItems
+        grouped: groupMode !== 'none'
       }, format);
       setExportModal(prev => ({ ...prev, isOpen: false }));
     } catch (error) {

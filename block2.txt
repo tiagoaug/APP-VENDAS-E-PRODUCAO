@@ -1,0 +1,26 @@
+﻿                                  <>
+                                    <button type="button" onClick={() => handleEditOS(orderOS!)} className="p-1.5 rounded-lg bg-amber-400 hover:bg-amber-500 text-white transition-all active:scale-95" title="Editar OS"><Edit2 size={13} /></button>
+                                    <button type="button" onClick={() => handleDeleteOS(orderOS!)} className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-300 hover:text-rose-500 transition-all" title="Excluir OS"><Trash2 size={13} /></button>
+                                  </>
+                                ) : (
+                                  selectedLot.currentSectorIndex === 0 && !selectedLot.finishedAt && (
+                                    <button type="button" onClick={() => handleRemoveItemFromLot(selectedLot, si.orderId)} className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 text-slate-300 hover:text-rose-500 transition-all" title="Retirar do Mapa"><MinusCircle size={14} /></button>
+                                  )
+                                )}
+                              </div>
+                            </div>
+
+                            {/* ── Expanded: grade + info completa ── */}
+                            {isExpanded && (
+                              <div className={`px-3 pb-3 pt-1 border-t flex flex-col gap-3 ${isDarkMode ? 'border-slate-800 bg-slate-950/50' : 'border-slate-100 bg-slate-50/60'}`}>
+                                {sizeEntries.length > 0 && (
+                                  <div>
+                                    <p className="text-[8px] font-black uppercase tracking-widest text-slate-400 mb-2">Grade de Produção</p>
+                                    <div className="flex flex-wrap gap-2 justify-center">
+                                      {sizeEntries.map(([size, s]) => (
+                                        <div key={size} className={`flex flex-col items-center min-w-[38px] py-1.5 px-2 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                          <p className="text-[11px] font-black text-slate-500 dark:text-slate-400 leading-none">{size}</p>
+                                          <p className="text-[16px] font-black text-slate-900 dark:text-white leading-none mt-0.5">{s.toProduction}</p>
+                                        </div>
+                                      ))}
+                                    </div>
