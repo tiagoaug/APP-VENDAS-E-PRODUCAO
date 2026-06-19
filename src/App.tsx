@@ -4342,6 +4342,7 @@ export default function App() {
             serviceOrders={serviceOrders}
             purchases={purchases}
             sales={sales}
+            stockLots={stockLots}
           />
         );
       case ViewType.PRODUCTION_STOCK:

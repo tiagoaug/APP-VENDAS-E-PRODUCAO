@@ -270,6 +270,7 @@ export default function PCPView({
   const [pendingOsSourceOrderIds, setPendingOsSourceOrderIds] = useState<string[]>([]);
   const [pendingOsSectorOverride, setPendingOsSectorOverride] = useState<string>('');
   const [pendingOsQuantityOverride, setPendingOsQuantityOverride] = useState<number | null>(null);
+  const [osCompleteConfirm, setOsCompleteConfirm] = useState<ServiceOrder | null>(null);
 
   // QR Baixa modal state
   const [qrBaixaModal, setQrBaixaModal] = useState<{
@@ -1334,7 +1335,7 @@ export default function PCPView({
         qty,
         suggestedSectorId, suggestedSectorName,
         skippedSectorNames: resolved.skippedSectorNames,
-        chosenSectorId: suggestedSectorId,
+        chosenSectorId: '__PENDING_SELECTION__',
       };
     };
 
@@ -1765,8 +1766,30 @@ export default function PCPView({
 
     setIsSavingOS(true);
     try {
-      // Usa quantidade override para pedidos adiantados, senão soma do lote
-      const quantity = pendingOsQuantityOverride ?? targetLots.reduce((acc, l) => acc + (l.quantity || 0), 0);
+      // Calcula quantidade: se houver seleção de pedidos específicos, soma a quantidade deles
+      let quantity = 0;
+      if (pendingOsQuantityOverride !== null && pendingOsQuantityOverride !== undefined) {
+        quantity = pendingOsQuantityOverride;
+      } else if (pendingOsSourceOrderIds && pendingOsSourceOrderIds.length > 0) {
+        const allSourceItems = targetLots.flatMap(l => (l as any).metadata?.sourceItems || []);
+        quantity = allSourceItems
+          .filter((si: any, idx: number) => {
+            const itemIdx = si.itemIdx !== undefined ? si.itemIdx : idx;
+            return pendingOsSourceOrderIds.some(key => {
+              const parts = key.split('::');
+              if (parts.length === 1) return key === si.orderId;
+              const keyOrderId = parts[1];
+              const keySiIdx = parts.length > 2 ? parseInt(parts[2], 10) : undefined;
+              if (keySiIdx !== undefined) {
+                return keyOrderId === si.orderId && keySiIdx === itemIdx;
+              }
+              return keyOrderId === si.orderId;
+            });
+          })
+          .reduce((acc: number, si: any) => acc + (si.qty || 0), 0);
+      } else {
+        quantity = targetLots.reduce((acc, l) => acc + (l.quantity || 0), 0);
+      }
       const totalValue = quantity * osValuePerPair;
 
       // --- MODO EDIÇÃO ---
@@ -2303,20 +2326,17 @@ export default function PCPView({
     }
   };
 
-  const handleCompleteOS = async (os: ServiceOrder) => {
-    if (!confirm(`Deseja concluir a Ordem de Serviço ${os.osNumber}?`)) return;
+  const handleCompleteOS = (os: ServiceOrder) => {
+    setOsCompleteConfirm(os);
+  };
+
+  const executeCompleteOS = async (os: ServiceOrder) => {
     try {
       const lotId = os.lotId || os.lotIds?.[0] || '';
       if (!lotId) { toast.show('OS sem lote vinculado.'); return; }
 
       const lotObj = lots.find(l => l.id === lotId || (os.lotIds && os.lotIds.includes(l.id)));
       if (!lotObj) { toast.show('Lote não encontrado.'); return; }
-
-      const sectorId = os.sectorId || (lotObj.route?.[lotObj.currentSectorIndex] ?? '');
-      // Usado apenas para a mensagem de "ainda há OS pendente neste setor" abaixo —
-      // a decisão de para onde o mapa avança (e a confirmação de cada modelo) agora
-      // passa pelo pop-up de `openSectorChangeConfirm`, que resolve por modelo.
-      const { nextSectorName } = computeOSAdvanceOutcome(os, lotObj, products, sectors);
 
       // 1. Mark OS as completed
       await firebaseService.updateDocument('serviceOrders', os.id, {
@@ -2328,90 +2348,13 @@ export default function PCPView({
       if (os.transactionId) {
         try { await financeService.settleTransaction(os.transactionId); } catch { /* ignore */ }
       }
-
-      // 2b. Se setor atual é Expedição → baixa automática (entrega ou estoque) e
-      // finalização ESCOPADA APENAS aos pedidos desta OS. Diferente dos demais
-      // setores (onde o mapa avança fisicamente como um todo), na Expedição cada
-      // pedido/cor pode finalizar de forma independente — os demais pedidos do
-      // mapa permanecem pendentes e o mapa só é concluído quando o último pedido
-      // restante também for finalizado.
-      const currentSectorObj = sectors.find(s => s.id === sectorId);
-      const isCycleEndSector = !!currentSectorObj?.isProductionCycleEnd;
-      if (isCycleEndSector && os.sourceOrderIds && os.sourceOrderIds.length > 0) {
-        const orderIds = Array.from(new Set(os.sourceOrderIds));
-        const lines: string[] = [`Setor de Expedição — ${os.osNumber}`];
-        const { customerItems, stockItems } = classifyExpedicaoOrders(orderIds.map(orderId => ({ orderId })));
-        if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
-        if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} pedido(s) → ENTRADA EM ESTOQUE`);
-        lines.push('\nConfirmar baixa de expedição?');
-        if (!confirm(lines.join('\n'))) return;
-        await applyExpedicaoStockUpdate(lotObj, stockItems, customerItems);
-
-        const currentOrderSectors: Record<string, string> = (lotObj as any).metadata?.orderSectors || {};
-        const updatedOrderSectors = { ...currentOrderSectors };
-        orderIds.forEach(oid => { updatedOrderSectors[oid] = ORDER_FINALIZED; });
-
-        const allSI: any[] = (lotObj as any).metadata?.sourceItems
-          || [{ orderId: lotObj.productionOrderId, itemIdx: 0, qty: lotObj.quantity }];
-        const lotObjWithUpdatedSectors = { ...lotObj, metadata: { ...(lotObj as any).metadata, orderSectors: updatedOrderSectors } };
-        const allFinalized = allSI.every((si: any) =>
-          getOrderEffectiveSector(lotObjWithUpdatedSectors, si.orderId, si) === ORDER_FINALIZED
-        );
-
-        if (allFinalized) {
-          await onSaveLot({
-            ...lotObj,
-            finishedAt: Date.now(),
-            metadata: { ...(lotObj as any).metadata, orderSectors: updatedOrderSectors },
-            history: [...(lotObj.history || []), {
-              sectorId, statusId: '', timestamp: Date.now(),
-              userName: userName || 'Usuário', notes: `Mapa finalizado via OS ${os.osNumber}.`,
-            }],
-          });
-          setOsFeedback({ osNumber: os.osNumber, nextSector: 'FINALIZADO', action: 'Mapa de produção finalizado!' });
-        } else {
-          await firebaseService.updateDocument('productionLots', lotObj.id, {
-            metadata: { ...(lotObj as any).metadata, orderSectors: updatedOrderSectors },
-          });
-          setOsFeedback({ osNumber: os.osNumber, nextSector: nextSectorName, action: 'Pedido(s) desta OS finalizado(s) — demais pedidos do mapa permanecem em Expedição.' });
-        }
-        setIsDetailModalOpen(false);
-        setSelectedLot(null);
-        return;
-      }
-
-      // 3. Count remaining PENDING OS for this lot in this sector
-      //    (exclude the current OS by id — state may not have updated yet)
-      const otherPendingOS = serviceOrders.filter(o =>
-        o.id !== os.id &&
-        o.status === 'PENDING' &&
-        o.sectorId === sectorId &&
-        (o.lotId === lotId || (o.lotIds?.includes(lotId) ?? false))
-      );
-
-      if (otherPendingOS.length > 0) {
-        // Still has pending OS — lot stays
-        setOsFeedback({
-          osNumber: os.osNumber,
-          nextSector: nextSectorName,
-          action: `Ainda ${otherPendingOS.length} OS pendente(s) neste setor.`,
-        });
-        setIsDetailModalOpen(false);
-        setSelectedLot(null);
-      } else {
-        // Última OS pendente neste setor — em vez de avançar o mapa inteiro
-        // silenciosamente (o que já fez modelos como o 290 pularem setores como
-        // BORDADO ao serem reunidos com modelos de roteiro diferente), abrimos o
-        // mesmo pop-up de confirmação usado em "Próximo Setor": ele lista CADA
-        // pedido (modelo) do mapa, sua quantidade e o setor de destino já
-        // resolvido pelo roteiro do PRÓPRIO modelo — permitindo que quem está
-        // dando a baixa confira e, se necessário, redirecione manualmente
-        // qualquer um deles ali mesmo antes de confirmar o avanço.
-        openSectorChangeConfirm(lotObj, '', `Baixa via OS ${os.osNumber} concluída.`);
-      }
+      // 3. Always open sector change confirmation popup to manually select destination
+      openSectorChangeConfirm(lotObj, '', `Baixa via OS ${os.osNumber} concluída.`);
     } catch (e) {
       console.error(e);
       toast.show('Erro ao concluir OS: ' + (e instanceof Error ? e.message : String(e)));
+    } finally {
+      setOsCompleteConfirm(null);
     }
   };
 
@@ -3968,7 +3911,7 @@ export default function PCPView({
                         const coveringOS = serviceOrders.find(os =>
                           (os.lotId === lot.id || (os.lotIds && os.lotIds.includes(lot.id))) &&
                           os.sectorId === selectedSectorId &&
-                          os.sourceOrderIds && os.sourceOrderIds.some(id => id === si.orderId || id.startsWith(`${si.orderId}::`))
+                          os.sourceOrderIds && os.sourceOrderIds.some(id => id === si.orderId || id.startsWith(`${si.orderId}::`) || id.split('::').includes(si.orderId))
                         ) || serviceOrders.find(os =>
                           (os.lotId === lot.id || (os.lotIds && os.lotIds.includes(lot.id))) &&
                           os.sectorId === selectedSectorId &&
@@ -4134,8 +4077,11 @@ export default function PCPView({
                                 const productName = product?.name || orderItem?.productName || '-';
                                 const productRef = product?.reference || '';
                                 const colorName = variation?.colorName || orderItem?.variationName || '';
-                                const completedOS = serviceOrders.find((so: any) => so.sourceOrderIds?.includes(f.si.orderId) && so.status === 'COMPLETED');
+                                const completedOS = serviceOrders.find((so: any) => so.sourceOrderIds?.some((id: string) => id === f.si.orderId || id.split('::').includes(f.si.orderId)) && so.status === 'COMPLETED');
                                 const hasCompletedOS = !!completedOS;
+                                const linkedOSList = serviceOrders.filter((so: any) =>
+                                  so.sourceOrderIds && so.sourceOrderIds.some((id: string) => id === f.si.orderId || id.startsWith(`${f.si.orderId}::`) || id.split('::').includes(f.si.orderId))
+                                );
 
                                 return (
                                   <div key={itemKey} id={`pedido-card-${itemKey}`} className={`rounded-2xl border overflow-hidden transition-all ${hasOS
@@ -4149,8 +4095,8 @@ export default function PCPView({
                                     {/* Cabeçalho */}
                                     <div className="p-3 flex items-center gap-3">
                                       {hasOS ? (
-                                        <div className="w-4 h-4 rounded-full bg-amber-400 flex items-center justify-center shrink-0" title="OS pendente">
-                                          <div className="w-2 h-2 rounded-full bg-white" />
+                                        <div className="text-amber-500 shrink-0 animate-pulse" title="Este pedido já está em uma ordem de serviço ativa neste setor.">
+                                          <AlertTriangle size={16} />
                                         </div>
                                       ) : hasCompletedOS ? (
                                         <input
@@ -4217,6 +4163,11 @@ export default function PCPView({
                                           <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400">
                                             · {f.si.qty} {f.si.qty === 1 ? 'par' : 'pares'}
                                           </span>
+                                          {hasOS && f.coveringOS && (
+                                            <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 shrink-0">
+                                              Atrelado à {f.coveringOS.osNumber} (Já possui OS neste setor!)
+                                            </span>
+                                          )}
                                         </div>
                                       </div>
 
@@ -4310,6 +4261,30 @@ export default function PCPView({
                                           </div>
                                         )}
 
+                                        {/* Ordens de Serviço Vinculadas */}
+                                        {linkedOSList.length > 0 && (
+                                          <div className="flex flex-col gap-2">
+                                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Histórico de OS</p>
+                                            <div className="flex flex-wrap gap-1.5 px-2 py-3 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800">
+                                              {linkedOSList.map((os: any) => {
+                                                const sec = sectors.find(s => s.id === os.sectorId);
+                                                return (
+                                                  <span
+                                                    key={os.id}
+                                                    className={`text-[8.5px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border ${
+                                                      os.status === 'PENDING'
+                                                        ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                                                        : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                                                    }`}
+                                                  >
+                                                    {os.osNumber} ({sec?.name || os.sectorId}) — {os.status === 'PENDING' ? 'Pendente' : 'Concluído'}
+                                                  </span>
+                                                );
+                                              })}
+                                            </div>
+                                          </div>
+                                        )}
+
                                         <hr className={`border-dashed ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`} />
 
                                         {/* Ações */}
@@ -4353,6 +4328,16 @@ export default function PCPView({
                                             </button>
                                           </div>
 
+                                          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mudar de Setor</span>
+                                            <button type="button"
+                                              onClick={() => setManualSectorPicker({ fichas: [f] })}
+                                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${isDarkMode ? 'bg-violet-700 text-violet-100 hover:bg-violet-600' : 'bg-violet-600 text-white hover:bg-violet-700'}`}
+                                            >
+                                              <ArrowLeftRight size={14} /> Mudar Setor
+                                            </button>
+                                          </div>
+
                                         </div>
                                       </div>
                                     )}
@@ -4381,7 +4366,7 @@ export default function PCPView({
                                   }}
                                   className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm shadow-violet-500/20"
                                 >
-                                  <ArrowLeftRight size={13} /> Mudar Setor Manualmente — {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'}
+                                  <ArrowLeftRight size={13} /> Mudar Setor — {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'}
                                 </button>
 
                                 {selByLot.size > 1 && (
@@ -4398,7 +4383,7 @@ export default function PCPView({
                                       const lotCurrentSector = firstLot.route?.[firstLot.currentSectorIndex];
                                       const isRedirected = lotCurrentSector !== selectedSectorId;
                                       const sectorOvr = isRedirected ? selectedSectorId : undefined;
-                                      const qtyOvr = isRedirected ? selectedQty : undefined;
+                                      const qtyOvr = selectedQty;
 
                                       handleOpenOSModalForOrder(uniqueLots, orderIds, undefined, sectorOvr, qtyOvr);
                                     }}
@@ -4422,7 +4407,7 @@ export default function PCPView({
                                         const lotCurrentSector = lot.route?.[lot.currentSectorIndex];
                                         const isRedirected = lotCurrentSector !== selectedSectorId;
                                         const sectorOvr = isRedirected ? selectedSectorId : undefined;
-                                        const qtyOvr = isRedirected ? qty : undefined;
+                                        const qtyOvr = qty;
                                         handleOpenOSModalForOrder(lot, orderIds, undefined, sectorOvr, qtyOvr);
                                       }}
                                       className="w-full py-3 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm shadow-sky-500/30"
@@ -4462,10 +4447,24 @@ export default function PCPView({
                                       <span className={`text-[10px] font-black uppercase ${isDarkMode ? 'text-sky-400' : 'text-sky-700'}`}>{os.osNumber}</span>
                                       {os.providerName ? <p className="text-[9px] text-slate-400 truncate">{os.providerName}</p> : null}
                                     </div>
-                                    <button type="button" onClick={() => handleCompleteOS(os)}
-                                      className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shrink-0 bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 hover:bg-emerald-600">
-                                      <CheckCircle2 size={12} /> Baixa → {nextSName}
-                                    </button>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <button type="button" title="Imprimir / Compartilhar OS" onClick={() => { setPrintOSData({ os, nextSectorName: nextSName }); setIsPrintOSModalOpen(true); }}
+                                        className={`p-2 rounded-xl transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                        <Share2 size={12} />
+                                      </button>
+                                      <button type="button" title="Editar OS" onClick={() => { setEditingOS(os); setIsOSModalOpen(true); }}
+                                        className={`p-2 rounded-xl transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                        <Edit2 size={12} />
+                                      </button>
+                                      <button type="button" title="Excluir OS" onClick={() => handleDeleteOS(os)}
+                                        className={`p-2 rounded-xl transition-all active:scale-95 ${isDarkMode ? 'bg-rose-950/40 text-rose-400 hover:bg-rose-900/40' : 'bg-rose-50 text-rose-600 hover:bg-rose-100'}`}>
+                                        <Trash2 size={12} />
+                                      </button>
+                                      <button type="button" onClick={() => handleCompleteOS(os)}
+                                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 hover:bg-emerald-600">
+                                        <CheckCircle2 size={12} /> Dar Baixa
+                                      </button>
+                                    </div>
                                   </div>
                                 );
                               })
@@ -7925,7 +7924,7 @@ export default function PCPView({
                             <button
                               type="button"
                               onClick={() => {
-                                setPendingOsSourceOrderIds(selectedItemsList.map((si: any, idx: number) => `${si.orderId}::${si.itemIdx !== undefined ? si.itemIdx : idx}`));
+                                setPendingOsSourceOrderIds(selectedItemsList.map((si: any) => `${selectedLot.id}::${si.orderId}::${si.itemIdx !== undefined ? si.itemIdx : sourceItems.indexOf(si)}`));
                                 handleOpenOSModal({ ...selectedLot, quantity: selectedQty } as any);
                               }}
                               className={`w-full px-4 py-2.5 rounded-xl text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-slate-600 hover:bg-slate-500' : 'bg-slate-700 hover:bg-slate-800'}`}
@@ -7978,7 +7977,7 @@ export default function PCPView({
                               }}
                               className="w-full px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
                             >
-                              <ArrowLeftRight size={12} strokeWidth={3} /> Mudar Setor Manualmente
+                              <ArrowLeftRight size={12} strokeWidth={3} /> Mudar Setor
                             </button>
                             {canFinalizeSelected && (
                               <button
@@ -8856,7 +8855,19 @@ export default function PCPView({
 
                 const selectedOrderQty = hasSelectedOrders
                   ? allSourceItems
-                    .filter((si: any, idx: number) => pendingOsSourceOrderIds.includes(si.orderId) || pendingOsSourceOrderIds.includes(`${si.orderId}::${si.itemIdx !== undefined ? si.itemIdx : idx}`))
+                    .filter((si: any, idx: number) => {
+                      const itemIdx = si.itemIdx !== undefined ? si.itemIdx : idx;
+                      return pendingOsSourceOrderIds.some(key => {
+                        const parts = key.split('::');
+                        if (parts.length === 1) return key === si.orderId;
+                        const keyOrderId = parts[1];
+                        const keySiIdx = parts.length > 2 ? parseInt(parts[2], 10) : undefined;
+                        if (keySiIdx !== undefined) {
+                          return keyOrderId === si.orderId && keySiIdx === itemIdx;
+                        }
+                        return keyOrderId === si.orderId;
+                      });
+                    })
                     .reduce((acc: number, si: any) => acc + (si.qty || 0), 0)
                   : effectiveQty;
 
@@ -9342,7 +9353,7 @@ export default function PCPView({
           <div className={`w-full max-w-sm rounded-[2rem] p-6 flex flex-col gap-4 shadow-2xl animate-in zoom-in-95 duration-300 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
             <div>
               <h3 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                {moveSectorModal.manual ? 'Mudar Setor Manualmente' : 'Mover para Setor'}
+                {moveSectorModal.manual ? 'Mudar Setor' : 'Mover para Setor'}
               </h3>
               <p className={`text-[10px] font-bold uppercase tracking-widest mt-0.5 text-emerald-500`}>
                 {moveSectorModal.items.length} pedido(s) · {moveSectorModal.qty} pares
@@ -9416,6 +9427,50 @@ export default function PCPView({
                 className="flex-1 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 disabled:opacity-40 active:scale-95 transition-all"
               >
                 Confirmar →
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Modal: Confirmação de Conclusão da OS ── */}
+      {osCompleteConfirm && createPortal(
+        <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" style={{ zIndex: 60000 }}>
+          <div className={`w-full max-w-sm rounded-[2rem] p-6 flex flex-col gap-5 shadow-2xl animate-in zoom-in-95 duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center shrink-0">
+                <CheckCircle2 size={20} />
+              </div>
+              <div>
+                <h3 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  Concluir Ordem de Serviço
+                </h3>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-500">
+                  {osCompleteConfirm.osNumber}
+                </p>
+              </div>
+            </div>
+
+            <p className={`text-xs font-bold leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-650'}`}>
+              Deseja realmente dar baixa e concluir a Ordem de Serviço <span className="font-black text-indigo-500">{osCompleteConfirm.osNumber}</span>? 
+              {osCompleteConfirm.providerName ? ` (Prestador: ${osCompleteConfirm.providerName})` : ''}
+            </p>
+
+            <div className="flex items-center gap-3 mt-2">
+              <button
+                type="button"
+                onClick={() => setOsCompleteConfirm(null)}
+                className={`flex-1 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-450 hover:bg-slate-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => executeCompleteOS(osCompleteConfirm)}
+                className="flex-1 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 active:scale-95 transition-all hover:bg-emerald-700"
+              >
+                Confirmar
               </button>
             </div>
           </div>
@@ -9834,7 +9889,7 @@ export default function PCPView({
             </div>
             <div className="flex flex-col gap-2 max-h-[55vh] overflow-y-auto custom-scrollbar pr-1">
               {sectorChangeConfirm.items.map(item => {
-                const isOverridden = item.chosenSectorId !== item.suggestedSectorId;
+                const isOverridden = item.chosenSectorId !== '__PENDING_SELECTION__' && item.chosenSectorId !== item.suggestedSectorId;
                 return (
                   <div
                     key={item.key}
@@ -9857,11 +9912,15 @@ export default function PCPView({
                         title={`Setor de destino para ${item.productName}`}
                         value={item.chosenSectorId}
                         onChange={(e) => updateSectorChoiceItem(item.key, e.target.value)}
-                        className={`flex-1 min-w-0 text-[10px] font-black uppercase tracking-widest rounded-xl px-3 py-2 border outline-none transition-all ${isOverridden
-                            ? 'border-orange-500 text-orange-500 bg-orange-500/10'
-                            : isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-200' : 'border-slate-200 bg-white text-slate-700'
+                        className={`flex-1 min-w-0 text-[10px] font-black uppercase tracking-widest rounded-xl px-3 py-2 border outline-none transition-all ${
+                          item.chosenSectorId === '__PENDING_SELECTION__'
+                            ? isDarkMode ? 'border-red-500/50 bg-red-500/10 text-red-400' : 'border-red-200 bg-red-50 text-red-600'
+                            : isOverridden
+                              ? 'border-orange-500 text-orange-500 bg-orange-500/10'
+                              : isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-200' : 'border-slate-200 bg-white text-slate-700'
                           }`}
                       >
+                        <option value="__PENDING_SELECTION__" disabled>-- SELECIONE O SETOR DE DESTINO --</option>
                         <option value="">CONCLUÍDO (finalizar)</option>
                         {sectors.map(sector => (
                           <option key={sector.id} value={sector.id}>{sector.name}</option>
@@ -9873,7 +9932,7 @@ export default function PCPView({
                         Ajustado manualmente — sugestão original: {item.suggestedSectorName}
                       </p>
                     )}
-                    {!isOverridden && item.skippedSectorNames.length > 0 && (
+                    {!isOverridden && item.chosenSectorId !== '__PENDING_SELECTION__' && item.skippedSectorNames.length > 0 && (
                       <p className={`text-[8px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                         Não passa por: {item.skippedSectorNames.join(', ')} — não faz parte do roteiro deste modelo
                       </p>
@@ -9892,8 +9951,13 @@ export default function PCPView({
               </button>
               <button
                 type="button"
+                disabled={sectorChangeConfirm.items.some(item => item.chosenSectorId === '__PENDING_SELECTION__')}
                 onClick={handleConfirmSectorChange}
-                className="flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white bg-orange-500 hover:bg-orange-600 transition-all"
+                className={`flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all ${
+                  sectorChangeConfirm.items.some(item => item.chosenSectorId === '__PENDING_SELECTION__')
+                    ? 'bg-slate-300 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-50'
+                    : 'bg-orange-500 hover:bg-orange-600'
+                }`}
               >
                 Confirmar e Avançar
               </button>
@@ -10046,13 +10110,15 @@ export default function PCPView({
             .filter(Boolean) as any[];
 
           const items: PCPShareItem[] = selectedItems.map((f: any) => {
-            const order = productionOrders.find(o => o.id === f.si.orderId);
-            const ordItem = f.siIdx !== undefined
-              ? order?.items[f.siIdx]
-              : order?.items.find((i: any) => i.productId === f.si.productId && i.variationId === f.si.variationId);
+            const order = f.order || productionOrders.find(o => o.id === (f.si?.orderId || f.productionOrderId || f.id));
+            const ordItem = f.orderItem || (
+              f.si && f.si.itemIdx !== undefined
+                ? order?.items[f.si.itemIdx]
+                : order?.items.find((i: any) => i.productId === (f.si?.productId || f.productId) && i.variationId === (f.si?.variationId || f.variationId))
+            );
 
-            const prod = products.find(p => p.id === (ordItem?.productId || f.si.productId));
-            const vari = prod?.variations.find((v: any) => v.id === (ordItem?.variationId || f.si.variationId));
+            const prod = f.product || products.find(p => p.id === (ordItem?.productId || f.si?.productId || f.productId));
+            const vari = f.variation || prod?.variations.find((v: any) => v.id === (ordItem?.variationId || f.si?.variationId || f.variationId));
 
             const sizes = Object.entries(ordItem?.sizes || {})
               .map(([sz, sData]: [string, any]) => ({ size: sz, qty: Number(sData.toProduction) || 0 }))
@@ -10134,13 +10200,15 @@ export default function PCPView({
             .filter(Boolean) as any[];
 
           const items: PCPShareItem[] = selectedItems.map((f: any) => {
-            const order = productionOrders.find(o => o.id === f.si.orderId);
-            const ordItem = f.siIdx !== undefined
-              ? order?.items[f.siIdx]
-              : order?.items.find((i: any) => i.productId === f.si.productId && i.variationId === f.si.variationId);
+            const order = f.order || productionOrders.find(o => o.id === (f.si?.orderId || f.productionOrderId || f.id));
+            const ordItem = f.orderItem || (
+              f.si && f.si.itemIdx !== undefined
+                ? order?.items[f.si.itemIdx]
+                : order?.items.find((i: any) => i.productId === (f.si?.productId || f.productId) && i.variationId === (f.si?.variationId || f.variationId))
+            );
 
-            const prod = products.find(p => p.id === (ordItem?.productId || f.si.productId));
-            const vari = prod?.variations.find((v: any) => v.id === (ordItem?.variationId || f.si.variationId));
+            const prod = f.product || products.find(p => p.id === (ordItem?.productId || f.si?.productId || f.productId));
+            const vari = f.variation || prod?.variations.find((v: any) => v.id === (ordItem?.variationId || f.si?.variationId || f.variationId));
 
             const sizes = Object.entries(ordItem?.sizes || {})
               .map(([sz, sData]: [string, any]) => ({ size: sz, qty: Number(sData.toProduction) || 0 }))
