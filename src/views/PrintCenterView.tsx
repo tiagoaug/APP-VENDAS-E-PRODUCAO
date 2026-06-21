@@ -143,6 +143,16 @@ function defaultLayout(section: Section): PrintLayout {
   return { paper: A4, orientation: 'portrait', elems: defaultElems(section) };
 }
 
+const hexToRgb = (hex: string) => {
+  if (!hex) return null;
+  const cleanHex = hex.replace('#', '');
+  if (cleanHex.length < 6) return null;
+  const r = parseInt(cleanHex.substring(0, 2), 16);
+  const g = parseInt(cleanHex.substring(2, 4), 16);
+  const b = parseInt(cleanHex.substring(4, 6), 16);
+  return { r, g, b };
+};
+
 function loadLayouts(): Record<Section, PrintLayout> {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') as any; } catch { return {} as any; }
 }
@@ -340,7 +350,9 @@ async function renderLotsPDF(
     const curSector = sectors.find(s => s.id === lot.route?.[lot.currentSectorIndex]);
 
     if (e.header?.visible !== false) {
-      doc.setFillColor(124, 58, 237);
+      const lotColor = (lot as any).metadata?.badgeColor || '#7c3aed';
+      const rgb = hexToRgb(lotColor) || { r: 124, g: 58, b: 237 };
+      doc.setFillColor(rgb.r, rgb.g, rgb.b);
       doc.rect(e.header.x, e.header.y, e.header.w, e.header.h, 'F');
       applyFont(e.header, 10); doc.setTextColor(255, 255, 255);
       doc.text(`MAPA DE PRODUÇÃO — ${lot.orderNumber}`, e.header.x + e.header.w / 2, e.header.y + e.header.h * 0.55, { align: 'center' });
@@ -569,7 +581,7 @@ function buildCards(
       const variation = product?.variations.find(v => v.id === lot.variationId);
       const curSector = allSectors.find(s => s.id === lot.route?.[lot.currentSectorIndex]);
       cards.push({
-        color: '#7c3aed', num: lot.orderNumber, title: product?.name || '—', subtitle: variation?.colorName || '',
+        color: (lot as any).metadata?.badgeColor || '#7c3aed', num: lot.orderNumber, title: product?.name || '—', subtitle: variation?.colorName || '',
         rows: [
           { label: 'Referência', value: product?.reference || '—' },
           { label: 'Setor atual', value: curSector?.name || '—' },
@@ -1136,7 +1148,19 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
             : <div className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center ${dk ? 'bg-slate-800' : 'bg-slate-100'}`}><Factory size={16} className="text-slate-400"/></div>}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
-              <span className="text-[10px] font-black text-violet-600 dark:text-violet-400">{lot.orderNumber}</span>
+              <span
+                className="text-[9px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider leading-none shrink-0"
+                style={(() => {
+                  const bg = (lot as any).metadata?.badgeColor || '#7c3aed';
+                  const txt = (lot as any).metadata?.badgeTextColor || '#ffffff';
+                  return {
+                    backgroundColor: bg,
+                    color: txt,
+                  };
+                })()}
+              >
+                MAPA {lot.orderNumber}
+              </span>
               <Badge label={lot.finishedAt ? 'Finalizado' : curSector?.name || 'Em produção'} color={lot.finishedAt ? 'bg-emerald-50 text-emerald-600' : 'bg-violet-50 text-violet-600'}/>
             </div>
             <p className={`text-sm font-bold truncate ${dk ? 'text-white' : 'text-slate-800'}`}>{product?.name || '—'}</p>

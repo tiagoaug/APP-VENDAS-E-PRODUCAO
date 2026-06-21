@@ -91,6 +91,7 @@ import ProductsView from "./views/ProductsView";
 import ProductFormView from "./views/ProductFormView";
 import PurchasesView from "./views/PurchasesView";
 import PurchaseFormView from "./views/PurchaseFormView";
+import ServiceOrderFormView from "./views/ServiceOrderFormView";
 import SalesView from "./views/SalesView";
 import SaleFormView from "./views/SaleFormView";
 import FinancialView from "./views/FinancialView";
@@ -182,7 +183,8 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
     ViewType.PRODUCTION_PURCHASE_NEEDS,
     ViewType.PRODUCTION_CONFIG,
     ViewType.PRODUCT_SHEET,
-    ViewType.PRODUCTION_ENGINEERING
+    ViewType.PRODUCTION_ENGINEERING,
+    ViewType.PRODUCTION_SERVICE_ORDER_FORM
   ],
   personal: [
     ViewType.PERSONAL_FINANCIAL
@@ -641,6 +643,7 @@ export default function App() {
   const [selectedPurchaseId, setSelectedPurchaseId] = useState<string | null>(
     null,
   );
+  const [selectedServiceOrderId, setSelectedServiceOrderId] = useState<string | null>(null);
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null);
   const [searchContext, setSearchContext] = useState<string>('');
@@ -665,6 +668,7 @@ export default function App() {
     if (view === ViewType.SALE_FORM) setSelectedSaleId(id);
     if (view === ViewType.PERSON_DETAIL) setSelectedPersonId(id);
     if (view === ViewType.REPORT_DETAILED) setSelectedReportId(id);
+    if (view === ViewType.PRODUCTION_SERVICE_ORDER_FORM) setSelectedServiceOrderId(id);
     
     if (view === ViewType.PRODUCTION_SOLE_PURCHASE) {
       setSolePurchaseParams(params);
@@ -4345,6 +4349,25 @@ export default function App() {
             stockLots={stockLots}
           />
         );
+      case ViewType.PRODUCTION_SERVICE_ORDER_FORM:
+        return (
+          <ServiceOrderFormView
+            serviceOrderId={selectedServiceOrderId}
+            serviceOrders={serviceOrders}
+            lots={productionLots}
+            products={products}
+            sectors={sectors}
+            productionOrders={productionOrders}
+            people={people}
+            accounts={accounts}
+            categories={categories}
+            isDarkMode={isDarkMode}
+            grids={grids}
+            onBack={goBack}
+            onNavigate={navigateTo}
+            initialParams={currentParams}
+          />
+        );
       case ViewType.PRODUCTION_STOCK:
         return (
           <ProductionConfigView 
@@ -4568,7 +4591,8 @@ export default function App() {
         ViewType.PRODUCTION_STOCK,
         ViewType.PRODUCTION_PURCHASE_NEEDS,
         ViewType.PRODUCTION_CONFIG,
-        ViewType.PRODUCTION_ENGINEERING
+        ViewType.PRODUCTION_ENGINEERING,
+        ViewType.PRODUCTION_SERVICE_ORDER_FORM
       ].includes(currentView)
     )
       return "production";
@@ -4666,6 +4690,8 @@ export default function App() {
         return "Engenharia de Produto";
       case ViewType.PRODUCT_SHEET:
         return "Ficha Técnica";
+      case ViewType.PRODUCTION_SERVICE_ORDER_FORM:
+        return "Emissão de Ordem de Serviço";
       case ViewType.PRODUCT_FORM:
         return "Cadastro de Produto";
       case ViewType.SALE_FORM:
@@ -4719,6 +4745,7 @@ export default function App() {
       case ViewType.PRODUCTION_CONFIG: return <Hammer size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.PRODUCTION_ENGINEERING: return <Database size={24} className="text-indigo-600 dark:text-indigo-400" />;
       case ViewType.PRODUCT_SHEET: return <FileText size={24} className="text-slate-500 dark:text-slate-400" />;
+      case ViewType.PRODUCTION_SERVICE_ORDER_FORM: return <ClipboardList size={24} className="text-indigo-600 dark:text-indigo-400" />;
       
       default: return <Shield size={24} className="text-blue-600 dark:text-blue-400" />;
     }

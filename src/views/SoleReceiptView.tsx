@@ -117,7 +117,7 @@ export default function SoleReceiptView({
           const prevReceived: Record<string, number> = item.totalReceivedQtys || item.quantities || {};
           Object.keys(prevReceived).forEach(size => {
             const toRevert = revertQtys[`${idx}-${size}`] ?? 0;
-            updatedStock[size] = Math.max(0, (updatedStock[size] || 0) - toRevert);
+            updatedStock[size] = (updatedStock[size] || 0) - toRevert;
           });
           const totalPairs = Object.values(updatedStock).reduce((a: number, b: any) => a + Number(b), 0);
           await firebaseService.updateDocument('soleStock', existing.id, { stock: updatedStock, totalPairs, updatedAt: Date.now() });

@@ -439,6 +439,7 @@ export enum ViewType {
   PRODUCT_FORM = 'PRODUCT_FORM',
   PURCHASE_FORM = 'PURCHASE_FORM',
   SALE_FORM = 'SALE_FORM',
+  PRODUCTION_SERVICE_ORDER_FORM = 'PRODUCTION_SERVICE_ORDER_FORM',
   PRODUCT_DETAIL = 'PRODUCT_DETAIL',
   PEOPLE = 'PEOPLE',
   CATEGORIES = 'CATEGORIES',
@@ -862,6 +863,7 @@ export interface ServiceOrder {
   finishedAt?: number;
   sourceOrderIds?: string[]; // Order IDs covered by this OS (for per-order OS tracking)
   sourceItemKeys?: string[]; // Specific source item keys (e.g. lotId::orderId::siIdx) covered by this OS
+  itemPrices?: Record<string, number>; // Custom pricing per item
   // Print extras
   productPhotoUrl?: string; // URL of the product/variation photo for label printing
   sizeGrid?: string;        // Human-readable size range, e.g. "37-38-39-40-41"

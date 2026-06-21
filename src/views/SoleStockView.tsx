@@ -1,4 +1,4 @@
-﻿import { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { ProductionConfigItem, ColorValue, SoleStockEntry, ProductionLot, Product, Person, PurchaseRequest, Purchase } from '../types';
 import {
   ArrowLeft, Package, Palette, Clock, Plus, Trash2, Save,
@@ -963,7 +963,7 @@ export default function SoleStockView({
             const displayTotal = isBalanceMode
               ? Object.values(balanceData[itemKey] || item.sizes).reduce((a, b) => a + b, 0)
               : item.total;
-            const paresRestantesTotal = Math.max(0, displayTotal - totalReserved);
+            const paresRestantesTotal = displayTotal - totalReserved;
 
             return (
               <div key={index} className={`p-5 rounded-3xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
@@ -981,11 +981,19 @@ export default function SoleStockView({
                     )}
                   </div>
                   <div className="flex items-start gap-3 flex-wrap justify-end">
-                    <div className="flex flex-col items-center justify-center px-4 py-2 rounded-2xl bg-emerald-50 border border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-700/40 min-w-[56px]">
-                      <p className="text-xl font-black text-emerald-600 dark:text-emerald-400 leading-none">
+                    <div className={`flex flex-col items-center justify-center px-4 py-2 rounded-2xl min-w-[56px] border ${
+                      paresRestantesTotal < 0
+                        ? 'bg-rose-50 border-rose-100 dark:bg-rose-900/20 dark:border-rose-700/40'
+                        : 'bg-emerald-50 border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-700/40'
+                    }`}>
+                      <p className={`text-xl font-black leading-none ${
+                        paresRestantesTotal < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
+                      }`}>
                         {paresRestantesTotal}
                       </p>
-                      <p className="text-[8px] font-black text-emerald-500 dark:text-emerald-400/70 uppercase tracking-widest mt-0.5">restante</p>
+                      <p className={`text-[8px] font-black uppercase tracking-widest mt-0.5 ${
+                        paresRestantesTotal < 0 ? 'text-rose-500 dark:text-rose-400/70' : 'text-emerald-500 dark:text-emerald-400/70'
+                      }`}>restante</p>
                     </div>
                   </div>
                 </div>
@@ -997,7 +1005,7 @@ export default function SoleStockView({
                       const itemKey = `${item.moldId}-${item.colorId}`;
                       const currentVal = isBalanceMode ? (balanceData[itemKey]?.[size] ?? qty) : qty;
                       const reservedQty = reservedByGrade[size] || 0;
-                      const restanteQty = Math.max(0, qty - reservedQty);
+                      const restanteQty = qty - reservedQty;
                       const pendingQty = pendingByGrade[size] || 0;
 
                       return (
@@ -1041,12 +1049,14 @@ export default function SoleStockView({
                             </>
                           ) : (
                             <div className="flex items-center gap-2 ml-auto">
-                              <span className="font-black text-slate-900 dark:text-white leading-none text-xl">
+                              <span className={`font-black leading-none text-xl ${
+                                restanteQty < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-slate-900 dark:text-white'
+                              }`}>
                                 {restanteQty}
                               </span>
                               {detailFieldVisibility.pedido && pendingQty > 0 && (
                                 <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest leading-none">
-                                  +{pendingQty} = {Math.max(0, qty + pendingQty - reservedQty)}
+                                  +{pendingQty} = {qty + pendingQty - reservedQty}
                                 </span>
                               )}
                             </div>
@@ -1089,7 +1099,7 @@ export default function SoleStockView({
 
                       <div className="mt-2 flex flex-col gap-1.5">
                         {sizeBreakdown.map(({ size, stockQty, reservedQty, missingQty, pendingQty, pendingSources }) => {
-                          const restanteQty = Math.max(0, stockQty - reservedQty);
+                          const restanteQty = stockQty - reservedQty;
                           const showPedido = detailFieldVisibility.pedido && pendingQty > 0;
                           const showPedidoBreakdown = showPedido && pendingSources.length > 1;
                           return (
@@ -1113,13 +1123,13 @@ export default function SoleStockView({
                                   {detailFieldVisibility.restante && (
                                     <div className="flex items-center gap-1">
                                       <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-tight">Restante</span>
-                                      <span className="text-[11px] font-black text-emerald-500 leading-none">{restanteQty}</span>
+                                      <span className={`text-[11px] font-black leading-none ${restanteQty < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{restanteQty}</span>
                                     </div>
                                   )}
                                   {showPedido && (
                                     <div className="flex items-center gap-1">
                                       <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-tight">Comprado</span>
-                                      <span className="text-[11px] font-black text-blue-500 leading-none">{pendingQty} → {Math.max(0, stockQty + pendingQty - reservedQty)}</span>
+                                      <span className="text-[11px] font-black text-blue-500 leading-none">{pendingQty} → {stockQty + pendingQty - reservedQty}</span>
                                     </div>
                                   )}
                                 </div>
