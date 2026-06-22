@@ -1,5 +1,5 @@
 import { ViewType } from '../types';
-import type { Collaborator, SectorId } from '../types';
+import type { Collaborator, SectorId, DashboardCardConfig } from '../types';
 
 export type { Collaborator, SectorId };
 
@@ -121,4 +121,15 @@ export function isDashboardCardAllowed(collab: Collaborator | null, cardId: stri
 
 export function collaboratorCanUseAI(collab: Collaborator | null): boolean {
   return !collab || collab.isUnrestricted || collab.canUseAI;
+}
+
+// Lista de cards efetiva pro Dashboard: sem colaborador ativo (ou de Acesso Total)
+// usa a config global de sempre; colaborador restrito vê só os cards dos seus
+// setores, com a personalização (visível/ordem) que ele próprio já salvou — cards
+// recém-liberados (setor adicionado depois) caem no padrão global até ele ajustar.
+export function getEffectiveDashboardCards(globalCards: DashboardCardConfig[], collab: Collaborator | null): DashboardCardConfig[] {
+  if (!collab || collab.isUnrestricted) return globalCards;
+  const allowed = globalCards.filter(c => isDashboardCardAllowed(collab, c.id));
+  const personalMap = new Map((collab.dashboardConfig || []).map(c => [c.id, c]));
+  return allowed.map(c => personalMap.get(c.id) || c);
 }

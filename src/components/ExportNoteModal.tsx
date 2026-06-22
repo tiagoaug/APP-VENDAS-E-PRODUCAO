@@ -1,5 +1,5 @@
 ﻿import React, { useState } from 'react';
-import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ListStart } from 'lucide-react';
+import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ListStart, Hash } from 'lucide-react';
 
 
 export interface ExportProfile {
@@ -43,7 +43,7 @@ const loadLastState = (): Omit<ExportProfile, 'id' | 'name'> => {
 interface ExportNoteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean) => void;
+  onConfirm: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean) => void;
   isDarkMode: boolean;
   title?: string;
   initialFormat?: 'pdf' | 'jpg';
@@ -54,9 +54,17 @@ interface ExportNoteModalProps {
   showPCPTotalGridToggle?: boolean;
   showMaterialsToggle?: boolean;
   showItemGridToggle?: boolean;
+  itemGridLabel?: string;
+  itemGridDescription?: string;
   showSectorNotesToggle?: boolean;
   showOrderListToggle?: boolean;
-  onPreview?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean) => Promise<string | boolean>;
+  /** Quando true, exibe um seletor para dividir a imagem JPG longa em várias páginas (estilo A4) */
+  showSplitPagesToggle?: boolean;
+  /** Quando true, exibe um seletor para incluir o nome do prestador de serviço da OS de origem */
+  showProviderToggle?: boolean;
+  /** Quando true, exibe um seletor para incluir valor/data/setor da OS de origem */
+  showOSDataToggle?: boolean;
+  onPreview?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean) => Promise<string | boolean>;
 }
 
 const DEFAULT_PREDEFINED_NOTES = [
@@ -88,8 +96,13 @@ export default function ExportNoteModal({
   showPCPTotalGridToggle = false,
   showMaterialsToggle = false,
   showItemGridToggle = false,
+  itemGridLabel = "Exibir grade do pedido",
+  itemGridDescription = "Mostra a grade detalhada individual de cada pedido listado",
   showSectorNotesToggle = false,
   showOrderListToggle = false,
+  showSplitPagesToggle = false,
+  showProviderToggle = false,
+  showOSDataToggle = false,
   onPreview
 }: ExportNoteModalProps) {
   const [note, setNote] = useState('');
@@ -111,6 +124,12 @@ export default function ExportNoteModal({
   const [showItemGrid, setShowItemGrid] = useState(true);
   const [showSectorNotes, setShowSectorNotes] = useState(true);
   const [showOrderList, setShowOrderList] = useState(true);
+  const [splitPages, setSplitPages] = useState(false);
+  const [showProvider, setShowProvider] = useState(true);
+  const [showOSData, setShowOSData] = useState(true);
+  // Subcards em acordeão — um por grupo de configurações (Valores, Resumo da
+  // Grade, Agrupamento, Dados da OS). Recolhidos por padrão.
+  const [openSections, setOpenSections] = useState<Set<string>>(new Set());
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
@@ -196,7 +215,7 @@ export default function ExportNoteModal({
     if (!onPreview) return;
     setIsPreviewLoading(true);
     try {
-      const url = await onPreview(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList);
+      const url = await onPreview(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData);
       if (typeof url === 'string') {
         setPreviewUrl(url);
       }
@@ -227,6 +246,10 @@ export default function ExportNoteModal({
       setShowItemGrid(true);
       setShowSectorNotes(true);
       setShowOrderList(true);
+      setSplitPages(false);
+      setShowProvider(true);
+      setShowOSData(true);
+      setOpenSections(new Set());
       setPreviewUrl(null);
       setIsPreviewLoading(false);
       setPredefinedNotes(loadPredefinedNotes());
@@ -237,6 +260,38 @@ export default function ExportNoteModal({
   }, [isOpen, initialFormat]);
 
   if (!isOpen) return null;
+
+  const toggleSection = (id: string) => {
+    setOpenSections(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const SectionCard = ({ id, icon, label, children }: { id: string; icon: React.ReactNode; label: string; children: React.ReactNode }) => {
+    const sectionOpen = openSections.has(id);
+    return (
+      <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+        <button
+          type="button"
+          onClick={() => toggleSection(id)}
+          className={`w-full flex items-center justify-between gap-2 px-3 py-3 transition-all ${isDarkMode ? 'bg-slate-800/50 hover:bg-slate-800' : 'bg-slate-50 hover:bg-slate-100'}`}
+        >
+          <span className="flex items-center gap-2">
+            {icon}
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-700 dark:text-slate-300">{label}</span>
+          </span>
+          <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${sectionOpen ? 'rotate-180' : ''}`} />
+        </button>
+        {sectionOpen && (
+          <div className={`p-3 flex flex-col gap-2.5 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+            {children}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const handlePredefinedClick = (text: string) => {
     if (note.includes(text)) {
@@ -342,217 +397,165 @@ export default function ExportNoteModal({
             </div>
           </div>
 
-          {/* Financial Values Toggle */}
-          {showValuesToggle && (
-            <div>
-              <div className="flex items-center gap-2 mb-2 px-1">
-                <DollarSign size={12} className="text-emerald-500" />
-                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-700 dark:text-slate-300">Valores Financeiros</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowFinancialValues(prev => !prev)}
-                className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] ${
-                  isDarkMode
-                    ? 'bg-slate-800/50 border-slate-700'
-                    : 'bg-slate-50 border-slate-100'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 text-left">
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                    showFinancialValues
-                      ? (isDarkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600')
-                      : (isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500')
-                  }`}>
-                    {showFinancialValues ? <DollarSign size={15} strokeWidth={2.5} /> : <EyeOff size={15} strokeWidth={2.5} />}
-                  </div>
-                  <div>
-                    <p className={`text-[10px] font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                      {showFinancialValues ? 'Mostrar valores' : 'Ocultar valores'}
-                    </p>
-                    <p className="text-[9px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-widest mt-0.5">
-                      {showFinancialValues ? 'Preços e total aparecerão no documento' : 'Documento será gerado sem preços/total'}
-                    </p>
-                  </div>
-                </div>
-                <div className={`w-10 h-6 rounded-full p-1 flex items-center transition-all shrink-0 ${
-                  showFinancialValues ? 'bg-emerald-500 justify-end' : (isDarkMode ? 'bg-slate-700 justify-start' : 'bg-slate-300 justify-start')
-                }`}>
-                  <div className="w-4 h-4 rounded-full bg-white shadow-sm" />
-                </div>
-              </button>
-            </div>
-          )}
-
-
-          {/* PCP Total Grid Toggle */}
-          {showPCPTotalGridToggle && (
-            <div>
-              <div className="flex items-center gap-2 mb-2 px-1 mt-4">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
-                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-700 dark:text-slate-300">Resumo da Grade</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPcpTotalGrid(prev => !prev)}
-                className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] ${
-                  isDarkMode
-                    ? 'bg-slate-800/50 border-slate-700'
-                    : 'bg-slate-50 border-slate-100'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 text-left">
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                    pcpTotalGrid
-                      ? 'bg-amber-500 text-white'
-                      : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'
-                  }`}>
-                    {pcpTotalGrid ? <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle><line x1="1" y1="1" x2="23" y2="23"></line></svg>}
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Exibir grade total consolidada</div>
-                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                      Mostra uma tabela extra somando todos os pedidos do documento
+          {/* Subcards em acordeão — um por grupo de configurações */}
+          <div className="flex flex-col gap-3">
+            {showValuesToggle && (
+              <SectionCard id="values" icon={<DollarSign size={13} className="text-emerald-500" />} label="Valores Financeiros">
+                <button
+                  type="button"
+                  onClick={() => setShowFinancialValues(prev => !prev)}
+                  className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+                >
+                  <div className="flex items-center gap-2.5 text-left">
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${showFinancialValues ? (isDarkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600') : (isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500')}`}>
+                      {showFinancialValues ? <DollarSign size={15} strokeWidth={2.5} /> : <EyeOff size={15} strokeWidth={2.5} />}
+                    </div>
+                    <div>
+                      <p className={`text-[10px] font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                        {showFinancialValues ? 'Mostrar valores' : 'Ocultar valores'}
+                      </p>
+                      <p className="text-[9px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                        {showFinancialValues ? 'Preços e total aparecerão no documento' : 'Documento será gerado sem preços/total'}
+                      </p>
                     </div>
                   </div>
-                </div>
-              </button>
-            </div>
-          )}
+                  <div className={`w-10 h-6 rounded-full p-1 flex items-center transition-all shrink-0 ${showFinancialValues ? 'bg-emerald-500 justify-end' : (isDarkMode ? 'bg-slate-700 justify-start' : 'bg-slate-300 justify-start')}`}>
+                    <div className="w-4 h-4 rounded-full bg-white shadow-sm" />
+                  </div>
+                </button>
+              </SectionCard>
+            )}
 
-          {/* Materials Toggle */}
-          {showMaterialsToggle && (
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowMaterials(prev => !prev)}
-                className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] mt-2 ${
-                  isDarkMode
-                    ? 'bg-slate-800/50 border-slate-700'
-                    : 'bg-slate-50 border-slate-100'
-                }`}
+            {(showPCPTotalGridToggle || showMaterialsToggle || showItemGridToggle || showSplitPagesToggle || showOrderListToggle || showSectorNotesToggle) && (
+              <SectionCard
+                id="grade"
+                icon={<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>}
+                label="Resumo da Grade"
               >
-                <div className="flex items-center gap-2.5 text-left">
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                    showMaterials
-                      ? 'bg-emerald-500 text-white'
-                      : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'
-                  }`}>
-                    {showMaterials ? <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle><line x1="1" y1="1" x2="23" y2="23"></line></svg>}
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Exibir materiais</div>
-                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                      Mostra a tabela de requisição consolidada de materiais
+                {showPCPTotalGridToggle && (
+                  <button
+                    type="button"
+                    onClick={() => setPcpTotalGrid(prev => !prev)}
+                    className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+                  >
+                    <div className="flex items-center gap-2.5 text-left">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${pcpTotalGrid ? 'bg-amber-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                        {pcpTotalGrid ? <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle><line x1="1" y1="1" x2="23" y2="23"></line></svg>}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Exibir grade total consolidada</div>
+                        <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                          Mostra uma tabela extra somando todos os pedidos do documento
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </button>
-            </div>
-          )}
+                  </button>
+                )}
 
-          {/* Item Grid Toggle */}
-          {showItemGridToggle && (
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowItemGrid(prev => !prev)}
-                className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] mt-2 ${
-                  isDarkMode
-                    ? 'bg-slate-800/50 border-slate-700'
-                    : 'bg-slate-50 border-slate-100'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 text-left">
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                    showItemGrid
-                      ? 'bg-indigo-500 text-white'
-                      : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'
-                  }`}>
-                    {showItemGrid ? <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle><line x1="1" y1="1" x2="23" y2="23"></line></svg>}
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Exibir grade do pedido</div>
-                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                      Mostra a grade detalhada individual de cada pedido listado
+                {showMaterialsToggle && (
+                  <button
+                    type="button"
+                    onClick={() => setShowMaterials(prev => !prev)}
+                    className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+                  >
+                    <div className="flex items-center gap-2.5 text-left">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${showMaterials ? 'bg-emerald-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                        {showMaterials ? <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle><line x1="1" y1="1" x2="23" y2="23"></line></svg>}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Exibir materiais</div>
+                        <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                          Mostra a tabela de requisição consolidada de materiais
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </button>
-            </div>
-          )}
+                  </button>
+                )}
 
-
-          {/* Order List Toggle */}
-          {showOrderListToggle && (
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowOrderList(prev => !prev)}
-                className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] mt-2 ${
-                  isDarkMode
-                    ? 'bg-slate-800/50 border-slate-700'
-                    : 'bg-slate-50 border-slate-100'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 text-left">
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                    showOrderList
-                      ? 'bg-cyan-500 text-white'
-                      : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'
-                  }`}>
-                    {showOrderList ? <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle><line x1="1" y1="1" x2="23" y2="23"></line></svg>}
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Exibir lista de pedidos</div>
-                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                      Mostra uma relação destacada de todos os pedidos no documento
+                {showItemGridToggle && (
+                  <button
+                    type="button"
+                    onClick={() => setShowItemGrid(prev => !prev)}
+                    className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+                  >
+                    <div className="flex items-center gap-2.5 text-left">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${showItemGrid ? 'bg-indigo-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                        {showItemGrid ? <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle><line x1="1" y1="1" x2="23" y2="23"></line></svg>}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-200">{itemGridLabel}</div>
+                        <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                          {itemGridDescription}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </button>
-            </div>
-          )}
+                  </button>
+                )}
 
-          {/* Sector Notes Toggle */}
-          {showSectorNotesToggle && (
-            <div>
-              <button
-                type="button"
-                onClick={() => setShowSectorNotes(prev => !prev)}
-                className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] mt-2 ${
-                  isDarkMode
-                    ? 'bg-slate-800/50 border-slate-700'
-                    : 'bg-slate-50 border-slate-100'
-                }`}
-              >
-                <div className="flex items-center gap-2.5 text-left">
-                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
-                    showSectorNotes
-                      ? 'bg-rose-500 text-white'
-                      : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'
-                  }`}>
-                    {showSectorNotes ? <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle><line x1="1" y1="1" x2="23" y2="23"></line></svg>}
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Exibir instruções por setor</div>
-                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                      Mostra as observações e instruções cadastradas por setor
+                {showSplitPagesToggle && selectedFormat === 'jpg' && (
+                  <button
+                    type="button"
+                    onClick={() => setSplitPages(prev => !prev)}
+                    className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+                  >
+                    <div className="flex items-center gap-2.5 text-left">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${splitPages ? 'bg-cyan-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                        {splitPages ? <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle><line x1="1" y1="1" x2="23" y2="23"></line></svg>}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Dividir em Páginas</div>
+                        <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                          Corta a imagem comprida em várias páginas (estilo A4) em vez de uma imagem única
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </button>
-            </div>
-          )}
+                  </button>
+                )}
 
-          {/* Grouping Toggle */}
-          {showGroupingToggle && (
-            <div>
-              <div className="flex items-center gap-2 mb-2 px-1">
-                <Layers size={12} className="text-indigo-500" />
-                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-700 dark:text-slate-300">Agrupamento de Itens</span>
-              </div>
-              <div className="flex flex-col gap-2">
+                {showOrderListToggle && (
+                  <button
+                    type="button"
+                    onClick={() => setShowOrderList(prev => !prev)}
+                    className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+                  >
+                    <div className="flex items-center gap-2.5 text-left">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${showOrderList ? 'bg-cyan-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                        {showOrderList ? <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle><line x1="1" y1="1" x2="23" y2="23"></line></svg>}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Exibir lista de pedidos</div>
+                        <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                          Mostra uma relação destacada de todos os pedidos no documento
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                )}
+
+                {showSectorNotesToggle && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSectorNotes(prev => !prev)}
+                    className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+                  >
+                    <div className="flex items-center gap-2.5 text-left">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${showSectorNotes ? 'bg-rose-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                        {showSectorNotes ? <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle><line x1="1" y1="1" x2="23" y2="23"></line></svg>}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Exibir instruções por setor</div>
+                        <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                          Mostra as observações e instruções cadastradas por setor
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                )}
+              </SectionCard>
+            )}
+
+            {showGroupingToggle && (
+              <SectionCard id="group" icon={<Layers size={13} className="text-indigo-500" />} label="Agrupamento de Itens">
                 <button type="button" onClick={() => setGroupMode('none')} className={`p-2.5 rounded-xl border text-left flex flex-col transition-all ${groupMode === 'none' ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20 shadow-sm' : 'border-slate-200 dark:border-slate-700 bg-transparent opacity-60'}`}>
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Não agrupar</span>
                   <span className="text-[10px] text-slate-500 font-medium">Cada item aparece individualmente</span>
@@ -565,9 +568,53 @@ export default function ExportNoteModal({
                   <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Agrupar apenas por Referência</span>
                   <span className="text-[10px] text-slate-500 font-medium">Soma as cores do mesmo modelo juntas</span>
                 </button>
-              </div>
-            </div>
-          )}
+              </SectionCard>
+            )}
+
+            {(showProviderToggle || showOSDataToggle) && (
+              <SectionCard id="os" icon={<Hash size={13} className="text-violet-500" />} label="Dados da OS">
+                {showProviderToggle && (
+                  <button
+                    type="button"
+                    onClick={() => setShowProvider(prev => !prev)}
+                    className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+                  >
+                    <div className="flex items-center gap-2.5 text-left">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${showProvider ? 'bg-violet-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                        {showProvider ? <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle><line x1="1" y1="1" x2="23" y2="23"></line></svg>}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Exibir Prestador de Serviço</div>
+                        <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                          Mostra o nome de quem executou o serviço, vindo da OS de origem
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                )}
+
+                {showOSDataToggle && (
+                  <button
+                    type="button"
+                    onClick={() => setShowOSData(prev => !prev)}
+                    className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+                  >
+                    <div className="flex items-center gap-2.5 text-left">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${showOSData ? 'bg-violet-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                        {showOSData ? <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle><line x1="1" y1="1" x2="23" y2="23"></line></svg>}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Exibir Dados da OS</div>
+                        <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                          Mostra valor, data e setor da Ordem de Serviço de origem
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                )}
+              </SectionCard>
+            )}
+          </div>
         </div>
 
                 {/* Profile Button */}
@@ -641,7 +688,7 @@ export default function ExportNoteModal({
                 Cancelar
               </button>
               <button 
-                onClick={() => onConfirm(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList)}
+                onClick={() => onConfirm(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData)}
                 className={`flex-[1.5] py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
                   selectedFormat === 'pdf' ? 'bg-rose-500' : 'bg-indigo-600'
                 }`}

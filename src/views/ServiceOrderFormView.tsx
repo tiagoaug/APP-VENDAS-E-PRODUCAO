@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   ArrowLeft, Check, CheckCircle2, ClipboardList, DollarSign,
   Info, Loader2, Plus, Search, Share2, Trash2, X,
@@ -77,6 +77,8 @@ export default function ServiceOrderFormView({
   const [sectorId, setSectorId] = useState('');
   const [providerId, setProviderId] = useState('');
   const [providerManualName, setProviderManualName] = useState('');
+  const [isProviderDropdownOpen, setIsProviderDropdownOpen] = useState(false);
+  const providerDropdownRef = useRef<HTMLDivElement>(null);
   const [defaultValuePerPair, setDefaultValuePerPair] = useState<number>(0);
   const [notes, setNotes] = useState('');
 
@@ -96,6 +98,16 @@ export default function ServiceOrderFormView({
   const [isSaving, setIsSaving] = useState(false);
   const [savedOS, setSavedOS] = useState<ServiceOrder | null>(null);
   const [printOSData, setPrintOSData] = useState<{ os: ServiceOrder; nextSectorName: string } | null>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (providerDropdownRef.current && !providerDropdownRef.current.contains(event.target as Node)) {
+        setIsProviderDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Initialize sequential OS number and default dropdowns (when creating)
   useEffect(() => {
@@ -721,37 +733,58 @@ export default function ServiceOrderFormView({
                 />
               </div>
 
-              {/* Provider Selection */}
+              {/* Provider Selection — digite livremente (sugestão/filtro dos prestadores
+                  cadastrados) ou clique numa sugestão para selecionar um já existente */}
               <div className="flex flex-col gap-2">
                 <label className="text-[9px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-400 px-3 block">
                   Prestador do Serviço
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <ComboBox
-                    options={people
+                <div className="relative" ref={providerDropdownRef}>
+                  <div className={`w-full flex items-center bg-slate-50 dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-800 rounded-2xl pl-12 pr-0 py-1 focus-within:border-indigo-500 transition-all ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>
+                    <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                      <ClipboardList size={18} />
+                    </div>
+                    <input
+                      type="text"
+                      value={providerId ? (people.find(p => p.id === providerId)?.name || '') : providerManualName}
+                      onChange={e => {
+                        setProviderId('');
+                        setProviderManualName(e.target.value);
+                        setIsProviderDropdownOpen(true);
+                      }}
+                      onFocus={() => setIsProviderDropdownOpen(true)}
+                      placeholder="Digite o nome do prestador..."
+                      className="flex-1 bg-transparent border-none outline-none text-[13px] font-black uppercase tracking-widest py-3 min-w-0"
+                    />
+                  </div>
+
+                  {isProviderDropdownOpen && (() => {
+                    const term = (providerId ? '' : providerManualName).toLowerCase();
+                    const suggestions = people
                       .filter(p => p.isSupplier || p.isServiceProvider)
-                      .map(p => ({ id: p.id || '', name: p.name }))}
-                    value={providerId}
-                    onChange={(id) => {
-                      setProviderId(id);
-                      if (id) setProviderManualName('');
-                    }}
-                    placeholder="Selecionar prestador..."
-                    isDarkMode={isDarkMode}
-                    icon={<ClipboardList size={18} />}
-                  />
-                  <input
-                    type="text"
-                    value={providerManualName}
-                    onChange={e => {
-                      setProviderManualName(e.target.value);
-                      if (e.target.value) setProviderId('');
-                    }}
-                    placeholder="Ou digite manualmente..."
-                    className={`w-full px-5 py-3.5 rounded-2xl border-2 font-bold text-xs outline-none transition-all ${
-                      isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-500'
-                    }`}
-                  />
+                      .filter(p => p.name.toLowerCase().includes(term));
+                    return (
+                      <div className="absolute left-0 right-0 top-full mt-2 z-50 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-2xl shadow-xl max-h-60 overflow-y-auto">
+                        {suggestions.length > 0 ? (
+                          suggestions.map(p => (
+                            <div
+                              key={p.id}
+                              className={`px-5 py-4 text-[13px] font-bold uppercase cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 active:bg-indigo-50 ${providerId === p.id ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-200'}`}
+                              onClick={() => {
+                                setProviderId(p.id || '');
+                                setProviderManualName('');
+                                setIsProviderDropdownOpen(false);
+                              }}
+                            >
+                              {p.name}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="px-5 py-3 text-[12px] text-slate-400 italic">Nenhum prestador cadastrado com esse nome — será salvo como digitado</div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 

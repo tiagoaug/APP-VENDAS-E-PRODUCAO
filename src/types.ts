@@ -202,6 +202,8 @@ export type GeneralPurchaseItem = {
   quantity?: number;    // Quantity purchased
   unit?: string;        // Unit label (e.g., "ML", "UN", "KG")
   value: number;        // Unit price
+  kind?: 'material' | 'person'; // ausente = 'material' (padrão); 'person' = pagamento a fornecedor/terceirizado cadastrado
+  personId?: string;    // Link to Person (fornecedor/terceirizado), usado quando kind === 'person'
 };
 
 export type CompanyCheck = {
@@ -556,6 +558,9 @@ export type Collaborator = {
   fontFamilyPref?: string;
   navIconModePref?: string;
   navMonoColorPref?: string;
+  failedAttempts?: number;
+  locked?: boolean;
+  dashboardConfig?: DashboardCardConfig[];
 };
 
 export type ProductionConfigItem = {

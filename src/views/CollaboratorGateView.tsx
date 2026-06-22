@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Users, KeyRound, LogOut, Eye, EyeOff } from "lucide-react";
+import { Users, KeyRound, LogOut, Eye, EyeOff, Lock } from "lucide-react";
 import { Collaborator } from "../types";
 
 interface CollaboratorGateViewProps {
@@ -56,10 +56,18 @@ export default function CollaboratorGateView({ collaborators, lastActiveId, onCo
                     {collab.name.charAt(0).toUpperCase()}
                   </div>
                   <span className="text-sm font-black text-slate-800 uppercase tracking-tight truncate flex-1">{collab.name}</span>
-                  <KeyRound size={16} className="text-slate-400 shrink-0" />
+                  {collab.locked ? <Lock size={16} className="text-rose-400 shrink-0" /> : <KeyRound size={16} className="text-slate-400 shrink-0" />}
                 </button>
 
-                {isSelected && (
+                {isSelected && collab.locked && (
+                  <div className="flex flex-col gap-2 px-1 py-2 animate-in fade-in slide-in-from-top-1 duration-150">
+                    <p className="text-rose-500 text-[11px] text-center font-bold leading-relaxed">
+                      Conta bloqueada após 5 tentativas incorretas.<br />Peça para o administrador desbloquear em Colaboradores.
+                    </p>
+                  </div>
+                )}
+
+                {isSelected && !collab.locked && (
                   <div className="flex flex-col gap-2 px-1 animate-in fade-in slide-in-from-top-1 duration-150">
                     <div className="relative">
                       <input

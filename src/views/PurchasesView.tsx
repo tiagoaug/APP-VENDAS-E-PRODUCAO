@@ -96,7 +96,7 @@ export default function PurchasesView({
     setExportModal({ isOpen: true, purchase, format });
   };
 
-  const handleConfirmExport = async (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref') => {
+  const handleConfirmExport = async (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', _pcpTotalGrid?: boolean, _showMaterials?: boolean, showItemGrid?: boolean) => {
     if (!exportModal.purchase) return;
 
     try {
@@ -107,7 +107,8 @@ export default function PurchasesView({
         additionalNote: note,
         isDarkMode,
         showFinancialValues,
-        grouped: groupMode !== 'none'
+        grouped: groupMode !== 'none',
+        showItemGrid: !!showItemGrid
       }, format);
       setExportModal(prev => ({ ...prev, isOpen: false }));
     } catch (error) {
@@ -787,6 +788,9 @@ export default function PurchasesView({
         title="Exportar Compra"
         showValuesToggle
         showGroupingToggle
+        showItemGridToggle
+        itemGridLabel="Mostrar Grade da Compra"
+        itemGridDescription="Itens aparecem em grade por cor (tamanhos no varejo, caixas no atacado), somando quantidades repetidas"
       />
     </div>
   );

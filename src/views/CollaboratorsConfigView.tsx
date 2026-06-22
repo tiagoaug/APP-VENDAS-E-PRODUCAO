@@ -20,6 +20,7 @@ import {
   Eye,
   EyeOff,
   Sparkles,
+  Lock,
 } from 'lucide-react';
 import { Collaborator } from '../types';
 import { SECTORS } from '../utils/collaborators';
@@ -54,6 +55,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
   const [draft, setDraft] = useState<Collaborator | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [showPin, setShowPin] = useState(false);
+  const [revealedPinId, setRevealedPinId] = useState<string | null>(null);
 
   const startNew = () => { setDraft(emptyDraft()); setShowPin(false); };
   const startEdit = (collab: Collaborator) => { setDraft({ ...collab }); setShowPin(false); };
@@ -69,7 +71,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
   };
 
   const handleSave = () => {
-    if (!draft || !draft.name.trim() || draft.pin.length < 4) return;
+    if (!draft || !draft.name.trim() || draft.pin.length !== 6) return;
     onSave(draft);
     setDraft(null);
   };
@@ -112,43 +114,75 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
 
       {collaborators.length > 0 && !draft && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {collaborators.map(collab => (
-            <div
-              key={collab.id}
-              className={`flex flex-col gap-3 p-5 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-2xl shrink-0" style={{ backgroundColor: collab.colorHex }} />
-                  <p className={`text-base font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{collab.name}</p>
+          {collaborators.map(collab => {
+            const isRevealed = revealedPinId === collab.id;
+            return (
+              <div
+                key={collab.id}
+                className={`flex flex-col gap-3 p-5 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'}`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl shrink-0" style={{ backgroundColor: collab.colorHex }} />
+                    <p className={`text-base font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{collab.name}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button type="button" onClick={() => startEdit(collab)} title="Editar" aria-label={`Editar ${collab.name}`} className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
+                      <Pencil size={15} />
+                    </button>
+                    <button type="button" onClick={() => setDeleteTarget(collab.id)} title="Excluir" aria-label={`Excluir ${collab.name}`} className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors">
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <button type="button" onClick={() => startEdit(collab)} title="Editar" aria-label={`Editar ${collab.name}`} className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
-                    <Pencil size={15} />
-                  </button>
-                  <button type="button" onClick={() => setDeleteTarget(collab.id)} title="Excluir" aria-label={`Excluir ${collab.name}`} className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors">
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              </div>
-              {collab.isUnrestricted ? (
-                <span className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[9px] font-black uppercase tracking-wider">
-                  <ShieldCheck size={12} /> Acesso Total
-                </span>
-              ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {collab.sectors.length === 0 && (
-                    <span className="text-[10px] text-slate-400 italic">Nenhum setor liberado</span>
-                  )}
-                  {collab.sectors.map(sId => (
-                    <span key={sId} className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      {SECTORS.find(s => s.id === sId)?.label}
+                {collab.isUnrestricted ? (
+                  <span className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[9px] font-black uppercase tracking-wider">
+                    <ShieldCheck size={12} /> Acesso Total
+                  </span>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {collab.sectors.length === 0 && (
+                      <span className="text-[10px] text-slate-400 italic">Nenhum setor liberado</span>
+                    )}
+                    {collab.sectors.map(sId => (
+                      <span key={sId} className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        {SECTORS.find(s => s.id === sId)?.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {collab.locked && (
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-900/20">
+                    <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-rose-500">
+                      <Lock size={13} /> Bloqueado (5 tentativas)
                     </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
+                    <button
+                      type="button"
+                      onClick={() => onSave({ ...collab, locked: false, failedAttempts: 0 })}
+                      className="px-2.5 py-1 rounded-lg bg-rose-500 hover:bg-rose-600 text-white text-[9px] font-black uppercase tracking-widest transition-colors"
+                    >
+                      Desbloquear
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setRevealedPinId(isRevealed ? null : collab.id)}
+                  className={`flex items-center justify-between px-3 py-2 rounded-xl transition-colors ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">PIN</span>
+                  <span className="flex items-center gap-2">
+                    <span className={`text-sm font-black tracking-[0.3em] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                      {isRevealed ? collab.pin : '••••••'}
+                    </span>
+                    {isRevealed ? <EyeOff size={14} className="text-slate-400" /> : <Eye size={14} className="text-slate-400" />}
+                  </span>
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -186,7 +220,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           </div>
 
           <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">PIN (4 a 6 dígitos)</label>
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">PIN (6 dígitos)</label>
             <div className="relative">
               <input
                 type={showPin ? 'text' : 'password'}
@@ -194,7 +228,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                 maxLength={6}
                 value={draft.pin}
                 onChange={e => setDraft({ ...draft, pin: e.target.value.replace(/\D/g, '') })}
-                placeholder="0000"
+                placeholder="000000"
                 className={`w-full px-4 py-3 pr-11 rounded-2xl border-2 text-sm font-bold outline-none focus:border-indigo-500 transition-colors tracking-[0.3em] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
               />
               <button
@@ -298,7 +332,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           <button
             type="button"
             onClick={handleSave}
-            disabled={!draft.name.trim() || draft.pin.length < 4}
+            disabled={!draft.name.trim() || draft.pin.length !== 6}
             className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
           >
             Salvar Colaborador

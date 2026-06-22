@@ -104,6 +104,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
   const [blocks, setBlocks] = useState<SaleBlock[]>([]);
   const [status, setStatus] = useState<SaleStatus>(SaleStatus.SALE);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [showSaleModeInfo, setShowSaleModeInfo] = useState(false);
   
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showCancelOnlyConfirm, setShowCancelOnlyConfirm] = useState(false);
@@ -1201,6 +1202,17 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             Orçamento
           </button>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setShowSaleModeInfo(true)}
+          className="w-full flex items-center justify-center gap-1.5 py-1 text-[10px] font-bold text-orange-500 hover:text-orange-600 transition-colors"
+          aria-label="Entenda a diferença entre Venda, Pedido e Orçamento"
+          title="Entenda a diferença entre os modos"
+        >
+          <AlertCircle size={13} />
+          Qual a diferença entre os modos?
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1275,25 +1287,29 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-3">
              <div>
                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest">Condição</label>
-                <select
-                  className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-4 text-[11px] font-black uppercase appearance-none text-slate-700 dark:text-slate-200"
-                  value={paymentTerm}
-                  aria-label="Condição de pagamento"
-                  title="Condição de Pagamento"
-                  onChange={(e) => setPaymentTerm(e.target.value as PaymentTerm)}
-                >
-                  <option value={PaymentTerm.CASH}>À Vista</option>
-                  <option value={PaymentTerm.INSTALLMENTS}>A Prazo</option>
-                </select>
+                <div className="relative">
+                  <select
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-full pl-5 pr-10 py-4 text-[11px] font-black uppercase appearance-none text-slate-700 dark:text-slate-200 cursor-pointer"
+                    value={paymentTerm}
+                    aria-label="Condição de pagamento"
+                    title="Condição de Pagamento"
+                    onChange={(e) => setPaymentTerm(e.target.value as PaymentTerm)}
+                  >
+                    <option value={PaymentTerm.CASH}>À Vista</option>
+                    <option value={PaymentTerm.INSTALLMENTS}>A Prazo</option>
+                  </select>
+                  <ChevronDown size={16} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                </div>
              </div>
              <div>
                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Pagamento</label>
                 <div className="relative">
-                  <select 
-                    className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-4 text-[11px] font-black uppercase appearance-none text-slate-700 dark:text-slate-200 cursor-pointer pr-10"
+                  <CreditCard size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <select
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-full pl-12 pr-10 py-4 text-[11px] font-black uppercase appearance-none text-slate-700 dark:text-slate-200 cursor-pointer"
                     value={paymentMethodId}
                     aria-label="Método de pagamento"
                     title="Método de Pagamento"
@@ -1302,17 +1318,15 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                     <option value="">SELECIONE O MÉTODO</option>
                     {paymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
                   </select>
-                  <CreditCard size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <ChevronDown size={16} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 </div>
              </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
              <div>
                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Tipo Pagamento</label>
                 <div className="relative">
-                  <select 
-                    className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-4 text-[11px] font-black uppercase appearance-none text-slate-700 dark:text-slate-200 cursor-pointer pr-10"
+                  <Clock size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <select
+                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-full pl-12 pr-10 py-4 text-[11px] font-black uppercase appearance-none text-slate-700 dark:text-slate-200 cursor-pointer"
                     value={paymentStatus}
                     aria-label="Status do pagamento"
                     title="Status do Pagamento"
@@ -1321,14 +1335,14 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                     <option value={PaymentStatus.PENDING}>Pendente</option>
                     <option value={PaymentStatus.PAID}>Quitado</option>
                   </select>
-                  <Clock size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                  <ChevronDown size={16} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                 </div>
              </div>
              {paymentTerm === PaymentTerm.INSTALLMENTS && (
                <div>
                   <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Vencimento</label>
                   <div className="relative">
-                    <input 
+                    <input
                       type="date"
                       className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-4 text-[11px] font-black uppercase appearance-none text-slate-700 dark:text-slate-200 cursor-pointer"
                       value={dueDate}
@@ -2656,6 +2670,73 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       </div>
 
       {/* CONFIRMATION MODALS FOR CANCELLATION */}
+      {showSaleModeInfo && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setShowSaleModeInfo(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white dark:bg-slate-900 rounded-[2rem] p-6 w-full max-w-sm max-h-[85vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col gap-5"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                  <AlertCircle size={22} />
+                </div>
+                <h3 className="text-base font-black uppercase tracking-tight leading-none text-slate-900 dark:text-white">Modos de Lançamento</h3>
+              </div>
+              <button
+                onClick={() => setShowSaleModeInfo(false)}
+                aria-label="Fechar"
+                title="Fechar"
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-slate-50 dark:bg-slate-800 text-slate-400 hover:text-slate-600 transition-all"
+              >
+                <X size={18} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-[#7c3aed]/10 border border-[#7c3aed]/20">
+              <p className="text-xs font-black uppercase tracking-widest text-[#7c3aed]">Venda</p>
+              <p className="text-xs font-bold text-slate-600 dark:text-slate-300 leading-relaxed">
+                Já é definitiva: abate o estoque na hora e lança no financeiro imediatamente.
+              </p>
+              <p className="text-[11px] text-slate-400 font-medium italic leading-relaxed">
+                Ex: o cliente compra e já leva o produto, que já está pronto em estoque.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-sky-500/10 border border-sky-500/20">
+              <p className="text-xs font-black uppercase tracking-widest text-sky-500">Pedido</p>
+              <p className="text-xs font-bold text-slate-600 dark:text-slate-300 leading-relaxed">
+                Confirmado, mas <span className="text-sky-500">sem abater estoque ainda</span> — fica reservado, aguardando produção ou reposição de compra. Quando o estoque chegar, o sistema completa automaticamente e o Pedido se transforma em Venda.
+              </p>
+              <p className="text-[11px] text-slate-400 font-medium italic leading-relaxed">
+                Ex: o cliente encomenda um par que ainda precisa ser fabricado ou comprado.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2.5 p-4 rounded-2xl bg-orange-500/10 border border-orange-500/20">
+              <p className="text-xs font-black uppercase tracking-widest text-orange-500">Orçamento</p>
+              <p className="text-xs font-bold text-slate-600 dark:text-slate-300 leading-relaxed">
+                Não compromete nada: não reserva estoque e não lança no financeiro — é só uma proposta. Se o cliente aceitar, você muda para Venda ou Pedido.
+              </p>
+              <p className="text-[11px] text-slate-400 font-medium italic leading-relaxed">
+                Ex: o cliente pede um valor pra avaliar antes de decidir se compra.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowSaleModeInfo(false)}
+              className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
+            >
+              Entendi
+            </button>
+          </div>
+        </div>
+      )}
+
       {showCancelConfirm && saleId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white dark:bg-slate-900 rounded-[2rem] p-6 w-full max-w-sm shadow-2xl animate-in zoom-in-95 duration-200">

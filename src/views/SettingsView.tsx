@@ -29,7 +29,8 @@ import {
   UserCog,
   KeyRound,
   Eye,
-  EyeOff
+  EyeOff,
+  Lock
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
@@ -539,11 +540,20 @@ export default function SettingsView({
                       <div className="text-left flex-1">
                         <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{collab.name}</p>
                         {isActive && <p className="text-[9px] font-black uppercase tracking-wider text-emerald-500">Ativo agora</p>}
+                        {collab.locked && <p className="text-[9px] font-black uppercase tracking-wider text-rose-500">Bloqueado</p>}
                       </div>
-                      <KeyRound size={16} className="text-slate-400 shrink-0" />
+                      {collab.locked ? <Lock size={16} className="text-rose-400 shrink-0" /> : <KeyRound size={16} className="text-slate-400 shrink-0" />}
                     </button>
 
-                    {isTarget && (
+                    {isTarget && collab.locked && (
+                      <div className="flex flex-col gap-2 px-1 py-1 animate-in fade-in slide-in-from-top-1 duration-150">
+                        <p className="text-[10px] font-bold text-rose-500 text-center leading-relaxed">
+                          Conta bloqueada após 5 tentativas incorretas. Peça para o administrador desbloquear em Colaboradores.
+                        </p>
+                      </div>
+                    )}
+
+                    {isTarget && !collab.locked && (
                       <div className="flex flex-col gap-2 px-1 animate-in fade-in slide-in-from-top-1 duration-150">
                         <div className="relative">
                           <input

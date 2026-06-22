@@ -145,7 +145,7 @@ import { toast } from "./utils/toast";
 import { parseLocaleNumber } from './utils/numbers';
 import { generateId } from './utils/id';
 import { ThemeId, THEME_VISUALS, ALL_THEME_CLASSES, FONT_OPTIONS, NavIconMode, NAV_TAB_COLORS } from './utils/themes';
-import { isViewAllowed, collaboratorCanUseAI } from './utils/collaborators';
+import { isViewAllowed, collaboratorCanUseAI, getEffectiveDashboardCards } from './utils/collaborators';
 
 const MODAL_VIEWS = [
   ViewType.PRODUCTS,
@@ -218,26 +218,17 @@ function TabItem({
   tintColor = '#4f46e5',
   monoColor = '#4f46e5',
 }: TabItemProps) {
-  const isDark = THEME_VISUALS[appTheme]?.cssClass.includes('dark') ?? false;
-  const isIndustrial = appTheme === 'industrial';
   const isColored = iconMode === 'colored';
 
   // Modo "Colorido": cada item sempre mostra sua própria cor (mais apagada quando
-  // inativo). Modo "Monocromático": só o item ativo ganha a cor escolhida; inativo
-  // mantém o cinza padrão do tema (igual ao comportamento original).
-  let iconStyle: React.CSSProperties | undefined;
-  let pillStyle: React.CSSProperties | undefined;
-  let inactiveClass = '';
-
-  if (isColored) {
-    iconStyle = { color: tintColor, opacity: active ? 1 : 0.55 };
-    if (active) pillStyle = { backgroundColor: `${tintColor}1f` };
-  } else if (active) {
-    iconStyle = { color: monoColor };
-    pillStyle = { backgroundColor: `${monoColor}1f` };
-  } else {
-    inactiveClass = isDark ? 'text-slate-500' : isIndustrial ? 'text-gray-400' : 'text-slate-400';
-  }
+  // inativo). Modo "Monocromático": todos os itens ficam permanentemente na cor
+  // escolhida — só o "pill" de fundo diferencia qual está ativo.
+  const iconStyle: React.CSSProperties = isColored
+    ? { color: tintColor, opacity: active ? 1 : 0.55 }
+    : { color: monoColor };
+  const pillStyle: React.CSSProperties | undefined = active
+    ? { backgroundColor: `${(isColored ? tintColor : monoColor)}1f` }
+    : undefined;
 
   return (
     <button
@@ -247,11 +238,11 @@ function TabItem({
       className="flex flex-col items-center justify-center gap-0.5 flex-1 py-2 transition-all"
     >
       <div className="w-10 h-7 flex items-center justify-center rounded-xl transition-all" style={pillStyle}>
-        <span className={`transition-all ${inactiveClass}`} style={iconStyle}>
+        <span className="transition-all" style={iconStyle}>
           {icon}
         </span>
       </div>
-      <span className={`text-[10px] font-bold tracking-tight transition-all ${inactiveClass}`} style={iconStyle}>
+      <span className="text-[10px] font-bold tracking-tight transition-all" style={iconStyle}>
         {label}
       </span>
     </button>
@@ -308,7 +299,15 @@ export default function App() {
 
   const switchCollaborator = (id: string, pin: string): boolean => {
     const target = collaborators.find(c => c.id === id);
-    if (!target || target.pin !== pin) return false;
+    if (!target || target.locked) return false;
+    if (target.pin !== pin) {
+      const failedAttempts = (target.failedAttempts || 0) + 1;
+      saveCollaborator({ ...target, failedAttempts, locked: failedAttempts >= 5 });
+      return false;
+    }
+    if (target.failedAttempts) {
+      saveCollaborator({ ...target, failedAttempts: 0 });
+    }
     setActiveCollaboratorId(id);
     localStorage.setItem('active_collaborator_id', id);
     return true;
@@ -2691,6 +2690,13 @@ export default function App() {
     }
   };
 
+  // Colaborador restrito: lista de cards do Dashboard fica filtrada aos seus
+  // setores, com a personalização (visível/ordem) que ele próprio já salvou.
+  const effectiveDashboardCards = getEffectiveDashboardCards(
+    (dashboardConfig || defaultDashboardConfig).cards,
+    activeCollaborator
+  );
+
   const renderView = (view: ViewType) => {
     // Route Guard: Check if the view is allowed by the current module configuration
     const isSalesView = MODULE_VIEWS.sales.includes(view);
@@ -2719,7 +2725,7 @@ export default function App() {
             onUpdateCheckStatus={handleCheckStatusChange}
             isDarkMode={isDarkMode}
             categories={categories}
-            dashboardConfig={dashboardConfig || defaultDashboardConfig}
+            dashboardConfig={{ cards: effectiveDashboardCards }}
             modulesConfig={modulesConfig}
             onNavigate={navigateTo}
             onNavigateProduction={navigateToProduction}
@@ -2735,9 +2741,13 @@ export default function App() {
         );
       case ViewType.DASHBOARD_CONFIG:
         return (
-          <DashboardConfigView 
-            config={dashboardConfig || defaultDashboardConfig}
+          <DashboardConfigView
+            config={{ cards: effectiveDashboardCards }}
             onSave={async (newConfig) => {
+              if (activeCollaborator && !activeCollaborator.isUnrestricted) {
+                await saveCollaborator({ ...activeCollaborator, dashboardConfig: newConfig.cards });
+                return;
+              }
               try {
                 const configToSave = { ...newConfig, id: 'main_config' };
                 await firebaseService.saveDocument("dashboard_config", configToSave);
@@ -2748,6 +2758,7 @@ export default function App() {
             onBack={goBack}
             isDarkMode={isDarkMode}
             modulesConfig={modulesConfig}
+            activeCollaborator={activeCollaborator}
           />
         );
       case ViewType.SETTINGS:

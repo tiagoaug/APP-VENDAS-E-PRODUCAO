@@ -190,6 +190,12 @@ export default function PCPView({
   // Oculta o nome do setor/status nas fichas de Pedidos Vinculados — pedidos lá ficam
   // só com o badge de produto/cor, sem o texto de setor.
   const [hideSectorBadge, setHideSectorBadge] = useState(() => localStorage.getItem('pcp_hide_sector_badge') === 'true');
+  // Badge da OS (cápsula com o número da OS no card) — independente do badge de Mapa,
+  // já que uma OS pode reunir pedidos de mapas diferentes e não tem um único "lote" de origem.
+  const [osBadgeBg, setOsBadgeBg] = useState(() => localStorage.getItem('pcp_os_badge_bg') || '#4f46e5');
+  const [osBadgeText, setOsBadgeText] = useState(() => localStorage.getItem('pcp_os_badge_text') || '#ffffff');
+  const [osBadgeBold, setOsBadgeBold] = useState(() => localStorage.getItem('pcp_os_badge_bold') !== 'false');
+  const [osBadgeItalic, setOsBadgeItalic] = useState(() => localStorage.getItem('pcp_os_badge_italic') === 'true');
   const [isBadgeColorPickerOpen, setIsBadgeColorPickerOpen] = useState(false);
   const updateProductBadgeColors = (bg: string, text: string) => {
     setProductBadgeBg(bg);
@@ -220,6 +226,22 @@ export default function PCPView({
     const next = !sectorBadgeItalic;
     setSectorBadgeItalic(next);
     localStorage.setItem('pcp_sector_badge_italic', String(next));
+  };
+  const updateOSBadgeColors = (bg: string, text: string) => {
+    setOsBadgeBg(bg);
+    setOsBadgeText(text);
+    localStorage.setItem('pcp_os_badge_bg', bg);
+    localStorage.setItem('pcp_os_badge_text', text);
+  };
+  const toggleOSBadgeBold = () => {
+    const next = !osBadgeBold;
+    setOsBadgeBold(next);
+    localStorage.setItem('pcp_os_badge_bold', String(next));
+  };
+  const toggleOSBadgeItalic = () => {
+    const next = !osBadgeItalic;
+    setOsBadgeItalic(next);
+    localStorage.setItem('pcp_os_badge_italic', String(next));
   };
   const toggleHideSectorBadge = () => {
     const next = !hideSectorBadge;
@@ -337,8 +359,7 @@ export default function PCPView({
   const [sharePreviewOpen, setSharePreviewOpen] = useState(false);
 
   // Service Order (OS) state declarations
-  const [isOSModalOpen, setIsOSModalOpen] = useState(false);
-  const [editingOS, setEditingOS] = useState<ServiceOrder | null>(null);
+  const [viewOSModal, setViewOSModal] = useState<{ isOpen: boolean; os: ServiceOrder | null; items: any[] }>({ isOpen: false, os: null, items: [] });
   const [osNumber, setOsNumber] = useState('');
   const [osType, setOsType] = useState<'INTERNAL' | 'OUTSOURCED'>('OUTSOURCED');
   const [osProviderId, setOsProviderId] = useState('');
@@ -2377,6 +2398,45 @@ export default function PCPView({
     onNavigate(ViewType.PRODUCTION_SERVICE_ORDER_FORM, os.id);
   };
 
+  // Resolve as "fichas" (pedidos/itens) cobertas por uma OS — usado tanto pelo
+  // botão "Visualizar" quanto pelo "Compartilhar" desta OS específica.
+  const getFichasForOS = (os: ServiceOrder): any[] => {
+    const osLotIds = os.lotIds || [os.lotId];
+    const osSourceOrderIds = os.sourceOrderIds || [];
+    const osSourceItemKeys = (os as any).sourceItemKeys || [];
+
+    const mappedFichas: any[] = [];
+    osLotIds.forEach(lId => {
+      const l = lots.find(lot => lot.id === lId);
+      if (!l) return;
+      const sourceItems: any[] = (l as any).metadata?.sourceItems || [];
+      sourceItems.forEach((si, siIdx) => {
+        const itemKey = `${l.id}::${si.orderId}::${siIdx}`;
+        const isIncluded = osSourceItemKeys.includes(itemKey) ||
+          (osSourceItemKeys.length === 0 && osSourceOrderIds.includes(si.orderId));
+
+        if (isIncluded) {
+          const prod = products.find(p => p.id === si.productId);
+          const vari = prod?.variations.find((v: any) => v.id === si.variationId);
+          const ord = productionOrders.find(o => o.id === si.orderId);
+          const ordItem: any = si.itemIdx !== undefined ? ord?.items[si.itemIdx] : ord?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+
+          mappedFichas.push({
+            lot: l,
+            si,
+            siIdx,
+            product: prod,
+            variation: vari,
+            orderItem: ordItem,
+            order: ord,
+            coveringOS: os
+          });
+        }
+      });
+    });
+    return mappedFichas;
+  };
+
   const handlePrintLotLabel = (lot: ProductionLot) => {
     const product = products.find(p => p.id === lot.productId);
     const variation = product?.variations.find(v => v.id === lot.variationId);
@@ -3730,6 +3790,20 @@ export default function PCPView({
                   {/* ── Pedidos Vinculados — padrão idêntico ao setor de Corte ── */}
                   {(() => {
                     type FichaItem = { lot: ProductionLot; si: any; siIdx: number; product: any; variation: any; orderItem: any; order: any; coveringOS?: ServiceOrder };
+                    // sourceItemKeys (formato lotId::orderId::siIdx) é gravado pela OS desde sempre
+                    // e identifica o item exato selecionado — usar isso em vez de sourceOrderIds
+                    // (que guarda só o orderId "puro") evita travar os outros itens do mesmo pedido
+                    // que não foram selecionados na emissão da OS. sourceOrderIds só entra como
+                    // fallback pra OS antigas, criadas antes de sourceItemKeys existir.
+                    const osCoversItem = (os: ServiceOrder, lotId: string, orderId: string, siIdx: number): boolean => {
+                      if (os.sourceItemKeys && os.sourceItemKeys.length > 0) {
+                        return os.sourceItemKeys.includes(`${lotId}::${orderId}::${siIdx}`);
+                      }
+                      if (os.sourceOrderIds && os.sourceOrderIds.length > 0) {
+                        return os.sourceOrderIds.includes(orderId);
+                      }
+                      return false;
+                    };
                     const allFichas: FichaItem[] = [];
                     filteredActiveLots.forEach(lot => {
                       const lotSI: any[] = (lot as any).metadata?.sourceItems || [];
@@ -3742,16 +3816,17 @@ export default function PCPView({
                         const vari = prod?.variations.find((v: any) => v.id === si.variationId);
                         const ord = productionOrders.find(o => o.id === si.orderId);
                         const ordItem: any = si.itemIdx !== undefined ? ord?.items[si.itemIdx] : ord?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+                        const siIdx = lotSI.indexOf(si);
                         const coveringOS = serviceOrders.find(os =>
                           (os.lotId === lot.id || (os.lotIds && os.lotIds.includes(lot.id))) &&
                           os.sectorId === selectedSectorId &&
-                          os.sourceOrderIds && os.sourceOrderIds.some(id => id === si.orderId || id.startsWith(`${si.orderId}::`) || id.split('::').includes(si.orderId))
+                          osCoversItem(os, lot.id, si.orderId, siIdx)
                         ) || serviceOrders.find(os =>
                           (os.lotId === lot.id || (os.lotIds && os.lotIds.includes(lot.id))) &&
                           os.sectorId === selectedSectorId &&
-                          (!os.sourceOrderIds || os.sourceOrderIds.length === 0)
+                          (!os.sourceOrderIds || os.sourceOrderIds.length === 0) &&
+                          (!os.sourceItemKeys || os.sourceItemKeys.length === 0)
                         );
-                        const siIdx = lotSI.indexOf(si);
                         allFichas.push({ lot, si, siIdx, product: prod, variation: vari, orderItem: ordItem, order: ord, coveringOS });
                       });
                     });
@@ -3911,11 +3986,9 @@ export default function PCPView({
                                 const productName = product?.name || orderItem?.productName || '-';
                                 const productRef = product?.reference || '';
                                 const colorName = variation?.colorName || orderItem?.variationName || '';
-                                const completedOS = serviceOrders.find((so: any) => so.sourceOrderIds?.some((id: string) => id === f.si.orderId || id.split('::').includes(f.si.orderId)) && so.status === 'COMPLETED');
+                                const completedOS = serviceOrders.find((so: any) => osCoversItem(so, f.lot.id, f.si.orderId, f.siIdx) && so.status === 'COMPLETED');
                                 const hasCompletedOS = !!completedOS;
-                                const linkedOSList = serviceOrders.filter((so: any) =>
-                                  so.sourceOrderIds && so.sourceOrderIds.some((id: string) => id === f.si.orderId || id.startsWith(`${f.si.orderId}::`) || id.split('::').includes(f.si.orderId))
-                                );
+                                const linkedOSList = serviceOrders.filter((so: any) => osCoversItem(so, f.lot.id, f.si.orderId, f.siIdx));
 
                                 return (
                                   <div key={itemKey} id={`pedido-card-${itemKey}`} className={`rounded-2xl border overflow-hidden transition-all ${hasOS
@@ -4416,94 +4489,71 @@ export default function PCPView({
                             )}
 
                             {/* OS emitidas neste setor */}
-                            {serviceOrders
-                              .filter(os => os.sectorId === selectedSectorId && os.status === 'PENDING' &&
-                                filteredActiveLots.some(l => os.lotId === l.id))
-                              .map(os => {
-                                const lot = filteredActiveLots.find(l => os.lotId === l.id) ?? null;
+                            {(() => {
+                              const sectorOSList = serviceOrders.filter(os => os.sectorId === selectedSectorId && os.status === 'PENDING' &&
+                                filteredActiveLots.some(l => os.lotId === l.id));
+                              if (sectorOSList.length === 0) return null;
+                              return (
+                                <>
+                                  <h3 className="px-1 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none mt-2">Ordem de Serviço por Setor</h3>
+                                  {sectorOSList.map(os => {
+                                    const lot = filteredActiveLots.find(l => os.lotId === l.id) ?? null;
                                 const nextSId = (lot?.route?.length ?? 0) > (lot?.currentSectorIndex ?? 0) + 1
                                   ? (lot?.route?.[(lot?.currentSectorIndex ?? 0) + 1] ?? '')
                                   : '';
                                 const nextSName = sectors.find(s => s.id === nextSId)?.name ?? 'CONCLUÍDO';
                                 return (
-                                  <div key={os.id} className={`rounded-2xl border flex items-center gap-2 px-3 py-2.5 ${isDarkMode ? 'bg-sky-950/20 border-sky-700/40' : 'bg-sky-50 border-sky-200'}`}>
-                                    {lot && (
+                                  <div key={os.id} className={`rounded-2xl border flex flex-col gap-2.5 px-3 py-3 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                    {/* Info — prestador numa extremidade, número da OS em cápsula na outra (cor própria da OS, configurável em Cor de Badges PCP — não herda do Mapa, já que uma OS pode reunir pedidos de mapas diferentes) */}
+                                    <div className="flex items-center justify-between gap-2">
+                                      <p className={`text-[11px] font-black truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{os.providerName || '—'}</p>
                                       <span
-                                        className="text-[7px] font-black px-1.5 py-0.5 rounded uppercase shrink-0"
-                                        style={(() => {
-                                          const bg = (lot as any).metadata?.badgeColor || mapBadgeBg;
-                                          const txt = (lot as any).metadata?.badgeTextColor || getContrastingColor(bg);
-                                          return {
-                                            backgroundColor: bg,
-                                            color: txt,
-                                            boxShadow: `0 1px 2px ${bg}30`
-                                          };
-                                        })()}
+                                        className="text-[10px] px-2.5 py-1 rounded-full uppercase shrink-0"
+                                        style={{
+                                          backgroundColor: osBadgeBg,
+                                          color: osBadgeText,
+                                          boxShadow: `0 1px 2px ${osBadgeBg}30`,
+                                          fontWeight: osBadgeBold ? 900 : 400,
+                                          fontStyle: osBadgeItalic ? 'italic' : 'normal',
+                                        }}
                                       >
-                                        MAPA{lot.orderNumber}
+                                        {os.osNumber}
                                       </span>
-                                    )}
-                                    <div className="flex-1 min-w-0">
-                                      <span className={`text-[10px] font-black uppercase ${isDarkMode ? 'text-sky-400' : 'text-sky-700'}`}>{os.osNumber}</span>
-                                      {os.providerName ? <p className="text-[9px] text-slate-400 truncate">{os.providerName}</p> : null}
                                     </div>
-                                    <div className="flex items-center gap-1 shrink-0">
-                                      <button type="button" title="Compartilhar OS" onClick={() => {
-                                        const osLotIds = os.lotIds || [os.lotId];
-                                        const osSourceOrderIds = os.sourceOrderIds || [];
-                                        const osSourceItemKeys = os.sourceItemKeys || [];
 
-                                        const mappedFichas: any[] = [];
-                                        osLotIds.forEach(lId => {
-                                          const l = lots.find(lot => lot.id === lId);
-                                          if (!l) return;
-                                          const sourceItems: any[] = (l as any).metadata?.sourceItems || [];
-                                          sourceItems.forEach((si, siIdx) => {
-                                            const itemKey = `${l.id}::${si.orderId}::${siIdx}`;
-                                            const isIncluded = osSourceItemKeys.includes(itemKey) ||
-                                              (osSourceItemKeys.length === 0 && osSourceOrderIds.includes(si.orderId));
-
-                                            if (isIncluded) {
-                                              const prod = products.find(p => p.id === si.productId);
-                                              const vari = prod?.variations.find((v: any) => v.id === si.variationId);
-                                              const ord = productionOrders.find(o => o.id === si.orderId);
-                                              const ordItem: any = si.itemIdx !== undefined ? ord?.items[si.itemIdx] : ord?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
-
-                                              mappedFichas.push({
-                                                lot: l,
-                                                si,
-                                                siIdx,
-                                                product: prod,
-                                                variation: vari,
-                                                orderItem: ordItem,
-                                                order: ord,
-                                                coveringOS: os
-                                              });
-                                            }
-                                          });
-                                        });
-                                        setShareModal({ isOpen: true, format: 'pdf', selectedItems: mappedFichas });
-                                      }}
-                                        className={`p-2 rounded-xl transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                                        <Share2 size={12} />
-                                      </button>
-                                      <button type="button" title="Editar OS" onClick={() => { setEditingOS(os); setIsOSModalOpen(true); }}
-                                        className={`p-2 rounded-xl transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                                        <Edit2 size={12} />
-                                      </button>
-                                      <button type="button" title="Excluir OS" onClick={() => handleDeleteOS(os)}
-                                        className={`p-2 rounded-xl transition-all active:scale-95 ${isDarkMode ? 'bg-rose-950/40 text-rose-400 hover:bg-rose-900/40' : 'bg-rose-50 text-rose-600 hover:bg-rose-100'}`}>
-                                        <Trash2 size={12} />
-                                      </button>
+                                    {/* Ações — Visualizar/Editar e Excluir/Compartilhar divididos ao meio, Dar Baixa cheio. Padrão industrial: fundo cinza, só o ícone tem cor. */}
+                                    <div className="flex flex-col gap-1.5">
+                                      <div className="grid grid-cols-2 gap-1.5">
+                                        <button type="button" title="Visualizar pedidos da OS" onClick={() => setViewOSModal({ isOpen: true, os, items: getFichasForOS(os) })}
+                                          className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                          <Eye size={12} className="text-indigo-500" /> Visualizar
+                                        </button>
+                                        <button type="button" title="Editar OS" onClick={() => handleEditOS(os)}
+                                          className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                          <Edit2 size={12} className="text-amber-500" /> Editar
+                                        </button>
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-1.5">
+                                        <button type="button" title="Excluir OS" onClick={() => handleDeleteOS(os)}
+                                          className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                          <Trash2 size={12} className="text-rose-500" /> Excluir
+                                        </button>
+                                        <button type="button" title="Compartilhar OS" onClick={() => setShareModal({ isOpen: true, format: 'pdf', selectedItems: getFichasForOS(os) })}
+                                          className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                          <Share2 size={12} className="text-orange-500" /> Compartilhar
+                                        </button>
+                                      </div>
                                       <button type="button" onClick={() => handleCompleteOS(os)}
-                                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 hover:bg-emerald-600">
-                                        <CheckCircle2 size={12} /> Dar Baixa
+                                        className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 hover:bg-emerald-600">
+                                        <CheckCircle2 size={13} /> Dar Baixa
                                       </button>
                                     </div>
                                   </div>
-                                );
-                              })
-                            }
+                                  );
+                                  })}
+                                </>
+                              );
+                            })()}
 
                           </div>
                         )}
@@ -10179,7 +10229,7 @@ export default function PCPView({
       <ExportNoteModal
         isOpen={shareModal.isOpen}
         onClose={() => setShareModal(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList) => {
+        onConfirm={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData) => {
           const { selectedItems } = shareModal;
 
           const uniqueLots = Array.from(new Set(selectedItems.map((f: any) => f.lot.id)))
@@ -10204,7 +10254,12 @@ export default function PCPView({
 
             const totalQty = sizes.reduce((acc, s) => acc + s.qty, 0);
 
+            // Instruções por setor: vêm do cadastro do produto (variation.sectorNotes).
+            // Quando o item está vinculado a uma OS, mostra só a instrução do setor
+            // em que ELA foi emitida — não as de todos os setores cadastrados.
+            const os: ServiceOrder | undefined = f.coveringOS;
             const secEntries = Object.entries(vari?.sectorNotes || {})
+              .filter(([sid]) => !os || sid === os.sectorId)
               .map(([sid, notes]) => ({ sid, notes: (notes as any[]).filter(n => n.text).map(n => n.text) }))
               .filter(({ notes }) => notes.length > 0)
               .map(({ sid, notes }) => {
@@ -10218,7 +10273,12 @@ export default function PCPView({
               color: vari?.colorName || '---',
               totalPairs: totalQty,
               sizeGrid: sizes,
-              sectorNotes: secEntries
+              sectorNotes: secEntries,
+              osNumber: os?.osNumber,
+              providerName: os?.providerName,
+              osValue: os?.totalValue,
+              osDate: os?.createdAt,
+              osSectorName: os ? (sectors.find(s => s.id === os.sectorId)?.name || os.sectorName) : undefined,
             };
           });
 
@@ -10262,14 +10322,17 @@ export default function PCPView({
             showMaterials,
             showItemGrid,
             showSectorNotes,
-            showOrderList
+            showOrderList,
+            splitPages,
+            showProvider,
+            showOSData
           }, format);
 
           if (success) {
             setShareModal(prev => ({ ...prev, isOpen: false }));
           }
         }}
-        onPreview={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList) => {
+        onPreview={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData) => {
           const { selectedItems } = shareModal;
 
           const uniqueLots = Array.from(new Set(selectedItems.map((f: any) => f.lot.id)))
@@ -10294,7 +10357,9 @@ export default function PCPView({
 
             const totalQty = sizes.reduce((acc, s) => acc + s.qty, 0);
 
+            const os: ServiceOrder | undefined = f.coveringOS;
             const secEntries = Object.entries(vari?.sectorNotes || {})
+              .filter(([sid]) => !os || sid === os.sectorId)
               .map(([sid, notes]) => ({ sid, notes: (notes as any[]).filter(n => n.text).map(n => n.text) }))
               .filter(({ notes }) => notes.length > 0)
               .map(({ sid, notes }) => {
@@ -10308,7 +10373,12 @@ export default function PCPView({
               color: vari?.colorName || '---',
               totalPairs: totalQty,
               sizeGrid: sizes,
-              sectorNotes: secEntries
+              sectorNotes: secEntries,
+              osNumber: os?.osNumber,
+              providerName: os?.providerName,
+              osValue: os?.totalValue,
+              osDate: os?.createdAt,
+              osSectorName: os ? (sectors.find(s => s.id === os.sectorId)?.name || os.sectorName) : undefined,
             };
           });
 
@@ -10352,7 +10422,10 @@ export default function PCPView({
             showMaterials,
             showItemGrid,
             showSectorNotes,
-            showOrderList
+            showOrderList,
+            splitPages,
+            showProvider,
+            showOSData
           }, format, true);
         }}
         isDarkMode={isDarkMode}
@@ -10364,7 +10437,57 @@ export default function PCPView({
         showItemGridToggle={true}
         showSectorNotesToggle={true}
         showOrderListToggle={true}
+        showSplitPagesToggle={true}
+        showProviderToggle={true}
+        showOSDataToggle={true}
       />
+
+      <Modal
+        isOpen={viewOSModal.isOpen}
+        onClose={() => setViewOSModal({ isOpen: false, os: null, items: [] })}
+        title={viewOSModal.os ? `${viewOSModal.os.osNumber}${viewOSModal.os.providerName ? ` — ${viewOSModal.os.providerName}` : ''}` : 'Pedidos da OS'}
+        icon={<Eye size={18} />}
+        maxWidth="max-w-md"
+      >
+        <div className="p-5 flex flex-col gap-3 max-h-[70vh] overflow-y-auto">
+          {viewOSModal.items.length === 0 && (
+            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 text-center py-6">Nenhum pedido encontrado para esta OS.</p>
+          )}
+          {viewOSModal.items.map((f: any, idx: number) => {
+            const productName = f.product?.name || f.orderItem?.productName || '—';
+            const productRef = f.product?.reference || '';
+            const colorName = f.variation?.colorName || f.orderItem?.variationName || '';
+            const szEntries = (f.orderItem?.sizes)
+              ? Object.entries(f.orderItem.sizes as Record<string, any>)
+                .filter(([, s]) => (s?.toProduction || 0) > 0)
+                .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
+              : [];
+            return (
+              <div key={idx} className={`rounded-2xl border p-3 flex flex-col gap-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className={`text-[11px] font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                      {productRef ? `${productRef} ` : ''}{productName}
+                    </p>
+                    {colorName && <p className="text-[10px] text-slate-400 font-bold uppercase">{colorName}</p>}
+                  </div>
+                  <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 shrink-0">{f.si?.qty || 0} pares</span>
+                </div>
+                {szEntries.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {szEntries.map(([sz, s]: [string, any]) => (
+                      <div key={sz} className={`px-2 py-1 rounded-lg border text-center min-w-[32px] ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                        <p className="text-[7px] font-bold text-slate-400 leading-none">{sz}</p>
+                        <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 leading-none mt-0.5">{s.toProduction}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </Modal>
 
       <Modal
         isOpen={isColorPickerOpen}
@@ -10697,6 +10820,111 @@ export default function PCPView({
               {hideSectorBadge ? <Eye size={14} /> : <Eye size={14} className="opacity-50" />}
               {hideSectorBadge ? 'Setor Oculto nas Fichas' : 'Ocultar Nome do Setor nas Fichas'}
             </button>
+          </div>
+
+          <div className="border-t border-slate-100 dark:border-slate-800" />
+
+          {/* Badge de OS — independente do Mapa, pois uma OS pode reunir pedidos de mapas diferentes */}
+          <div className="flex flex-col gap-3">
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
+              Cor de fundo e do texto da cápsula com o número da OS, exibida no card de cada Ordem de Serviço.
+            </p>
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pré-visualização</label>
+              <div className="flex justify-center py-6 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800">
+                <span
+                  className="text-[11px] px-3.5 py-1.5 rounded-full uppercase tracking-widest shadow-lg"
+                  style={{
+                    backgroundColor: osBadgeBg,
+                    color: osBadgeText,
+                    boxShadow: `0 4px 12px ${osBadgeBg}30`,
+                    fontWeight: osBadgeBold ? 900 : 400,
+                    fontStyle: osBadgeItalic ? 'italic' : 'normal',
+                  }}
+                >
+                  OS-0014
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cor de Fundo</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={osBadgeBg}
+                  onChange={(e) => updateOSBadgeColors(e.target.value, osBadgeText)}
+                  className="w-10 h-10 rounded-xl cursor-pointer border-2 border-slate-200 dark:border-slate-700 bg-transparent shrink-0"
+                  title="Escolher cor personalizada"
+                />
+                <div className="flex flex-wrap gap-2 max-w-[320px]">
+                  {[
+                    '#000000', '#1e293b', '#475569', '#7c3aed', '#4f46e5',
+                    '#2563eb', '#0891b2', '#0d9488', '#059669', '#16a34a',
+                    '#ca8a04', '#d97706', '#ea580c', '#dc2626', '#e11d48',
+                    // Tons suaves/pastéis
+                    '#ffffff', '#f1f5f9', '#fce7f3', '#fae8ff', '#ede9fe',
+                    '#e0e7ff', '#dbeafe', '#cffafe', '#ccfbf1', '#d1fae5',
+                    '#dcfce7', '#fef9c3', '#fef3c7', '#ffedd5', '#fee2e2',
+                    '#ffe4e6',
+                  ].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => updateOSBadgeColors(c, getContrastingColor(c))}
+                      className={`w-7 h-7 rounded-lg border transition-all ${osBadgeBg === c ? 'border-indigo-500 scale-110 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-700 hover:scale-105'}`}
+                      style={{ backgroundColor: c }}
+                      title={c}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => updateOSBadgeColors(osBadgeBg, '#ffffff')}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${osBadgeText === '#ffffff'
+                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                  }`}
+              >
+                <div className="w-3.5 h-3.5 rounded-full bg-white border border-slate-300 shrink-0" />
+                Texto Branco
+              </button>
+              <button
+                type="button"
+                onClick={() => updateOSBadgeColors(osBadgeBg, '#000000')}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${osBadgeText === '#000000'
+                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                  }`}
+              >
+                <div className="w-3.5 h-3.5 rounded-full bg-black shrink-0" />
+                Texto Preto
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={toggleOSBadgeBold}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${osBadgeBold
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                  }`}
+              >
+                <span className="font-black">N</span> Negrito
+              </button>
+              <button
+                type="button"
+                onClick={toggleOSBadgeItalic}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${osBadgeItalic
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                  }`}
+              >
+                <span className="italic font-black">I</span> Itálico
+              </button>
+            </div>
           </div>
 
           <button

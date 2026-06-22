@@ -366,7 +366,7 @@ export default function SoleReceiptView({
       )}
 
       {/* Header */}
-      <header className="p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800/40 backdrop-blur-md sticky top-0 z-30">
+      <header className="p-6 md:p-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 dark:border-slate-800/40">
         <div className="flex items-center gap-4">
           <button
             onClick={onBack}

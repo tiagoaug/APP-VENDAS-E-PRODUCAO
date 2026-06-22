@@ -369,6 +369,11 @@ export default function PurchaseFormView({
     [productionConfigs]
   );
 
+  const availableThirdParties = useMemo(
+    () => people.filter(p => p.isSupplier || p.isServiceProvider),
+    [people]
+  );
+
   const unitConfigs = useMemo(
     () => productionConfigs.filter(c => c.type === 'UNIT'),
     [productionConfigs]
@@ -1095,15 +1100,15 @@ export default function PurchaseFormView({
             <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
               Lançamento Financeiro
             </label>
-            <div className={`p-1.5 rounded-2xl border flex items-center gap-2 transition-all ${generateTransaction ? 'bg-indigo-50 border-indigo-100 dark:bg-indigo-950/30 dark:border-indigo-900/50' : 'bg-slate-50 border-slate-100 dark:bg-slate-800 dark:border-slate-700'}`}>
+            <div className={`p-1.5 rounded-2xl border flex items-center gap-2 transition-all ${generateTransaction ? 'bg-emerald-50 border-emerald-100 dark:bg-emerald-950/30 dark:border-emerald-900/50' : 'bg-slate-50 border-slate-100 dark:bg-slate-800 dark:border-slate-700'}`}>
               <button
                 type="button"
                 onClick={() => setGenerateTransaction(true)}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${generateTransaction ? "bg-white dark:bg-slate-700 shadow-lg text-indigo-600 dark:text-indigo-400" : "text-slate-400 dark:text-slate-500"}`}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${generateTransaction ? "bg-emerald-500 shadow-lg shadow-emerald-500/20 text-white" : "text-slate-400 dark:text-slate-500"}`}
                 aria-label="Gerar transação contábil"
                 title="Contábil"
               >
-                <div className={`w-2 h-2 rounded-full ${generateTransaction ? 'bg-indigo-500 animate-pulse' : 'bg-slate-300'}`} />
+                <div className={`w-2 h-2 rounded-full ${generateTransaction ? 'bg-white animate-pulse' : 'bg-slate-300'}`} />
                 Contábil
               </button>
               <button
@@ -1155,7 +1160,7 @@ export default function PurchaseFormView({
             <div className="flex bg-slate-50 dark:bg-slate-800 p-1.5 rounded-2xl border border-slate-100 dark:border-slate-700">
               <button
                 onClick={() => setPaymentTerm(PaymentTerm.CASH)}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${paymentTerm === PaymentTerm.CASH ? "bg-white dark:bg-slate-700 shadow-lg text-slate-900 dark:text-white" : "text-slate-400 dark:text-slate-500"}`}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${paymentTerm === PaymentTerm.CASH ? "bg-emerald-500 shadow-lg shadow-emerald-500/20 text-white" : "text-slate-600 dark:text-slate-300"}`}
                 aria-label="Pagamento à vista"
                 title="À Vista"
               >
@@ -1163,7 +1168,7 @@ export default function PurchaseFormView({
               </button>
               <button
                 onClick={() => setPaymentTerm(PaymentTerm.INSTALLMENTS)}
-                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${paymentTerm === PaymentTerm.INSTALLMENTS ? "bg-white dark:bg-slate-700 shadow-lg text-slate-900 dark:text-white" : "text-slate-400 dark:text-slate-500"}`}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${paymentTerm === PaymentTerm.INSTALLMENTS ? "bg-orange-500 shadow-lg shadow-orange-500/20 text-white" : "text-slate-600 dark:text-slate-300"}`}
                 aria-label="Pagamento a prazo"
                 title="A Prazo"
               >
@@ -1239,57 +1244,96 @@ export default function PurchaseFormView({
               const selectedMat = availableMaterials.find(m => m.id === item.materialId);
               const unitLabel = item.unit || (selectedMat ? getMaterialUnit(selectedMat) : '');
               const total = itemTotal(item);
+              const isPersonItem = item.kind === 'person';
 
               return (
                 <div
                   key={item.id}
                   className={`p-4 rounded-[2rem] border shadow-sm flex flex-col gap-3 relative group overflow-hidden ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
                 >
-                  {/* Campo 1: Seleção do Material */}
+                  {/* Tipo do item: Material x Fornecedor/Terceirizado */}
+                  <div className="flex gap-2 p-1 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => updateGeneralItem(index, { kind: 'material', personId: undefined })}
+                      className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${!isPersonItem ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 dark:text-slate-400'}`}
+                    >
+                      Material
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateGeneralItem(index, { kind: 'person', materialId: undefined, colorId: undefined, colorName: undefined, unit: undefined })}
+                      className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${isPersonItem ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 dark:text-slate-400'}`}
+                    >
+                      Fornecedor / Terceirizado
+                    </button>
+                  </div>
+
+                  {/* Campo 1: Seleção do Material ou do Fornecedor/Terceirizado */}
                   <div className="flex gap-3 items-start">
                     <div className="flex-1 flex flex-col gap-1">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white ml-1">Material</p>
-                      <ComboBox
-                        options={availableMaterials.map(m => ({ id: m.id, name: m.name }))}
-                        value={item.materialId || ''}
-                        onChange={(val) => {
-                          const mat = availableMaterials.find(m => m.id === val);
-                          updateGeneralItem(index, {
-                            materialId: val || undefined,
-                            description: mat?.name || item.description,
-                            unit: mat ? getMaterialUnit(mat) : item.unit,
-                            value: mat?.metadata?.baseCost ?? item.value,
-                          });
-                        }}
-                        placeholder="Pesquisar material..."
-                        isDarkMode={isDarkMode}
-                      />
-                      {!item.materialId && (
-                        <input
-                          type="text"
-                          placeholder="Ou descreva manualmente..."
-                          title="Descrição manual"
-                          className={`mt-1 w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-[12px] font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none`}
-                          value={item.description}
-                          onChange={(e) => updateGeneralItem(index, { description: e.target.value })}
-                        />
-                      )}
-                      {(selectedMat?.metadata?.colorIds?.length || 0) > 0 && (
-                        <select
-                          className={`mt-1 w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-[11px] font-bold outline-none ${isDarkMode ? 'text-white' : 'text-slate-700'}`}
-                          value={item.colorId || ''}
-                          onChange={(e) => {
-                            const cid = e.target.value;
-                            const cname = allColors.find(c => c.id === cid)?.name || '';
-                            updateGeneralItem(index, { colorId: cid || undefined, colorName: cname || undefined });
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white ml-1">
+                        {isPersonItem ? 'Fornecedor / Terceirizado' : 'Material'}
+                      </p>
+                      {isPersonItem ? (
+                        <ComboBox
+                          options={availableThirdParties.map(p => ({ id: p.id, name: p.name }))}
+                          value={item.personId || ''}
+                          onChange={(val) => {
+                            const person = availableThirdParties.find(p => p.id === val);
+                            updateGeneralItem(index, {
+                              personId: val || undefined,
+                              description: person?.name || item.description,
+                            });
                           }}
-                        >
-                          <option value="">Selecione a Cor...</option>
-                          {(selectedMat!.metadata!.colorIds || []).map((cid: string) => {
-                            const color = allColors.find(c => c.id === cid);
-                            return <option key={cid} value={cid}>{color?.name || cid}</option>;
-                          })}
-                        </select>
+                          placeholder="Pesquisar fornecedor ou terceirizado..."
+                          isDarkMode={isDarkMode}
+                        />
+                      ) : (
+                        <>
+                          <ComboBox
+                            options={availableMaterials.map(m => ({ id: m.id, name: m.name }))}
+                            value={item.materialId || ''}
+                            onChange={(val) => {
+                              const mat = availableMaterials.find(m => m.id === val);
+                              updateGeneralItem(index, {
+                                materialId: val || undefined,
+                                description: mat?.name || item.description,
+                                unit: mat ? getMaterialUnit(mat) : item.unit,
+                                value: mat?.metadata?.baseCost ?? item.value,
+                              });
+                            }}
+                            placeholder="Pesquisar material..."
+                            isDarkMode={isDarkMode}
+                          />
+                          {!item.materialId && (
+                            <input
+                              type="text"
+                              placeholder="Ou descreva manualmente..."
+                              title="Descrição manual"
+                              className={`mt-1 w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-[12px] font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none`}
+                              value={item.description}
+                              onChange={(e) => updateGeneralItem(index, { description: e.target.value })}
+                            />
+                          )}
+                          {(selectedMat?.metadata?.colorIds?.length || 0) > 0 && (
+                            <select
+                              className={`mt-1 w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-[11px] font-bold outline-none ${isDarkMode ? 'text-white' : 'text-slate-700'}`}
+                              value={item.colorId || ''}
+                              onChange={(e) => {
+                                const cid = e.target.value;
+                                const cname = allColors.find(c => c.id === cid)?.name || '';
+                                updateGeneralItem(index, { colorId: cid || undefined, colorName: cname || undefined });
+                              }}
+                            >
+                              <option value="">Selecione a Cor...</option>
+                              {(selectedMat!.metadata!.colorIds || []).map((cid: string) => {
+                                const color = allColors.find(c => c.id === cid);
+                                return <option key={cid} value={cid}>{color?.name || cid}</option>;
+                              })}
+                            </select>
+                          )}
+                        </>
                       )}
                     </div>
                     <div className="mt-5 flex flex-col gap-2 shrink-0">

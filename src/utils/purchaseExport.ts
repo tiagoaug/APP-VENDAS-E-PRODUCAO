@@ -14,6 +14,8 @@ interface ExportData {
   showFinancialValues: boolean;
   /** Quando true, agrupa itens de mesma referência + cor (somando quantidades/caixas e total) */
   grouped?: boolean;
+  /** Quando true, itens de varejo (com tamanho) aparecem como grade por cor (igual Solados), em vez de uma linha por tamanho */
+  showItemGrid?: boolean;
 }
 
 type ItemRow = {
@@ -31,7 +33,52 @@ const TYPE_LABELS: Record<string, string> = {
   [PurchaseType.SOLE]: 'Compra de Solados',
 };
 
-function buildItemRows(purchase: Purchase, products: Product[], grouped = false): ItemRow[] {
+function buildFlatRows(items: any[], products: Product[], grouped: boolean): ItemRow[] {
+  // Agrupamento: soma quantidades (caixas/unidades) e total dos itens que compartilham
+  // a mesma referência (produto) + mesma cor (variação) + mesma unidade (cx/un). Útil
+  // após duplicar modelos — em vez de várias linhas iguais, mostra uma só com o total.
+  if (grouped) {
+    const map = new Map<string, { productId: string; variationId: string; size?: string; isBox: boolean; quantity: number; lineTotal: number }>();
+    for (const raw of items) {
+      const key = `${raw.productId}::${raw.variationId}::${raw.size || ''}::${raw.isBox ? 'cx' : 'un'}`;
+      const acc = map.get(key) || { productId: raw.productId, variationId: raw.variationId, size: raw.size, isBox: !!raw.isBox, quantity: 0, lineTotal: 0 };
+      acc.quantity += Number(raw.quantity) || 0;
+      acc.lineTotal += (raw.cost || 0) * (Number(raw.quantity) || 0);
+      map.set(key, acc);
+    }
+    return Array.from(map.values()).map(g => {
+      const product = products.find(p => p.id === g.productId);
+      const variation = product?.variations?.find(v => v.id === g.variationId);
+      const ref = product?.reference ? `${product.reference} ` : '';
+      // Item com tamanho (size) é varejo — contado em pares, não em caixas.
+      const isRetail = !!g.size;
+      return {
+        title: `${ref}${product?.name || 'Produto não encontrado'}`,
+        subtitle: [variation?.colorName, g.size].filter(Boolean).join(' / ') || undefined,
+        qtyLabel: `${g.quantity} ${isRetail ? 'pares' : (g.isBox ? 'cx' : 'un')}`,
+        unitValue: g.quantity > 0 ? g.lineTotal / g.quantity : undefined,
+        lineTotal: g.lineTotal,
+      };
+    });
+  }
+
+  return items.map((raw: any) => {
+    const product = products.find(p => p.id === raw.productId);
+    const variation = product?.variations?.find(v => v.id === raw.variationId);
+    const ref = product?.reference ? `${product.reference} ` : '';
+    // Item com tamanho (size) é varejo — contado em pares, não em caixas.
+    const isRetail = !!raw.size;
+    return {
+      title: `${ref}${product?.name || 'Produto não encontrado'}`,
+      subtitle: [variation?.colorName, raw.size].filter(Boolean).join(' / ') || undefined,
+      qtyLabel: `${raw.quantity} ${isRetail ? 'pares' : (raw.isBox ? 'cx' : 'un')}`,
+      unitValue: raw.cost,
+      lineTotal: (raw.cost || 0) * (raw.quantity || 0),
+    };
+  });
+}
+
+function buildItemRows(purchase: Purchase, products: Product[], grouped = false, showItemGrid = false): ItemRow[] {
   if (purchase.type === PurchaseType.GENERAL) {
     return (purchase.generalItems || []).map(item => ({
       title: item.description,
@@ -55,46 +102,44 @@ function buildItemRows(purchase: Purchase, products: Product[], grouped = false)
     });
   }
 
-  const items = purchase.items || [];
+  const items = (purchase.items || []) as any[];
 
-  // Agrupamento: soma quantidades (caixas/unidades) e total dos itens que compartilham
-  // a mesma referência (produto) + mesma cor (variação) + mesma unidade (cx/un). Útil
-  // após duplicar modelos — em vez de várias linhas iguais, mostra uma só com o total.
-  if (grouped) {
-    const map = new Map<string, { productId: string; variationId: string; isBox: boolean; quantity: number; lineTotal: number }>();
-    for (const raw of items as any[]) {
-      const key = `${raw.productId}::${raw.variationId}::${raw.isBox ? 'cx' : 'un'}`;
-      const acc = map.get(key) || { productId: raw.productId, variationId: raw.variationId, isBox: !!raw.isBox, quantity: 0, lineTotal: 0 };
-      acc.quantity += Number(raw.quantity) || 0;
+  // "Mostrar Grade da Compra": itens de varejo (com tamanho) deixam de aparecer
+  // uma linha por tamanho e passam a formar uma grade por produto+cor (igual a
+  // Solados) — somando automaticamente tamanhos repetidos. Itens de atacado (sem
+  // tamanho) também entram na grade, usando "CX" como célula única (somando caixas
+  // repetidas da mesma cor).
+  if (showItemGrid) {
+    const gridMap = new Map<string, { productId: string; variationId: string; sizes: Record<string, number>; unitCost: number; lineTotal: number; hasRetailSize: boolean }>();
+    for (const raw of items) {
+      const sizeKey = raw.size || 'CX';
+      const key = `${raw.productId}::${raw.variationId}`;
+      const acc = gridMap.get(key) || { productId: raw.productId, variationId: raw.variationId, sizes: {} as Record<string, number>, unitCost: raw.cost || 0, lineTotal: 0, hasRetailSize: false };
+      acc.sizes[sizeKey] = (acc.sizes[sizeKey] || 0) + (Number(raw.quantity) || 0);
       acc.lineTotal += (raw.cost || 0) * (Number(raw.quantity) || 0);
-      map.set(key, acc);
+      if (raw.size) acc.hasRetailSize = true;
+      gridMap.set(key, acc);
     }
-    return Array.from(map.values()).map(g => {
+
+    const gridRows: ItemRow[] = Array.from(gridMap.values()).map(g => {
       const product = products.find(p => p.id === g.productId);
       const variation = product?.variations?.find(v => v.id === g.variationId);
       const ref = product?.reference ? `${product.reference} ` : '';
+      const totalQty = Object.values(g.sizes).reduce((acc, q) => acc + q, 0);
       return {
         title: `${ref}${product?.name || 'Produto não encontrado'}`,
         subtitle: variation?.colorName || undefined,
-        qtyLabel: `${g.quantity} ${g.isBox ? 'cx' : 'un'}`,
-        unitValue: g.quantity > 0 ? g.lineTotal / g.quantity : undefined,
+        qtyLabel: `${totalQty} ${g.hasRetailSize ? 'pares' : 'cx'}`,
+        unitValue: g.unitCost,
         lineTotal: g.lineTotal,
+        soleQuantities: g.sizes,
       };
     });
+
+    return gridRows;
   }
 
-  return items.map((raw: any) => {
-    const product = products.find(p => p.id === raw.productId);
-    const variation = product?.variations?.find(v => v.id === raw.variationId);
-    const ref = product?.reference ? `${product.reference} ` : '';
-    return {
-      title: `${ref}${product?.name || 'Produto não encontrado'}`,
-      subtitle: [variation?.colorName, raw.size].filter(Boolean).join(' / ') || undefined,
-      qtyLabel: `${raw.quantity} ${raw.isBox ? 'cx' : 'un'}`,
-      unitValue: raw.cost,
-      lineTotal: (raw.cost || 0) * (raw.quantity || 0),
-    };
-  });
+  return buildFlatRows(items, products, grouped);
 }
 
 export const exportPurchase = async (data: ExportData, formatType: 'pdf' | 'jpg') => {
@@ -127,11 +172,13 @@ const ROSE: [number, number, number] = [239, 68, 68];
 // ── PDF ───────────────────────────────────────────────────────────────────────
 
 async function generatePDF(data: ExportData, filename: string, orderNumber: string) {
-  const { purchase, suppliers, products, additionalNote, showFinancialValues, grouped } = data;
+  const { purchase, suppliers, products, additionalNote, showFinancialValues, grouped, showItemGrid } = data;
   const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
   const supplier = suppliers.find(s => s.id === purchase.supplierId);
-  const rows = buildItemRows(purchase, products, grouped);
+  const rows = buildItemRows(purchase, products, grouped, showItemGrid);
   const isSole = purchase.type === PurchaseType.SOLE;
+  const gridRows = rows.filter(r => r.soleQuantities && Object.keys(r.soleQuantities).length > 0);
+  const flatRows = rows.filter(r => !(r.soleQuantities && Object.keys(r.soleQuantities).length > 0));
 
   // Header Banner
   doc.setFillColor(...HEADER_BG);
@@ -177,9 +224,12 @@ async function generatePDF(data: ExportData, filename: string, orderNumber: stri
   const MARGIN = 20;
   const CONTENT_W = 210 - MARGIN * 2;
   let tableStartY = nextY + 15;
+  const pageH = doc.internal.pageSize.getHeight();
+  let finalY = tableStartY;
+  let usedTable = false;
 
-  if (isSole) {
-    // ── Grade cells rendering for sole items ──
+  if (gridRows.length > 0) {
+    // ── Grade cells rendering (Solados, ou Varejo com "Mostrar Grade da Compra") ──
     const CELL_W = 22, CELL_H = 13, CELL_GAP = 2;
     const availW = CONTENT_W - 8;
     const cellsPerRow = Math.floor((availW + CELL_GAP) / (CELL_W + CELL_GAP));
@@ -194,13 +244,12 @@ async function generatePDF(data: ExportData, filename: string, orderNumber: stri
     if (showFinancialValues) doc.text('TOTAL', MARGIN + CONTENT_W - 4, tableStartY + 7, { align: 'right' });
     tableStartY += 13;
 
-    const pageH = doc.internal.pageSize.getHeight();
     let y = tableStartY;
 
-    rows.forEach(row => {
+    gridRows.forEach(row => {
       const sizeEntries = Object.entries(row.soleQuantities || {}).filter(([, q]) => Number(q) > 0);
-      const gridRows = Math.max(1, Math.ceil(sizeEntries.length / cellsPerRow));
-      const gridH = gridRows * CELL_H + (gridRows - 1) * CELL_GAP;
+      const gridLines = Math.max(1, Math.ceil(sizeEntries.length / cellsPerRow));
+      const gridH = gridLines * CELL_H + (gridLines - 1) * CELL_GAP;
       const cardH = 9 + gridH + (showFinancialValues ? 9 : 5);
 
       if (y + cardH > pageH - 20) { doc.addPage(); y = 20; }
@@ -266,38 +315,29 @@ async function generatePDF(data: ExportData, filename: string, orderNumber: stri
       y += cardH + 4;
     });
 
-    // Financial Summary
-    if (showFinancialValues) {
-      if (y + 20 > pageH - 20) { doc.addPage(); y = 20; }
-      doc.setDrawColor(200);
-      doc.line(130, y + 6, 190, y + 6);
-      doc.setTextColor(...HEADER_BG);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
-      doc.text('Total:', 130, y + 14);
-      doc.text(`R$ ${purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 190, y + 14, { align: 'right' });
-      y += 24;
-    }
+    finalY = y + 6;
+  }
 
-    // Observations
-    if (additionalNote) {
-      doc.setTextColor(40, 40, 40);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10);
-      doc.text('Observações:', MARGIN, y + 8);
-      doc.setFont('helvetica', 'normal');
+  // ── Tabela simples: itens em caixa/atacado (sem tamanho), ou Compra Geral ──
+  // Roda sempre que houver linhas fora da grade; quando não há seção de grade
+  // (Solados desligado/Compra Geral/grade não habilitada), usa todas as linhas.
+  const rowsForTable = gridRows.length > 0 ? flatRows : rows;
+  if (rowsForTable.length > 0) {
+    let startY = finalY;
+    if (gridRows.length > 0) {
+      if (startY + 12 > pageH - 20) { doc.addPage(); startY = 20; }
       doc.setFontSize(9);
-      const splitNote = doc.splitTextToSize(additionalNote, CONTENT_W);
-      doc.text(splitNote, MARGIN, y + 16);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(...LABEL_COLOR);
+      doc.text('ITENS EM CAIXA (ATACADO)', MARGIN, startY);
+      startY += 4;
     }
 
-  } else {
-    // ── Original autoTable rendering for non-sole types ──
     const head = showFinancialValues
       ? [['Item / Descrição', 'Qtd', 'Vlr. Unit.', 'Total']]
       : [['Item / Descrição', 'Qtd']];
 
-    const tableData = rows.map(row => {
+    const tableData = rowsForTable.map(row => {
       const description = [row.title, row.subtitle].filter(Boolean).join('\n');
       const line: any[] = [
         { content: description, styles: { textColor: LABEL_COLOR } },
@@ -313,7 +353,7 @@ async function generatePDF(data: ExportData, filename: string, orderNumber: stri
     });
 
     autoTable(doc, {
-      startY: tableStartY,
+      startY,
       head,
       body: tableData,
       theme: 'plain',
@@ -330,27 +370,54 @@ async function generatePDF(data: ExportData, filename: string, orderNumber: stri
       }
     });
 
-    const tableFinalY = (doc as any).lastAutoTable.finalY + 10;
+    finalY = (doc as any).lastAutoTable.finalY + 10;
+    usedTable = true;
+  }
 
+  // ── Total + Observações ──
+  if (usedTable) {
+    // Layout em duas colunas (Total à direita, Observações à esquerda, mesma altura)
     if (showFinancialValues) {
       doc.setDrawColor(200);
-      doc.line(130, tableFinalY, 190, tableFinalY);
+      doc.line(130, finalY, 190, finalY);
       doc.setTextColor(...HEADER_BG);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(12);
-      doc.text('Total:', 130, tableFinalY + 9);
-      doc.text(`R$ ${purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 190, tableFinalY + 9, { align: 'right' });
+      doc.text('Total:', 130, finalY + 9);
+      doc.text(`R$ ${purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 190, finalY + 9, { align: 'right' });
     }
-
     if (additionalNote) {
       doc.setTextColor(40, 40, 40);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(10);
-      doc.text('Observações:', 20, tableFinalY);
+      doc.text('Observações:', MARGIN, finalY);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       const splitNote = doc.splitTextToSize(additionalNote, 90);
-      doc.text(splitNote, 20, tableFinalY + 7);
+      doc.text(splitNote, MARGIN, finalY + 7);
+    }
+  } else {
+    // Apenas grade (sem tabela) — Total e Observações empilhados
+    if (showFinancialValues) {
+      if (finalY + 20 > pageH - 20) { doc.addPage(); finalY = 20; }
+      doc.setDrawColor(200);
+      doc.line(130, finalY + 6, 190, finalY + 6);
+      doc.setTextColor(...HEADER_BG);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.text('Total:', 130, finalY + 14);
+      doc.text(`R$ ${purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 190, finalY + 14, { align: 'right' });
+      finalY += 24;
+    }
+    if (additionalNote) {
+      doc.setTextColor(40, 40, 40);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text('Observações:', MARGIN, finalY + 8);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      const splitNote = doc.splitTextToSize(additionalNote, CONTENT_W);
+      doc.text(splitNote, MARGIN, finalY + 16);
     }
   }
 
@@ -365,10 +432,14 @@ async function generatePDF(data: ExportData, filename: string, orderNumber: stri
 // ── JPG ───────────────────────────────────────────────────────────────────────
 
 async function generateJPG(data: ExportData, filename: string, orderNumber: string) {
-  const { purchase, suppliers, products, additionalNote, showFinancialValues, grouped } = data;
+  const { purchase, suppliers, products, additionalNote, showFinancialValues, grouped, showItemGrid } = data;
   const supplier = suppliers.find(s => s.id === purchase.supplierId);
-  const rows = buildItemRows(purchase, products, grouped);
+  const rows = buildItemRows(purchase, products, grouped, showItemGrid);
   const isSole = purchase.type === PurchaseType.SOLE;
+  const gridItemRows = rows.filter(r => r.soleQuantities && Object.keys(r.soleQuantities).length > 0);
+  const flatItemRows = rows.filter(r => !(r.soleQuantities && Object.keys(r.soleQuantities).length > 0));
+  const showGridSection = gridItemRows.length > 0;
+  const flatSectionRows = showGridSection ? flatItemRows : rows;
 
   const W = 600;
   const S = 2;
@@ -416,10 +487,10 @@ async function generateJPG(data: ExportData, filename: string, orderNumber: stri
 
   let itemsH = 0;
 
-  const soleItemLayouts = isSole ? rows.map(row => {
+  const soleItemLayouts = showGridSection ? gridItemRows.map(row => {
     const sizeEntries = Object.entries(row.soleQuantities || {}).filter(([, q]) => Number(q) > 0);
-    const gridRows = Math.max(1, Math.ceil(sizeEntries.length / cellsPerRow));
-    const gridH = gridRows * CELL_H + (gridRows - 1) * CELL_GAP;
+    const gridLines = Math.max(1, Math.ceil(sizeEntries.length / cellsPerRow));
+    const gridH = gridLines * CELL_H + (gridLines - 1) * CELL_GAP;
     const rowH = 16 + 8 + gridH + (showFinancialValues ? 30 : 12) + 8;
     itemsH += rowH;
     return { row, sizeEntries, rowH };
@@ -428,7 +499,11 @@ async function generateJPG(data: ExportData, filename: string, orderNumber: stri
   const VALUE_COL_W = showFinancialValues ? 120 : 0;
   const DESC_W = W - pad * 2 - VALUE_COL_W;
 
-  const regularItemLayouts = !isSole ? rows.map(row => {
+  // Pequeno rótulo de seção entre a grade e os itens em caixa (atacado), só quando ambos aparecem juntos
+  const SECTION_LABEL_H = (showGridSection && flatSectionRows.length > 0) ? 30 : 0;
+  itemsH += SECTION_LABEL_H;
+
+  const regularItemLayouts = flatSectionRows.length > 0 ? flatSectionRows.map(row => {
     const lines: { text: string; primary: boolean }[] = [];
     mx.font = '700 13px Arial';
     wrapText(mx, `${row.qtyLabel}   ·   ${row.title}`, DESC_W - 12).forEach(l => lines.push({ text: l, primary: true }));
@@ -506,7 +581,7 @@ async function generateJPG(data: ExportData, filename: string, orderNumber: stri
   ctx.font = 'bold 9px Arial';
   ctx.fillStyle = '#64748b';
   ctx.textAlign = 'left';
-  ctx.fillText(isSole ? 'MODELO / COR — GRADE DE TAMANHOS' : 'ITEM / DESCRIÇÃO', pad + 12, y + TH_H / 2 + 4);
+  ctx.fillText(showGridSection ? 'MODELO / COR — GRADE DE TAMANHOS' : 'ITEM / DESCRIÇÃO', pad + 12, y + TH_H / 2 + 4);
   if (showFinancialValues) {
     ctx.textAlign = 'right';
     ctx.fillText('TOTAL', W - pad - 12, y + TH_H / 2 + 4);
@@ -515,8 +590,8 @@ async function generateJPG(data: ExportData, filename: string, orderNumber: stri
   ctx.beginPath(); ctx.moveTo(pad, y + TH_H); ctx.lineTo(W - pad, y + TH_H); ctx.stroke();
   y += TH_H;
 
-  if (isSole) {
-    // ── Sole items with grade grid ──
+  if (showGridSection) {
+    // ── Itens com grade (Solados, ou Varejo com "Mostrar Grade da Compra") ──
     soleItemLayouts.forEach(({ row, sizeEntries, rowH }, i) => {
       if (i % 2 === 1) {
         roundRectPath(ctx, pad + 4, y + 4, W - pad * 2 - 8, rowH - 8, 12);
@@ -585,9 +660,17 @@ async function generateJPG(data: ExportData, filename: string, orderNumber: stri
       ctx.beginPath(); ctx.moveTo(pad, y + rowH); ctx.lineTo(W - pad, y + rowH); ctx.stroke();
       y += rowH;
     });
+  }
 
-  } else {
-    // ── Regular items ──
+  if (flatSectionRows.length > 0) {
+    if (showGridSection) {
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 13px Arial';
+      ctx.fillStyle = '#64748b';
+      ctx.fillText('ITENS EM CAIXA (ATACADO)', pad, y + 18);
+      y += SECTION_LABEL_H;
+    }
+    // ── Itens em linha simples (atacado, ou Compra Geral) ──
     regularItemLayouts.forEach((item, i) => {
       if (i % 2 === 1) { ctx.fillStyle = '#fafafa'; ctx.fillRect(pad, y, W - pad * 2, item.rowH); }
       const tY = y + (item.rowH - (item.lines.length - 1) * 17) / 2;
