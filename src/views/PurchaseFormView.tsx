@@ -444,7 +444,7 @@ export default function PurchaseFormView({
       {
         id: newId,
         productId: p.id,
-        isBox: type === PurchaseType.REPLENISHMENT,
+        isBox: (p.saleTypes?.[0] ?? p.type) === SaleType.WHOLESALE,
         cost: p.costPrice || 0,
         unitCost: calcUnitCost(p.costPrice || 0, p),
         saleType: p.saleTypes?.[0] ?? p.type,
@@ -628,7 +628,9 @@ export default function PurchaseFormView({
               variationId,
               quantity: typedData.quantity,
               size: typedData.size,
-              isBox: b.isBox,
+              // Deriva sempre de saleType (não da flag isBox armazenada no bloco), pra
+              // nunca dessincronizar com a Modalidade (Varejo/Atacado) escolhida acima.
+              isBox: b.saleType === SaleType.WHOLESALE,
               cost: b.cost,
               unitCost: b.unitCost,
               saleType: b.saleType,
@@ -1844,7 +1846,7 @@ export default function PurchaseFormView({
                             type="button"
                             onClick={() => {
                               const newType = block.saleType === SaleType.RETAIL ? SaleType.WHOLESALE : SaleType.RETAIL;
-                              updateBlock(index, { saleType: newType });
+                              updateBlock(index, { saleType: newType, isBox: newType === SaleType.WHOLESALE });
                             }}
                             className={`w-full text-[9px] font-black py-3 rounded-2xl border-2 uppercase tracking-widest transition-all ${block.saleType === SaleType.WHOLESALE ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-slate-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/50'}`}
                             aria-label="Mudar modalidade de reposição"

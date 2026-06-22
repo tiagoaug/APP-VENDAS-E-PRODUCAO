@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, Product } from '../types';
+import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, Product, SaleType } from '../types';
 import { Search, Plus, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash, ChevronDown, ChevronUp, Tag, FileText } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -88,7 +88,7 @@ export default function FinancialView({
               </>
             )}
           </div>
-          <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 shrink-0">{stockItem.quantity} {stockItem.isBox ? 'cx' : 'un'}</span>
+          <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 shrink-0">{stockItem.quantity} {(stockItem.size || stockItem.saleType === SaleType.RETAIL || !stockItem.isBox) ? 'pares' : 'cx'}</span>
         </div>
       );
     }

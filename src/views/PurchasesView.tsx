@@ -1,5 +1,5 @@
 ﻿import { useState, useMemo } from "react";
-import { Purchase, Person, Product, PurchaseType, PaymentStatus, PaymentTerm } from "../types";
+import { Purchase, Person, Product, PurchaseType, PaymentStatus, PaymentTerm, SaleType } from "../types";
 import {
   ShoppingCart,
   Plus,
@@ -203,7 +203,7 @@ export default function PurchasesView({
               </>
             )}
           </div>
-          <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 shrink-0">{stockItem.quantity} {stockItem.isBox ? 'cx' : 'un'}</span>
+          <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400 shrink-0">{stockItem.quantity} {(stockItem.size || stockItem.saleType === SaleType.RETAIL || !stockItem.isBox) ? 'pares' : 'cx'}</span>
         </div>
       );
     }
@@ -540,6 +540,13 @@ export default function PurchasesView({
                         <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-rose-500 border border-white dark:border-slate-900 rounded-full animate-pulse" />
                       </button>
                     )}
+                    {purchase.paymentTerm === PaymentTerm.CASH ? (
+                      <span className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-black tracking-wider shrink-0">Quitada</span>
+                    ) : (
+                      <span className={`px-2 py-1 rounded-lg text-[10px] font-black tracking-wider shrink-0 ${purchase.paymentStatus === PaymentStatus.PAID ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : 'animate-pulse-orange-yellow'}`}>
+                        {purchase.paymentStatus === PaymentStatus.PAID ? 'Quitada' : 'Pendente'}
+                      </span>
+                    )}
                     {purchase.type === PurchaseType.REPLENISHMENT ? (
                       <span className="flex items-center justify-center w-6 h-6 rounded-full bg-indigo-50 dark:bg-indigo-900/30">
                         <Package size={13} strokeWidth={2.5} className="text-indigo-500" />
@@ -582,19 +589,10 @@ export default function PurchasesView({
                     </div>
                   </div>
 
-                  {/* Linha 2: lote + status pagamento */}
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 min-w-0">
-                      <Hash size={12} strokeWidth={3} />
-                      #{purchase.batchNumber || purchase.id.slice(-6).toUpperCase()}
-                    </div>
-                    {purchase.paymentTerm === PaymentTerm.CASH ? (
-                      <span className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-black tracking-wider shrink-0">Quitada</span>
-                    ) : (
-                      <span className={`px-2 py-1 rounded-lg text-[10px] font-black tracking-wider shrink-0 ${purchase.paymentStatus === PaymentStatus.PAID ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : 'animate-pulse-orange-yellow'}`}>
-                        {purchase.paymentStatus === PaymentStatus.PAID ? 'Quitada' : 'Pendente'}
-                      </span>
-                    )}
+                  {/* Linha 2: lote */}
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 min-w-0">
+                    <Hash size={12} strokeWidth={3} />
+                    #{purchase.batchNumber || purchase.id.slice(-6).toUpperCase()}
                   </div>
 
                   {/* Linha 3: badges extras */}
