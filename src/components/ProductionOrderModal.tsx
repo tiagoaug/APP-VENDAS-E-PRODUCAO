@@ -69,7 +69,10 @@ export default function ProductionOrderModal({
       const variation = product?.variations.find(v => v.id === item.variationId);
       if (!product || !variation) return;
 
-      const key = `${item.productId}-${item.variationId}`;
+      // Inclui saleType na chave: um pedido pode misturar Atacado e Varejo da MESMA
+      // cor (produto híbrido) — sem isso, o segundo item seria mesclado no grupo do
+      // primeiro, perdendo a modalidade.
+      const key = `${item.productId}-${item.variationId}-${item.saleType}`;
       if (!map.has(key)) {
         const stock: Record<string, number> = {};
         

@@ -21,10 +21,12 @@ import {
   Truck,
   Factory,
   Users,
+  Wrench,
 } from "lucide-react";
 import PrintLabelEditorModal from "../components/PrintLabelEditorModal";
 import Modal from "../components/Modal";
 import { toast } from '../utils/toast';
+import { isHybridProduct, getWholesaleBoxes, getRetailPairs, getStockValue, getWholesaleValue, getRetailValue, productHasSaleType } from '../utils/stockPools';
 
 // Capacidade (pares) de uma embalagem avulsa: usa `metadata.capacity` quando
 // configurado; senão recai para o número embutido no nome (ex.: "12 pares
@@ -47,6 +49,7 @@ interface StockViewProps {
   onRevertStockLot?: (stockLot: StockLot) => Promise<StockLotRevertPreview>;
   sales?: Sale[];
   productionOrders?: ProductionOrder[];
+  onFixPkgAllocations?: () => Promise<{ fixed: number; total: number }>;
 }
 
 export default function StockView({
@@ -59,6 +62,7 @@ export default function StockView({
   onRevertStockLot,
   sales = [],
   productionOrders = [],
+  onFixPkgAllocations,
 }: StockViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [isEditing, setIsEditing] = useState(false);
@@ -67,13 +71,32 @@ export default function StockView({
   const [productForLabels, setProductForLabels] = useState<Product | null>(null);
   const [activeTab, setActiveTab] = useState<'estoque' | 'clientes' | 'lotes'>('clientes');
   const [showEntryHistory, setShowEntryHistory] = useState(false);
+  const [stockTypeFilter, setStockTypeFilter] = useState<'ALL' | SaleType.WHOLESALE | SaleType.RETAIL>('ALL');
+  const [fixingAlloc, setFixingAlloc] = useState(false);
+  const [fixAllocResult, setFixAllocResult] = useState<{ fixed: number; total: number } | null>(null);
+  const [showFixAllocModal, setShowFixAllocModal] = useState(false);
 
   const packagingItems = productionConfigs.filter(c => c.type === 'PACKAGING');
 
+  // Checagem somente leitura — mesma regra de handleFixPkgAllocations (App.tsx), só
+  // pra saber QUANTOS produtos têm alocação de embalagem maior que o estoque real,
+  // sem alterar nada. A correção de fato só acontece ao clicar no botão.
+  const pkgAllocIssuesCount = useMemo(() => {
+    return products.reduce((count, product) => {
+      const hasIssue = product.variations.some((v) => {
+        const boxQty = v.stock?.['WHOLESALE'] ?? 0;
+        const totalAlloc = (v.stockPkgAllocations || []).reduce((s, a) => s + a.qty, 0);
+        return totalAlloc > boxQty;
+      });
+      return hasIssue ? count + 1 : count;
+    }, 0);
+  }, [products]);
+
   const filteredProducts = products.filter(
     (p) =>
-      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.reference.toLowerCase().includes(searchTerm.toLowerCase()),
+      (p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.reference.toLowerCase().includes(searchTerm.toLowerCase())) &&
+      (stockTypeFilter === 'ALL' || productHasSaleType(p, stockTypeFilter)),
   );
 
   const handleStartEditing = () => {
@@ -220,6 +243,42 @@ export default function StockView({
           </button>
         )}
 
+        {!isEditing && onFixPkgAllocations && (
+          <button
+            type="button"
+            disabled={fixingAlloc}
+            onClick={async () => {
+              setFixingAlloc(true);
+              try {
+                const result = await onFixPkgAllocations();
+                setFixAllocResult(result);
+                setShowFixAllocModal(true);
+              } finally {
+                setFixingAlloc(false);
+              }
+            }}
+            className={`w-full flex items-center justify-between gap-2 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] disabled:opacity-60 ${isDarkMode ? 'bg-slate-900 border border-slate-800 text-slate-300' : 'bg-white border border-slate-100 text-slate-500 shadow-sm'}`}
+            title="Corrigir alocações de embalagem inconsistentes"
+            aria-label="Corrigir inconsistências nas alocações de embalagem"
+          >
+            <div className="flex items-center gap-2">
+              <Wrench size={16} strokeWidth={2.5} className={pkgAllocIssuesCount > 0 ? 'text-orange-500' : 'text-emerald-500'} />
+              <span className="text-[10px] font-black uppercase tracking-widest">
+                {fixingAlloc ? 'Corrigindo...' : 'Corrigir Alocações de Embalagem'}
+              </span>
+            </div>
+            {!fixingAlloc && (
+              pkgAllocIssuesCount > 0 ? (
+                <span className="flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-amber-500 text-white text-[10px] font-black shrink-0">
+                  {pkgAllocIssuesCount}
+                </span>
+              ) : (
+                <CheckCircle2 size={16} strokeWidth={2.5} className="text-emerald-500 shrink-0" />
+              )
+            )}
+          </button>
+        )}
+
         {/* Toggle de abas */}
         <div className={`flex gap-1 p-1 rounded-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-slate-100'}`}>
           <button
@@ -264,11 +323,55 @@ export default function StockView({
               : 'bg-gradient-to-br from-indigo-600 via-indigo-600 to-indigo-800 border-indigo-500 text-white'
           }`}>
             <div className="absolute -right-10 -top-10 w-40 h-40 bg-white/5 rounded-full blur-2xl pointer-events-none" />
-            <p className={`text-[10px] font-black uppercase tracking-[0.2em] mb-1 ${isDarkMode ? 'text-slate-500' : 'text-indigo-100/70'}`}>Valor Estimado em Estoque</p>
+            <p className={`text-[10px] font-black uppercase tracking-[0.2em] mb-1 ${isDarkMode ? 'text-slate-500' : 'text-indigo-100/70'}`}>
+              Valor Estimado em Estoque{stockTypeFilter !== 'ALL' && (stockTypeFilter === SaleType.WHOLESALE ? ' · Atacado' : ' · Varejo')}
+            </p>
             <p className={`text-3xl font-black italic tracking-tighter ${isDarkMode ? 'text-white' : 'text-white'}`}>
               <span className="text-sm not-italic opacity-50 mr-2">R$</span>
-              {products.reduce((acc, p) => acc + (p.variations.reduce((vAcc, v) => vAcc + (p.type === SaleType.WHOLESALE ? (v.stock['WHOLESALE'] || 0) : (Object.values(v.stock) as number[]).reduce((sum, s) => sum + s, 0)), 0) * (p.costPrice || 0)), 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {products.reduce((acc, p) => acc + p.variations.reduce((vAcc, v) => {
+                if (stockTypeFilter === SaleType.WHOLESALE) return vAcc + getWholesaleValue(p, v).cost;
+                if (stockTypeFilter === SaleType.RETAIL) return vAcc + getRetailValue(p, v).cost;
+                return vAcc + getStockValue(p, v).costValue;
+              }, 0), 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
+          </div>
+        )}
+
+        {activeTab === 'estoque' && (
+          <div className={`flex gap-1 p-1 rounded-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-slate-100'}`}>
+            <button
+              type="button"
+              onClick={() => setStockTypeFilter('ALL')}
+              className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                stockTypeFilter === 'ALL'
+                  ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm')
+                  : 'text-slate-400'
+              }`}
+            >
+              Todos
+            </button>
+            <button
+              type="button"
+              onClick={() => setStockTypeFilter(SaleType.WHOLESALE)}
+              className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                stockTypeFilter === SaleType.WHOLESALE
+                  ? 'bg-amber-500 text-white shadow-sm shadow-amber-500/30'
+                  : 'text-slate-400'
+              }`}
+            >
+              Atacado
+            </button>
+            <button
+              type="button"
+              onClick={() => setStockTypeFilter(SaleType.RETAIL)}
+              className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                stockTypeFilter === SaleType.RETAIL
+                  ? 'bg-indigo-600 text-white shadow-sm shadow-indigo-600/30'
+                  : 'text-slate-400'
+              }`}
+            >
+              Varejo
+            </button>
           </div>
         )}
 
@@ -309,6 +412,7 @@ export default function StockView({
               onUpdateStock={(variationId, key, value) => updateProductStock(product.id, variationId, key, value)}
               onUpdatePkgAllocations={(variationId, allocations) => handleUpdatePkgAllocations(isEditing ? (editedStocks[product.id] || product) : product, variationId, allocations)}
               onPrint={() => setProductForLabels(product)}
+              poolFilter={stockTypeFilter}
             />
           ))}
 
@@ -342,6 +446,39 @@ export default function StockView({
         onPreviewRevertStockLot={onPreviewRevertStockLot}
         onRevertStockLot={onRevertStockLot}
       />
+
+      <Modal
+        isOpen={showFixAllocModal}
+        onClose={() => setShowFixAllocModal(false)}
+        title="Correção de Embalagens"
+        icon={<Wrench size={20} />}
+        maxWidth="max-w-sm"
+      >
+        {fixAllocResult && (
+          <div className="flex flex-col items-center gap-4 py-2 text-center">
+            <div className={`w-16 h-16 rounded-full flex items-center justify-center ${fixAllocResult.fixed > 0 ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500' : 'bg-slate-50 dark:bg-slate-800 text-slate-400'}`}>
+              <CheckCircle2 size={32} strokeWidth={2.5} />
+            </div>
+            <div>
+              <p className={`text-2xl font-black tracking-tighter ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                {fixAllocResult.fixed} de {fixAllocResult.total}
+              </p>
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                {fixAllocResult.fixed > 0
+                  ? `${fixAllocResult.fixed} produto(s) tinham embalagem alocada além do estoque e foram corrigidos.`
+                  : 'Nenhuma inconsistência encontrada — estoque e embalagens já estão consistentes.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowFixAllocModal(false)}
+              className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
+            >
+              Fechar
+            </button>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
@@ -369,6 +506,23 @@ const PedidosClientesPanel: React.FC<{
     return map;
   }, [stockLots]);
 
+  // Quantidade já disponível no estoque comum para os itens ainda não separados de
+  // uma venda SEM ordem de produção — vendas com produção só podem separar a partir do
+  // lote reservado (nunca caem no estoque agregado), por isso retornam sempre 0 aqui.
+  const getStockReadyQty = (sale: Sale) => {
+    if (sale.productionOrderId) return 0;
+    return sale.items.reduce((sum, item) => {
+      if (item.fulfilled === true) return sum;
+      const needed = item.quantity - (item.boxesSeparated || 0);
+      if (needed <= 0) return sum;
+      const product = products.find(p => p.id === item.productId);
+      const variation = product?.variations.find(v => v.id === item.variationId);
+      const key = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || '');
+      const available = variation?.stock[key] || 0;
+      return sum + Math.min(available, needed);
+    }, 0);
+  };
+
   // Customer orders: all non-cancelled SALE status orders, excluding explicit STOCK destination
   const customerSales = useMemo(() => {
     return sales
@@ -384,22 +538,27 @@ const PedidosClientesPanel: React.FC<{
       .sort((a, b) => b.date - a.date);
   }, [sales, term]);
 
-  const prontos = customerSales.filter(s =>
-    s.deliveryStatus !== 'DELIVERED' && (reservedBySale.get(s.id) || []).length > 0
-  );
-  const aguardando = customerSales.filter(s =>
-    s.deliveryStatus !== 'DELIVERED' && (reservedBySale.get(s.id) || []).length === 0
-  );
+  // Pronta para expedir: tem lote reservado da produção OU (sem ordem de produção)
+  // já tem estoque comum suficiente para separar pelo menos um item. Sem nenhum dos
+  // dois, é uma venda genuinamente aguardando — produção, no caso de pedidos com OP, ou
+  // reposição de estoque, no caso de vendas de estoque comum.
+  const isReadyToShip = (s: Sale) =>
+    (reservedBySale.get(s.id) || []).length > 0 || getStockReadyQty(s) > 0;
+
+  const prontos = customerSales.filter(s => s.deliveryStatus !== 'DELIVERED' && isReadyToShip(s));
+  const aguardando = customerSales.filter(s => s.deliveryStatus !== 'DELIVERED' && !isReadyToShip(s));
   const entregues = customerSales.filter(s => s.deliveryStatus === 'DELIVERED');
 
   const SaleRow: React.FC<{ sale: Sale }> = ({ sale }) => {
     const lots = reservedBySale.get(sale.id) || [];
     const po = productionOrders.find(o => o.id === sale.productionOrderId);
+    const stockReadyQty = getStockReadyQty(sale);
+    const fromGeneralStock = lots.length === 0 && stockReadyQty > 0;
     const totalBoxes = lots.reduce((s, l) => s + (l.boxQty ?? 1), 0);
     const totalPairs = lots.reduce((s, l) => s + l.totalPairs, 0);
     const isDelivered = sale.deliveryStatus === 'DELIVERED';
-    const isReady = !isDelivered && lots.length > 0;
-    const isWaiting = !isDelivered && lots.length === 0;
+    const isReady = !isDelivered && (lots.length > 0 || stockReadyQty > 0);
+    const isWaiting = !isDelivered && !isReady;
 
     return (
       <div className={`p-3 rounded-2xl border ${
@@ -429,10 +588,18 @@ const PedidosClientesPanel: React.FC<{
             </p>
           </div>
           <div className="text-right shrink-0">
-            {isReady && (
+            {isReady && lots.length > 0 && (
               <div className="flex flex-col items-end">
                 <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400">{totalBoxes} cx</span>
                 <span className="text-[9px] font-bold text-slate-400">{totalPairs} pares</span>
+              </div>
+            )}
+            {isReady && fromGeneralStock && (
+              <div className="flex flex-col items-end">
+                <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400">
+                  {stockReadyQty} {sale.items.some(it => it.saleType === SaleType.WHOLESALE) ? 'cx' : 'pares'}
+                </span>
+                <span className="text-[9px] font-bold text-slate-400">estoque comum</span>
               </div>
             )}
             {isWaiting && po && (
@@ -535,7 +702,7 @@ const PedidosClientesPanel: React.FC<{
         defaultOpen={true}
       />
       <Section
-        title="Aguardando Produção"
+        title="Aguardando Expedição"
         icon={<Clock size={16} />}
         color="text-orange-500"
         items={aguardando}
@@ -978,7 +1145,8 @@ const StockCard: React.FC<{
   onUpdateStock: (variationId: string, key: string, value: number) => void;
   onUpdatePkgAllocations: (variationId: string, allocations: StockPkgAllocation[]) => void;
   onPrint: () => void;
-}> = ({ product, packagingItems, isDarkMode, isEditing, onUpdateStock, onUpdatePkgAllocations, onPrint }) => {
+  poolFilter?: 'ALL' | SaleType.WHOLESALE | SaleType.RETAIL;
+}> = ({ product, packagingItems, isDarkMode, isEditing, onUpdateStock, onUpdatePkgAllocations, onPrint, poolFilter = 'ALL' }) => {
   // Padrão "avulso a escolha do cliente" (sem tamanhos fixos) — referência de
   // capacidade para alocações avulsas que não correspondem a nenhuma embalagem cadastrada.
   const avulsoPkg = packagingItems.find(p => p.metadata?.mode === 'FREE');
@@ -1005,11 +1173,25 @@ const StockCard: React.FC<{
     sizeInput: Record<string, number>;
   } | null>(null);
 
-  const totalStock = product.variations.reduce((acc, v) => {
-    return acc + (product.type === SaleType.WHOLESALE ? (v.stock['WHOLESALE'] || 0) : (Object.values(v.stock) as number[]).reduce((sum, s) => sum + s, 0));
-  }, 0);
+  const hybrid = isHybridProduct(product);
+  const hasWholesale = productHasSaleType(product, SaleType.WHOLESALE);
+  const hasRetail = productHasSaleType(product, SaleType.RETAIL);
+  // Filtro Atacado/Varejo (toggle no topo da aba Estoque): em produto híbrido,
+  // restringe quais das duas seções aparecem nesta capsula sem afetar os dados.
+  const showWholesale = hasWholesale && poolFilter !== SaleType.RETAIL;
+  const showRetail = hasRetail && poolFilter !== SaleType.WHOLESALE;
+  const wholesaleBoxesTotal = product.variations.reduce((acc, v) => acc + getWholesaleBoxes(product, v), 0);
+  const retailPairsTotal = product.variations.reduce((acc, v) => acc + getRetailPairs(product, v), 0);
+  const isWholesaleLow = wholesaleBoxesTotal <= product.minStockInBoxes;
+  const isRetailLow = retailPairsTotal <= (product.minStockRetailPairs ?? 0);
 
-  const isLowStock = totalStock <= product.minStockInBoxes * 12;
+  const totalStock = hybrid
+    ? wholesaleBoxesTotal + retailPairsTotal
+    : product.variations.reduce((acc, v) => {
+        return acc + (product.type === SaleType.WHOLESALE ? (v.stock['WHOLESALE'] || 0) : (Object.values(v.stock) as number[]).reduce((sum, s) => sum + s, 0));
+      }, 0);
+
+  const isLowStock = hybrid ? (isWholesaleLow || isRetailLow) : totalStock <= product.minStockInBoxes * 12;
 
   const toggleVar = (id: string) => {
     setExpandedVars(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -1059,15 +1241,40 @@ const StockCard: React.FC<{
       {!isCollapsed && (
       <>
       {/* Totais */}
-      <div className="grid grid-cols-2 gap-4 py-5 border-y border-slate-100 dark:border-slate-800">
-        <div className="flex flex-col gap-3">
-          <div>
-            <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Estoque Total</p>
-            <p className={`text-3xl font-black italic tracking-tighter ${isLowStock ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>
-              {totalStock}
-            </p>
-            <p className="text-xs font-bold text-slate-400 uppercase mt-0.5">{product.type === SaleType.WHOLESALE ? 'CAIXAS' : 'UNIDADES'}</p>
-          </div>
+      {hybrid ? (
+        <div className="flex flex-col gap-4 py-5 border-y border-slate-100 dark:border-slate-800">
+          {showWholesale && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest mb-1">Estoque Atacado</p>
+                <p className={`text-2xl font-black italic tracking-tighter ${isWholesaleLow ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>
+                  {wholesaleBoxesTotal}
+                </p>
+                <p className="text-xs font-bold text-slate-400 uppercase mt-0.5">CAIXAS</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Mínimo</p>
+                <p className="text-2xl font-black italic tracking-tighter text-indigo-500">{product.minStockInBoxes}</p>
+                <p className="text-xs font-bold text-slate-400 uppercase mt-0.5">CAIXAS</p>
+              </div>
+            </div>
+          )}
+          {showRetail && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest mb-1">Estoque Varejo</p>
+                <p className={`text-2xl font-black italic tracking-tighter ${isRetailLow ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>
+                  {retailPairsTotal}
+                </p>
+                <p className="text-xs font-bold text-slate-400 uppercase mt-0.5">PARES</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Mínimo</p>
+                <p className="text-2xl font-black italic tracking-tighter text-indigo-500">{product.minStockRetailPairs ?? 0}</p>
+                <p className="text-xs font-bold text-slate-400 uppercase mt-0.5">PARES</p>
+              </div>
+            </div>
+          )}
           <button
             type="button"
             onClick={onPrint}
@@ -1078,21 +1285,42 @@ const StockCard: React.FC<{
             <span className="text-xs font-black uppercase tracking-widest">Imprimir</span>
           </button>
         </div>
-        <div className="text-right">
-          <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Mínimo</p>
-          <p className="text-3xl font-black italic tracking-tighter text-indigo-500">
-            {product.minStockInBoxes}
-          </p>
-          <p className="text-xs font-bold text-slate-400 uppercase mt-0.5">CAIXAS</p>
+      ) : (
+        <div className="grid grid-cols-2 gap-4 py-5 border-y border-slate-100 dark:border-slate-800">
+          <div className="flex flex-col gap-3">
+            <div>
+              <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Estoque Total</p>
+              <p className={`text-3xl font-black italic tracking-tighter ${isLowStock ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>
+                {totalStock}
+              </p>
+              <p className="text-xs font-bold text-slate-400 uppercase mt-0.5">{product.type === SaleType.WHOLESALE ? 'CAIXAS' : 'UNIDADES'}</p>
+            </div>
+            <button
+              type="button"
+              onClick={onPrint}
+              className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 transition-all border border-indigo-100/50 dark:border-indigo-500/20 shadow-sm w-fit"
+              title="Imprimir Etiquetas"
+            >
+              <Tag size={14} strokeWidth={3} />
+              <span className="text-xs font-black uppercase tracking-widest">Imprimir</span>
+            </button>
+          </div>
+          <div className="text-right">
+            <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Mínimo</p>
+            <p className="text-3xl font-black italic tracking-tighter text-indigo-500">
+              {product.minStockInBoxes}
+            </p>
+            <p className="text-xs font-bold text-slate-400 uppercase mt-0.5">CAIXAS</p>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Variações */}
       <div className="flex flex-col gap-3">
         <p className="text-xs font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest pl-1">Variações em Estoque</p>
         <div className="space-y-2">
           {product.variations.map(v => {
-            const varStock = (Object.values(v.stock) as number[]).reduce((sum, s) => sum + s, 0);
+            const varStock = hybrid ? getRetailPairs(product, v) : (Object.values(v.stock) as number[]).reduce((sum, s) => sum + s, 0);
             const allocations: StockPkgAllocation[] = v.stockPkgAllocations || [];
             const totalAllocated = allocations.reduce((s, a) => s + a.qty, 0);
             const isExpanded = expandedVars.includes(v.id);
@@ -1118,7 +1346,7 @@ const StockCard: React.FC<{
                     <div className="text-left min-w-0 flex-1">
                       <p className="text-[10px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none mb-0.5">{product.reference}</p>
                       <span className="text-sm font-bold text-slate-900 dark:text-slate-100 uppercase">{v.colorName}</span>
-                      {product.type === SaleType.WHOLESALE && (allocations.some(a => a.qty > 0) || boxQty - totalAllocated > 0) && (
+                      {showWholesale && (allocations.some(a => a.qty > 0) || boxQty - totalAllocated > 0) && (
                         <div className="flex flex-wrap gap-1 mt-1">
                           {allocations.filter(a => a.qty > 0).map((a, i) => {
                             const pkg = packagingItems.find(p => p.id === a.pkgId);
@@ -1140,12 +1368,29 @@ const StockCard: React.FC<{
                     </div>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    <div className="flex items-center gap-1">
-                      <span className="text-base font-black text-indigo-600 dark:text-indigo-400 leading-none">
-                        {product.type === SaleType.WHOLESALE ? boxQty : varStock}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase">{product.type === SaleType.WHOLESALE ? 'CX' : 'UN'}</span>
-                    </div>
+                    {hybrid ? (
+                      <div className="flex items-center gap-2">
+                        {showWholesale && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-sm font-black text-amber-600 dark:text-amber-400 leading-none">{boxQty}</span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase">CX</span>
+                          </div>
+                        )}
+                        {showRetail && (
+                          <div className="flex items-center gap-1">
+                            <span className="text-sm font-black text-indigo-600 dark:text-indigo-400 leading-none">{varStock}</span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase">UN</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <span className="text-base font-black text-indigo-600 dark:text-indigo-400 leading-none">
+                          {product.type === SaleType.WHOLESALE ? boxQty : varStock}
+                        </span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">{product.type === SaleType.WHOLESALE ? 'CX' : 'UN'}</span>
+                      </div>
+                    )}
                     {isExpanded
                       ? <ChevronDown size={16} className="text-indigo-400 shrink-0" />
                       : <ChevronRight size={16} className="text-slate-400 shrink-0" />
@@ -1158,10 +1403,13 @@ const StockCard: React.FC<{
                   <div className={`mx-3 mb-3 rounded-xl flex flex-col border ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}>
 
                     {/* RETAIL: grid por tamanho */}
-                    {product.type === SaleType.RETAIL && (
+                    {showRetail && (
                       <div className="p-3 flex flex-col gap-2">
+                        {hybrid && (
+                          <p className="text-[9px] font-black text-indigo-500 uppercase tracking-widest px-1">Varejo</p>
+                        )}
                         <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                          {Object.entries(v.stock).map(([size, qty]) => (
+                          {Object.entries(v.stock).filter(([size]) => size !== 'WHOLESALE').map(([size, qty]) => (
                             <div key={size} className={`flex flex-col items-center rounded-xl py-3 px-2 ${isDarkMode ? 'bg-slate-700/60' : 'bg-slate-50'}`}>
                               <span className="text-[10px] font-black text-slate-500 uppercase leading-none mb-2">{size}</span>
                               {isEditing ? (
@@ -1190,8 +1438,11 @@ const StockCard: React.FC<{
                     )}
 
                     {/* ATACADO: estoque global + embalagens */}
-                    {product.type === SaleType.WHOLESALE && (
+                    {showWholesale && (
                       <>
+                        {hybrid && (
+                          <p className={`text-[9px] font-black text-amber-500 uppercase tracking-widest px-3 pt-3 ${showRetail ? `border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}` : ''}`}>Atacado</p>
+                        )}
                         {/* Estoque Global com +/- */}
                         <div className={`flex items-center justify-between px-4 py-4 ${isDarkMode ? 'bg-slate-900/40' : 'bg-slate-50/80'}`}>
                           <div className="flex items-center gap-2">

@@ -32,6 +32,26 @@ function usePersistedToggle(key: string, defaultValue: boolean): [boolean, (v: b
   return [value, setPersisted];
 }
 
+function usePersistedState<T>(key: string, defaultValue: T): [T, (v: T | ((prev: T) => T)) => void] {
+  const [value, setValue] = useState<T>(() => {
+    const saved = localStorage.getItem(key);
+    if (saved === null) return defaultValue;
+    try {
+      return JSON.parse(saved) as T;
+    } catch {
+      return defaultValue;
+    }
+  });
+  const setPersisted = (v: T | ((prev: T) => T)) => {
+    setValue(prev => {
+      const next = typeof v === 'function' ? (v as (p: T) => T)(prev) : v;
+      localStorage.setItem(key, JSON.stringify(next));
+      return next;
+    });
+  };
+  return [value, setPersisted];
+}
+
 interface SalesViewProps {
   sales: Sale[];
   products: Product[];
@@ -65,6 +85,7 @@ interface SalesViewProps {
   onTransferToStock: (saleId: string) => Promise<void>;
   onNavigateStock: () => void;
   productionConfigs: ProductionConfigItem[];
+  appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite';
 }
 
 export default function SalesView({
@@ -100,12 +121,15 @@ export default function SalesView({
   onTransferToStock,
   onNavigateStock,
   productionConfigs,
+  appTheme = 'light',
 }: SalesViewProps) {
+  const isIndustrial = appTheme === 'industrial';
   const hasProduction = modulesConfig.production;
-  const [filter, setFilter] = useState<'ALL' | 'RETAIL' | 'WHOLESALE'>('ALL');
-  const [paymentFilter, setPaymentFilter] = useState<'ALL' | 'PENDING' | 'PAID'>('ALL');
+  const [filter, setFilter] = usePersistedState<'ALL' | 'RETAIL' | 'WHOLESALE'>('salesView_filter', 'ALL');
+  const [paymentFilter, setPaymentFilter] = usePersistedState<'ALL' | 'PENDING' | 'PAID'>('salesView_paymentFilter', 'ALL');
+  const [deliveryFilter, setDeliveryFilter] = usePersistedState<'ALL' | 'PENDING' | 'DELIVERED'>('salesView_deliveryFilter', 'ALL');
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
-  const [selectedStatuses, setSelectedStatuses] = useState<SaleStatus[]>([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]);
+  const [selectedStatuses, setSelectedStatuses] = usePersistedState<SaleStatus[]>('salesView_selectedStatuses', [SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]);
   const [showFilters, setShowFilters] = useState(false);
   const [expandedCards, setExpandedCards] = usePersistedToggle('salesView_expandedCards', false);
   const [showProducts, setShowProducts] = usePersistedToggle('salesView_showProducts', true);
@@ -294,12 +318,13 @@ export default function SalesView({
     let count = 0;
     if (filter !== 'ALL') count++;
     if (paymentFilter !== 'ALL') count++;
+    if (deliveryFilter !== 'ALL') count++;
     const defaultStatuses = [SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE];
     const isDefaultStatuses = selectedStatuses.length === defaultStatuses.length &&
                               defaultStatuses.every(s => selectedStatuses.includes(s));
     if (!isDefaultStatuses) count++;
     return count;
-  }, [filter, paymentFilter, selectedStatuses]);
+  }, [filter, paymentFilter, deliveryFilter, selectedStatuses]);
 
   // Métricas de entrega — fechadas pelo PCP ao concluir a expedição (ver SaleStatus.SALE não cancelados)
   const deliveryStats = useMemo(() => {
@@ -361,6 +386,13 @@ export default function SalesView({
         if (paymentFilter === 'PENDING' && s.paymentStatus !== PaymentStatus.PENDING) return false;
       }
 
+      // Filter by Delivery Status
+      if (deliveryFilter !== 'ALL') {
+        const isDelivered = s.deliveryStatus === 'DELIVERED';
+        if (deliveryFilter === 'DELIVERED' && !isDelivered) return false;
+        if (deliveryFilter === 'PENDING' && isDelivered) return false;
+      }
+
       // Filter by Status
       if (selectedStatuses.length > 0 && !selectedStatuses.includes(s.status)) {
         return false;
@@ -380,7 +412,7 @@ export default function SalesView({
 
       return true;
     }).sort((a, b) => b.date - a.date); // Mais recentes primeiro
-  }, [sales, filter, paymentFilter, selectedStatuses, searchQuery]);
+  }, [sales, filter, paymentFilter, deliveryFilter, selectedStatuses, searchQuery]);
 
   const getProductInfo = (productId: string) => productMap.get(productId);
 
@@ -559,7 +591,7 @@ export default function SalesView({
               className={`flex-1 h-12 px-3 flex items-center justify-center gap-2 transition-all duration-300 ${isDarkMode ? 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800/50' : 'text-slate-400 hover:text-emerald-600 hover:bg-slate-50'} ${showCrossCheckCard ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : ''}`}
               title="Cruzamento de Demanda x Estoque e Produção"
             >
-              <PackagePlus size={18} strokeWidth={2.5} className={showCrossCheckCard ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-500'} />
+              <PackagePlus size={18} strokeWidth={2.5} className={isIndustrial ? 'text-emerald-600' : (showCrossCheckCard ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-500')} />
               <span className="text-[10px] font-black tracking-[0.15em]">Cruzamento</span>
             </button>
           )}
@@ -568,7 +600,7 @@ export default function SalesView({
             className={`flex-1 h-12 px-3 flex items-center justify-center gap-2 transition-all duration-300 ${isDarkMode ? 'text-slate-400 hover:text-amber-400 hover:bg-slate-800/50' : 'text-slate-400 hover:text-amber-600 hover:bg-slate-50'}`}
             title="Estoque de Produtos"
           >
-            <Boxes size={18} strokeWidth={2.5} className="text-amber-500" />
+            <Boxes size={18} strokeWidth={2.5} className={isIndustrial ? 'text-amber-600' : 'text-amber-500'} />
             <span className="text-[10px] font-black tracking-[0.15em]">Estoque</span>
           </button>
           <button
@@ -761,9 +793,14 @@ export default function SalesView({
               <div className={`flex p-1 rounded-2xl border gap-1 shadow-inner ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50' : 'bg-slate-50 border-slate-100'}`}>
                 {(['ALL', 'RETAIL', 'WHOLESALE'] as const).map((v) => {
                   const active = filter === v;
+                  const activeClass = v === 'RETAIL'
+                    ? 'bg-gradient-to-b from-indigo-500 to-indigo-600 shadow-[0_2px_8px_-2px_rgba(99,102,241,0.5)]'
+                    : v === 'WHOLESALE'
+                      ? 'bg-gradient-to-b from-amber-400 to-amber-500 shadow-[0_2px_8px_-2px_rgba(245,158,11,0.5)]'
+                      : 'bg-gradient-to-b from-slate-500 to-slate-600 shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)]';
                   return (
                     <button key={v} onClick={() => setFilter(v)}
-                      className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider transition-all ${active ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700/50' : 'text-slate-500 hover:text-slate-800 hover:bg-white shadow-sm'}`}>
+                      className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider transition-all ${active ? `${activeClass} text-white ring-1 ring-inset ring-white/20` : isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700/50' : 'text-slate-500 hover:text-slate-800 hover:bg-white shadow-sm'}`}>
                       {v === 'ALL' ? 'Todos' : v === 'RETAIL' ? 'Varejo' : 'Atacado'}
                     </button>
                   );
@@ -777,10 +814,36 @@ export default function SalesView({
               <div className={`flex p-1 rounded-2xl border gap-1 shadow-inner ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50' : 'bg-slate-50 border-slate-100'}`}>
                 {(['ALL', 'PENDING', 'PAID'] as const).map((v) => {
                   const active = paymentFilter === v;
+                  const activeClass = v === 'PENDING'
+                    ? 'bg-gradient-to-b from-amber-400 to-amber-500 shadow-[0_2px_8px_-2px_rgba(245,158,11,0.5)]'
+                    : v === 'PAID'
+                      ? 'bg-gradient-to-b from-emerald-500 to-emerald-600 shadow-[0_2px_8px_-2px_rgba(16,185,129,0.5)]'
+                      : 'bg-gradient-to-b from-slate-500 to-slate-600 shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)]';
                   return (
                     <button key={v} onClick={() => setPaymentFilter(v)}
-                      className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider transition-all ${active ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700/50' : 'text-slate-500 hover:text-slate-800 hover:bg-white shadow-sm'}`}>
+                      className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider transition-all ${active ? `${activeClass} text-white ring-1 ring-inset ring-white/20` : isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700/50' : 'text-slate-500 hover:text-slate-800 hover:bg-white shadow-sm'}`}>
                       {v === 'ALL' ? 'Todos' : v === 'PENDING' ? 'Pendente' : 'Pago'}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Status de Entrega */}
+            <div className="flex flex-col gap-2 mt-2">
+              <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">Entrega</p>
+              <div className={`flex p-1 rounded-2xl border gap-1 shadow-inner ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50' : 'bg-slate-50 border-slate-100'}`}>
+                {(['ALL', 'PENDING', 'DELIVERED'] as const).map((v) => {
+                  const active = deliveryFilter === v;
+                  const activeClass = v === 'PENDING'
+                    ? 'bg-gradient-to-b from-amber-400 to-amber-500 shadow-[0_2px_8px_-2px_rgba(245,158,11,0.5)]'
+                    : v === 'DELIVERED'
+                      ? 'bg-gradient-to-b from-emerald-500 to-emerald-600 shadow-[0_2px_8px_-2px_rgba(16,185,129,0.5)]'
+                      : 'bg-gradient-to-b from-slate-500 to-slate-600 shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)]';
+                  return (
+                    <button key={v} onClick={() => setDeliveryFilter(v)}
+                      className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider transition-all ${active ? `${activeClass} text-white ring-1 ring-inset ring-white/20` : isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-700/50' : 'text-slate-500 hover:text-slate-800 hover:bg-white shadow-sm'}`}>
+                      {v === 'ALL' ? 'Todos' : v === 'PENDING' ? 'Pendente' : 'Entregue'}
                     </button>
                   );
                 })}
@@ -790,23 +853,27 @@ export default function SalesView({
             {/* Status do Pedido */}
             <div className="flex flex-col gap-2 mt-2">
               <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">Status do Pedido</p>
-              <div className="flex gap-2 flex-wrap">
+              <div className={`flex p-1 rounded-2xl border gap-1 shadow-inner ${isDarkMode ? 'bg-slate-800/50 border-slate-700/50' : 'bg-slate-50 border-slate-100'}`}>
                 {([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE, SaleStatus.CANCELLED] as const).map((s) => {
                   const active = selectedStatuses.includes(s);
                   const label = s === SaleStatus.SALE ? 'Venda' : s === SaleStatus.CONFIRMED ? 'Pedido' : s === SaleStatus.QUOTE ? 'Orçamento' : 'Cancelado';
                   
                   let activeClass = '';
-                  if (s === SaleStatus.SALE) activeClass = 'bg-gradient-to-b from-slate-500 to-slate-600 shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20 text-white border-transparent';
-                  else if (s === SaleStatus.CONFIRMED) activeClass = 'bg-gradient-to-b from-slate-400 to-slate-500 shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20 text-white border-transparent';
-                  else if (s === SaleStatus.QUOTE) activeClass = 'bg-gradient-to-b from-slate-300 to-slate-400 dark:from-slate-600 dark:to-slate-700 shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20 text-slate-700 dark:text-white border-transparent';
-                  else activeClass = 'bg-gradient-to-b from-slate-200 to-slate-300 dark:from-slate-700 dark:to-slate-800 shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20 text-slate-600 dark:text-slate-300 border-transparent line-through decoration-slate-400';
-                  
-                  const inactiveClass = isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm';
+                  if (s === SaleStatus.SALE) activeClass = 'bg-gradient-to-b from-violet-500 to-violet-600 shadow-[0_2px_8px_-2px_rgba(139,92,246,0.5)]';
+                  else if (s === SaleStatus.CONFIRMED) activeClass = 'bg-gradient-to-b from-sky-500 to-sky-600 shadow-[0_2px_8px_-2px_rgba(14,165,233,0.5)]';
+                  else if (s === SaleStatus.QUOTE) activeClass = 'bg-gradient-to-b from-amber-400 to-amber-500 shadow-[0_2px_8px_-2px_rgba(245,158,11,0.5)]';
+                  else activeClass = 'bg-gradient-to-b from-rose-500 to-rose-600 shadow-[0_2px_8px_-2px_rgba(244,63,94,0.5)]';
 
                   return (
                     <button key={s}
                       onClick={() => setSelectedStatuses(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s])}
-                      className={`px-4 py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${active ? activeClass : inactiveClass}`}>
+                      className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider transition-all ${
+                        active 
+                          ? `${activeClass} text-white ring-1 ring-inset ring-white/20` 
+                          : isDarkMode 
+                            ? 'text-slate-400 hover:text-white hover:bg-slate-700/50' 
+                            : 'text-slate-500 hover:text-slate-800 hover:bg-white shadow-sm'
+                      }`}>
                       {label}
                     </button>
                   );
@@ -828,23 +895,23 @@ export default function SalesView({
                 </button>
               </div>
               <button onClick={() => setShowGradeBreakdown(v => !v)}
-                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${showGradeBreakdown ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all ${showGradeBreakdown ? 'bg-gradient-to-b from-violet-500 to-violet-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(139,92,246,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
                 {showGradeBreakdown ? 'Ocultar Padrão de Embalagem' : 'Mostrar Padrão de Embalagem'}
               </button>
               <button onClick={() => setShowSeparationInfo(v => !v)}
-                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showSeparationInfo ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showSeparationInfo ? 'bg-gradient-to-b from-indigo-500 to-indigo-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(99,102,241,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
                 <Boxes size={14} strokeWidth={2.5} />
                 {showSeparationInfo ? 'Avisos de Separação Visíveis' : 'Avisos de Separação Ocultos'}
               </button>
               <button onClick={() => setShowSummaryBar(v => !v)}
-                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showSummaryBar ? 'bg-gradient-to-b from-slate-500 to-slate-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(71,85,105,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showSummaryBar ? 'bg-gradient-to-b from-emerald-500 to-emerald-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(16,185,129,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
                 <DollarSign size={14} strokeWidth={2.5} />
                 {showSummaryBar ? 'Barra de Valores Visível' : 'Barra de Valores Oculta'}
               </button>
             </div>
 
             <button
-              onClick={() => { setFilter('ALL'); setPaymentFilter('ALL'); setSelectedStatuses([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]); setExpandedCards(false); setShowProducts(true); setShowGradeBreakdown(false); setShowSeparationInfo(true); setShowSummaryBar(true); }}
+              onClick={() => { setFilter('ALL'); setPaymentFilter('ALL'); setDeliveryFilter('ALL'); setSelectedStatuses([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]); setExpandedCards(false); setShowProducts(true); setShowGradeBreakdown(false); setShowSeparationInfo(true); setShowSummaryBar(true); }}
               className="mt-1 w-full py-3 rounded-2xl text-[10px] font-black tracking-widest text-rose-500 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all shadow-sm bg-white dark:bg-slate-900"
             >
               Limpar Filtros

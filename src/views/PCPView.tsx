@@ -10,7 +10,7 @@ import {
   Settings2, Trash2, Edit3, Edit2, ClipboardList,
   Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart,
   DollarSign, Hammer, FileText, CheckSquare, Scissors, Printer, Share2, Truck,
-  QrCode, ScanLine, Hash, Lock, ChevronDown, List, ArrowLeftRight, MessageSquare, Eye,
+  QrCode, ScanLine, Hash, Lock, ChevronDown, List, ArrowLeftRight, MessageSquare, Eye, EyeOff,
   Footprints, Scale, Database, TrendingDown, Zap, Palette
 } from 'lucide-react';
 import {
@@ -73,6 +73,7 @@ type LotAdvanceItem = {
   skippedSectorNames: string[];
   chosenSectorId: string;
   lotId?: string;
+  saleType?: SaleType;
 };
 
 interface PCPViewProps {
@@ -109,6 +110,7 @@ interface PCPViewProps {
   purchases?: Purchase[];
   sales?: import('../types').Sale[];
   stockLots?: StockLot[];
+  appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite';
 }
 
 export default function PCPView({
@@ -145,7 +147,9 @@ export default function PCPView({
   purchases = [],
   sales = [],
   stockLots = [],
+  appTheme = 'light',
 }: PCPViewProps) {
+  const isIndustrial = appTheme === 'industrial';
   const [activeTab, setActiveTab] = useState<'monitor' | 'lots' | 'orders' | 'needs' | 'solados'>(initialTab);
   const [mapBadgeBg, setMapBadgeBg] = useState(() => localStorage.getItem('pcp_map_badge_bg') || '#7c3aed');
   const [mapBadgeText, setMapBadgeText] = useState(() => localStorage.getItem('pcp_map_badge_text') || '#ffffff');
@@ -173,6 +177,78 @@ export default function PCPView({
     setMapBadgeText(text);
     localStorage.setItem('pcp_map_badge_bg', bg);
     localStorage.setItem('pcp_map_badge_text', text);
+  };
+  // Cor do badge "REF COR" (ex: 310 BRANCO) e do texto do setor/status (ex: PREPARAÇÃO E
+  // CONFERÊNCIA) exibidos nas fichas de Pedidos Vinculados — preferência local, igual à Cor do Mapa.
+  const [productBadgeBg, setProductBadgeBg] = useState(() => localStorage.getItem('pcp_product_badge_bg') || '#000000');
+  const [productBadgeText, setProductBadgeText] = useState(() => localStorage.getItem('pcp_product_badge_text') || '#ffffff');
+  const [productBadgeBold, setProductBadgeBold] = useState(() => localStorage.getItem('pcp_product_badge_bold') !== 'false');
+  const [productBadgeItalic, setProductBadgeItalic] = useState(() => localStorage.getItem('pcp_product_badge_italic') === 'true');
+  const [sectorBadgeColor, setSectorBadgeColor] = useState(() => localStorage.getItem('pcp_sector_badge_color') || '#e11d48');
+  const [sectorBadgeBold, setSectorBadgeBold] = useState(() => localStorage.getItem('pcp_sector_badge_bold') !== 'false');
+  const [sectorBadgeItalic, setSectorBadgeItalic] = useState(() => localStorage.getItem('pcp_sector_badge_italic') === 'true');
+  // Oculta o nome do setor/status nas fichas de Pedidos Vinculados — pedidos lá ficam
+  // só com o badge de produto/cor, sem o texto de setor.
+  const [hideSectorBadge, setHideSectorBadge] = useState(() => localStorage.getItem('pcp_hide_sector_badge') === 'true');
+  const [isBadgeColorPickerOpen, setIsBadgeColorPickerOpen] = useState(false);
+  const updateProductBadgeColors = (bg: string, text: string) => {
+    setProductBadgeBg(bg);
+    setProductBadgeText(text);
+    localStorage.setItem('pcp_product_badge_bg', bg);
+    localStorage.setItem('pcp_product_badge_text', text);
+  };
+  const toggleProductBadgeBold = () => {
+    const next = !productBadgeBold;
+    setProductBadgeBold(next);
+    localStorage.setItem('pcp_product_badge_bold', String(next));
+  };
+  const toggleProductBadgeItalic = () => {
+    const next = !productBadgeItalic;
+    setProductBadgeItalic(next);
+    localStorage.setItem('pcp_product_badge_italic', String(next));
+  };
+  const updateSectorBadgeColor = (color: string) => {
+    setSectorBadgeColor(color);
+    localStorage.setItem('pcp_sector_badge_color', color);
+  };
+  const toggleSectorBadgeBold = () => {
+    const next = !sectorBadgeBold;
+    setSectorBadgeBold(next);
+    localStorage.setItem('pcp_sector_badge_bold', String(next));
+  };
+  const toggleSectorBadgeItalic = () => {
+    const next = !sectorBadgeItalic;
+    setSectorBadgeItalic(next);
+    localStorage.setItem('pcp_sector_badge_italic', String(next));
+  };
+  const toggleHideSectorBadge = () => {
+    const next = !hideSectorBadge;
+    setHideSectorBadge(next);
+    localStorage.setItem('pcp_hide_sector_badge', String(next));
+  };
+
+  // Barra de estatísticas do Monitor (Produção Total / Em Produção / Mapas Ativos /
+  // Atrasos) — visibilidade geral e por cartão, preferência local por dispositivo.
+  type StatsBarTile = 'total' | 'inProgress' | 'active' | 'delayed';
+  const [statsBarHidden, setStatsBarHidden] = useState(() => localStorage.getItem('pcp_stats_bar_hidden') === 'true');
+  const [statsBarTiles, setStatsBarTiles] = useState<Record<StatsBarTile, boolean>>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('pcp_stats_bar_tiles') || 'null');
+      if (saved) return { total: true, inProgress: true, active: true, delayed: true, ...saved };
+    } catch { /* ignore */ }
+    return { total: true, inProgress: true, active: true, delayed: true };
+  });
+  const toggleStatsBarHidden = () => {
+    const next = !statsBarHidden;
+    setStatsBarHidden(next);
+    localStorage.setItem('pcp_stats_bar_hidden', String(next));
+  };
+  const toggleStatsBarTile = (tile: StatsBarTile) => {
+    setStatsBarTiles(prev => {
+      const next = { ...prev, [tile]: !prev[tile] };
+      localStorage.setItem('pcp_stats_bar_tiles', JSON.stringify(next));
+      return next;
+    });
   };
   const [requestingId, setRequestingId] = useState<string | null>(null);
   const [isRequestingBatch, setIsRequestingBatch] = useState(false);
@@ -205,8 +281,6 @@ export default function PCPView({
     if (fresh && fresh !== selectedLot) setSelectedLot(fresh);
   }, [lots, selectedLot]);
   const [selectedLots, setSelectedLots] = useState<ProductionLot[]>([]);
-  const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
-  const [selectedLotIds, setSelectedLotIds] = useState<string[]>([]);
   const [showQuickActions, setShowQuickActions] = useState(false);
   const [selectedSectorId, setSelectedSectorId] = useState<string | null>(initialSectorId ?? null);
   const [isSectorSwitcherOpen, setIsSectorSwitcherOpen] = useState(false);
@@ -354,6 +428,37 @@ export default function PCPView({
   }, [lots, products, searchTerm, statusFilter]);
 
   const activeLots = useMemo(() => lots.filter(l => !l.finishedAt), [lots]);
+
+  const activeOrdersCount = useMemo(() => {
+    const orderIds = new Set<string>();
+    activeLots.forEach(lot => {
+      if (lot.productionOrderId) {
+        orderIds.add(lot.productionOrderId);
+      }
+      const sourceItems = lot.metadata?.sourceItems || [];
+      sourceItems.forEach((si: any) => {
+        if (si.orderId) {
+          orderIds.add(si.orderId);
+        }
+      });
+    });
+    return orderIds.size;
+  }, [activeLots]);
+
+  const activePendingPairs = useMemo(() => {
+    let total = 0;
+    activeLots.forEach(lot => {
+      const sourceItems: any[] = (lot as any).metadata?.sourceItems
+        || [{ orderId: lot.productionOrderId || lot.id, itemIdx: 0, qty: lot.quantity }];
+      sourceItems.forEach(si => {
+        const sec = getOrderEffectiveSector(lot, si.orderId, si);
+        if (sec !== ORDER_FINALIZED && sectors.some(s => s.id === sec)) {
+          total += si.qty || 0;
+        }
+      });
+    });
+    return total;
+  }, [activeLots, sectors]);
 
   const filteredActiveLots = useMemo(() => {
     return filteredLots.filter(l => !l.finishedAt);
@@ -1178,7 +1283,7 @@ export default function PCPView({
   // Espelha a conversão pares→caixas usada em `applyExpedicaoStockUpdate`
   // (ATACADO: caixas via "Grade de Produção Padrão"; demais: pares).
   const computeStockProjection = (
-    it: { productId?: string; variationId?: string; qty: number },
+    it: { productId?: string; variationId?: string; qty: number; saleType?: SaleType },
     destino: { isStock: boolean; customerName?: string },
   ): { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string } | null => {
     const product = products.find(p => p.id === it.productId);
@@ -1187,7 +1292,7 @@ export default function PCPView({
 
     const destinoLabel = destino.isStock ? 'Estoque' : `Reserva: ${destino.customerName || 'Cliente'}`;
 
-    if (product.type === SaleType.WHOLESALE) {
+    if ((it.saleType ?? product.type) === SaleType.WHOLESALE) {
       const gridId = product.productionGridId || product.defaultGridId;
       const defaultPkg = productionConfigs.find(c => c.type === 'PACKAGING' && c.metadata?.productionGradeId === gridId);
       let pairsPerBox = defaultPkg?.metadata?.capacity as number | undefined;
@@ -2018,7 +2123,7 @@ export default function PCPView({
       for (const si of stockSI) {
         const resolved = resolveSourceItem(si);
         if (!resolved || resolved.totalQty <= 0) continue;
-        const { prodOrder, prod, vari, pairs, totalQty, gradeLabel, itemIdx } = resolved;
+        const { prodOrder, ordItem, prod, vari, pairs, totalQty, gradeLabel, itemIdx } = resolved;
 
         let entryBoxQty: number | undefined;
         let entryPkg: ProductionConfigItem | undefined;
@@ -2028,7 +2133,7 @@ export default function PCPView({
         const updVars = baseVariations.map((v, idx) => {
           if (idx !== variIdx) return v;
           const newStock = { ...v.stock };
-          if (prod.type === SaleType.WHOLESALE) {
+          if (ordItem.saleType === SaleType.WHOLESALE) {
             // ATACADO: "Estoque Global" (CAIXAS) é incrementado convertendo os pares
             // produzidos pela embalagem cujo "Grade de Produção Padrão" corresponde à
             // grade de produção do produto (pares por caixa), com fallback para a
@@ -3218,62 +3323,83 @@ export default function PCPView({
         {/* As Ações Rápidas (Escanear, Filtros, Compartilhar, Mapas) ficam agora no
             popup do 6º ícone ("Ações") da navegação. */}
 
-        {/* Filter Popup/Section */}
-        <AnimatePresence>
-          {isFilterPopupOpen && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="overflow-hidden mb-6"
+        {/* Popup centralizado — Filtros (mesmo padrão das Ações Rápidas/Cor de Badges) */}
+        {isFilterPopupOpen && (
+          <div className="fixed inset-0 z-[300000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setIsFilterPopupOpen(false)}>
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className={`w-full max-w-md max-h-[85vh] overflow-y-auto rounded-[2.5rem] shadow-2xl animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
             >
-              <div className={`p-5 rounded-[2rem] border flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-xl'}`}>
-                <div className="flex items-center justify-between px-1">
-                  <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Filtrar Mapas por Status</h4>
-                  <div className="flex items-center gap-2">
-                    <button onClick={() => { setStatusFilter('all'); setIsFilterPopupOpen(false); }} className="text-[10px] font-black text-rose-500 uppercase tracking-widest hover:text-rose-600">Limpar</button>
-                    <button
-                      type="button"
-                      onClick={() => setIsFilterPopupOpen(false)}
-                      title="Recolher filtros"
-                      aria-label="Recolher filtros"
-                      className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-400 hover:text-slate-600'}`}
-                    >
-                      <X size={16} strokeWidth={2.5} />
-                    </button>
+              <div className="p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-violet-500/20 text-violet-400' : 'bg-violet-50 text-violet-500'}`}>
+                    <Filter size={22} strokeWidth={2.5} />
+                  </div>
+                  <div>
+                    <h3 className={`text-lg font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Filtros</h3>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">Barra de estatísticas</p>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setIsFilterPopupOpen(false)}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-600'}`}
+                  aria-label="Fechar" title="Fechar"
+                >
+                  <X size={20} strokeWidth={2.5} />
+                </button>
+              </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { id: 'all', label: 'Todos os Mapas', icon: <List size={18} strokeWidth={2.5} />, active: 'bg-slate-700 shadow-lg shadow-slate-700/25', idle: isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500' },
-                    { id: 'active', label: 'Em Produção (WIP)', icon: <Factory size={18} strokeWidth={2.5} />, active: 'bg-indigo-600 shadow-lg shadow-indigo-600/25', idle: isDarkMode ? 'bg-indigo-900/30 text-indigo-400' : 'bg-indigo-50 text-indigo-500' },
-                    { id: 'finished', label: 'Concluídos / Expedidos', icon: <CheckCircle2 size={18} strokeWidth={2.5} />, active: 'bg-emerald-600 shadow-lg shadow-emerald-600/25', idle: isDarkMode ? 'bg-emerald-900/30 text-emerald-400' : 'bg-emerald-50 text-emerald-500' },
-                    { id: 'urgent', label: 'Atrasos e Urgências', icon: <AlertTriangle size={18} strokeWidth={2.5} />, active: 'bg-rose-600 shadow-lg shadow-rose-600/25', idle: isDarkMode ? 'bg-rose-900/30 text-rose-400' : 'bg-rose-50 text-rose-500' },
-                  ].map(f => {
-                    const isActive = statusFilter === f.id;
-                    return (
-                      <button
-                        key={f.id}
-                        type="button"
-                        onClick={() => { setStatusFilter(f.id as 'all' | 'active' | 'finished' | 'urgent'); setIsFilterPopupOpen(false); }}
-                        className={`flex flex-col items-start gap-2.5 p-4 rounded-2xl border transition-all active:scale-[0.97] ${isActive
-                          ? `${f.active} text-white border-transparent`
-                          : isDarkMode ? 'bg-slate-800/40 border-slate-700 text-slate-300 hover:border-slate-600' : 'bg-white border-slate-100 text-slate-600 hover:border-slate-200 shadow-sm'
-                          }`}
-                      >
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isActive ? 'bg-white/20 text-white' : f.idle}`}>
-                          {f.icon}
-                        </div>
-                        <span className="text-[10px] font-black uppercase tracking-widest text-left leading-tight">{f.label}</span>
-                      </button>
-                    );
-                  })}
+              <div className="p-5 flex flex-col gap-4">
+                <div className={`flex flex-col gap-3`}>
+                  <div className="flex items-center justify-between px-1">
+                    <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Barra de Estatísticas</h4>
+                    <button
+                      type="button"
+                      onClick={toggleStatsBarHidden}
+                      aria-label={statsBarHidden ? 'Mostrar barra de estatísticas' : 'Ocultar barra de estatísticas'}
+                      className={`w-12 h-7 rounded-full transition-all relative flex-shrink-0 ${!statsBarHidden ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}
+                    >
+                      <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-sm transition-all duration-200 flex items-center justify-center ${!statsBarHidden ? 'left-5' : 'left-0.5'}`}>
+                        {statsBarHidden ? <EyeOff size={10} className="text-slate-400" /> : <Eye size={10} className="text-indigo-600" />}
+                      </span>
+                    </button>
+                  </div>
+
+                  {!statsBarHidden && (
+                    <div className="flex flex-col gap-2 px-1">
+                      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest -mt-1">Cartões exibidos na barra</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([
+                          { id: 'total', label: 'Produção Total' },
+                          { id: 'inProgress', label: 'Em Produção' },
+                          { id: 'active', label: 'Pedidos em Produção' },
+                          { id: 'delayed', label: 'Atrasos' },
+                        ] as { id: StatsBarTile; label: string }[]).map(tile => {
+                          const on = statsBarTiles[tile.id];
+                          return (
+                            <button
+                              key={tile.id}
+                              type="button"
+                              onClick={() => toggleStatsBarTile(tile.id)}
+                              className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${on
+                                ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/50'
+                                : isDarkMode ? 'bg-slate-800/40 border border-slate-700 text-slate-500' : 'bg-slate-50 border border-slate-100 text-slate-400'
+                                }`}
+                            >
+                              {tile.label}
+                              {on ? <Eye size={12} /> : <EyeOff size={12} />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </div>
+          </div>
+        )}
 
         {/* Navegação — card único com 6 divisões (5 entradas + Ações Rápidas) */}
         <div className={`w-full rounded-2xl overflow-hidden border ${isDarkMode ? 'border-slate-800' : 'border-slate-100 shadow-sm'}`}>
@@ -3385,10 +3511,11 @@ export default function PCPView({
             <div className="p-5 grid grid-cols-2 gap-3">
               {[
                 { label: 'Escanear', icon: <Camera size={20} />, color: 'text-sky-500', bg: isDarkMode ? 'bg-sky-500/10' : 'bg-sky-50', run: () => setIsScannerOpen(true) },
-                { label: 'Filtros', icon: <Filter size={20} />, color: 'text-violet-500', bg: isDarkMode ? 'bg-violet-500/10' : 'bg-violet-50', run: () => setIsFilterPopupOpen(true), dot: statusFilter !== 'all' },
+                { label: 'Filtros', icon: <Filter size={20} />, color: 'text-violet-500', bg: isDarkMode ? 'bg-violet-500/10' : 'bg-violet-50', run: () => setIsFilterPopupOpen(true), dot: statsBarHidden || Object.values(statsBarTiles).some(v => !v) },
                 { label: 'Compartilhar', icon: <Share2 size={20} />, color: 'text-orange-500', bg: isDarkMode ? 'bg-orange-500/10' : 'bg-orange-50', run: () => setShareModal({ isOpen: true, format: 'pdf', selectedItems: filteredActiveLots }) },
                 { label: 'Mapas', icon: <ListTodo size={20} />, color: 'text-emerald-500', bg: isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50', run: () => { setActiveTab('lots'); setSelectedSectorId(null); } },
                 { label: 'Cor Mapa', icon: <Palette size={20} />, color: 'text-indigo-500', bg: isDarkMode ? 'bg-indigo-500/10' : 'bg-indigo-50', run: () => { setColorPickerLot(null); setIsColorPickerOpen(true); } },
+                { label: 'Cor Badges', icon: <Tag size={20} />, color: 'text-rose-500', bg: isDarkMode ? 'bg-rose-500/10' : 'bg-rose-50', run: () => setIsBadgeColorPickerOpen(true) },
               ].map((action) => (
                 <button
                   key={action.label}
@@ -3410,26 +3537,33 @@ export default function PCPView({
 
       {activeTab === 'monitor' && (
         <div className="flex flex-col gap-8">
-          {/* WIP Overview */}
-          <div className={`px-5 py-4 rounded-[2rem] border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-            <div className="grid grid-cols-3 divide-x divide-slate-100 dark:divide-slate-800">
-              <div className="flex flex-col pr-4">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight mb-1.5" style={{ minHeight: 26 }}>Total Produção</span>
-                <span className="text-xl font-black text-indigo-600 leading-none">{activeLots.reduce((acc, l) => acc + l.quantity, 0)}</span>
-                <span className="text-[9px] font-bold text-slate-400 uppercase mt-1">Pares</span>
+          {/* WIP Overview — Produção Total (todos os mapas, histórico) / Em Produção
+              (pares ainda pendentes nos setores, já descontando pedidos do mapa que
+              tiveram sua expedição finalizada via activePendingPairs) / Pedidos em
+              Produção (contagem) / Atrasos. Visibilidade geral e por cartão
+              configurável no popup de Filtros. */}
+          {!statsBarHidden && (() => {
+            const tileDefs: { id: StatsBarTile; label: string; value: number; unit: string; color: string }[] = [
+              { id: 'total', label: 'Produção Total', value: lots.reduce((acc, l) => acc + l.quantity, 0), unit: 'Pares', color: 'text-violet-600' },
+              { id: 'inProgress', label: 'Em Produção', value: activePendingPairs, unit: 'Pares', color: 'text-indigo-600' },
+              { id: 'active', label: 'Pedidos em Prod.', value: activeOrdersCount, unit: 'Pedidos', color: 'text-emerald-600' },
+              { id: 'delayed', label: 'Atrasos', value: Object.values(sectorMetrics).reduce((acc, m) => acc + m.delayedCount, 0), unit: 'Críticos', color: 'text-rose-500' },
+            ];
+            const visibleTiles = tileDefs.filter(t => statsBarTiles[t.id]);
+            if (visibleTiles.length === 0) return null;
+            const gridColsClass = visibleTiles.length === 1 ? 'grid-cols-1' : visibleTiles.length === 3 ? 'grid-cols-3' : 'grid-cols-2 sm:grid-cols-4';
+            return (
+              <div className={`grid ${gridColsClass} gap-3`}>
+                {visibleTiles.map(tile => (
+                  <div key={tile.id} className={`flex flex-col items-center text-center px-4 py-4 rounded-[1.5rem] border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight mb-1.5" style={{ minHeight: 26 }}>{tile.label}</span>
+                    <span className={`text-xl font-black leading-none ${tile.color}`}>{tile.value}</span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase mt-1">{tile.unit}</span>
+                  </div>
+                ))}
               </div>
-              <div className="flex flex-col px-4">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight mb-1.5" style={{ minHeight: 26 }}>Mapas Ativos</span>
-                <span className="text-xl font-black text-emerald-600 leading-none">{activeLots.length}</span>
-                <span className="text-[9px] font-bold text-slate-400 uppercase mt-1">Mapas</span>
-              </div>
-              <div className="flex flex-col pl-4">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-tight mb-1.5" style={{ minHeight: 26 }}>Atrasos</span>
-                <span className="text-xl font-black text-rose-500 leading-none">{Object.values(sectorMetrics).reduce((acc, m) => acc + m.delayedCount, 0)}</span>
-                <span className="text-[9px] font-bold text-slate-400 uppercase mt-1">Críticos</span>
-              </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Sectors Dashboard or Specific Sector View */}
           {!selectedSectorId ? (
@@ -3445,9 +3579,13 @@ export default function PCPView({
                       }`}
                   >
                     {/* Brilho sutil da cor do setor */}
-                    <div className="absolute -top-20 -right-16 w-44 h-44 rounded-full blur-3xl opacity-[0.18] pointer-events-none" style={{ backgroundColor: sector.color }} />
+                    {!isIndustrial && (
+                      <div className="absolute -top-20 -right-16 w-44 h-44 rounded-full blur-3xl opacity-[0.18] pointer-events-none" style={{ backgroundColor: sector.color }} />
+                    )}
                     {/* Barra superior com a cor do setor */}
-                    <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: sector.color }} />
+                    {!isIndustrial && (
+                      <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: sector.color }} />
+                    )}
 
                     <div className="relative p-6 flex flex-col gap-5">
                       {/* Header: ícone + nome + badges */}
@@ -3491,8 +3629,16 @@ export default function PCPView({
 
                       {/* Rodapé: ação */}
                       <div className="flex items-center justify-between pt-1">
-                        <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: sector.color }}>Ver Detalhes</span>
-                        <div className="w-8 h-8 rounded-full flex items-center justify-center transition-transform group-hover:translate-x-1" style={{ backgroundColor: `${sector.color}1f`, color: sector.color }}>
+                        <span 
+                          className={`text-[10px] font-black uppercase tracking-widest ${isIndustrial ? 'text-slate-500 dark:text-zinc-400' : ''}`} 
+                          style={isIndustrial ? undefined : { color: sector.color }}
+                        >
+                          Ver Detalhes
+                        </span>
+                        <div 
+                          className={`w-8 h-8 rounded-full flex items-center justify-center transition-transform group-hover:translate-x-1 ${isIndustrial ? 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400' : ''}`} 
+                          style={isIndustrial ? undefined : { backgroundColor: `${sector.color}1f`, color: sector.color }}
+                        >
                           <ChevronRight size={16} strokeWidth={2.5} />
                         </div>
                       </div>
@@ -3507,11 +3653,7 @@ export default function PCPView({
                 {/* Linha 1: voltar + nome do setor ativo */}
                 <div className="flex items-center justify-between gap-3">
                   <button
-                    onClick={() => {
-                      setSelectedSectorId(null);
-                      setIsMultiSelectMode(false);
-                      setSelectedLotIds([]);
-                    }}
+                    onClick={() => setSelectedSectorId(null)}
                     className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:gap-3 transition-all shrink-0"
                   >
                     <ChevronRight size={16} className="rotate-180" /> Voltar para Setores
@@ -3552,8 +3694,6 @@ export default function PCPView({
                             onClick={() => {
                               setSelectedSectorId(sector.id);
                               setIsSectorSwitcherOpen(false);
-                              setIsMultiSelectMode(false);
-                              setSelectedLotIds([]);
                             }}
                             className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-left transition-all ${sector.id === selectedSectorId
                               ? 'bg-orange-500 text-white'
@@ -3573,27 +3713,6 @@ export default function PCPView({
                 {/* Linha 2: ações do setor */}
                 <div className="flex flex-wrap items-center gap-2">
                   <button
-                    onClick={() => {
-                      setIsMultiSelectMode(!isMultiSelectMode);
-                      setSelectedLotIds([]);
-                    }}
-                    className={`px-4 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center gap-2 relative ${isMultiSelectMode
-                      ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/25 ring-4 ring-rose-500/30 animate-pulse'
-                      : isDarkMode
-                        ? 'bg-slate-900 text-slate-400 border border-slate-800 hover:border-indigo-500/50'
-                        : 'bg-white text-slate-500 border border-slate-100 shadow-sm hover:border-indigo-300'
-                      }`}
-                  >
-                    {isMultiSelectMode && (
-                      <span className="relative flex h-2 w-2 mr-1">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
-                      </span>
-                    )}
-                    {isMultiSelectMode ? 'Cancelar Seleção' : 'Seleção Múltipla'}
-                  </button>
-
-                  <button
                     type="button"
                     onClick={() => setIsSectorSwitcherOpen(true)}
                     title="Mudar para outro setor"
@@ -3608,85 +3727,6 @@ export default function PCPView({
 
               {(
                 <>
-                  {isMultiSelectMode && selectedLotIds.length > 0 && (
-                    <div className={`p-5 rounded-[2rem] border-2 flex flex-col sm:flex-row items-center justify-between gap-4 transition-all ${isDarkMode ? 'bg-slate-900 border-indigo-950/50 text-white' : 'bg-indigo-50/50 border-indigo-100/50 text-indigo-950 shadow-sm'}`}>
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/20 shrink-0">
-                          <CheckSquare size={20} />
-                        </div>
-                        <div>
-                          <p className="text-xs font-black uppercase tracking-wider">{selectedLotIds.length} Mapa(s) Selecionado(s)</p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
-                            Total: {filteredActiveLots.filter(l => selectedLotIds.includes(l.id)).reduce((acc, l) => acc + (l.quantity || 0), 0)} Pares
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                        <button
-                          onClick={() => {
-                            const lotsToEmit = filteredActiveLots.filter(l => selectedLotIds.includes(l.id));
-                            handleOpenOSModal(lotsToEmit);
-                          }}
-                          className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
-                        >
-                          Emitir OS em Grupo
-                        </button>
-
-                        <button
-                          onClick={async () => {
-                            const lotsToAdvance = filteredActiveLots.filter(l => selectedLotIds.includes(l.id));
-                            const blockedLots = lotsToAdvance.filter(l => hasPendingOS(l));
-                            if (blockedLots.length > 0) {
-                              toast.show(`${blockedLots.length} mapa(s) têm OS pendentes e não podem ser avançados:\n${blockedLots.map(l => `• Mapa #${l.orderNumber}`).join('\n')}\n\nConclua as OS antes de avançar.`);
-                              return;
-                            }
-                            if (confirm(`Deseja avançar os ${selectedLotIds.length} lotes selecionados de uma vez?`)) {
-                              // Em vez de mover todos silenciosamente (o que pode pular setores
-                              // como BORDADO em mapas com modelos de roteiros diferentes),
-                              // enfileira a confirmação — mostrando, mapa por mapa, cada
-                              // pedido/modelo, sua quantidade e o setor de destino, com
-                              // chance de ajustar manualmente antes de confirmar o avanço.
-                              queueLotAdvanceConfirms(lotsToAdvance.map(lot => ({
-                                lot,
-                                nextStatusId: lot.currentStatusId || '',
-                                notes: 'Avanço em lote (Massa).',
-                              })));
-                              setSelectedLotIds([]);
-                              setIsMultiSelectMode(false);
-                            }
-                          }}
-                          className={`flex-1 sm:flex-none px-5 py-3 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'border-slate-800 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-100'
-                            }`}
-                        >
-                          Avançar em Massa
-                        </button>
-
-                        <button
-                          onClick={async () => {
-                            if (confirm(`Tem certeza de que deseja EXCLUIR e CANCELAR todos os ${selectedLotIds.length} mapas selecionados?`)) {
-                              try {
-                                for (const id of selectedLotIds) {
-                                  await onDeleteLot(id);
-                                }
-                                setSelectedLotIds([]);
-                                setIsMultiSelectMode(false);
-                                toast.show("Mapas excluídos com sucesso!");
-                              } catch (e) {
-                                console.error(e);
-                                toast.show("Erro ao excluir mapas: " + (e instanceof Error ? e.message : String(e)));
-                              }
-                            }
-                          }}
-                          className="flex-1 sm:flex-none px-5 py-3 rounded-xl bg-rose-50 dark:bg-rose-950/20 text-rose-600 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-900/30 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
-                        >
-                          Excluir Mapas
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-
                   {/* ── Pedidos Vinculados — padrão idêntico ao setor de Corte ── */}
                   {(() => {
                     type FichaItem = { lot: ProductionLot; si: any; siIdx: number; product: any; variation: any; orderItem: any; order: any; coveringOS?: ServiceOrder };
@@ -3921,7 +3961,7 @@ export default function PCPView({
                                       <div className="min-w-0 flex-1 cursor-pointer" onClick={() => { const n = new Set(fichaItemExpanded); gradeOpen ? n.delete(gradeKey) : n.add(gradeKey); setFichaItemExpanded(n); }}>
                                         <div className="flex items-center justify-between gap-2 mb-1.5">
                                           <div className="flex flex-wrap items-center gap-1.5">
-                                            <span className="text-[9px] font-black px-2 py-0.5 rounded-full uppercase bg-black text-white dark:bg-slate-800 dark:text-white tracking-wider leading-none shrink-0">
+                                            <span className="text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider leading-none shrink-0" style={{ backgroundColor: productBadgeBg, color: productBadgeText, fontWeight: productBadgeBold ? 900 : 400, fontStyle: productBadgeItalic ? 'italic' : 'normal' }}>
                                               {`${productRef || productName}${colorName ? ` ${colorName}` : ''}`.trim()}
                                             </span>
                                             {(() => {
@@ -3929,8 +3969,8 @@ export default function PCPView({
                                               const secName = effSec === ORDER_FINALIZED
                                                 ? 'Finalizado'
                                                 : (sectors.find(s => s.id === effSec)?.name || effSec || '—');
-                                              return (
-                                                <span className="text-[9px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 leading-none shrink-0">
+                                              return hideSectorBadge ? null : (
+                                                <span className="text-[9px] uppercase tracking-wider leading-none shrink-0" style={{ color: sectorBadgeColor, fontWeight: sectorBadgeBold ? 900 : 400, fontStyle: sectorBadgeItalic ? 'italic' : 'normal' }}>
                                                   {secName}
                                                 </span>
                                               );
@@ -4070,8 +4110,8 @@ export default function PCPView({
                                                   <span
                                                     key={os.id}
                                                     className={`text-[8.5px] font-black uppercase tracking-wider px-2.5 py-1 rounded-full border ${os.status === 'PENDING'
-                                                        ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                                                        : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                                                      ? 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                                                      : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
                                                       }`}
                                                   >
                                                     {os.osNumber} ({sec?.name || os.sectorId}) — {os.status === 'PENDING' ? 'Pendente' : 'Concluído'}
@@ -4103,6 +4143,9 @@ export default function PCPView({
                                                       .join('-');
 
                                                     if (szStr) {
+                                                      setLabelModalProduct(itemProduct);
+                                                      setLabelModalLot(f.lot);
+                                                      setLabelModalSizeGrid(szStr);
                                                       setLabelModalBatchItems([{ product: itemProduct, variation: itemVariation, sizeGrid: szStr, lotId: f.lot.id, orderId: f.si.orderId, itemIdx: f.siIdx }]);
                                                     }
                                                   }
@@ -4198,6 +4241,7 @@ export default function PCPView({
                                             skippedSectorNames: resolved.skippedSectorNames,
                                             chosenSectorId,
                                             lotId: f.lot.id,
+                                            saleType: f.orderItem?.saleType,
                                           };
                                         });
 
@@ -7443,7 +7487,7 @@ export default function PCPView({
                                 {/* Linha 1: Referência + Nome + Cor + Setor */}
                                 <div className="flex items-center justify-between gap-2 mb-1.5">
                                   <div className="flex flex-wrap items-center gap-1.5">
-                                    <span className="text-[9px] font-black px-2 py-0.5 rounded-full uppercase bg-black text-white dark:bg-slate-800 dark:text-white tracking-wider leading-none shrink-0">
+                                    <span className="text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider leading-none shrink-0" style={{ backgroundColor: productBadgeBg, color: productBadgeText, fontWeight: productBadgeBold ? 900 : 400, fontStyle: productBadgeItalic ? 'italic' : 'normal' }}>
                                       {`${productRef || productName}${colorName ? ` ${colorName}` : ''}`.trim()}
                                     </span>
                                     {(() => {
@@ -7451,8 +7495,8 @@ export default function PCPView({
                                       const secName = effSec === ORDER_FINALIZED
                                         ? 'Finalizado'
                                         : (sectors.find(s => s.id === effSec)?.name || effSec || '—');
-                                      return (
-                                        <span className="text-[9px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 leading-none shrink-0">
+                                      return hideSectorBadge ? null : (
+                                        <span className="text-[9px] uppercase tracking-wider leading-none shrink-0" style={{ color: sectorBadgeColor, fontWeight: sectorBadgeBold ? 900 : 400, fontStyle: sectorBadgeItalic ? 'italic' : 'normal' }}>
                                           {secName}
                                         </span>
                                       );
@@ -7793,12 +7837,14 @@ export default function PCPView({
                                     {/* Linha 1: Referência + Nome + Cor + Setor */}
                                     <div className="flex items-center justify-between gap-2 mb-1.5">
                                       <div className="flex flex-wrap items-center gap-1.5">
-                                        <span className="text-[9px] font-black px-2 py-0.5 rounded-full uppercase bg-black text-white dark:bg-slate-800 dark:text-white tracking-wider leading-none shrink-0">
+                                        <span className="text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider leading-none shrink-0" style={{ backgroundColor: productBadgeBg, color: productBadgeText, fontWeight: productBadgeBold ? 900 : 400, fontStyle: productBadgeItalic ? 'italic' : 'normal' }}>
                                           {`${productRef || productName}${colorName ? ` ${colorName}` : ''}`.trim()}
                                         </span>
-                                        <span className="text-[9px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400 leading-none shrink-0">
-                                          {secName}
-                                        </span>
+                                        {!hideSectorBadge && (
+                                          <span className="text-[9px] uppercase tracking-wider leading-none shrink-0" style={{ color: sectorBadgeColor, fontWeight: sectorBadgeBold ? 900 : 400, fontStyle: sectorBadgeItalic ? 'italic' : 'normal' }}>
+                                            {secName}
+                                          </span>
+                                        )}
                                       </div>
                                       <span
                                         className="text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest leading-none shrink-0"
@@ -8096,6 +8142,7 @@ export default function PCPView({
                                       skippedSectorNames: resolved.skippedSectorNames,
                                       chosenSectorId,
                                       lotId: selectedLot.id,
+                                      saleType: orderItem?.saleType,
                                     };
                                   });
                                   const toFinalize = resolved.filter(it => it.chosenSectorId === '');
@@ -9860,14 +9907,6 @@ export default function PCPView({
               )}
             </div>
 
-            {/* Warning Alert */}
-            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-start gap-2.5 mt-1">
-              <AlertTriangle className="text-amber-500 shrink-0 mt-0.5" size={14} />
-              <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400/90 leading-normal">
-                Use esta opção apenas se o cálculo automático do PCP estiver incorreto.
-              </p>
-            </div>
-
             {/* Actions */}
             <div className="flex flex-col gap-2 mt-2">
               <button
@@ -9953,10 +9992,10 @@ export default function PCPView({
                         value={item.chosenSectorId}
                         onChange={(e) => updateSectorChoiceItem(item.key, e.target.value)}
                         className={`flex-1 min-w-0 text-[10px] font-black uppercase tracking-widest rounded-xl px-3 py-2 border outline-none transition-all ${item.chosenSectorId === '__PENDING_SELECTION__'
-                            ? isDarkMode ? 'border-red-500/50 bg-red-500/10 text-red-400' : 'border-red-200 bg-red-50 text-red-600'
-                            : isOverridden
-                              ? 'border-orange-500 text-orange-500 bg-orange-500/10'
-                              : isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-200' : 'border-slate-200 bg-white text-slate-700'
+                          ? isDarkMode ? 'border-red-500/50 bg-red-500/10 text-red-400' : 'border-red-200 bg-red-50 text-red-600'
+                          : isOverridden
+                            ? 'border-orange-500 text-orange-500 bg-orange-500/10'
+                            : isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-200' : 'border-slate-200 bg-white text-slate-700'
                           }`}
                       >
                         <option value="__PENDING_SELECTION__" disabled>-- SELECIONE O SETOR DE DESTINO --</option>
@@ -9993,8 +10032,8 @@ export default function PCPView({
                 disabled={sectorChangeConfirm.items.some(item => item.chosenSectorId === '__PENDING_SELECTION__')}
                 onClick={handleConfirmSectorChange}
                 className={`flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all ${sectorChangeConfirm.items.some(item => item.chosenSectorId === '__PENDING_SELECTION__')
-                    ? 'bg-slate-300 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-50'
-                    : 'bg-orange-500 hover:bg-orange-600'
+                  ? 'bg-slate-300 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-50'
+                  : 'bg-orange-500 hover:bg-orange-600'
                   }`}
               >
                 Confirmar e Avançar
@@ -10337,7 +10376,7 @@ export default function PCPView({
         <div className="flex flex-col gap-5 p-1">
           <div>
             <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
-              {colorPickerLot 
+              {colorPickerLot
                 ? `Defina a cor de fundo e do texto para o identificador do mapa ${colorPickerLot.orderNumber}.`
                 : "Defina a cor de fundo e do texto padrão para o identificador do mapa (ex: MAPA009) exibido em setores e mapas."}
             </p>
@@ -10455,6 +10494,217 @@ export default function PCPView({
             className="w-full mt-2 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
           >
             Confirmar Cor
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={isBadgeColorPickerOpen}
+        onClose={() => setIsBadgeColorPickerOpen(false)}
+        title="Cor de Badges PCP"
+        icon={<Tag size={20} />}
+        maxWidth="max-w-md"
+      >
+        <div className="flex flex-col gap-6 p-1">
+          {/* Badge de Produto/Cor */}
+          <div className="flex flex-col gap-3">
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
+              Cor de fundo e do texto do badge de produto/cor (ex: 310 BRANCO) exibido nas fichas.
+            </p>
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pré-visualização</label>
+              <div className="flex justify-center py-6 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800">
+                <span
+                  className="text-[11px] px-3.5 py-1.5 rounded-full uppercase tracking-widest shadow-lg"
+                  style={{
+                    backgroundColor: productBadgeBg,
+                    color: productBadgeText,
+                    boxShadow: `0 4px 12px ${productBadgeBg}30`,
+                    fontWeight: productBadgeBold ? 900 : 400,
+                    fontStyle: productBadgeItalic ? 'italic' : 'normal',
+                  }}
+                >
+                  310 BRANCO
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cor de Fundo</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={productBadgeBg}
+                  onChange={(e) => updateProductBadgeColors(e.target.value, productBadgeText)}
+                  className="w-10 h-10 rounded-xl cursor-pointer border-2 border-slate-200 dark:border-slate-700 bg-transparent shrink-0"
+                  title="Escolher cor personalizada"
+                />
+                <div className="flex flex-wrap gap-2 max-w-[320px]">
+                  {[
+                    '#000000', '#1e293b', '#475569', '#7c3aed', '#4f46e5',
+                    '#2563eb', '#0891b2', '#0d9488', '#059669', '#16a34a',
+                    '#ca8a04', '#d97706', '#ea580c', '#dc2626', '#e11d48',
+                    // Tons suaves/pastéis
+                    '#ffffff', '#f1f5f9', '#fce7f3', '#fae8ff', '#ede9fe',
+                    '#e0e7ff', '#dbeafe', '#cffafe', '#ccfbf1', '#d1fae5',
+                    '#dcfce7', '#fef9c3', '#fef3c7', '#ffedd5', '#fee2e2',
+                    '#ffe4e6',
+                  ].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => updateProductBadgeColors(c, getContrastingColor(c))}
+                      className={`w-7 h-7 rounded-lg border transition-all ${productBadgeBg === c ? 'border-indigo-500 scale-110 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-700 hover:scale-105'}`}
+                      style={{ backgroundColor: c }}
+                      title={c}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => updateProductBadgeColors(productBadgeBg, '#ffffff')}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${productBadgeText === '#ffffff'
+                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                  }`}
+              >
+                <div className="w-3.5 h-3.5 rounded-full bg-white border border-slate-300 shrink-0" />
+                Texto Branco
+              </button>
+              <button
+                type="button"
+                onClick={() => updateProductBadgeColors(productBadgeBg, '#000000')}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${productBadgeText === '#000000'
+                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                  }`}
+              >
+                <div className="w-3.5 h-3.5 rounded-full bg-black shrink-0" />
+                Texto Preto
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={toggleProductBadgeBold}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${productBadgeBold
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                  }`}
+              >
+                <span className="font-black">N</span> Negrito
+              </button>
+              <button
+                type="button"
+                onClick={toggleProductBadgeItalic}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${productBadgeItalic
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                  }`}
+              >
+                <span className="italic font-black">I</span> Itálico
+              </button>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 dark:border-slate-800" />
+
+          {/* Texto do Setor/Status */}
+          <div className="flex flex-col gap-3">
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
+              Cor do texto do setor/status atual (ex: PREPARAÇÃO E CONFERÊNCIA) exibido nas fichas.
+            </p>
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pré-visualização</label>
+              <div className="flex justify-center py-6 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800">
+                <span
+                  className="text-[11px] uppercase tracking-widest"
+                  style={{
+                    color: sectorBadgeColor,
+                    fontWeight: sectorBadgeBold ? 900 : 400,
+                    fontStyle: sectorBadgeItalic ? 'italic' : 'normal',
+                  }}
+                >
+                  {hideSectorBadge ? '(oculto nas fichas)' : 'PREPARAÇÃO E CONFERÊNCIA'}
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cor do Texto</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={sectorBadgeColor}
+                  onChange={(e) => updateSectorBadgeColor(e.target.value)}
+                  className="w-10 h-10 rounded-xl cursor-pointer border-2 border-slate-200 dark:border-slate-700 bg-transparent shrink-0"
+                  title="Escolher cor personalizada"
+                />
+                <div className="flex flex-wrap gap-2 max-w-[320px]">
+                  {[
+                    '#e11d48', '#dc2626', '#ea580c', '#d97706', '#ca8a04',
+                    '#16a34a', '#059669', '#0d9488', '#0891b2', '#2563eb',
+                    '#4f46e5', '#7c3aed', '#c026d3', '#475569', '#000000',
+                    // Tons suaves/pastéis
+                    '#ffffff', '#f1f5f9', '#fce7f3', '#fae8ff', '#ede9fe',
+                    '#e0e7ff', '#dbeafe', '#cffafe', '#ccfbf1', '#d1fae5',
+                    '#dcfce7', '#fef9c3', '#fef3c7', '#ffedd5', '#fee2e2',
+                    '#ffe4e6',
+                  ].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => updateSectorBadgeColor(c)}
+                      className={`w-7 h-7 rounded-lg border transition-all ${sectorBadgeColor === c ? 'border-indigo-500 scale-110 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-700 hover:scale-105'}`}
+                      style={{ backgroundColor: c }}
+                      title={c}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={toggleSectorBadgeBold}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${sectorBadgeBold
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                  }`}
+              >
+                <span className="font-black">N</span> Negrito
+              </button>
+              <button
+                type="button"
+                onClick={toggleSectorBadgeItalic}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${sectorBadgeItalic
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                  }`}
+              >
+                <span className="italic font-black">I</span> Itálico
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={toggleHideSectorBadge}
+              className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${hideSectorBadge
+                ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                }`}
+            >
+              {hideSectorBadge ? <Eye size={14} /> : <Eye size={14} className="opacity-50" />}
+              {hideSectorBadge ? 'Setor Oculto nas Fichas' : 'Ocultar Nome do Setor nas Fichas'}
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsBadgeColorPickerOpen(false)}
+            className="w-full mt-1 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
+          >
+            Confirmar Cores
           </button>
         </div>
       </Modal>

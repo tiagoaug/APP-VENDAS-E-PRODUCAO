@@ -13,6 +13,9 @@ import { sharePDF } from "../utils/pdfExport";
 import { toast } from '../utils/toast';
 import { scannerService, SCAN_HISTORY_KEY, ScanHistoryEntry } from '../services/scannerService';
 import { getLotPendingSectorGroups } from '../utils/productionRoute';
+import { getPoolQty, getStockValue } from '../utils/stockPools';
+import { isDashboardCardAllowed, collaboratorCanUseAI } from '../utils/collaborators';
+import type { Collaborator } from '../types';
 
 type DashboardScanItem = ScanHistoryEntry;
 
@@ -42,6 +45,7 @@ interface DashboardViewProps {
   isDarkMode: boolean;
   dashboardConfig: DashboardConfig;
   modulesConfig: import("../types").AppModulesConfig;
+  activeCollaborator?: Collaborator | null;
 }
 
 export default function DashboardView({
@@ -66,6 +70,7 @@ export default function DashboardView({
   isDarkMode,
   dashboardConfig,
   modulesConfig,
+  activeCollaborator = null,
 }: DashboardViewProps) {
   const [checksSearch, setChecksSearch] = useState("");
   const [lowStockSearch, setLowStockSearch] = useState("");
@@ -232,6 +237,7 @@ export default function DashboardView({
 
     sales.forEach(sale => {
       if (sale.status === SaleStatus.CANCELLED) return;
+      if (sale.isAccounting === false) return; // Não incluir "Não Contábil"
       if (sale.paymentStatus === PaymentStatus.PAID) return;
 
       const totalPaid = (sale.paymentHistory || []).reduce((acc, p) => acc + p.amount, 0);
@@ -278,11 +284,9 @@ export default function DashboardView({
 
     // Quantidade em estoque de uma variação: para ATACADO, apenas a contagem de
     // caixas (v.stock['WHOLESALE']) — os tamanhos individuais ali presentes vêm
-    // da produção e não devem ser somados de novo (senão dobra a contagem).
-    const getVariationQty = (p: Product, v: Variation) =>
-      p.type === SaleType.WHOLESALE
-        ? (v.stock['WHOLESALE'] || 0)
-        : Object.values(v.stock || {}).reduce((sum, s) => sum + (Number(s) || 0), 0);
+    // da produção e não devem ser somados de novo (senão dobra a contagem). Para
+    // produto híbrido (Atacado + Varejo), soma os dois pools (getPoolQty).
+    const getVariationQty = (p: Product, v: Variation) => getPoolQty(p, v);
 
     const lowStockProducts = products.filter(p => {
       return (p.variations || []).some(
@@ -293,20 +297,21 @@ export default function DashboardView({
     const lowStockAlerts = lowStockProducts.length;
 
     const stockSummary = products.reduce((acc, p) => {
-      let totalQty = 0;
       (p.variations || []).forEach(v => {
         const qty = getVariationQty(p, v);
-        totalQty += qty;
-        
+
         // Group by color
         const colorName = v.colorName || 'Sem Cor';
         acc.stockByColor[colorName] = (acc.stockByColor[colorName] || 0) + qty;
+
+        // Custo/venda por pool — produto híbrido usa preço de caixa para o pool
+        // Atacado e preço unitário por par para o pool Varejo (getStockValue).
+        const { costValue, saleValue } = getStockValue(p, v);
+        acc.totalCostValue += costValue;
+        acc.totalSaleValue += saleValue;
+        acc.estimatedProfit += saleValue - costValue;
       });
 
-      acc.totalCostValue += totalQty * (p.costPrice || 0);
-      acc.totalSaleValue += totalQty * (p.salePrice || 0);
-      acc.estimatedProfit += totalQty * ((p.salePrice || 0) - (p.costPrice || 0));
-      
       return acc;
     }, { totalCostValue: 0, totalSaleValue: 0, estimatedProfit: 0, stockByColor: {} as Record<string, number> });
 
@@ -316,7 +321,7 @@ export default function DashboardView({
       .slice(0, 5);
 
     const pendingReceivables = sales
-      .filter(s => s.status !== SaleStatus.CANCELLED && s.paymentStatus !== PaymentStatus.PAID)
+      .filter(s => s.status !== SaleStatus.CANCELLED && s.isAccounting !== false && s.paymentStatus !== PaymentStatus.PAID)
       .reduce((acc, sale) => {
         const totalPaid = (sale.paymentHistory || []).reduce((acc, p) => acc + p.amount, 0);
         return acc + Math.max(0, sale.total - totalPaid);
@@ -571,6 +576,11 @@ export default function DashboardView({
 
       {sortedCards.map((card) => {
         if (!card.visible) return null;
+
+        // Mostra só os cards do(s) setor(es) do colaborador ativo — sem colaborador
+        // ativo (ou colaborador de acesso total), nada muda do comportamento atual.
+        if (card.id === 'ai_assistant' && !collaboratorCanUseAI(activeCollaborator)) return null;
+        if (!isDashboardCardAllowed(activeCollaborator, card.id)) return null;
 
         // Strict Modular Gating
         if (card.id === 'personal_balance' && !modulesConfig.personal) return null;
@@ -988,17 +998,17 @@ export default function DashboardView({
                 <div className="h-[200px] overflow-y-auto space-y-2 pr-1 no-scrollbar">
                   {(stats.lowStockProducts || []).filter(p => p.name?.toLowerCase().includes(lowStockSearch.toLowerCase())).map((product) => (
                     (product.variations || [])
-                      .filter(v => Object.values(v.stock || {}).reduce((sum: number, s: any) => sum + Number(s || 0), 0) < (v.minStock || 0))
+                      .filter(v => getPoolQty(product, v) < (v.minStock || 0))
                       .map((variation, vIdx) => (
                         <div key={`${product.id}-${vIdx}`} className={`p-3 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
                           <p className="text-[11px] font-bold text-slate-700 dark:text-slate-200">{product.name}</p>
                           <p className="text-[9px] text-slate-500 mt-0.5">
-                            Cor: {variation.colorName || 'Padrão'} | Qtd: <span className="text-rose-500 font-bold">{Object.values(variation.stock || {}).reduce((sum: number, s: any) => sum + Number(s || 0), 0)}</span>
+                            Cor: {variation.colorName || 'Padrão'} | Qtd: <span className="text-rose-500 font-bold">{getPoolQty(product, variation)}</span>
                           </p>
                         </div>
                       ))
                   ))}
-                  {(stats.lowStockProducts || []).filter(p => (p.name || '').toLowerCase().includes(lowStockSearch.toLowerCase())).flatMap(p => (p.variations || []).filter(v => Object.values(v.stock || {}).reduce((sum: number, s: any) => sum + Number(s || 0), 0) < (v.minStock || 0))).length === 0 && (
+                  {(stats.lowStockProducts || []).filter(p => (p.name || '').toLowerCase().includes(lowStockSearch.toLowerCase())).flatMap(p => (p.variations || []).filter(v => getPoolQty(p, v) < (v.minStock || 0))).length === 0 && (
                     <p className="text-[10px] text-center text-slate-400 py-4">Nenhum produto baixo encontrado.</p>
                   )}
                 </div>
@@ -1835,7 +1845,18 @@ export default function DashboardView({
           case "pcp_purchase_needs": {
             if (!modulesConfig.production) return null;
             const pendingReqs = purchaseRequests.filter((r: any) => r.status === 'PENDING' || r.status === 'IN_PROGRESS');
-            const activeLotCount = productionLots.filter((l: any) => !l.finishedAt).length;
+            const activeLots = productionLots.filter((l: any) => !l.finishedAt);
+            const activeOrdersCount = (() => {
+              const orderIds = new Set<string>();
+              activeLots.forEach(lot => {
+                if (lot.productionOrderId) orderIds.add(lot.productionOrderId);
+                const sourceItems = (lot as any).metadata?.sourceItems || [];
+                sourceItems.forEach((si: any) => {
+                  if (si.orderId) orderIds.add(si.orderId);
+                });
+              });
+              return orderIds.size;
+            })();
             return (
               <div key="pcp_purchase_needs" className={`p-5 rounded-[1.5rem] border flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
                 <div className="flex items-center justify-between">
@@ -1849,8 +1870,8 @@ export default function DashboardView({
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className={`p-3 rounded-2xl border flex flex-col gap-1 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Mapas Ativos</p>
-                    <p className={`text-2xl font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{activeLotCount}</p>
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Pedidos em Prod.</p>
+                    <p className={`text-2xl font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{activeOrdersCount}</p>
                   </div>
                   <div className={`p-3 rounded-2xl border flex flex-col gap-1 ${pendingReqs.length > 0 ? (isDarkMode ? 'bg-rose-900/20 border-rose-700/40' : 'bg-rose-50 border-rose-100') : (isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-emerald-50 border-emerald-100')}`}>
                     <p className={`text-[8px] font-black uppercase tracking-widest ${pendingReqs.length > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>Solicitações</p>

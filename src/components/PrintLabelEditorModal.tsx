@@ -221,7 +221,12 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
 
   // Lote "mapa" agrupando múltiplas variantes (sem variationId único) — instruções
   // por setor são exclusivas de uma variante e não fazem sentido nesse contexto.
-  const isMultiVariantMap = !!lot && (!lot.variationId || (((lot as any).metadata?.groups?.length ?? 0) > 1));
+  // Quando a impressão veio de uma seleção específica (batchItems), o que importa é
+  // quantas variantes DISTINTAS estão nessa seleção — não a composição do mapa
+  // inteiro (um mapa pode cortar várias cores juntas, mas o pedido impresso é só uma).
+  const isMultiVariantMap = batchItems && batchItems.length > 0
+    ? new Set(batchItems.map(bi => bi.variation.id)).size > 1
+    : !!lot && (!lot.variationId || (((lot as any).metadata?.groups?.length ?? 0) > 1));
 
   const rawLayout = layouts[sizeKey === 'manual' ? `${manualW}x${manualH}` : sizeKey] ?? defaultLayout(paperDims);
   const def = defaultLayout(paperDims);

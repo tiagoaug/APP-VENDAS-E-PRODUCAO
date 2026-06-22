@@ -79,6 +79,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [salePrice, setSalePrice] = useState<number | string>(existingProduct?.salePrice ?? 0);
   const [unitSalePrice, setUnitSalePrice] = useState<number | string>(existingProduct?.unitSalePrice ?? 0);
   const [minStockInBoxes, setMinStockInBoxes] = useState<number | string>(existingProduct?.minStockInBoxes ?? 0);
+  const [minStockRetailPairs, setMinStockRetailPairs] = useState<number | string>(existingProduct?.minStockRetailPairs ?? 0);
 
   const profitPerBox = useMemo(() => (parseFloat(salePrice as string) || 0) - (parseFloat(costPrice as string) || 0), [salePrice, costPrice]);
   const profitPerPair = useMemo(() => (parseFloat(unitSalePrice as string) || 0) - (parseFloat(unitCostPrice as string) || 0), [unitSalePrice, unitCostPrice]);
@@ -289,6 +290,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       salePrice: parseFloat(salePrice as string) || 0,
       unitSalePrice: parseFloat(unitSalePrice as string) || 0,
       minStockInBoxes: parseInt(minStockInBoxes as string) || 0,
+      ...(saleTypes.includes(SaleType.WHOLESALE) && saleTypes.includes(SaleType.RETAIL)
+        ? { minStockRetailPairs: parseInt(minStockRetailPairs as string) || 0 }
+        : {}),
       priceAdjustmentDate: adjustmentDate ? new Date(adjustmentDate).getTime() : undefined,
       costPriceAdjustmentAmount: parseFloat(costPriceAdjustmentAmount as string) || 0,
       salePriceAdjustmentAmount: parseFloat(salePriceAdjustmentAmount as string) || 0,
@@ -1629,6 +1633,25 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       <Package size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
                     </div>
                   </div>
+
+                  {saleTypes.includes(SaleType.WHOLESALE) && saleTypes.includes(SaleType.RETAIL) && (
+                    <div className="col-span-1">
+                      <label className="text-[10px] uppercase font-black text-indigo-600 dark:text-indigo-400 px-1 mb-2 block tracking-widest leading-none">
+                        Estoque Mín. Varejo (Pares)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          className={`w-full border-2 rounded-2xl px-6 py-4.5 pl-12 text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-500'}`}
+                          value={minStockRetailPairs}
+                          aria-label="Estoque mínimo varejo"
+                          title="Estoque Mínimo Varejo"
+                          onChange={(e) => setMinStockRetailPairs(e.target.value)}
+                        />
+                        <Tag size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      </div>
+                    </div>
+                  )}
 
                   <div className="col-span-1 sm:col-span-2 p-5 bg-white/50 dark:bg-slate-900/50 rounded-3xl border border-dashed border-emerald-100 dark:border-emerald-900/30">
                     <div className="flex items-center gap-3 mb-4">

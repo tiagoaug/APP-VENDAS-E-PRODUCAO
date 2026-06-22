@@ -57,6 +57,18 @@ import PackagingBuilderModal from '../components/PackagingBuilderModal';
 import GradeBuilderModal from '../components/GradeBuilderModal';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
+import { isHybridProduct } from '../utils/stockPools';
+
+// Cor de texto legível sobre um fundo hexadecimal (preto ou branco, pelo contraste YIQ).
+const getContrastingColor = (hexcolor: string) => {
+  if (!hexcolor || hexcolor.length < 6) return '#ffffff';
+  const cleanHex = hexcolor.replace('#', '');
+  const r = parseInt(cleanHex.substring(0, 2), 16);
+  const g = parseInt(cleanHex.substring(2, 4), 16);
+  const b = parseInt(cleanHex.substring(4, 6), 16);
+  const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+  return (yiq >= 128) ? '#000000' : '#ffffff';
+};
 
 interface PurchaseFormViewProps {
   purchaseId: string | null;
@@ -177,6 +189,7 @@ export default function PurchaseFormView({
     cost: number;
     unitCost?: number;
     blockPkgId?: string;
+    saleType?: SaleType; // pool de estoque a reabastecer (produtos híbridos)
     variations: Record<string, { quantity: number; size?: string; note?: string }>;
   }
 
@@ -186,21 +199,26 @@ export default function PurchaseFormView({
     existing.items.forEach((item) => {
       const key = `${item.productId}-${item.isBox}-${item.cost}`;
       if (!b[key]) {
+        const prod = products.find(p => p.id === item.productId);
         b[key] = {
           id: generateId(),
           productId: item.productId,
           isBox: item.isBox,
           cost: item.cost,
           unitCost: item.unitCost,
+          saleType: item.saleType ?? prod?.saleTypes?.[0] ?? prod?.type,
           variations: {},
         };
       }
-      if (!b[key].variations[item.variationId]) {
-        b[key].variations[item.variationId] = { quantity: 0, size: "" };
+      // Varejo (com tamanho) usa chave composta para não mesclar tamanhos diferentes
+      // da mesma variação em uma única entrada.
+      const varKey = item.size ? `${item.variationId}-${item.size}` : item.variationId;
+      if (!b[key].variations[varKey]) {
+        b[key].variations[varKey] = { quantity: 0, size: "" };
       }
-      b[key].variations[item.variationId].quantity += item.quantity;
-      b[key].variations[item.variationId].size =
-        item.size || b[key].variations[item.variationId].size;
+      b[key].variations[varKey].quantity += item.quantity;
+      b[key].variations[varKey].size =
+        item.size || b[key].variations[varKey].size;
     });
     return Object.values(b);
   });
@@ -424,6 +442,7 @@ export default function PurchaseFormView({
         isBox: type === PurchaseType.REPLENISHMENT,
         cost: p.costPrice || 0,
         unitCost: calcUnitCost(p.costPrice || 0, p),
+        saleType: p.saleTypes?.[0] ?? p.type,
         variations: {},
       },
     ]);
@@ -449,10 +468,14 @@ export default function PurchaseFormView({
   const updateVariation = (blockIndex: number, variationId: string, quantity: number, size: string = "") => {
     const newBlocks = [...blocks];
     const block = newBlocks[blockIndex];
-    const current = block.variations[variationId] || { quantity: 0, size: "" };
+    // Varejo (grade por tamanho): chave composta variationId-size, uma entrada por
+    // tamanho — igual ao padrão já usado em SaleFormView. Atacado: chave simples
+    // (variationId), sem mudança de comportamento.
+    const key = size ? `${variationId}-${size}` : variationId;
+    const current = block.variations[key] || { quantity: 0, size: "" };
     block.variations = {
       ...block.variations,
-      [variationId]: { ...current, quantity: Math.max(0, quantity), size },
+      [key]: { ...current, quantity: Math.max(0, quantity), size },
     };
     setBlocks(newBlocks);
   };
@@ -588,17 +611,22 @@ export default function PurchaseFormView({
     const finalItems: PurchaseItem[] = [];
     if (type === PurchaseType.REPLENISHMENT) {
       blocks.forEach((b) => {
-        Object.entries(b.variations).forEach(([varId, data]) => {
+        Object.entries(b.variations).forEach(([varKey, data]) => {
           const typedData = data as { quantity: number; size?: string };
           if (typedData.quantity > 0) {
+            // Varejo (grade por tamanho) usa chave composta `${variationId}-${size}`;
+            // Atacado usa a chave simples (variationId). IDs gerados por generateId()
+            // nunca têm hífen, então o split é seguro.
+            const variationId = typedData.size ? varKey.split('-')[0] : varKey;
             finalItems.push({
               productId: b.productId,
-              variationId: varId,
+              variationId,
               quantity: typedData.quantity,
               size: typedData.size,
               isBox: b.isBox,
               cost: b.cost,
               unitCost: b.unitCost,
+              saleType: b.saleType,
             });
           }
         });
@@ -649,9 +677,12 @@ export default function PurchaseFormView({
 
     // Cria (ou atualiza) o Pedido de Produção (OP) na fila de espera do PCP — mapas são criados manualmente lá
     if (type === PurchaseType.REPLENISHMENT && isProductionOrder) {
-      // Validação: embalagem obrigatória para cada variação com quantidade > 0
+      // Validação: embalagem obrigatória para cada variação com quantidade > 0 — só
+      // se aplica a Atacado (caixa coletiva agrupando pares). Varejo não tem grade/
+      // embalagem: cada entrada já é a quantidade exata de pares daquele tamanho.
       const missingPkg: string[] = [];
       blocks.forEach(block => {
+        if (block.saleType === SaleType.RETAIL) return;
         const product = products.find(p => p.id === block.productId);
         Object.entries(block.variations).forEach(([variationId, varData]) => {
           const typedVarData = varData as { quantity: number; size?: string; note?: string };
@@ -678,6 +709,48 @@ export default function PurchaseFormView({
 
       blocks.forEach(block => {
         const product = products.find(p => p.id === block.productId);
+
+        if (block.saleType === SaleType.RETAIL) {
+          // Varejo: não existe grade/embalagem — cada entrada da grade por tamanho já
+          // É a quantidade exata de pares daquele tamanho (sem multiplicador de caixa).
+          // Agrupa por variação (cor) para gerar um ProductionOrderItem por cor, igual ao Atacado.
+          const byVariation = new Map<string, { sizes: Record<string, number>; note?: string }>();
+          Object.entries(block.variations).forEach(([varKey, varData]) => {
+            const typedVarData = varData as { quantity: number; size?: string; note?: string };
+            if (typedVarData.quantity <= 0 || !typedVarData.size) return;
+            const variationId = varKey.split('-')[0];
+            const entry = byVariation.get(variationId) || { sizes: {} as Record<string, number> };
+            entry.sizes[typedVarData.size] = (entry.sizes[typedVarData.size] || 0) + typedVarData.quantity;
+            if (typedVarData.note?.trim()) entry.note = typedVarData.note.trim();
+            byVariation.set(variationId, entry);
+          });
+
+          byVariation.forEach((entry, variationId) => {
+            const variation = product?.variations.find(v => v.id === variationId);
+            const sizesResult: Record<string, { total: number; fromStock: number; toProduction: number }> = {};
+            let totalPairs = 0;
+            Object.entries(entry.sizes).forEach(([size, qty]) => {
+              sizesResult[size] = { total: qty, fromStock: 0, toProduction: qty };
+              totalPairs += qty;
+            });
+            if (totalPairs === 0) return;
+            const combinedNote = [productionGlobalNote?.trim(), entry.note].filter(Boolean).join('\n') || undefined;
+            orderItems.push({
+              productId: block.productId,
+              productName: product?.name || '',
+              variationId,
+              variationName: variation?.colorName || '',
+              saleType: SaleType.RETAIL,
+              sizes: sizesResult,
+              totalQuantity: totalPairs,
+              fromStockQty: 0,
+              toProductionQty: totalPairs,
+              ...(combinedNote ? { notes: combinedNote } : {}),
+            });
+          });
+          return;
+        }
+
         Object.entries(block.variations).forEach(([variationId, varData]) => {
           const typedVarData = varData as { quantity: number; size?: string; note?: string };
           if (typedVarData.quantity <= 0) return;
@@ -1623,6 +1696,9 @@ export default function PurchaseFormView({
               const product = products.find((p) => p.id === block.productId);
               if (!product) return null;
               const isExpanded = expandedBlocks.includes(block.id);
+              // Caixa coletiva/grade só existem em Atacado — Varejo não agrupa pares em
+              // caixa, cada par já é uma unidade vendida individualmente.
+              const blockIsWholesale = (block.saleType ?? product.type) === SaleType.WHOLESALE;
 
               const totalItemsInBlock = Object.values(block.variations).reduce<number>((sum, v) => sum + (v as { quantity: number }).quantity, 0);
 
@@ -1685,8 +1761,8 @@ export default function PurchaseFormView({
                   {isExpanded && (
                     <div className="px-5 pb-5 pt-3 border-t border-slate-50 dark:border-slate-800 flex flex-col gap-4">
 
-                      {/* Caixa Coletiva — quando OP ativo */}
-                      {isProductionOrder && (() => {
+                      {/* Caixa Coletiva — quando OP ativo, só para Atacado */}
+                      {isProductionOrder && blockIsWholesale && (() => {
                         const packagingConfigs = productionConfigs.filter(c => c.type === 'PACKAGING');
                         const selectedPkg = block.blockPkgId ? packagingConfigs.find(c => c.id === block.blockPkgId) : null;
                         const capacity = selectedPkg?.metadata?.capacity || 0;
@@ -1719,19 +1795,36 @@ export default function PurchaseFormView({
                       {/* Modalidade */}
                       <div className="flex flex-col gap-1.5">
                         <label className="text-[8px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest px-1">Modalidade</label>
-                        <div className="text-[9px] font-black py-3 rounded-2xl border-2 uppercase tracking-widest bg-slate-50 dark:bg-slate-800 text-slate-400 border-slate-100 dark:border-slate-800 text-center flex items-center justify-center gap-2">
-                          <Box size={12} /> Somente Atacado
-                        </div>
+                        {isHybridProduct(product) ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newType = block.saleType === SaleType.RETAIL ? SaleType.WHOLESALE : SaleType.RETAIL;
+                              updateBlock(index, { saleType: newType });
+                            }}
+                            className={`w-full text-[9px] font-black py-3 rounded-2xl border-2 uppercase tracking-widest transition-all ${block.saleType === SaleType.WHOLESALE ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-slate-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/50'}`}
+                            aria-label="Mudar modalidade de reposição"
+                            title="Modalidade"
+                          >
+                            {block.saleType === SaleType.WHOLESALE ? 'Atacado' : 'Varejo'}
+                          </button>
+                        ) : (
+                          <div className="text-[9px] font-black py-3 rounded-2xl border-2 uppercase tracking-widest bg-slate-50 dark:bg-slate-800 text-slate-400 border-slate-100 dark:border-slate-800 text-center flex items-center justify-center gap-2">
+                            <Box size={12} /> {block.saleType === SaleType.RETAIL ? 'Somente Varejo' : 'Somente Atacado'}
+                          </div>
+                        )}
                       </div>
 
-                      {/* Custo Grade */}
+                      {/* Custo Grade (Atacado) / Custo Unitário (Varejo — não há grade, cada par é uma unidade) */}
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-[8px] uppercase font-black text-slate-400 tracking-widest px-1">Custo Grade (R$)</label>
+                        <label className="text-[8px] uppercase font-black text-slate-400 tracking-widest px-1">
+                          {blockIsWholesale ? 'Custo Grade (R$)' : 'Custo Unitário (R$/par)'}
+                        </label>
                         <div className="flex gap-2">
                           <input type="number" step="0.01"
                             className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-xl py-2.5 text-right pr-3 text-[12px] font-black text-indigo-600 dark:text-indigo-400 focus:ring-2 focus:ring-indigo-500/10"
                             value={block.cost} onChange={(e) => updateBlock(index, { cost: parseFloat(e.target.value) || 0 })}
-                            aria-label="Custo Grade" title="Custo Grade" />
+                            aria-label={blockIsWholesale ? 'Custo Grade' : 'Custo Unitário por Par'} title={blockIsWholesale ? 'Custo Grade' : 'Custo Unitário por Par'} />
                           <button type="button" onClick={(e) => { e.preventDefault(); openCalculator(index, 'blocks'); }}
                             className="w-10 flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 rounded-xl" title="Calculadora" aria-label="Calculadora">
                             <Calculator size={16} strokeWidth={2.5} />
@@ -1739,18 +1832,20 @@ export default function PurchaseFormView({
                         </div>
                       </div>
 
-                      {/* Custo Unitário */}
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-[8px] uppercase font-black text-sky-400 tracking-widest px-1">Custo Unitário (R$/par)</label>
-                        <input type="number" step="0.01"
-                          className="w-full bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-xl py-2.5 text-right pr-3 text-[12px] font-black text-sky-600 dark:text-sky-400 focus:ring-2 focus:ring-sky-500/10 transition-all"
-                          value={block.unitCost || ''}
-                          placeholder="0,00"
-                          aria-label="Custo por par"
-                          title="Custo Unitário por Par"
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) => updateBlock(index, { unitCost: parseFloat(e.target.value) || 0 })} />
-                      </div>
+                      {/* Custo Unitário — só em Atacado (preço por par avulso de uma caixa fechada) */}
+                      {blockIsWholesale && (
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[8px] uppercase font-black text-sky-400 tracking-widest px-1">Custo Unitário (R$/par)</label>
+                          <input type="number" step="0.01"
+                            className="w-full bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 rounded-xl py-2.5 text-right pr-3 text-[12px] font-black text-sky-600 dark:text-sky-400 focus:ring-2 focus:ring-sky-500/10 transition-all"
+                            value={block.unitCost || ''}
+                            placeholder="0,00"
+                            aria-label="Custo por par"
+                            title="Custo Unitário por Par"
+                            onFocus={(e) => e.target.select()}
+                            onChange={(e) => updateBlock(index, { unitCost: parseFloat(e.target.value) || 0 })} />
+                        </div>
+                      )}
 
                       {/* Variações */}
                       <div className="flex flex-col gap-3">
@@ -1758,17 +1853,65 @@ export default function PurchaseFormView({
                         {product.variations.map((v) => {
                           const varState = block.variations[v.id] || { quantity: 0 };
                           const qty = varState.quantity;
-                          // Estoque exibido deve casar com o Controle de Estoque/Vendas:
-                          // para atacado é a contagem de caixas (v.stock['WHOLESALE']); para
-                          // varejo é a soma das grades por tamanho. Somar TODAS as chaves de
-                          // v.stock inflava o número no atacado (contava resíduo por tamanho).
-                          const stock = product.type === SaleType.WHOLESALE
+                          // Estoque exibido deve casar com o pool escolhido na Modalidade:
+                          // Atacado é a contagem de caixas (v.stock['WHOLESALE']); Varejo é a
+                          // soma dos pares por tamanho (todas as chaves exceto 'WHOLESALE').
+                          const stock = blockIsWholesale
                             ? (v.stock?.['WHOLESALE'] || 0)
-                            : Object.values(v.stock || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+                            : Object.entries(v.stock || {}).reduce((s, [k, q]) => k === 'WHOLESALE' ? s : s + (Number(q) || 0), 0);
                           const varPkgKey = `${block.id}-${v.id}`;
                           const varPkg = packagingPerVar[varPkgKey];
                           const varPkgConfig = varPkg?.pkgId ? productionConfigs.find(c => c.id === varPkg.pkgId) : null;
                           const varPkgTotal = varPkg ? Object.values(varPkg.breakdown).reduce((a, b) => a + b, 0) : 0;
+
+                          // Varejo: grade por tamanho — necessária para reabastecer o pool
+                          // varejo na chave certa (sem tamanho, a compra cairia em 'WHOLESALE').
+                          const grid = !blockIsWholesale ? grids.find(g => g.id === product.defaultGridId) : null;
+                          if (grid) {
+                            const textColor = getContrastingColor(v.color);
+                            return (
+                              <div key={v.id} className={`rounded-[1.75rem] border overflow-hidden shadow-lg ${isDarkMode ? 'border-slate-800 shadow-black/30' : 'border-slate-100 shadow-slate-200/60'}`}>
+                                <div
+                                  className="relative overflow-hidden px-4 py-3 flex items-center gap-3"
+                                  style={{ background: `linear-gradient(135deg, ${v.color} 0%, ${v.color}aa 100%)` }}
+                                >
+                                  <div className="absolute -right-8 -top-8 w-28 h-28 bg-white/15 rounded-full blur-2xl pointer-events-none" />
+                                  <div className="absolute -left-6 -bottom-8 w-20 h-20 bg-black/10 rounded-full blur-xl pointer-events-none" />
+                                  <div
+                                    className="w-8 h-8 rounded-full border-2 shrink-0 shadow-md relative z-10"
+                                    style={{ backgroundColor: v.color, borderColor: textColor === '#ffffff' ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.2)' }}
+                                  />
+                                  <p className="text-sm font-black uppercase tracking-wide relative z-10" style={{ color: textColor, textShadow: textColor === '#ffffff' ? '0 1px 2px rgba(0,0,0,0.25)' : 'none' }}>
+                                    {v.colorName}
+                                  </p>
+                                </div>
+                                <div className={`grid grid-cols-2 sm:grid-cols-3 gap-2 p-3 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                                  {grid.sizes.map(size => {
+                                    const sizeKey = `${v.id}-${size}`;
+                                    const sizeState = block.variations[sizeKey] || { quantity: 0, size };
+                                    const sizeStock = v.stock?.[size] || 0;
+                                    return (
+                                      <div key={sizeKey} className={`p-3 rounded-2xl border flex flex-col gap-2 ${sizeState.quantity > 0 ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800' : 'bg-slate-50/50 dark:bg-slate-800/30 border-transparent'}`}>
+                                        <div className="flex justify-between items-center text-[9px] font-black uppercase tracking-tight">
+                                          <span className="text-slate-700 dark:text-slate-200">TAM. {size}</span>
+                                          <span className={sizeStock > 0 ? 'text-emerald-500' : 'text-rose-500'}>{sizeStock} prs</span>
+                                        </div>
+                                        <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-1">
+                                          <button type="button" onClick={() => updateVariation(index, v.id, Math.max(0, (sizeState.quantity || 0) - 1), size)}
+                                            className="w-6 h-6 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-500" title="Diminuir" aria-label="Diminuir"><Minus size={12} strokeWidth={3} /></button>
+                                          <input type="number" className="flex-1 w-full bg-transparent border-none p-0 text-center font-black text-[11px] text-slate-800 dark:text-white focus:ring-0"
+                                            value={sizeState.quantity || ''} placeholder="0" title="Quantidade" aria-label="Quantidade"
+                                            onChange={(e) => updateVariation(index, v.id, parseInt(e.target.value) || 0, size)} />
+                                          <button type="button" onClick={() => updateVariation(index, v.id, (sizeState.quantity || 0) + 1, size)}
+                                            className="w-6 h-6 rounded-lg flex items-center justify-center text-indigo-500" title="Aumentar" aria-label="Aumentar"><Plus size={12} strokeWidth={3} /></button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          }
 
                           return (
                             <div key={v.id} className={`rounded-2xl border overflow-hidden ${qty > 0 ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800' : 'bg-slate-50/50 dark:bg-slate-800/30 border-transparent'}`}>
@@ -1776,7 +1919,7 @@ export default function PurchaseFormView({
                                 <div className="flex-1">
                                   <p className="text-[11px] font-black uppercase text-slate-700 dark:text-slate-200">{v.colorName}</p>
                                   <p className={`text-[9px] font-bold uppercase tracking-widest mt-0.5 ${stock > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                    Estoque: {stock} grades
+                                    Estoque: {stock} {blockIsWholesale ? 'grades' : 'pares'}
                                   </p>
                                 </div>
                                 <div className="flex items-center gap-2 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-xl p-1">

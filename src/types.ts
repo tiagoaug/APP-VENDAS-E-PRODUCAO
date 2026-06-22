@@ -165,6 +165,7 @@ export type Product = {
   salePrice: number;
   unitSalePrice?: number;
   minStockInBoxes: number;
+  minStockRetailPairs?: number; // mínimo do pool varejo (pares), só usado em produtos híbridos
   priceAdjustmentDate?: number;
   costPriceAdjustmentAmount?: number;
   salePriceAdjustmentAmount?: number;
@@ -189,6 +190,7 @@ export type PurchaseItem = {
   cost: number;
   note?: string;
   unitCost?: number;
+  saleType?: SaleType; // pool de estoque a reabastecer (produtos híbridos); ausente = usa product.type
 };
 
 export type GeneralPurchaseItem = {
@@ -475,6 +477,7 @@ export enum ViewType {
   PRODUCTION_GENERAL_RECEIPT = 'PRODUCTION_GENERAL_RECEIPT',
   MANUAL = 'MANUAL',
   PRINT_CENTER = 'PRINT_CENTER',
+  COLLABORATORS_CONFIG = 'COLLABORATORS_CONFIG',
 }
 
 export type DashboardCardConfig = {
@@ -533,6 +536,26 @@ export type AppModulesConfig = {
   personal: boolean;
   sales: boolean;
   production: boolean;
+};
+
+export type SectorId =
+  | 'vendas' | 'compras' | 'cadastro_produtos' | 'cadastro_insumos'
+  | 'producao_pcp' | 'estoque' | 'financeiro' | 'clientes_fornecedores'
+  | 'pessoal' | 'sistema';
+
+export type Collaborator = {
+  id: string;
+  name: string;
+  pin: string;
+  colorHex: string;
+  isUnrestricted: boolean;
+  sectors: SectorId[];
+  canUseAI: boolean;
+  themePref?: string;
+  fontScalePref?: number;
+  fontFamilyPref?: string;
+  navIconModePref?: string;
+  navMonoColorPref?: string;
 };
 
 export type ProductionConfigItem = {

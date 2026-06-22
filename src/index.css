@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wght@8..144,100..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wght@8..144,100..900&family=Roboto:wght@400;500;700;900&family=Inter:wght@400;500;600;700;800;900&family=Open+Sans:wght@400;600;700;800&family=Lato:wght@400;700;900&family=Montserrat:wght@400;600;700;800;900&family=Poppins:wght@400;500;600;700;800;900&family=Nunito:wght@400;600;700;800;900&family=Raleway:wght@400;600;700;800;900&family=Source+Sans+3:wght@400;600;700;800&family=Ubuntu:wght@400;500;700&family=Noto+Sans:wght@400;600;700;800&family=PT+Sans:wght@400;700&family=Work+Sans:wght@400;600;700;800&family=Rubik:wght@400;500;700;800;900&family=Mukta:wght@400;600;700;800&family=Karla:wght@400;600;700;800&display=swap');
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -66,6 +66,92 @@
 .industrial .border-slate-50 {
   border-color: #d1d5db !important; /* gray-300 */
 }
+
+/* ── Temas adicionais (Personalização) ──────────────────────────────────────
+   Mesmo mecanismo do .industrial: reaproveita as classes utilitárias comuns já
+   usadas em todo o app (bg-white, bg-slate-50/100, text-slate-900/500/400,
+   text-indigo-600 etc.) e força a cor do tema por cima, sem precisar editar
+   componente por componente. */
+
+.theme-ocean {
+  --color-background: #ecfeff; /* cyan-50 */
+  --color-surface: #ffffff;
+  --color-text-main: #0c4a6e; /* sky-900 */
+  --color-text-muted: #0e7490; /* cyan-700 */
+  --color-text-dim: #67a3b8;
+  --color-primary: #0891b2; /* cyan-600 */
+  --color-primary-dark: #0e7490;
+  --color-primary-light: #cffafe;
+}
+.theme-ocean .bg-white, .theme-ocean .bg-slate-50 { background-color: var(--color-surface) !important; }
+.theme-ocean .bg-slate-100 { background-color: #cffafe !important; }
+.theme-ocean .border-slate-100, .theme-ocean .border-slate-50 { border-color: #a5f3fc !important; }
+.theme-ocean .text-slate-900, .theme-ocean .text-slate-800, .theme-ocean .text-indigo-600 { color: var(--color-text-main) !important; }
+.theme-ocean .text-slate-500, .theme-ocean .text-slate-400 { color: var(--color-text-muted) !important; }
+
+.theme-forest {
+  --color-background: #ecfdf5; /* emerald-50 */
+  --color-surface: #ffffff;
+  --color-text-main: #064e3b; /* emerald-900 */
+  --color-text-muted: #047857; /* emerald-700 */
+  --color-text-dim: #6ea692;
+  --color-primary: #059669; /* emerald-600 */
+  --color-primary-dark: #047857;
+  --color-primary-light: #d1fae5;
+}
+.theme-forest .bg-white, .theme-forest .bg-slate-50 { background-color: var(--color-surface) !important; }
+.theme-forest .bg-slate-100 { background-color: #d1fae5 !important; }
+.theme-forest .border-slate-100, .theme-forest .border-slate-50 { border-color: #a7f3d0 !important; }
+.theme-forest .text-slate-900, .theme-forest .text-slate-800, .theme-forest .text-indigo-600 { color: var(--color-text-main) !important; }
+.theme-forest .text-slate-500, .theme-forest .text-slate-400 { color: var(--color-text-muted) !important; }
+
+.theme-sunset {
+  --color-background: #fff7ed; /* orange-50 */
+  --color-surface: #ffffff;
+  --color-text-main: #7c2d12; /* orange-900 */
+  --color-text-muted: #c2410c; /* orange-700 */
+  --color-text-dim: #d28b6c;
+  --color-primary: #ea580c; /* orange-600 */
+  --color-primary-dark: #c2410c;
+  --color-primary-light: #ffedd5;
+}
+.theme-sunset .bg-white, .theme-sunset .bg-slate-50 { background-color: var(--color-surface) !important; }
+.theme-sunset .bg-slate-100 { background-color: #ffedd5 !important; }
+.theme-sunset .border-slate-100, .theme-sunset .border-slate-50 { border-color: #fed7aa !important; }
+.theme-sunset .text-slate-900, .theme-sunset .text-slate-800, .theme-sunset .text-indigo-600 { color: var(--color-text-main) !important; }
+.theme-sunset .text-slate-500, .theme-sunset .text-slate-400 { color: var(--color-text-muted) !important; }
+
+.theme-midnight {
+  --color-background: #0b0a1e;
+  --color-surface: #15132f;
+  --color-text-main: #ede9fe; /* violet-100 */
+  --color-text-muted: #a78bfa; /* violet-400 */
+  --color-text-dim: #6d28d9;
+  --color-primary: #8b5cf6; /* violet-500 */
+  --color-primary-dark: #7c3aed;
+  --color-primary-light: #c4b5fd;
+}
+.theme-midnight .bg-white, .theme-midnight .bg-slate-50, .theme-midnight .bg-slate-900, .theme-midnight .bg-slate-950 { background-color: var(--color-surface) !important; }
+.theme-midnight .bg-slate-100, .theme-midnight .bg-slate-800 { background-color: #1f1b3d !important; }
+.theme-midnight .border-slate-100, .theme-midnight .border-slate-50, .theme-midnight .border-slate-800, .theme-midnight .border-slate-700 { border-color: #312a5e !important; }
+.theme-midnight .text-slate-900, .theme-midnight .text-slate-800, .theme-midnight .text-white, .theme-midnight .text-indigo-600, .theme-midnight .text-indigo-400 { color: var(--color-text-main) !important; }
+.theme-midnight .text-slate-500, .theme-midnight .text-slate-400 { color: var(--color-text-muted) !important; }
+
+.theme-graphite {
+  --color-background: #1c1c1e;
+  --color-surface: #262628;
+  --color-text-main: #f4f4f5; /* zinc-100 */
+  --color-text-muted: #a1a1aa; /* zinc-400 */
+  --color-text-dim: #71717a;
+  --color-primary: #d4d4d8; /* zinc-300 */
+  --color-primary-dark: #a1a1aa;
+  --color-primary-light: #e4e4e7;
+}
+.theme-graphite .bg-white, .theme-graphite .bg-slate-50, .theme-graphite .bg-slate-900, .theme-graphite .bg-slate-950 { background-color: var(--color-surface) !important; }
+.theme-graphite .bg-slate-100, .theme-graphite .bg-slate-800 { background-color: #313133 !important; }
+.theme-graphite .border-slate-100, .theme-graphite .border-slate-50, .theme-graphite .border-slate-800, .theme-graphite .border-slate-700 { border-color: #3f3f42 !important; }
+.theme-graphite .text-slate-900, .theme-graphite .text-slate-800, .theme-graphite .text-white { color: var(--color-text-main) !important; }
+.theme-graphite .text-slate-500, .theme-graphite .text-slate-400 { color: var(--color-text-muted) !important; }
 
 @keyframes filterPulse {
   0%, 100% { background-color: #f59e0b; box-shadow: 0 0 0 0 rgba(245,158,11,0.5); }

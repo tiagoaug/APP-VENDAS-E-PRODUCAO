@@ -15,6 +15,7 @@ import GradeBuilderModal from '../components/GradeBuilderModal';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
 import { saleProductionHasProgressed } from '../utils/productionRoute';
+import { isHybridProduct } from '../utils/stockPools';
 
 interface SaleBlock {
   id: string;
@@ -454,7 +455,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     if (!p) return;
 
     const newBlockId = generateId();
-    const isWholesale = p.type === SaleType.WHOLESALE;
+    const defaultSaleType = p.saleTypes?.[0] ?? p.type ?? SaleType.RETAIL;
+    const isWholesale = defaultSaleType === SaleType.WHOLESALE;
     let defaultPkgId = undefined;
 
     if (isWholesale) {
@@ -468,7 +470,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     const newBlock: SaleBlock = {
       id: newBlockId,
       productId: p.id,
-      saleType: p.type || SaleType.RETAIL,
+      saleType: defaultSaleType,
       price: p.salePrice || 0,
       unitPrice: p.unitSalePrice || p.salePrice || 0,
       variations: {},
@@ -545,7 +547,10 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       if (blockIndex === -1) {
         // Add new block
         const newBlockId = generateId();
-        const isWholesale = product.type === SaleType.WHOLESALE;
+        // Etiqueta escaneada com tamanho específico implica venda por par (Varejo),
+        // mesmo que o tipo primário do produto seja Atacado (produto híbrido).
+        const scanSaleType = size ? SaleType.RETAIL : (product.saleTypes?.[0] ?? product.type ?? SaleType.RETAIL);
+        const isWholesale = scanSaleType === SaleType.WHOLESALE;
         let defaultPkgId = undefined;
 
         if (isWholesale) {
@@ -559,7 +564,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         const newBlock: SaleBlock = {
           id: newBlockId,
           productId,
-          saleType: product.type || SaleType.RETAIL,
+          saleType: scanSaleType,
           price: product.salePrice || 0,
           unitPrice: product.unitSalePrice || product.salePrice || 0,
           variations: {},
@@ -610,54 +615,52 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     }
   };
 
-  const checkStock = (productId: string, variationId: string, size?: string, quantity: number = 0): boolean => {
+  const checkStock = (productId: string, variationId: string, saleType: SaleType, size?: string, quantity: number = 0): boolean => {
     const product = products.find(p => p.id === productId);
     const variation = product?.variations.find(v => v.id === variationId);
     if (!variation) return false;
-    
-    const stockKey = product?.type === SaleType.RETAIL && size ? size : 'WHOLESALE';
-    let currentStock = variation.stock[stockKey] || 0;
-    
+
+    // Pool Atacado: chave 'WHOLESALE'. Pool Varejo: tamanho específico, ou soma de
+    // todos os tamanhos (exceto 'WHOLESALE') quando não há tamanho informado.
+    const isWholesale = saleType === SaleType.WHOLESALE;
+    const stockKey = !isWholesale && size ? size : null;
+
+    let currentStock = stockKey
+      ? (variation.stock[stockKey] || 0)
+      : isWholesale
+        ? (variation.stock['WHOLESALE'] || 0)
+        : Object.entries(variation.stock).reduce((s, [k, v]) => k === 'WHOLESALE' ? s : s + (Number(v) || 0), 0);
+
     // Add back the stock that is ALREADY part of this sale if we are editing
     const existingSale = saleId ? sales.find(s => s.id === saleId) : null;
     if (existingSale && existingSale.status === SaleStatus.SALE) {
-      const existingItem = existingSale.items.find(i => i.productId === productId && i.variationId === variationId && i.size === size);
-      if (existingItem) {
-        currentStock += existingItem.quantity;
-      }
+      const existingItems = existingSale.items.filter(i => i.productId === productId && i.variationId === variationId && (!stockKey || i.size === size));
+      currentStock += existingItems.reduce((acc, i) => acc + i.quantity, 0);
     }
-    
+
     let productionStock = 0;
     lots.forEach((lot) => {
       if (lot.productId !== productId || lot.variationId !== variationId) return;
       if (lot.status === 'COMPLETED' || lot.status === 'CANCELLED' || lot.finishedAt) return;
-      
-      if (stockKey === 'WHOLESALE') {
+
+      if (isWholesale) {
         productionStock += (lot.gradesQty !== undefined ? lot.gradesQty : (lot.quantity > 50 ? Math.round(lot.quantity / 12) : lot.quantity));
-      } else {
-        if (lot.pairs && lot.pairs[stockKey]) {
-          productionStock += lot.pairs[stockKey];
-        }
+      } else if (stockKey) {
+        if (lot.pairs && lot.pairs[stockKey]) productionStock += lot.pairs[stockKey];
+      } else if (lot.pairs) {
+        productionStock += Object.values(lot.pairs).reduce((a, b) => a + (Number(b) || 0), 0);
       }
     });
 
     currentStock += productionStock;
 
-    // Fallback to sum of sizes if WHOLESALE is explicitly 0 but sizes have values (unlikely but possible)
-    if (stockKey === 'WHOLESALE' && currentStock === 0) {
+    // Fallback legado: WHOLESALE explicitamente 0 mas há valores residuais por tamanho.
+    if (isWholesale && currentStock === 0) {
       let totalSum = Object.values(variation.stock).reduce((a, b) => a + (Number(b) || 0), 0);
       if (existingSale && existingSale.status === SaleStatus.SALE) {
          const existingItemsTotal = existingSale.items.filter(i => i.productId === productId && i.variationId === variationId).reduce((acc, i) => acc + i.quantity, 0);
          totalSum += existingItemsTotal;
       }
-      
-      // Also add fallback production stock summing
-      lots.forEach((lot) => {
-        if (lot.productId !== productId || lot.variationId !== variationId) return;
-        if (lot.status === 'COMPLETED' || lot.status === 'CANCELLED' || lot.finishedAt) return;
-        productionStock += (lot.gradesQty !== undefined ? lot.gradesQty : (lot.quantity > 50 ? Math.round(lot.quantity / 12) : lot.quantity));
-      });
-
       return (totalSum + productionStock) >= quantity;
     }
 
@@ -710,7 +713,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     }
 
     // Optional stock warning
-    const stockIssues = items.filter(item => !checkStock(item.productId, item.variationId, item.size, item.quantity));
+    const stockIssues = items.filter(item => !checkStock(item.productId, item.variationId, item.saleType, item.size, item.quantity));
     if (stockIssues.length > 0 && status === SaleStatus.SALE) {
       if (!confirm('Alguns itens estão com estoque insuficiente. Deseja continuar?')) return;
     }
@@ -1533,45 +1536,43 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
 
                 {isExpanded && (
                   <div className="p-5 pt-0 border-t border-slate-50 dark:border-slate-800 mt-2">
+                    {/* Modalidade — disponível em qualquer venda (com ou sem OP) quando o
+                        produto é híbrido (vendido em Atacado E Varejo). Produto não-híbrido
+                        mantém o saleType fixo definido na hora de adicionar o item. */}
+                    {isHybridProduct(product) && (
+                      <div className="flex flex-col gap-1.5 mt-4 mb-3">
+                        <label className="text-[8px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest px-1">Modalidade</label>
+                        <button
+                          onClick={() => {
+                            const newType = block.saleType === SaleType.RETAIL ? SaleType.WHOLESALE : SaleType.RETAIL;
+                            const p = products.find(prod => prod.id === block.productId);
+                            const newPrice = p?.salePrice || 0;
+
+                            const newVariations = { ...block.variations };
+                            Object.keys(newVariations).forEach(k => {
+                              newVariations[k].price = newPrice;
+                              if (newType === SaleType.WHOLESALE) newVariations[k].size = undefined;
+                            });
+
+                            updateBlock(index, {
+                              saleType: newType,
+                              price: newPrice,
+                              variations: newVariations
+                            });
+                          }}
+                          className={`w-full text-[9px] font-black py-3 rounded-2xl border-2 uppercase tracking-widest transition-all ${block.saleType === SaleType.WHOLESALE ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-slate-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/50'}`}
+                          aria-label="Mudar modalidade de venda"
+                          title="Modalidade"
+                        >
+                          {block.saleType === SaleType.WHOLESALE ? 'Atacado' : 'Varejo'}
+                        </button>
+                      </div>
+                    )}
+
                     {/* Configuração de grade/preços — apenas em Pedido de Produção.
                         Em venda simples (sem OP) a cesta é simplificada: cor + quantidade + preço. */}
                     {isProductionOrder && (
                     <div className="flex flex-col gap-3 mt-4 mb-5">
-                      {/* Modalidade */}
-                      <div className="flex flex-col gap-1.5">
-                        <label className="text-[8px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest px-1">Modalidade</label>
-                        {product.type === SaleType.RETAIL ? (
-                          <button
-                            onClick={() => {
-                              const newType = block.saleType === SaleType.RETAIL ? SaleType.WHOLESALE : SaleType.RETAIL;
-                              const p = products.find(prod => prod.id === block.productId);
-                              const newPrice = p?.salePrice || 0;
-
-                              const newVariations = { ...block.variations };
-                              Object.keys(newVariations).forEach(k => {
-                                newVariations[k].price = newPrice;
-                                if (newType === SaleType.WHOLESALE) newVariations[k].size = undefined;
-                              });
-
-                              updateBlock(index, {
-                                saleType: newType,
-                                price: newPrice,
-                                variations: newVariations
-                              });
-                            }}
-                            className={`w-full text-[9px] font-black py-3 rounded-2xl border-2 uppercase tracking-widest transition-all ${block.saleType === SaleType.WHOLESALE ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg' : 'bg-slate-50 dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900/50'}`}
-                            aria-label="Mudar modalidade de venda"
-                            title="Modalidade"
-                          >
-                            {block.saleType === SaleType.WHOLESALE ? 'Atacado' : 'Varejo'}
-                          </button>
-                        ) : (
-                          <div className="text-[9px] font-black py-3 rounded-2xl border-2 uppercase tracking-widest bg-slate-50 dark:bg-slate-800 text-slate-400 border-slate-100 dark:border-slate-800 text-center flex items-center justify-center gap-2">
-                            <Box size={12} /> Somente Atacado
-                          </div>
-                        )}
-                      </div>
-
                       {/* Preço Grade */}
                       <div className="flex flex-col gap-1.5">
                         <label className="text-[8px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest px-1">
@@ -1686,13 +1687,10 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                       {product.variations.map(v => {
                         const grid = grids.find(g => g.id === product.defaultGridId);
                         
-                        // For Retail, we might want to iterate sizes if they want specific sizes.
-                        // But let's keep it simple: if Retail, show sizes.
-                        
-                        // Em venda simples (sem OP) não mostramos numerações/grade — apenas
-                        // cor + quantidade (entrada de atacado). A grade por tamanho do varejo
-                        // só aparece dentro de um Pedido de Produção.
-                        if (block.saleType === SaleType.RETAIL && grid && isProductionOrder) {
+                        // Varejo: grade por tamanho, com ou sem Pedido de Produção — a
+                        // numeração específica é sempre necessária para abater o pool de
+                        // estoque varejo correto (chaves por tamanho em variation.stock).
+                        if (block.saleType === SaleType.RETAIL && grid) {
                           return (
                             <div key={v.id} className="space-y-2">
                               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">{v.colorName}</p>
@@ -2771,7 +2769,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         const product = block ? products.find(p => p.id === block.productId) : null;
         const productGrid = product ? (grids.find(g => g.id === product.productionGridId) || grids.find(g => g.id === product.defaultGridId) || null) : null;
         const variation = product?.variations.find(v => v.id === variationId);
-        const isWholesale = product?.type === SaleType.WHOLESALE;
+        const isWholesale = block?.saleType === SaleType.WHOLESALE;
         const stockPerSize: Record<string, number> = {};
         if (variation && !isWholesale) {
           Object.entries(variation.stock).forEach(([size, qty]) => {

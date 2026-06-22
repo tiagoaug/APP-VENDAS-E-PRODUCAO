@@ -83,6 +83,7 @@ import {
   ServiceOrder,
   StockLot,
   StockLotRevertPreview,
+  Collaborator,
 } from "./types";
 
 // Views
@@ -114,6 +115,8 @@ import DashboardConfigView from "./views/DashboardConfigView";
 import ProductionConfigView from "./views/ProductionConfigView";
 import PersonalFinancialView from "./views/PersonalFinancialView";
 import ModuleConfigView from "./views/ModuleConfigView";
+import CollaboratorsConfigView from "./views/CollaboratorsConfigView";
+import CollaboratorGateView from "./views/CollaboratorGateView";
 import ManualView from "./views/ManualView";
 import WeighingView from "./views/WeighingView";
 import SoleProcurement from "./views/SolePurchaseView";
@@ -141,6 +144,8 @@ import { ToastContainer } from "./components/ToastContainer";
 import { toast } from "./utils/toast";
 import { parseLocaleNumber } from './utils/numbers';
 import { generateId } from './utils/id';
+import { ThemeId, THEME_VISUALS, ALL_THEME_CLASSES, FONT_OPTIONS, NavIconMode, NAV_TAB_COLORS } from './utils/themes';
+import { isViewAllowed, collaboratorCanUseAI } from './utils/collaborators';
 
 const MODAL_VIEWS = [
   ViewType.PRODUCTS,
@@ -191,7 +196,67 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
   ]
 };
 
-type FontSize = 'xs' | 'sm' | 'md';
+interface TabItemProps {
+  icon: ReactNode;
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  colorClass?: string;
+  appTheme: ThemeId;
+  iconMode?: NavIconMode;
+  tintColor?: string;
+  monoColor?: string;
+}
+
+function TabItem({
+  icon,
+  label,
+  active,
+  onClick,
+  appTheme,
+  iconMode = 'mono',
+  tintColor = '#4f46e5',
+  monoColor = '#4f46e5',
+}: TabItemProps) {
+  const isDark = THEME_VISUALS[appTheme]?.cssClass.includes('dark') ?? false;
+  const isIndustrial = appTheme === 'industrial';
+  const isColored = iconMode === 'colored';
+
+  // Modo "Colorido": cada item sempre mostra sua própria cor (mais apagada quando
+  // inativo). Modo "Monocromático": só o item ativo ganha a cor escolhida; inativo
+  // mantém o cinza padrão do tema (igual ao comportamento original).
+  let iconStyle: React.CSSProperties | undefined;
+  let pillStyle: React.CSSProperties | undefined;
+  let inactiveClass = '';
+
+  if (isColored) {
+    iconStyle = { color: tintColor, opacity: active ? 1 : 0.55 };
+    if (active) pillStyle = { backgroundColor: `${tintColor}1f` };
+  } else if (active) {
+    iconStyle = { color: monoColor };
+    pillStyle = { backgroundColor: `${monoColor}1f` };
+  } else {
+    inactiveClass = isDark ? 'text-slate-500' : isIndustrial ? 'text-gray-400' : 'text-slate-400';
+  }
+
+  return (
+    <button
+      onClick={onClick}
+      title={label}
+      aria-label={`Ir para ${label}`}
+      className="flex flex-col items-center justify-center gap-0.5 flex-1 py-2 transition-all"
+    >
+      <div className="w-10 h-7 flex items-center justify-center rounded-xl transition-all" style={pillStyle}>
+        <span className={`transition-all ${inactiveClass}`} style={iconStyle}>
+          {icon}
+        </span>
+      </div>
+      <span className={`text-[10px] font-bold tracking-tight transition-all ${inactiveClass}`} style={iconStyle}>
+        {label}
+      </span>
+    </button>
+  );
+}
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -199,14 +264,81 @@ export default function App() {
   const [currentView, setCurrentView] = useState<ViewType>(ViewType.DASHBOARD);
   const [lastNonModalView, setLastNonModalView] = useState<ViewType>(ViewType.DASHBOARD);
   const [history, setHistory] = useState<ViewType[]>([ViewType.DASHBOARD]);
-  const [appTheme, setAppTheme] = useState<'light' | 'dark' | 'industrial'>(() => {
-    return (localStorage.getItem('app_theme_pref') as any) || 'light';
+  const [appTheme, setAppTheme] = useState<ThemeId>(() => {
+    return (localStorage.getItem('app_theme_pref') as ThemeId) || 'light';
   });
-  const isDarkMode = appTheme === 'dark';
-  const [fontSize, setFontSize] = useState<FontSize>(() => {
-    return (localStorage.getItem('font_size_pref') as FontSize) || 'xs';
+  const isDarkMode = THEME_VISUALS[appTheme]?.cssClass.includes('dark') ?? false;
+  const [fontScale, setFontScale] = useState<number>(() => {
+    const saved = localStorage.getItem('font_size_pref');
+    const parsed = saved ? parseInt(saved, 10) : NaN;
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 100;
   });
+  const [fontFamily, setFontFamily] = useState<string>(() => {
+    return localStorage.getItem('font_family_pref') || FONT_OPTIONS[0].value;
+  });
+  const [navIconMode, setNavIconMode] = useState<NavIconMode>(() => {
+    return (localStorage.getItem('nav_icon_mode_pref') as NavIconMode) || 'mono';
+  });
+  const [navMonoColor, setNavMonoColor] = useState<string>(() => {
+    return localStorage.getItem('nav_mono_color_pref') || '#4f46e5';
+  });
+  const updateNavIconMode = (mode: NavIconMode) => {
+    setNavIconMode(mode);
+    localStorage.setItem('nav_icon_mode_pref', mode);
+  };
+  const updateNavMonoColor = (color: string) => {
+    setNavMonoColor(color);
+    localStorage.setItem('nav_mono_color_pref', color);
+  };
   const [isA11yOpen, setIsA11yOpen] = useState(false);
+
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+  const [activeCollaboratorId, setActiveCollaboratorId] = useState<string | null>(() => {
+    return localStorage.getItem('active_collaborator_id') || null;
+  });
+  const activeCollaborator = collaborators.find(c => c.id === activeCollaboratorId) ?? null;
+
+  // Decide, uma única vez por sessão (ao abrir o app / logar), se a tela "Quem é
+  // você?" precisa aparecer — fixado no primeiro snapshot do Firestore pra não
+  // expulsar o usuário pro gate no meio da sessão ao cadastrar o 1º colaborador.
+  const [needsCollabGate, setNeedsCollabGate] = useState(false);
+  const [collabSessionConfirmed, setCollabSessionConfirmed] = useState<boolean>(() => {
+    return sessionStorage.getItem('collab_session_confirmed') === '1';
+  });
+
+  const switchCollaborator = (id: string, pin: string): boolean => {
+    const target = collaborators.find(c => c.id === id);
+    if (!target || target.pin !== pin) return false;
+    setActiveCollaboratorId(id);
+    localStorage.setItem('active_collaborator_id', id);
+    return true;
+  };
+
+  const confirmCollabSession = (id: string, pin: string): boolean => {
+    const ok = switchCollaborator(id, pin);
+    if (ok) {
+      setCollabSessionConfirmed(true);
+      sessionStorage.setItem('collab_session_confirmed', '1');
+    }
+    return ok;
+  };
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('collab_session_confirmed');
+    logout();
+  };
+
+  const saveCollaborator = async (collab: Collaborator) => {
+    await firebaseService.saveDocument("collaborators", collab);
+  };
+
+  const deleteCollaborator = async (id: string) => {
+    await firebaseService.deleteDocument("collaborators", id);
+    if (activeCollaboratorId === id) {
+      setActiveCollaboratorId(null);
+      localStorage.removeItem('active_collaborator_id');
+    }
+  };
 
   useEffect(() => {
     if (!MODAL_VIEWS.includes(currentView)) {
@@ -214,13 +346,82 @@ export default function App() {
     }
   }, [currentView]);
 
+  // Aplica as preferências de Acessibilidade salvas no perfil do colaborador ativo
+  // (tema/fonte/tamanho/ícones), sobrepondo o que estava no aparelho — dispara ao
+  // trocar de colaborador (ou quando a lista termina de carregar do Firestore).
   useEffect(() => {
-    localStorage.setItem('font_size_pref', fontSize);
-    const root = document.documentElement;
-    if (fontSize === 'xs') root.style.fontSize = '14px';
-    else if (fontSize === 'sm') root.style.fontSize = '16px';
-    else if (fontSize === 'md') root.style.fontSize = '18px';
-  }, [fontSize]);
+    if (!activeCollaborator) return;
+    if (activeCollaborator.themePref) setAppTheme(activeCollaborator.themePref as ThemeId);
+    if (activeCollaborator.fontScalePref) setFontScale(activeCollaborator.fontScalePref);
+    if (activeCollaborator.fontFamilyPref) setFontFamily(activeCollaborator.fontFamilyPref);
+    if (activeCollaborator.navIconModePref) setNavIconMode(activeCollaborator.navIconModePref as NavIconMode);
+    if (activeCollaborator.navMonoColorPref) setNavMonoColor(activeCollaborator.navMonoColorPref);
+  }, [activeCollaboratorId, collaborators]);
+
+  // Salva as mesmas preferências no perfil do colaborador ativo, pra acompanhá-lo
+  // em qualquer aparelho (em vez de ficar só no localStorage deste aparelho).
+  useEffect(() => {
+    if (!activeCollaborator) return;
+    saveCollaborator({
+      ...activeCollaborator,
+      themePref: appTheme,
+      fontScalePref: fontScale,
+      fontFamilyPref: fontFamily,
+      navIconModePref: navIconMode,
+      navMonoColorPref: navMonoColor,
+    });
+  }, [appTheme, fontScale, fontFamily, navIconMode, navMonoColor, activeCollaboratorId]);
+
+  // Tamanho de fonte: zoom afeta literalmente toda a UI (inclusive os textos com
+  // tamanho fixo em px usados em todo o app), diferente de só mudar o font-size da
+  // raiz — que só alcançava elementos medidos em rem/em.
+  useEffect(() => {
+    localStorage.setItem('font_size_pref', String(fontScale));
+    (document.body.style as any).zoom = `${fontScale}%`;
+  }, [fontScale]);
+
+  // Fonte: aplica na raiz (herda para todo o app) e também na variável usada pelo
+  // Tailwind (--font-sans), cobrindo qualquer texto que dependa do font-sans padrão.
+  useEffect(() => {
+    localStorage.setItem('font_family_pref', fontFamily);
+    document.documentElement.style.fontFamily = fontFamily;
+    document.documentElement.style.setProperty('--font-sans', fontFamily);
+  }, [fontFamily]);
+
+  // Estados para as animações randômicas dos botões do cabeçalho
+  const [scanAnim, setScanAnim] = useState({ scale: 1, rotate: 0, y: 0, x: 0, opacity: 1 });
+  const [aiAnim, setAiAnim] = useState({ scale: 1, rotate: 0, y: 0, x: 0, opacity: 1 });
+  const [themeAnim, setThemeAnim] = useState({ scale: 1, rotate: 0, y: 0, x: 0, opacity: 1 });
+
+  useEffect(() => {
+    const getRandomVal = (min: number, max: number) => Math.random() * (max - min) + min;
+    
+    const interval = setInterval(() => {
+      setScanAnim({
+        scale: getRandomVal(0.92, 1.12),
+        rotate: getRandomVal(-12, 12),
+        y: getRandomVal(-2, 2),
+        x: getRandomVal(-2, 2),
+        opacity: getRandomVal(0.88, 1)
+      });
+      setAiAnim({
+        scale: getRandomVal(0.92, 1.12),
+        rotate: getRandomVal(-12, 12),
+        y: getRandomVal(-2, 2),
+        x: getRandomVal(-2, 2),
+        opacity: getRandomVal(0.88, 1)
+      });
+      setThemeAnim({
+        scale: getRandomVal(0.92, 1.12),
+        rotate: getRandomVal(-12, 12),
+        y: getRandomVal(-2, 2),
+        x: getRandomVal(-2, 2),
+        opacity: getRandomVal(0.88, 1)
+      });
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, []);
 
 
   // Modals state
@@ -481,6 +682,17 @@ export default function App() {
       "people",
       setPeople,
     );
+    let collabGateDecided = false;
+    const unsubCollaborators = firebaseService.subscribeToCollection<Collaborator>(
+      "collaborators",
+      (data) => {
+        setCollaborators(data);
+        if (!collabGateDecided) {
+          collabGateDecided = true;
+          setNeedsCollabGate(data.length > 0);
+        }
+      },
+    );
     const unsubCategories = firebaseService.subscribeToCollection<Category>(
       "categories",
       setCategories,
@@ -613,6 +825,7 @@ export default function App() {
       unsubAccounts();
       unsubGrids();
       unsubPeople();
+      unsubCollaborators();
       unsubCategories();
       unsubColors();
       unsubPaymentMethods();
@@ -759,25 +972,17 @@ export default function App() {
     localStorage.setItem('app_theme_pref', appTheme);
     const root = document.documentElement;
     const body = document.body;
-    
-    // Remove all theme classes first
-    root.classList.remove("dark", "industrial");
-    body.classList.remove("dark", "industrial");
 
-    if (appTheme === 'dark') {
-      root.classList.add("dark");
-      body.classList.add("dark");
-    } else if (appTheme === 'industrial') {
-      root.classList.add("industrial");
-      body.classList.add("industrial");
+    // Remove all theme classes first
+    root.classList.remove(...ALL_THEME_CLASSES);
+    body.classList.remove(...ALL_THEME_CLASSES);
+
+    const classes = THEME_VISUALS[appTheme]?.cssClass.split(' ').filter(Boolean) || [];
+    if (classes.length > 0) {
+      root.classList.add(...classes);
+      body.classList.add(...classes);
     }
   }, [appTheme]);
-
-  useEffect(() => {
-    const sizeMap: Record<FontSize, string> = { xs: '14px', sm: '16px', md: '18px' };
-    document.documentElement.style.fontSize = sizeMap[fontSize];
-    localStorage.setItem('font_size_pref', fontSize);
-  }, [fontSize]);
 
   useEffect(() => {
     if (!isA11yOpen) return;
@@ -939,7 +1144,7 @@ export default function App() {
         const variation = prod.variations.find((v: any) => v.id === lot.variationId);
         if (!variation) continue;
 
-        if (prod.type === SaleType.WHOLESALE) {
+        if (lot.boxQty !== undefined) {
           const boxQty = lot.boxQty || 0;
           variation.stock['WHOLESALE'] = (variation.stock['WHOLESALE'] || 0) + boxQty;
           if (lot.pkgId && boxQty > 0) {
@@ -1696,7 +1901,7 @@ export default function App() {
                 const variationIndex = productData.variations.findIndex(v => v.id === item.variationId);
                 if (variationIndex !== -1) {
                   const variation = productData.variations[variationIndex];
-                  const stockKey = (productData.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+                  const stockKey = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
                   const currentStock = variation.stock[stockKey] || 0;
                   variation.stock[stockKey] = currentStock + item.quantity;
                 }
@@ -1833,7 +2038,7 @@ export default function App() {
             sale.items.filter(item => item.productId === pId && item.fulfilled !== false).forEach(item => {
               const variation = productData.variations.find(v => v.id === item.variationId);
               if (!variation) return;
-              const stockKey = (productData.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+              const stockKey = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
               variation.stock[stockKey] = (variation.stock[stockKey] || 0) + item.quantity;
             });
           }
@@ -1841,7 +2046,7 @@ export default function App() {
           reservedLots.filter(l => l.productId === pId).forEach(lot => {
             const variation = productData.variations.find(v => v.id === lot.variationId);
             if (!variation) return;
-            if (productData.type === SaleType.WHOLESALE) {
+            if (lot.boxQty !== undefined) {
               const boxQty = lot.boxQty || 0;
               variation.stock['WHOLESALE'] = (variation.stock['WHOLESALE'] || 0) + boxQty;
               if (lot.pkgId && boxQty > 0) {
@@ -1970,8 +2175,9 @@ export default function App() {
               const variationIndex = productData.variations.findIndex(v => v.id === item.variationId);
               if (variationIndex !== -1) {
                 const variation = productData.variations[variationIndex];
-                const key = (productData.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
-                const amountToSubtract = (productData.type === SaleType.RETAIL && item.isBox) ? item.quantity * 12 : item.quantity;
+                const itemSaleType = item.saleType ?? productData.type;
+                const key = (itemSaleType === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+                const amountToSubtract = (itemSaleType === SaleType.RETAIL && item.isBox && !item.size) ? item.quantity * 12 : item.quantity;
                 variation.stock[key] = (variation.stock[key] || 0) - amountToSubtract;
                 txn.update(productRefsMap.get(item.productId), { variations: productData.variations });
               }
@@ -2494,6 +2700,7 @@ export default function App() {
     if (isSalesView && !modulesConfig.sales) return renderView(ViewType.DASHBOARD);
     if (isProductionView && (!modulesConfig.sales || !modulesConfig.production)) return renderView(ViewType.DASHBOARD);
     if (isPersonalView && !modulesConfig.personal) return renderView(ViewType.DASHBOARD);
+    if (!isViewAllowed(activeCollaborator, view)) return renderView(ViewType.DASHBOARD);
 
     switch (view) {
       case ViewType.DASHBOARD:
@@ -2523,6 +2730,7 @@ export default function App() {
               setIsTransactionModalOpen(true);
             }}
             onOpenAIAssistant={() => setIsAIAssistantOpen(true)}
+            activeCollaborator={activeCollaborator}
           />
         );
       case ViewType.DASHBOARD_CONFIG:
@@ -2552,9 +2760,18 @@ export default function App() {
             setAppTheme={setAppTheme}
             toggleDarkMode={toggleDarkMode}
             modulesConfig={modulesConfig}
-            fontSize={fontSize}
-            setFontSize={setFontSize}
-            onLogout={logout}
+            fontScale={fontScale}
+            setFontScale={setFontScale}
+            fontFamily={fontFamily}
+            setFontFamily={setFontFamily}
+            navIconMode={navIconMode}
+            setNavIconMode={updateNavIconMode}
+            navMonoColor={navMonoColor}
+            setNavMonoColor={updateNavMonoColor}
+            collaborators={collaborators}
+            activeCollaborator={activeCollaborator}
+            onSwitchCollaborator={switchCollaborator}
+            onLogout={handleLogout}
             onFixPkgAllocations={handleFixPkgAllocations}
           />
         );
@@ -3055,10 +3272,11 @@ export default function App() {
                       const variationIndex = updatedProduct.variations.findIndex((v: any) => v.id === item.variationId);
                       if (variationIndex !== -1) {
                         const variation = updatedProduct.variations[variationIndex];
-                        const key = (updatedProduct.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
-                        
-                        const amountToSubtract = (updatedProduct.type === SaleType.RETAIL && item.isBox) ? item.quantity * 12 : item.quantity;
-                        
+                        const itemSaleType = item.saleType ?? updatedProduct.type;
+                        const key = (itemSaleType === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+
+                        const amountToSubtract = (itemSaleType === SaleType.RETAIL && item.isBox && !item.size) ? item.quantity * 12 : item.quantity;
+
                         if (variation.stock[key] !== undefined) {
                           variation.stock[key] -= amountToSubtract;
                           if (variation.stock[key] < 0) variation.stock[key] = 0;
@@ -3078,9 +3296,10 @@ export default function App() {
                       const variationIndex = updatedProduct.variations.findIndex((v: any) => v.id === item.variationId);
                       if (variationIndex !== -1) {
                         const variation = updatedProduct.variations[variationIndex];
-                        const key = (updatedProduct.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+                        const itemSaleType = item.saleType ?? updatedProduct.type;
+                        const key = (itemSaleType === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
 
-                        const amountToAdd = (updatedProduct.type === SaleType.RETAIL && item.isBox) ? item.quantity * 12 : item.quantity;
+                        const amountToAdd = (itemSaleType === SaleType.RETAIL && item.isBox && !item.size) ? item.quantity * 12 : item.quantity;
 
                         variation.stock[key] = (variation.stock[key] || 0) + amountToAdd;
                       }
@@ -3111,7 +3330,7 @@ export default function App() {
                       if (!prod) continue;
                       const variation = prod.variations.find((v: any) => v.id === item.variationId);
                       if (!variation) continue;
-                      const key = (prod.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+                      const key = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
                       const available = variation.stock[key] || 0;
                       if (available >= item.quantity) {
                         variation.stock[key] = Math.max(0, available - item.quantity);
@@ -3314,8 +3533,9 @@ export default function App() {
                       
                       if (variationIndex !== -1) {
                         const variation = { ...variations[variationIndex] };
-                        const key = (productData.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
-                        
+                        // Já passamos pelo continue acima para itens WHOLESALE — aqui é sempre Varejo.
+                        const key = item.size || 'WHOLESALE';
+
                         if (variation.stock[key] !== undefined) {
                           variation.stock[key] = Math.max(0, variation.stock[key] - item.quantity);
                           variations[variationIndex] = variation;
@@ -3700,6 +3920,7 @@ export default function App() {
             }}
             modulesConfig={modulesConfig}
             isDarkMode={isDarkMode}
+            appTheme={appTheme}
             initialSearchQuery={searchContext}
             stockLots={stockLots}
             onReleaseSale={handleReleaseSale}
@@ -3905,6 +4126,7 @@ export default function App() {
             onRevertStockLot={handleRevertStockLot}
             sales={sales}
             productionOrders={productionOrders}
+            onFixPkgAllocations={handleFixPkgAllocations}
           />
         );
       case ViewType.SALE_FORM:
@@ -3992,7 +4214,8 @@ export default function App() {
                      const variationIndex = updatedProduct.variations.findIndex((v: any) => v.id === item.variationId);
                      if (variationIndex !== -1) {
                        const variation = updatedProduct.variations[variationIndex];
-                       const key = (updatedProduct.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+                       // Já passamos pelo continue acima para itens WHOLESALE — aqui é sempre Varejo.
+                       const key = item.size || 'WHOLESALE';
                        variation.stock[key] = (variation.stock[key] || 0) + item.quantity;
                      }
                    }
@@ -4014,7 +4237,8 @@ export default function App() {
                   const variationIndex = updatedProduct.variations.findIndex((v: any) => v.id === item.variationId);
                   if (variationIndex === -1) { newItems[i] = { ...item, fulfilled: false }; continue; }
                   const variation = updatedProduct.variations[variationIndex];
-                  const key = (updatedProduct.type === SaleType.RETAIL && item.size) ? item.size : 'WHOLESALE';
+                  // Já passamos pelo continue acima para itens WHOLESALE — aqui é sempre Varejo.
+                  const key = item.size || 'WHOLESALE';
                   const available = variation.stock[key] || 0;
                   if (available >= item.quantity) {
                     variation.stock[key] = Math.max(0, available - item.quantity);
@@ -4322,6 +4546,7 @@ export default function App() {
             flowTags={flowTags}
             colors={colors}
             isDarkMode={isDarkMode}
+            appTheme={appTheme}
             onSaveLot={handleSaveProductionLot}
             onDeleteLot={handleDeleteProductionLot}
             onDeleteProductionOrder={handleDeleteProductionOrder}
@@ -4553,6 +4778,15 @@ export default function App() {
             isDarkMode={isDarkMode}
           />
         );
+      case ViewType.COLLABORATORS_CONFIG:
+        return (
+          <CollaboratorsConfigView
+            collaborators={collaborators}
+            onSave={saveCollaborator}
+            onDelete={deleteCollaborator}
+            isDarkMode={isDarkMode}
+          />
+        );
       case ViewType.MANUAL:
         return (
           <ManualView
@@ -4781,28 +5015,27 @@ export default function App() {
     return <LoginView />;
   }
 
+  if (needsCollabGate && !collabSessionConfirmed) {
+    return (
+      <CollaboratorGateView
+        collaborators={collaborators}
+        lastActiveId={activeCollaboratorId}
+        onConfirm={confirmCollabSession}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  const themeVisual = THEME_VISUALS[appTheme] || THEME_VISUALS.light;
+
   return (
     <div
-      className={`flex flex-col h-screen ${
-        appTheme === 'light' ? 'bg-slate-50' :
-        appTheme === 'industrial' ? 'industrial bg-[#e5e7eb]' :
-        'dark bg-slate-950'
-      } font-sans ${appTheme === 'light' || appTheme === 'industrial' ? 'text-slate-900' : 'text-white'} overflow-hidden overflow-x-hidden`}
+      className={`flex flex-col h-screen ${themeVisual.outerBg} font-sans ${themeVisual.baseText} overflow-hidden overflow-x-hidden`}
     >
       <ToastContainer />
       {/* Header */}
-      <header className={`sticky top-0 z-10 shrink-0 px-4 pt-10 pb-3 ${
-        appTheme === 'light' ? 'bg-gradient-to-b from-slate-50 to-white' :
-        appTheme === 'industrial' ? 'bg-gradient-to-b from-gray-100 to-gray-50' :
-        'bg-gradient-to-b from-slate-800 to-slate-950'
-      }`}>
-        <div className={`relative flex items-center justify-between px-4 py-2.5 rounded-[1.75rem] overflow-hidden ${
-          appTheme === 'light'
-            ? 'bg-gradient-to-b from-white to-slate-100 border border-slate-200/60'
-            : appTheme === 'industrial'
-            ? 'bg-gradient-to-b from-gray-50 to-gray-200 border border-gray-300'
-            : 'bg-gradient-to-b from-slate-700 to-slate-900 border border-slate-600/40'
-        } shadow-[0_8px_32px_rgba(0,0,0,0.14),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.07)]`}>
+      <header className={`sticky top-0 z-10 shrink-0 px-4 pt-10 pb-3 ${themeVisual.headerGradient}`}>
+        <div className={`relative flex items-center justify-between px-4 py-2.5 rounded-[1.75rem] overflow-hidden ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.14),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.07)]`}>
           {/* 3D top highlight */}
           <div className="absolute top-0 left-6 right-6 h-[1px] rounded-full bg-gradient-to-r from-transparent via-white to-transparent opacity-90 pointer-events-none" />
           {/* 3D bottom shadow */}
@@ -4832,29 +5065,35 @@ export default function App() {
             aria-label="Escanear Código"
             whileHover={{ scale: 1.15, rotate: -8 }}
             whileTap={{ scale: 0.9 }}
+            animate={scanAnim}
+            transition={{ duration: 1.5, ease: "easeInOut" }}
             className="p-2 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 dark:text-emerald-400 transition-colors hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
           >
             <ScanLine size={20} />
           </motion.button>
-          <motion.button
-            type="button"
-            onClick={() => setIsAIAssistantOpen(true)}
-            title="Abrir Assistente IA"
-            aria-label="Abrir Assistente IA"
-            whileHover={{ scale: 1.15, rotate: 8 }}
-            whileTap={{ scale: 0.9 }}
-            animate={{ scale: [1, 1.08, 1] }}
-            transition={{ scale: { duration: 2, repeat: Infinity, ease: "easeInOut" } }}
-            className="p-2 rounded-full bg-violet-50 dark:bg-violet-900/30 text-violet-500 dark:text-violet-400 transition-colors hover:bg-violet-100 dark:hover:bg-violet-900/50"
-          >
-            <Sparkles size={20} />
-          </motion.button>
+          {collaboratorCanUseAI(activeCollaborator) && (
+            <motion.button
+              type="button"
+              onClick={() => setIsAIAssistantOpen(true)}
+              title="Abrir Assistente IA"
+              aria-label="Abrir Assistente IA"
+              whileHover={{ scale: 1.15, rotate: 8 }}
+              whileTap={{ scale: 0.9 }}
+              animate={aiAnim}
+              transition={{ duration: 1.5, ease: "easeInOut" }}
+              className="p-2 rounded-full bg-violet-50 dark:bg-violet-900/30 text-violet-500 dark:text-violet-400 transition-colors hover:bg-violet-100 dark:hover:bg-violet-900/50"
+            >
+              <Sparkles size={20} />
+            </motion.button>
+          )}
           <motion.button
             onClick={toggleDarkMode}
             title={isDarkMode ? "Mudar para modo claro" : "Mudar para modo escuro"}
             aria-label={isDarkMode ? "Mudar para modo claro" : "Mudar para modo escuro"}
             whileHover={{ scale: 1.15, rotate: 25 }}
             whileTap={{ scale: 0.9 }}
+            animate={themeAnim}
+            transition={{ duration: 1.5, ease: "easeInOut" }}
             className={`p-2 rounded-full transition-colors ${isDarkMode ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50' : 'bg-blue-50 text-blue-500 hover:bg-blue-100'}`}
           >
             {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
@@ -4980,13 +5219,7 @@ export default function App() {
 
       {/* Bottom Tab Navigation */}
       <nav className={`fixed bottom-0 left-0 right-0 z-40 flex items-end justify-center pb-5 px-4 pointer-events-none`}>
-        <div className={`relative flex items-center justify-around w-full max-w-md px-2 py-2 rounded-[2rem] overflow-hidden pointer-events-auto ${
-          appTheme === 'light'
-            ? 'bg-gradient-to-b from-white to-slate-100 border border-slate-200/60'
-            : appTheme === 'industrial'
-            ? 'bg-gradient-to-b from-gray-50 to-gray-200 border border-gray-300'
-            : 'bg-gradient-to-b from-slate-700 to-slate-900 border border-slate-600/40'
-        } shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>
+        <div className={`relative flex items-center justify-around w-full max-w-md px-2 py-2 rounded-[2rem] overflow-hidden pointer-events-auto ${themeVisual.pillGradient} shadow-[0_8px_32px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.85),inset_0_-2px_0_rgba(0,0,0,0.08)]`}>
           {/* 3D top highlight streak */}
           <div className="absolute top-0 left-4 right-4 h-[1px] rounded-full bg-gradient-to-r from-transparent via-white to-transparent opacity-90 pointer-events-none" />
           {/* 3D bottom shadow line */}
@@ -4997,50 +5230,68 @@ export default function App() {
             active={activeTab === "dashboard"}
             onClick={() => resetTo(ViewType.DASHBOARD)}
             appTheme={appTheme}
+            iconMode={navIconMode}
+            tintColor={NAV_TAB_COLORS.dashboard}
+            monoColor={navMonoColor}
           />
-          {modulesConfig.sales && (
-            <>
-              <TabItem
-                icon={<ShoppingCart size={20} />}
-                label="Compras"
-                active={activeTab === "purchases"}
-                onClick={() => resetTo(ViewType.PURCHASES)}
-                appTheme={appTheme}
-              />
-              <TabItem
-                icon={<ShoppingBag size={20} />}
-                label="Vendas"
-                active={activeTab === "sales"}
-                onClick={() => resetTo(ViewType.SALES)}
-                appTheme={appTheme}
-              />
-            </>
+          {modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.PURCHASES) && (
+            <TabItem
+              icon={<ShoppingCart size={20} />}
+              label="Compras"
+              active={activeTab === "purchases"}
+              onClick={() => resetTo(ViewType.PURCHASES)}
+              appTheme={appTheme}
+              iconMode={navIconMode}
+              tintColor={NAV_TAB_COLORS.purchases}
+              monoColor={navMonoColor}
+            />
           )}
-          {modulesConfig.sales && modulesConfig.production && (
+          {modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.SALES) && (
+            <TabItem
+              icon={<ShoppingBag size={20} />}
+              label="Vendas"
+              active={activeTab === "sales"}
+              onClick={() => resetTo(ViewType.SALES)}
+              appTheme={appTheme}
+              iconMode={navIconMode}
+              tintColor={NAV_TAB_COLORS.sales}
+              monoColor={navMonoColor}
+            />
+          )}
+          {modulesConfig.sales && modulesConfig.production && isViewAllowed(activeCollaborator, ViewType.PRODUCTION_MENU) && (
             <TabItem
               icon={<Factory size={20} />}
               label="Prod."
               active={activeTab === "production"}
               onClick={() => resetTo(ViewType.PRODUCTION_MENU)}
               appTheme={appTheme}
+              iconMode={navIconMode}
+              tintColor={NAV_TAB_COLORS.production}
+              monoColor={navMonoColor}
             />
           )}
-          {modulesConfig.sales && (
+          {modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.FINANCIAL) && (
             <TabItem
               icon={<DollarSign size={20} />}
               label="Finan."
               active={activeTab === "financial"}
               onClick={() => resetTo(ViewType.FINANCIAL)}
               appTheme={appTheme}
+              iconMode={navIconMode}
+              tintColor={NAV_TAB_COLORS.financial}
+              monoColor={navMonoColor}
             />
           )}
-          {modulesConfig.personal && (
+          {modulesConfig.personal && isViewAllowed(activeCollaborator, ViewType.PERSONAL_FINANCIAL) && (
             <TabItem
               icon={<UserIcon size={20} />}
               label="Pessoal"
               active={activeTab === "personal"}
               onClick={() => resetTo(ViewType.PERSONAL_FINANCIAL)}
               appTheme={appTheme}
+              iconMode={navIconMode}
+              tintColor={NAV_TAB_COLORS.personal}
+              monoColor={navMonoColor}
             />
           )}
           <TabItem
@@ -5049,6 +5300,9 @@ export default function App() {
             active={activeTab === "settings"}
             onClick={() => resetTo(ViewType.SETTINGS)}
             appTheme={appTheme}
+            iconMode={navIconMode}
+            tintColor={NAV_TAB_COLORS.settings}
+            monoColor={navMonoColor}
           />
         </div>
       </nav>
@@ -5116,6 +5370,7 @@ export default function App() {
         accounts={accounts.filter(a => a.type !== AccountType.PERSONAL)}
         people={people}
         initialType={transactionModalType}
+        isDarkMode={isDarkMode}
       />
       
 
@@ -5204,50 +5459,3 @@ export default function App() {
   );
 }
 
-function TabItem({
-  icon,
-  label,
-  active,
-  onClick,
-  appTheme
-}: {
-  icon: ReactNode;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  colorClass?: string;
-  appTheme: 'light' | 'dark' | 'industrial';
-}) {
-  const isDark = appTheme === 'dark';
-  const isIndustrial = appTheme === 'industrial';
-
-  return (
-    <button
-      onClick={onClick}
-      title={label}
-      aria-label={`Ir para ${label}`}
-      className="flex flex-col items-center justify-center gap-0.5 flex-1 py-2 transition-all"
-    >
-      <div className={`w-10 h-7 flex items-center justify-center rounded-xl transition-all ${
-        active
-          ? isDark ? 'bg-indigo-500/20' : isIndustrial ? 'bg-gray-200' : 'bg-indigo-50'
-          : 'bg-transparent'
-      }`}>
-        <span className={`transition-all ${
-          active
-            ? isDark ? 'text-indigo-400' : isIndustrial ? 'text-gray-700' : 'text-indigo-600'
-            : isDark ? 'text-slate-500' : isIndustrial ? 'text-gray-400' : 'text-slate-400'
-        }`}>
-          {icon}
-        </span>
-      </div>
-      <span className={`text-[10px] font-bold tracking-tight transition-all ${
-        active
-          ? isDark ? 'text-indigo-400' : isIndustrial ? 'text-gray-700' : 'text-indigo-600'
-          : isDark ? 'text-slate-500' : isIndustrial ? 'text-gray-400' : 'text-slate-400'
-      }`}>
-        {label}
-      </span>
-    </button>
-  );
-}

@@ -1,4 +1,4 @@
-﻿import { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Transaction, TransactionType, Category, Account, AccountType, CategoryType, FamilyMember, Budget, Person } from '../types';
 import { Search, Plus, TrendingUp, TrendingDown, DollarSign, Wallet, ArrowRightLeft, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, LayoutGrid, ArrowLeft, Settings, Users, Target, ChevronRight, Calculator, Phone } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -298,6 +298,7 @@ export default function PersonalFinancialView({
         initialType={modalInitialType}
         transaction={editingTransaction}
         initialValue={calcResult || undefined}
+        isDarkMode={isDarkMode}
       />
 
       <CategoryModal
