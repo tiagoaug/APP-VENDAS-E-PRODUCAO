@@ -2783,7 +2783,6 @@ export default function App() {
             activeCollaborator={activeCollaborator}
             onSwitchCollaborator={switchCollaborator}
             onLogout={handleLogout}
-            onFixPkgAllocations={handleFixPkgAllocations}
           />
         );
       case ViewType.PRODUCTS:
@@ -3120,6 +3119,7 @@ export default function App() {
             onDeleteSale={(id) => firebaseService.deleteDocument("sales", id)}
             onResetDatabase={handleResetDatabase}
             onSelectiveDelete={handleSelectiveDelete}
+            onFixPkgAllocations={handleFixPkgAllocations}
           />
         );
       case ViewType.PRODUCT_FORM:

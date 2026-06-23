@@ -175,40 +175,6 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         });
         const blockList = Object.values(blocksMap);
         setBlocks(blockList);
-
-        // Restaura a configuração de embalagem/grade (pares avulsos) salva na Ordem de Produção vinculada
-        if (sale.productionOrderId) {
-          const linkedOrder = productionOrders.find(o => o.id === sale.productionOrderId);
-          if (linkedOrder) {
-            const restoredPackaging: Record<string, { pkgId: string; breakdown: Record<string, number>; fromStock: Record<string, number> }> = {};
-            const restoredGrades: Record<string, Record<string, number>> = {};
-
-            linkedOrder.items.forEach(poItem => {
-              const block = blockList.find(b => b.productId === poItem.productId && b.saleType === poItem.saleType);
-              if (!block) return;
-              const varData = block.variations[poItem.variationId];
-              if (!varData || varData.quantity <= 0) return;
-
-              const breakdown: Record<string, number> = {};
-              const fromStock: Record<string, number> = {};
-              Object.entries(poItem.sizes).forEach(([size, sizeInfo]) => {
-                breakdown[size] = sizeInfo.total / varData.quantity;
-                fromStock[size] = sizeInfo.fromStock;
-              });
-
-              const varKey = `${block.id}-${poItem.variationId}`;
-              if (poItem.pkgId) {
-                restoredPackaging[varKey] = { pkgId: poItem.pkgId, breakdown, fromStock };
-              } else {
-                restoredGrades[varKey] = breakdown;
-              }
-            });
-
-            if (Object.keys(restoredPackaging).length > 0) setPackagingPerVar(prev => ({ ...prev, ...restoredPackaging }));
-            if (Object.keys(restoredGrades).length > 0) setGradePerVar(prev => ({ ...prev, ...restoredGrades }));
-          }
-        }
-
         setIsInitialized(true);
       }
     } else if (!saleId && !isInitialized) {
@@ -299,6 +265,49 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
   const [gradeModalTarget, setGradeModalTarget] = useState<{
     blockId: string; variationId: string; variationName: string; productId: string;
   } | null>(null);
+
+  // Restaura a embalagem/grade salva na OP vinculada. Roda separado da inicialização
+  // principal (e tenta de novo a cada atualização de productionOrders/blocks) porque
+  // productionOrders pode ainda não ter carregado quando o formulário monta — se a
+  // restauração só corresse uma vez (junto com isInitialized), essa corrida fazia
+  // packagingPerVar/gradePerVar ficarem vazios pra sempre, e editar o pedido parecia
+  // "perder" a embalagem (e podia gerar uma OP nova em vez de reaproveitar a existente).
+  const [isPkgRestored, setIsPkgRestored] = useState(false);
+  useEffect(() => {
+    if (isPkgRestored || !saleId || blocks.length === 0) return;
+    const sale = sales.find(s => s.id === saleId);
+    if (!sale?.productionOrderId) { setIsPkgRestored(true); return; }
+    const linkedOrder = productionOrders.find(o => o.id === sale.productionOrderId);
+    if (!linkedOrder) return; // productionOrders ainda não carregou — tenta de novo quando atualizar
+
+    const restoredPackaging: Record<string, { pkgId: string; breakdown: Record<string, number>; fromStock: Record<string, number> }> = {};
+    const restoredGrades: Record<string, Record<string, number>> = {};
+
+    linkedOrder.items.forEach(poItem => {
+      const block = blocks.find(b => b.productId === poItem.productId && b.saleType === poItem.saleType);
+      if (!block) return;
+      const varData = block.variations[poItem.variationId];
+      if (!varData || varData.quantity <= 0) return;
+
+      const breakdown: Record<string, number> = {};
+      const fromStock: Record<string, number> = {};
+      Object.entries(poItem.sizes).forEach(([size, sizeInfo]) => {
+        breakdown[size] = sizeInfo.total / varData.quantity;
+        fromStock[size] = sizeInfo.fromStock;
+      });
+
+      const varKey = `${block.id}-${poItem.variationId}`;
+      if (poItem.pkgId) {
+        restoredPackaging[varKey] = { pkgId: poItem.pkgId, breakdown, fromStock };
+      } else {
+        restoredGrades[varKey] = breakdown;
+      }
+    });
+
+    if (Object.keys(restoredPackaging).length > 0) setPackagingPerVar(prev => ({ ...prev, ...restoredPackaging }));
+    if (Object.keys(restoredGrades).length > 0) setGradePerVar(prev => ({ ...prev, ...restoredGrades }));
+    setIsPkgRestored(true);
+  }, [saleId, sales, productionOrders, blocks, isPkgRestored]);
 
   // Cesta de pedidos — itens computados para exibição/conferência
   const cartItems = useMemo(() => {

@@ -110,7 +110,7 @@ interface PCPViewProps {
   purchases?: Purchase[];
   sales?: import('../types').Sale[];
   stockLots?: StockLot[];
-  appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite';
+  appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite' | 'hcWhite' | 'hcBlack' | 'hcIndustrial';
 }
 
 export default function PCPView({
@@ -149,7 +149,9 @@ export default function PCPView({
   stockLots = [],
   appTheme = 'light',
 }: PCPViewProps) {
-  const isIndustrial = appTheme === 'industrial';
+  // Temas de chrome neutro: Industrial e os de Alto Contraste removem o
+  // degradê/borda coloridos dos cards de setor, deixando só os ícones coloridos.
+  const isIndustrial = appTheme === 'industrial' || appTheme === 'hcWhite' || appTheme === 'hcBlack' || appTheme === 'hcIndustrial';
   const [activeTab, setActiveTab] = useState<'monitor' | 'lots' | 'orders' | 'needs' | 'solados'>(initialTab);
   const [mapBadgeBg, setMapBadgeBg] = useState(() => localStorage.getItem('pcp_map_badge_bg') || '#7c3aed');
   const [mapBadgeText, setMapBadgeText] = useState(() => localStorage.getItem('pcp_map_badge_text') || '#ffffff');

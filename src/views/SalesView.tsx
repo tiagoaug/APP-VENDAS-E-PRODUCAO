@@ -85,7 +85,7 @@ interface SalesViewProps {
   onTransferToStock: (saleId: string) => Promise<void>;
   onNavigateStock: () => void;
   productionConfigs: ProductionConfigItem[];
-  appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite';
+  appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite' | 'hcWhite' | 'hcBlack' | 'hcIndustrial';
 }
 
 export default function SalesView({

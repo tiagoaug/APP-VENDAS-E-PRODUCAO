@@ -1,5 +1,5 @@
 ﻿import { useState, useMemo } from 'react';
-import { Database, Download, Upload, AlertTriangle, RefreshCw, Copy, Trash2, CheckCircle2, Eraser, X } from 'lucide-react';
+import { Database, Download, Upload, AlertTriangle, RefreshCw, Copy, Trash2, CheckCircle2, Eraser, X, Wrench } from 'lucide-react';
 import { Transaction, Purchase, Sale, ProductionConfigItem, SoleStockEntry } from '../types';
 import { toast } from '../utils/toast';
 
@@ -21,6 +21,7 @@ interface BackupViewProps {
   onDeleteSale: (id: string) => Promise<void>;
   onResetDatabase: () => Promise<void>;
   onSelectiveDelete: (categories: SelectiveCategory[]) => Promise<void>;
+  onFixPkgAllocations: () => Promise<{ fixed: number; total: number }>;
 }
 
 export default function BackupView({
@@ -39,8 +40,11 @@ export default function BackupView({
   onDeleteSale,
   onResetDatabase,
   onSelectiveDelete,
+  onFixPkgAllocations,
 }: BackupViewProps) {
   const [isCleaning, setIsCleaning] = useState(false);
+  const [fixingAlloc, setFixingAlloc] = useState(false);
+  const [fixAllocResult, setFixAllocResult] = useState<{ fixed: number; total: number } | null>(null);
   const [isResetting, setIsResetting] = useState(false);
   const [isSelectiveDeleting, setIsSelectiveDeleting] = useState(false);
   const [cleanMessage, setCleanMessage] = useState<string | null>(null);
@@ -119,6 +123,17 @@ export default function BackupView({
       toast.show('Ocorreu um erro ao limpar os dados.');
     } finally {
       setIsCleaning(false);
+    }
+  };
+
+  const handleFixPkgAllocations = async () => {
+    setFixingAlloc(true);
+    setFixAllocResult(null);
+    try {
+      const result = await onFixPkgAllocations();
+      setFixAllocResult(result);
+    } finally {
+      setFixingAlloc(false);
     }
   };
 
@@ -212,6 +227,37 @@ export default function BackupView({
           >
             {isCleaning ? <RefreshCw size={18} className="animate-spin" /> : <Trash2 size={18} />}
             {isCleaning ? 'Limpando...' : totalDuplicates > 0 ? `Limpar ${totalDuplicates} Duplicidades` : 'Nenhuma Duplicidade Encontrada'}
+          </button>
+        )}
+      </section>
+
+      {/* CORRIGIR ALOCAÇÕES DE EMBALAGEM */}
+      <section className={`p-6 rounded-[2.5rem] border shadow-sm flex flex-col gap-4 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+        <div className="flex items-center gap-3">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${fixAllocResult ? 'bg-emerald-500/10 text-emerald-500' : 'bg-orange-500/10 text-orange-500'}`}>
+            {fixAllocResult ? <CheckCircle2 size={20} /> : <Wrench size={20} />}
+          </div>
+          <div>
+            <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Corrigir Alocações de Embalagem</h3>
+            <p className="text-[11px] text-slate-400 font-black uppercase tracking-widest">Ajustar inconsistências de estoque × embalagem</p>
+          </div>
+        </div>
+
+        {fixAllocResult ? (
+          <div className="bg-emerald-500/10 text-emerald-500 p-4 rounded-2xl flex items-center gap-3">
+            <CheckCircle2 size={20} />
+            <p className="text-[11px] font-black uppercase tracking-widest leading-relaxed">{fixAllocResult.fixed} corrigido(s) de {fixAllocResult.total}</p>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={handleFixPkgAllocations}
+            disabled={fixingAlloc}
+            title="Corrigir alocações de embalagem inconsistentes"
+            className={`w-full py-4 rounded-2xl font-black text-[11px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 bg-orange-500 text-white shadow-lg shadow-orange-500/20 disabled:opacity-60`}
+          >
+            {fixingAlloc ? <RefreshCw size={18} className="animate-spin" /> : <Wrench size={18} />}
+            {fixingAlloc ? 'Corrigindo...' : 'Corrigir Alocações de Embalagem'}
           </button>
         )}
       </section>

@@ -19,18 +19,16 @@ import {
   Landmark,
   Package,
   LogOut,
-  Accessibility,
   Type,
   BookOpen,
-  Wrench,
-  CheckCircle2,
   X,
   Check,
   UserCog,
   KeyRound,
   Eye,
   EyeOff,
-  Lock
+  Lock,
+  SlidersHorizontal
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
@@ -56,7 +54,6 @@ interface SettingsViewProps {
   activeCollaborator: Collaborator | null;
   onSwitchCollaborator: (id: string, pin: string) => boolean;
   onLogout: () => void;
-  onFixPkgAllocations: () => Promise<{ fixed: number; total: number }>;
 }
 
 export default function SettingsView({
@@ -79,12 +76,9 @@ export default function SettingsView({
   activeCollaborator,
   onSwitchCollaborator,
   onLogout,
-  onFixPkgAllocations
 }: SettingsViewProps) {
   const [showA11y, setShowA11y] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [fixingAlloc, setFixingAlloc] = useState(false);
-  const [fixAllocResult, setFixAllocResult] = useState<{ fixed: number; total: number } | null>(null);
   const [showCollabSwitcher, setShowCollabSwitcher] = useState(false);
   const [switchTargetId, setSwitchTargetId] = useState<string | null>(null);
   const [pinInput, setPinInput] = useState('');
@@ -146,9 +140,7 @@ export default function SettingsView({
     {
       title: "Sistema & Backup",
       items: [
-        { id: ViewType.MODULES_CONFIG, label: "Módulos do Sistema", icon: <Shield size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'any' },
         { id: ViewType.COLLABORATORS_CONFIG, label: "Colaboradores", icon: <UserCog size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'any' },
-        { id: ViewType.DASHBOARD_CONFIG, label: "Organizar Dashboard", icon: <Layout size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'any' },
         { id: ViewType.BACKUP, label: "Ajustes Técnicos", icon: <Database size={22} />, color: "text-gray-600 dark:text-gray-400", bg: "bg-slate-100 dark:bg-slate-800", module: 'any' },
         { id: ViewType.MANUAL, label: "Manual do Sistema", icon: <BookOpen size={22} />, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/20", module: 'any' },
       ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
@@ -231,11 +223,11 @@ export default function SettingsView({
               onClick={() => setShowA11y(true)}
               title="Acessibilidade e Personalização"
               aria-label="Abrir configurações de acessibilidade e personalização"
-              className="w-full flex items-center justify-between p-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors active:bg-slate-100 dark:active:bg-slate-800"
+              className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800 hover:bg-slate-800/50' : 'border-b border-slate-50 hover:bg-slate-50'}`}
             >
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-2xl bg-violet-50 dark:bg-violet-900/30 flex items-center justify-center shrink-0 text-violet-600 dark:text-violet-400">
-                  <Accessibility size={22} />
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center shrink-0 text-indigo-600 dark:text-indigo-400">
+                  <SlidersHorizontal size={22} />
                 </div>
                 <div className="text-left">
                   <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Acessibilidade e Personalização</p>
@@ -245,41 +237,50 @@ export default function SettingsView({
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
             </button>
 
-            {/* ── CORRIGIR ALOCAÇÕES DE EMBALAGEM ── */}
+            {/* ── MÓDULOS DO SISTEMA ── */}
             <button
-              type="button"
-              title="Corrigir alocações de embalagem inconsistentes"
-              aria-label="Corrigir inconsistências nas alocações de embalagem"
-              disabled={fixingAlloc}
-              onClick={async () => {
-                setFixingAlloc(true);
-                setFixAllocResult(null);
-                try {
-                  const result = await onFixPkgAllocations();
-                  setFixAllocResult(result);
-                } finally {
-                  setFixingAlloc(false);
-                }
-              }}
-              className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800 hover:bg-slate-800/50' : 'border-b border-slate-50 hover:bg-slate-50'} disabled:opacity-60`}
+              onClick={() => onNavigate(ViewType.MODULES_CONFIG)}
+              title="Módulos do Sistema"
+              aria-label="Configurar módulos do sistema"
+              className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800 hover:bg-slate-800/50' : 'border-b border-slate-50 hover:bg-slate-50'}`}
             >
               <div className="flex items-center gap-4">
-                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${fixAllocResult ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400'}`}>
-                  {fixAllocResult ? <CheckCircle2 size={22} /> : <Wrench size={22} />}
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center shrink-0 text-indigo-600 dark:text-indigo-400">
+                  <Shield size={22} />
                 </div>
                 <div className="text-left">
-                  <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                    {fixingAlloc ? 'Corrigindo...' : fixAllocResult ? `${fixAllocResult.fixed} corrigido(s) de ${fixAllocResult.total}` : 'Corrigir Alocações de Embalagem'}
-                  </p>
-                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">
-                    {fixAllocResult ? 'Concluído — estoque consistente' : 'Ajustar inconsistências de estoque × embalagem'}
-                  </p>
+                  <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Módulos do Sistema</p>
+                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Ativar ou desativar módulos</p>
                 </div>
               </div>
-              {!fixingAlloc && !fixAllocResult && <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />}
+              <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
             </button>
 
-            {/* ── LOGOUT — último item do menu ── */}
+            {/* ── ORGANIZAR DASHBOARD ── */}
+            <button
+              onClick={() => onNavigate(ViewType.DASHBOARD_CONFIG)}
+              title="Organizar Dashboard"
+              aria-label="Organizar layout do Dashboard"
+              className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}`}
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center shrink-0 text-indigo-600 dark:text-indigo-400">
+                  <Layout size={22} />
+                </div>
+                <div className="text-left">
+                  <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Organizar Dashboard</p>
+                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Layout e atalhos da tela inicial</p>
+                </div>
+              </div>
+              <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+            </button>
+          </div>
+        </div>
+
+        {/* ── CONTA — LOGOUT ── */}
+        <div className="flex flex-col gap-3">
+          <h3 className="px-2 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Conta</h3>
+          <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             <button
               onClick={() => setShowLogoutConfirm(true)}
               title="Encerrar Sessão"
@@ -315,8 +316,8 @@ export default function SettingsView({
             {/* Header */}
             <div className={`p-6 flex items-center justify-between border-b ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
               <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-violet-50 dark:bg-violet-900/30 flex items-center justify-center text-violet-600 dark:text-violet-400">
-                  <Accessibility size={22} />
+                <div className="w-11 h-11 rounded-2xl bg-indigo-600 flex items-center justify-center text-white">
+                  <SlidersHorizontal size={22} />
                 </div>
                 <div>
                   <h3 className={`text-base font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Acessibilidade</h3>
@@ -374,10 +375,10 @@ export default function SettingsView({
                         title={t.label}
                       >
                         <div
-                          className={`w-12 h-12 rounded-2xl border-2 transition-all flex items-center justify-center ${active ? 'border-violet-500 scale-110 shadow-lg' : 'border-transparent'}`}
+                          className={`w-9 h-9 rounded-lg border-2 transition-all flex items-center justify-center ${active ? 'border-violet-500 scale-110 shadow-lg' : 'border-transparent'}`}
                           style={{ background: t.swatch }}
                         >
-                          {active && <Check size={18} className="text-white drop-shadow" strokeWidth={3} />}
+                          {active && <Check size={14} className="text-white drop-shadow" strokeWidth={3} />}
                         </div>
                         <span className={`text-[8px] font-black uppercase tracking-wide ${active ? 'text-violet-500' : 'text-slate-400'}`}>{t.label}</span>
                       </button>

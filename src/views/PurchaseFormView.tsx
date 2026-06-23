@@ -273,6 +273,52 @@ export default function PurchaseFormView({
   const [pkgPickerBlockIndex, setPkgPickerBlockIndex] = useState<number | null>(null);
   const [gradePerVar, setGradePerVar] = useState<Record<string, Record<string, number>>>({});
   const [gradeModalTarget, setGradeModalTarget] = useState<{ blockId: string; variationId: string; variationName: string; productId: string } | null>(null);
+
+  // Restaura a embalagem/grade (atacado) salva na OP vinculada. Tenta de novo a cada
+  // atualização de productionOrders/blocks (em vez de rodar só uma vez ao montar)
+  // porque productionOrders pode ainda não ter carregado quando o formulário monta —
+  // se a restauração rodasse só uma vez, essa corrida fazia packagingPerVar/gradePerVar
+  // ficarem vazios pra sempre: toda vez que a compra de produção era reaberta pra
+  // editar, a validação "Embalagem obrigatória" obrigava reconfigurar tudo de novo
+  // (ou, se ignorada, o item saía sem grade do pedido salvo — e em alguns casos a OP
+  // vinculada nem era encontrada a tempo de reaproveitar o id, criando uma OP nova).
+  const [isPkgRestored, setIsPkgRestored] = useState(false);
+  useEffect(() => {
+    if (isPkgRestored || blocks.length === 0) return;
+    if (!existing?.productionOrderId) { setIsPkgRestored(true); return; }
+    const linkedOrder = productionOrders.find(o => o.id === existing.productionOrderId);
+    if (!linkedOrder) return; // productionOrders ainda não carregou — tenta de novo quando atualizar
+
+    const restoredPackaging: Record<string, { pkgId: string; breakdown: Record<string, number>; fromStock: Record<string, number> }> = {};
+    const restoredGrades: Record<string, Record<string, number>> = {};
+
+    linkedOrder.items.forEach(poItem => {
+      if (poItem.saleType === SaleType.RETAIL) return;
+      const block = blocks.find(b => b.productId === poItem.productId && b.saleType === poItem.saleType);
+      if (!block) return;
+      const varData = block.variations[poItem.variationId];
+      if (!varData || varData.quantity <= 0) return;
+
+      const breakdown: Record<string, number> = {};
+      const fromStock: Record<string, number> = {};
+      Object.entries(poItem.sizes).forEach(([size, sizeInfo]) => {
+        breakdown[size] = sizeInfo.total / varData.quantity;
+        fromStock[size] = sizeInfo.fromStock;
+      });
+
+      const varKey = `${block.id}-${poItem.variationId}`;
+      if (poItem.pkgId) {
+        restoredPackaging[varKey] = { pkgId: poItem.pkgId, breakdown, fromStock };
+      } else {
+        restoredGrades[varKey] = breakdown;
+      }
+    });
+
+    if (Object.keys(restoredPackaging).length > 0) setPackagingPerVar(prev => ({ ...prev, ...restoredPackaging }));
+    if (Object.keys(restoredGrades).length > 0) setGradePerVar(prev => ({ ...prev, ...restoredGrades }));
+    setIsPkgRestored(true);
+  }, [existing, productionOrders, blocks, isPkgRestored]);
+
   // Duplicação de modelo (item): escolhe quantas cópias serão criadas a partir de um bloco.
   const [duplicateTarget, setDuplicateTarget] = useState<{ index: number } | null>(null);
   const [duplicateCount, setDuplicateCount] = useState<number>(1);

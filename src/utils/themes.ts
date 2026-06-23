@@ -1,4 +1,4 @@
-export type ThemeId = 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite';
+export type ThemeId = 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite' | 'hcWhite' | 'hcBlack' | 'hcIndustrial';
 
 // Identidade visual de cada tema para o "chrome" mais visível do app (fundo geral,
 // cabeçalho e barra inferior) — o resto da UI usa normalmente isDarkMode (claro/escuro)
@@ -16,9 +16,14 @@ export const THEME_VISUALS: Record<ThemeId, {
   sunset:     { cssClass: 'theme-sunset', outerBg: 'bg-orange-50', headerGradient: 'bg-gradient-to-b from-orange-50 to-white', pillGradient: 'bg-gradient-to-b from-white to-orange-100 border border-orange-200/60', baseText: 'text-slate-900', swatch: 'linear-gradient(135deg,#fff7ed,#ea580c)', label: 'Pôr do Sol' },
   midnight:   { cssClass: 'dark theme-midnight', outerBg: 'bg-[#0b0a1e]', headerGradient: 'bg-gradient-to-b from-[#1a1735] to-[#0b0a1e]', pillGradient: 'bg-gradient-to-b from-[#241f47] to-[#13112b] border border-violet-900/40', baseText: 'text-white', swatch: 'linear-gradient(135deg,#15132f,#8b5cf6)', label: 'Meia-Noite' },
   graphite:   { cssClass: 'dark theme-graphite', outerBg: 'bg-[#1c1c1e]', headerGradient: 'bg-gradient-to-b from-[#2c2c2e] to-[#1c1c1e]', pillGradient: 'bg-gradient-to-b from-[#3a3a3c] to-[#1c1c1e] border border-zinc-700/40', baseText: 'text-white', swatch: 'linear-gradient(135deg,#262628,#71717a)', label: 'Grafite' },
+  // Temas de alto contraste (acessibilidade): preto/branco puros + bordas fortes,
+  // pra máxima legibilidade — sem os tons intermediários de cinza dos demais temas.
+  hcWhite:      { cssClass: 'theme-hc-white', outerBg: 'bg-white', headerGradient: 'bg-gradient-to-b from-white to-white', pillGradient: 'bg-white border-2 border-black', baseText: 'text-black', swatch: 'linear-gradient(135deg,#ffffff,#000000)', label: 'Alto Contraste Branco' },
+  hcBlack:      { cssClass: 'dark theme-hc-black', outerBg: 'bg-black', headerGradient: 'bg-gradient-to-b from-black to-black', pillGradient: 'bg-black border-2 border-white', baseText: 'text-white', swatch: 'linear-gradient(135deg,#000000,#ffffff)', label: 'Alto Contraste Preto' },
+  hcIndustrial: { cssClass: 'dark theme-hc-industrial', outerBg: 'bg-black', headerGradient: 'bg-gradient-to-b from-black to-black', pillGradient: 'bg-black border-2 border-yellow-400', baseText: 'text-yellow-300', swatch: 'linear-gradient(135deg,#000000,#facc15)', label: 'Alto Contraste Industrial' },
 };
 
-export const ALL_THEME_CLASSES = ['dark', 'industrial', 'theme-ocean', 'theme-forest', 'theme-sunset', 'theme-midnight', 'theme-graphite'];
+export const ALL_THEME_CLASSES = ['dark', 'industrial', 'theme-ocean', 'theme-forest', 'theme-sunset', 'theme-midnight', 'theme-graphite', 'theme-hc-white', 'theme-hc-black', 'theme-hc-industrial'];
 
 // ~24 opções de fonte para teste em Acessibilidade — mistura de Google Fonts
 // (carregadas via index.css) e fontes de sistema (sempre disponíveis, sem import).
