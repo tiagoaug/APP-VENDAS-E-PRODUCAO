@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, ReactNode } from "react";
+import { useState, useEffect, useMemo, useRef, ReactNode, lazy, Suspense } from "react";
 import {
   LayoutDashboard,
   Package,
@@ -40,6 +40,7 @@ import { auth, db, logout } from "./lib/firebase";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { doc, collection, query, where, getDocs, deleteField } from "firebase/firestore";
 import { firebaseService } from "./services/firebaseService";
+import { notificationService, ReminderNotification } from "./services/notificationService";
 import { resolveSoleConsumption } from "./utils/soleNeeds";
 import { getSourceItemKey, saleProductionHasProgressed } from "./utils/productionRoute";
 import { financeService } from "./services/financeService";
@@ -84,50 +85,55 @@ import {
   StockLot,
   StockLotRevertPreview,
   Collaborator,
+  MonthlySnapshot,
+  CleanupConfig,
 } from "./types";
 
-// Views
+// Views — DashboardView e LoginView ficam estáticas (primeira tela vista por
+// todo mundo, sem flash de loading); o resto é code-split via lazy() pra não
+// jogar o app inteiro num chunk só (eram >4MB minificados em um único arquivo).
 import DashboardView from "./views/DashboardView";
-import ProductsView from "./views/ProductsView";
-import ProductFormView from "./views/ProductFormView";
-import PurchasesView from "./views/PurchasesView";
-import PurchaseFormView from "./views/PurchaseFormView";
-import ServiceOrderFormView from "./views/ServiceOrderFormView";
-import SalesView from "./views/SalesView";
-import SaleFormView from "./views/SaleFormView";
-import FinancialView from "./views/FinancialView";
-import SettingsView from "./views/SettingsView";
-import PeopleView from "./views/PeopleView";
-import CategoriesView from "./views/CategoriesView";
-import CategoryConfigView from "./views/CategoryConfigView";
-import GradesView from "./views/GradesView";
-import ColorsView from "./views/ColorsView";
-import PaymentMethodsView from "./views/PaymentMethodsView";
-import ReportsView from "./views/ReportsView";
-import ReportDetailedView from "./views/ReportDetailedView";
-import PrintCenterView from "./views/PrintCenterView";
-import BackupView from "./views/BackupView";
-import AccountsView from "./views/AccountsView";
-import StockView from "./views/StockView";
-import PersonDetailView from "./views/PersonDetailView";
 import LoginView from "./views/LoginView";
-import DashboardConfigView from "./views/DashboardConfigView";
-import ProductionConfigView from "./views/ProductionConfigView";
-import PersonalFinancialView from "./views/PersonalFinancialView";
-import ModuleConfigView from "./views/ModuleConfigView";
-import CollaboratorsConfigView from "./views/CollaboratorsConfigView";
-import CollaboratorGateView from "./views/CollaboratorGateView";
-import ManualView from "./views/ManualView";
-import WeighingView from "./views/WeighingView";
-import SoleProcurement from "./views/SolePurchaseView";
-import SoleStockView from "./views/SoleStockView";
-import PalmilhaStockView from "./views/PalmilhaStockView";
-import PCPView from "./views/PCPView";
-import PurchaseNeedsView from "./views/PurchaseNeedsView";
-import GeneralReceiptsView from "./views/GeneralReceiptsView";
-import SoleReceiptView from "./views/SoleReceiptView";
+const ProductsView = lazy(() => import("./views/ProductsView"));
+const ProductFormView = lazy(() => import("./views/ProductFormView"));
+const PurchasesView = lazy(() => import("./views/PurchasesView"));
+const PurchaseFormView = lazy(() => import("./views/PurchaseFormView"));
+const ServiceOrderFormView = lazy(() => import("./views/ServiceOrderFormView"));
+const SalesView = lazy(() => import("./views/SalesView"));
+const SaleFormView = lazy(() => import("./views/SaleFormView"));
+const FinancialView = lazy(() => import("./views/FinancialView"));
+const SettingsView = lazy(() => import("./views/SettingsView"));
+const PeopleView = lazy(() => import("./views/PeopleView"));
+const CategoriesView = lazy(() => import("./views/CategoriesView"));
+const CategoryConfigView = lazy(() => import("./views/CategoryConfigView"));
+const GradesView = lazy(() => import("./views/GradesView"));
+const ColorsView = lazy(() => import("./views/ColorsView"));
+const PaymentMethodsView = lazy(() => import("./views/PaymentMethodsView"));
+const ReportsView = lazy(() => import("./views/ReportsView"));
+const ReportDetailedView = lazy(() => import("./views/ReportDetailedView"));
+const DataCleanupView = lazy(() => import("./views/DataCleanupView"));
+const PrintCenterView = lazy(() => import("./views/PrintCenterView"));
+const BackupView = lazy(() => import("./views/BackupView"));
+const AccountsView = lazy(() => import("./views/AccountsView"));
+const StockView = lazy(() => import("./views/StockView"));
+const PersonDetailView = lazy(() => import("./views/PersonDetailView"));
+const DashboardConfigView = lazy(() => import("./views/DashboardConfigView"));
+const ProductionConfigView = lazy(() => import("./views/ProductionConfigView"));
+const PersonalFinancialView = lazy(() => import("./views/PersonalFinancialView"));
+const ModuleConfigView = lazy(() => import("./views/ModuleConfigView"));
+const CollaboratorsConfigView = lazy(() => import("./views/CollaboratorsConfigView"));
+const CollaboratorGateView = lazy(() => import("./views/CollaboratorGateView"));
+const ManualView = lazy(() => import("./views/ManualView"));
+const WeighingView = lazy(() => import("./views/WeighingView"));
+const SoleProcurement = lazy(() => import("./views/SolePurchaseView"));
+const SoleStockView = lazy(() => import("./views/SoleStockView"));
+const PalmilhaStockView = lazy(() => import("./views/PalmilhaStockView"));
+const PCPView = lazy(() => import("./views/PCPView"));
+const PurchaseNeedsView = lazy(() => import("./views/PurchaseNeedsView"));
+const GeneralReceiptsView = lazy(() => import("./views/GeneralReceiptsView"));
+const SoleReceiptView = lazy(() => import("./views/SoleReceiptView"));
 
-import ProductionEngineeringView from "./views/ProductionEngineeringView";
+const ProductionEngineeringView = lazy(() => import("./views/ProductionEngineeringView"));
 
 
 // Modals
@@ -144,6 +150,7 @@ import { ToastContainer } from "./components/ToastContainer";
 import { toast } from "./utils/toast";
 import { parseLocaleNumber } from './utils/numbers';
 import { generateId } from './utils/id';
+import { seedProductionOrderSequence } from './utils/sequenceSeeds';
 import { ThemeId, THEME_VISUALS, ALL_THEME_CLASSES, FONT_OPTIONS, NavIconMode, NAV_TAB_COLORS } from './utils/themes';
 import { isViewAllowed, collaboratorCanUseAI, getEffectiveDashboardCards } from './utils/collaborators';
 
@@ -246,6 +253,14 @@ function TabItem({
         {label}
       </span>
     </button>
+  );
+}
+
+function ViewLoadingFallback() {
+  return (
+    <div className="flex items-center justify-center py-24">
+      <div className="w-8 h-8 rounded-full border-[3px] border-slate-200 dark:border-slate-700 border-t-indigo-500 animate-spin" />
+    </div>
   );
 }
 
@@ -486,6 +501,8 @@ export default function App() {
   const [productionOrders, setProductionOrders] = useState<ProductionOrder[]>([]);
   const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequest[]>([]);
   const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
+  const [monthlySnapshots, setMonthlySnapshots] = useState<MonthlySnapshot[]>([]);
+  const [cleanupConfig, setCleanupConfig] = useState<CleanupConfig | null>(null);
   
   const suppliers = useMemo(() => people.filter(p => p.isSupplier), [people]);
 
@@ -508,6 +525,7 @@ export default function App() {
       { id: 'stock_value', label: 'Patrimônio em Estoque', visible: true, order: 12, module: 'sales' },
       { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 13, module: 'sales' },
       { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 14, module: 'sales' },
+      { id: 'reminders', label: 'Lembretes e Vencimentos', visible: true, order: 14.5, module: 'any' },
       { id: 'activity', label: 'Atividade Recente', visible: true, order: 15, module: 'any' },
       { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 16, module: 'sales' },
       { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 17, module: 'production' },
@@ -641,12 +659,17 @@ export default function App() {
       "products",
       setProducts,
     );
-    const unsubPurchases = firebaseService.subscribeToCollection<Purchase>(
+    // Vendas, compras e transações só crescem com o tempo — em vez de baixar o
+    // histórico inteiro para sempre, mantém "recentes" + "ainda em aberto" (o que
+    // está pendente continua carregado independente da idade do registro).
+    const unsubPurchases = firebaseService.subscribeToRecentOrOpen<Purchase>(
       "purchases",
+      { dateField: "date", cutoffMs: Date.now() - 18 * 30 * 24 * 60 * 60 * 1000, openField: "paymentStatus", openValues: ["PENDING"] },
       setPurchases,
     );
-    const unsubSales = firebaseService.subscribeToCollection<Sale>(
+    const unsubSales = firebaseService.subscribeToRecentOrOpen<Sale>(
       "sales",
+      { dateField: "date", cutoffMs: Date.now() - 18 * 30 * 24 * 60 * 60 * 1000, openField: "paymentStatus", openValues: ["PENDING"] },
       (data) => {
         // Garantir que todos os recebimentos no histórico tenham um ID (suporte a dados legados)
         const processed = data.map(sale => {
@@ -665,8 +688,9 @@ export default function App() {
       },
     );
     const unsubTransactions =
-      firebaseService.subscribeToCollection<Transaction>(
+      firebaseService.subscribeToRecentOrOpen<Transaction>(
         "transactions",
+        { dateField: "date", cutoffMs: Date.now() - 6 * 30 * 24 * 60 * 60 * 1000, openField: "status", openValues: ["PENDING"] },
         setTransactions,
       );
     const unsubAccounts = firebaseService.subscribeToCollection<Account>(
@@ -754,13 +778,18 @@ export default function App() {
       setProductionLots
     );
 
-    const unsubStockLots = firebaseService.subscribeToCollection<StockLot>(
+    // Estoque/Pedidos de Produção/OS só crescem com o tempo — mantém "recentes" + "ainda
+    // em aberto" (ver Fase 1 em sales/purchases/transactions, mesmo helper). productionLots
+    // fica de fora por agora: não tem um campo confiável de "ainda ativo" para consultar.
+    const unsubStockLots = firebaseService.subscribeToRecentOrOpen<StockLot>(
       "stockLots",
+      { dateField: "createdAt", cutoffMs: Date.now() - 12 * 30 * 24 * 60 * 60 * 1000, openField: "status", openValues: ["EM_ESTOQUE", "RESERVADO"] },
       setStockLots
     );
 
-    const unsubProductionOrders = firebaseService.subscribeToCollection<ProductionOrder>(
+    const unsubProductionOrders = firebaseService.subscribeToRecentOrOpen<ProductionOrder>(
       "productionOrders",
+      { dateField: "orderDate", cutoffMs: Date.now() - 12 * 30 * 24 * 60 * 60 * 1000, openField: "status", openValues: ["PENDING", "IN_PRODUCTION"] },
       setProductionOrders
     );
 
@@ -769,8 +798,9 @@ export default function App() {
       (data) => setPurchaseRequests([...data].sort((a, b) => b.requestedAt - a.requestedAt))
     );
 
-    const unsubServiceOrders = firebaseService.subscribeToCollection<ServiceOrder>(
+    const unsubServiceOrders = firebaseService.subscribeToRecentOrOpen<ServiceOrder>(
       "serviceOrders",
+      { dateField: "createdAt", cutoffMs: Date.now() - 12 * 30 * 24 * 60 * 60 * 1000, openField: "status", openValues: ["PENDING"] },
       setServiceOrders
     );
 
@@ -816,6 +846,17 @@ export default function App() {
       }
     );
 
+    // Coleções pequenas (1 doc por mês / 1 doc de config) do arquivamento periódico —
+    // sempre carregadas por completo, sem necessidade de otimização de janela.
+    const unsubMonthlySnapshots = firebaseService.subscribeToCollection<MonthlySnapshot>(
+      "monthly_snapshots",
+      setMonthlySnapshots
+    );
+    const unsubCleanupConfig = firebaseService.subscribeToCollection<CleanupConfig>(
+      "cleanup_config",
+      (data) => setCleanupConfig(data.find(c => c.id === 'main') || null)
+    );
+
     return () => {
       unsubProducts();
       unsubPurchases();
@@ -843,10 +884,53 @@ export default function App() {
       unsubPurchaseRequests();
       unsubServiceOrders();
       unsubDashboardConfig();
+      unsubMonthlySnapshots();
+      unsubCleanupConfig();
 
     };
   }, [user]);
 
+  // Lembretes externos (notificações locais) — pede permissão e (re)agenda todos os
+  // lembretes pendentes uma única vez por sessão, alguns segundos após o login, dando
+  // tempo dos listeners do Firestore povoarem sales/serviceOrders/productionOrders.
+  // Funciona como rede de segurança: o agendamento "ao vivo" já acontece nas telas que
+  // editam o lembrete, isso aqui cobre reinstalação do app ou notificações perdidas.
+  const remindersSyncedRef = useRef(false);
+  useEffect(() => {
+    if (!user || remindersSyncedRef.current) return;
+    const timer = setTimeout(() => {
+      if (remindersSyncedRef.current) return;
+      remindersSyncedRef.current = true;
+      (async () => {
+        const granted = await notificationService.requestPermission();
+        if (!granted) return;
+        const reminders: ReminderNotification[] = [];
+        sales.filter(s => s.reminderAt).forEach(s => reminders.push({
+          id: `sale-${s.id}`,
+          title: s.reminderTitle || s.customerName || 'Venda',
+          body: s.reminderTitle ? (s.customerName || 'Venda') : 'Lembrete de venda',
+          at: s.reminderAt!,
+        }));
+        serviceOrders.filter(os => os.reminderAt).forEach(os => reminders.push({
+          id: `os-${os.id}`,
+          title: os.reminderTitle || `OS ${os.osNumber}`,
+          body: os.providerName ? `Fornecedor: ${os.providerName}` : 'Lembrete de Ordem de Serviço',
+          at: os.reminderAt!,
+        }));
+        productionOrders.forEach(order => (order.items || []).forEach((item: any) => {
+          if (!item.reminderAt) return;
+          reminders.push({
+            id: `order-${order.id}-${item.productId}-${item.variationId}`,
+            title: item.reminderTitle || `Pedido ${order.orderNumber}`,
+            body: `${order.customerName || 'Estoque'} · Pedido ${order.orderNumber}`,
+            at: item.reminderAt,
+          });
+        }));
+        notificationService.rescheduleAll(reminders);
+      })();
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [user, sales, serviceOrders, productionOrders]);
 
   // Selection state for editing
   const [selectedProductId, setSelectedProductId] = useState<string | null>(
@@ -2615,7 +2699,8 @@ export default function App() {
 
     try {
       const orderId = generateId();
-      const orderNum = `OP #${String(productionOrders.length + 1).padStart(3, '0')}`;
+      const nextOPNum = await firebaseService.getNextSequence('productionOrders', seedProductionOrderSequence);
+      const orderNum = `OP #${String(nextOPNum).padStart(3, '0')}`;
 
       // Agrupar itens da venda por Produto/Variação para criar os lotes (Mapas)
       const groupedItems = new Map<string, {
@@ -2721,6 +2806,8 @@ export default function App() {
             productionLots={productionLots}
             sectors={sectors}
             purchaseRequests={purchaseRequests}
+            serviceOrders={serviceOrders}
+            productionOrders={productionOrders}
             onAddSale={() => resetTo(ViewType.SALE_FORM)}
             onUpdateCheckStatus={handleCheckStatusChange}
             isDarkMode={isDarkMode}
@@ -3065,7 +3152,19 @@ export default function App() {
             products={products}
             people={people}
             categories={categories}
+            monthlySnapshots={monthlySnapshots}
             onBack={() => setCurrentView(ViewType.REPORTS)}
+          />
+        );
+      case ViewType.DATA_CLEANUP:
+        return (
+          <DataCleanupView
+            isDarkMode={isDarkMode}
+            onBack={() => setCurrentView(ViewType.SETTINGS)}
+            cleanupConfig={cleanupConfig}
+            monthlySnapshots={monthlySnapshots}
+            people={people}
+            products={products}
           />
         );
       case ViewType.PRINT_CENTER:
@@ -5124,7 +5223,9 @@ export default function App() {
             transition={{ duration: 0.15 }}
             className="px-3 py-5 min-h-full"
           >
-            {renderView(lastNonModalView)}
+            <Suspense fallback={<ViewLoadingFallback />}>
+              {renderView(lastNonModalView)}
+            </Suspense>
           </motion.div>
         </AnimatePresence>
       </main>
@@ -5141,7 +5242,9 @@ export default function App() {
            currentView === ViewType.PRODUCTION_ENGINEERING) ? "max-w-5xl" : "max-w-2xl"
         }
       >
-        {renderView(currentView)}
+        <Suspense fallback={<ViewLoadingFallback />}>
+          {renderView(currentView)}
+        </Suspense>
       </Modal>
 
       {/* Aviso de exclusão de compra vinculada ao PCP */}

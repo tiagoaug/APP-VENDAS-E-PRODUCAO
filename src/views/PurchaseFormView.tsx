@@ -57,6 +57,8 @@ import PackagingBuilderModal from '../components/PackagingBuilderModal';
 import GradeBuilderModal from '../components/GradeBuilderModal';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
+import { firebaseService } from '../services/firebaseService';
+import { seedProductionOrderSequence } from '../utils/sequenceSeeds';
 import { isHybridProduct } from '../utils/stockPools';
 
 // Cor de texto legível sobre um fundo hexadecimal (preto ou branco, pelo contraste YIQ).
@@ -757,7 +759,7 @@ export default function PurchaseFormView({
       const existingOrderId = existing?.productionOrderId;
       const existingOrder = productionOrders.find(o => o.id === existingOrderId);
       const orderId = existingOrderId || generateId();
-      const orderNum = existingOrder?.orderNumber || `OP #${String(productionOrders.length + 1).padStart(3, '0')}`;
+      const orderNum = existingOrder?.orderNumber || `OP #${String(await firebaseService.getNextSequence('productionOrders', seedProductionOrderSequence)).padStart(3, '0')}`;
       const orderItems: ProductionOrderItem[] = [];
 
       blocks.forEach(block => {
@@ -1292,50 +1294,78 @@ export default function PurchaseFormView({
               const selectedMat = availableMaterials.find(m => m.id === item.materialId);
               const unitLabel = item.unit || (selectedMat ? getMaterialUnit(selectedMat) : '');
               const total = itemTotal(item);
-              const isPersonItem = item.kind === 'person';
+              const itemKind = item.kind || 'material';
+              const isPersonItem = itemKind === 'person';
+              const isGeneralItem = itemKind === 'general';
 
               return (
                 <div
                   key={item.id}
                   className={`p-4 rounded-[2rem] border shadow-sm flex flex-col gap-3 relative group overflow-hidden ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
                 >
-                  {/* Tipo do item: Material x Fornecedor/Terceirizado */}
-                  <div className="flex gap-2 p-1 rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800">
+                  {/* Tipo do item: Material x Fornecedor/Terceirizado x Geral — 3 repartições divididas */}
+                  <div className="flex rounded-2xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 overflow-hidden">
                     <button
                       type="button"
                       onClick={() => updateGeneralItem(index, { kind: 'material', personId: undefined })}
-                      className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${!isPersonItem ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 dark:text-slate-400'}`}
+                      className={`flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest transition-all border-r ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} ${itemKind === 'material' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 dark:text-slate-400'}`}
                     >
                       Material
                     </button>
                     <button
                       type="button"
                       onClick={() => updateGeneralItem(index, { kind: 'person', materialId: undefined, colorId: undefined, colorName: undefined, unit: undefined })}
-                      className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${isPersonItem ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 dark:text-slate-400'}`}
+                      className={`flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest transition-all border-r ${isDarkMode ? 'border-slate-700' : 'border-slate-200'} ${isPersonItem ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 dark:text-slate-400'}`}
                     >
                       Fornecedor / Terceirizado
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => updateGeneralItem(index, { kind: 'general', materialId: undefined, personId: undefined, colorId: undefined, colorName: undefined, unit: undefined })}
+                      className={`flex-1 py-2.5 text-[9px] font-black uppercase tracking-widest transition-all ${isGeneralItem ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 dark:text-slate-400'}`}
+                    >
+                      Gerais
+                    </button>
                   </div>
 
-                  {/* Campo 1: Seleção do Material ou do Fornecedor/Terceirizado */}
+                  {/* Campo 1: Seleção do Material, do Fornecedor/Terceirizado ou Descrição (Geral) */}
                   <div className="flex gap-3 items-start">
                     <div className="flex-1 flex flex-col gap-1">
                       <p className="text-[10px] font-black uppercase tracking-widest text-slate-900 dark:text-white ml-1">
-                        {isPersonItem ? 'Fornecedor / Terceirizado' : 'Material'}
+                        {isPersonItem ? 'Fornecedor / Terceirizado' : isGeneralItem ? 'Descrição' : 'Material'}
                       </p>
                       {isPersonItem ? (
-                        <ComboBox
-                          options={availableThirdParties.map(p => ({ id: p.id, name: p.name }))}
-                          value={item.personId || ''}
-                          onChange={(val) => {
-                            const person = availableThirdParties.find(p => p.id === val);
-                            updateGeneralItem(index, {
-                              personId: val || undefined,
-                              description: person?.name || item.description,
-                            });
-                          }}
-                          placeholder="Pesquisar fornecedor ou terceirizado..."
-                          isDarkMode={isDarkMode}
+                        <>
+                          <ComboBox
+                            options={availableThirdParties.map(p => ({ id: p.id, name: p.name }))}
+                            value={item.personId || ''}
+                            onChange={(val) => {
+                              const person = availableThirdParties.find(p => p.id === val);
+                              updateGeneralItem(index, {
+                                personId: val || undefined,
+                                description: person?.name || item.description,
+                              });
+                            }}
+                            placeholder="Pesquisar fornecedor ou terceirizado..."
+                            isDarkMode={isDarkMode}
+                          />
+                          <input
+                            type="text"
+                            placeholder="Descreva o serviço ou motivo..."
+                            title="Descrição do serviço"
+                            className={`mt-1 w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-[12px] font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none`}
+                            value={item.description}
+                            onChange={(e) => updateGeneralItem(index, { description: e.target.value })}
+                          />
+                        </>
+                      ) : isGeneralItem ? (
+                        <input
+                          type="text"
+                          placeholder="Descreva a despesa..."
+                          title="Descrição da despesa"
+                          className={`w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-4 py-2.5 text-[12px] font-bold text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none`}
+                          value={item.description}
+                          onChange={(e) => updateGeneralItem(index, { description: e.target.value })}
                         />
                       ) : (
                         <>

@@ -1,7 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
 import { Sale, Product, SaleType, SaleItem, SaleExtraItem, SalePayment, Grid, Person, PaymentMethod, SaleStatus, PaymentTerm, Account, ProductStatus, PaymentStatus, ProductionOrder, ProductionLot, Sector, AppModulesConfig, ProductionConfigItem } from '../types';
 import { firebaseService } from '../services/firebaseService';
+import { notificationService } from '../services/notificationService';
 import ComboBox from '../components/ComboBox';
+import DateTimePicker from '../components/DateTimePicker';
 import { Save, Plus, Trash2, Tag, User, CreditCard, Info, Box, MessageSquare, AlertCircle, Hash, Percent, DollarSign, Receipt, TrendingUp, Wallet, Package, ChevronDown, ChevronUp, Search, X, CheckCircle2, Minus, FileText, Copy, Share, Share2, Calendar, Clock, RotateCcw, Ban, ShoppingCart, Users, Factory, Layers, Warehouse, Calculator } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import jsPDF from 'jspdf';
@@ -14,6 +16,7 @@ import PackagingBuilderModal from '../components/PackagingBuilderModal';
 import GradeBuilderModal from '../components/GradeBuilderModal';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
+import { seedProductionOrderSequence } from '../utils/sequenceSeeds';
 import { saleProductionHasProgressed } from '../utils/productionRoute';
 import { isHybridProduct } from '../utils/stockPools';
 
@@ -129,6 +132,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         setPaymentStatus(sale.paymentStatus || PaymentStatus.PAID);
         setPaymentHistory(sale.paymentHistory || []);
         setNotes(sale.notes || '');
+        setReminderAt(sale.reminderAt);
+        setReminderTitle(sale.reminderTitle || '');
         if (sale.dueDate) {
           setDueDate(new Date(sale.dueDate).toISOString().split('T')[0]);
         }
@@ -233,6 +238,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
   });
   const [showProductModal, setShowProductModal] = useState(false);
   const [notes, setNotes] = useState('');
+  const [reminderAt, setReminderAt] = useState<number | undefined>(undefined);
+  const [reminderTitle, setReminderTitle] = useState('');
   const [productSearchQuery, setProductSearchQuery] = useState("");
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [whatsappMessage, setWhatsappMessage] = useState("");
@@ -774,6 +781,12 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     if (deliveryDate) {
       saleToSave.deliveryDate = new Date(deliveryDate).getTime();
     }
+    if (reminderAt) {
+      saleToSave.reminderAt = reminderAt;
+    }
+    if (reminderTitle) {
+      saleToSave.reminderTitle = reminderTitle;
+    }
     if (isProductionOrder) {
       saleToSave.isProductionOrder = true;
     }
@@ -785,6 +798,17 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       saleToSave.isAccounting = false;
     }
 
+    if (saleToSave.reminderAt) {
+      notificationService.scheduleReminder({
+        id: `sale-${saleToSave.id}`,
+        title: saleToSave.reminderTitle || saleToSave.customerName || 'Venda',
+        body: saleToSave.reminderTitle ? (saleToSave.customerName || 'Venda') : 'Lembrete de venda',
+        at: saleToSave.reminderAt,
+      });
+    } else {
+      notificationService.cancelReminder(`sale-${saleToSave.id}`);
+    }
+
     try {
       setIsSaving(true);
 
@@ -794,7 +818,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
           ? productionOrders.find(o => o.id === existingSale.productionOrderId)
           : undefined;
         const orderId = existingOrder?.id || generateId();
-        const orderNum = existingOrder?.orderNumber || `OP #${String(productionOrders.length + 1).padStart(3, '0')}`;
+        const orderNum = existingOrder?.orderNumber || `OP #${String(await firebaseService.getNextSequence('productionOrders', seedProductionOrderSequence)).padStart(3, '0')}`;
         const orderItems: import('../types').ProductionOrderItem[] = [];
 
         blocks.forEach(block => {
@@ -1391,6 +1415,25 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                 title="Observações"
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Adicione observações sobre a venda..."
+              />
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2">
+              <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 block tracking-widest leading-none">Lembrete (opcional)</label>
+              <input
+                type="text"
+                value={reminderTitle}
+                title="Título do lembrete"
+                aria-label="Título do lembrete"
+                onChange={(e) => setReminderTitle(e.target.value)}
+                placeholder="Título do lembrete..."
+                className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-4 py-3 text-[12px] font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-200"
+              />
+              <DateTimePicker
+                value={reminderAt}
+                onChange={(ts) => setReminderAt(ts || undefined)}
+                placeholder="Definir data e hora do lembrete"
+                isDarkMode={isDarkMode}
               />
           </div>
 
@@ -2941,8 +2984,6 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             products={products}
             grids={grids}
             sectors={sectors}
-            existingOrdersCount={productionOrders.length}
-            existingLotsCount={lots.length}
             lots={lots}
             isDarkMode={isDarkMode}
             onConfirm={async (order, newLots, deductions) => {

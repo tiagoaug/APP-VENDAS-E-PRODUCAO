@@ -82,6 +82,7 @@ function buildItemRows(purchase: Purchase, products: Product[], grouped = false,
   if (purchase.type === PurchaseType.GENERAL) {
     return (purchase.generalItems || []).map(item => ({
       title: item.description,
+      subtitle: item.kind === 'person' ? 'Fornecedor' : item.kind === 'general' ? 'Geral' : 'Material',
       qtyLabel: `${item.quantity ?? 1}${item.unit ? ` ${item.unit}` : ''}`,
       unitValue: item.value,
       lineTotal: (item.value || 0) * (item.quantity || 1),

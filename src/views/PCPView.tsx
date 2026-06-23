@@ -24,6 +24,7 @@ import { computePalmilhaMapaReservations, computePalmilhaPendingOrders } from '.
 import { resolveSoleConsumption } from '../utils/soleNeeds';
 import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
+import DateTimePicker from '../components/DateTimePicker';
 import ScannerModal from '../components/ScannerModal';
 import PrintOSModal from '../components/PrintOSModal';
 import PrintLabelEditorModal from '../components/PrintLabelEditorModal';
@@ -38,6 +39,8 @@ import { financeService } from '../services/financeService';
 import WebCameraScanner from '../components/WebCameraScanner';
 import { Capacitor } from '@capacitor/core';
 import { firebaseService } from '../services/firebaseService';
+import { notificationService } from '../services/notificationService';
+import { seedProductionLotSequence } from '../utils/sequenceSeeds';
 import CuttingAreaPanel from '../components/CuttingProjectionPanel';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
@@ -577,7 +580,7 @@ export default function PCPView({
   const [fichaSelection, setFichaSelection] = useState<Set<string>>(new Set());
   const [fichaListOpen, setFichaListOpen] = useState<Set<string>>(new Set()); // expanded lot keys
   const [fichaItemExpanded, setFichaItemExpanded] = useState<Set<string>>(new Set()); // expanded grade keys
-  const [fichaFilters, setFichaFilters] = useState<Record<string, { model: string; color: string }>>({});
+  const [fichaFilters, setFichaFilters] = useState<Record<string, { model: string; color: string; search?: string }>>({});
 
   // Itens de pedidos pendentes decupados — granularidade por item, não por pedido.
   // Importante: um pedido com vários modelos pode ter alguns já incluídos em um mapa e outros não;
@@ -2400,6 +2403,22 @@ export default function PCPView({
     onNavigate(ViewType.PRODUCTION_SERVICE_ORDER_FORM, os.id);
   };
 
+  // Agenda/cancela a notificação local do lembrete de uma OS, refletindo o título/data mais recentes
+  const syncOSReminderNotification = (os: ServiceOrder, updates: { reminderAt?: number | null; reminderTitle?: string | null }) => {
+    const reminderAt = updates.reminderAt !== undefined ? updates.reminderAt : os.reminderAt;
+    const reminderTitle = updates.reminderTitle !== undefined ? updates.reminderTitle : os.reminderTitle;
+    if (reminderAt) {
+      notificationService.scheduleReminder({
+        id: `os-${os.id}`,
+        title: reminderTitle || `OS ${os.osNumber}`,
+        body: os.providerName ? `Fornecedor: ${os.providerName}` : 'Lembrete de Ordem de Serviço',
+        at: reminderAt,
+      });
+    } else {
+      notificationService.cancelReminder(`os-${os.id}`);
+    }
+  };
+
   // Resolve as "fichas" (pedidos/itens) cobertas por uma OS — usado tanto pelo
   // botão "Visualizar" quanto pelo "Compartilhar" desta OS específica.
   const getFichasForOS = (os: ServiceOrder): any[] => {
@@ -2477,7 +2496,8 @@ export default function PCPView({
     });
 
     const totalQty = groupEntries.reduce((s, g) => s + g.quantity, 0);
-    const lotNumber = `${String(lots.length + 1).padStart(3, '0')}`;
+    const nextLotNum = await firebaseService.getNextSequence('productionLots', seedProductionLotSequence);
+    const lotNumber = `${String(nextLotNum).padStart(3, '0')}`;
     const isMultiGroup = groupEntries.length > 1;
 
     const singleLot: ProductionLot = {
@@ -3839,11 +3859,27 @@ export default function PCPView({
                     const filterKey = `__filter__${selectedSectorId}`;
                     const isMainOpen = !fichaListOpen.has(mainKey + '_closed');
                     const isFilterOpen = fichaListOpen.has(filterKey);
-                    const activeFilt = fichaFilters[mainKey] || { model: '', color: '' };
+                    const activeFilt = fichaFilters[mainKey] || { model: '', color: '', search: '' };
+                    const filterSearch = (activeFilt.search || '').trim().toLowerCase();
 
-                    // Unique models and colors across all fichas
-                    const uniqueModels = Array.from(new Set(allFichas.map(f => f.product?.name || f.orderItem?.productName || '').filter(Boolean)));
-                    const uniqueColors = Array.from(new Set(allFichas.map(f => f.variation?.colorName || f.orderItem?.variationName || '').filter(Boolean)));
+                    // Modelos únicos: chave = nome (usado no filtro), label = referência (exibida nos chips)
+                    const modelMap = new Map<string, { key: string; label: string }>();
+                    allFichas.forEach(f => {
+                      const name = f.product?.name || f.orderItem?.productName || '';
+                      if (!name) return;
+                      const label = f.product?.reference || name;
+                      if (!modelMap.has(name)) modelMap.set(name, { key: name, label });
+                    });
+                    const modelOptions = Array.from(modelMap.values()).filter(opt =>
+                      !filterSearch || opt.label.toLowerCase().includes(filterSearch) || opt.key.toLowerCase().includes(filterSearch)
+                    );
+                    const uniqueModels = modelOptions.map(opt => opt.key);
+                    // Cores disponíveis: restritas ao modelo/referência selecionado, se houver
+                    const fichasForColors = activeFilt.model
+                      ? allFichas.filter(f => (f.product?.name || f.orderItem?.productName || '') === activeFilt.model)
+                      : allFichas;
+                    const uniqueColors = Array.from(new Set(fichasForColors.map(f => f.variation?.colorName || f.orderItem?.variationName || '').filter(Boolean)))
+                      .filter(c => !filterSearch || c.toLowerCase().includes(filterSearch));
 
                     // Filtered fichas
                     const filteredFichas = allFichas.filter(f => {
@@ -3938,31 +3974,54 @@ export default function PCPView({
                                 onClick={() => { const n = new Set(fichaListOpen); isFilterOpen ? n.delete(filterKey) : n.add(filterKey); setFichaListOpen(n); }}
                                 className={`w-full flex items-center gap-2 px-4 py-2.5 transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}`}
                               >
-                                <Filter size={12} className="text-slate-400" />
-                                <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex-1 text-left">Filtrar</span>
+                                <Filter size={12} className="text-orange-500" />
+                                <span className="flex-1 text-left">
+                                  <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${isDarkMode ? 'bg-slate-700 text-slate-200' : 'bg-slate-200 text-slate-600'}`}>Filtrar</span>
+                                </span>
                                 {(activeFilt.model || activeFilt.color) && (
                                   <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-indigo-500 text-white">Ativo</span>
                                 )}
                                 <ChevronDown size={13} className={`text-slate-400 transition-transform duration-200 ${isFilterOpen ? 'rotate-180' : ''}`} />
                               </button>
                               {isFilterOpen && (
-                                <div className={`px-4 pb-3 pt-2 border-t flex flex-wrap gap-1.5 ${isDarkMode ? 'border-slate-800 bg-slate-950/30' : 'border-slate-100 bg-slate-50/60'}`}>
-                                  {uniqueModels.map(m => (
-                                    <button type="button" key={m}
-                                      onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, model: activeFilt.model === m ? '' : m } }))}
-                                      className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all border ${activeFilt.model === m ? 'bg-indigo-600 text-white border-indigo-600' : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-600 border-slate-200'}`}
-                                    >{m}</button>
-                                  ))}
-                                  {uniqueColors.map(c => (
-                                    <button type="button" key={c}
-                                      onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, color: activeFilt.color === c ? '' : c } }))}
-                                      className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all border ${activeFilt.color === c ? 'bg-amber-500 text-white border-amber-500' : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-600 border-slate-200'}`}
-                                    >{c}</button>
-                                  ))}
-                                  {(activeFilt.model || activeFilt.color) && (
+                                <div className={`px-4 pb-3 pt-2 border-t flex flex-col gap-2 ${isDarkMode ? 'border-slate-800 bg-slate-950/30' : 'border-slate-100 bg-slate-50/60'}`}>
+                                  <input type="text"
+                                    placeholder="Buscar modelo ou referência..."
+                                    title="Buscar modelo ou referência"
+                                    value={activeFilt.search || ''}
+                                    onChange={(e) => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, search: e.target.value } }))}
+                                    className={`w-full px-3 py-2 rounded-xl text-[11px] font-bold outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-white border-slate-200 text-slate-700 placeholder:text-slate-400'}`}
+                                  />
+                                  {modelOptions.length > 0 && (
+                                    <div>
+                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Referência</p>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {modelOptions.map(({ key, label }) => (
+                                          <button type="button" key={key}
+                                            onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, model: activeFilt.model === key ? '' : key, color: '' } }))}
+                                            className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all border ${activeFilt.model === key ? 'bg-indigo-600 text-white border-indigo-600' : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-600 border-slate-200'}`}
+                                          >{label}</button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {uniqueColors.length > 0 && (
+                                    <div>
+                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Cor</p>
+                                      <div className="flex flex-wrap gap-1.5">
+                                        {uniqueColors.map(c => (
+                                          <button type="button" key={c}
+                                            onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, color: activeFilt.color === c ? '' : c } }))}
+                                            className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all border ${activeFilt.color === c ? 'bg-amber-500 text-white border-amber-500' : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-600 border-slate-200'}`}
+                                          >{c}</button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {(activeFilt.model || activeFilt.color || activeFilt.search) && (
                                     <button type="button" title="Limpar filtros"
-                                      onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { model: '', color: '' } }))}
-                                      className="text-[9px] font-black uppercase text-slate-400 hover:text-slate-700 px-2"
+                                      onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { model: '', color: '', search: '' } }))}
+                                      className="self-start text-[9px] font-black uppercase text-slate-400 hover:text-slate-700 px-2"
                                     >✕ Limpar</button>
                                   )}
                                 </div>
@@ -3991,6 +4050,30 @@ export default function PCPView({
                                 const completedOS = serviceOrders.find((so: any) => osCoversItem(so, f.lot.id, f.si.orderId, f.siIdx) && so.status === 'COMPLETED');
                                 const hasCompletedOS = !!completedOS;
                                 const linkedOSList = serviceOrders.filter((so: any) => osCoversItem(so, f.lot.id, f.si.orderId, f.siIdx));
+                                const orderItemIdx = f.si.itemIdx !== undefined
+                                  ? f.si.itemIdx
+                                  : (f.order?.items.findIndex((i: any) => i.productId === f.si.productId && i.variationId === f.si.variationId) ?? -1);
+                                const updateOrderItemNote = (updates: { notes?: string | null; reminderAt?: number | null; reminderTitle?: string | null }) => {
+                                  if (!f.order || orderItemIdx < 0) return;
+                                  const newItems = [...f.order.items];
+                                  const updatedItem = { ...newItems[orderItemIdx], ...updates };
+                                  newItems[orderItemIdx] = updatedItem;
+                                  firebaseService.updateDocument('productionOrders', f.order.id, { items: newItems });
+
+                                  if ('reminderAt' in updates || 'reminderTitle' in updates) {
+                                    const reminderId = `order-${f.order.id}-${updatedItem.productId}-${updatedItem.variationId}`;
+                                    if (updatedItem.reminderAt) {
+                                      notificationService.scheduleReminder({
+                                        id: reminderId,
+                                        title: updatedItem.reminderTitle || `Pedido ${f.order.orderNumber}`,
+                                        body: `${f.order.customerName || 'Estoque'} · Pedido ${f.order.orderNumber}`,
+                                        at: updatedItem.reminderAt,
+                                      });
+                                    } else {
+                                      notificationService.cancelReminder(reminderId);
+                                    }
+                                  }
+                                };
 
                                 return (
                                   <div key={itemKey} id={`pedido-card-${itemKey}`} className={`rounded-2xl border overflow-hidden transition-all ${hasOS
@@ -4095,7 +4178,7 @@ export default function PCPView({
                                           gradeOpen ? n.delete(gradeKey) : n.add(gradeKey);
                                           setFichaItemExpanded(n);
                                         }}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 transition-all text-[9px] font-black uppercase tracking-wider"
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all text-[9px] font-black uppercase tracking-wider ${gradeOpen ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}
                                       >
                                         <ChevronDown size={12} className={`transition-transform duration-200 ${gradeOpen ? 'rotate-180' : ''}`} />
                                         {gradeOpen ? 'Recolher' : 'Grade / Detalhes'}
@@ -4137,6 +4220,41 @@ export default function PCPView({
                                             <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">{f.si.qty} pares</p>
                                           </div>
                                         </div>
+
+                                        {/* Observações + Lembrete deste pedido — título e data/hora opcionais para entrar no card de Lembretes do Dashboard */}
+                                        {f.order && orderItemIdx >= 0 && (
+                                          <div className="flex flex-col gap-1.5 px-2">
+                                            <textarea
+                                              defaultValue={orderItem?.notes || ''}
+                                              placeholder="Observações sobre este pedido..."
+                                              title="Observações do pedido"
+                                              onBlur={(e) => {
+                                                if (e.target.value !== (orderItem?.notes || '')) {
+                                                  updateOrderItemNote({ notes: e.target.value || null });
+                                                }
+                                              }}
+                                              className={`w-full px-3 py-2 rounded-xl text-[10px] font-bold outline-none border resize-none h-16 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-700 placeholder:text-slate-400'}`}
+                                            />
+                                            <input
+                                              type="text"
+                                              defaultValue={orderItem?.reminderTitle || ''}
+                                              placeholder="Título do lembrete..."
+                                              title="Título do lembrete"
+                                              onBlur={(e) => {
+                                                if (e.target.value !== (orderItem?.reminderTitle || '')) {
+                                                  updateOrderItemNote({ reminderTitle: e.target.value || null });
+                                                }
+                                              }}
+                                              className={`w-full px-3 py-2 rounded-xl text-[10px] font-bold outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-700 placeholder:text-slate-400'}`}
+                                            />
+                                            <DateTimePicker
+                                              value={orderItem?.reminderAt}
+                                              isDarkMode={isDarkMode}
+                                              placeholder="Definir lembrete"
+                                              onChange={(ts) => updateOrderItemNote({ reminderAt: ts })}
+                                            />
+                                          </div>
+                                        )}
 
                                         {/* Instruções */}
                                         {variation?.sectorNotes && Object.keys(variation.sectorNotes).length > 0 && (
@@ -4545,6 +4663,52 @@ export default function PCPView({
                                           <Share2 size={12} className="text-orange-500" /> Compartilhar
                                         </button>
                                       </div>
+                                      <button type="button" title="Imprimir Etiqueta / OS" onClick={() => {
+                                        setPrintOSData({ os, nextSectorName: nextSName });
+                                        setIsPrintOSModalOpen(true);
+                                      }}
+                                        className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                        <Printer size={12} className="text-emerald-500" /> Imprimir Etiqueta / OS
+                                      </button>
+
+                                      {/* Observações + Lembrete — anotações sobre a OS, com título e data/hora opcionais para entrar no card de Lembretes do Dashboard */}
+                                      <div className="flex flex-col gap-1.5">
+                                        <textarea
+                                          defaultValue={os.notes || ''}
+                                          placeholder="Observações sobre esta OS..."
+                                          title="Observações da OS"
+                                          onBlur={(e) => {
+                                            if (e.target.value !== (os.notes || '')) {
+                                              firebaseService.updateDocument('serviceOrders', os.id, { notes: e.target.value || null });
+                                            }
+                                          }}
+                                          className={`w-full px-3 py-2 rounded-xl text-[10px] font-bold outline-none border resize-none h-16 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-700 placeholder:text-slate-400'}`}
+                                        />
+                                        <input
+                                          type="text"
+                                          defaultValue={os.reminderTitle || ''}
+                                          placeholder="Título do lembrete..."
+                                          title="Título do lembrete"
+                                          onBlur={(e) => {
+                                            if (e.target.value !== (os.reminderTitle || '')) {
+                                              const reminderTitle = e.target.value || null;
+                                              firebaseService.updateDocument('serviceOrders', os.id, { reminderTitle });
+                                              syncOSReminderNotification(os, { reminderTitle });
+                                            }
+                                          }}
+                                          className={`w-full px-3 py-2 rounded-xl text-[10px] font-bold outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-700 placeholder:text-slate-400'}`}
+                                        />
+                                        <DateTimePicker
+                                          value={os.reminderAt}
+                                          isDarkMode={isDarkMode}
+                                          placeholder="Definir lembrete"
+                                          onChange={(ts) => {
+                                            firebaseService.updateDocument('serviceOrders', os.id, { reminderAt: ts });
+                                            syncOSReminderNotification(os, { reminderAt: ts });
+                                          }}
+                                        />
+                                      </div>
+
                                       <button type="button" onClick={() => handleCompleteOS(os)}
                                         className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 hover:bg-emerald-600">
                                         <CheckCircle2 size={13} /> Dar Baixa

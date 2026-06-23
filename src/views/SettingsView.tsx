@@ -261,7 +261,7 @@ export default function SettingsView({
               onClick={() => onNavigate(ViewType.DASHBOARD_CONFIG)}
               title="Organizar Dashboard"
               aria-label="Organizar layout do Dashboard"
-              className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}`}
+              className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'border-b border-slate-800 hover:bg-slate-800/50' : 'border-b border-slate-50 hover:bg-slate-50'}`}
             >
               <div className="flex items-center gap-4">
                 <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center shrink-0 text-indigo-600 dark:text-indigo-400">
@@ -270,6 +270,25 @@ export default function SettingsView({
                 <div className="text-left">
                   <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Organizar Dashboard</p>
                   <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Layout e atalhos da tela inicial</p>
+                </div>
+              </div>
+              <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+            </button>
+
+            {/* ── LIMPEZA E ARQUIVAMENTO DE DADOS ── */}
+            <button
+              onClick={() => onNavigate(ViewType.DATA_CLEANUP)}
+              title="Limpeza e Arquivamento de Dados"
+              aria-label="Configurar limpeza e arquivamento de dados antigos"
+              className={`w-full flex items-center justify-between p-4 transition-colors active:bg-slate-100 dark:active:bg-slate-800 ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}`}
+            >
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center shrink-0 text-indigo-600 dark:text-indigo-400">
+                  <Database size={22} />
+                </div>
+                <div className="text-left">
+                  <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Limpeza e Arquivamento</p>
+                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5">Arquivar Vendas/Compras/Produção antigas</p>
                 </div>
               </div>
               <ChevronRight size={18} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />

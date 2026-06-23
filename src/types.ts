@@ -202,7 +202,7 @@ export type GeneralPurchaseItem = {
   quantity?: number;    // Quantity purchased
   unit?: string;        // Unit label (e.g., "ML", "UN", "KG")
   value: number;        // Unit price
-  kind?: 'material' | 'person'; // ausente = 'material' (padrão); 'person' = pagamento a fornecedor/terceirizado cadastrado
+  kind?: 'material' | 'person' | 'general'; // ausente = 'material' (padrão); 'person' = pagamento a fornecedor/terceirizado cadastrado; 'general' = despesa genérica com descrição livre
   personId?: string;    // Link to Person (fornecedor/terceirizado), usado quando kind === 'person'
 };
 
@@ -330,6 +330,8 @@ export type Sale = {
   isAccounting?: boolean; // false = não gera lançamento financeiro
   deliveryStatus?: 'PENDING' | 'DELIVERED';
   deliveredAt?: number;
+  reminderAt?: number; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
+  reminderTitle?: string; // Título curto do lembrete
 };
 
 export type Person = {
@@ -459,6 +461,7 @@ export enum ViewType {
   PERSONAL_FINANCIAL = 'PERSONAL_FINANCIAL',
   REPORT_DETAILED = 'REPORT_DETAILED',
   DASHBOARD_CONFIG = 'DASHBOARD_CONFIG',
+  DATA_CLEANUP = 'DATA_CLEANUP',
   PRODUCTION_MENU = 'PRODUCTION_MENU',
   PRODUCTION_PCP = 'PRODUCTION_PCP',
   PRODUCTION_STOCK = 'PRODUCTION_STOCK',
@@ -493,6 +496,30 @@ export type DashboardCardConfig = {
 
 export type DashboardConfig = {
   cards: DashboardCardConfig[];
+};
+
+// Resumo permanente de um mês — gerado no arquivamento (ver DataCleanupView), nunca
+// recalculado a partir dos registros detalhados (que podem já ter sido arquivados).
+export type MonthlySnapshot = {
+  id: string; // "YYYY-MM"
+  month: string; // "YYYY-MM"
+  generatedAt: number;
+  totalPairsProduced: number;
+  salesTotal: number;
+  salesCount: number;
+  purchasesTotal: number;
+  purchasesCount: number;
+  financialIncome: number;
+  financialExpense: number;
+  topCustomers: { id: string; name: string; total: number; count: number }[];
+  topProducts: { id: string; name: string; colorName: string; quantity: number; total: number }[];
+  supplierTotals: { id: string; name: string; total: number; count: number }[];
+};
+
+export type CleanupConfig = {
+  id: 'main';
+  intervalMonths: number;
+  lastRunAt?: number;
 };
 
 export type FamilyMember = {
@@ -725,6 +752,8 @@ export type ProductionOrderItem = {
   toProductionQty: number;
   pkgId?: string; // id do ProductionConfigItem (PACKAGING) usado para montar a grade deste item, se houver
   notes?: string;
+  reminderAt?: number; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
+  reminderTitle?: string; // Título curto do lembrete
 };
 
 export type ProductionOrder = {
@@ -895,6 +924,8 @@ export interface ServiceOrder {
   // Print extras
   productPhotoUrl?: string; // URL of the product/variation photo for label printing
   sizeGrid?: string;        // Human-readable size range, e.g. "37-38-39-40-41"
+  reminderAt?: number; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
+  reminderTitle?: string; // Título curto do lembrete
   // Navigation helpers (derived from linked lot, not persisted)
   currentSectorIndex?: number;
   route?: string[];

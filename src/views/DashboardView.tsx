@@ -1,15 +1,12 @@
 import { useState, useMemo, ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Sale, Purchase, Product, Variation, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig, SaleType } from "../types";
-import { Share2, TrendingUp, TrendingDown, Package, PackageOpen, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings, Sparkles, ScanLine, QrCode, Trash2 } from "lucide-react";
-import { format, differenceInDays } from "date-fns";
+import { Sale, Purchase, Product, Variation, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig, SaleType, ServiceOrder, PaymentTerm, ProductionOrder } from "../types";
+import { Share2, TrendingUp, TrendingDown, Package, PackageOpen, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings, Sparkles, ScanLine, QrCode, Trash2, Bell } from "lucide-react";
+import { format, differenceInDays, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import ScannerModal from '../components/ScannerModal';
 import { ProductionScreenType } from "../types";
-import { sharePDF } from "../utils/pdfExport";
 import { toast } from '../utils/toast';
 import { scannerService, SCAN_HISTORY_KEY, ScanHistoryEntry } from '../services/scannerService';
 import { getLotPendingSectorGroups } from '../utils/productionRoute';
@@ -30,6 +27,8 @@ interface DashboardViewProps {
   productionLots?: any[];
   sectors?: any[];
   purchaseRequests?: any[];
+  serviceOrders?: ServiceOrder[];
+  productionOrders?: ProductionOrder[];
   onAddSale: () => void;
   onUpdateCheckStatus: (
     purchaseId: string,
@@ -59,6 +58,8 @@ export default function DashboardView({
   productionLots = [],
   sectors = [],
   purchaseRequests = [],
+  serviceOrders = [],
+  productionOrders = [],
   onAddSale,
   onUpdateCheckStatus,
   onNavigate,
@@ -77,6 +78,7 @@ export default function DashboardView({
   const [customerDebtsSearch, setCustomerDebtsSearch] = useState("");
   const [supplierDebtsSearch, setSupplierDebtsSearch] = useState("");
   const [checksStatusFilter, setChecksStatusFilter] = useState<'ALL' | 'PENDING' | 'CLEARED' | 'OVERDUE'>('PENDING');
+  const [reminderFilter, setReminderFilter] = useState<'ALL' | 'debt' | 'sale' | 'os' | 'order'>('ALL');
   const [expandedCheckId, setExpandedCheckId] = useState<string | null>(null);
   const [isRecentActivityExpanded, setIsRecentActivityExpanded] = useState(false);
 
@@ -152,8 +154,15 @@ export default function DashboardView({
   };
 
   const shareChecksPDF = async () => {
+    // Importados sob demanda — jspdf/html2canvas só pra quem realmente exporta
+    // um relatório, em vez de ir no chunk inicial do Dashboard pra todo mundo.
+    const [{ jsPDF }, { default: autoTable }, { sharePDF }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+      import('../utils/pdfExport'),
+    ]);
     const doc = new jsPDF();
-    
+
     doc.setFontSize(22);
     doc.setTextColor(63, 81, 181);
     doc.text('Relatório de Cheques', 14, 22);
@@ -271,15 +280,17 @@ export default function DashboardView({
     const consolidatedBalance = businessAccounts.reduce((acc, a) => acc + (a.balance || 0), 0);
     const personalBalance = personalAccounts.reduce((acc, a) => acc + (a.balance || 0), 0);
     
-    // Movimentação mensal pelas transações confirmadas (comerciais)
+    // Movimentação mensal pelas transações confirmadas (comerciais) — restrita ao mês
+    // atual; antes somava a história inteira mesmo com os cards dizendo "(Mês)".
     const now = new Date();
-    
+    const monthStart = startOfMonth(now).getTime();
+
     const monthlyIncome = businessTransactions
-      .filter(t => t.status === 'COMPLETED' && t.type === TransactionType.INCOME)
+      .filter(t => t.status === 'COMPLETED' && t.type === TransactionType.INCOME && t.date >= monthStart && t.date <= now.getTime())
       .reduce((acc, t) => acc + t.amount, 0);
-      
+
     const monthlyExpenses = businessTransactions
-      .filter(t => t.status === 'COMPLETED' && t.type === TransactionType.EXPENSE)
+      .filter(t => t.status === 'COMPLETED' && t.type === TransactionType.EXPENSE && t.date >= monthStart && t.date <= now.getTime())
       .reduce((acc, t) => acc + t.amount, 0);
 
     // Quantidade em estoque de uma variação: para ATACADO, apenas a contagem de
@@ -1413,6 +1424,148 @@ export default function DashboardView({
                 </div>
               </div>
             );
+
+          case "reminders": {
+            const now = Date.now();
+            type ReminderItem = { id: string; kind: 'debt' | 'sale' | 'os' | 'order'; title: string; subtitle: string; ts: number; onClick: () => void };
+            const items: ReminderItem[] = [];
+
+            purchases
+              .filter(p => p.paymentTerm === PaymentTerm.INSTALLMENTS && p.paymentStatus !== PaymentStatus.PAID && p.dueDate)
+              .forEach(p => {
+                const supplier = people.find(s => s.id === p.supplierId);
+                const totalPaid = (p.paymentHistory || []).reduce((acc, pay) => acc + pay.amount, 0);
+                const remaining = Math.max(0, p.total - totalPaid);
+                items.push({
+                  id: `debt-${p.id}`,
+                  kind: 'debt',
+                  title: supplier?.name || 'Fornecedor',
+                  subtitle: `R$ ${remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                  ts: p.dueDate!,
+                  onClick: () => onNavigate(ViewType.FINANCIAL),
+                });
+              });
+
+            sales
+              .filter(s => s.reminderAt)
+              .forEach(s => {
+                items.push({
+                  id: `sale-${s.id}`,
+                  kind: 'sale',
+                  title: s.reminderTitle || s.customerName || 'Venda',
+                  subtitle: s.reminderTitle ? (s.customerName || 'Venda') : (s.notes || 'Lembrete de venda'),
+                  ts: s.reminderAt!,
+                  onClick: () => onNavigate(ViewType.SALE_FORM, s.id),
+                });
+              });
+
+            serviceOrders
+              .filter(os => os.reminderAt)
+              .forEach(os => {
+                items.push({
+                  id: `os-${os.id}`,
+                  kind: 'os',
+                  title: os.reminderTitle || `OS ${os.osNumber}`,
+                  subtitle: os.reminderTitle ? `OS ${os.osNumber} · ${os.providerName || ''}` : (os.notes || 'Lembrete de OS'),
+                  ts: os.reminderAt!,
+                  onClick: () => onNavigateProduction('PCP', os.sectorId),
+                });
+              });
+
+            productionOrders.forEach(order => {
+              (order.items || []).forEach((item: any) => {
+                if (!item.reminderAt) return;
+                items.push({
+                  id: `order-${order.id}-${item.productId}-${item.variationId}`,
+                  kind: 'order',
+                  title: item.reminderTitle || `Pedido ${order.orderNumber}`,
+                  subtitle: item.reminderTitle ? `${order.customerName || 'Estoque'} · Pedido ${order.orderNumber}` : (item.notes || 'Lembrete de pedido'),
+                  ts: item.reminderAt,
+                  onClick: () => onNavigateProduction('PCP'),
+                });
+              });
+            });
+
+            items.sort((a, b) => a.ts - b.ts);
+
+            const kindMeta: Record<ReminderItem['kind'], { label: string; icon: ReactNode }> = {
+              debt: { label: 'Dívida', icon: <AlertCircle size={14} /> },
+              sale: { label: 'Venda', icon: <ShoppingBag size={14} /> },
+              os: { label: 'OS', icon: <ClipboardList size={14} /> },
+              order: { label: 'Pedido', icon: <Package size={14} /> },
+            };
+
+            const filterOptions: { id: 'ALL' | ReminderItem['kind']; label: string }[] = [
+              { id: 'ALL', label: 'Todos' },
+              { id: 'debt', label: 'Dívidas' },
+              { id: 'sale', label: 'Vendas' },
+              { id: 'os', label: 'OS' },
+              { id: 'order', label: 'Pedidos' },
+            ];
+            const visibleItems = items.filter(i => reminderFilter === 'ALL' || i.kind === reminderFilter);
+
+            return (
+              <section key="reminders" className="mt-2">
+                <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden flex flex-col ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+                  <div className="p-6 pb-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h2 className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-800"}`}>Lembretes e Vencimentos</h2>
+                        <p className="text-[10px] text-slate-400 font-bold tracking-widest mt-1">Dívidas, vendas, OS e pedidos</p>
+                      </div>
+                      <div className={`p-2.5 rounded-xl ${isDarkMode ? 'bg-rose-900/20 text-rose-500' : 'bg-rose-50 text-rose-600'}`}>
+                        <Bell size={20} strokeWidth={2.5} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {filterOptions.map(opt => {
+                        const count = opt.id === 'ALL' ? items.length : items.filter(i => i.kind === opt.id).length;
+                        const active = reminderFilter === opt.id;
+                        return (
+                          <button key={opt.id} type="button" onClick={() => setReminderFilter(opt.id)}
+                            className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border truncate ${active ? 'bg-indigo-600 text-white border-indigo-600' : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-slate-50 text-slate-500 border-slate-100'}`}
+                          >
+                            {opt.label}{count > 0 ? ` (${count})` : ''}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="px-4 pb-4 flex flex-col gap-2">
+                    {visibleItems.length === 0 ? (
+                      <div className="text-center py-8">
+                        <p className="text-[10px] font-black text-slate-300 dark:text-slate-700 uppercase tracking-[0.2em] italic">Nenhum lembrete programado</p>
+                      </div>
+                    ) : (
+                      visibleItems.slice(0, 8).map(item => {
+                        const isLate = item.ts < now;
+                        const meta = kindMeta[item.kind];
+                        return (
+                          <button key={item.id} type="button" onClick={item.onClick}
+                            className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-left transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800/50 border-slate-800 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isLate ? (isDarkMode ? 'bg-rose-900/30 text-rose-400' : 'bg-rose-50 text-rose-500') : (isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-500 border border-slate-200')}`}>
+                              {meta.icon}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">{meta.label}</span>
+                                {isLate && <span className="text-[8px] font-black uppercase text-rose-500">Atrasado</span>}
+                              </div>
+                              <p className={`text-[11px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{item.title}</p>
+                              <p className="text-[9px] font-bold text-slate-400 truncate">{item.subtitle}</p>
+                            </div>
+                            <span className="text-[9px] font-bold text-slate-400 shrink-0 text-right">
+                              {format(item.ts, item.kind === 'debt' ? 'dd/MM/yyyy' : "dd/MM HH:mm", { locale: ptBR })}
+                            </span>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </section>
+            );
+          }
 
           case "checks":
             return (

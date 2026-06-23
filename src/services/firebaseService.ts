@@ -12,7 +12,8 @@ import {
   Timestamp,
   orderBy,
   deleteField,
-  runTransaction
+  runTransaction,
+  writeBatch
 } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 
@@ -88,6 +89,36 @@ export const firebaseService = {
     }
   },
 
+  // Contador persistido (users/{uid}/counters/{counterId}) para gerar números
+  // sequenciais (OP, OS, Mapa/Lote) sem depender de contar quantos registros já
+  // estão carregados em memória — isso evitava duplicidade tanto por carregamento
+  // parcial quanto por duas criações quase simultâneas antes de sincronizar.
+  // Na primeira chamada (contador ainda não existe), usa `seed` para calcular o
+  // maior número já emitido na coleção e inicializar o contador a partir dele —
+  // sem precisar de nenhuma migração manual.
+  getNextSequence: async (counterId: string, seed?: () => Promise<number>): Promise<number> => {
+    if (!auth.currentUser) throw new Error('Not authenticated');
+    const fullPath = `users/${auth.currentUser.uid}/counters`;
+    const counterRef = doc(db, fullPath, counterId);
+    try {
+      const existing = await getDoc(counterRef);
+      if (!existing.exists() && seed) {
+        const seedValue = await seed();
+        await setDoc(counterRef, { value: seedValue });
+      }
+      return await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(counterRef);
+        const current = snap.exists() ? (snap.data().value || 0) : 0;
+        const next = current + 1;
+        transaction.set(counterRef, { value: next });
+        return next;
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.TRANSACTION, `${fullPath}/${counterId}`);
+      throw error;
+    }
+  },
+
   getCollection: async <T>(path: string) => {
     if (!auth.currentUser) return [];
     const fullPath = `users/${auth.currentUser.uid}/${path}`;
@@ -123,13 +154,50 @@ export const firebaseService = {
     if (!auth.currentUser) return () => {};
     const fullPath = `users/${auth.currentUser.uid}/${path}`;
     const q = query(collection(db, fullPath));
-    
+
     return onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as (T & { id: string })[];
       callback(data);
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, fullPath);
     });
+  },
+
+  // Como subscribeToCollection, mas em vez de baixar a coleção inteira para sempre,
+  // mantém só "recentes" (dateField >= cutoffMs) UNIDO com "ainda em aberto"
+  // (openField in openValues) — usado em coleções que só crescem (sales, purchases,
+  // transactions) para não acumular o histórico inteiro na memória/listener, sem
+  // perder nada que ainda esteja pendente, independente da idade do registro.
+  subscribeToRecentOrOpen: <T>(
+    path: string,
+    opts: { dateField: string; cutoffMs: number; openField: string; openValues: string[] },
+    callback: (data: (T & { id: string })[]) => void,
+  ) => {
+    if (!auth.currentUser) return () => {};
+    const fullPath = `users/${auth.currentUser.uid}/${path}`;
+    const colRef = collection(db, fullPath);
+
+    let recentDocs: Record<string, T & { id: string }> = {};
+    let openDocs: Record<string, T & { id: string }> = {};
+    const emit = () => {
+      const merged = { ...recentDocs, ...openDocs };
+      callback(Object.values(merged));
+    };
+
+    const qRecent = query(colRef, where(opts.dateField, '>=', opts.cutoffMs));
+    const qOpen = query(colRef, where(opts.openField, 'in', opts.openValues));
+
+    const unsubRecent = onSnapshot(qRecent, (snapshot) => {
+      recentDocs = Object.fromEntries(snapshot.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() } as T & { id: string }]));
+      emit();
+    }, (error) => handleFirestoreError(error, OperationType.LIST, fullPath));
+
+    const unsubOpen = onSnapshot(qOpen, (snapshot) => {
+      openDocs = Object.fromEntries(snapshot.docs.map(doc => [doc.id, { id: doc.id, ...doc.data() } as T & { id: string }]));
+      emit();
+    }, (error) => handleFirestoreError(error, OperationType.LIST, fullPath));
+
+    return () => { unsubRecent(); unsubOpen(); };
   },
 
   saveDocument: async <T extends object>(path: string, data: T) => {
@@ -194,6 +262,32 @@ export const firebaseService = {
     } catch (error) {
       console.error(`Failed to delete document at ${fullPath}/${id}`, error);
       handleFirestoreError(error, OperationType.DELETE, `${fullPath}/${id}`);
+    }
+  },
+
+  // Move documentos de uma coleção para outra (copia + apaga da original) em lotes —
+  // usado pelo arquivamento (DataCleanupView): cada "move" é 1 set + 1 delete = 2
+  // operações, e o Firestore limita a 500 operações por batch, então no máximo 250
+  // documentos por lote, com lotes sequenciais se precisar de mais.
+  moveDocumentsBatch: async (fromPath: string, toPath: string, docs: { id: string; data: any }[]): Promise<void> => {
+    if (!auth.currentUser) throw new Error('Not authenticated');
+    if (docs.length === 0) return;
+    const fromFullPath = `users/${auth.currentUser.uid}/${fromPath}`;
+    const toFullPath = `users/${auth.currentUser.uid}/${toPath}`;
+    const CHUNK_SIZE = 250;
+    try {
+      for (let i = 0; i < docs.length; i += CHUNK_SIZE) {
+        const chunk = docs.slice(i, i + CHUNK_SIZE);
+        const batch = writeBatch(db);
+        chunk.forEach(({ id, data }) => {
+          const { id: _omit, ...payload } = data;
+          batch.set(doc(db, toFullPath, id), deepClean(payload));
+          batch.delete(doc(db, fromFullPath, id));
+        });
+        await batch.commit();
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `${fromFullPath} -> ${toFullPath}`);
     }
   }
 };

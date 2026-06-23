@@ -12,6 +12,7 @@ import SalePaymentModal from '../components/SalePaymentModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { toast } from '../utils/toast';
 import { saleProductionHasProgressed } from '../utils/productionRoute';
+import { firebaseService } from '../services/firebaseService';
 
 // Preferências de "Visualização" (Cards Compactos/Expandidos, Mostrar Produtos,
 // Mostrar Grade e Quantidades, Mostrar Padrão de Embalagem) persistem entre
@@ -129,6 +130,25 @@ export default function SalesView({
   const [paymentFilter, setPaymentFilter] = usePersistedState<'ALL' | 'PENDING' | 'PAID'>('salesView_paymentFilter', 'ALL');
   const [deliveryFilter, setDeliveryFilter] = usePersistedState<'ALL' | 'PENDING' | 'DELIVERED'>('salesView_deliveryFilter', 'ALL');
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
+  // Vendas antigas e já pagas não ficam carregadas por padrão (ver App.tsx); busca de
+  // uma só vez para a sessão atual quando a pesquisa não encontra nada no que já está em memória.
+  const [olderSales, setOlderSales] = useState<Sale[] | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const handleLoadFullHistory = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const all = await firebaseService.getCollection<Sale>('sales');
+      setOlderSales(all);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+  const effectiveSales = useMemo(() => {
+    if (!olderSales) return sales;
+    const merged = new Map(olderSales.map(s => [s.id, s]));
+    sales.forEach(s => merged.set(s.id, s));
+    return Array.from(merged.values());
+  }, [sales, olderSales]);
   const [selectedStatuses, setSelectedStatuses] = usePersistedState<SaleStatus[]>('salesView_selectedStatuses', [SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]);
   const [showFilters, setShowFilters] = useState(false);
   const [expandedCards, setExpandedCards] = usePersistedToggle('salesView_expandedCards', false);
@@ -373,7 +393,7 @@ export default function SalesView({
   }, [products]);
 
   const filteredSales = useMemo(() => {
-    return sales.filter(s => {
+    return effectiveSales.filter(s => {
       // Filter by Type (Retail/Wholesale)
       if (filter !== 'ALL') {
         const hasType = (s.items || []).some(item => item.saleType === filter);
@@ -412,7 +432,7 @@ export default function SalesView({
 
       return true;
     }).sort((a, b) => b.date - a.date); // Mais recentes primeiro
-  }, [sales, filter, paymentFilter, deliveryFilter, selectedStatuses, searchQuery]);
+  }, [effectiveSales, filter, paymentFilter, deliveryFilter, selectedStatuses, searchQuery]);
 
   const getProductInfo = (productId: string) => productMap.get(productId);
 
@@ -737,6 +757,18 @@ export default function SalesView({
             </button>
           )}
         </div>
+
+        {/* Vendas antigas e já pagas não ficam carregadas por padrão — busca de uma vez sob demanda */}
+        {searchQuery.trim() && filteredSales.length === 0 && !olderSales && (
+          <button
+            type="button"
+            onClick={handleLoadFullHistory}
+            disabled={isLoadingHistory}
+            className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-indigo-950/30 text-indigo-400 border border-indigo-900/50' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}
+          >
+            {isLoadingHistory ? 'Carregando...' : 'Carregar histórico completo de vendas'}
+          </button>
+        )}
 
         {/* Métricas de Entrega e Valores */}
         {showSummaryBar && (deliveryStats.delivered > 0 || deliveryStats.pending > 0 || deliveryStats.totalPendingAmount > 0) && (
@@ -2134,8 +2166,6 @@ export default function SalesView({
           products={products}
           grids={grids}
           sectors={sectors}
-          existingOrdersCount={productionOrders.length}
-          existingLotsCount={lots.length}
           lots={lots}
           isDarkMode={isDarkMode}
           onConfirm={async (order, newLots, deductions) => {

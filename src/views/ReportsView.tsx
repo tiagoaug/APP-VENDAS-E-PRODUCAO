@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BarChart3, TrendingUp, Users, Package, ArrowUpRight, ArrowDownRight, Search, MessageCircle } from 'lucide-react';
+import { BarChart3, TrendingUp, Users, Package, ArrowUpRight, ArrowDownRight, Search, MessageCircle, Archive } from 'lucide-react';
 import { Sale, Transaction, SaleStatus, TransactionType } from '../types';
 
 interface ReportsViewProps {
@@ -63,6 +63,7 @@ export default function ReportsView({ isDarkMode, onSelectReport, onOpenPrintCen
             { id: "desempenho-financeiro", label: "Desempenho Financeiro", icon: <BarChart3 size={18} />, color: "text-blue-500" },
             { id: "dividas-fornecedor", label: "Dívidas por Fornecedor", icon: <ArrowDownRight size={18} />, color: "text-rose-500" },
             { id: "informacao-estoque", label: "Informação de Estoques", icon: <Package size={18} />, color: "text-purple-500" },
+            { id: "historico-mensal", label: "Histórico Mensal (Arquivado)", icon: <Archive size={18} />, color: "text-slate-500" },
           ].map((item, idx, list) => (
             <button
               key={item.id}

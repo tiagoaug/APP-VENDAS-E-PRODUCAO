@@ -25,6 +25,7 @@ import ChecksModal from "../components/ChecksModal";
 import ExportNoteModal from "../components/ExportNoteModal";
 import { exportPurchase } from "../utils/purchaseExport";
 import { toast } from '../utils/toast';
+import { firebaseService } from '../services/firebaseService';
 
 // Persiste filtros/visualização de Compras entre navegações e recarregamentos —
 // sem isso, sair e voltar para a tela resetava as escolhas (Tipo, Período, Cards,
@@ -75,6 +76,25 @@ export default function PurchasesView({
   const [selectedNote, setSelectedNote] = useState<string | null>(null);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
+  // Compras antigas e já pagas não ficam carregadas por padrão (ver App.tsx); busca de
+  // uma só vez para a sessão atual quando a busca/período não encontra nada em memória.
+  const [olderPurchases, setOlderPurchases] = useState<Purchase[] | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const handleLoadFullHistory = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const all = await firebaseService.getCollection<Purchase>('purchases');
+      setOlderPurchases(all);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+  const effectivePurchases = useMemo(() => {
+    if (!olderPurchases) return purchases;
+    const merged = new Map(olderPurchases.map(p => [p.id, p]));
+    purchases.forEach(p => merged.set(p.id, p));
+    return Array.from(merged.values());
+  }, [purchases, olderPurchases]);
   const [typeFilter, setTypeFilter] = usePersistedState<'ALL' | PurchaseType>('purchasesView_typeFilter', 'ALL');
   const [periodFilter, setPeriodFilter] = usePersistedState<string>('purchasesView_periodFilter', ''); // YYYY-MM
   const [showFilters, setShowFilters] = useState(false);
@@ -118,7 +138,7 @@ export default function PurchasesView({
   };
 
   const filteredPurchases = useMemo(() => {
-    return purchases.filter(purchase => {
+    return effectivePurchases.filter(purchase => {
       // Filter by type
       if (typeFilter !== 'ALL' && purchase.type !== typeFilter) return false;
       
@@ -146,7 +166,7 @@ export default function PurchasesView({
       
       return true;
     }).sort((a, b) => b.date - a.date);
-  }, [purchases, suppliers, typeFilter, periodFilter, searchQuery]);
+  }, [effectivePurchases, suppliers, typeFilter, periodFilter, searchQuery]);
 
   const activeFiltersCount = useMemo(() => {
     let count = 0;
@@ -255,7 +275,10 @@ export default function PurchasesView({
     );
   };
 
-  // Renderiza uma linha de item de Compra Geral (descrição + qtd/unidade + valor)
+  // Renderiza uma linha de item de Compra Geral (tipo + descrição + qtd/unidade + valor)
+  const generalItemKindLabel = (kind?: string) =>
+    kind === 'person' ? 'Fornecedor' : kind === 'general' ? 'Geral' : 'Material';
+
   const renderGeneralItemRow = (item: any, idx: number) => {
     const lineTotal = (item.value || 0) * (item.quantity || 1);
     return (
@@ -263,6 +286,7 @@ export default function PurchasesView({
         <div className="flex items-center gap-2 min-w-0">
           <Tag size={12} className="text-slate-400 shrink-0" />
           <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 truncate">
+            <span className="text-slate-400">{generalItemKindLabel(item.kind)} · </span>
             {item.description}
             {item.quantity ? <span className="text-slate-400"> · {item.quantity}{item.unit ? ` ${item.unit}` : ''}</span> : null}
           </span>
@@ -427,6 +451,18 @@ export default function PurchasesView({
             )}
           </button>
         </div>
+
+        {/* Compras antigas e já pagas não ficam carregadas por padrão — busca de uma vez sob demanda */}
+        {(searchQuery.trim() || periodFilter) && filteredPurchases.length === 0 && !olderPurchases && (
+          <button
+            type="button"
+            onClick={handleLoadFullHistory}
+            disabled={isLoadingHistory}
+            className={`w-full mt-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-indigo-950/30 text-indigo-400 border border-indigo-900/50' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}
+          >
+            {isLoadingHistory ? 'Carregando...' : 'Carregar histórico completo de compras'}
+          </button>
+        )}
       </div>
 
       {/* Filter Popup */}

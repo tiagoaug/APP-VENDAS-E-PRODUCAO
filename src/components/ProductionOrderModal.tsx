@@ -8,6 +8,8 @@ import {
   ArrowRight, Warehouse, Wrench, Calendar, User, AlertCircle
 } from 'lucide-react';
 import { generateId } from '../utils/id';
+import { firebaseService } from '../services/firebaseService';
+import { seedProductionOrderSequence, seedProductionLotSequence } from '../utils/sequenceSeeds';
 
 interface StockDeduction {
   productId: string;
@@ -23,8 +25,6 @@ interface ProductionOrderModalProps {
   products: Product[];
   grids: Grid[];
   sectors: Sector[];
-  existingOrdersCount: number;
-  existingLotsCount: number;
   lots: ProductionLot[];
   isDarkMode: boolean;
   onConfirm: (
@@ -38,7 +38,7 @@ type Mode = 'FULL' | 'PARTIAL';
 
 export default function ProductionOrderModal({
   isOpen, onClose, sale, products, grids, sectors,
-  existingOrdersCount, existingLotsCount, lots,
+  lots,
   isDarkMode, onConfirm
 }: ProductionOrderModalProps) {
   const [step, setStep] = useState<1 | 2>(1);
@@ -155,7 +155,7 @@ export default function ProductionOrderModal({
     setError(null);
     try {
       const orderId = generateId();
-      const orderNum = `OP #${String(existingOrdersCount + 1).padStart(3, '0')}`;
+      const orderNum = `OP #${String(await firebaseService.getNextSequence('productionOrders', seedProductionOrderSequence)).padStart(3, '0')}`;
 
       const items: ProductionOrderItem[] = computed.map(g => ({
         productId: g.productId,
@@ -170,8 +170,8 @@ export default function ProductionOrderModal({
       }));
 
       const lots: ProductionLot[] = [];
-      computed.forEach(g => {
-        if (g.toProductionQty <= 0) return;
+      for (const g of computed) {
+        if (g.toProductionQty <= 0) continue;
         const product = products.find(p => p.id === g.productId);
         const route = product?.productionRoute || sectors.map(s => s.id);
 
@@ -202,9 +202,10 @@ export default function ProductionOrderModal({
           });
         }
 
+        const nextLotNum = await firebaseService.getNextSequence('productionLots', seedProductionLotSequence);
         const lot: ProductionLot = {
           id: generateId(),
-          orderNumber: `Lote #${String(existingLotsCount + lots.length + 1).padStart(3, '0')}`,
+          orderNumber: `Lote #${String(nextLotNum).padStart(3, '0')}`,
           saleId: sale.id,
           productionOrderId: orderId,
           saleOrderNumber: sale.orderNumber,
@@ -227,7 +228,7 @@ export default function ProductionOrderModal({
           createdAt: Date.now()
         };
         lots.push(lot);
-      });
+      }
 
       const order: ProductionOrder = {
         id: orderId,

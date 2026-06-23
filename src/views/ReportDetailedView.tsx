@@ -1,6 +1,6 @@
 ﻿import React, { useState, useMemo } from 'react';
 import { Download, ArrowLeft, Calendar, Filter, MessageCircle, Copy, Share2, Search } from 'lucide-react';
-import { Sale, Transaction, Product, Person, SaleStatus, TransactionType, Category } from '../types';
+import { Sale, Transaction, Product, Person, SaleStatus, TransactionType, Category, MonthlySnapshot } from '../types';
 import { format, startOfMonth, endOfMonth, parseISO, isWithinInterval } from 'date-fns';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -20,6 +20,7 @@ interface ReportDetailedViewProps {
   products: Product[];
   people: Person[];
   categories: Category[];
+  monthlySnapshots?: MonthlySnapshot[];
 }
 
 export default function ReportDetailedView({
@@ -32,8 +33,10 @@ export default function ReportDetailedView({
   products,
   people,
   categories,
+  monthlySnapshots = [],
 }: ReportDetailedViewProps) {
   const [startDate, setStartDate] = useState('');
+  const [expandedSnapshotMonth, setExpandedSnapshotMonth] = useState<string | null>(null);
   const [endDate, setEndDate] = useState('');
   const [customerSearch, setCustomerSearch] = useState('');
   const [supplierId, setSupplierId] = useState('');
@@ -67,9 +70,16 @@ export default function ReportDetailedView({
       case 'dividas-fornecedor': return 'Dívidas por Fornecedor';
       case 'informacao-estoque': return 'Informação de Estoques';
       case 'relacionamento-cliente': return 'Relacionamento com Cliente';
+      case 'historico-mensal': return 'Histórico Mensal (Arquivado)';
       default: return 'Relatório';
     }
   }, [reportId]);
+
+  // Histórico Mensal (arquivado) — dados já vêm prontos, só ordena
+  const monthlySnapshotsSorted = useMemo(() => {
+    if (reportId !== 'historico-mensal') return [];
+    return [...monthlySnapshots].sort((a, b) => b.month.localeCompare(a.month));
+  }, [monthlySnapshots, reportId]);
 
   // Vendas por periodo logic
   const salesByPeriodData = useMemo(() => {
@@ -860,6 +870,72 @@ export default function ReportDetailedView({
                             )}
                         </tbody>
                     </table>
+                </div>
+            )}
+
+            {reportId === 'historico-mensal' && (
+                <div className="flex flex-col gap-2">
+                    {monthlySnapshotsSorted.map(snap => {
+                        const balance = snap.financialIncome - snap.financialExpense;
+                        const isExpanded = expandedSnapshotMonth === snap.month;
+                        return (
+                            <div key={snap.id} className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                                <button type="button" onClick={() => setExpandedSnapshotMonth(isExpanded ? null : snap.month)}
+                                    className={`w-full flex items-center justify-between gap-3 p-3 text-left transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}`}>
+                                    <span className="text-xs font-black text-slate-700 dark:text-slate-200 shrink-0">{snap.month}</span>
+                                    <span className="flex items-center gap-3 text-[10px] font-bold text-slate-500 flex-wrap justify-end">
+                                        <span className="text-emerald-500">Vendas: R$ {snap.salesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                        <span className="text-orange-500">Compras: R$ {snap.purchasesTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                        <span className={balance >= 0 ? 'text-blue-500' : 'text-rose-500'}>Saldo: R$ {balance.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                        <span className="text-indigo-500">{snap.totalPairsProduced} pares</span>
+                                    </span>
+                                </button>
+                                {isExpanded && (
+                                    <div className={`p-4 border-t grid grid-cols-1 sm:grid-cols-3 gap-4 ${isDarkMode ? 'border-slate-800 bg-slate-950/30' : 'border-slate-100 bg-slate-50/60'}`}>
+                                        <div>
+                                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Clientes que mais compraram</p>
+                                            <div className="flex flex-col gap-1">
+                                                {snap.topCustomers.slice(0, 5).map(c => (
+                                                    <div key={c.id} className="flex items-center justify-between text-[10px] font-bold">
+                                                        <span className="truncate max-w-[120px]">{c.name}</span>
+                                                        <span className="text-emerald-500">R$ {c.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                ))}
+                                                {snap.topCustomers.length === 0 && <p className="text-[10px] text-slate-400 italic">Sem dados</p>}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Produtos mais vendidos</p>
+                                            <div className="flex flex-col gap-1">
+                                                {snap.topProducts.slice(0, 5).map(p => (
+                                                    <div key={p.id} className="flex items-center justify-between text-[10px] font-bold">
+                                                        <span className="truncate max-w-[120px]">{p.name} {p.colorName}</span>
+                                                        <span className="text-slate-500">{p.quantity} un</span>
+                                                    </div>
+                                                ))}
+                                                {snap.topProducts.length === 0 && <p className="text-[10px] text-slate-400 italic">Sem dados</p>}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Total por Fornecedor</p>
+                                            <div className="flex flex-col gap-1">
+                                                {snap.supplierTotals.slice(0, 5).map(s => (
+                                                    <div key={s.id} className="flex items-center justify-between text-[10px] font-bold">
+                                                        <span className="truncate max-w-[120px]">{s.name}</span>
+                                                        <span className="text-orange-500">R$ {s.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                ))}
+                                                {snap.supplierTotals.length === 0 && <p className="text-[10px] text-slate-400 italic">Sem dados</p>}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                    {monthlySnapshotsSorted.length === 0 && (
+                        <div className="p-6 text-center text-xs text-slate-400 font-bold">Nenhum mês arquivado ainda.</div>
+                    )}
                 </div>
             )}
 

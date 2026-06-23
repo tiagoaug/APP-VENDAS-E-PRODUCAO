@@ -1,7 +1,7 @@
 ﻿import { Share } from '@capacitor/share';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
-import { jsPDF } from 'jspdf';
+import type { jsPDF } from 'jspdf';
 import type { ProductionLot, Product, ProductionConfigItem, ServiceOrder } from '../types';
 import { toast } from './toast';
 

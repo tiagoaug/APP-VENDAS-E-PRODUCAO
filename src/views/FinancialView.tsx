@@ -9,6 +9,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import FinancialQueryModal from '../components/FinancialQueryModal';
 import PartialPaymentModal from '../components/PartialPaymentModal';
 import { toast } from '../utils/toast';
+import { firebaseService } from '../services/firebaseService';
 
 interface FinancialViewProps {
   transactions: Transaction[];
@@ -125,11 +126,13 @@ export default function FinancialView({
     }
     const genItem = item as any;
     const lineTotal = (genItem.value || 0) * (genItem.quantity || 1);
+    const kindLabel = genItem.kind === 'person' ? 'Fornecedor' : genItem.kind === 'general' ? 'Geral' : 'Material';
     return (
       <div key={genItem.id || idx} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
         <div className="flex items-center gap-2 min-w-0">
           <Tag size={12} className="text-slate-400 shrink-0" />
           <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 truncate">
+            <span className="text-slate-400">{kindLabel} · </span>
             {genItem.description}
             {genItem.quantity ? <span className="text-slate-400"> · {genItem.quantity}{genItem.unit ? ` ${genItem.unit}` : ''}</span> : null}
           </span>
@@ -141,17 +144,37 @@ export default function FinancialView({
     );
   };
 
-  const payableCount = useMemo(() => 
+  const payableCount = useMemo(() =>
     purchases.filter(p => p.paymentTerm === PaymentTerm.INSTALLMENTS && p.paymentStatus !== PaymentStatus.PAID).length
   , [purchases]);
 
-  const filtered = transactions
+  // Lançamentos antigos e já liquidados não ficam carregados por padrão (ver App.tsx);
+  // busca de uma só vez para a sessão atual quando o usuário pede o histórico completo.
+  const [olderTransactions, setOlderTransactions] = useState<Transaction[] | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const handleLoadFullHistory = async () => {
+    setIsLoadingHistory(true);
+    try {
+      const all = await firebaseService.getCollection<Transaction>('transactions');
+      setOlderTransactions(all);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+  const effectiveTransactions = useMemo(() => {
+    if (!olderTransactions) return transactions;
+    const merged = new Map(olderTransactions.map(t => [t.id, t]));
+    transactions.forEach(t => merged.set(t.id, t));
+    return Array.from(merged.values());
+  }, [transactions, olderTransactions]);
+
+  const filtered = effectiveTransactions
     .filter(t => !t.isPersonal && accounts.find(a => a.id === t.accountId)?.type !== AccountType.PERSONAL)
     .filter(t => {
       const matchesFilter = filterType === 'ALL' || t.type === filterType;
       const desc = t.description || '';
       const contact = t.contactName || '';
-      const matchesSearch = desc.toLowerCase().includes(searchTerm.toLowerCase()) || 
+      const matchesSearch = desc.toLowerCase().includes(searchTerm.toLowerCase()) ||
                             contact.toLowerCase().includes(searchTerm.toLowerCase());
       return matchesFilter && matchesSearch;
     }).sort((a, b) => b.date - a.date);
@@ -828,7 +851,19 @@ export default function FinancialView({
             );
           })
         )}
-          
+
+          {/* Lançamentos antigos e já liquidados não ficam carregados por padrão — busca sob demanda */}
+          {searchTerm.trim() && !olderTransactions && (
+            <button
+              type="button"
+              onClick={handleLoadFullHistory}
+              disabled={isLoadingHistory}
+              className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-indigo-950/30 text-indigo-400 border border-indigo-900/50' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}
+            >
+              {isLoadingHistory ? 'Carregando...' : 'Carregar lançamentos mais antigos'}
+            </button>
+          )}
+
           {filtered.length === 0 && filterType !== 'PAYABLE' && (
             <div className="text-center py-12">
               <AlertCircle size={48} className="mx-auto text-slate-100 dark:text-slate-800 mb-4" strokeWidth={1} />

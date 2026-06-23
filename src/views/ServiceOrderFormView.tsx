@@ -11,6 +11,7 @@ import {
 } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import { financeService } from '../services/financeService';
+import { seedServiceOrderSequence } from '../utils/sequenceSeeds';
 import { toast } from '../utils/toast';
 import ComboBox from '../components/ComboBox';
 import PrintOSModal from '../components/PrintOSModal';
@@ -73,6 +74,11 @@ export default function ServiceOrderFormView({
 
   // Form Fields
   const [osNumber, setOsNumber] = useState('');
+  // Sugestão automática mostrada ao abrir o formulário (apenas cosmética — calculada a
+  // partir do que já está em memória). Usada para saber se o usuário editou o número
+  // manualmente: se sim, o valor digitado é respeitado; se não, o número definitivo é
+  // buscado do contador atômico em handleSave, evitando duplicidade.
+  const [autoSuggestedOsNumber, setAutoSuggestedOsNumber] = useState('');
   const [osType, setOsType] = useState<'INTERNAL' | 'OUTSOURCED'>('OUTSOURCED');
   const [sectorId, setSectorId] = useState('');
   const [providerId, setProviderId] = useState('');
@@ -192,7 +198,9 @@ export default function ServiceOrderFormView({
           }
         });
       }
-      setOsNumber(`OS-${String(nextNum).padStart(4, '0')}`);
+      const suggestedOsNumber = `OS-${String(nextNum).padStart(4, '0')}`;
+      setOsNumber(suggestedOsNumber);
+      setAutoSuggestedOsNumber(suggestedOsNumber);
 
       // 2. Set defaults
       const defAccount = accounts.find(a => a.isDefault) || accounts[0];
@@ -426,6 +434,15 @@ export default function ServiceOrderFormView({
     setIsSaving(true);
 
     try {
+      // Número sugerido era só cosmético (calculado em memória) — se o usuário não editou,
+      // busca o número definitivo do contador atômico aqui para evitar duplicidade. Se
+      // editou manualmente, respeita o que foi digitado.
+      let finalOsNumber = osNumber;
+      if (!isEditing && osNumber === autoSuggestedOsNumber) {
+        const nextNum = await firebaseService.getNextSequence('serviceOrders', seedServiceOrderSequence);
+        finalOsNumber = `OS-${String(nextNum).padStart(4, '0')}`;
+      }
+
       const firstItem = basket[0];
       const lotIds = Array.from(new Set(basket.map(item => item.lot.id)));
       const lotNumbers = Array.from(new Set(basket.map(item => item.lot.orderNumber)));
@@ -454,14 +471,14 @@ export default function ServiceOrderFormView({
           id: txId,
           type: 'EXPENSE' as const,
           amount: totalValue,
-          description: `Mão de Obra - OS ${osNumber} (${lotIds.length === 1 ? `Lote: ${lotNumbers[0]}` : `${lotIds.length} Lotes`} - Setor: ${sectors.find(s => s.id === sectorId)?.name})`,
+          description: `Mão de Obra - OS ${finalOsNumber} (${lotIds.length === 1 ? `Lote: ${lotNumbers[0]}` : `${lotIds.length} Lotes`} - Setor: ${sectors.find(s => s.id === sectorId)?.name})`,
           accountId,
           categoryId,
           date: Date.now(),
           dueDate: dueDate,
           status: 'PENDING' as const,
           personId: providerId || undefined,
-          notes: `OS Número: ${osNumber}\nPrestador: ${providerName}\nSetor: ${sectors.find(s => s.id === sectorId)?.name}\nQuantidade: ${totalQuantity} pares\nItens:\n${basket.map(item => `• Mapa #${item.lot.orderNumber} (${item.product?.reference || item.product?.name}) - ${item.quantity} prs - R$ ${item.price.toFixed(2)}/par`).join('\n')}`
+          notes: `OS Número: ${finalOsNumber}\nPrestador: ${providerName}\nSetor: ${sectors.find(s => s.id === sectorId)?.name}\nQuantidade: ${totalQuantity} pares\nItens:\n${basket.map(item => `• Mapa #${item.lot.orderNumber} (${item.product?.reference || item.product?.name}) - ${item.quantity} prs - R$ ${item.price.toFixed(2)}/par`).join('\n')}`
         };
 
         await financeService.createTransaction(txData);
@@ -471,7 +488,7 @@ export default function ServiceOrderFormView({
       // Prepare Service Order document
       const osData: ServiceOrder = {
         id: uniqueId,
-        osNumber,
+        osNumber: finalOsNumber,
         lotId: firstItem.lot.id,
         lotNumber: firstItem.lot.orderNumber,
         lotIds,

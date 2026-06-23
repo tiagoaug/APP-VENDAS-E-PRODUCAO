@@ -416,25 +416,22 @@ export default function PurchaseNeedsView({
   return (
     <div className={`flex flex-col min-h-screen ${isDarkMode ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'}`}>
       {/* Header */}
-      <div className={`sticky top-0 z-20 px-4 pt-4 pb-3 flex items-center justify-between gap-2 border-b ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'} shadow-sm`}>
-        <div className="flex items-center gap-3 min-w-0 flex-1">
+      <div className={`sticky top-0 z-20 px-4 pt-4 pb-3 flex flex-col gap-3 border-b ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'} shadow-sm`}>
+        <div className="flex items-center gap-3 min-w-0">
           <button type="button" title="Voltar" onClick={onBack} className={`w-10 h-10 flex items-center justify-center rounded-2xl shrink-0 ${isDarkMode ? 'bg-slate-900 hover:bg-slate-800' : 'bg-slate-50 hover:bg-slate-100 shadow-sm text-slate-500'}`}>
             <ChevronLeft size={20} />
           </button>
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 truncate">Setor de Compras</p>
-            <h2 className="text-base font-black tracking-tight leading-none truncate">Necessidade de Compras</h2>
-          </div>
+          <h2 className="text-base font-black tracking-tight leading-none truncate flex-1">Necessidade de Compras</h2>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => {
               if (isSelectMode) setSelectedIds(new Set());
               setIsSelectMode(prev => !prev);
             }}
-            className={`h-10 px-2.5 rounded-xl flex items-center gap-1.5 transition-all duration-300 ${
+            className={`flex-1 h-10 px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all duration-300 ${
               isSelectMode
                 ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30'
                 : isDarkMode ? 'bg-slate-900 text-indigo-400 hover:text-indigo-300' : 'bg-white text-indigo-500 border border-slate-100 shadow-sm hover:text-indigo-600'
@@ -446,7 +443,7 @@ export default function PurchaseNeedsView({
           <button
             type="button"
             onClick={() => setShowFilters(true)}
-            className={`h-10 px-2.5 rounded-xl flex items-center gap-1.5 transition-all duration-300 ${isDarkMode ? 'bg-slate-900 text-amber-400 hover:text-amber-300' : 'bg-white text-amber-500 border border-slate-100 shadow-sm hover:text-amber-600'}`}
+            className={`flex-1 h-10 px-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all duration-300 ${isDarkMode ? 'bg-slate-900 text-amber-400 hover:text-amber-300' : 'bg-white text-amber-500 border border-slate-100 shadow-sm hover:text-amber-600'}`}
           >
             <Filter size={16} strokeWidth={2.5} className="text-amber-500" />
             <span className="text-[9px] font-black uppercase tracking-widest">Configurar</span>

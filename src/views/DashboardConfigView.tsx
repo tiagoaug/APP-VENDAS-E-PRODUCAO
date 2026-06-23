@@ -6,7 +6,7 @@ import {
   Users, BarChart3, Landmark, Search, ShoppingCart, AlertCircle, Filter, Calendar,
   Boxes, Copy, Share2, Hash, User, History, Printer, Factory, Settings, ScanLine,
   QrCode, Trash2, ClipboardList, Footprints, Layers, PackageOpen, Clipboard, Clock,
-  ChevronRight, ShoppingBag, BookOpen, CreditCard, Database
+  ChevronRight, ShoppingBag, BookOpen, CreditCard, Database, Bell
 } from 'lucide-react';
 import { motion, Reorder, AnimatePresence, useDragControls } from 'motion/react';
 import { isDashboardCardAllowed } from '../utils/collaborators';
@@ -344,6 +344,23 @@ function CardPreview({ id, isDarkMode, mini }: CardPreviewProps) {
               <p className="font-bold">Cheque nº 10024</p>
             </div>
             <span className="font-black text-indigo-500 shrink-0">R$ 2.500</span>
+          </div>
+        </div>
+      );
+
+    case 'reminders':
+      return (
+        <div className={containerClass}>
+          <div className={headerClass}>
+            <span className={`${titleClass} bg-rose-50 text-rose-500 dark:bg-rose-900/30 dark:text-rose-400`}>Lembretes e Vencimentos</span>
+            <Bell size={mini ? 12 : 16} className="text-rose-500" />
+          </div>
+          <div className={`p-1.5 rounded-lg border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-100 border-slate-200'} flex justify-between items-center`}>
+            <div>
+              <p className="font-bold truncate max-w-[100px]">Couros Vale Ltda</p>
+              {!mini && <p className="text-[7px] text-slate-400">Dívida · Vence: 25/06</p>}
+            </div>
+            <span className="text-rose-500 font-black shrink-0">R$ 1.200,00</span>
           </div>
         </div>
       );
