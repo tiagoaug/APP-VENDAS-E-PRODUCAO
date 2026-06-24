@@ -1590,7 +1590,11 @@ export default function PCPView({
   // que pode não conter setores que outros modelos do bundle precisam (ex.: um mapa
   // criado a partir do modelo 300 — cujo roteiro pula BORDADO — não tem "BORDADO" no
   // `route`, então o modelo 290 nunca conseguiria parar lá se resolvêssemos pelo mapa).
-  const buildLotAdvanceItems = (lot: ProductionLot, currentSectorId: string): LotAdvanceItem[] => {
+  const buildLotAdvanceItems = (
+    lot: ProductionLot,
+    currentSectorId: string,
+    restrictTo?: { sourceItemKeys?: string[]; sourceOrderIds?: string[] },
+  ): LotAdvanceItem[] => {
     const buildItem = (
       key: string, orderId: string, productId: string, variationId: string | undefined,
       qty: number, fallbackProductName?: string, fallbackColorName?: string,
@@ -1607,13 +1611,31 @@ export default function PCPView({
         qty,
         suggestedSectorId, suggestedSectorName,
         skippedSectorNames: resolved.skippedSectorNames,
-        chosenSectorId: suggestedSectorId,
+        // Setor de destino nunca vem pré-selecionado — força escolha manual de cada
+        // modelo antes de poder confirmar (ver botão "Confirmar e Avançar" abaixo).
+        chosenSectorId: '__PENDING_SELECTION__',
       };
     };
 
     const sourceItems: any[] = (lot as any).metadata?.sourceItems || [];
     if (sourceItems.length > 0) {
-      return sourceItems.map((si: any, idx: number) => {
+      // Quando restringido (ex.: "Dar Baixa" de uma OS específica), mostra só os
+      // itens realmente cobertos por ela — não o Mapa inteiro.
+      const filteredSourceItems = restrictTo
+        ? sourceItems.filter((si: any, idx: number) => {
+            const itemKey = `${lot.id}::${si.orderId}::${idx}`;
+            if (restrictTo.sourceItemKeys && restrictTo.sourceItemKeys.length > 0) {
+              return restrictTo.sourceItemKeys.includes(itemKey);
+            }
+            if (restrictTo.sourceOrderIds && restrictTo.sourceOrderIds.length > 0) {
+              return restrictTo.sourceOrderIds.includes(si.orderId);
+            }
+            return true;
+          })
+        : sourceItems;
+      const itemsToUse = filteredSourceItems.length > 0 ? filteredSourceItems : sourceItems;
+      return itemsToUse.map((si: any) => {
+        const idx = sourceItems.indexOf(si);
         const order = productionOrders.find(o => o.id === si.orderId);
         const orderItem: any = si.itemIdx !== undefined
           ? order?.items[si.itemIdx]
@@ -1638,6 +1660,60 @@ export default function PCPView({
     let bestQty = -1;
     totals.forEach((qty, sectorId) => { if (qty > bestQty) { bestQty = qty; destSectorId = sectorId; } });
     return destSectorId;
+  };
+
+  // Detalhes de Setor > Separação de Solas por Ficha (Montagem) — pra um pedido da
+  // Central de Compartilhamento, resolve qual molde/cor de solado ele consome e a
+  // grade de numeração correspondente (mesma lógica de resolveSoleConsumption já
+  // usada na baixa de estoque e nas reservas de solas).
+  const buildSoleInfoForItem = (
+    prod: Product | undefined, vari: Variation | undefined, ordItem: any, totalQty: number,
+  ): PCPShareItem['soleInfo'] | undefined => {
+    if (!prod || !vari) return undefined;
+    const pairs: Record<string, number> = Object.entries(ordItem?.sizes || {}).reduce((acc: Record<string, number>, [sz, sData]: [string, any]) => {
+      const q = Number(sData?.toProduction) || 0;
+      if (q > 0) acc[sz] = q;
+      return acc;
+    }, {});
+    const consumption = resolveSoleConsumption(prod, vari, pairs, totalQty, soleStock);
+    if (!consumption) return undefined;
+
+    const stockEntry = soleStock.find(s => String(s.moldId).trim() === consumption.moldId && String(s.colorId || '').trim() === consumption.colorId);
+    const moldName = stockEntry?.moldName || productionConfigs.find(c => c.id === consumption.moldId)?.name || 'Solado';
+    const colorName = stockEntry?.colorName || colors.find(c => c.id === consumption.colorId)?.name || '';
+
+    const sizeGrid = Object.entries(consumption.gradeQuantities)
+      .filter(([k]) => k !== 'pesagem' && k !== 'total')
+      .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
+      .map(([size, qty]) => ({ size, qty: Number(qty) || 0 }));
+    const totalPairs = sizeGrid.reduce((acc, s) => acc + s.qty, 0);
+    if (sizeGrid.length === 0 || totalPairs <= 0) return undefined;
+
+    return [{ moldName, colorName, sizeGrid, totalPairs }];
+  };
+
+  // Funde as listas de soleInfo de dois itens ao agrupar fichas (ex.: "Agrupar
+  // apenas por Referência" pode reunir cores diferentes que usam solados
+  // diferentes entre si) — soma a grade quando o molde/cor já existe no destino,
+  // ou inclui como uma entrada nova quando é um molde/cor ainda não visto.
+  const mergeSoleInfo = (
+    target: PCPShareItem['soleInfo'], source: PCPShareItem['soleInfo'],
+  ): PCPShareItem['soleInfo'] => {
+    if (!source || source.length === 0) return target;
+    const result = (target || []).map(s => ({ ...s, sizeGrid: [...s.sizeGrid] }));
+    for (const sole of source) {
+      const match = result.find(s => s.moldName === sole.moldName && s.colorName === sole.colorName);
+      if (match) {
+        const soleSizeMap = new Map<string, number>();
+        for (const s of match.sizeGrid) soleSizeMap.set(s.size, s.qty);
+        for (const s of sole.sizeGrid) soleSizeMap.set(s.size, (soleSizeMap.get(s.size) || 0) + s.qty);
+        match.sizeGrid = Array.from(soleSizeMap.entries()).map(([size, qty]) => ({ size, qty })).sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
+        match.totalPairs += sole.totalPairs;
+      } else {
+        result.push({ ...sole, sizeGrid: [...sole.sizeGrid] });
+      }
+    }
+    return result;
   };
 
   const applyLotAdvance = async (
@@ -1686,10 +1762,15 @@ export default function PCPView({
   // e o setor para onde será movido (já resolvido pelo roteiro do PRÓPRIO modelo),
   // permitindo ajustar manualmente antes de confirmar — em vez de avançar "às cegas"
   // e só descobrir depois que algum modelo pulou um setor que deveria passar.
-  const openSectorChangeConfirm = (lot: ProductionLot, nextStatusId: string, notes: string) => {
+  const openSectorChangeConfirm = (
+    lot: ProductionLot,
+    nextStatusId: string,
+    notes: string,
+    restrictTo?: { sourceItemKeys?: string[]; sourceOrderIds?: string[] },
+  ) => {
     const route = lot.route || [];
     const currentSectorId = route[lot.currentSectorIndex] || '';
-    const items = buildLotAdvanceItems(lot, currentSectorId);
+    const items = buildLotAdvanceItems(lot, currentSectorId, restrictTo);
     setSectorChangeConfirm({ lot, nextStatusId, notes, currentSectorId, items });
   };
 
@@ -2368,8 +2449,12 @@ export default function PCPView({
       if (os.transactionId) {
         try { await financeService.settleTransaction(os.transactionId); } catch { /* ignore */ }
       }
-      // 3. Always open sector change confirmation popup to manually select destination
-      openSectorChangeConfirm(lotObj, '', `Baixa via OS ${os.osNumber} concluída.`);
+      // 3. Always open sector change confirmation popup to manually select destination —
+      // restrito aos itens que esta OS realmente cobre, não o Mapa inteiro.
+      openSectorChangeConfirm(lotObj, '', `Baixa via OS ${os.osNumber} concluída.`, {
+        sourceItemKeys: os.sourceItemKeys,
+        sourceOrderIds: os.sourceOrderIds,
+      });
     } catch (e) {
       console.error(e);
       toast.show('Erro ao concluir OS: ' + (e instanceof Error ? e.message : String(e)));
@@ -4474,7 +4559,7 @@ export default function PCPView({
                                                       : 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
                                                       }`}
                                                   >
-                                                    {os.osNumber} ({sec?.name || os.sectorId}) — {os.status === 'PENDING' ? 'Pendente' : 'Concluído'}
+                                                    {os.osNumber} ({sec?.name || os.sectorId}){os.providerName ? ` — ${os.providerName}` : ''} — {os.status === 'PENDING' ? 'Pendente' : 'Concluído'}
                                                   </span>
                                                 );
                                               })}
@@ -10562,7 +10647,7 @@ export default function PCPView({
       <ExportNoteModal
         isOpen={shareModal.isOpen}
         onClose={() => setShareModal(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData) => {
+        onConfirm={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid) => {
           const { selectedItems } = shareModal;
 
           const uniqueLots = Array.from(new Set(selectedItems.map((f: any) => f.lot.id)))
@@ -10612,6 +10697,7 @@ export default function PCPView({
               osValue: os?.totalValue,
               osDate: os?.createdAt,
               osSectorName: os ? (sectors.find(s => s.id === os.sectorId)?.name || os.sectorName) : undefined,
+              soleInfo: buildSoleInfoForItem(prod, vari, ordItem, totalQty),
             };
           });
 
@@ -10634,6 +10720,8 @@ export default function PCPView({
                 for (const s of existing.sizeGrid) sizeMap.set(s.size, s.qty);
                 for (const s of item.sizeGrid) sizeMap.set(s.size, (sizeMap.get(s.size) || 0) + s.qty);
                 existing.sizeGrid = Array.from(sizeMap.entries()).map(([size, qty]) => ({ size, qty })).sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
+
+                existing.soleInfo = mergeSoleInfo(existing.soleInfo, item.soleInfo);
               } else {
                 groupedMap.set(key, { ...item });
               }
@@ -10658,14 +10746,15 @@ export default function PCPView({
             showOrderList,
             splitPages,
             showProvider,
-            showOSData
+            showOSData,
+            showSoleGrid
           }, format);
 
           if (success) {
             setShareModal(prev => ({ ...prev, isOpen: false }));
           }
         }}
-        onPreview={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData) => {
+        onPreview={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid) => {
           const { selectedItems } = shareModal;
 
           const uniqueLots = Array.from(new Set(selectedItems.map((f: any) => f.lot.id)))
@@ -10712,6 +10801,7 @@ export default function PCPView({
               osValue: os?.totalValue,
               osDate: os?.createdAt,
               osSectorName: os ? (sectors.find(s => s.id === os.sectorId)?.name || os.sectorName) : undefined,
+              soleInfo: buildSoleInfoForItem(prod, vari, ordItem, totalQty),
             };
           });
 
@@ -10734,6 +10824,8 @@ export default function PCPView({
                 for (const s of existing.sizeGrid) sizeMap.set(s.size, s.qty);
                 for (const s of item.sizeGrid) sizeMap.set(s.size, (sizeMap.get(s.size) || 0) + s.qty);
                 existing.sizeGrid = Array.from(sizeMap.entries()).map(([size, qty]) => ({ size, qty })).sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
+
+                existing.soleInfo = mergeSoleInfo(existing.soleInfo, item.soleInfo);
               } else {
                 groupedMap.set(key, { ...item });
               }
@@ -10758,7 +10850,8 @@ export default function PCPView({
             showOrderList,
             splitPages,
             showProvider,
-            showOSData
+            showOSData,
+            showSoleGrid
           }, format, true);
         }}
         isDarkMode={isDarkMode}
@@ -10773,6 +10866,7 @@ export default function PCPView({
         showSplitPagesToggle={true}
         showProviderToggle={true}
         showOSDataToggle={true}
+        showSoleGridToggle={true}
       />
 
       <Modal

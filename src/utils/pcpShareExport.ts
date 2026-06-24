@@ -18,6 +18,16 @@ export interface PCPShareItem {
   osValue?: number;
   osDate?: number;
   osSectorName?: string;
+  // Detalhes de Setor > Separação de Solas por Ficha (Montagem) — molde(s)/cor(es)
+  // de solado que este pedido consome e a grade de numeração correspondente. É uma
+  // lista porque, depois de agrupar por Referência, um mesmo item pode reunir
+  // pedidos de cores diferentes que usam solados diferentes entre si.
+  soleInfo?: {
+    moldName: string;
+    colorName: string;
+    sizeGrid: { size: string; qty: number }[];
+    totalPairs: number;
+  }[];
 }
 
 export interface PCPShareData {
@@ -36,6 +46,8 @@ export interface PCPShareData {
   showProvider?: boolean;
   /** Exibe valor, data e setor da OS de origem do item */
   showOSData?: boolean;
+  /** Detalhes de Setor > Exibe a grade de solado (molde/cor/numeração) necessária por pedido */
+  showSoleGrid?: boolean;
 }
 
 export async function generatePCPShareExport(data: PCPShareData, formatType: 'pdf' | 'jpg', previewOnly: boolean = false): Promise<boolean | string> {
@@ -55,7 +67,7 @@ export async function generatePCPShareExport(data: PCPShareData, formatType: 'pd
 }
 
 async function generatePDF(data: PCPShareData, filename: string, previewOnly: boolean = false): Promise<boolean | string> {
-  const { lotNumber, items, additionalNote, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, showProvider, showOSData } = data;
+  const { lotNumber, items, additionalNote, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, showProvider, showOSData, showSoleGrid } = data;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
   // Fonts
@@ -175,6 +187,36 @@ async function generatePDF(data: PCPShareData, filename: string, previewOnly: bo
         margin: { left: 14, right: 14 },
       });
       currentY = (doc as any).lastAutoTable.finalY + 12;
+    }
+
+    // Grade de Solado (Detalhes de Setor > Separação de Solas por Ficha — Montagem)
+    // — um bloco por molde/cor de solado distinto (pode haver mais de um quando o
+    // item reúne pedidos agrupados que usam solados diferentes).
+    if (showSoleGrid && item.soleInfo && item.soleInfo.length > 0) {
+      for (const sole of item.soleInfo) {
+        if (sole.sizeGrid.length === 0) continue;
+        if (currentY > 250) { doc.addPage(); currentY = 20; }
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(0);
+        const soleTitle = `SOLADO NECESSÁRIO — ${sole.moldName}${sole.colorName ? ` (${sole.colorName})` : ''}`.toUpperCase();
+        doc.text(soleTitle, 14, currentY);
+
+        const headSole = [['NUMERAÇÃO', ...sole.sizeGrid.map(g => g.size), 'TOTAL']];
+        const bodySole = [['Pares', ...sole.sizeGrid.map(g => g.qty.toString()), sole.totalPairs.toString()]];
+
+        autoTable(doc, {
+          startY: currentY + 4,
+          head: headSole,
+          body: bodySole,
+          theme: 'grid',
+          headStyles: { fillColor: [255, 237, 213], textColor: 0, fontStyle: 'bold', halign: 'left', fontSize: 8 },
+          bodyStyles: { halign: 'center', fontSize: 9, fontStyle: 'bold' },
+          columnStyles: { 0: { halign: 'left' }, [headSole[0].length - 1]: { fillColor: [255, 237, 213] } },
+          margin: { left: 14, right: 14 },
+        });
+        currentY = (doc as any).lastAutoTable.finalY + 12;
+      }
     }
 
         // Sector Notes
@@ -298,7 +340,7 @@ async function generatePDF(data: PCPShareData, filename: string, previewOnly: bo
 }
 
 async function generateJPG(data: PCPShareData, filename: string, previewOnly: boolean = false): Promise<boolean | string> {
-  const { lotNumber, items, additionalNote, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData } = data;
+  const { lotNumber, items, additionalNote, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid } = data;
   const W = 900;
   const pad = 40;
   const SCALE = 3; // 3x melhora muito a qualidade em celulares/zoom
@@ -326,6 +368,7 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
     if (showOSData && item.osNumber) h += 24;
     if (showMaterials !== false) h += 80;
     if (showItemGrid !== false && item.sizeGrid && item.sizeGrid.length > 0) h += 80;
+    if (showSoleGrid && item.soleInfo) h += item.soleInfo.filter(s => s.sizeGrid.length > 0).length * 80;
     if (showSectorNotes !== false && item.sectorNotes && item.sectorNotes.length > 0) {
       h += 30;
       measureCtx.font = '16px Inter';
@@ -559,6 +602,56 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
         y += hBase * 2 + 35;
+      }
+
+      // Grade de Solado (Detalhes de Setor > Separação de Solas por Ficha — Montagem)
+      // — um bloco por molde/cor de solado distinto.
+      if (showSoleGrid && item.soleInfo && item.soleInfo.length > 0) {
+        for (const sole of item.soleInfo) {
+          if (sole.sizeGrid.length === 0) continue;
+          ctx.fillStyle = '#0f172a';
+          ctx.font = '900 16px Inter';
+          const soleTitle = `SOLADO NECESSÁRIO — ${sole.moldName}${sole.colorName ? ` (${sole.colorName})` : ''}`.toUpperCase();
+          ctx.fillText(soleTitle, pad, y);
+          y += 20;
+
+          const soleCols = sole.sizeGrid.length + 2;
+          const soleCellW = (W - pad * 2) / soleCols;
+          const soleHBase = 32;
+
+          ctx.fillStyle = '#ffedd5';
+          ctx.fillRect(pad, y, W - pad * 2, soleHBase);
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(pad, y, W - pad * 2, soleHBase);
+          ctx.strokeRect(pad, y + soleHBase, W - pad * 2, soleHBase);
+
+          for (let c = 1; c < soleCols; c++) {
+            ctx.beginPath(); ctx.moveTo(pad + c * soleCellW, y); ctx.lineTo(pad + c * soleCellW, y + soleHBase * 2); ctx.stroke();
+          }
+
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = '#0f172a';
+
+          const soleHead = ['NUMERAÇÃO', ...sole.sizeGrid.map(g => g.size), 'TOTAL'];
+          ctx.font = '800 13px Inter';
+          ctx.textAlign = 'left';
+          ctx.fillText('NUMERAÇÃO', pad + 10, y + soleHBase / 2);
+          ctx.textAlign = 'center';
+          for (let i = 1; i < soleHead.length; i++) ctx.fillText(soleHead[i], pad + i * soleCellW + soleCellW / 2, y + soleHBase / 2);
+
+          const soleBody = ['Pares', ...sole.sizeGrid.map(g => g.qty.toString()), sole.totalPairs.toString()];
+          ctx.font = '900 14px Inter';
+          ctx.textAlign = 'left';
+          ctx.fillText('Pares', pad + 10, y + soleHBase + soleHBase / 2);
+          ctx.textAlign = 'center';
+          for (let i = 1; i < soleBody.length; i++) ctx.fillText(soleBody[i], pad + i * soleCellW + soleCellW / 2, y + soleHBase + soleHBase / 2);
+
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'alphabetic';
+          y += soleHBase * 2 + 35;
+        }
       }
 
       // Sector Notes

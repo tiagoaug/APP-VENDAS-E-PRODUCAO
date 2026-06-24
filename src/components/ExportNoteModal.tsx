@@ -1,5 +1,5 @@
 ﻿import React, { useState } from 'react';
-import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ListStart, Hash } from 'lucide-react';
+import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ListStart, Hash, Boxes } from 'lucide-react';
 
 
 export interface ExportProfile {
@@ -13,6 +13,7 @@ export interface ExportProfile {
   showItemGrid: boolean;
   showSectorNotes: boolean;
   showOrderList: boolean;
+  showSoleGrid: boolean;
 }
 
 const DEFAULT_PROFILE: Omit<ExportProfile, 'id' | 'name'> = {
@@ -24,6 +25,7 @@ const DEFAULT_PROFILE: Omit<ExportProfile, 'id' | 'name'> = {
   showItemGrid: true,
   showSectorNotes: true,
   showOrderList: true,
+  showSoleGrid: false,
 };
 
 const loadProfiles = (): ExportProfile[] => {
@@ -43,7 +45,7 @@ const loadLastState = (): Omit<ExportProfile, 'id' | 'name'> => {
 interface ExportNoteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean) => void;
+  onConfirm: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean) => void;
   isDarkMode: boolean;
   title?: string;
   initialFormat?: 'pdf' | 'jpg';
@@ -64,7 +66,9 @@ interface ExportNoteModalProps {
   showProviderToggle?: boolean;
   /** Quando true, exibe um seletor para incluir valor/data/setor da OS de origem */
   showOSDataToggle?: boolean;
-  onPreview?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean) => Promise<string | boolean>;
+  /** Quando true, exibe a entrada "Detalhes de Setor" com a opção de separação de solas por ficha (Montagem) */
+  showSoleGridToggle?: boolean;
+  onPreview?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean) => Promise<string | boolean>;
 }
 
 const DEFAULT_PREDEFINED_NOTES = [
@@ -103,6 +107,7 @@ export default function ExportNoteModal({
   showSplitPagesToggle = false,
   showProviderToggle = false,
   showOSDataToggle = false,
+  showSoleGridToggle = false,
   onPreview
 }: ExportNoteModalProps) {
   const [note, setNote] = useState('');
@@ -127,8 +132,9 @@ export default function ExportNoteModal({
   const [splitPages, setSplitPages] = useState(false);
   const [showProvider, setShowProvider] = useState(true);
   const [showOSData, setShowOSData] = useState(true);
+  const [showSoleGrid, setShowSoleGrid] = useState(false);
   // Subcards em acordeão — um por grupo de configurações (Valores, Resumo da
-  // Grade, Agrupamento, Dados da OS). Recolhidos por padrão.
+  // Grade, Agrupamento, Dados da OS, Detalhes de Setor). Recolhidos por padrão.
   const [openSections, setOpenSections] = useState<Set<string>>(new Set());
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
@@ -144,6 +150,7 @@ export default function ExportNoteModal({
       setShowItemGrid(state.showItemGrid);
       setShowSectorNotes(state.showSectorNotes);
       setShowOrderList(state.showOrderList);
+      setShowSoleGrid(state.showSoleGrid);
       setActiveProfileId(localStorage.getItem('@app:export_active_profile') || null);
     }
   }, [isOpen, initialFormat]);
@@ -159,13 +166,14 @@ export default function ExportNoteModal({
       showItemGrid: showItemGrid,
       showSectorNotes: showSectorNotes,
       showOrderList: showOrderList,
+      showSoleGrid: showSoleGrid,
     };
     localStorage.setItem('@app:export_last_state', JSON.stringify(state));
 
     if (activeProfileId) {
       const p = profiles.find(x => x.id === activeProfileId);
       if (p) {
-        const isSame = 
+        const isSame =
           p.format === selectedFormat &&
           p.financialValues === showFinancialValues &&
           p.groupMode === groupMode &&
@@ -173,15 +181,16 @@ export default function ExportNoteModal({
           p.showMaterials === showMaterials &&
           p.showItemGrid === showItemGrid &&
           p.showSectorNotes === showSectorNotes &&
-          p.showOrderList === showOrderList;
-        
+          p.showOrderList === showOrderList &&
+          p.showSoleGrid === showSoleGrid;
+
         if (!isSame) {
           setActiveProfileId(null);
           localStorage.removeItem('@app:export_active_profile');
         }
       }
     }
-  }, [isOpen, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, activeProfileId, profiles]);
+  }, [isOpen, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, showSoleGrid, activeProfileId, profiles]);
 
   // Textos rápidos configuráveis (adicionar/editar/excluir) — persistidos em localStorage.
   const [predefinedNotes, setPredefinedNotes] = useState<string[]>(() => loadPredefinedNotes());
@@ -215,7 +224,7 @@ export default function ExportNoteModal({
     if (!onPreview) return;
     setIsPreviewLoading(true);
     try {
-      const url = await onPreview(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData);
+      const url = await onPreview(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid);
       if (typeof url === 'string') {
         setPreviewUrl(url);
       }
@@ -249,6 +258,7 @@ export default function ExportNoteModal({
       setSplitPages(false);
       setShowProvider(true);
       setShowOSData(true);
+      setShowSoleGrid(false);
       setOpenSections(new Set());
       setPreviewUrl(null);
       setIsPreviewLoading(false);
@@ -614,6 +624,28 @@ export default function ExportNoteModal({
                 )}
               </SectionCard>
             )}
+
+            {showSoleGridToggle && (
+              <SectionCard id="sector_details" icon={<Boxes size={13} className="text-orange-500" />} label="Detalhes de Setor">
+                <button
+                  type="button"
+                  onClick={() => setShowSoleGrid(prev => !prev)}
+                  className={`w-full flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+                >
+                  <div className="flex items-center gap-2.5 text-left">
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${showSoleGrid ? 'bg-orange-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
+                      {showSoleGrid ? <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle><line x1="1" y1="1" x2="23" y2="23"></line></svg>}
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-700 dark:text-slate-200">Separação de Solas por Ficha (Montagem)</div>
+                      <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
+                        Mostra, em cada pedido, o molde/cor de solado e a grade de numeração que ele precisa
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              </SectionCard>
+            )}
           </div>
         </div>
 
@@ -688,7 +720,7 @@ export default function ExportNoteModal({
                 Cancelar
               </button>
               <button 
-                onClick={() => onConfirm(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData)}
+                onClick={() => onConfirm(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid)}
                 className={`flex-[1.5] py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
                   selectedFormat === 'pdf' ? 'bg-rose-500' : 'bg-indigo-600'
                 }`}
@@ -750,6 +782,7 @@ export default function ExportNoteModal({
                   setShowItemGrid(state.showItemGrid);
                   setShowSectorNotes(state.showSectorNotes);
                   setShowOrderList(state.showOrderList);
+                  setShowSoleGrid(state.showSoleGrid);
                   setActiveProfileId(null);
                   localStorage.removeItem('@app:export_active_profile');
                   setShowProfilePopup(false);
@@ -820,6 +853,7 @@ export default function ExportNoteModal({
                           setShowItemGrid(p.showItemGrid);
                           setShowSectorNotes(p.showSectorNotes);
                           setShowOrderList(p.showOrderList);
+                          setShowSoleGrid(p.showSoleGrid);
                           setActiveProfileId(p.id);
                           localStorage.setItem('@app:export_active_profile', p.id);
                           setShowProfilePopup(false);
@@ -884,7 +918,8 @@ export default function ExportNoteModal({
                         showMaterials: showMaterials,
                         showItemGrid: showItemGrid,
                         showSectorNotes: showSectorNotes,
-                        showOrderList: showOrderList
+                        showOrderList: showOrderList,
+                        showSoleGrid: showSoleGrid
                       };
                       const newP = [...profiles, p];
                       setProfiles(newP);
@@ -913,7 +948,8 @@ export default function ExportNoteModal({
                         showMaterials: showMaterials,
                         showItemGrid: showItemGrid,
                         showSectorNotes: showSectorNotes,
-                        showOrderList: showOrderList
+                        showOrderList: showOrderList,
+                        showSoleGrid: showSoleGrid
                       };
                       const newP = [...profiles, p];
                       setProfiles(newP);
@@ -924,6 +960,8 @@ export default function ExportNoteModal({
                     }
                   }}
                   disabled={!newProfileName.trim()}
+                  title="Salvar novo perfil"
+                  aria-label="Salvar novo perfil"
                   className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
                     newProfileName.trim() ? 'bg-indigo-600 text-white active:scale-95' : 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-not-allowed'
                   }`}

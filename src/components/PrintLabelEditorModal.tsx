@@ -21,15 +21,8 @@ type Elem = {
   noteFilter?: { sectorId: string; noteName: string };
 };
 type Layout = { paper: [number, number]; elems: Record<ElemKey, Elem> };
-type PrintMode = 'document' | 'thermal';
 
 // ─── Size presets ─────────────────────────────────────────────────────────────
-
-const DOC_SIZES: { label: string; dims: [number, number] }[] = [
-  { label: 'Ticket 80×120', dims: [80,  120] },
-  { label: 'A6  105×148',   dims: [105, 148] },
-  { label: 'A5  148×210',   dims: [148, 210] },
-];
 
 const THERMAL_SIZES: { label: string; dims: [number, number]; star?: boolean }[] = [
   { label: '75 × 24 mm',  dims: [75, 24],  star: true },
@@ -44,7 +37,6 @@ const THERMAL_SIZES: { label: string; dims: [number, number]; star?: boolean }[]
 
 const ELEM_KEYS: ElemKey[] = ['reference', 'name', 'color', 'size', 'qr', 'footer', 'photo', 'grade', 'osdata', 'sectornotes'];
 const STEPS = [0.5, 1, 2, 5];
-const STORAGE_MODE    = 'lbl_print_mode';
 const STORAGE_SIZE    = 'lbl_print_size';
 const STORAGE_MANUAL  = 'lbl_print_manual';
 const STORAGE_LAYOUTS = 'lbl_print_layouts_v1';
@@ -171,13 +163,15 @@ interface Props {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PrintLabelEditorModal({ isOpen, onClose, product, isDarkMode, grids = [], lot, sizeGridOverride, os, sectors = [], batchItems }: Props) {
-  const [printMode, setPrintMode] = useState<PrintMode>(() => (localStorage.getItem(STORAGE_MODE) as PrintMode) || 'thermal');
   const [sizeKey, setSizeKey]     = useState<string>(() => localStorage.getItem(STORAGE_SIZE) || '75x24');
   const [layouts, setLayouts]     = useState<Record<string, Layout>>(loadLayouts);
   const [selected, setSelected]   = useState<ElemKey | null>(null);
   const [step, setStep]           = useState(1);
   const [tab, setTab]             = useState<'view'|'edit'>('view');
   const [elemConfigOpen, setElemConfigOpen] = useState(false);
+  const [notePickerOpen, setNotePickerOpen] = useState(false);
+  const [sizeAccordionOpen, setSizeAccordionOpen] = useState(false);
+  const [myPresetsPopupOpen, setMyPresetsPopupOpen] = useState(false);
   const [printing, setPrinting]     = useState(false);
   const [exportingJpg, setExportingJpg] = useState(false);
   const [qrPreview, setQrPreview] = useState('');
@@ -339,12 +333,6 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   const handleSizeSelect = (dims: [number, number] | 'manual') => {
     if (dims === 'manual') { setSizeKey('manual'); }
     else { const k = `${dims[0]}x${dims[1]}`; setSizeKey(k); localStorage.setItem(STORAGE_SIZE, k); }
-    setSelected(null);
-  };
-  const handleModeChange = (m: PrintMode) => {
-    setPrintMode(m); localStorage.setItem(STORAGE_MODE, m);
-    if (m === 'thermal' && !THERMAL_SIZES.some(s => `${s.dims[0]}x${s.dims[1]}` === sizeKey)) { setSizeKey('75x24'); localStorage.setItem(STORAGE_SIZE, '75x24'); }
-    if (m === 'document' && THERMAL_SIZES.some(s => `${s.dims[0]}x${s.dims[1]}` === sizeKey)) { setSizeKey('40x30'); localStorage.setItem(STORAGE_SIZE, '40x30'); }
     setSelected(null);
   };
   const handleReset = () => { saveLayout(defaultLayout(paperDims)); setSelected(null); };
@@ -898,116 +886,79 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
     <Modal isOpen={isOpen} onClose={onClose} title="Editor de Etiquetas" maxWidth="max-w-lg" zIndex={70000}>
       <div className="flex flex-col gap-4 py-1">
 
-        {/* Print mode */}
-        <div className={`flex p-1 rounded-2xl gap-1 ${dk?'bg-slate-800':'bg-slate-100'}`}>
-          {([['document','Documento',<FileText size={12}/>],['thermal','Etiqueta Térmica',<Tag size={12}/>]] as const).map(([m,lbl,icon])=>(
-            <button key={m} type="button" onClick={()=>handleModeChange(m as PrintMode)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${printMode===m?'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm':'text-slate-400'}`}>
-              {icon} {lbl}
-            </button>
-          ))}
-        </div>
 
-        {/* Size selection */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between px-1">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-100">Tamanho da Etiqueta</label>
-            <div className="flex items-center gap-1">
+        {/* Size selection — acordeão, recolhido por padrão pra economizar espaço */}
+        <div className={`rounded-2xl border overflow-hidden ${dk ? 'border-slate-800' : 'border-slate-200'}`}>
+          <button
+            type="button"
+            onClick={() => setSizeAccordionOpen(o => !o)}
+            className={`w-full flex items-center justify-between gap-2 px-3 py-3 transition-all ${dk ? 'bg-slate-800/50 hover:bg-slate-800' : 'bg-slate-50 hover:bg-slate-100'}`}
+          >
+            <span className="flex items-center gap-2">
+              <Tag size={13} className="text-indigo-500" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-100">Tamanho da Etiqueta</span>
+            </span>
+            <span className="flex items-center gap-2">
+              <span className={`text-[9px] font-black px-2 py-1 rounded-full ${dk ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-100 text-orange-600'}`}>{W}×{H}mm</span>
+              <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 ${sizeAccordionOpen ? 'rotate-180' : ''}`} />
+            </span>
+          </button>
+
+          {/* Salvar Padrão / Resetar e Meus Padrões — sempre visíveis, mesmo com o acordeão fechado */}
+          <div className={`p-3 flex flex-col gap-2.5 border-t ${dk ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
+            <div className={`flex p-1 rounded-2xl gap-1 ${dk?'bg-slate-800':'bg-slate-100'}`}>
               <button type="button" onClick={() => setSavePresetModal({ open: true, name: '' })}
                 title="Salvar padrão atual com nome"
-                className={`text-[9px] font-black flex items-center gap-1 px-2 py-1 rounded-lg transition-all ${
-                  dk ? 'text-emerald-400 hover:bg-emerald-900/20' : 'text-emerald-600 hover:bg-emerald-50'
-                }`}>
-                <BookmarkPlus size={10}/> Salvar Padrão
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${dk ? 'bg-slate-700 text-emerald-400 shadow-sm' : 'bg-white text-emerald-600 shadow-sm'}`}>
+                <BookmarkPlus size={12}/> Salvar Padrão
               </button>
-              <button type="button" onClick={handleReset} className="text-[9px] font-black text-indigo-500 flex items-center gap-1 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 px-2 py-1 rounded-lg">
-                <RotateCcw size={9}/> Resetar
+              <button type="button" onClick={handleReset}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 transition-all hover:text-indigo-500">
+                <RotateCcw size={11}/> Resetar
               </button>
             </div>
+
+            {customPresets.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setMyPresetsPopupOpen(true)}
+                className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border-2 transition-all ${dk ? 'border-slate-700 bg-slate-800 text-slate-300 hover:border-indigo-500' : 'border-slate-100 bg-slate-50 text-slate-600 hover:border-indigo-400'}`}
+              >
+                <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest">
+                  <BookOpen size={11}/> Meus Padrões
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${dk ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-500'}`}>{customPresets.length}</span>
+                  <ChevronDown size={13} className="text-slate-400 -rotate-90" />
+                </span>
+              </button>
+            )}
           </div>
 
-          {/* Custom presets row */}
-          {customPresets.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <p className={`text-[9px] font-black uppercase tracking-widest px-1 flex items-center gap-1 ${dk ? 'text-slate-400' : 'text-slate-500'}`}>
-                <BookOpen size={9}/> Meus Padrões
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {customPresets.map(preset => (
-                  <div key={preset.id} className={`flex items-center gap-0 rounded-xl border-2 overflow-hidden transition-all ${
-                    sizeKey === 'manual' && manualW === preset.dims[0] && manualH === preset.dims[1]
-                      ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
-                      : dk ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-white'
-                  }`}>
-                    <button
-                      type="button"
-                      onClick={() => handleLoadPreset(preset)}
-                      className={`py-2 px-3 text-[9px] font-black transition-all ${
-                        sizeKey === 'manual' && manualW === preset.dims[0] && manualH === preset.dims[1]
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : dk ? 'text-slate-300' : 'text-slate-600'
-                      }`}
-                      title={`${preset.dims[0]}×${preset.dims[1]} mm`}
-                    >
-                      {preset.name}
-                      <span className={`ml-1 text-[8px] font-bold opacity-60`}>{preset.dims[0]}×{preset.dims[1]}</span>
+          {sizeAccordionOpen && (
+            <div className={`p-3 pt-0 flex flex-col gap-3 ${dk ? 'bg-slate-900' : 'bg-white'}`}>
+              <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-2 gap-1.5">
+                  {THERMAL_SIZES.map(opt => { const k=`${opt.dims[0]}x${opt.dims[1]}`; return (
+                    <button key={k} type="button" onClick={()=>handleSizeSelect(opt.dims)}
+                      className={`py-2 px-3 rounded-xl border-2 font-black text-[9px] tracking-tight transition-all flex items-center justify-between ${sizeKey===k?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600':'border-slate-100 dark:border-slate-800 text-slate-400'}`}>
+                      {opt.label}
+                      {opt.star && <span className="text-[9px] font-black text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded-full ml-1">minha</span>}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setRenamePreset({ id: preset.id, name: preset.name })}
-                      title="Renomear padrão"
-                      className={`px-1.5 py-2 border-l transition-all ${
-                        dk ? 'border-slate-700 text-slate-500 hover:text-indigo-400 hover:bg-indigo-900/20' : 'border-slate-200 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50'
-                      }`}
-                    >
-                      <Pencil size={10}/>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleDeletePreset(preset.id)}
-                      title="Excluir padrão"
-                      className={`px-1.5 py-2 border-l transition-all ${
-                        dk ? 'border-slate-700 text-slate-500 hover:text-rose-400 hover:bg-rose-900/20' : 'border-slate-200 text-slate-400 hover:text-rose-500 hover:bg-rose-50'
-                      }`}
-                    >
-                      <Trash2 size={10}/>
-                    </button>
+                  );})}
+                </div>
+                <div className={`flex items-center gap-2 p-3 rounded-xl border-2 ${sizeKey==='manual'?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20':'border-slate-100 dark:border-slate-800'}`}>
+                  <button type="button" onClick={()=>handleSizeSelect('manual')} className={`text-[9px] font-black uppercase whitespace-nowrap ${sizeKey==='manual'?'text-indigo-600':'text-slate-400'}`}>Manual</button>
+                  <div className="flex items-center gap-1 flex-1">
+                    <input type="number" min={10} max={200} value={manualW} title="Largura mm" placeholder="80"
+                      onChange={e=>{setManualW(+e.target.value||10); if(sizeKey==='manual') localStorage.setItem(STORAGE_MANUAL, JSON.stringify([+e.target.value||10,manualH]));}}
+                      className={`w-14 text-center px-2 py-1 rounded-lg border text-[10px] font-black outline-none ${dk?'bg-slate-800 border-slate-700 text-white':'bg-white border-slate-200 text-slate-800'}`}/>
+                    <span className="text-[9px] text-slate-400 font-bold">×</span>
+                    <input type="number" min={10} max={200} value={manualH} title="Altura mm" placeholder="40"
+                      onChange={e=>{setManualH(+e.target.value||10); if(sizeKey==='manual') localStorage.setItem(STORAGE_MANUAL, JSON.stringify([manualW,+e.target.value||10]));}}
+                      className={`w-14 text-center px-2 py-1 rounded-lg border text-[10px] font-black outline-none ${dk?'bg-slate-800 border-slate-700 text-white':'bg-white border-slate-200 text-slate-800'}`}/>
+                    <span className="text-[9px] text-slate-400 font-bold">mm</span>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {printMode === 'document' ? (
-            <div className="flex gap-1.5 flex-wrap">
-              {DOC_SIZES.map(opt => { const k=`${opt.dims[0]}x${opt.dims[1]}`; return (
-                <button key={k} type="button" onClick={()=>handleSizeSelect(opt.dims)}
-                  className={`py-2 px-3 rounded-xl border-2 font-black text-[9px] uppercase tracking-tight transition-all ${sizeKey===k?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600':'border-slate-100 dark:border-slate-800 text-slate-400'}`}>
-                  {opt.label}
-                </button>
-              );})}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              <div className="grid grid-cols-2 gap-1.5">
-                {THERMAL_SIZES.map(opt => { const k=`${opt.dims[0]}x${opt.dims[1]}`; return (
-                  <button key={k} type="button" onClick={()=>handleSizeSelect(opt.dims)}
-                    className={`py-2 px-3 rounded-xl border-2 font-black text-[9px] tracking-tight transition-all flex items-center justify-between ${sizeKey===k?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600':'border-slate-100 dark:border-slate-800 text-slate-400'}`}>
-                    {opt.label}
-                    {opt.star && <span className="text-[9px] font-black text-amber-500 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded-full ml-1">minha</span>}
-                  </button>
-                );})}
-              </div>
-              <div className={`flex items-center gap-2 p-3 rounded-xl border-2 ${sizeKey==='manual'?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20':'border-slate-100 dark:border-slate-800'}`}>
-                <button type="button" onClick={()=>handleSizeSelect('manual')} className={`text-[9px] font-black uppercase whitespace-nowrap ${sizeKey==='manual'?'text-indigo-600':'text-slate-400'}`}>Manual</button>
-                <div className="flex items-center gap-1 flex-1">
-                  <input type="number" min={10} max={200} value={manualW} title="Largura mm" placeholder="80"
-                    onChange={e=>{setManualW(+e.target.value||10); if(sizeKey==='manual') localStorage.setItem(STORAGE_MANUAL, JSON.stringify([+e.target.value||10,manualH]));}}
-                    className={`w-14 text-center px-2 py-1 rounded-lg border text-[10px] font-black outline-none ${dk?'bg-slate-800 border-slate-700 text-white':'bg-white border-slate-200 text-slate-800'}`}/>
-                  <span className="text-[9px] text-slate-400 font-bold">×</span>
-                  <input type="number" min={10} max={200} value={manualH} title="Altura mm" placeholder="40"
-                    onChange={e=>{setManualH(+e.target.value||10); if(sizeKey==='manual') localStorage.setItem(STORAGE_MANUAL, JSON.stringify([manualW,+e.target.value||10]));}}
-                    className={`w-14 text-center px-2 py-1 rounded-lg border text-[10px] font-black outline-none ${dk?'bg-slate-800 border-slate-700 text-white':'bg-white border-slate-200 text-slate-800'}`}/>
-                  <span className="text-[9px] text-slate-400 font-bold">mm</span>
                 </div>
               </div>
             </div>
@@ -1151,25 +1102,20 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                         <div className="flex flex-col gap-1.5 pl-8">
                           <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Instrução a exibir</label>
                           {availableSectorNotes.length > 0 ? (
-                            <select
-                              aria-label="Instrução a exibir"
-                              title="Instrução a exibir"
-                              value={el.noteFilter ? `${el.noteFilter.sectorId}::${el.noteFilter.noteName}` : ''}
-                              onChange={(ev) => {
-                                const val = ev.target.value;
-                                if (!val) { updateElem('sectornotes', { noteFilter: undefined }); return; }
-                                const [sectorId, ...rest] = val.split('::');
-                                updateElem('sectornotes', { noteFilter: { sectorId, noteName: rest.join('::') } });
-                              }}
-                              className={`w-full px-3 py-2 rounded-xl text-[10px] font-bold border outline-none ${dk ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-700'}`}
+                            <button
+                              type="button"
+                              onClick={() => setNotePickerOpen(true)}
+                              className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-[10px] font-bold border outline-none transition-all ${dk ? 'bg-slate-800 border-slate-700 text-white hover:border-indigo-500' : 'bg-white border-slate-200 text-slate-700 hover:border-indigo-400'}`}
                             >
-                              <option value="">Todas as instruções</option>
-                              {availableSectorNotes.map(n => (
-                                <option key={`${n.sectorId}::${n.noteName}`} value={`${n.sectorId}::${n.noteName}`}>
-                                  {n.sectorName} — {n.noteName}
-                                </option>
-                              ))}
-                            </select>
+                              <span className="truncate">
+                                {el.noteFilter
+                                  ? availableSectorNotes.find(n => n.sectorId === el.noteFilter!.sectorId && n.noteName === el.noteFilter!.noteName)
+                                    ? `${availableSectorNotes.find(n => n.sectorId === el.noteFilter!.sectorId && n.noteName === el.noteFilter!.noteName)!.sectorName} — ${el.noteFilter.noteName}`
+                                    : 'Todas as instruções'
+                                  : 'Todas as instruções'}
+                              </span>
+                              <ChevronDown size={13} className="shrink-0 text-slate-400" />
+                            </button>
                           ) : (
                             <p className="text-[10px] font-bold text-slate-400">Nenhuma instrução por setor cadastrada para esta cor.</p>
                           )}
@@ -1199,6 +1145,152 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                     <X size={13} /> Fechar
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Instrução a exibir — popup centralizado, aberto a partir do elemento
+            "Obs. Variante" dentro de Configurar Elementos */}
+        {notePickerOpen && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" onClick={() => setNotePickerOpen(false)}>
+            <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <div
+              className={`relative w-full max-w-sm max-h-[75vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden ${dk ? 'bg-slate-900' : 'bg-white'}`}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className={`flex items-center justify-between px-6 py-4 border-b ${dk ? 'border-slate-800' : 'border-slate-100'}`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-2xl bg-orange-500 flex items-center justify-center text-white shrink-0">
+                    <FileText size={16} />
+                  </div>
+                  <div>
+                    <p className={`text-sm font-black leading-none ${dk ? 'text-white' : 'text-slate-900'}`}>Instrução a Exibir</p>
+                    <p className="text-[10px] font-bold text-slate-400 mt-0.5">Escolha a informação mostrada em Obs. Variante</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNotePickerOpen(false)}
+                  aria-label="Fechar"
+                  className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${dk ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-800'}`}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => { updateElem('sectornotes', { noteFilter: undefined }); setNotePickerOpen(false); }}
+                  className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all text-left ${
+                    !layout.elems.sectornotes.noteFilter
+                      ? 'border-orange-500 bg-orange-500/10'
+                      : dk ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
+                  }`}
+                >
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border-2 ${!layout.elems.sectornotes.noteFilter ? 'border-orange-500 bg-orange-500 text-white' : dk ? 'border-slate-600' : 'border-slate-300'}`}>
+                    {!layout.elems.sectornotes.noteFilter && <Check size={12} strokeWidth={3} />}
+                  </span>
+                  <span className={`text-[11px] font-black uppercase tracking-widest ${dk ? 'text-white' : 'text-slate-900'}`}>Todas as instruções</span>
+                </button>
+
+                {availableSectorNotes.map(n => {
+                  const isSel = layout.elems.sectornotes.noteFilter?.sectorId === n.sectorId && layout.elems.sectornotes.noteFilter?.noteName === n.noteName;
+                  return (
+                    <button
+                      key={`${n.sectorId}::${n.noteName}`}
+                      type="button"
+                      onClick={() => { updateElem('sectornotes', { noteFilter: { sectorId: n.sectorId, noteName: n.noteName } }); setNotePickerOpen(false); }}
+                      className={`w-full flex items-center gap-3 p-3.5 rounded-2xl border-2 transition-all text-left ${
+                        isSel ? 'border-orange-500 bg-orange-500/10' : dk ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
+                      }`}
+                    >
+                      <span className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border-2 ${isSel ? 'border-orange-500 bg-orange-500 text-white' : dk ? 'border-slate-600' : 'border-slate-300'}`}>
+                        {isSel && <Check size={12} strokeWidth={3} />}
+                      </span>
+                      <div className="min-w-0">
+                        <p className={`text-[11px] font-black uppercase tracking-widest truncate ${dk ? 'text-white' : 'text-slate-900'}`}>{n.noteName}</p>
+                        <p className="text-[9px] font-bold text-slate-400 mt-0.5 truncate">{n.sectorName} — {n.text}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Meus Padrões — popup centralizado com os tamanhos salvos pelo usuário */}
+        {myPresetsPopupOpen && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" onClick={() => setMyPresetsPopupOpen(false)}>
+            <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <div
+              className={`relative w-full max-w-sm max-h-[75vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden ${dk ? 'bg-slate-900' : 'bg-white'}`}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className={`flex items-center justify-between px-6 py-4 border-b ${dk ? 'border-slate-800' : 'border-slate-100'}`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shrink-0">
+                    <BookOpen size={16} />
+                  </div>
+                  <div>
+                    <p className={`text-sm font-black leading-none ${dk ? 'text-white' : 'text-slate-900'}`}>Meus Padrões</p>
+                    <p className="text-[10px] font-bold text-slate-400 mt-0.5">Tamanhos de etiqueta salvos por você</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMyPresetsPopupOpen(false)}
+                  aria-label="Fechar"
+                  className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${dk ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-800'}`}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2">
+                {customPresets.length === 0 ? (
+                  <p className="text-[11px] font-bold text-slate-400 text-center py-6">Nenhum padrão salvo ainda.</p>
+                ) : customPresets.map(preset => {
+                  const isSel = sizeKey === 'manual' && manualW === preset.dims[0] && manualH === preset.dims[1];
+                  return (
+                    <div key={preset.id} className={`flex items-center gap-0 rounded-2xl border-2 overflow-hidden transition-all ${
+                      isSel ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : dk ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
+                    }`}>
+                      <button
+                        type="button"
+                        onClick={() => { handleLoadPreset(preset); setMyPresetsPopupOpen(false); }}
+                        className={`flex-1 min-w-0 flex items-center gap-2 py-3 px-4 text-left transition-all ${
+                          isSel ? 'text-emerald-600 dark:text-emerald-400' : dk ? 'text-slate-200' : 'text-slate-700'
+                        }`}
+                      >
+                        <span className="text-[11px] font-black uppercase tracking-widest truncate">{preset.name}</span>
+                        <span className="text-[9px] font-bold opacity-60 shrink-0">{preset.dims[0]}×{preset.dims[1]}mm</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRenamePreset({ id: preset.id, name: preset.name })}
+                        title="Renomear padrão"
+                        className={`px-3 py-3 border-l transition-all ${
+                          dk ? 'border-slate-700 text-slate-500 hover:text-indigo-400 hover:bg-indigo-900/20' : 'border-slate-200 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50'
+                        }`}
+                      >
+                        <Pencil size={13}/>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeletePreset(preset.id)}
+                        title="Excluir padrão"
+                        className={`px-3 py-3 border-l transition-all ${
+                          dk ? 'border-slate-700 text-slate-500 hover:text-rose-400 hover:bg-rose-900/20' : 'border-slate-200 text-slate-400 hover:text-rose-500 hover:bg-rose-50'
+                        }`}
+                      >
+                        <Trash2 size={13}/>
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
