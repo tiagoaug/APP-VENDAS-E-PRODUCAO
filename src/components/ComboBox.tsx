@@ -8,9 +8,10 @@ interface ComboBoxProps {
   placeholder?: string;
   isDarkMode?: boolean;
   icon?: React.ReactNode;
+  compact?: boolean;
 }
 
-export default function ComboBox({ options, value, onChange, placeholder = "SELECIONE...", isDarkMode = false, icon }: ComboBoxProps) {
+export default function ComboBox({ options, value, onChange, placeholder = "SELECIONE...", isDarkMode = false, icon, compact = false }: ComboBoxProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -35,17 +36,17 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
   return (
     <div className="relative" ref={dropdownRef}>
       <div
-        className={`w-full flex items-center bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl ${icon ? 'pl-12' : 'pl-5'} pr-0 py-4 cursor-pointer focus-within:ring-4 focus-within:ring-slate-900/5 dark:focus-within:ring-indigo-500/10 transition-all ${isDarkMode ? "text-slate-100" : "text-slate-900"}`}
+        className={`w-full flex items-center bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl ${icon ? (compact ? 'pl-9' : 'pl-12') : (compact ? 'pl-4' : 'pl-5')} pr-0 ${compact ? 'py-2.5' : 'py-4'} cursor-pointer focus-within:ring-4 focus-within:ring-slate-900/5 dark:focus-within:ring-indigo-500/10 transition-all ${isDarkMode ? "text-slate-100" : "text-slate-900"}`}
         onClick={() => setIsOpen(!isOpen)}
       >
         {icon && (
-          <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+          <div className={`absolute ${compact ? 'left-3' : 'left-5'} top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none`}>
             {icon}
           </div>
         )}
         <input
           type="text"
-          className={`flex-1 bg-transparent border-none outline-none text-[13px] font-black uppercase tracking-widest min-w-0 ${selectedOption ? 'placeholder:text-slate-900 dark:placeholder:text-white' : 'placeholder:text-slate-700 dark:placeholder:text-slate-300'}`}
+          className={`flex-1 bg-transparent border-none outline-none font-black uppercase tracking-widest min-w-0 ${compact ? 'text-[10px]' : 'text-[13px]'} ${selectedOption ? 'placeholder:text-slate-900 dark:placeholder:text-white' : 'placeholder:text-slate-700 dark:placeholder:text-slate-300'}`}
           placeholder={selectedOption ? selectedOption.name : placeholder}
           value={isOpen ? search : ""}
           onChange={(e) => {
@@ -55,8 +56,8 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
           onClick={(e) => e.stopPropagation()}
         />
         {/* Área clicável generosa ao redor da seta */}
-        <div className="flex items-center justify-center w-12 h-full self-stretch shrink-0 text-indigo-400">
-          <ChevronDown size={22} strokeWidth={2.5} className={`transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+        <div className={`flex items-center justify-center ${compact ? 'w-9' : 'w-12'} h-full self-stretch shrink-0 text-indigo-400`}>
+          <ChevronDown size={compact ? 16 : 22} strokeWidth={2.5} className={`transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
         </div>
       </div>
 
@@ -66,7 +67,7 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
             filteredOptions.map(option => (
               <div
                 key={option.id}
-                className={`px-5 py-4 text-[13px] font-bold uppercase cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 active:bg-indigo-50 ${value === option.id ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200"}`}
+                className={`${compact ? 'px-4 py-2.5 text-[10px]' : 'px-5 py-4 text-[13px]'} font-bold uppercase cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 active:bg-indigo-50 ${value === option.id ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200"}`}
                 onClick={() => {
                   onChange(option.id);
                   setIsOpen(false);
@@ -77,7 +78,7 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
               </div>
             ))
           ) : (
-            <div className="px-5 py-3 text-[12px] text-slate-400 italic">Nenhum resultado encontrado</div>
+            <div className={`px-5 py-3 ${compact ? 'text-[10px]' : 'text-[12px]'} text-slate-400 italic`}>Nenhum resultado encontrado</div>
           )}
         </div>
       )}

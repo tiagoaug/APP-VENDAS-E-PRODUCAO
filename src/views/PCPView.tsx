@@ -106,6 +106,9 @@ interface PCPViewProps {
   initialOrderId?: string;
   initialItemIdx?: string | number;
   initialScanNonce?: number;
+  initialOSId?: string;
+  initialOSNonce?: number;
+  initialOpenMode?: 'modal' | 'sector';
   people?: Person[];
   accounts?: Account[];
   categories?: Category[];
@@ -143,6 +146,9 @@ export default function PCPView({
   initialOrderId,
   initialItemIdx,
   initialScanNonce,
+  initialOSId,
+  initialOSNonce,
+  initialOpenMode,
   people = [],
   accounts = [],
   categories = [],
@@ -385,6 +391,8 @@ export default function PCPView({
   const [selectedSourceItemKeys, setSelectedSourceItemKeys] = useState<Set<string>>(new Set());
   const [expandedSourceItems, setExpandedSourceItems] = useState<Set<string>>(new Set());
   const [scanFocusKey, setScanFocusKey] = useState<string | null>(null);
+  const [highlightedOSId, setHighlightedOSId] = useState<string | null>(null);
+  const [highlightedPedidoKey, setHighlightedPedidoKey] = useState<string | null>(null);
   const [sourceFilterModel, setSourceFilterModel] = useState<string>('');
   const [sourceFilterColor, setSourceFilterColor] = useState<string>('');
   const [osFeedback, setOsFeedback] = useState<{ osNumber: string; nextSector: string; action?: string; type?: 'pedido' | 'os'; details?: string[] } | null>(null);
@@ -580,7 +588,7 @@ export default function PCPView({
   const [fichaSelection, setFichaSelection] = useState<Set<string>>(new Set());
   const [fichaListOpen, setFichaListOpen] = useState<Set<string>>(new Set()); // expanded lot keys
   const [fichaItemExpanded, setFichaItemExpanded] = useState<Set<string>>(new Set()); // expanded grade keys
-  const [fichaFilters, setFichaFilters] = useState<Record<string, { model: string; color: string; search?: string }>>({});
+  const [fichaFilters, setFichaFilters] = useState<Record<string, { model: string; color: string; search?: string; customerName?: string; providerName?: string }>>({});
 
   // Itens de pedidos pendentes decupados — granularidade por item, não por pedido.
   // Importante: um pedido com vários modelos pode ter alguns já incluídos em um mapa e outros não;
@@ -1213,7 +1221,9 @@ export default function PCPView({
   // esteja aberto de um escaneamento anterior.
   const initialLotHandledKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!initialLotId) return;
+    // Lembretes de pedido (Dashboard) pedem para abrir no card dentro do Setor, não no
+    // modal do Mapa — esse modo é tratado pelo efeito "initialFocusHandledKeyRef" abaixo.
+    if (!initialLotId || initialOpenMode === 'sector') return;
     const signature = `${initialLotId}|${initialOrderId ?? ''}|${initialItemIdx ?? ''}|${initialScanNonce ?? ''}`;
     if (initialLotHandledKeyRef.current === signature) return;
     const lot = lots.find(l => l.id === initialLotId);
@@ -1262,6 +1272,79 @@ export default function PCPView({
         : 'Pedido não encontrado neste Mapa.');
     }
   }, [initialLotId, initialOrderId, initialItemIdx, initialScanNonce, lots]);
+
+  // Chegando via lembrete do Dashboard ("Lembretes e Vencimentos") com uma OS específica,
+  // troca para o setor certo e rola até o card dela na lista "Ordem de Serviço por Setor".
+  const initialOSHandledKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialOSId) return;
+    const signature = `${initialOSId}|${initialOSNonce ?? ''}`;
+    if (initialOSHandledKeyRef.current === signature) return;
+    const os = serviceOrders.find(o => o.id === initialOSId);
+    if (!os) return;
+    initialOSHandledKeyRef.current = signature;
+
+    if (os.sectorId !== selectedSectorId) setSelectedSectorId(os.sectorId);
+
+    const timer = setTimeout(() => {
+      document.getElementById(`os-card-${initialOSId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setHighlightedOSId(initialOSId);
+      setTimeout(() => setHighlightedOSId(null), 2500);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [initialOSId, initialOSNonce, serviceOrders, selectedSectorId]);
+
+  // Chegando via lembrete do Dashboard ("Lembretes e Vencimentos") com um pedido/mapa em setor específico,
+  // troca para o setor certo, expande a grade/detalhes e rola até o card dele na lista.
+  const initialSectorHandledKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialLotId || initialOpenMode !== 'sector') return;
+    const signature = `${initialLotId}|${initialOrderId ?? ''}|${initialItemIdx ?? ''}|${initialScanNonce ?? ''}`;
+    if (initialSectorHandledKeyRef.current === signature) return;
+    const lot = lots.find(l => l.id === initialLotId);
+    if (!lot) return;
+    initialSectorHandledKeyRef.current = signature;
+
+    const allSourceItems: any[] = (lot as any).metadata?.sourceItems || [
+      { orderId: lot.productionOrderId, itemIdx: 0, qty: lot.quantity }
+    ];
+    const itemIdxNum = initialItemIdx !== undefined && initialItemIdx !== '' ? Number(initialItemIdx) : undefined;
+    const matchesTarget = (s: any) => s.orderId === initialOrderId && (itemIdxNum === undefined || s.itemIdx === itemIdxNum);
+
+    const targetItem = allSourceItems.find(matchesTarget)
+      || allSourceItems.find((s: any) => s.orderId === initialOrderId)
+      || allSourceItems[0];
+
+    if (targetItem) {
+      const targetSectorId = getOrderEffectiveSector(lot, targetItem.orderId, targetItem);
+      if (targetSectorId && targetSectorId !== ORDER_FINALIZED) {
+        if (targetSectorId !== selectedSectorId) {
+          setSelectedSectorId(targetSectorId);
+        }
+
+        const idx = allSourceItems.indexOf(targetItem);
+        const itemKey = `${lot.id}::${targetItem.orderId}::${idx}`;
+        const gradeKey = `grade-${itemKey}`;
+
+        // Expande o item na lista do setor
+        setFichaItemExpanded(prev => {
+          const next = new Set(prev);
+          next.add(gradeKey);
+          return next;
+        });
+
+        const timer = setTimeout(() => {
+          const el = document.getElementById(`pedido-card-${itemKey}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            setHighlightedPedidoKey(itemKey);
+            setTimeout(() => setHighlightedPedidoKey(null), 2500);
+          }
+        }, 450);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [initialLotId, initialOrderId, initialItemIdx, initialScanNonce, lots, initialOpenMode, selectedSectorId]);
 
   const deadlineConfigs = useMemo(() => {
     return (productionConfigs || []).filter(c => c.type === 'DEADLINE');
@@ -3828,7 +3911,11 @@ export default function PCPView({
                     };
                     const allFichas: FichaItem[] = [];
                     filteredActiveLots.forEach(lot => {
-                      const lotSI: any[] = (lot as any).metadata?.sourceItems || [];
+                      // Mapas antigos criados sem metadata.sourceItems (ex: via Venda → Pedido
+                      // de Produção) não tinham ficha nenhuma aqui — sintetiza uma a partir do
+                      // productionOrderId pra não ficarem invisíveis em "Pedidos Vinculados".
+                      const lotSI: any[] = (lot as any).metadata?.sourceItems
+                        || (lot.productionOrderId ? [{ orderId: lot.productionOrderId, itemIdx: 0, qty: lot.quantity }] : []);
 
                       lotSI.forEach((si: any) => {
                         const effectiveSector = getOrderEffectiveSector(lot, si.orderId, si);
@@ -3859,7 +3946,7 @@ export default function PCPView({
                     const filterKey = `__filter__${selectedSectorId}`;
                     const isMainOpen = !fichaListOpen.has(mainKey + '_closed');
                     const isFilterOpen = fichaListOpen.has(filterKey);
-                    const activeFilt = fichaFilters[mainKey] || { model: '', color: '', search: '' };
+                    const activeFilt = fichaFilters[mainKey] || { model: '', color: '', search: '', customerName: '', providerName: '' };
                     const filterSearch = (activeFilt.search || '').trim().toLowerCase();
 
                     // Modelos únicos: chave = nome (usado no filtro), label = referência (exibida nos chips)
@@ -3881,12 +3968,32 @@ export default function PCPView({
                     const uniqueColors = Array.from(new Set(fichasForColors.map(f => f.variation?.colorName || f.orderItem?.variationName || '').filter(Boolean)))
                       .filter(c => !filterSearch || c.toLowerCase().includes(filterSearch));
 
+                    // Clientes com pedidos neste setor — usado na busca com sugestão de nome
+                    const customerMap = new Map<string, string>();
+                    allFichas.forEach(f => {
+                      const cname = f.order?.customerName || 'Estoque';
+                      const cid = f.order?.customerId || cname;
+                      if (!customerMap.has(cid)) customerMap.set(cid, cname);
+                    });
+                    const customerOptions = Array.from(customerMap.entries()).map(([id, name]) => ({ id, name }));
+
+                    // Prestadores que já estão atendendo neste setor (via OS pendente vinculada)
+                    const uniqueProviders = Array.from(new Set(
+                      allFichas
+                        .filter(f => f.coveringOS && f.coveringOS.status === 'PENDING')
+                        .map(f => f.coveringOS!.providerName)
+                        .filter(Boolean)
+                    ));
+
                     // Filtered fichas
                     const filteredFichas = allFichas.filter(f => {
                       const m = f.product?.name || f.orderItem?.productName || '';
                       const c = f.variation?.colorName || f.orderItem?.variationName || '';
+                      const customerName = f.order?.customerName || 'Estoque';
                       if (activeFilt.model && m !== activeFilt.model) return false;
                       if (activeFilt.color && c !== activeFilt.color) return false;
+                      if (activeFilt.customerName && customerName !== activeFilt.customerName) return false;
+                      if (activeFilt.providerName && f.coveringOS?.providerName !== activeFilt.providerName) return false;
                       return true;
                     });
 
@@ -3968,7 +4075,7 @@ export default function PCPView({
                               </div>
                             </div>
 
-                            {/* FILTRAR accordion */}
+                            {/* Botão que abre o popup de filtros */}
                             <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
                               <button type="button"
                                 onClick={() => { const n = new Set(fichaListOpen); isFilterOpen ? n.delete(filterKey) : n.add(filterKey); setFichaListOpen(n); }}
@@ -3978,55 +4085,110 @@ export default function PCPView({
                                 <span className="flex-1 text-left">
                                   <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${isDarkMode ? 'bg-slate-700 text-slate-200' : 'bg-slate-200 text-slate-600'}`}>Filtrar</span>
                                 </span>
-                                {(activeFilt.model || activeFilt.color) && (
+                                {(activeFilt.model || activeFilt.color || activeFilt.customerName || activeFilt.providerName) && (
                                   <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-indigo-500 text-white">Ativo</span>
                                 )}
-                                <ChevronDown size={13} className={`text-slate-400 transition-transform duration-200 ${isFilterOpen ? 'rotate-180' : ''}`} />
                               </button>
-                              {isFilterOpen && (
-                                <div className={`px-4 pb-3 pt-2 border-t flex flex-col gap-2 ${isDarkMode ? 'border-slate-800 bg-slate-950/30' : 'border-slate-100 bg-slate-50/60'}`}>
+                            </div>
+
+                            {isFilterOpen && createPortal(
+                              <div className="fixed inset-0 z-[60000] flex items-center justify-center p-4">
+                                <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { const n = new Set(fichaListOpen); n.delete(filterKey); setFichaListOpen(n); }} />
+                                <div className={`relative w-full max-w-sm max-h-[85vh] overflow-y-auto rounded-[2rem] shadow-2xl border p-5 flex flex-col gap-4 bg-gradient-to-br ${isDarkMode ? 'from-slate-800 via-slate-900 to-slate-950 border-slate-800' : 'from-white via-slate-50 to-slate-100 border-slate-100'}`}>
+                                  <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                      <Filter size={14} className="text-orange-500" />
+                                      <span className="text-[11px] font-black uppercase tracking-widest">Filtrar Pedidos</span>
+                                    </div>
+                                    <button type="button" title="Fechar" onClick={() => { const n = new Set(fichaListOpen); n.delete(filterKey); setFichaListOpen(n); }}
+                                      className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
+                                      <X size={16} />
+                                    </button>
+                                  </div>
+
                                   <input type="text"
                                     placeholder="Buscar modelo ou referência..."
                                     title="Buscar modelo ou referência"
                                     value={activeFilt.search || ''}
                                     onChange={(e) => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, search: e.target.value } }))}
-                                    className={`w-full px-3 py-2 rounded-xl text-[11px] font-bold outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-white border-slate-200 text-slate-700 placeholder:text-slate-400'}`}
+                                    className={`w-full px-3 py-2.5 rounded-xl text-[11px] font-bold outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-700 placeholder:text-slate-400'}`}
                                   />
+
                                   {modelOptions.length > 0 && (
-                                    <div>
-                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Referência</p>
-                                      <div className="flex flex-wrap gap-1.5">
+                                    <div className={`rounded-2xl border p-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Referência</p>
+                                      <div className="grid grid-cols-3 gap-1.5">
                                         {modelOptions.map(({ key, label }) => (
                                           <button type="button" key={key}
                                             onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, model: activeFilt.model === key ? '' : key, color: '' } }))}
-                                            className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all border ${activeFilt.model === key ? 'bg-indigo-600 text-white border-indigo-600' : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-600 border-slate-200'}`}
+                                            className={`w-full h-9 px-1 rounded-xl text-[9px] font-black uppercase truncate transition-all border active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${activeFilt.model === key ? 'from-indigo-500 to-indigo-700 text-white border-indigo-800 shadow-[0_3px_0_rgba(67,56,202,0.5)]' : isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_2px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-600 border-slate-300 shadow-[0_2px_0_rgba(0,0,0,0.08)]'}`}
                                           >{label}</button>
                                         ))}
                                       </div>
                                     </div>
                                   )}
+
                                   {uniqueColors.length > 0 && (
-                                    <div>
-                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Cor</p>
-                                      <div className="flex flex-wrap gap-1.5">
+                                    <div className={`rounded-2xl border p-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Cor</p>
+                                      <div className="grid grid-cols-3 gap-1.5">
                                         {uniqueColors.map(c => (
                                           <button type="button" key={c}
                                             onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, color: activeFilt.color === c ? '' : c } }))}
-                                            className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase transition-all border ${activeFilt.color === c ? 'bg-amber-500 text-white border-amber-500' : isDarkMode ? 'bg-slate-800 text-slate-300 border-slate-700' : 'bg-white text-slate-600 border-slate-200'}`}
+                                            className={`w-full h-9 px-1 rounded-xl text-[9px] font-black uppercase truncate transition-all border active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${activeFilt.color === c ? 'from-amber-400 to-amber-600 text-white border-amber-700 shadow-[0_3px_0_rgba(180,83,9,0.5)]' : isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_2px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-600 border-slate-300 shadow-[0_2px_0_rgba(0,0,0,0.08)]'}`}
                                           >{c}</button>
                                         ))}
                                       </div>
                                     </div>
                                   )}
-                                  {(activeFilt.model || activeFilt.color || activeFilt.search) && (
-                                    <button type="button" title="Limpar filtros"
-                                      onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { model: '', color: '', search: '' } }))}
-                                      className="self-start text-[9px] font-black uppercase text-slate-400 hover:text-slate-700 px-2"
-                                    >✕ Limpar</button>
+
+                                  {customerOptions.length > 0 && (
+                                    <div className={`rounded-2xl border p-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Cliente</p>
+                                      <ComboBox
+                                        options={customerOptions}
+                                        value={customerOptions.find(o => o.name === activeFilt.customerName)?.id || ''}
+                                        onChange={(val) => {
+                                          const opt = customerOptions.find(o => o.id === val);
+                                          setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, customerName: opt?.name || '' } }));
+                                        }}
+                                        placeholder="Digite para buscar cliente..."
+                                        isDarkMode={isDarkMode}
+                                        compact
+                                      />
+                                    </div>
                                   )}
+
+                                  {uniqueProviders.length > 0 && (
+                                    <div className={`rounded-2xl border p-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Prestador de Serviço</p>
+                                      <div className="grid grid-cols-3 gap-1.5">
+                                        {uniqueProviders.map(p => (
+                                          <button type="button" key={p}
+                                            onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { ...activeFilt, providerName: activeFilt.providerName === p ? '' : p } }))}
+                                            className={`w-full h-9 px-1 rounded-xl text-[9px] font-black uppercase truncate transition-all border active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${activeFilt.providerName === p ? 'from-emerald-500 to-emerald-700 text-white border-emerald-800 shadow-[0_3px_0_rgba(4,120,87,0.5)]' : isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_2px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-600 border-slate-300 shadow-[0_2px_0_rgba(0,0,0,0.08)]'}`}
+                                          >{p}</button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  <div className="flex items-center gap-2 pt-1">
+                                    {(activeFilt.model || activeFilt.color || activeFilt.search || activeFilt.customerName || activeFilt.providerName) && (
+                                      <button type="button" title="Limpar filtros"
+                                        onClick={() => setFichaFilters(prev => ({ ...prev, [mainKey]: { model: '', color: '', search: '', customerName: '', providerName: '' } }))}
+                                        className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_3px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-500 border-slate-300 shadow-[0_3px_0_rgba(0,0,0,0.08)]'}`}
+                                      >✕ Limpar</button>
+                                    )}
+                                    <button type="button"
+                                      onClick={() => { const n = new Set(fichaListOpen); n.delete(filterKey); setFichaListOpen(n); }}
+                                      className="flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white border border-indigo-800 bg-gradient-to-b from-indigo-500 to-indigo-700 shadow-[0_4px_0_rgba(67,56,202,0.5)] transition-all active:translate-y-0.5 active:shadow-none"
+                                    >Aplicar</button>
+                                  </div>
                                 </div>
-                              )}
-                            </div>
+                              </div>,
+                              document.body
+                            )}
 
                             {/* Ficha cards — flat list */}
                             <div className="flex flex-col gap-1.5">
@@ -4083,7 +4245,7 @@ export default function PCPView({
                                       : isChecked
                                         ? (isDarkMode ? 'bg-indigo-950/30 border-indigo-700' : 'bg-indigo-50 border-indigo-200')
                                         : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm')
-                                    }`}>
+                                    } ${highlightedPedidoKey === itemKey ? 'ring-4 ring-indigo-500/60 border-indigo-500 dark:border-indigo-500 shadow-lg shadow-indigo-500/30 scale-[1.02]' : ''}`}>
                                     {/* Cabeçalho */}
                                     <div className="p-3 flex items-center gap-3">
                                       {hasOS ? (
@@ -4165,6 +4327,11 @@ export default function PCPView({
                                             </span>
                                           )}
                                         </div>
+                                        {hasOS && f.coveringOS && (
+                                          <p className="text-[8px] font-bold text-slate-900 dark:text-white uppercase tracking-widest mt-1">
+                                            Prestador: {f.coveringOS.providerName || '—'} · Criada em {new Date(f.coveringOS.createdAt).toLocaleDateString('pt-BR')}
+                                          </p>
+                                        )}
                                       </div>
 
                                     </div>
@@ -4623,7 +4790,7 @@ export default function PCPView({
                                   : '';
                                 const nextSName = sectors.find(s => s.id === nextSId)?.name ?? 'CONCLUÍDO';
                                 return (
-                                  <div key={os.id} className={`rounded-2xl border flex flex-col gap-2.5 px-3 py-3 ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                  <div key={os.id} id={`os-card-${os.id}`} className={`rounded-2xl border flex flex-col gap-2.5 px-3 py-3 transition-all ${highlightedOSId === os.id ? 'ring-4 ring-indigo-500/60 border-indigo-500 dark:border-indigo-500 shadow-lg shadow-indigo-500/30 scale-[1.02]' : ''} ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
                                     {/* Info — prestador numa extremidade, número da OS em cápsula na outra (cor própria da OS, configurável em Cor de Badges PCP — não herda do Mapa, já que uma OS pode reunir pedidos de mapas diferentes) */}
                                     <div className="flex items-center justify-between gap-2">
                                       <p className={`text-[11px] font-black truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{os.providerName || '—'}</p>

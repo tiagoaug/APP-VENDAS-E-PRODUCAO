@@ -170,7 +170,7 @@ export default function ProductionOrderModal({
       }));
 
       const lots: ProductionLot[] = [];
-      for (const g of computed) {
+      for (const [itemIdx, g] of computed.entries()) {
         if (g.toProductionQty <= 0) continue;
         const product = products.find(p => p.id === g.productId);
         const route = product?.productionRoute || sectors.map(s => s.id);
@@ -225,8 +225,13 @@ export default function ProductionOrderModal({
             timestamp: Date.now(),
             notes: `Criado via ${orderNum} — Pedido #${sale.orderNumber}`
           }],
-          createdAt: Date.now()
-        };
+          createdAt: Date.now(),
+          // Sem isso, o lote não aparece em "Pedidos Vinculados" (lista por Setor) —
+          // essa tela só monta as fichas a partir de metadata.sourceItems.
+          metadata: {
+            sourceItems: [{ orderId, itemIdx, qty: g.toProductionQty, productId: g.productId, variationId: g.variationId }]
+          }
+        } as any;
         lots.push(lot);
       }
 

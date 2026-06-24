@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Calendar, ChevronLeft, ChevronRight, X } from "lucide-react";
-import AnalogClock from "./AnalogClock";
+import DigitalTimeScroller from "./DigitalTimeScroller";
 
 interface DateTimePickerProps {
   value?: number | null;
@@ -33,6 +33,13 @@ export default function DateTimePicker({ value, onChange, isDarkMode = false, pl
   const commit = (day: number, timeStr: string) => {
     const [h, m] = timeStr.split(":").map(Number);
     onChange(new Date(viewYear, viewMonth, day, h, m).getTime());
+  };
+
+  const goToToday = () => {
+    const now = new Date();
+    setViewYear(now.getFullYear());
+    setViewMonth(now.getMonth());
+    commit(now.getDate(), time);
   };
 
   const cells = buildMonthGrid(viewYear, viewMonth);
@@ -96,6 +103,13 @@ export default function DateTimePicker({ value, onChange, isDarkMode = false, pl
                   <X size={14} />
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={goToToday}
+                className={`w-full mb-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? "bg-indigo-950/40 text-indigo-300 border border-indigo-900/50" : "bg-indigo-50 text-indigo-600 border border-indigo-100"}`}
+              >
+                Hoje
+              </button>
               <div className="grid grid-cols-7 gap-1 mb-1">
                 {WEEKDAYS.map((w, i) => (
                   <div key={i} className="text-center text-[8px] font-black text-slate-400">{w}</div>
@@ -120,8 +134,8 @@ export default function DateTimePicker({ value, onChange, isDarkMode = false, pl
                 })}
               </div>
               <div className="mt-4 pt-4 border-t border-dashed border-slate-200 dark:border-slate-700 flex justify-center">
-                <AnalogClock
-                  hour24={parseInt(time.split(":")[0], 10)}
+                <DigitalTimeScroller
+                  hour={parseInt(time.split(":")[0], 10)}
                   minute={parseInt(time.split(":")[1], 10)}
                   isDarkMode={isDarkMode}
                   onChange={(h, m) => {

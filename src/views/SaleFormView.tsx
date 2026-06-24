@@ -132,7 +132,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         setPaymentStatus(sale.paymentStatus || PaymentStatus.PAID);
         setPaymentHistory(sale.paymentHistory || []);
         setNotes(sale.notes || '');
-        setReminderAt(sale.reminderAt);
+        setReminderAt(sale.reminderAt || undefined);
         setReminderTitle(sale.reminderTitle || '');
         if (sale.dueDate) {
           setDueDate(new Date(sale.dueDate).toISOString().split('T')[0]);
@@ -781,12 +781,11 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     if (deliveryDate) {
       saleToSave.deliveryDate = new Date(deliveryDate).getTime();
     }
-    if (reminderAt) {
-      saleToSave.reminderAt = reminderAt;
-    }
-    if (reminderTitle) {
-      saleToSave.reminderTitle = reminderTitle;
-    }
+    // Sempre grava (mesmo null) — saveDocument usa merge:true, então se o campo
+    // simplesmente não fosse enviado quando limpo, o valor antigo no Firestore
+    // nunca seria apagado e o lembrete continuaria aparecendo no Dashboard.
+    saleToSave.reminderAt = reminderAt || null;
+    saleToSave.reminderTitle = reminderTitle || null;
     if (isProductionOrder) {
       saleToSave.isProductionOrder = true;
     }

@@ -1015,9 +1015,27 @@ export default function App() {
     navigateTo(ViewType.PRODUCTION_PCP, { initialSectorId: sectorId, initialLotId: lotId, initialOrderId: orderId, initialItemIdx: itemIdx, initialScanNonce: scanNonce });
   };
 
-  const navigateToProduction = (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES', sectorId?: string, lotId?: string, orderId?: string, itemIdx?: string | number, scanNonce?: number) => {
+  const navigateToProduction = (
+    subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES',
+    sectorId?: string,
+    lotId?: string,
+    orderId?: string,
+    itemIdx?: string | number,
+    scanNonce?: number,
+    osId?: string,
+    openMode?: 'modal' | 'sector'
+  ) => {
     if (subScreen === 'PCP') {
-      navigateTo(ViewType.PRODUCTION_PCP, (sectorId || lotId) ? { initialSectorId: sectorId, initialLotId: lotId, initialOrderId: orderId, initialItemIdx: itemIdx, initialScanNonce: scanNonce } : null);
+      navigateTo(ViewType.PRODUCTION_PCP, (sectorId || lotId || osId) ? {
+        initialSectorId: sectorId,
+        initialLotId: lotId,
+        initialOrderId: orderId,
+        initialItemIdx: itemIdx,
+        initialScanNonce: scanNonce,
+        initialOSId: osId,
+        initialOSNonce: osId ? Date.now() : undefined,
+        initialOpenMode: openMode
+      } : null);
     } else if (subScreen === 'NECESSIDADES') {
       navigateTo(ViewType.PRODUCTION_PCP, { initialTab: 'needs' });
     } else {
@@ -4675,6 +4693,9 @@ export default function App() {
             initialOrderId={currentParams?.initialOrderId}
             initialItemIdx={currentParams?.initialItemIdx}
             initialScanNonce={currentParams?.initialScanNonce}
+            initialOSId={currentParams?.initialOSId}
+            initialOSNonce={currentParams?.initialOSNonce}
+            initialOpenMode={currentParams?.initialOpenMode}
             people={people}
             accounts={accounts}
             categories={categories}

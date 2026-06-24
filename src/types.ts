@@ -330,8 +330,8 @@ export type Sale = {
   isAccounting?: boolean; // false = não gera lançamento financeiro
   deliveryStatus?: 'PENDING' | 'DELIVERED';
   deliveredAt?: number;
-  reminderAt?: number; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
-  reminderTitle?: string; // Título curto do lembrete
+  reminderAt?: number | null; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
+  reminderTitle?: string | null; // Título curto do lembrete
 };
 
 export type Person = {
@@ -752,8 +752,8 @@ export type ProductionOrderItem = {
   toProductionQty: number;
   pkgId?: string; // id do ProductionConfigItem (PACKAGING) usado para montar a grade deste item, se houver
   notes?: string;
-  reminderAt?: number; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
-  reminderTitle?: string; // Título curto do lembrete
+  reminderAt?: number | null; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
+  reminderTitle?: string | null; // Título curto do lembrete
 };
 
 export type ProductionOrder = {
@@ -924,8 +924,8 @@ export interface ServiceOrder {
   // Print extras
   productPhotoUrl?: string; // URL of the product/variation photo for label printing
   sizeGrid?: string;        // Human-readable size range, e.g. "37-38-39-40-41"
-  reminderAt?: number; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
-  reminderTitle?: string; // Título curto do lembrete
+  reminderAt?: number | null; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
+  reminderTitle?: string | null; // Título curto do lembrete
   // Navigation helpers (derived from linked lot, not persisted)
   currentSectorIndex?: number;
   route?: string[];

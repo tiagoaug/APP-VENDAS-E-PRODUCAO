@@ -228,8 +228,9 @@ async function generatePDF(data: PCPShareData, filename: string, previewOnly: bo
     // currentY += 8;
   }
 
-  // TOTAL GRID (All grouped)
-  if (showTotalGrid) {
+  // TOTAL GRID (All grouped) — só faz sentido com mais de um item; com um só, o
+  // total seria idêntico à grade do próprio item e apareceria como duplicado.
+  if (showTotalGrid && items.length > 1) {
       if (currentY > 250) { doc.addPage(); currentY = 20; }
       
       // Compute total grid
@@ -344,7 +345,7 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
   const itemHeights = items.map(measureItemHeight);
 
   let totalGridH = 0;
-  if (showTotalGrid) totalGridH = 100;
+  if (showTotalGrid && items.length > 1) totalGridH = 100;
 
   const noteLines: string[] = [];
   if (additionalNote && additionalNote.trim()) {
@@ -604,8 +605,9 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
       }
     }
 
-    // TOTAL GRID (All grouped) — só na última página
-    if (isLastPage && showTotalGrid) {
+    // TOTAL GRID (All grouped) — só na última página, e só com mais de um item
+    // (com um só, o total seria idêntico à grade do próprio item — duplicado)
+    if (isLastPage && showTotalGrid && items.length > 1) {
       const totalSizeMap = new Map<string, number>();
       let overallPairs = 0;
       for (const item of items) {

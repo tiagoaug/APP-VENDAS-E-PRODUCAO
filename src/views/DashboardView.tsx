@@ -13,6 +13,8 @@ import { getLotPendingSectorGroups } from '../utils/productionRoute';
 import { getPoolQty, getStockValue } from '../utils/stockPools';
 import { isDashboardCardAllowed, collaboratorCanUseAI } from '../utils/collaborators';
 import type { Collaborator } from '../types';
+import { firebaseService } from '../services/firebaseService';
+import { notificationService } from '../services/notificationService';
 
 type DashboardScanItem = ScanHistoryEntry;
 
@@ -36,7 +38,7 @@ interface DashboardViewProps {
     newStatus: "PENDING" | "CLEARED" | "OVERDUE",
   ) => void;
   onNavigate: (view: ViewType, id?: string | null, search?: string) => void;
-  onNavigateProduction: (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES', sectorId?: string, lotId?: string, orderId?: string, itemIdx?: string | number, scanNonce?: number) => void;
+  onNavigateProduction: (subScreen: ProductionScreenType | 'PCP' | 'NECESSIDADES', sectorId?: string, lotId?: string, orderId?: string, itemIdx?: string | number, scanNonce?: number, osId?: string, openMode?: 'modal' | 'sector') => void;
   onNavigateGrids: () => void;
   onAddProduct: () => void;
   onAddTransaction: (type: TransactionType) => void;
@@ -1427,7 +1429,7 @@ export default function DashboardView({
 
           case "reminders": {
             const now = Date.now();
-            type ReminderItem = { id: string; kind: 'debt' | 'sale' | 'os' | 'order'; title: string; subtitle: string; ts: number; onClick: () => void };
+            type ReminderItem = { id: string; kind: 'debt' | 'sale' | 'os' | 'order'; title: string; subtitle: string; ts: number; onClick: () => void; onDelete?: () => void };
             const items: ReminderItem[] = [];
 
             purchases
@@ -1456,6 +1458,10 @@ export default function DashboardView({
                   subtitle: s.reminderTitle ? (s.customerName || 'Venda') : (s.notes || 'Lembrete de venda'),
                   ts: s.reminderAt!,
                   onClick: () => onNavigate(ViewType.SALE_FORM, s.id),
+                  onDelete: () => {
+                    firebaseService.updateDocument('sales', s.id, { reminderAt: null, reminderTitle: null });
+                    notificationService.cancelReminder(`sale-${s.id}`);
+                  },
                 });
               });
 
@@ -1468,20 +1474,43 @@ export default function DashboardView({
                   title: os.reminderTitle || `OS ${os.osNumber}`,
                   subtitle: os.reminderTitle ? `OS ${os.osNumber} · ${os.providerName || ''}` : (os.notes || 'Lembrete de OS'),
                   ts: os.reminderAt!,
-                  onClick: () => onNavigateProduction('PCP', os.sectorId),
+                  // Abre direto no card desta OS, dentro de "Ordem de Serviço por Setor"
+                  onClick: () => onNavigateProduction('PCP', os.sectorId, undefined, undefined, undefined, undefined, os.id),
+                  onDelete: () => {
+                    firebaseService.updateDocument('serviceOrders', os.id, { reminderAt: null, reminderTitle: null });
+                    notificationService.cancelReminder(`os-${os.id}`);
+                  },
                 });
               });
 
             productionOrders.forEach(order => {
-              (order.items || []).forEach((item: any) => {
+              (order.items || []).forEach((item: any, itemIdx: number) => {
                 if (!item.reminderAt) return;
+                // Acha o Mapa que realmente contém este item (não só o primeiro lotId do
+                // pedido), pra abrir direto no card certo mesmo com vários Mapas na OP.
+                const targetLot = productionLots.find((l: any) =>
+                  (l.metadata?.sourceItems || []).some((si: any) => si.orderId === order.id && si.itemIdx === itemIdx)
+                ) || productionLots.find((l: any) => l.id === order.lotIds?.[0]);
+                const lotId = targetLot?.id || order.lotIds?.[0];
+                // Mesma identificação mostrada no card da ficha ("PED. 013") — se não achar
+                // o Mapa, cai pro número do pedido (venda) e, por último, pro nº da OP.
+                const pedidoLabel = targetLot
+                  ? `PED. ${targetLot.orderNumber}`
+                  : `Pedido ${order.saleOrderNumber || order.orderNumber}`;
                 items.push({
                   id: `order-${order.id}-${item.productId}-${item.variationId}`,
                   kind: 'order',
-                  title: item.reminderTitle || `Pedido ${order.orderNumber}`,
-                  subtitle: item.reminderTitle ? `${order.customerName || 'Estoque'} · Pedido ${order.orderNumber}` : (item.notes || 'Lembrete de pedido'),
+                  title: item.reminderTitle || pedidoLabel,
+                  subtitle: item.reminderTitle ? `${order.customerName || 'Estoque'} · ${pedidoLabel}` : (item.notes || 'Lembrete de pedido'),
                   ts: item.reminderAt,
-                  onClick: () => onNavigateProduction('PCP'),
+                  // Abre direto no Setor (pedido na aba de setores do PCP)
+                  onClick: () => onNavigateProduction('PCP', undefined, lotId, order.id, itemIdx, undefined, undefined, 'sector'),
+                  onDelete: () => {
+                    const newItems = [...order.items];
+                    newItems[itemIdx] = { ...newItems[itemIdx], reminderAt: null, reminderTitle: null };
+                    firebaseService.updateDocument('productionOrders', order.id, { items: newItems });
+                    notificationService.cancelReminder(`order-${order.id}-${item.productId}-${item.variationId}`);
+                  },
                 });
               });
             });
@@ -1541,23 +1570,33 @@ export default function DashboardView({
                         const isLate = item.ts < now;
                         const meta = kindMeta[item.kind];
                         return (
-                          <button key={item.id} type="button" onClick={item.onClick}
-                            className={`w-full flex items-center gap-3 p-3 rounded-2xl border text-left transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800/50 border-slate-800 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
-                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isLate ? (isDarkMode ? 'bg-rose-900/30 text-rose-400' : 'bg-rose-50 text-rose-500') : (isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-500 border border-slate-200')}`}>
-                              {meta.icon}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">{meta.label}</span>
-                                {isLate && <span className="text-[8px] font-black uppercase text-rose-500">Atrasado</span>}
+                          <div key={item.id}
+                            className={`w-full flex items-center gap-2 p-3 rounded-2xl border transition-all ${isDarkMode ? 'bg-slate-800/50 border-slate-800 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
+                            <button type="button" onClick={item.onClick} className="flex-1 min-w-0 flex items-center gap-3 text-left active:scale-95 transition-all">
+                              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isLate ? (isDarkMode ? 'bg-rose-900/30 text-rose-400' : 'bg-rose-50 text-rose-500') : (isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-500 border border-slate-200')}`}>
+                                {meta.icon}
                               </div>
-                              <p className={`text-[11px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{item.title}</p>
-                              <p className="text-[9px] font-bold text-slate-400 truncate">{item.subtitle}</p>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">{meta.label}</span>
+                                  {isLate && <span className="text-[8px] font-black uppercase text-rose-500">Atrasado</span>}
+                                </div>
+                                <p className={`text-[11px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{item.title}</p>
+                                <p className="text-[9px] font-bold text-slate-400 truncate">{item.subtitle}</p>
+                              </div>
+                            </button>
+                            <div className="flex flex-col items-end gap-1.5 shrink-0">
+                              <span className="text-[9px] font-bold text-slate-400 text-right">
+                                {format(item.ts, item.kind === 'debt' ? 'dd/MM/yyyy' : "dd/MM HH:mm", { locale: ptBR })}
+                              </span>
+                              {item.onDelete && (
+                                <button type="button" title="Excluir lembrete" onClick={item.onDelete}
+                                  className="p-1 -m-1 text-slate-300 hover:text-rose-500 dark:text-slate-600 dark:hover:text-rose-400 transition-colors active:scale-90">
+                                  <Trash2 size={13} />
+                                </button>
+                              )}
                             </div>
-                            <span className="text-[9px] font-bold text-slate-400 shrink-0 text-right">
-                              {format(item.ts, item.kind === 'debt' ? 'dd/MM/yyyy' : "dd/MM HH:mm", { locale: ptBR })}
-                            </span>
-                          </button>
+                          </div>
                         );
                       })
                     )}
