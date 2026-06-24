@@ -374,8 +374,21 @@ export default function App() {
 
   // Salva as mesmas preferências no perfil do colaborador ativo, pra acompanhá-lo
   // em qualquer aparelho (em vez de ficar só no localStorage deste aparelho).
+  // Só grava se algo realmente mudou: sem essa checagem, o efeito acima (que
+  // aplica essas mesmas prefs sempre que `collaborators` chega um novo snapshot
+  // do Firestore) regravava o documento a cada abertura do app mesmo sem
+  // alteração nenhuma — e cada gravação reabre o próprio snapshot, retriggerando
+  // o efeito de aplicar e fazendo a tela "piscar" enquanto os dois ficam se
+  // realimentando logo na restauração do perfil ao abrir o app.
   useEffect(() => {
     if (!activeCollaborator) return;
+    const unchanged =
+      activeCollaborator.themePref === appTheme &&
+      activeCollaborator.fontScalePref === fontScale &&
+      activeCollaborator.fontFamilyPref === fontFamily &&
+      activeCollaborator.navIconModePref === navIconMode &&
+      activeCollaborator.navMonoColorPref === navMonoColor;
+    if (unchanged) return;
     saveCollaborator({
       ...activeCollaborator,
       themePref: appTheme,
