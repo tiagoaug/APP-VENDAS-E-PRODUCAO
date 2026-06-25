@@ -324,9 +324,13 @@ export default function PersonalFinancialView({
           setCalcResult(null);
         }}
         onSave={async (data) => {
+          // Não chamar setCalcResult(null) aqui — isso muda a prop initialValue do
+          // TransactionModal, que ainda está montado, e dispara o useEffect de reset do
+          // formulário (zera isRecurring/totalInstallments/amount) NO MEIO do laço de
+          // parcelas, antes das parcelas seguintes serem salvas. onClose já limpa isso
+          // uma única vez, depois que todas as parcelas terminam.
           if (editingTransaction) await onEditTransaction(editingTransaction.id, { ...data, isPersonal: true });
           else await onSaveTransaction({ ...data, isPersonal: true });
-          setCalcResult(null);
         }}
         categories={personalCategories.length > 0 ? personalCategories : categories}
         accounts={personalAccount ? [personalAccount] : accounts}

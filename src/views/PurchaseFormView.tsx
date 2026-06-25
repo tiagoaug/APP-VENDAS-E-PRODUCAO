@@ -22,6 +22,7 @@ import {
   ProductionOrderItem,
   ProductionLot,
 } from "../types";
+import DatePicker from "../components/DatePicker";
 import {
   Save,
   Plus,
@@ -1189,15 +1190,13 @@ export default function PurchaseFormView({
               </div>
               <div className="flex flex-col flex-1 min-w-0">
                 <span className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 leading-none mb-0.5">Vencimento</span>
-                <input
-                  type="date"
-                  className={`w-full bg-transparent border-none p-0 text-[13px] font-black focus:ring-0 outline-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
+                <DatePicker
+                  raw
                   value={(() => {
                     try { return format(dueDate, "yyyy-MM-dd"); } catch { return format(new Date(), "yyyy-MM-dd"); }
                   })()}
-                  onChange={(e) => setDueDate(new Date(e.target.value).getTime() || Date.now())}
-                  aria-label="Data de vencimento"
-                  title="Vencimento"
+                  onChange={(val) => setDueDate(new Date(val).getTime() || Date.now())}
+                  className={`w-full bg-transparent border-none p-0 text-[13px] font-black focus:ring-0 outline-none text-left cursor-pointer ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
                 />
               </div>
             </div>
@@ -1728,9 +1727,12 @@ export default function PurchaseFormView({
             </div>
             <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
               <CalendarIcon size={13} className="text-indigo-400 shrink-0" />
-              <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)}
-                title="Data de entrega para produção" aria-label="Data de entrega para produção"
-                className={`flex-1 bg-transparent font-black text-xs outline-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`} />
+              <DatePicker
+                raw
+                value={deliveryDate}
+                onChange={setDeliveryDate}
+                className={`flex-1 bg-transparent font-black text-xs outline-none text-left cursor-pointer ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
+              />
             </div>
           </div>
           )}
@@ -2238,9 +2240,9 @@ export default function PurchaseFormView({
                       <label className="text-[8px] uppercase font-black text-slate-400 dark:text-slate-500 tracking-widest px-1">
                         Vencimento
                       </label>
-                      <input
-                        type="date"
-                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl py-3 px-4 text-[12px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-100 focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-indigo-500/10 transition-all"
+                      <DatePicker
+                        raw
+                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl py-3 px-4 text-[12px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-100 focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-indigo-500/10 transition-all text-left cursor-pointer"
                         value={(() => {
                           try {
                             return format(check.dueDate, "yyyy-MM-dd");
@@ -2248,14 +2250,12 @@ export default function PurchaseFormView({
                             return format(new Date(), "yyyy-MM-dd");
                           }
                         })()}
-                        onChange={(e) =>
+                        onChange={(val) =>
                           updateCheck(index, {
                             dueDate:
-                              new Date(e.target.value).getTime() || Date.now(),
+                              new Date(val).getTime() || Date.now(),
                           })
                         }
-                        aria-label="Data de vencimento do cheque"
-                        title="Vencimento"
                       />
                     </div>
                   </div>

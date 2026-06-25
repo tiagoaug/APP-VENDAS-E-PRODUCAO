@@ -157,55 +157,61 @@ export default function SalePaymentModal({
         <div className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar">
           {/* View Toggle */}
           <div className="flex p-1 bg-slate-50 dark:bg-slate-950 rounded-2xl">
-            <button 
+            <button
               onClick={() => setViewMode('HISTORY')}
-              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${viewMode === 'HISTORY' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}
+              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${viewMode === 'HISTORY' ? 'bg-gradient-to-br from-white to-slate-100 dark:from-slate-800 dark:to-slate-900 shadow-sm text-indigo-600' : 'text-slate-400'}`}
             >
               <History size={14} /> Histórico
             </button>
-            <button 
+            <button
               onClick={() => setViewMode('PAYMENT')}
-              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${viewMode === 'PAYMENT' ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600' : 'text-slate-400'}`}
+              className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${viewMode === 'PAYMENT' ? 'bg-gradient-to-br from-white to-slate-100 dark:from-slate-800 dark:to-slate-900 shadow-sm text-indigo-600' : 'text-slate-400'}`}
             >
               <DollarSign size={14} /> Receber Agora
             </button>
           </div>
 
           {/* Summary */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className={`p-4 rounded-3xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+          <div className="grid grid-cols-2 gap-3">
+            <div className={`p-3.5 rounded-2xl border shadow-sm ${isDarkMode ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700/60' : 'bg-gradient-to-br from-white to-slate-50 border-slate-100'}`}>
               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Dívida Total</p>
-              <p className={`text-lg font-black tracking-tighter ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>R$ {sale.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+              <p className={`text-base font-black tracking-tighter ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>R$ {sale.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
             </div>
-            <div className={`p-4 rounded-3xl ${isDarkMode ? 'bg-indigo-900/20' : 'bg-indigo-50'}`}>
+            <div className={`p-3.5 rounded-2xl border shadow-sm ${isDarkMode ? 'bg-gradient-to-br from-indigo-900/40 to-indigo-950/30 border-indigo-800/40' : 'bg-gradient-to-br from-indigo-50 to-white border-indigo-100'}`}>
               <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1">Total Recebido</p>
-              <p className={`text-lg font-black tracking-tighter ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>R$ {totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+              <p className={`text-base font-black tracking-tighter ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>R$ {totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
             </div>
           </div>
 
           {viewMode === 'PAYMENT' ? (
             /* Form Mode */
             <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
-              <div className={`p-5 rounded-3xl flex items-center justify-between ${isDarkMode ? 'bg-rose-900/20' : 'bg-rose-50'}`}>
-                <div>
-                  <p className="text-[9px] font-black text-rose-500 uppercase tracking-widest mb-1">Restante a Receber</p>
-                  <p className={`text-2xl font-black tracking-tighter ${isDarkMode ? 'text-rose-400' : 'text-rose-600'}`}>R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
-                </div>
-                <AlertCircle size={32} className="text-rose-500/30" />
-              </div>
-
-              {remaining > 0 && (
-                <button
-                  type="button"
-                  onClick={setQuitarTudo}
-                  className={`w-full p-4 rounded-3xl flex items-center justify-between transition-all active:scale-[0.98] ${isDarkMode ? 'bg-emerald-900/30 hover:bg-emerald-900/50' : 'bg-emerald-50 hover:bg-emerald-100'}`}
-                >
-                  <p className="text-[11px] font-black text-emerald-500 uppercase tracking-widest">Clique aqui para quitar tudo</p>
-                  <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-emerald-500/20' : 'bg-emerald-500/10'}`}>
-                    <CheckCircle2 size={22} className="text-emerald-500" strokeWidth={2.5} />
+              <div className={`rounded-3xl border shadow-md overflow-hidden ${isDarkMode ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700/60 shadow-black/20' : 'bg-gradient-to-br from-white to-slate-50 border-slate-200/60 shadow-slate-200/50'}`}>
+                <div className="p-4 flex items-center justify-between">
+                  <div>
+                    <p className="text-[9px] font-black text-rose-400 uppercase tracking-widest mb-1">Restante a Receber</p>
+                    <p className={`text-xl font-black tracking-tighter ${isDarkMode ? 'text-rose-300' : 'text-rose-500'}`}>R$ {remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
                   </div>
-                </button>
-              )}
+                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-rose-500/15' : 'bg-rose-50'}`}>
+                    <AlertCircle size={20} className="text-rose-400" strokeWidth={2.5} />
+                  </div>
+                </div>
+
+                {remaining > 0 && (
+                  <button
+                    type="button"
+                    onClick={setQuitarTudo}
+                    className={`relative overflow-hidden w-full p-4 flex items-center justify-between transition-all active:scale-[0.98] border-t ${isDarkMode ? 'border-slate-700/60' : 'border-slate-100'}`}
+                  >
+                    {/* Só a metade direita do card fica verde — destaca o lado do ícone sem pintar a linha inteira */}
+                    <div className={`absolute inset-y-0 right-0 w-1/2 ${isDarkMode ? 'bg-emerald-900/25' : 'bg-emerald-50'}`} />
+                    <p className="relative z-10 text-[10px] font-black text-emerald-500 uppercase tracking-widest">Clique aqui para quitar tudo</p>
+                    <div className="relative z-10 w-9 h-9 rounded-xl flex items-center justify-center shrink-0 bg-emerald-500 shadow-lg shadow-emerald-500/40 animate-pulse">
+                      <DollarSign size={18} className="text-white" strokeWidth={3} />
+                    </div>
+                  </button>
+                )}
+              </div>
 
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
@@ -220,7 +226,7 @@ export default function SalePaymentModal({
                       required
                       autoFocus
                       placeholder="0,00"
-                      className={`w-full border-none rounded-2xl py-4 pl-12 pr-14 text-xl font-black font-mono tracking-tight focus:ring-4 focus:ring-indigo-500/10 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-moz-appearance]:textfield ${isDarkMode ? 'bg-slate-800 text-white placeholder:text-slate-700' : 'bg-slate-50 text-slate-900 placeholder:text-slate-200'}`}
+                      className={`w-full border rounded-2xl py-4 pl-12 pr-14 text-xl font-black font-mono tracking-tight focus:ring-4 focus:ring-indigo-500/10 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [&::-moz-appearance]:textfield ${isDarkMode ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700/60 text-white placeholder:text-slate-700' : 'bg-gradient-to-br from-white to-slate-100 border-slate-100 text-slate-900 placeholder:text-slate-300'}`}
                       value={amount}
                       onChange={(e) => setAmount(e.target.value)}
                     />
@@ -243,7 +249,7 @@ export default function SalePaymentModal({
                       <Wallet className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                       <select
                         title="Conta de Destino"
-                        className={`w-full border-none rounded-2xl py-3.5 pl-12 pr-4 text-xs font-black uppercase tracking-widest focus:ring-4 focus:ring-indigo-500/10 appearance-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
+                        className={`w-full border rounded-2xl py-3.5 pl-12 pr-4 text-xs font-black uppercase tracking-widest focus:ring-4 focus:ring-indigo-500/10 appearance-none ${isDarkMode ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700/60 text-white' : 'bg-gradient-to-br from-white to-slate-100 border-slate-100 text-slate-900'}`}
                         value={accountId}
                         onChange={(e) => setAccountId(e.target.value)}
                       >
@@ -260,7 +266,7 @@ export default function SalePaymentModal({
                       <CreditCard className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                       <select
                         title="Método de Pagamento"
-                        className={`w-full border-none rounded-2xl py-3.5 pl-12 pr-4 text-xs font-black uppercase tracking-widest focus:ring-4 focus:ring-indigo-500/10 appearance-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
+                        className={`w-full border rounded-2xl py-3.5 pl-12 pr-4 text-xs font-black uppercase tracking-widest focus:ring-4 focus:ring-indigo-500/10 appearance-none ${isDarkMode ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700/60 text-white' : 'bg-gradient-to-br from-white to-slate-100 border-slate-100 text-slate-900'}`}
                         value={paymentMethodId}
                         onChange={(e) => setPaymentMethodId(e.target.value)}
                       >
@@ -277,7 +283,7 @@ export default function SalePaymentModal({
                     <input 
                       type="text"
                       placeholder="Ex: Recebimento em dinheiro"
-                      className={`w-full border-none rounded-2xl py-3.5 px-4 text-[11px] font-black uppercase tracking-widest focus:ring-4 focus:ring-indigo-500/10 placeholder:text-[12px] placeholder:font-medium placeholder:normal-case placeholder:tracking-normal ${isDarkMode ? 'bg-slate-800 text-white placeholder:text-slate-500' : 'bg-slate-50 text-slate-900 placeholder:text-slate-400'}`}
+                      className={`w-full border rounded-2xl py-3.5 px-4 text-[11px] font-black uppercase tracking-widest focus:ring-4 focus:ring-indigo-500/10 placeholder:text-[12px] placeholder:font-medium placeholder:normal-case placeholder:tracking-normal ${isDarkMode ? 'bg-gradient-to-br from-slate-800 to-slate-900 border-slate-700/60 text-white placeholder:text-slate-500' : 'bg-gradient-to-br from-white to-slate-100 border-slate-100 text-slate-900 placeholder:text-slate-400'}`}
                       value={note}
                       onChange={(e) => setNote(e.target.value)}
                     />
@@ -295,14 +301,16 @@ export default function SalePaymentModal({
           ) : (
             /* History Mode */
             <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
-              <div className={`p-5 rounded-3xl flex items-center justify-between ${isDarkMode ? 'bg-emerald-900/20' : 'bg-emerald-50'}`}>
+              <div className={`p-5 rounded-3xl border shadow-lg flex items-center justify-between ${isDarkMode ? 'bg-gradient-to-br from-emerald-900/50 to-emerald-950/40 border-emerald-800/50 shadow-black/30' : 'bg-gradient-to-br from-emerald-50 to-emerald-100 border-emerald-200/70 shadow-emerald-200/60'}`}>
                 <div>
                   <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest mb-1">Status da Venda</p>
                   <p className={`text-2xl font-black tracking-tighter ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>
                     {remaining <= 0 ? 'QUITADO' : `FALTAM R$ ${remaining.toLocaleString('pt-BR')}`}
                   </p>
                 </div>
-                <History size={32} className="text-emerald-500/30" />
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-emerald-500/15' : 'bg-emerald-500/10'}`}>
+                  <History size={26} className="text-emerald-500" strokeWidth={2.5} />
+                </div>
               </div>
 
               <div className={`rounded-3xl p-5 border ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>

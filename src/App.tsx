@@ -18,6 +18,7 @@ import {
   BarChart3,
   Database,
   Boxes,
+  Eye,
   Factory,
   GanttChartSquare,
   Hammer,
@@ -116,6 +117,7 @@ const PrintCenterView = lazy(() => import("./views/PrintCenterView"));
 const BackupView = lazy(() => import("./views/BackupView"));
 const AccountsView = lazy(() => import("./views/AccountsView"));
 const StockView = lazy(() => import("./views/StockView"));
+const StockGlanceView = lazy(() => import("./views/StockGlanceView"));
 const PersonDetailView = lazy(() => import("./views/PersonDetailView"));
 const DashboardConfigView = lazy(() => import("./views/DashboardConfigView"));
 const ProductionConfigView = lazy(() => import("./views/ProductionConfigView"));
@@ -168,6 +170,7 @@ const MODAL_VIEWS = [
   ViewType.REPORTS,
   ViewType.PRODUCT_SHEET,
   ViewType.STOCK,
+  ViewType.STOCK_GLANCE,
   ViewType.SALE_FORM,
   ViewType.PURCHASE_FORM,
   ViewType.PRODUCT_DETAIL,
@@ -186,6 +189,7 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
     ViewType.ACCOUNTS,
     ViewType.REPORTS,
     ViewType.STOCK,
+    ViewType.STOCK_GLANCE,
     ViewType.PRINT_CENTER,
   ],
   production: [
@@ -1364,6 +1368,16 @@ export default function App() {
     const sale = sales.find(s => s.id === saleId);
     if (!sale) return;
     try {
+      const allAlreadyFulfilled = sale.items.every(it => it.fulfilled === true);
+      if (allAlreadyFulfilled) {
+        await firebaseService.updateDocument('sales', saleId, {
+          deliveryStatus: 'DELIVERED',
+          deliveredAt: Date.now(),
+        });
+        toast.show('Venda expedida — pedido entregue.');
+        return;
+      }
+
       const productUpdates = new Map<string, any>();
       const getProd = (id: string) => {
         if (productUpdates.has(id)) return productUpdates.get(id);
@@ -1635,14 +1649,16 @@ export default function App() {
         await firebaseService.saveDocument('products', prod);
       }
 
+      // Separar caixas só deixa o pedido PRONTO (reservado/abatido do estoque) — a
+      // entrega em si é um passo manual e separado ("Liberar Pedido"), por isso não
+      // marca deliveryStatus aqui mesmo quando todos os itens já foram separados.
       const allFulfilled = newItems.every(it => it.fulfilled === true);
       await firebaseService.updateDocument('sales', saleId, {
         items: newItems,
-        ...(allFulfilled ? { deliveryStatus: 'DELIVERED', deliveredAt: Date.now() } : {}),
       });
 
       toast.show(allFulfilled
-        ? 'Todos os itens separados — estoque baixado e pedido entregue.'
+        ? 'Todos os itens separados — pedido pronto para liberação.'
         : 'Separação registrada com sucesso.');
     } catch (e: any) {
       console.error(e);
@@ -4070,6 +4086,7 @@ export default function App() {
             onSepararCaixas={handleSepararCaixas}
             onTransferToStock={handleTransferSaleToStock}
             onNavigateStock={() => navigateTo(ViewType.STOCK)}
+            onNavigateStockGlance={() => navigateTo(ViewType.STOCK_GLANCE)}
             productionConfigs={productionConfigs}
           />
         );
@@ -4268,6 +4285,14 @@ export default function App() {
             sales={sales}
             productionOrders={productionOrders}
             onFixPkgAllocations={handleFixPkgAllocations}
+          />
+        );
+      case ViewType.STOCK_GLANCE:
+        return (
+          <StockGlanceView
+            products={products}
+            isDarkMode={isDarkMode}
+            onBack={goBack}
           />
         );
       case ViewType.SALE_FORM:
@@ -4988,6 +5013,7 @@ export default function App() {
         ViewType.SETTINGS,
         ViewType.PRODUCTS,
         ViewType.STOCK,
+        ViewType.STOCK_GLANCE,
         ViewType.PEOPLE,
         ViewType.CATEGORIES,
         ViewType.GRIDS,
@@ -5010,6 +5036,8 @@ export default function App() {
         return "Produção de Produtos";
       case ViewType.STOCK:
         return "Expedição e Estoque";
+      case ViewType.STOCK_GLANCE:
+        return "Disponível em Estoque";
       case ViewType.PEOPLE:
         return "Cadastros de Pessoas";
       case ViewType.CATEGORIES:
@@ -5098,6 +5126,7 @@ export default function App() {
       case ViewType.PRODUCTS:
       case ViewType.PRODUCT_FORM: return <Package size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.STOCK: return <Boxes size={24} className="text-slate-500 dark:text-slate-400" />;
+      case ViewType.STOCK_GLANCE: return <Eye size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.PEOPLE:
       case ViewType.PERSON_DETAIL: return <Users size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.CATEGORIES: return <Tags size={24} className="text-slate-500 dark:text-slate-400" />;

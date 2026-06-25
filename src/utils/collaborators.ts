@@ -11,7 +11,7 @@ export const SECTORS: { id: SectorId; label: string; icon: string; tasks: string
   {
     id: 'vendas', label: 'Vendas', icon: 'ShoppingBag',
     tasks: ['Vender', 'Emitir Orçamentos', 'Imprimir Etiquetas'],
-    views: [ViewType.SALES, ViewType.SALE_FORM, ViewType.PRINT_CENTER],
+    views: [ViewType.SALES, ViewType.SALE_FORM, ViewType.PRINT_CENTER, ViewType.STOCK_GLANCE],
   },
   {
     id: 'compras', label: 'Compras', icon: 'ShoppingCart',
@@ -36,7 +36,7 @@ export const SECTORS: { id: SectorId; label: string; icon: string; tasks: string
   {
     id: 'estoque', label: 'Estoque e Expedição', icon: 'PackageOpen',
     tasks: ['Estoque de Produtos Prontos', 'Expedição'],
-    views: [ViewType.STOCK],
+    views: [ViewType.STOCK, ViewType.STOCK_GLANCE],
   },
   {
     id: 'financeiro', label: 'Financeiro', icon: 'Wallet',

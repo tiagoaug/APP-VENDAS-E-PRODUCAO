@@ -16,6 +16,7 @@ import PackagingBuilderModal from '../components/PackagingBuilderModal';
 import GradeBuilderModal from '../components/GradeBuilderModal';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
+import DatePicker from '../components/DatePicker';
 import { seedProductionOrderSequence } from '../utils/sequenceSeeds';
 import { saleProductionHasProgressed } from '../utils/productionRoute';
 import { isHybridProduct } from '../utils/stockPools';
@@ -1374,15 +1375,11 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                <div>
                   <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Vencimento</label>
                   <div className="relative">
-                    <input
-                      type="date"
-                      className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-4 text-[11px] font-black uppercase appearance-none text-slate-700 dark:text-slate-200 cursor-pointer"
+                    <DatePicker
                       value={dueDate}
-                      aria-label="Data de vencimento"
-                      title="Data de Vencimento"
-                      onChange={(e) => setDueDate(e.target.value)}
+                      onChange={setDueDate}
+                      className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-4 text-[11px] font-black uppercase appearance-none text-slate-700 dark:text-slate-200 cursor-pointer"
                     />
-                    <Calendar size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
                   </div>
                </div>
              )}
@@ -1491,9 +1488,12 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             </div>
             <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
               <Calendar size={13} className="text-indigo-400 shrink-0" />
-              <input type="date" value={deliveryDate} onChange={e => setDeliveryDate(e.target.value)}
-                title="Data de entrega" aria-label="Data de entrega"
-                className={`flex-1 bg-transparent font-black text-xs outline-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`} />
+              <DatePicker
+                raw
+                value={deliveryDate}
+                onChange={setDeliveryDate}
+                className={`flex-1 bg-transparent font-black text-xs outline-none text-left cursor-pointer ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
+              />
             </div>
           </div>
           )}

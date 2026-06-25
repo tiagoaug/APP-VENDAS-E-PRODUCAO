@@ -27,6 +27,7 @@ import {
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { firebaseService } from '../services/firebaseService';
+import DatePicker from '../components/DatePicker';
 
 interface GeneralReceiptsViewProps {
   purchases: Purchase[];
@@ -582,8 +583,9 @@ export default function GeneralReceiptsView({
                     )}
                   </div>
                   <div className="relative">
-                    <input type="date" title="Filtrar por data" aria-label="Filtrar por data"
-                      value={filterDate} onChange={e => setFilterDate(e.target.value)}
+                    <DatePicker
+                      value={filterDate}
+                      onChange={setFilterDate}
                       className={`w-[140px] px-2.5 py-2 rounded-lg text-[11px] font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-400/30 transition-all ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-200 text-slate-700'}`}
                     />
                   </div>

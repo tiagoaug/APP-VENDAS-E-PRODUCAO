@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Person, Transaction, TransactionType, Sale, Purchase } from '../types';
 import { Search, X, User, DollarSign, TrendingUp, TrendingDown, Clock, CheckCircle2, Calendar, ChevronDown, ChevronUp, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import DatePicker from './DatePicker';
 
 interface FinancialQueryModalProps {
   isOpen: boolean;
@@ -270,25 +271,23 @@ export default function FinancialQueryModal({
                     <div className="flex items-center gap-2">
                       <div className={`flex-1 flex items-center gap-2 px-3 h-11 rounded-xl border relative ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
                         <Calendar size={14} className="text-slate-400 shrink-0" />
-                        <input 
-                          type="date" 
+                        <DatePicker 
+                          raw
                           value={startDate}
-                          onChange={(e) => setStartDate(e.target.value)}
-                          title="Data Inicial"
+                          onChange={setStartDate}
                           placeholder="Data Inicial"
-                          className="bg-transparent text-[9px] font-black uppercase tracking-widest focus:outline-none w-full text-current"
+                          className="bg-transparent text-[9px] font-black uppercase tracking-widest focus:outline-none w-full text-current cursor-pointer text-left"
                         />
                       </div>
                       <div className="w-2 h-0.5 bg-slate-300 dark:bg-slate-700 shrink-0"></div>
                       <div className={`flex-1 flex items-center gap-2 px-3 h-11 rounded-xl border relative ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
                         <Calendar size={14} className="text-slate-400 shrink-0" />
-                        <input 
-                          type="date" 
+                        <DatePicker 
+                          raw
                           value={endDate}
-                          onChange={(e) => setEndDate(e.target.value)}
-                          title="Data Final"
+                          onChange={setEndDate}
                           placeholder="Data Final"
-                          className="bg-transparent text-[9px] font-black uppercase tracking-widest focus:outline-none w-full text-current"
+                          className="bg-transparent text-[9px] font-black uppercase tracking-widest focus:outline-none w-full text-current cursor-pointer text-left"
                         />
                       </div>
                     </div>

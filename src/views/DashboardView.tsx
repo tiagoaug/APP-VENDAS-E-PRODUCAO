@@ -15,6 +15,7 @@ import { isDashboardCardAllowed, collaboratorCanUseAI } from '../utils/collabora
 import type { Collaborator } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import { notificationService } from '../services/notificationService';
+import DatePicker from '../components/DatePicker';
 
 type DashboardScanItem = ScanHistoryEntry;
 
@@ -1332,24 +1333,18 @@ export default function DashboardView({
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1.5">
                           <p className="text-[8px] font-black text-slate-400 tracking-widest px-1">Período Início</p>
-                          <input 
-                            title="Data Inicial"
-                            aria-label="Data de início do período"
-                            type="date" 
-                            className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold focus:ring-2 focus:ring-rose-500/20 transition-all" 
+                          <DatePicker 
                             value={debtStartDate} 
-                            onChange={(e) => setDebtStartDate(e.target.value)} 
+                            onChange={setDebtStartDate}
+                            className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold focus:ring-2 focus:ring-rose-500/20 transition-all" 
                           />
                         </div>
                         <div className="space-y-1.5">
                           <p className="text-[8px] font-black text-slate-400 tracking-widest px-1">Período Fim</p>
-                          <input 
-                            title="Data Final"
-                            aria-label="Data de fim do período"
-                            type="date" 
-                            className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold focus:ring-2 focus:ring-rose-500/20 transition-all" 
+                          <DatePicker 
                             value={debtEndDate} 
-                            onChange={(e) => setDebtEndDate(e.target.value)} 
+                            onChange={setDebtEndDate}
+                            className="w-full bg-slate-50 dark:bg-slate-950 border-none rounded-xl px-3 py-2.5 text-[10px] font-bold focus:ring-2 focus:ring-rose-500/20 transition-all" 
                           />
                         </div>
                       </div>

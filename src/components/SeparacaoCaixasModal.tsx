@@ -120,9 +120,11 @@ export default function SeparacaoCaixasModal({ sale, products, stockLots, isDark
         {/* Items */}
         <div className="overflow-y-auto flex-1 p-4 flex flex-col gap-3 custom-scrollbar">
           {pendingRows.length === 0 && doneRows.length > 0 && (
-            <div className="py-8 text-center">
+            <div className="py-8 text-center px-4">
               <CheckCircle2 size={32} className="text-emerald-500 mx-auto mb-2" />
-              <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Todos os itens já separados</p>
+              <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">
+                pedido totalmente separado, ja pode fazer a entrega/expedicao
+              </p>
             </div>
           )}
 

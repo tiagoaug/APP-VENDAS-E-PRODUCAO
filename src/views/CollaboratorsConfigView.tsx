@@ -27,6 +27,7 @@ import { SECTORS } from '../utils/collaborators';
 import { NAV_MONO_PALETTE } from '../utils/themes';
 import { generateId } from '../utils/id';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { toast } from '../utils/toast';
 
 const SECTOR_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   ShoppingBag, ShoppingCart, Package, Boxes, Factory, PackageOpen, Wallet, Users, Landmark, Database,
@@ -56,9 +57,17 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [showPin, setShowPin] = useState(false);
   const [revealedPinId, setRevealedPinId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const startNew = () => { setDraft(emptyDraft()); setShowPin(false); };
   const startEdit = (collab: Collaborator) => { setDraft({ ...collab }); setShowPin(false); };
+
+  const isExistingDraft = !!draft && collaborators.some(c => c.id === draft.id);
+  // Colaborador novo exige PIN de 6 dígitos. Editando um já existente, só exige que
+  // o PIN não esteja vazio — assim um registro antigo com PIN fora do padrão atual
+  // não trava pra sempre o salvamento de outras mudanças (ex.: setores liberados).
+  const pinValid = !!draft && (isExistingDraft ? draft.pin.trim().length > 0 : draft.pin.length === 6);
 
   const toggleSector = (sectorId: typeof SECTORS[number]['id']) => {
     if (!draft) return;
@@ -70,20 +79,43 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
     });
   };
 
-  const handleSave = () => {
-    if (!draft || !draft.name.trim() || draft.pin.length !== 6) return;
-    onSave(draft);
-    setDraft(null);
+  // onSave não era esperado aqui (await ausente) — o modal fechava (setDraft(null))
+  // antes da escrita no Firestore terminar, então qualquer erro de gravação (rede,
+  // etc.) ficava engolido em silêncio e a edição (ex.: setor marcado/desmarcado)
+  // parecia "não salvar" sem nenhum aviso. Agora só fecha o modal depois de confirmar
+  // que salvou, e mostra um toast nos dois casos.
+  const handleSave = async () => {
+    if (!draft || !draft.name.trim() || !pinValid || isSaving) return;
+    setIsSaving(true);
+    try {
+      await onSave(draft);
+      toast.show('Colaborador salvo com sucesso!');
+      setDraft(null);
+    } catch (e: any) {
+      console.error('Erro ao salvar colaborador:', e);
+      toast.show('Erro ao salvar colaborador: ' + (e?.message || e));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const confirmDelete = () => {
-    if (!deleteTarget) return;
-    onDelete(deleteTarget);
-    setDeleteTarget(null);
+  const confirmDelete = async () => {
+    if (!deleteTarget || isDeleting) return;
+    setIsDeleting(true);
+    try {
+      await onDelete(deleteTarget);
+      toast.show('Colaborador excluído.');
+      setDeleteTarget(null);
+    } catch (e: any) {
+      console.error('Erro ao excluir colaborador:', e);
+      toast.show('Erro ao excluir colaborador: ' + (e?.message || e));
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
-    <div className="flex flex-col gap-8 pb-10 max-w-4xl mx-auto">
+    <div className="flex flex-col gap-8 pb-32 max-w-4xl mx-auto">
       <header className="flex flex-col gap-2">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
@@ -201,7 +233,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
         <div className={`flex flex-col gap-6 p-6 rounded-[2.5rem] border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-xl'}`}>
           <div className="flex items-center justify-between">
             <h3 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-              {collaborators.some(c => c.id === draft.id) ? 'Editar Colaborador' : 'Novo Colaborador'}
+              {isExistingDraft ? 'Editar Colaborador' : 'Novo Colaborador'}
             </h3>
             <button type="button" onClick={() => setDraft(null)} aria-label="Cancelar" title="Cancelar" className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-400 hover:text-slate-600">
               <X size={18} />
@@ -332,10 +364,10 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
           <button
             type="button"
             onClick={handleSave}
-            disabled={!draft.name.trim() || draft.pin.length !== 6}
+            disabled={!draft.name.trim() || !pinValid || isSaving}
             className="w-full py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
           >
-            Salvar Colaborador
+            {isSaving ? 'Salvando...' : 'Salvar Colaborador'}
           </button>
         </div>
       )}

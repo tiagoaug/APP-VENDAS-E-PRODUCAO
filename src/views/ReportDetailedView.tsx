@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Download, ArrowLeft, Calendar, Filter, MessageCircle, Copy, Share2, Search } from 'lucide-react';
 import { Sale, Transaction, Product, Person, SaleStatus, TransactionType, Category, MonthlySnapshot } from '../types';
 import { format, startOfMonth, endOfMonth, parseISO, isWithinInterval } from 'date-fns';
@@ -8,6 +8,7 @@ import ComboBox from '../components/ComboBox';
 import ConsolidatedMessageModal from '../components/ConsolidatedMessageModal';
 import { sharePDF } from '../utils/pdfExport';
 import { toast } from '../utils/toast';
+import DatePicker from '../components/DatePicker';
 
 
 interface ReportDetailedViewProps {
@@ -447,27 +448,21 @@ export default function ReportDetailedView({
             </p>
             <div className="flex gap-2 items-center flex-wrap">
                 <div className="relative flex-1 min-w-[140px]">
-                    <input 
-                        type="date" 
+                    <DatePicker 
                         value={startDate}
-                        title="Data Inicial"
+                        onChange={setStartDate}
                         placeholder="Data Inicial"
-                        onChange={(e) => setStartDate(e.target.value)}
                         className={`w-full p-3 rounded-xl border text-xs font-bold ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-700'}`}
                     />
-                    <Calendar className={`absolute right-3 top-3.5 pointer-events-none ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} size={14} />
                 </div>
                 <span className="text-slate-400 text-xs font-bold">até</span>
                 <div className="relative flex-1 min-w-[140px]">
-                    <input 
-                        type="date" 
+                    <DatePicker 
                         value={endDate}
-                        title="Data Final"
+                        onChange={setEndDate}
                         placeholder="Data Final"
-                        onChange={(e) => setEndDate(e.target.value)}
                         className={`w-full p-3 rounded-xl border text-xs font-bold ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-700'}`}
                     />
-                    <Calendar className={`absolute right-3 top-3.5 pointer-events-none ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} size={14} />
                 </div>
                 {reportId === 'ventas-periodo' && (
                     <input 

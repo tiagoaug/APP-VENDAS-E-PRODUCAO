@@ -1,4 +1,4 @@
-﻿import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, ComponentConsumption, ComponentCategory, FlowTag, Sector, AppModulesConfig } from '../types';
 import {
@@ -14,6 +14,7 @@ import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
+import DatePicker from '../components/DatePicker';
 
 interface ProductFormViewProps {
   productId: string | null;
@@ -1723,13 +1724,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     <div>
                       <label className="text-[10px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest">Data da Aplicação</label>
-                      <input
-                        type="date"
-                        title="Data de aplicação do ajuste de preço"
-                        aria-label="Data de aplicação"
-                        className={`w-full border-2 rounded-2xl px-5 py-4 text-xs font-black transition-all outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-500'}`}
+                      <DatePicker
                         value={adjustmentDate}
-                        onChange={(e) => setAdjustmentDate(e.target.value)}
+                        onChange={setAdjustmentDate}
+                        className={`w-full border-2 rounded-2xl px-5 py-4 text-xs font-black transition-all outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-500'}`}
                       />
                     </div>
                     <div>

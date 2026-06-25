@@ -80,7 +80,7 @@ export default function CalculatorPopover({ onApply, onClose }: CalculatorPopove
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[2.5rem] shadow-2xl w-full max-w-[280px] overflow-hidden flex flex-col animate-in zoom-in duration-200">
         <div className="p-6 bg-slate-50 dark:bg-slate-800 flex flex-col items-end shrink-0">
           <div className="h-4 text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em]">{equation || 'CALCULAR'}</div>

@@ -10,6 +10,7 @@ import {
 import { generateId } from '../utils/id';
 import { firebaseService } from '../services/firebaseService';
 import { seedProductionOrderSequence, seedProductionLotSequence } from '../utils/sequenceSeeds';
+import DatePicker from './DatePicker';
 
 interface StockDeduction {
   productId: string;
@@ -392,12 +393,11 @@ export default function ProductionOrderModal({
                   <label htmlFor="delivery-date-input" className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-1">
                     Data de Entrega Combinada
                   </label>
-                  <input
-                    id="delivery-date-input"
-                    type="date"
+                  <DatePicker
+                    raw
                     value={deliveryDate}
-                    onChange={e => setDeliveryDate(e.target.value)}
-                    className={`w-full bg-transparent font-black text-sm outline-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
+                    onChange={setDeliveryDate}
+                    className={`w-full bg-transparent font-black text-sm outline-none text-left cursor-pointer ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
                   />
                 </div>
               </div>

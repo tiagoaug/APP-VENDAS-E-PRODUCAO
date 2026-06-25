@@ -5,6 +5,7 @@ import { format, startOfMonth, endOfMonth, subMonths, startOfWeek, endOfWeek } f
 import { X, Receipt, Send } from "lucide-react";
 import { Person } from "../types";
 import ComboBox from "./ComboBox";
+import DatePicker from "./DatePicker";
 
 interface ProviderServiceReportFormModalProps {
   isOpen: boolean;
@@ -187,9 +188,9 @@ export default function ProviderServiceReportFormModal({ isOpen, onClose, isDark
               <div className="flex flex-col gap-1.5">
                 <span className="text-[9px] font-bold uppercase tracking-wide text-slate-900 dark:text-white">Período (opcional)</span>
                 <div className="flex items-center gap-2">
-                  <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className={`flex-1 ${inputClass}`} />
+                  <DatePicker value={fromDate} onChange={setFromDate} className={`flex-1 ${inputClass}`} />
                   <span className="text-[10px] font-bold text-slate-400 uppercase">até</span>
-                  <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className={`flex-1 ${inputClass}`} />
+                  <DatePicker value={toDate} onChange={setToDate} className={`flex-1 ${inputClass}`} />
                 </div>
                 <div className="flex flex-wrap gap-2 mt-1">
                   <button type="button" onClick={handleThisWeek} className={periodButtonClass}>Esta semana</button>

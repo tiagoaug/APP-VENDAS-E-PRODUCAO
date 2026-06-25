@@ -11,8 +11,9 @@ import ExportNoteModal from '../components/ExportNoteModal';
 import SalePaymentModal from '../components/SalePaymentModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { toast } from '../utils/toast';
-import { saleProductionHasProgressed } from '../utils/productionRoute';
+import { saleProductionHasProgressed, getLotPendingSectorGroups } from '../utils/productionRoute';
 import { firebaseService } from '../services/firebaseService';
+import { getWholesaleBoxes, getRetailPairs } from '../utils/stockPools';
 
 // Preferências de "Visualização" (Cards Compactos/Expandidos, Mostrar Produtos,
 // Mostrar Grade e Quantidades, Mostrar Padrão de Embalagem) persistem entre
@@ -85,6 +86,7 @@ interface SalesViewProps {
   onSepararCaixas: (saleId: string, separations: { itemIdx: number; quantity: number }[]) => Promise<void>;
   onTransferToStock: (saleId: string) => Promise<void>;
   onNavigateStock: () => void;
+  onNavigateStockGlance: () => void;
   productionConfigs: ProductionConfigItem[];
   appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite' | 'hcWhite' | 'hcBlack' | 'hcIndustrial';
 }
@@ -121,6 +123,7 @@ export default function SalesView({
   onSepararCaixas,
   onTransferToStock,
   onNavigateStock,
+  onNavigateStockGlance,
   productionConfigs,
   appTheme = 'light',
 }: SalesViewProps) {
@@ -156,6 +159,7 @@ export default function SalesView({
   const [showGradeBreakdown, setShowGradeBreakdown] = usePersistedToggle('salesView_showGradeBreakdown', false);
   const [showSeparationInfo, setShowSeparationInfo] = usePersistedToggle('salesView_showSeparationInfo', true);
   const [showSummaryBar, setShowSummaryBar] = usePersistedToggle('salesView_showSummaryBar', true);
+  const [showStockGlanceCard, setShowStockGlanceCard] = usePersistedToggle('salesView_showStockGlanceCard', true);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [paymentModalSale, setPaymentModalSale] = useState<Sale | null>(null);
   const [paymentModalMode, setPaymentModalMode] = useState<'PAYMENT' | 'HISTORY'>('PAYMENT');
@@ -173,7 +177,8 @@ export default function SalesView({
     const map = new Map<string, {
       key: string; productId: string; variationId: string; stockKey: string;
       productName: string; reference: string; colorName: string;
-      isWholesale: boolean; demand: number; stock: number; production: number;
+      isWholesale: boolean; demand: number; stock: number; productionPairs: number;
+      productionBySector: Record<string, number>;
       sources: { saleId: string; orderNumber: string; status: SaleStatus; demand: number; }[];
     }>();
 
@@ -223,41 +228,39 @@ export default function SalesView({
             isWholesale,
             demand: pendingDemand,
             stock: variation?.stock?.[stockKey] || 0,
-            production: 0,
+            productionPairs: 0,
+            productionBySector: {},
             sources: [sourceInfo],
           });
         }
       });
     });
 
-    // 2. Somar Produção (desconsiderando lotes que pertencem às OPs excluídas acima)
+    // 2. Somar pares em produção por setor — só informativo (atacado), não entra mais no
+    // saldo. Usa os sourceItems reais do lote (cada um com seu productId/variationId/qty
+    // próprios) em vez de lot.quantity, que é o total do mapa somando todos os produtos
+    // dele — não só esta referência/cor.
     lots.forEach((lot) => {
       if (lot.status === 'COMPLETED' || lot.status === 'CANCELLED' || lot.finishedAt) return;
-      
+
       // Se o lote pertence a uma OP de uma venda que não debita estoque (já tem OP própria), não somar como produção livre
       const lotOpId = lot.productionOrderId;
       if (lotOpId && excludedOPs.has(lotOpId)) return;
 
-      const product = products.find(p => p.id === lot.productId);
-      if (!product) return;
-      
-      const mapKeyWholesale = `${lot.productId}::${lot.variationId}::WHOLESALE`;
-      const isWholesaleInDemand = map.has(mapKeyWholesale);
-      
-      if (isWholesaleInDemand) {
-         const qty = lot.gradesQty !== undefined ? lot.gradesQty : (lot.quantity > 50 ? Math.round(lot.quantity / 12) : lot.quantity);
-         const existing = map.get(mapKeyWholesale)!;
-         existing.production += qty;
-      } else if (lot.pairs) {
-         Object.entries(lot.pairs).forEach(([size, qty]) => {
-           if (qty <= 0) return;
-           const mapKeySize = `${lot.productId}::${lot.variationId}::${size}`;
-           const existing = map.get(mapKeySize);
-           if (existing) {
-             existing.production += qty;
-           }
-         });
-      }
+      const sectorGroups = getLotPendingSectorGroups(lot);
+      sectorGroups.forEach((items, sectorId) => {
+        items.forEach((si: any) => {
+          const pid = si.productId || lot.productId;
+          const vid = si.variationId || lot.variationId;
+          const qty = si.qty || 0;
+          if (qty <= 0) return;
+          const mapKeyWholesale = `${pid}::${vid}::WHOLESALE`;
+          const existing = map.get(mapKeyWholesale);
+          if (!existing) return;
+          existing.productionPairs += qty;
+          existing.productionBySector[sectorId] = (existing.productionBySector[sectorId] || 0) + qty;
+        });
+      });
     });
 
     return Array.from(map.values()).sort((a, b) =>
@@ -266,6 +269,20 @@ export default function SalesView({
       a.stockKey.localeCompare(b.stockKey)
     );
   }, [sales, products, lots]);
+
+  // Resumo geral de estoque real (Atacado/Varejo) — alimenta o card-resumo e o botão
+  // "Disponível" da barra (ver StockGlanceView, que mostra o detalhe por referência).
+  const stockGlanceSummary = useMemo(() => {
+    let wholesaleReady = 0;
+    let retailReady = 0;
+    products.forEach(product => {
+      product.variations.forEach(variation => {
+        wholesaleReady += getWholesaleBoxes(product, variation);
+        retailReady += getRetailPairs(product, variation);
+      });
+    });
+    return { wholesaleReady, retailReady };
+  }, [products]);
 
   const [productionOrderSale, setProductionOrderSale] = useState<Sale | null>(null);
   const [itemsPopupSale, setItemsPopupSale] = useState<Sale | null>(null);
@@ -604,40 +621,55 @@ export default function SalesView({
         );
       })()}
       <div className="flex flex-col gap-4">
-        <div className={`flex w-full rounded-2xl overflow-hidden border divide-x ${isDarkMode ? 'bg-slate-900 border-slate-800 divide-slate-800' : 'bg-white border-slate-100 shadow-sm divide-slate-100'}`}>
-          {showCrossCheckCard !== undefined && (
+        {/* Card único dividido em 4 partes (2 por linha) — antes era uma barra de 4
+            botões numa linha só, que espremia "Configurar" até cortar o texto. */}
+        <div className={`p-2 rounded-[2rem] border shadow-sm ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-100/80 border-slate-100'}`}>
+          <div className="grid grid-cols-2 gap-2">
+            {/* Linha de cima: Cruzamento + Configurar */}
+            {showCrossCheckCard !== undefined && (
+              <button
+                onClick={() => setShowCrossCheckCard(v => !v)}
+                className={`py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 shadow-sm ${showCrossCheckCard ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-emerald-400' : 'bg-white text-slate-600 hover:text-emerald-600'}`}
+                title="Cruzamento de Demanda x Estoque e Produção"
+              >
+                <PackagePlus size={18} strokeWidth={2.5} className={isIndustrial ? 'text-emerald-600' : (showCrossCheckCard ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-500')} />
+                <span className="text-[10px] font-black tracking-[0.15em]">Cruzamento</span>
+              </button>
+            )}
             <button
-              onClick={() => setShowCrossCheckCard(v => !v)}
-              className={`flex-1 h-12 px-3 flex items-center justify-center gap-2 transition-all duration-300 ${isDarkMode ? 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800/50' : 'text-slate-400 hover:text-emerald-600 hover:bg-slate-50'} ${showCrossCheckCard ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : ''}`}
-              title="Cruzamento de Demanda x Estoque e Produção"
+              onClick={() => setShowFilters(true)}
+              className={`py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 relative shadow-sm ${showFilters ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-indigo-400' : 'bg-white text-slate-600 hover:text-indigo-500'}`}
+              title="Configurações e Filtros"
             >
-              <PackagePlus size={18} strokeWidth={2.5} className={isIndustrial ? 'text-emerald-600' : (showCrossCheckCard ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-500')} />
-              <span className="text-[10px] font-black tracking-[0.15em]">Cruzamento</span>
+              <div className="relative">
+                <Filter size={18} strokeWidth={2.5} className={showFilters ? '' : 'text-indigo-500'} />
+                {activeFiltersCount > 0 && (
+                  <span className="absolute -top-3 -right-3 w-5 h-5 bg-orange-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 animate-in zoom-in">
+                    {activeFiltersCount}
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] font-black tracking-[0.15em]">Configurar</span>
             </button>
-          )}
-          <button
-            onClick={onNavigateStock}
-            className={`flex-1 h-12 px-3 flex items-center justify-center gap-2 transition-all duration-300 ${isDarkMode ? 'text-slate-400 hover:text-amber-400 hover:bg-slate-800/50' : 'text-slate-400 hover:text-amber-600 hover:bg-slate-50'}`}
-            title="Estoque de Produtos"
-          >
-            <Boxes size={18} strokeWidth={2.5} className={isIndustrial ? 'text-amber-600' : 'text-amber-500'} />
-            <span className="text-[10px] font-black tracking-[0.15em]">Estoque</span>
-          </button>
-          <button
-            onClick={() => setShowFilters(true)}
-            className={`flex-1 h-12 px-3 flex items-center justify-center gap-2 transition-all duration-300 relative ${showFilters ? 'bg-indigo-600 text-white' : isDarkMode ? 'text-slate-400 hover:text-indigo-400 hover:bg-slate-800/50' : 'text-slate-400 hover:text-indigo-500 hover:bg-slate-50'}`}
-            title="Configurações e Filtros"
-          >
-            <div className="relative">
-              <Filter size={18} strokeWidth={2.5} className={showFilters ? '' : 'text-indigo-500'} />
-              {activeFiltersCount > 0 && (
-                <span className="absolute -top-3 -right-3 w-5 h-5 bg-orange-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900 animate-in zoom-in">
-                  {activeFiltersCount}
-                </span>
-              )}
-            </div>
-            <span className="text-[10px] font-black tracking-[0.15em]">Configurar</span>
-          </button>
+
+            {/* Linha de baixo: Estoque + Disponível */}
+            <button
+              onClick={onNavigateStock}
+              className={`py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 shadow-sm ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-amber-400' : 'bg-white text-slate-600 hover:text-amber-600'}`}
+              title="Estoque de Produtos"
+            >
+              <Boxes size={18} strokeWidth={2.5} className={isIndustrial ? 'text-amber-600' : 'text-amber-500'} />
+              <span className="text-[10px] font-black tracking-[0.15em]">Configurações Est.</span>
+            </button>
+            <button
+              onClick={onNavigateStockGlance}
+              className={`py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 shadow-sm ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-sky-400' : 'bg-white text-slate-600 hover:text-sky-600'}`}
+              title="Disponível em Estoque (somente leitura)"
+            >
+              <Eye size={18} strokeWidth={2.5} className={isIndustrial ? 'text-sky-600' : 'text-sky-500'} />
+              <span className="text-[10px] font-black tracking-[0.15em]">Disponível</span>
+            </button>
+          </div>
         </div>
 
         {/* Card de Cruzamento de Demanda x Estoque/Produção */}
@@ -663,7 +695,7 @@ export default function SalesView({
                 <p className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400 py-6">Nenhuma demanda nas vendas visíveis.</p>
               )}
               {crossCheckData.map((d) => {
-                const balance = d.stock + d.production - d.demand;
+                const balance = d.stock - d.demand;
                 const isDeficit = balance < 0;
                 const unit = d.isWholesale ? 'cx' : 'pr';
                 
@@ -681,9 +713,10 @@ export default function SalesView({
                           )}
                         </p>
                       </div>
-                      <div className={`shrink-0 flex items-center justify-center min-w-[3rem] h-8 px-2 rounded-xl border ${isDeficit ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-900/20 dark:border-rose-800/50 dark:text-rose-400' : 'bg-emerald-50 border-emerald-100 text-emerald-600 dark:bg-emerald-900/20 dark:border-emerald-800/50 dark:text-emerald-400'}`}>
-                        <span className="text-[12px] font-black">{balance > 0 ? '+' : ''}{balance}</span>
-                        <span className="text-[9px] font-black uppercase tracking-widest ml-1 opacity-70">{unit}</span>
+                      <div className={`shrink-0 flex items-center justify-center h-8 px-2.5 rounded-xl border whitespace-nowrap ${isDeficit ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-900/20 dark:border-rose-800/50 dark:text-rose-400' : balance === 0 ? 'bg-slate-100 border-slate-200 text-slate-500 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400' : 'bg-emerald-50 border-emerald-100 text-emerald-600 dark:bg-emerald-900/20 dark:border-emerald-800/50 dark:text-emerald-400'}`}>
+                        <span className="text-[11px] font-black">
+                          {isDeficit ? `Faltou ${Math.abs(balance)} ${unit}` : balance === 0 ? 'Em dia' : `Sobrou ${balance} ${unit}`}
+                        </span>
                       </div>
                     </div>
                     
@@ -696,11 +729,6 @@ export default function SalesView({
                       <div className="flex-1 flex flex-col items-center justify-center py-1 rounded-lg bg-white dark:bg-slate-800">
                         <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Estoque</span>
                         <span className="text-[11px] font-black text-amber-600 dark:text-amber-500">{d.stock}</span>
-                      </div>
-                      <div className="text-slate-300 dark:text-slate-600 text-[10px] font-black">+</div>
-                      <div className="flex-1 flex flex-col items-center justify-center py-1 rounded-lg bg-white dark:bg-slate-800">
-                        <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Produção</span>
-                        <span className="text-[11px] font-black text-sky-600 dark:text-sky-500">{d.production}</span>
                       </div>
                     </div>
 
@@ -731,6 +759,22 @@ export default function SalesView({
                         </button>
                       ))}
                     </div>
+
+                    {d.isWholesale && d.productionPairs > 0 && (
+                      <div className="flex flex-col gap-0.5 px-2.5 py-1.5 rounded-lg bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400">
+                        <div className="flex items-center gap-1.5">
+                          <Factory size={12} strokeWidth={2.5} />
+                          <span className="text-[10px] font-bold">{d.productionPairs} pares deste produto em produção</span>
+                        </div>
+                        {Object.keys(d.productionBySector).length > 1 && (
+                          <span className="text-[9px] font-semibold opacity-80 pl-[18px]">
+                            {Object.entries(d.productionBySector)
+                              .map(([sectorId, qty]) => `${sectors.find(s => s.id === sectorId)?.name || sectorId}: ${qty}`)
+                              .join(' · ')}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -801,6 +845,39 @@ export default function SalesView({
             </div>
 
           </div>
+        )}
+
+        {/* Card-resumo: Disponível em Estoque (estoque real, Atacado/Varejo) — toque
+            navega pra StockGlanceView, a visão detalhada só-leitura. Visibilidade
+            controlada em Filtros e Configurações > Visualização. */}
+        {showStockGlanceCard && (
+          <button
+            type="button"
+            onClick={onNavigateStockGlance}
+            className={`w-full text-left p-4 rounded-[2rem] border shadow-sm transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800/60' : 'bg-white border-slate-100 hover:bg-slate-50'}`}
+            title="Disponível em Estoque"
+          >
+            <div className="flex items-center justify-between mb-3 px-1">
+              <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Disponível em Estoque</span>
+              <Eye size={14} className="text-slate-400" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className={`flex items-center gap-2 p-2.5 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                <PackageCheck size={16} className={isDarkMode ? 'text-slate-300 shrink-0' : 'text-slate-700 shrink-0'} />
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Atacado Pronto</span>
+                  <span className={`text-[15px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{stockGlanceSummary.wholesaleReady} cx</span>
+                </div>
+              </div>
+              <div className={`flex items-center gap-2 p-2.5 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                <PackageCheck size={16} className={isDarkMode ? 'text-slate-300 shrink-0' : 'text-slate-700 shrink-0'} />
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-slate-400">Varejo Pronto</span>
+                  <span className={`text-[15px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{stockGlanceSummary.retailReady} pr</span>
+                </div>
+              </div>
+            </div>
+          </button>
         )}
       </div>
 
@@ -940,10 +1017,15 @@ export default function SalesView({
                 <DollarSign size={14} strokeWidth={2.5} />
                 {showSummaryBar ? 'Barra de Valores Visível' : 'Barra de Valores Oculta'}
               </button>
+              <button onClick={() => setShowStockGlanceCard(v => !v)}
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showStockGlanceCard ? 'bg-gradient-to-b from-sky-500 to-sky-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(14,165,233,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
+                <Eye size={14} strokeWidth={2.5} />
+                {showStockGlanceCard ? 'Card Disponível em Estoque Visível' : 'Card Disponível em Estoque Oculto'}
+              </button>
             </div>
 
             <button
-              onClick={() => { setFilter('ALL'); setPaymentFilter('ALL'); setDeliveryFilter('ALL'); setSelectedStatuses([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]); setExpandedCards(false); setShowProducts(true); setShowGradeBreakdown(false); setShowSeparationInfo(true); setShowSummaryBar(true); }}
+              onClick={() => { setFilter('ALL'); setPaymentFilter('ALL'); setDeliveryFilter('ALL'); setSelectedStatuses([SaleStatus.SALE, SaleStatus.CONFIRMED, SaleStatus.QUOTE]); setExpandedCards(false); setShowProducts(true); setShowGradeBreakdown(false); setShowSeparationInfo(true); setShowSummaryBar(true); setShowStockGlanceCard(true); }}
               className="mt-1 w-full py-3 rounded-2xl text-[10px] font-black tracking-widest text-rose-500 border border-rose-100 dark:border-rose-900/30 hover:bg-rose-50 dark:hover:bg-rose-900/10 transition-all shadow-sm bg-white dark:bg-slate-900"
             >
               Limpar Filtros
@@ -1092,15 +1174,17 @@ export default function SalesView({
                 <div className="flex flex-col gap-3 z-10">
                   {/* Banner: separação de caixas */}
                   {sale.status === SaleStatus.SALE && sale.deliveryStatus !== 'DELIVERED' && (() => {
+                    const totalOrdered = sale.items.reduce((s, it) => s + it.quantity, 0);
+                    const totalSeparated = sale.items.reduce((s, it) => s + (it.boxesSeparated || 0), 0);
+                    const allSeparated = totalSeparated >= totalOrdered;
+
+                    // Se já estiver tudo separado, não mostra o banner interno (pois já mostramos no aviso geral externo)
+                    if (allSeparated) return null;
+
                     const stockStatus = getUnfulfilledStockStatus(sale);
                     const hasReservedLots = (reservedLotsBySale.get(sale.id) || []).length > 0;
                     const canSeparate = hasReservedLots || (stockStatus && stockStatus.ready > 0);
                     if (!canSeparate) return null;
-
-                    // Progresso de separação: soma boxesSeparated / soma quantity
-                    const totalOrdered = sale.items.reduce((s, it) => s + it.quantity, 0);
-                    const totalSeparated = sale.items.reduce((s, it) => s + (it.boxesSeparated || 0), 0);
-                    const allSeparated = totalSeparated >= totalOrdered;
 
                     const unit = sale.items.some(it => it.saleType === SaleType.WHOLESALE) ? 'cx' : 'pares';
 
@@ -1110,11 +1194,11 @@ export default function SalesView({
                           <div className="flex items-center gap-2 min-w-0">
                             <Boxes size={14} className="text-indigo-500 shrink-0" />
                             <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest truncate">
-                              {allSeparated ? 'Todos os itens separados' : 'Separação de caixas pendente'}
+                              Separação de caixas pendente
                             </span>
                           </div>
                           {totalSeparated > 0 && (
-                            <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest shrink-0 ${allSeparated ? 'bg-emerald-500 text-white' : 'bg-indigo-500 text-white'}`}>
+                            <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest shrink-0 bg-indigo-500 text-white`}>
                               {totalSeparated}/{totalOrdered} {unit}
                             </span>
                           )}
@@ -1200,6 +1284,31 @@ export default function SalesView({
               )}
 
               {showSeparationInfo && sale.status === SaleStatus.SALE && (() => {
+                const totalOrdered = sale.items.reduce((s, it) => s + it.quantity, 0);
+                const totalSeparated = sale.items.reduce((s, it) => s + (it.boxesSeparated || 0), 0);
+                const allSeparated = totalSeparated >= totalOrdered;
+
+                // Se o pedido estiver totalmente separado, exibe o aviso de sucesso (visível mesmo colapsado)
+                if (allSeparated && sale.deliveryStatus !== 'DELIVERED') {
+                  const unit = sale.items.some(it => it.saleType === SaleType.WHOLESALE) ? 'cx' : 'pares';
+                  return (
+                    <div className="mb-4 p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-100 dark:border-emerald-900/30 flex items-center justify-between gap-3 z-10">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <CheckCircle2 size={16} className="text-emerald-500 shrink-0" />
+                        <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 leading-snug">
+                          <span className="font-black uppercase tracking-widest text-[8px] block mb-1">Status de Separação</span>
+                          pedido totalmente separado, ja pode fazer a entrega/expedicao
+                        </p>
+                      </div>
+                      <span className="text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest bg-emerald-500 text-white shrink-0">
+                        {totalSeparated}/{totalOrdered} {unit}
+                      </span>
+                    </div>
+                  );
+                }
+
+                if (allSeparated) return null;
+
                 const stockStatus = getUnfulfilledStockStatus(sale);
                 if (!stockStatus) return null;
                 
@@ -1307,6 +1416,41 @@ export default function SalesView({
                     >
                       <Eye size={18} />
                     </button>
+
+                    {/* Quick Expedite Button (Truck Icon) */}
+                    {(() => {
+                      const isCompleted = sale.items.length > 0 && sale.items.every(it => it.fulfilled === true || (it.boxesSeparated || 0) >= it.quantity);
+                      const isDelivered = sale.deliveryStatus === 'DELIVERED';
+                      const isQuote = sale.status === SaleStatus.QUOTE;
+                      const canExpedite = isCompleted && !isDelivered && !isQuote;
+
+                      return (
+                        <button
+                          type="button"
+                          disabled={!canExpedite}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpediteSale(sale);
+                          }}
+                          className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
+                            canExpedite
+                              ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500 active:scale-90 animate-pulse-dispatch'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-50'
+                          }`}
+                          title={
+                            isDelivered
+                              ? "Pedido já entregue"
+                              : isQuote
+                              ? "Confirmar orçamento antes de expedir"
+                              : canExpedite
+                              ? "Expedir pedido"
+                              : "Aguardando separação completa"
+                          }
+                        >
+                          <Truck size={18} />
+                        </button>
+                      );
+                    })()}
 
                     {/* Simple Preview Button (substituiu PDF) */}
                     <button
@@ -1847,9 +1991,11 @@ export default function SalesView({
 
                 {/* All done */}
                 {pendingRows.length === 0 && doneRows.length > 0 && (
-                  <div className="py-6 text-center">
+                  <div className="py-6 text-center px-4">
                     <CheckCircle2 size={32} className="text-emerald-500 mx-auto mb-2" />
-                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">Todos os itens já separados</p>
+                    <p className="text-[11px] font-black uppercase tracking-widest text-slate-400">
+                      pedido totalmente separado, ja pode fazer a entrega/expedicao
+                    </p>
                   </div>
                 )}
               </div>
@@ -1922,18 +2068,25 @@ export default function SalesView({
       {/* Popup — Expedição (pré-visualiza as baixas no estoque) */}
       {expediteSale && (() => {
         const s = expediteSale;
+        const allAlreadyFulfilled = s.items.every(it => it.fulfilled === true);
         const rows = s.items
-          .filter(it => it.fulfilled !== true)
           .map((it, idx) => {
             const product = getProductInfo(it.productId);
             const variation = getVariationInfo(it.productId, it.variationId);
             const unit = it.saleType === SaleType.WHOLESALE ? 'grade(s)' : 'par(es)';
             const key = it.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (it.size || 'WHOLESALE');
             const current = (variation?.stock[key] || 0);
-            const willDeduct = current >= it.quantity;
-            return { idx, product, variation, it, unit, current, after: willDeduct ? current - it.quantity : current, willDeduct };
+            
+            // Se já está fulfilled (separado), não precisa abater novamente
+            const willDeduct = it.fulfilled !== true && current >= it.quantity;
+            const alreadySeparated = it.fulfilled === true || (it.boxesSeparated || 0) >= it.quantity;
+            
+            return { idx, product, variation, it, unit, current, after: willDeduct ? current - it.quantity : current, willDeduct, alreadySeparated };
           });
+        
         const toDeduct = rows.filter(r => r.willDeduct);
+        const canConfirm = allAlreadyFulfilled || toDeduct.length > 0;
+
         return (
           <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm" onClick={() => setExpediteSale(null)}>
             <div onClick={e => e.stopPropagation()} className={`w-full max-w-md max-h-[85vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
@@ -1946,12 +2099,14 @@ export default function SalesView({
               </div>
               <div className="overflow-y-auto max-h-[55vh] p-4 flex flex-col gap-2 custom-scrollbar">
                 {rows.map(r => (
-                  <div key={r.idx} className={`p-3 rounded-2xl border flex items-center justify-between gap-2 ${r.willDeduct ? (isDarkMode ? 'bg-emerald-900/15 border-emerald-800/40' : 'bg-emerald-50 border-emerald-100') : (isDarkMode ? 'bg-amber-900/15 border-amber-800/40' : 'bg-amber-50 border-amber-100')}`}>
+                  <div key={r.idx} className={`p-3 rounded-2xl border flex items-center justify-between gap-2 ${r.alreadySeparated ? (isDarkMode ? 'bg-emerald-900/15 border-emerald-800/40' : 'bg-emerald-50 border-emerald-100') : r.willDeduct ? (isDarkMode ? 'bg-indigo-900/15 border-indigo-800/40' : 'bg-indigo-50 border-indigo-100') : (isDarkMode ? 'bg-amber-900/15 border-amber-800/40' : 'bg-amber-50 border-amber-100')}`}>
                     <div className="min-w-0">
                       <p className={`text-[11px] font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{r.product?.reference} {r.product?.name}</p>
                       <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-0.5">{r.variation?.colorName}{r.it.size ? ` · Nº ${r.it.size}` : ''} · {r.it.quantity} {r.unit}</p>
                     </div>
-                    {r.willDeduct ? (
+                    {r.alreadySeparated ? (
+                      <span className="text-[8px] font-black uppercase tracking-widest px-2 py-1 rounded-lg bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shrink-0">Separado</span>
+                    ) : r.willDeduct ? (
                       <div className="flex items-center gap-2 shrink-0">
                         <span className="text-sm font-black text-slate-400">{r.current}</span>
                         <span className="text-slate-300 dark:text-slate-600">→</span>
@@ -1967,11 +2122,11 @@ export default function SalesView({
                 <button type="button" onClick={() => setExpediteSale(null)} disabled={processingExpedite} className={`flex-1 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-700 border border-slate-100'}`}>Cancelar</button>
                 <button
                   type="button"
-                  disabled={processingExpedite || toDeduct.length === 0}
+                  disabled={processingExpedite || !canConfirm}
                   onClick={async () => { setProcessingExpedite(true); try { await onExpediteSale(s.id); setExpediteSale(null); } finally { setProcessingExpedite(false); } }}
-                  className={`flex-[1.5] py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${toDeduct.length === 0 ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20'}`}
+                  className={`flex-[1.5] py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${!canConfirm ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 text-white shadow-lg shadow-emerald-600/20'}`}
                 >
-                  <Truck size={16} strokeWidth={3} /> {processingExpedite ? 'Expedindo...' : `Confirmar (${toDeduct.length})`}
+                  <Truck size={16} strokeWidth={3} /> {processingExpedite ? 'Expedindo...' : allAlreadyFulfilled ? 'Confirmar Expedição' : `Confirmar (${toDeduct.length})`}
                 </button>
               </div>
             </div>

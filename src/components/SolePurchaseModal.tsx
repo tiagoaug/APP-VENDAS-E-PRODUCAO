@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, Save, ShoppingCart, Users, CreditCard, 
   Calendar as CalendarIcon, Hash, Package, Palette, 
@@ -12,6 +12,7 @@ import {
 } from '../types';
 import { format } from 'date-fns';
 import { toast } from '../utils/toast';
+import DatePicker from './DatePicker';
 import { parseLocaleNumber } from '../utils/numbers';
 
 interface SolePurchaseModalProps {
@@ -370,11 +371,9 @@ export default function SolePurchaseModal({
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                 <CalendarIcon size={12} /> Data de Vencimento
               </label>
-              <input
-                type="date"
+              <DatePicker
                 value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                title="Data de Vencimento"
+                onChange={setDueDate}
                 className={`w-full px-5 py-4 rounded-2xl text-xs font-black border-2 outline-none transition-all ${
                   isDarkMode ? 'bg-slate-950 border-slate-800 focus:border-indigo-500' : 'bg-slate-50 border-slate-100 focus:border-indigo-600'
                 }`}

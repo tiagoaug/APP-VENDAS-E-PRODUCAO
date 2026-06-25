@@ -14,6 +14,7 @@ import { financeService } from '../services/financeService';
 import { seedServiceOrderSequence } from '../utils/sequenceSeeds';
 import { toast } from '../utils/toast';
 import ComboBox from '../components/ComboBox';
+import DatePicker from '../components/DatePicker';
 import PrintOSModal from '../components/PrintOSModal';
 import { getOrderEffectiveSector, getSourceItemKey, resolveCorrectSectorForProduct } from '../utils/productionRoute';
 import { generatePCPShareExport, PCPShareItem } from '../utils/pcpShareExport';
@@ -882,11 +883,11 @@ export default function ServiceOrderFormView({
                       <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-900/30 text-amber-500' : 'bg-amber-50 text-amber-600'}`}>
                         <CalendarIcon size={16} strokeWidth={2.5} />
                       </div>
-                      <input
-                        type="date"
-                        className={`w-full bg-transparent border-none p-0 text-xs font-bold focus:ring-0 outline-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
+                      <DatePicker
+                        raw
                         value={dueDate ? format(dueDate, "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd")}
-                        onChange={(e) => setDueDate(new Date(e.target.value).getTime() || Date.now())}
+                        onChange={(val) => setDueDate(new Date(val).getTime() || Date.now())}
+                        className={`w-full bg-transparent border-none p-0 text-xs font-bold focus:ring-0 outline-none text-left cursor-pointer ${isDarkMode ? 'text-white' : 'text-slate-800'}`}
                       />
                     </div>
                   </div>

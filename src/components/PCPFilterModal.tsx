@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Filter, Eraser } from 'lucide-react';
 import Modal from './Modal';
+import DatePicker from './DatePicker';
 
 export type PCPFilters = {
   mapa: string;
@@ -151,10 +152,9 @@ export function PCPFilterModal({
           <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">
             Data (Emissão)
           </label>
-          <input
-            type="date"
+          <DatePicker
             value={filters.data}
-            onChange={(e) => updateFilter('data', e.target.value)}
+            onChange={(val) => updateFilter('data', val)}
             className={`w-full px-4 py-3 rounded-xl border text-sm font-bold transition-colors ${
               isDarkMode 
                 ? 'bg-slate-900 border-slate-700 text-white focus:border-indigo-500 [color-scheme:dark]' 

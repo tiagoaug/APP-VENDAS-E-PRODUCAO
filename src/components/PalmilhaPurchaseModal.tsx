@@ -11,6 +11,7 @@ import {
 } from '../types';
 import { format } from 'date-fns';
 import { toast } from '../utils/toast';
+import DatePicker from './DatePicker';
 import { parseLocaleNumber } from '../utils/numbers';
 
 interface PalmilhaPurchaseModalProps {
@@ -352,11 +353,9 @@ export default function PalmilhaPurchaseModal({
               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
                 <CalendarIcon size={12} /> Data de Vencimento
               </label>
-              <input
-                type="date"
+              <DatePicker
                 value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                title="Data de Vencimento"
+                onChange={setDueDate}
                 className={`w-full px-5 py-4 rounded-2xl text-xs font-black border-2 outline-none transition-all ${
                   isDarkMode ? 'bg-slate-950 border-slate-800 focus:border-rose-500' : 'bg-slate-50 border-slate-100 focus:border-rose-600'
                 }`}

@@ -356,6 +356,21 @@
     animation: scan-line 2s ease-in-out infinite;
     position: absolute;
   }
+
+  @keyframes pulse-dispatch {
+    0% {
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    }
+    70% {
+      box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    }
+  }
+  .animate-pulse-dispatch {
+    animation: pulse-dispatch 1.5s infinite;
+  }
 }
 
 /* ── Global Print Rules ───────────────────────────────────────────────────── */
