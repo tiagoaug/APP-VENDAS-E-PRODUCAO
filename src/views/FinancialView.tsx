@@ -325,9 +325,9 @@ export default function FinancialView({
             setIsPaymentModalOpen(false);
             setSelectedPurchase(null);
           }}
-          purchase={selectedPurchase}
+          entity={selectedPurchase}
           accounts={accounts}
-          supplier={people.find(s => s.id === selectedPurchase.supplierId)}
+          entityLabel={people.find(s => s.id === selectedPurchase.supplierId)?.name}
           onPay={onPartialPay}
           isDarkMode={isDarkMode}
           initialMode={paymentModalMode}

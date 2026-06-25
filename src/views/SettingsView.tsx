@@ -28,11 +28,13 @@ import {
   Eye,
   EyeOff,
   Lock,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Printer
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
 import { isViewAllowed, isSectorAllowed } from '../utils/collaborators';
+import { openPrintStudio } from '../lib/printStudio';
 
 interface SettingsViewProps {
   onNavigate: (view: ViewType) => void;
@@ -141,6 +143,7 @@ export default function SettingsView({
       title: "Sistema & Backup",
       items: [
         { id: ViewType.COLLABORATORS_CONFIG, label: "Colaboradores", icon: <UserCog size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'any' },
+        { id: ViewType.PRINT_STUDIO, label: "Print Studio", icon: <Printer size={22} />, color: "text-cyan-600 dark:text-cyan-400", bg: "bg-cyan-50 dark:bg-cyan-900/20", module: 'any' },
         { id: ViewType.BACKUP, label: "Ajustes Técnicos", icon: <Database size={22} />, color: "text-gray-600 dark:text-gray-400", bg: "bg-slate-100 dark:bg-slate-800", module: 'any' },
         { id: ViewType.MANUAL, label: "Manual do Sistema", icon: <BookOpen size={22} />, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/20", module: 'any' },
       ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
@@ -164,6 +167,8 @@ export default function SettingsView({
                   onClick={() => {
                     if (item.id === 'SOLE_MATRIX_DIRECT') {
                       onNavigateProduction('MATRIZES');
+                    } else if (item.id === ViewType.PRINT_STUDIO) {
+                      openPrintStudio();
                     } else {
                       onNavigate(item.id as ViewType);
                     }

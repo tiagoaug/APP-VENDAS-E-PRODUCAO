@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
 import { Transaction, TransactionType, Category, Account, AccountType, CategoryType, FamilyMember, Budget, Person } from '../types';
-import { Search, Plus, TrendingUp, TrendingDown, DollarSign, Wallet, ArrowRightLeft, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, LayoutGrid, ArrowLeft, Settings, Users, Target, ChevronRight, Calculator, Phone } from 'lucide-react';
+import { Search, Plus, TrendingUp, TrendingDown, DollarSign, Wallet, ArrowRightLeft, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, LayoutGrid, ArrowLeft, Settings, Users, Target, ChevronLeft, ChevronRight, Calculator, Phone, Calendar } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { format, startOfMonth, endOfMonth } from 'date-fns';
+import { format, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import TransactionModal from '../components/TransactionModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -12,7 +12,10 @@ import PersonalContactModal from '../components/PersonalContactModal';
 import BudgetModal from '../components/BudgetModal';
 import TransferToPersonalModal from '../components/TransferToPersonalModal';
 import CalculatorModal from '../components/CalculatorModal';
+import PartialPaymentModal from '../components/PartialPaymentModal';
 import { toast } from '../utils/toast';
+import { generateId } from '../utils/id';
+import { exportPersonalExpense } from '../utils/personalExpenseExport';
 
 interface PersonalFinancialViewProps {
   transactions: Transaction[];
@@ -97,6 +100,11 @@ export default function PersonalFinancialView({
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
   const [deleteType, setDeleteType] = useState<'TX' | 'CAT' | 'FM' | 'PC' | 'BUDGET'>('TX');
 
+  // Painel de Despesas Mensais — mês navegável por setas
+  const [selectedMonth, setSelectedMonth] = useState(() => startOfMonth(new Date()));
+  const [paymentTx, setPaymentTx] = useState<Transaction | null>(null);
+  const [paymentModalMode, setPaymentModalMode] = useState<'PAYMENT' | 'HISTORY'>('PAYMENT');
+
   // Filter personal account
   const personalAccount = useMemo(() => accounts.find(a => a.type === AccountType.PERSONAL), [accounts]);
   const personalCategories = useMemo(() => categories.filter(c => c.isPersonal), [categories]);
@@ -111,9 +119,38 @@ export default function PersonalFinancialView({
   const filteredTxs = personalTransactions.filter(t => {
     const desc = t.description || '';
     const member = familyMembers.find(m => m.id === t.memberId)?.name || '';
-    return desc.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    return desc.toLowerCase().includes(searchTerm.toLowerCase()) ||
            member.toLowerCase().includes(searchTerm.toLowerCase());
   });
+
+  // Despesas do mês selecionado no Painel de Despesas (subcards) — cada parcela de uma
+  // despesa recorrente é seu próprio Transaction, então o filtro por mês já basta pra
+  // mostrar só a parcela correspondente ao mês navegado.
+  const monthlyExpenses = useMemo(() => {
+    const monthStart = startOfMonth(selectedMonth).getTime();
+    const monthEnd = endOfMonth(selectedMonth).getTime();
+    return personalTransactions
+      .filter(t => t.type === TransactionType.EXPENSE && t.date >= monthStart && t.date <= monthEnd)
+      .sort((a, b) => a.date - b.date);
+  }, [personalTransactions, selectedMonth]);
+
+  const monthSummary = useMemo(() => {
+    const total = monthlyExpenses.reduce((acc, t) => acc + t.amount, 0);
+    const paidCount = monthlyExpenses.filter(t => t.status === 'COMPLETED').length;
+    const pendingCount = monthlyExpenses.filter(t => t.status === 'PENDING').length;
+    return { total, paidCount, pendingCount };
+  }, [monthlyExpenses]);
+
+  const handlePartialPay = async (amount: number, accountId: string, note: string) => {
+    if (!paymentTx) return;
+    const newHistory = [...(paymentTx.paymentHistory || []), { id: generateId(), date: Date.now(), amount, accountId, note }];
+    const totalPaid = newHistory.reduce((acc, p) => acc + p.amount, 0);
+    await onEditTransaction(paymentTx.id, {
+      paymentHistory: newHistory,
+      status: totalPaid >= paymentTx.amount ? 'COMPLETED' : 'PENDING',
+    });
+    setPaymentTx(null);
+  };
 
   const stats = useMemo(() => {
     const monthStart = startOfMonth(new Date()).getTime();
@@ -301,6 +338,19 @@ export default function PersonalFinancialView({
         isDarkMode={isDarkMode}
       />
 
+      {paymentTx && (
+        <PartialPaymentModal
+          isOpen={!!paymentTx}
+          onClose={() => setPaymentTx(null)}
+          entity={{ id: paymentTx.id, total: paymentTx.amount, paymentHistory: paymentTx.paymentHistory }}
+          accounts={personalAccount ? [personalAccount] : accounts}
+          entityLabel={personalContacts.find(p => p.id === paymentTx.contactId)?.name || paymentTx.contactName}
+          onPay={handlePartialPay}
+          isDarkMode={isDarkMode}
+          initialMode={paymentModalMode}
+        />
+      )}
+
       <CategoryModal
         isOpen={isCatModalOpen}
         onClose={() => setIsCatModalOpen(false)}
@@ -428,6 +478,152 @@ export default function PersonalFinancialView({
                 <p className="text-[10px] font-black uppercase tracking-tight text-amber-800">Crie sua conta pessoal nas configurações de contas do menu lateral.</p>
             </div>
           )}
+
+          {/* Painel de Despesas Mensais — card grande com setas pra trocar de mês e
+              subcards de despesa (estilo Compras): fornecedor, data, valor, recorrência/
+              parcela, badges de membro e status, e ações editar/excluir/pagar/exportar. */}
+          <div className={`p-6 rounded-[2.5rem] border shadow-xl ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <div className="flex items-center justify-between mb-5">
+              <button
+                onClick={() => setSelectedMonth(m => subMonths(m, 1))}
+                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-indigo-400' : 'bg-slate-50 text-slate-400 hover:text-indigo-500'}`}
+                title="Mês anterior"
+                aria-label="Mês anterior"
+              >
+                <ChevronLeft size={18} />
+              </button>
+              <div className="text-center">
+                <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                  {format(selectedMonth, 'MMMM yyyy', { locale: ptBR })}
+                </h3>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Painel de Despesas</p>
+              </div>
+              <button
+                onClick={() => setSelectedMonth(m => addMonths(m, 1))}
+                className={`w-9 h-9 rounded-full flex items-center justify-center transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-indigo-400' : 'bg-slate-50 text-slate-400 hover:text-indigo-500'}`}
+                title="Próximo mês"
+                aria-label="Próximo mês"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </div>
+
+            {/* Resumo do mês */}
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              <div className={`p-3 rounded-2xl text-center ${isDarkMode ? 'bg-rose-500/10' : 'bg-rose-50'}`}>
+                <p className="text-[8px] font-black uppercase text-rose-400 tracking-widest mb-1">Total do Mês</p>
+                <p className={`text-sm font-black ${isDarkMode ? 'text-rose-400' : 'text-rose-600'}`}>
+                  R$ {monthSummary.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div className={`p-3 rounded-2xl text-center ${isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50'}`}>
+                <p className="text-[8px] font-black uppercase text-emerald-400 tracking-widest mb-1">Pagas</p>
+                <p className={`text-sm font-black ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>{monthSummary.paidCount}</p>
+              </div>
+              <div className={`p-3 rounded-2xl text-center ${isDarkMode ? 'bg-amber-500/10' : 'bg-amber-50'}`}>
+                <p className="text-[8px] font-black uppercase text-amber-500 tracking-widest mb-1">A Pagar</p>
+                <p className={`text-sm font-black ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>{monthSummary.pendingCount}</p>
+              </div>
+            </div>
+
+            {/* Subcards de despesa */}
+            <div className="flex flex-col gap-3">
+              {monthlyExpenses.length === 0 && (
+                <p className="text-center text-[10px] font-bold uppercase text-slate-300 dark:text-slate-700 py-6">Nenhuma despesa neste mês.</p>
+              )}
+              {monthlyExpenses.map(t => {
+                const contact = personalContacts.find(p => p.id === t.contactId);
+                const member = familyMembers.find(m => m.id === t.memberId);
+                const isPaid = t.status === 'COMPLETED';
+                const contactName = contact?.name || t.contactName;
+                return (
+                  <div key={t.id} className={`p-5 rounded-[1.5rem] border flex flex-col gap-3 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className={`font-black text-[13px] uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                        {contactName || t.description}
+                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {isPaid ? (
+                          <span className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[9px] font-black uppercase tracking-tight">Quitado</span>
+                        ) : (
+                          <span className="px-2 py-1 rounded-lg bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[9px] font-black uppercase tracking-tight">Pendente</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                      <Calendar size={11} strokeWidth={3} /> {format(t.date, "dd MMM yyyy", { locale: ptBR })}
+                    </div>
+
+                    {(t.isRecurring || member) && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {t.isRecurring && t.totalInstallments && (
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400">
+                            Parcela {t.installmentNumber}/{t.totalInstallments}
+                          </span>
+                        )}
+                        {member && (
+                          <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                            <User size={9} /> {member.name}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex justify-between items-center pt-3 border-t border-slate-200/60 dark:border-slate-700/60">
+                      <p className={`font-black text-base ${isDarkMode ? 'text-rose-400' : 'text-rose-500'}`}>
+                        R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </p>
+                      <div className={`flex items-center gap-1.5 p-1.5 rounded-full border shadow-sm backdrop-blur-md ${isDarkMode ? 'bg-slate-900/80 border-slate-700' : 'bg-white/80 border-slate-100'}`}>
+                        <button
+                          onClick={() => exportPersonalExpense({ transaction: t, contactName, memberName: member?.name }, 'pdf')}
+                          className="w-9 h-9 flex items-center justify-center bg-rose-50 dark:bg-rose-500/10 text-rose-500 rounded-full font-black text-[9px]"
+                          title="Exportar PDF"
+                          aria-label="Exportar PDF"
+                        >
+                          PDF
+                        </button>
+                        <button
+                          onClick={() => exportPersonalExpense({ transaction: t, contactName, memberName: member?.name }, 'jpg')}
+                          className="w-9 h-9 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 rounded-full font-black text-[9px]"
+                          title="Exportar JPG"
+                          aria-label="Exportar JPG"
+                        >
+                          JPG
+                        </button>
+                        {!isPaid && (
+                          <button
+                            onClick={() => { setPaymentTx(t); setPaymentModalMode('PAYMENT'); }}
+                            className="w-9 h-9 flex items-center justify-center bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 rounded-full"
+                            title="Registrar Pagamento"
+                            aria-label="Registrar Pagamento"
+                          >
+                            <DollarSign size={16} />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { setEditingTransaction(t); setIsTxModalOpen(true); }}
+                          className={`w-9 h-9 flex items-center justify-center rounded-full text-blue-500 ${isDarkMode ? 'bg-slate-700' : 'bg-white'}`}
+                          title="Editar Despesa"
+                          aria-label="Editar Despesa"
+                        >
+                          <Edit size={16} />
+                        </button>
+                        <button
+                          onClick={() => { setIdToDelete(t.id); setDeleteType('TX'); setIsConfirmOpen(true); }}
+                          className={`w-9 h-9 flex items-center justify-center rounded-full text-rose-500 ${isDarkMode ? 'bg-slate-700' : 'bg-white'}`}
+                          title="Excluir Despesa"
+                          aria-label="Excluir Despesa"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
 
           {/* Budget Progress Section */}
           {budgets.length > 0 && (

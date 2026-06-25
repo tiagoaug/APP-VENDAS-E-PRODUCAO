@@ -19,4 +19,15 @@
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
     </style>
+
+    <!-- Tema próprio do Print Studio — NÃO herda de Theme.SplashScreen (era essa herança que
+         deixava o drawable de splash, com o ícone "P" do app, permanentemente visível por
+         baixo do conteúdo: PrintStudioActivity nunca chama installSplashScreen(), então nada
+         nunca pede pra dispensar esse background, ao contrário da MainActivity). Fundo cinza
+         claro próprio em vez do rosa/lilás do splash — só nesta tela, não afeta o resto do app. -->
+    <style name="AppTheme.PrintStudio" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowBackground">#FFF1F5F9</item>
+    </style>
 </resources>

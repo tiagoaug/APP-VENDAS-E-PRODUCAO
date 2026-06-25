@@ -383,6 +383,14 @@ export type Transaction = {
   isManual?: boolean; // true = lançamento manual pelo usuário; false/undefined = gerado automaticamente
   referenceNumber?: string; // número de indicação / referência do lançamento
   items?: TransactionItem[];
+  // Despesa pessoal recorrente/parcelada — cada parcela é o seu próprio Transaction,
+  // ligado às demais pelo mesmo recurrenceGroupId (ver Financeiro Pessoal).
+  isRecurring?: boolean;
+  recurrenceGroupId?: string;
+  installmentNumber?: number;
+  totalInstallments?: number;
+  dueDate?: number;
+  paymentHistory?: PaymentHistory[];
 };
 
 export enum CategoryType {
@@ -483,6 +491,9 @@ export enum ViewType {
   MANUAL = 'MANUAL',
   PRINT_CENTER = 'PRINT_CENTER',
   COLLABORATORS_CONFIG = 'COLLABORATORS_CONFIG',
+  // Sem view React própria — só um id estável pro item de menu que abre o módulo nativo
+  // Android (ver src/lib/printStudio.ts); onClick nunca chama onNavigate com este valor.
+  PRINT_STUDIO = 'PRINT_STUDIO',
 }
 
 export type DashboardCardConfig = {

@@ -1,5 +1,5 @@
 ﻿import React, { useState } from 'react';
-import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ListStart, Hash, Boxes } from 'lucide-react';
+import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ChevronLeft, ChevronRight, ListStart, Hash, Boxes } from 'lucide-react';
 
 
 export interface ExportProfile {
@@ -17,7 +17,7 @@ export interface ExportProfile {
 }
 
 const DEFAULT_PROFILE: Omit<ExportProfile, 'id' | 'name'> = {
-  format: 'pdf',
+  format: 'jpg',
   financialValues: true,
   groupMode: 'none',
   pcpTotalGrid: true,
@@ -68,7 +68,15 @@ interface ExportNoteModalProps {
   showOSDataToggle?: boolean;
   /** Quando true, exibe a entrada "Detalhes de Setor" com a opção de separação de solas por ficha (Montagem) */
   showSoleGridToggle?: boolean;
-  onPreview?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean) => Promise<string | boolean>;
+  /** Retorna um array com uma data URI por página real de saída (já considerando
+   * "Dividir em Páginas"), pra pré-visualização poder navegar página a página
+   * exatamente como o arquivo final vai ficar — em vez de mostrar tudo cortado
+   * numa imagem só. */
+  onPreview?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean) => Promise<string[] | boolean>;
+  /** Quando true, exibe a opção "Abrir no Print Studio" ao lado de "Visualizar Arquivo" —
+   * só faz sentido pra quem gera fichas PCP (módulo nativo Android). */
+  showOpenInPrintStudioToggle?: boolean;
+  onOpenInPrintStudio?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean) => Promise<void>;
 }
 
 const DEFAULT_PREDEFINED_NOTES = [
@@ -94,7 +102,7 @@ export default function ExportNoteModal({
   onConfirm,
   isDarkMode,
   title = "Exportar Documento",
-  initialFormat = 'pdf',
+  initialFormat = 'jpg',
   showValuesToggle = false,
   showGroupingToggle = false,
   showPCPTotalGridToggle = false,
@@ -108,7 +116,9 @@ export default function ExportNoteModal({
   showProviderToggle = false,
   showOSDataToggle = false,
   showSoleGridToggle = false,
-  onPreview
+  onPreview,
+  showOpenInPrintStudioToggle = false,
+  onOpenInPrintStudio
 }: ExportNoteModalProps) {
   const [note, setNote] = useState('');
   
@@ -121,7 +131,7 @@ export default function ExportNoteModal({
   const [editingProfileName, setEditingProfileName] = useState('');
 
   // Main config state
-  const [selectedFormat, setSelectedFormat] = useState<'pdf' | 'jpg'>('pdf');
+  const [selectedFormat, setSelectedFormat] = useState<'pdf' | 'jpg'>('jpg');
   const [showFinancialValues, setShowFinancialValues] = useState(true);
   const [groupMode, setGroupMode] = useState<'none' | 'ref_color' | 'ref'>('none');
   const [pcpTotalGrid, setPcpTotalGrid] = useState(true);
@@ -135,9 +145,11 @@ export default function ExportNoteModal({
   const [showSoleGrid, setShowSoleGrid] = useState(false);
   // Subcards em acordeão — um por grupo de configurações (Valores, Resumo da
   // Grade, Agrupamento, Dados da OS, Detalhes de Setor). Recolhidos por padrão.
-  const [openSections, setOpenSections] = useState<Set<string>>(new Set());
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [openSections, setOpenSections] = useState<Set<string>>(new Set(['share_actions']));
+  const [previewPages, setPreviewPages] = useState<string[]>([]);
+  const [previewPageIdx, setPreviewPageIdx] = useState(0);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [isOpeningPrintStudio, setIsOpeningPrintStudio] = useState(false);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -224,14 +236,27 @@ export default function ExportNoteModal({
     if (!onPreview) return;
     setIsPreviewLoading(true);
     try {
-      const url = await onPreview(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid);
-      if (typeof url === 'string') {
-        setPreviewUrl(url);
+      const pages = await onPreview(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid);
+      if (Array.isArray(pages) && pages.length > 0) {
+        setPreviewPages(pages);
+        setPreviewPageIdx(0);
       }
     } catch (e) {
       console.error("Preview failed", e);
     } finally {
       setIsPreviewLoading(false);
+    }
+  };
+
+  const handleOpenInPrintStudio = async () => {
+    if (!onOpenInPrintStudio) return;
+    setIsOpeningPrintStudio(true);
+    try {
+      await onOpenInPrintStudio(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid);
+    } catch (e) {
+      console.error("Open in Print Studio failed", e);
+    } finally {
+      setIsOpeningPrintStudio(false);
     }
   };
 
@@ -259,8 +284,9 @@ export default function ExportNoteModal({
       setShowProvider(true);
       setShowOSData(true);
       setShowSoleGrid(false);
-      setOpenSections(new Set());
-      setPreviewUrl(null);
+      setOpenSections(new Set(['share_actions']));
+      setPreviewPages([]);
+      setPreviewPageIdx(0);
       setIsPreviewLoading(false);
       setPredefinedNotes(loadPredefinedNotes());
       setManageChips(false);
@@ -435,6 +461,21 @@ export default function ExportNoteModal({
                 </button>
               </SectionCard>
             )}
+
+            {(showPCPTotalGridToggle || showMaterialsToggle || showItemGridToggle || showSplitPagesToggle || showOrderListToggle || showSectorNotesToggle || showGroupingToggle || showProviderToggle || showOSDataToggle || showSoleGridToggle) && (
+              <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                <button
+                  type="button"
+                  onClick={() => toggleSection('ficha_export_options')}
+                  className={`w-full flex items-center justify-between gap-2 px-3 py-3 transition-all ${isDarkMode ? 'bg-slate-800/50 hover:bg-slate-800' : 'bg-slate-50 hover:bg-slate-100'}`}
+                >
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-orange-500">
+                    Abra para configurar as exportações de fichas
+                  </span>
+                  <ChevronDown size={14} className={`text-orange-500 transition-transform duration-200 ${openSections.has('ficha_export_options') ? 'rotate-180' : ''}`} />
+                </button>
+                {openSections.has('ficha_export_options') && (
+                  <div className={`p-3 flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
 
             {(showPCPTotalGridToggle || showMaterialsToggle || showItemGridToggle || showSplitPagesToggle || showOrderListToggle || showSectorNotesToggle) && (
               <SectionCard
@@ -646,6 +687,10 @@ export default function ExportNoteModal({
                 </button>
               </SectionCard>
             )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -676,79 +721,133 @@ export default function ExportNoteModal({
         </div>
                 {/* Footer Actions */}
         <div className={`p-4 flex flex-col gap-3 shrink-0 ${isDarkMode ? 'bg-slate-800/30' : 'bg-slate-50/50'}`}>
-          {/* Preview Section */}
-          {previewUrl && (
+          {/* Preview Section — navega página a página exatamente como o arquivo final
+              vai ser dividido (ver "Dividir em Páginas"), pra dar pra revisar onde cada
+              corte cai antes de gerar de verdade. */}
+          {previewPages.length > 0 && (
             <div className="border border-slate-100 dark:border-slate-800 rounded-2xl p-3 bg-white dark:bg-slate-800">
               <div className="flex items-center justify-between mb-3 px-1">
-                <span className="text-xs font-bold uppercase tracking-widest text-slate-700 dark:text-slate-300">Pré-visualização</span>
-                <button type="button" onClick={() => setPreviewUrl(null)} className="text-[10px] font-black uppercase tracking-widest text-white bg-rose-500 hover:bg-rose-600 active:scale-95 transition-all px-3 py-1.5 rounded-full shadow-sm">Fechar Preview</button>
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-700 dark:text-slate-300">
+                  Pré-visualização{previewPages.length > 1 ? ` — Pág. ${previewPageIdx + 1}/${previewPages.length}` : ''}
+                </span>
+                <button type="button" onClick={() => setPreviewPages([])} className="text-[10px] font-black uppercase tracking-widest text-white bg-rose-500 hover:bg-rose-600 active:scale-95 transition-all px-3 py-1.5 rounded-full shadow-sm">Fechar Preview</button>
               </div>
               <div className="w-full bg-slate-100 dark:bg-slate-900 rounded-xl overflow-hidden shadow-inner max-h-[60vh] overflow-y-auto">
                 {selectedFormat === 'pdf' ? (
-                  <iframe src={previewUrl + "#toolbar=0"} className="w-full h-[500px]" />
+                  <iframe src={previewPages[previewPageIdx] + "#toolbar=0"} className="w-full h-[500px]" />
                 ) : (
-                  <img src={previewUrl} className="w-full h-auto" />
+                  <img src={previewPages[previewPageIdx]} className="w-full h-auto" />
                 )}
               </div>
+              {previewPages.length > 1 && (
+                <div className="flex items-center justify-between gap-2 mt-3">
+                  <button
+                    type="button"
+                    disabled={previewPageIdx === 0}
+                    onClick={() => setPreviewPageIdx(p => Math.max(0, p - 1))}
+                    className={`flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${previewPageIdx === 0 ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                  >
+                    <ChevronLeft size={14} /> Anterior
+                  </button>
+                  <div className="flex items-center gap-1">
+                    {previewPages.map((_, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setPreviewPageIdx(idx)}
+                        aria-label={`Ir para página ${idx + 1}`}
+                        className={`w-2 h-2 rounded-full transition-all ${idx === previewPageIdx ? 'bg-indigo-500 w-5' : 'bg-slate-300 dark:bg-slate-600'}`}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={previewPageIdx === previewPages.length - 1}
+                    onClick={() => setPreviewPageIdx(p => Math.min(previewPages.length - 1, p + 1))}
+                    className={`flex items-center gap-1 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${previewPageIdx === previewPages.length - 1 ? 'text-slate-300 dark:text-slate-600 cursor-not-allowed' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'}`}
+                  >
+                    Próxima <ChevronRight size={14} />
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Cards Actions */}
+          {/* Cards Actions — agrupadas num acordeão (igual aos demais SectionCard da tela);
+              só "Cancelar" fica sempre visível, fora do acordeão. */}
           <div className="flex flex-col gap-2">
-            {/* Visualizar */}
-            {onPreview && (
-              <div className={`p-1.5 rounded-[20px] shadow-sm flex ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
-                <button
-                  type="button"
-                  onClick={handlePreview}
-                  disabled={isPreviewLoading}
-                  className={`w-full py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 bg-slate-800 shadow-slate-800/20`}
-                >
-                  {isPreviewLoading ? 'Carregando...' : 'Visualizar Arquivo'}
-                </button>
-              </div>
-            )}
+            <SectionCard id="share_actions" icon={<Send size={13} className="text-cyan-500" />} label="Opções de Compartilhamento">
+              {/* Visualizar / Abrir no Print Studio */}
+              {(onPreview || (showOpenInPrintStudioToggle && onOpenInPrintStudio)) && (
+                <div className="flex gap-1.5">
+                  {onPreview && (
+                    <button
+                      type="button"
+                      onClick={handlePreview}
+                      disabled={isPreviewLoading}
+                      className={`flex-1 py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 bg-slate-800 shadow-slate-800/20`}
+                    >
+                      {isPreviewLoading ? 'Carregando...' : 'Visualizar Arquivo'}
+                    </button>
+                  )}
+                  {showOpenInPrintStudioToggle && onOpenInPrintStudio && (
+                    <button
+                      type="button"
+                      onClick={handleOpenInPrintStudio}
+                      disabled={isOpeningPrintStudio}
+                      className={`flex-1 py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 bg-cyan-600 shadow-cyan-600/20`}
+                    >
+                      {isOpeningPrintStudio ? 'Abrindo...' : 'Print Studio'}
+                    </button>
+                  )}
+                </div>
+              )}
 
-            {/* Cancel / Generate */}
-            <div className={`p-1.5 rounded-[20px] shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
+              {/* Generate */}
               <button
-                onClick={onClose}
-                className={`flex-1 py-3 rounded-xl text-[12px] font-black uppercase tracking-widest transition-all ${
-                  isDarkMode ? 'bg-slate-700 text-slate-200' : 'bg-slate-50 text-slate-700'
-                }`}
-              >
-                Cancelar
-              </button>
-              <button 
+                type="button"
                 onClick={() => onConfirm(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid)}
-                className={`flex-[1.5] py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
+                className={`w-full py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
                   selectedFormat === 'pdf' ? 'bg-rose-500' : 'bg-indigo-600'
                 }`}
               >
                 {selectedFormat === 'pdf' ? <FileText size={16} /> : <Send size={16} className="rotate-45" />}
                 Gerar {selectedFormat.toUpperCase()}
               </button>
-            </div>
 
-            {/* Format Toggles */}
-            <div className={`p-1.5 rounded-[20px] shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
-              <button
-                onClick={() => setSelectedFormat('pdf')}
-                className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                  selectedFormat === 'pdf' ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
-                }`}
-              >
-                Formato PDF
-              </button>
-              <button
-                onClick={() => setSelectedFormat('jpg')}
-                className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                  selectedFormat === 'jpg' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
-                }`}
-              >
-                Formato JPG
-              </button>
-            </div>
+              {/* Format Toggles */}
+              <div className={`p-1.5 rounded-[20px] shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFormat('pdf')}
+                  className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                    selectedFormat === 'pdf' ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Formato PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFormat('jpg')}
+                  className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                    selectedFormat === 'jpg' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  Formato JPG
+                </button>
+              </div>
+            </SectionCard>
+
+            {/* Cancelar — única ação que fica fora do acordeão, sempre visível */}
+            <button
+              type="button"
+              onClick={onClose}
+              className={`w-full py-3 rounded-xl text-[12px] font-black uppercase tracking-widest transition-all ${
+                isDarkMode ? 'bg-slate-700 text-slate-200' : 'bg-slate-100 text-slate-700'
+              }`}
+            >
+              Cancelar
+            </button>
           </div>
         </div>
       </div>

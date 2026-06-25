@@ -1,8 +1,10 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 import { sharePDF, shareImage } from './pdfExport';
 import { toast } from './toast';
+import { openPrintStudio } from '../lib/printStudio';
 
 export interface PCPShareItem {
   orderNumber: string;
@@ -50,7 +52,7 @@ export interface PCPShareData {
   showSoleGrid?: boolean;
 }
 
-export async function generatePCPShareExport(data: PCPShareData, formatType: 'pdf' | 'jpg', previewOnly: boolean = false): Promise<boolean | string> {
+export async function generatePCPShareExport(data: PCPShareData, formatType: 'pdf' | 'jpg', previewOnly: boolean = false): Promise<boolean | string[]> {
   try {
     const filename = `Ficha_PCP_${data.lotNumber.replace(/[^a-zA-Z0-9]/g, '')}_${format(new Date(), 'yyyyMMdd_HHmm')}`;
     
@@ -66,7 +68,7 @@ export async function generatePCPShareExport(data: PCPShareData, formatType: 'pd
   }
 }
 
-async function generatePDF(data: PCPShareData, filename: string, previewOnly: boolean = false): Promise<boolean | string> {
+async function generatePDF(data: PCPShareData, filename: string, previewOnly: boolean = false): Promise<boolean | string[]> {
   const { lotNumber, items, additionalNote, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, showProvider, showOSData, showSoleGrid } = data;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
@@ -333,13 +335,15 @@ async function generatePDF(data: PCPShareData, filename: string, previewOnly: bo
   }
 
   if (previewOnly) {
-    return doc.output('datauristring');
+    // Um único PDF já carrega todas as páginas internamente — o próprio
+    // visualizador (iframe) deixa navegar entre elas, sem precisar de array aqui.
+    return [doc.output('datauristring')];
   }
   await sharePDF(doc, filename);
   return true;
 }
 
-async function generateJPG(data: PCPShareData, filename: string, previewOnly: boolean = false): Promise<boolean | string> {
+async function generateJPG(data: PCPShareData, filename: string, previewOnly: boolean = false): Promise<boolean | string[]> {
   const { lotNumber, items, additionalNote, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid } = data;
   const W = 900;
   const pad = 40;
@@ -784,7 +788,10 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
   };
 
   if (previewOnly) {
-    return drawPage(items, true).toDataURL('image/jpeg', 0.9);
+    // Renderiza as mesmas páginas reais que seriam compartilhadas (já considerando
+    // "Dividir em Páginas") — assim a pré-visualização mostra exatamente onde cada
+    // corte cai, em vez de empilhar tudo numa imagem só e escondê-los.
+    return pages.map((pageItems, idx) => drawPage(pageItems, idx === pages.length - 1).toDataURL('image/jpeg', 0.9));
   }
 
   if (pages.length === 1) {
@@ -801,4 +808,75 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
     if (p < pages.length - 1) await new Promise(resolve => setTimeout(resolve, 600));
   }
   return true;
+}
+
+// Gera a(s) imagem(ns) da(s) ficha(s) (mesmo motor de geração do JPG) e abre o Print
+// Studio já com elas carregadas — usado pelos botões "Print Studio" do PCP (ficha,
+// OS e Mapa). Salva em arquivo via Filesystem antes de abrir: a ponte JS↔nativo do
+// Capacitor recebe só o caminho do arquivo, nunca o base64 bruto (que pode passar de
+// vários MB por ficha e deixaria a chamada lenta/instável).
+export async function sendPCPItemsToPrintStudio(
+  items: PCPShareItem[],
+  options: {
+    isDarkMode: boolean;
+    showTotalGrid?: boolean;
+    showMaterials?: boolean;
+    showItemGrid?: boolean;
+    showSectorNotes?: boolean;
+    showOrderList?: boolean;
+    showProvider?: boolean;
+    showOSData?: boolean;
+    showSoleGrid?: boolean;
+  },
+): Promise<void> {
+  if (items.length === 0) {
+    toast.show('Nada para enviar ao Print Studio.');
+    return;
+  }
+  try {
+    const lotNumber = items.map(i => i.orderNumber).filter(Boolean).join(', ') || 'PCP';
+    const result = await generatePCPShareExport(
+      {
+        lotNumber,
+        items,
+        isDarkMode: options.isDarkMode,
+        showTotalGrid: options.showTotalGrid,
+        showMaterials: options.showMaterials ?? true,
+        showItemGrid: options.showItemGrid ?? true,
+        showSectorNotes: options.showSectorNotes,
+        showOrderList: options.showOrderList,
+        showProvider: options.showProvider,
+        showOSData: options.showOSData,
+        showSoleGrid: options.showSoleGrid,
+        // Print Studio recebe sempre a imagem completa, sem cortes — a divisão em
+        // páginas é feita lá dentro (manualmente, com linhas de corte + blocos),
+        // nunca antes de chegar lá.
+        splitPages: false,
+      },
+      'jpg',
+      true,
+    );
+
+    if (!Array.isArray(result) || result.length === 0) {
+      toast.show('Não foi possível gerar a imagem da ficha.');
+      return;
+    }
+
+    const uris: string[] = [];
+    for (let i = 0; i < result.length; i++) {
+      const dataUri = result[i];
+      const base64 = dataUri.includes('base64,') ? dataUri.split('base64,')[1] : dataUri;
+      const written = await Filesystem.writeFile({
+        path: `printstudio_ficha_${Date.now()}_${i}.jpg`,
+        data: base64,
+        directory: Directory.Cache,
+      });
+      uris.push(written.uri);
+    }
+
+    await openPrintStudio(uris);
+  } catch (error) {
+    console.error('Error sending PCP items to Print Studio:', error);
+    toast.show('Erro ao enviar ficha para o Print Studio.');
+  }
 }

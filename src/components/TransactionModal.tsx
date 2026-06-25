@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Transaction, TransactionType, TransactionItem, Category, CategoryType, Account, Person, FamilyMember } from '../types';
-import { X, Calendar, DollarSign, Tag, Wallet, User, CheckCircle2, Clock, Users, Calculator as CalculatorIcon, Plus, ChevronDown, Trash2, Hash, ClipboardList } from 'lucide-react';
-import { format } from 'date-fns';
+import { X, Calendar, DollarSign, Tag, Wallet, User, CheckCircle2, Clock, Users, Calculator as CalculatorIcon, Plus, ChevronDown, Trash2, Hash, ClipboardList, Repeat } from 'lucide-react';
+import { format, addMonths } from 'date-fns';
 import CalculatorPopover from './CalculatorPopover';
 import ComboBox from './ComboBox';
 import { toast } from '../utils/toast';
@@ -10,7 +10,7 @@ import { generateId } from '../utils/id';
 interface TransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (transaction: Omit<Transaction, 'id'>) => void;
+  onSave: (transaction: Omit<Transaction, 'id'>) => void | Promise<void>;
   categories: Category[];
   accounts: Account[];
   people: Person[];
@@ -47,6 +47,8 @@ export default function TransactionModal({
   const [items, setItems] = useState<TransactionItem[]>([]);
   const [isManual, setIsManual] = useState(true);
   const [referenceNumber, setReferenceNumber] = useState('');
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [totalInstallments, setTotalInstallments] = useState(2);
   const calculatorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -63,9 +65,13 @@ export default function TransactionModal({
       setItems(transaction.items || []);
       setIsManual(transaction.isManual !== false);
       setReferenceNumber(transaction.referenceNumber || '');
+      setIsRecurring(false);
+      setTotalInstallments(2);
     } else {
       setIsManual(true);
       setReferenceNumber('');
+      setIsRecurring(false);
+      setTotalInstallments(2);
       setType(initialType);
       setAmount(initialValue !== undefined ? initialValue : 0);
       setDescription('');
@@ -122,15 +128,20 @@ export default function TransactionModal({
 
   if (!isOpen) return null;
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!description || !(Number(amount) > 0) || !categoryId || !accountId) {
       toast.show('Preencha todos os campos obrigatórios (valor deve ser maior que zero)');
       return;
     }
+    if (!transaction && isRecurring && (!totalInstallments || totalInstallments < 2)) {
+      toast.show('Informe quantas parcelas (mínimo 2)');
+      return;
+    }
 
     const contact = people.find(p => p.id === contactId);
+    const baseDate = new Date(date).getTime() + (new Date().getTime() % (24 * 60 * 60 * 1000)); // Preserve current time of day roughly if possible, but simple date is fine
 
-    onSave({
+    const buildTx = (txDate: number, installmentNumber?: number, recurrenceGroupId?: string): Omit<Transaction, 'id'> => ({
       type,
       amount: Number(amount),
       description,
@@ -138,13 +149,28 @@ export default function TransactionModal({
       accountId,
       contactId: contactId || undefined,
       contactName: contact?.name,
-      date: new Date(date).getTime() + (new Date().getTime() % (24 * 60 * 60 * 1000)), // Preserve current time of day roughly if possible, but simple date is fine
+      date: txDate,
       status,
       isManual,
       referenceNumber: referenceNumber.trim() || undefined,
       memberId: memberId || undefined,
       items: items.length > 0 ? items : undefined,
+      isRecurring: recurrenceGroupId ? true : undefined,
+      recurrenceGroupId,
+      installmentNumber,
+      totalInstallments: recurrenceGroupId ? totalInstallments : undefined,
     });
+
+    if (!transaction && isRecurring && totalInstallments >= 2) {
+      const groupId = generateId();
+      for (let i = 0; i < totalInstallments; i++) {
+        await onSave(buildTx(addMonths(baseDate, i).getTime(), i + 1, groupId));
+      }
+      onClose();
+      return;
+    }
+
+    await onSave(buildTx(baseDate));
     onClose();
   };
 
@@ -539,6 +565,64 @@ export default function TransactionModal({
               </button>
             </div>
           </div>
+
+          {/* Recorrência Card — só faz sentido pra despesas; ao editar uma parcela já
+              existente, mostra só a informação (não dá pra "re-parcelar" um lançamento
+              que já é uma parcela individual). */}
+          {type === TransactionType.EXPENSE && (
+            <div className={`p-5 rounded-[2rem] border transition-all duration-300 flex flex-col gap-4 ${
+              isDarkMode
+                ? 'bg-gradient-to-b from-slate-900 to-slate-950/80 border-slate-800/80 shadow-[0_10px_25px_rgba(0,0,0,0.35),inset_0_1px_0_rgba(255,255,255,0.05)]'
+                : 'bg-gradient-to-b from-white to-slate-50/50 border-slate-200/60 shadow-[0_10px_25px_rgba(0,0,0,0.02),inset_0_1px_1px_rgba(255,255,255,0.9)]'
+            } hover:scale-[1.01] hover:shadow-lg`}>
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${
+                  isDarkMode ? 'bg-cyan-500/10 text-cyan-400 shadow-[0_4px_12px_rgba(6,182,212,0.15)]' : 'bg-cyan-50 text-cyan-600 shadow-[inset_0_1px_2px_rgba(255,255,255,0.4)]'
+                }`}>
+                  <Repeat size={16} strokeWidth={2.5} />
+                </div>
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Recorrência</label>
+              </div>
+
+              {transaction?.isRecurring ? (
+                <p className="text-[11px] font-bold text-slate-500 dark:text-slate-400">
+                  Parcela {transaction.installmentNumber} de {transaction.totalInstallments} — editar/excluir afeta só esta parcela.
+                </p>
+              ) : transaction ? (
+                <p className="text-[11px] font-bold text-slate-400 italic">Lançamento único (não recorrente).</p>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsRecurring(v => !v)}
+                    className={`flex items-center justify-between gap-3 p-2.5 rounded-2xl border transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+                  >
+                    <span className="text-[11px] font-black uppercase tracking-tight text-left dark:text-white">
+                      Despesa recorrente / parcelada
+                    </span>
+                    <div className={`w-10 h-6 rounded-full p-1 flex items-center transition-all shrink-0 ${isRecurring ? 'bg-cyan-500 justify-end' : (isDarkMode ? 'bg-slate-700 justify-start' : 'bg-slate-300 justify-start')}`}>
+                      <div className="w-4 h-4 rounded-full bg-white shadow-sm" />
+                    </div>
+                  </button>
+                  {isRecurring && (
+                    <div>
+                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest ml-1 mb-2 block">Quantas parcelas</label>
+                      <input
+                        type="number"
+                        min={2}
+                        value={totalInstallments}
+                        onChange={(e) => setTotalInstallments(Math.max(2, Number(e.target.value) || 2))}
+                        className="w-full bg-slate-100/70 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 rounded-[1.3rem] py-3.5 px-5 text-sm font-black focus:ring-4 focus:ring-cyan-500/10 transition-all dark:text-white outline-none"
+                      />
+                      <p className="text-[9px] font-bold text-slate-400 mt-2 ml-1">
+                        Gera {totalInstallments} lançamentos, um por mês a partir da data informada.
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="p-8 pt-2 shrink-0">

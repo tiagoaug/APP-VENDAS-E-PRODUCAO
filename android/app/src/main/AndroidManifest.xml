@@ -24,6 +24,14 @@
 
         </activity>
 
+        <!-- Print Studio — tela nativa de diagramação para impressão, aberta apenas via
+             PrintStudioPlugin (ponte Capacitor); nunca por fora do app. -->
+        <activity
+            android:name=".printstudio.PrintStudioActivity"
+            android:label="Print Studio"
+            android:theme="@style/AppTheme.PrintStudio"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

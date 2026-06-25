@@ -1,16 +1,24 @@
 ﻿import React, { useState, useMemo } from 'react';
-import { Purchase, Account, PaymentMethod, PaymentHistory, TransactionType, PaymentStatus, Person } from '../types';
+import { Account, PaymentHistory } from '../types';
 import { X, DollarSign, Calendar, Wallet, History, Clipboard, CheckCircle2, ChevronRight, AlertCircle, Copy } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '../utils/toast';
 
+/** Forma estrutural mínima — funciona tanto pra Purchase (id/total/paymentHistory) quanto
+ * pra Transaction (usando `amount` como `total`), sem acoplar este modal a nenhum dos dois. */
+interface PayableEntity {
+  id: string;
+  total: number;
+  paymentHistory?: PaymentHistory[];
+}
+
 interface PartialPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  purchase: Purchase;
+  entity: PayableEntity;
   accounts: Account[];
-  supplier?: Person;
+  entityLabel?: string;
   onPay: (amount: number, accountId: string, note: string) => Promise<void>;
   isDarkMode: boolean;
   initialMode?: 'PAYMENT' | 'HISTORY';
@@ -19,9 +27,9 @@ interface PartialPaymentModalProps {
 export default function PartialPaymentModal({
   isOpen,
   onClose,
-  purchase,
+  entity,
   accounts,
-  supplier,
+  entityLabel,
   onPay,
   isDarkMode,
   initialMode = 'PAYMENT'
@@ -33,21 +41,21 @@ export default function PartialPaymentModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const totalPaid = useMemo(() => {
-    return (purchase.paymentHistory || []).reduce((acc, p) => acc + p.amount, 0);
-  }, [purchase.paymentHistory]);
+    return (entity.paymentHistory || []).reduce((acc, p) => acc + p.amount, 0);
+  }, [entity.paymentHistory]);
 
-  const remaining = Math.max(0, purchase.total - totalPaid);
+  const remaining = Math.max(0, entity.total - totalPaid);
 
   if (!isOpen) return null;
 
   const handleCopyHistory = () => {
-    if (!purchase.paymentHistory || purchase.paymentHistory.length === 0) return;
+    if (!entity.paymentHistory || entity.paymentHistory.length === 0) return;
 
-    const text = purchase.paymentHistory
+    const text = entity.paymentHistory
       .map(p => `${format(p.date, 'dd/MM/yyyy')} - R$ ${p.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`)
       .join('\n');
-    
-    const summary = `Histórico de Pagamentos - Compra #${purchase.id.slice(-6).toUpperCase()}\nFornecedor: ${supplier?.name || '---'}\nTotal: R$ ${purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n\n${text}\n\nTotal Pago: R$ ${totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\nRestante: R$ ${remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+
+    const summary = `Histórico de Pagamentos - #${entity.id.slice(-6).toUpperCase()}\n${entityLabel ? `Fornecedor: ${entityLabel}\n` : ''}Total: R$ ${entity.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\n\n${text}\n\nTotal Pago: R$ ${totalPaid.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}\nRestante: R$ ${remaining.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
 
     navigator.clipboard.writeText(summary);
     toast.show('Histórico copiado!');
@@ -90,7 +98,7 @@ export default function PartialPaymentModal({
             <h2 className={`text-lg font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
               {viewMode === 'PAYMENT' ? 'Registrar Pagamento' : 'Histórico de Pagamentos'}
             </h2>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Fornecedor: {supplier?.name || "---"}</p>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Fornecedor: {entityLabel || "---"}</p>
           </div>
           <button 
             onClick={onClose} 
@@ -123,7 +131,7 @@ export default function PartialPaymentModal({
           <div className="grid grid-cols-2 gap-4">
             <div className={`p-4 rounded-3xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Dívida Total</p>
-              <p className={`text-lg font-black tracking-tighter ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>R$ {purchase.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+              <p className={`text-lg font-black tracking-tighter ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>R$ {entity.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
             </div>
             <div className={`p-4 rounded-3xl ${isDarkMode ? 'bg-indigo-900/20' : 'bg-indigo-50'}`}>
               <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest mb-1">Total Pago</p>
@@ -229,8 +237,8 @@ export default function PartialPaymentModal({
                     <History size={16} className="text-slate-400" />
                     <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Extrato de Pagamentos</h3>
                   </div>
-                  {purchase.paymentHistory && purchase.paymentHistory.length > 0 && (
-                    <button 
+                  {entity.paymentHistory && entity.paymentHistory.length > 0 && (
+                    <button
                       onClick={handleCopyHistory}
                       className="p-2 rounded-lg bg-white dark:bg-slate-800 text-slate-400 hover:text-indigo-500 transition-all border border-slate-100 dark:border-slate-700 flex items-center gap-1.5"
                     >
@@ -240,9 +248,9 @@ export default function PartialPaymentModal({
                   )}
                 </div>
 
-                {purchase.paymentHistory && purchase.paymentHistory.length > 0 ? (
+                {entity.paymentHistory && entity.paymentHistory.length > 0 ? (
                   <div className="space-y-4">
-                    {purchase.paymentHistory.slice().reverse().map((p) => {
+                    {entity.paymentHistory.slice().reverse().map((p) => {
                       const acc = accounts.find(a => a.id === p.accountId);
                       return (
                         <div key={p.id} className="flex items-center justify-between border-b last:border-0 border-slate-50 dark:border-slate-900 pb-3 last:pb-0">

@@ -46,7 +46,7 @@ import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
 import { getMaterialStockForColor } from '../utils/materialStock';
 import ExportNoteModal from '../components/ExportNoteModal';
-import { generatePCPShareExport, PCPShareItem } from '../utils/pcpShareExport';
+import { generatePCPShareExport, PCPShareItem, sendPCPItemsToPrintStudio } from '../utils/pcpShareExport';
 
 const getContrastingColor = (hexcolor: string) => {
   if (!hexcolor || hexcolor.length < 6) return '#ffffff';
@@ -360,7 +360,7 @@ export default function PCPView({
 
   // ── Centro de Compartilhamento PCP ──────────────────────────────────────────
   const [isPCPShareModalOpen, setIsPCPShareModalOpen] = useState(false);
-  const [shareModal, setShareModal] = useState<{ isOpen: boolean; format: 'pdf' | 'jpg'; selectedItems: any[] }>({ isOpen: false, format: 'pdf', selectedItems: [] });
+  const [shareModal, setShareModal] = useState<{ isOpen: boolean; format: 'pdf' | 'jpg'; selectedItems: any[] }>({ isOpen: false, format: 'jpg', selectedItems: [] });
   const [shareReportType, setShareReportType] = useState<'sector' | 'lot' | 'customer'>('sector');
   const [shareFilterSectors, setShareFilterSectors] = useState<Set<string>>(new Set());
   const [shareFilterStatus, setShareFilterStatus] = useState<'active' | 'finished' | 'all'>('active');
@@ -1597,7 +1597,7 @@ export default function PCPView({
   ): LotAdvanceItem[] => {
     const buildItem = (
       key: string, orderId: string, productId: string, variationId: string | undefined,
-      qty: number, fallbackProductName?: string, fallbackColorName?: string,
+      qty: number, fallbackProductName?: string, fallbackColorName?: string, itemIdx?: number,
     ): LotAdvanceItem => {
       const product = products.find(p => p.id === productId);
       const variation = product?.variations.find(v => v.id === variationId);
@@ -1605,7 +1605,7 @@ export default function PCPView({
       const suggestedSectorId = resolved.isFinished ? '' : resolved.sectorId;
       const suggestedSectorName = resolved.isFinished ? 'CONCLUÍDO' : (sectors.find(s => s.id === suggestedSectorId)?.name || suggestedSectorId);
       return {
-        key, orderId, productId,
+        key, orderId, productId, itemIdx, variationId,
         productName: product?.name || fallbackProductName || '—',
         colorName: variation?.colorName || fallbackColorName || '',
         qty,
@@ -1642,7 +1642,7 @@ export default function PCPView({
           : order?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
         const resolvedProductId = si.productId || orderItem?.productId;
         const resolvedVariationId = si.variationId || orderItem?.variationId;
-        return buildItem(`${si.orderId}-${idx}`, si.orderId, resolvedProductId, resolvedVariationId, si.qty || 0, orderItem?.productName, orderItem?.variationName);
+        return buildItem(`${si.orderId}-${idx}`, si.orderId, resolvedProductId, resolvedVariationId, si.qty || 0, orderItem?.productName, orderItem?.variationName, si.itemIdx);
       });
     }
     return [buildItem(lot.id, lot.productionOrderId || lot.id, lot.productId, lot.variationId, lot.quantity || 0)];
@@ -1716,6 +1716,102 @@ export default function PCPView({
     return result;
   };
 
+  // Constrói um PCPShareItem a partir de uma "ficha" (item selecionado na Central de
+  // Compartilhamento, card de pedido por setor, linha de pedido do Mapa, etc.) — extraído
+  // da Central de Compartilhamento pra ser reaproveitado também pelos botões "Print
+  // Studio" do PCP (ficha, OS e Mapa), sem duplicar essa montagem de novo em cada um.
+  const buildPCPShareItem = (f: any): PCPShareItem => {
+    const order = f.order || productionOrders.find(o => o.id === (f.si?.orderId || f.productionOrderId || f.id));
+    const ordItem = f.orderItem || (
+      f.si && f.si.itemIdx !== undefined
+        ? order?.items[f.si.itemIdx]
+        : order?.items.find((i: any) => i.productId === (f.si?.productId || f.productId) && i.variationId === (f.si?.variationId || f.variationId))
+    );
+
+    const prod = f.product || products.find(p => p.id === (ordItem?.productId || f.si?.productId || f.productId));
+    const vari = f.variation || prod?.variations.find((v: any) => v.id === (ordItem?.variationId || f.si?.variationId || f.variationId));
+
+    const sizes = Object.entries(ordItem?.sizes || {})
+      .map(([sz, sData]: [string, any]) => ({ size: sz, qty: Number(sData.toProduction) || 0 }))
+      .filter(s => s.qty > 0)
+      .sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
+
+    const totalQty = sizes.reduce((acc, s) => acc + s.qty, 0);
+
+    const os: ServiceOrder | undefined = f.coveringOS;
+    const secEntries = Object.entries(vari?.sectorNotes || {})
+      .filter(([sid]) => !os || sid === os.sectorId)
+      .map(([sid, notes]) => ({ sid, notes: (notes as any[]).filter(n => n.text).map(n => n.text) }))
+      .filter(({ notes }) => notes.length > 0)
+      .map(({ sid, notes }) => {
+        const sectorName = sectors.find(s => s.id === sid)?.name || 'Setor Desconhecido';
+        return { sectorName, notes };
+      });
+
+    return {
+      orderNumber: order?.saleOrderNumber || f.si?.orderId?.substring(0, 6) || '---',
+      reference: prod?.reference || prod?.name || '---',
+      color: vari?.colorName || '---',
+      totalPairs: totalQty,
+      sizeGrid: sizes,
+      sectorNotes: secEntries,
+      osNumber: os?.osNumber,
+      providerName: os?.providerName,
+      osValue: os?.totalValue,
+      osDate: os?.createdAt,
+      osSectorName: os ? (sectors.find(s => s.id === os.sectorId)?.name || os.sectorName) : undefined,
+      soleInfo: buildSoleInfoForItem(prod, vari, ordItem, totalQty),
+    };
+  };
+
+  // Constrói os PCPShareItem (já agrupados, se groupMode !== 'none') a partir das fichas
+  // selecionadas na Central de Compartilhamento — extraído de onConfirm/onPreview do
+  // ExportNoteModal pra ser reaproveitado também por "Abrir no Print Studio", sem
+  // triplicar essa montagem+agrupamento de novo.
+  const buildGroupedShareItems = (
+    selectedItems: any[], groupMode: 'none' | 'ref_color' | 'ref',
+  ): { finalItems: PCPShareItem[]; lotNumbers: string } => {
+    const uniqueLots = Array.from(new Set(selectedItems.map((f: any) => f.lot.id)))
+      .map((id: any) => lots.find((l: any) => l.id === id))
+      .filter(Boolean) as any[];
+
+    const items: PCPShareItem[] = selectedItems.map(buildPCPShareItem);
+
+    let finalItems = items;
+    if (groupMode !== 'none') {
+      const groupedMap = new Map<string, PCPShareItem>();
+      for (const item of items) {
+        const key = groupMode === 'ref' ? item.reference : `${item.reference}::${item.color}`;
+        if (groupedMap.has(key)) {
+          const existing = groupedMap.get(key)!;
+          existing.totalPairs += item.totalPairs;
+          if (groupMode === 'ref') {
+            if (existing.color !== 'Várias' && existing.color !== item.color) {
+              existing.color = 'Várias';
+            }
+          }
+          existing.orderNumber = existing.orderNumber.includes(',') ? existing.orderNumber : `${existing.orderNumber}, ${item.orderNumber}`;
+
+          const sizeMap = new Map<string, number>();
+          for (const s of existing.sizeGrid) sizeMap.set(s.size, s.qty);
+          for (const s of item.sizeGrid) sizeMap.set(s.size, (sizeMap.get(s.size) || 0) + s.qty);
+          existing.sizeGrid = Array.from(sizeMap.entries()).map(([size, qty]) => ({ size, qty })).sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
+
+          existing.soleInfo = mergeSoleInfo(existing.soleInfo, item.soleInfo);
+        } else {
+          groupedMap.set(key, { ...item });
+        }
+      }
+      finalItems = Array.from(groupedMap.values());
+      for (const fi of finalItems) {
+        if (fi.orderNumber.includes(',')) fi.orderNumber = 'Vários';
+      }
+    }
+
+    const lotNumbers = uniqueLots.map(l => l.orderNumber).filter(Boolean).join(', ');
+    return { finalItems, lotNumbers };
+  };
+
   const applyLotAdvance = async (
     lot: ProductionLot, items: LotAdvanceItem[], currentSectorId: string, nextStatusId: string, notes: string,
   ): Promise<{ destSectorId: string; destSectorName: string; isFinished: boolean; skippedSectorNames: string[] }> => {
@@ -1726,8 +1822,14 @@ export default function PCPView({
     const currentOrderSectors: Record<string, string> = (lot as any).metadata?.orderSectors || {};
     const updatedOrderSectors = { ...currentOrderSectors };
     items.forEach(it => {
-      if (it.chosenSectorId !== destSectorId) updatedOrderSectors[it.orderId] = it.chosenSectorId;
-      else delete updatedOrderSectors[it.orderId];
+      // Override por item (mesma chave usada por getOrderEffectiveSector/getSourceItemKey)
+      // — escrever por orderId aqui deixava esse override "sombreado" pela chave por item
+      // já gravada por outras ações (Direcionar p/, Transferir de Setor, etc.), fazendo o
+      // pedido continuar aparecendo no setor antigo mesmo após confirmar o novo destino.
+      const itemKey = getSourceItemKey(it);
+      if (it.chosenSectorId === destSectorId) delete updatedOrderSectors[itemKey];
+      else if (it.chosenSectorId === '') updatedOrderSectors[itemKey] = ORDER_FINALIZED;
+      else updatedOrderSectors[itemKey] = it.chosenSectorId;
     });
 
     const route = lot.route || [];
@@ -3762,7 +3864,7 @@ export default function PCPView({
               {[
                 { label: 'Escanear', icon: <Camera size={20} />, color: 'text-sky-500', bg: isDarkMode ? 'bg-sky-500/10' : 'bg-sky-50', run: () => setIsScannerOpen(true) },
                 { label: 'Filtros', icon: <Filter size={20} />, color: 'text-violet-500', bg: isDarkMode ? 'bg-violet-500/10' : 'bg-violet-50', run: () => setIsFilterPopupOpen(true), dot: statsBarHidden || Object.values(statsBarTiles).some(v => !v) },
-                { label: 'Compartilhar', icon: <Share2 size={20} />, color: 'text-orange-500', bg: isDarkMode ? 'bg-orange-500/10' : 'bg-orange-50', run: () => setShareModal({ isOpen: true, format: 'pdf', selectedItems: filteredActiveLots }) },
+                { label: 'Compartilhar', icon: <Share2 size={20} />, color: 'text-orange-500', bg: isDarkMode ? 'bg-orange-500/10' : 'bg-orange-50', run: () => setShareModal({ isOpen: true, format: 'jpg', selectedItems: filteredActiveLots }) },
                 { label: 'Mapas', icon: <ListTodo size={20} />, color: 'text-emerald-500', bg: isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50', run: () => { setActiveTab('lots'); setSelectedSectorId(null); } },
                 { label: 'Cor Mapa', icon: <Palette size={20} />, color: 'text-indigo-500', bg: isDarkMode ? 'bg-indigo-500/10' : 'bg-indigo-50', run: () => { setColorPickerLot(null); setIsColorPickerOpen(true); } },
                 { label: 'Cor Badges', icon: <Tag size={20} />, color: 'text-rose-500', bg: isDarkMode ? 'bg-rose-500/10' : 'bg-rose-50', run: () => setIsBadgeColorPickerOpen(true) },
@@ -3900,20 +4002,31 @@ export default function PCPView({
           ) : (
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-2 px-2">
-                {/* Linha 1: voltar + nome do setor ativo */}
-                <div className="flex items-center justify-between gap-3">
+                {/* Nome do setor atual, centralizado pela largura do subcard abaixo */}
+                <div className="flex items-center justify-center gap-2 min-w-0">
+                  <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse shrink-0" />
+                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 truncate">
+                    {sectors.find(s => s.id === selectedSectorId)?.name}
+                  </h3>
+                </div>
+
+                {/* Subcard dividido em 2: Voltar para Setores | Mudar Setor */}
+                <div className={`p-1.5 rounded-2xl shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
                   <button
+                    type="button"
                     onClick={() => setSelectedSectorId(null)}
-                    className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 hover:gap-3 transition-all shrink-0"
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
                   >
-                    <ChevronRight size={16} className="rotate-180" /> Voltar para Setores
+                    <ChevronRight size={14} className="rotate-180" /> Voltar
                   </button>
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse shrink-0" />
-                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 truncate">
-                      {sectors.find(s => s.id === selectedSectorId)?.name}
-                    </h3>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsSectorSwitcherOpen(true)}
+                    title="Mudar para outro setor"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-orange-500 text-white shadow-md shadow-orange-500/25 hover:bg-orange-600 transition-all active:scale-95"
+                  >
+                    <ArrowLeftRight size={14} /> Mudar Setor
+                  </button>
                 </div>
                 {isSectorSwitcherOpen && createPortal(
                   <div
@@ -3959,19 +4072,6 @@ export default function PCPView({
                   </div>,
                   document.body
                 )}
-
-                {/* Linha 2: ações do setor */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsSectorSwitcherOpen(true)}
-                    title="Mudar para outro setor"
-                    className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border border-orange-500 bg-orange-500 text-white shadow-lg shadow-orange-500/25 hover:bg-orange-600 transition-all active:scale-95"
-                  >
-                    <ArrowLeftRight size={12} />
-                    Mudar Setor
-                  </button>
-                </div>
               </div>
 
 
@@ -4569,60 +4669,68 @@ export default function PCPView({
 
                                         <hr className={`border-dashed ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`} />
 
-                                        {/* Ações */}
+                                        {/* Ações — dois subcards divididos em 2 botões cada (em vez da lista
+                                            label+botão que apertava/sobrepunha "Imprimir/Compartilhar" e
+                                            "Print Studio" lado a lado em telas estreitas). */}
                                         <div className="flex flex-col gap-2">
-                                          <div className="flex items-center justify-between">
+                                          <div className="flex items-center justify-center gap-1.5">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
                                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Etiqueta Deste Pedido</span>
-                                            <div className="flex items-center gap-2">
-                                              <button type="button"
-                                                onClick={() => {
-                                                  const resolvedProductId = f.si.productId || f.orderItem?.productId;
-                                                  const resolvedVariationId = f.si.variationId || f.orderItem?.variationId;
-                                                  const itemProduct = products.find(p => p.id === resolvedProductId);
-                                                  const itemVariation = itemProduct?.variations.find(v => v.id === resolvedVariationId);
-                                                  if (itemProduct && itemVariation && f.orderItem?.sizes) {
-                                                    const szStr = Object.entries(f.orderItem.sizes as Record<string, { toProduction: number }>)
-                                                      .filter(([, s]) => s.toProduction > 0)
-                                                      .sort(([a], [b]) => Number(a) - Number(b))
-                                                      .map(([sz, s]) => `${sz}x${s.toProduction}`)
-                                                      .join('-');
-
-                                                    if (szStr) {
-                                                      setLabelModalProduct(itemProduct);
-                                                      setLabelModalLot(f.lot);
-                                                      setLabelModalSizeGrid(szStr);
-                                                      setLabelModalBatchItems([{ product: itemProduct, variation: itemVariation, sizeGrid: szStr, lotId: f.lot.id, orderId: f.si.orderId, itemIdx: f.siIdx }]);
-                                                    }
-                                                  }
-                                                }}
-                                                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest transition-all shadow-md shadow-indigo-500/20 flex items-center gap-2"
-                                              >
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
-                                                Imprimir / Compartilhar
-                                              </button>
-                                            </div>
                                           </div>
-
-                                          <div className="flex items-center justify-between">
-                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ficha do Pedido</span>
+                                          <div className={`p-1.5 rounded-2xl shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
                                             <button type="button"
-                                              onClick={() => setShareModal({ isOpen: true, format: 'pdf', selectedItems: [f] })}
-                                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${isDarkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-slate-600 text-white hover:bg-slate-700'}`}
+                                              onClick={() => {
+                                                const resolvedProductId = f.si.productId || f.orderItem?.productId;
+                                                const resolvedVariationId = f.si.variationId || f.orderItem?.variationId;
+                                                const itemProduct = products.find(p => p.id === resolvedProductId);
+                                                const itemVariation = itemProduct?.variations.find(v => v.id === resolvedVariationId);
+                                                if (itemProduct && itemVariation && f.orderItem?.sizes) {
+                                                  const szStr = Object.entries(f.orderItem.sizes as Record<string, { toProduction: number }>)
+                                                    .filter(([, s]) => s.toProduction > 0)
+                                                    .sort(([a], [b]) => Number(a) - Number(b))
+                                                    .map(([sz, s]) => `${sz}x${s.toProduction}`)
+                                                    .join('-');
+
+                                                  if (szStr) {
+                                                    setLabelModalProduct(itemProduct);
+                                                    setLabelModalLot(f.lot);
+                                                    setLabelModalSizeGrid(szStr);
+                                                    setLabelModalBatchItems([{ product: itemProduct, variation: itemVariation, sizeGrid: szStr, lotId: f.lot.id, orderId: f.si.orderId, itemIdx: f.siIdx }]);
+                                                  }
+                                                }
+                                              }}
+                                              className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/20 transition-all active:scale-95"
                                             >
-                                              <Share2 size={14} /> Compartilhar Ficha
+                                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
+                                              Imprimir / Compartilhar
+                                            </button>
+                                            <button type="button"
+                                              title="Print Studio"
+                                              onClick={() => sendPCPItemsToPrintStudio([buildPCPShareItem(f)], { isDarkMode })}
+                                              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-cyan-900/30 text-cyan-300 hover:bg-cyan-900/50' : 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100'}`}
+                                            >
+                                              <Printer size={13} /> Print Studio
                                             </button>
                                           </div>
 
-                                          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mudar de Setor</span>
+                                          <div className="flex items-center justify-center gap-1.5 mt-1">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
+                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Ficha &amp; Setor</span>
+                                          </div>
+                                          <div className={`p-1.5 rounded-2xl shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
+                                            <button type="button"
+                                              onClick={() => setShareModal({ isOpen: true, format: 'jpg', selectedItems: [f] })}
+                                              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-slate-600 text-white hover:bg-slate-700'}`}
+                                            >
+                                              <Share2 size={14} /> Compartilhar Ficha
+                                            </button>
                                             <button type="button"
                                               onClick={() => setManualSectorPicker({ fichas: [f] })}
-                                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${isDarkMode ? 'bg-violet-700 text-violet-100 hover:bg-violet-600' : 'bg-violet-600 text-white hover:bg-violet-700'}`}
+                                              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-violet-700 text-violet-100 hover:bg-violet-600' : 'bg-violet-600 text-white hover:bg-violet-700'}`}
                                             >
                                               <ArrowLeftRight size={14} /> Mudar Setor
                                             </button>
                                           </div>
-
                                         </div>
                                       </div>
                                     )}
@@ -4633,13 +4741,13 @@ export default function PCPView({
 
                             {/* Emitir OS — grouped by lot */}
                             {selected.length > 0 && (
-                              <div className="flex flex-col gap-2">
+                              <div className={`flex flex-col gap-2 p-2 rounded-2xl border ${isDarkMode ? 'border-slate-700 bg-slate-800/40' : 'border-slate-200 bg-slate-50/60'}`}>
                                 <button type="button"
                                   onClick={() => {
                                     const selectedFichasData = filteredFichas.filter(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
-                                    setShareModal({ isOpen: true, format: 'pdf', selectedItems: selectedFichasData });
+                                    setShareModal({ isOpen: true, format: 'jpg', selectedItems: selectedFichasData });
                                   }}
-                                  className="w-full py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm shadow-orange-500/20"
+                                  className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${isDarkMode ? 'bg-orange-500/15 text-orange-400 hover:bg-orange-500/25' : 'bg-orange-50 text-orange-600 hover:bg-orange-100'}`}
                                 >
                                   <Share2 size={13} /> Compartilhar {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'} ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
                                 </button>
@@ -4649,10 +4757,58 @@ export default function PCPView({
                                     const selectedFichasData = filteredFichas.filter(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
                                     setManualSectorPicker({ fichas: selectedFichasData });
                                   }}
-                                  className="w-full py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 shadow-sm shadow-violet-500/20"
+                                  className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${isDarkMode ? 'bg-violet-500/15 text-violet-400 hover:bg-violet-500/25' : 'bg-violet-50 text-violet-600 hover:bg-violet-100'}`}
                                 >
-                                  <ArrowLeftRight size={13} /> Mudar Setor — {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'}
+                                  <ArrowLeftRight size={13} /> Transferir de Setor — {selected.length} {selected.length === 1 ? 'Pedido' : 'Pedidos'}
                                 </button>
+
+                                {selByLot.size > 1 && (
+                                  <button type="button"
+                                    onClick={() => {
+                                      const uniqueLots = Array.from(selByLot.keys()).map(id => allFichas.find(f => f.lot.id === id)?.lot).filter(Boolean) as ProductionLot[];
+                                      const orderIds = selected.map(f => `${f.lot.id}::${f.si.orderId}::${f.siIdx}`);
+
+                                      const n = new Set(fichaSelection);
+                                      selected.forEach(f => n.delete(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
+                                      setFichaSelection(n);
+
+                                      const firstLot = uniqueLots[0];
+                                      const lotCurrentSector = firstLot.route?.[firstLot.currentSectorIndex];
+                                      const isRedirected = lotCurrentSector !== selectedSectorId;
+                                      const sectorOvr = isRedirected ? selectedSectorId : undefined;
+                                      const qtyOvr = selectedQty;
+
+                                      handleOpenOSModalForOrder(uniqueLots, orderIds, undefined, sectorOvr, qtyOvr);
+                                    }}
+                                    className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-sky-500/15 text-sky-400 hover:bg-sky-500/25' : 'bg-sky-50 text-sky-600 hover:bg-sky-100'}`}
+                                  >
+                                    <Hammer size={13} /> Emitir OS Unificada — {selected.length} Pedidos ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
+                                  </button>
+                                )}
+
+                                {selByLot.size === 1 && Array.from(selByLot.entries()).map(([lotId, lotSelected]) => {
+                                  const lot = allFichas.find(f => f.lot.id === lotId)?.lot;
+                                  if (!lot) return null;
+                                  const qty = lotSelected.reduce((s, f) => s + (f.si.qty || 0), 0);
+                                  return (
+                                    <button type="button" key={lotId}
+                                      onClick={() => {
+                                        const orderIds = lotSelected.map(f => `${f.lot.id}::${f.si.orderId}::${f.siIdx}`);
+                                        const n = new Set(fichaSelection);
+                                        lotSelected.forEach(f => n.delete(`${lotId}::${f.si.orderId}::${f.siIdx}`));
+                                        setFichaSelection(n);
+                                        const lotCurrentSector = lot.route?.[lot.currentSectorIndex];
+                                        const isRedirected = lotCurrentSector !== selectedSectorId;
+                                        const sectorOvr = isRedirected ? selectedSectorId : undefined;
+                                        const qtyOvr = qty;
+                                        handleOpenOSModalForOrder(lot, orderIds, undefined, sectorOvr, qtyOvr);
+                                      }}
+                                      className={`w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-sky-500/15 text-sky-400 hover:bg-sky-500/25' : 'bg-sky-50 text-sky-600 hover:bg-sky-100'}`}
+                                    >
+                                      <Hammer size={13} /> Emitir OS — {lotSelected.length} {lotSelected.length === 1 ? 'Pedido' : 'Pedidos'} ({qty} {qty === 1 ? 'par' : 'pares'}) · MAPA{lot.orderNumber}
+                                    </button>
+                                  );
+                                })}
 
                                 {(() => {
                                   const isEndCycle = !!sectors.find(s => s.id === selectedSectorId)?.isProductionCycleEnd ||
@@ -4809,54 +4965,6 @@ export default function PCPView({
                                     </button>
                                   );
                                 })()}
-
-                                {selByLot.size > 1 && (
-                                  <button type="button"
-                                    onClick={() => {
-                                      const uniqueLots = Array.from(selByLot.keys()).map(id => allFichas.find(f => f.lot.id === id)?.lot).filter(Boolean) as ProductionLot[];
-                                      const orderIds = selected.map(f => `${f.lot.id}::${f.si.orderId}::${f.siIdx}`);
-
-                                      const n = new Set(fichaSelection);
-                                      selected.forEach(f => n.delete(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
-                                      setFichaSelection(n);
-
-                                      const firstLot = uniqueLots[0];
-                                      const lotCurrentSector = firstLot.route?.[firstLot.currentSectorIndex];
-                                      const isRedirected = lotCurrentSector !== selectedSectorId;
-                                      const sectorOvr = isRedirected ? selectedSectorId : undefined;
-                                      const qtyOvr = selectedQty;
-
-                                      handleOpenOSModalForOrder(uniqueLots, orderIds, undefined, sectorOvr, qtyOvr);
-                                    }}
-                                    className="w-full py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm shadow-emerald-500/30"
-                                  >
-                                    <Hammer size={13} /> Emitir OS Unificada — {selected.length} Pedidos ({selectedQty} {selectedQty === 1 ? 'par' : 'pares'})
-                                  </button>
-                                )}
-
-                                {selByLot.size === 1 && Array.from(selByLot.entries()).map(([lotId, lotSelected]) => {
-                                  const lot = allFichas.find(f => f.lot.id === lotId)?.lot;
-                                  if (!lot) return null;
-                                  const qty = lotSelected.reduce((s, f) => s + (f.si.qty || 0), 0);
-                                  return (
-                                    <button type="button" key={lotId}
-                                      onClick={() => {
-                                        const orderIds = lotSelected.map(f => `${f.lot.id}::${f.si.orderId}::${f.siIdx}`);
-                                        const n = new Set(fichaSelection);
-                                        lotSelected.forEach(f => n.delete(`${lotId}::${f.si.orderId}::${f.siIdx}`));
-                                        setFichaSelection(n);
-                                        const lotCurrentSector = lot.route?.[lot.currentSectorIndex];
-                                        const isRedirected = lotCurrentSector !== selectedSectorId;
-                                        const sectorOvr = isRedirected ? selectedSectorId : undefined;
-                                        const qtyOvr = qty;
-                                        handleOpenOSModalForOrder(lot, orderIds, undefined, sectorOvr, qtyOvr);
-                                      }}
-                                      className="w-full py-3 rounded-2xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-600 hover:to-blue-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 shadow-sm shadow-sky-500/30"
-                                    >
-                                      <Hammer size={13} /> Emitir OS — {lotSelected.length} {lotSelected.length === 1 ? 'Pedido' : 'Pedidos'} ({qty} {qty === 1 ? 'par' : 'pares'}) · MAPA{lot.orderNumber}
-                                    </button>
-                                  );
-                                })}
                               </div>
                             )}
 
@@ -4910,7 +5018,7 @@ export default function PCPView({
                                           className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                                           <Trash2 size={12} className="text-rose-500" /> Excluir
                                         </button>
-                                        <button type="button" title="Compartilhar OS" onClick={() => setShareModal({ isOpen: true, format: 'pdf', selectedItems: getFichasForOS(os) })}
+                                        <button type="button" title="Compartilhar OS" onClick={() => setShareModal({ isOpen: true, format: 'jpg', selectedItems: getFichasForOS(os) })}
                                           className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                                           <Share2 size={12} className="text-orange-500" /> Compartilhar
                                         </button>
@@ -4921,6 +5029,11 @@ export default function PCPView({
                                       }}
                                         className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                                         <Printer size={12} className="text-emerald-500" /> Imprimir Etiqueta / OS
+                                      </button>
+
+                                      <button type="button" title="Print Studio" onClick={() => sendPCPItemsToPrintStudio(getFichasForOS(os).map(buildPCPShareItem), { isDarkMode })}
+                                        className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                                        <Printer size={12} className="text-cyan-500" /> Print Studio
                                       </button>
 
                                       {/* Observações + Lembrete — anotações sobre a OS, com título e data/hora opcionais para entrar no card de Lembretes do Dashboard */}
@@ -4980,6 +5093,34 @@ export default function PCPView({
                   })()}
                 </>
               )}
+
+              {/* Subcard de navegação repetido no fim do setor — evita ter que rolar até
+                  o topo só pra voltar ou mudar de setor depois de revisar a lista toda. */}
+              <div className="flex flex-col gap-2 px-2">
+                <div className="flex items-center justify-center gap-2 min-w-0">
+                  <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse shrink-0" />
+                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-500 truncate">
+                    {sectors.find(s => s.id === selectedSectorId)?.name}
+                  </h3>
+                </div>
+                <div className={`p-1.5 rounded-2xl shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSectorId(null)}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                  >
+                    <ChevronRight size={14} className="rotate-180" /> Voltar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsSectorSwitcherOpen(true)}
+                    title="Mudar para outro setor"
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-orange-500 text-white shadow-md shadow-orange-500/25 hover:bg-orange-600 transition-all active:scale-95"
+                  >
+                    <ArrowLeftRight size={14} /> Mudar Setor
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -8207,21 +8348,35 @@ export default function PCPView({
                                 {product && variation && (
                                   <div className={`flex items-center justify-between gap-2 pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
                                     <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Etiqueta deste Pedido</p>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        const itemSizeGrid = sizeEntries.map(([sz, s]) => `${sz}x${s.toProduction}`).join('-');
-                                        setLabelModalProduct(product);
-                                        setLabelModalLot(selectedLot);
-                                        setLabelModalSizeGrid(itemSizeGrid);
-                                        setLabelModalBatchItems([{ product, variation, sizeGrid: itemSizeGrid, lotId: selectedLot.id, orderId: si.orderId, itemIdx: si.itemIdx }]);
-                                      }}
-                                      className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 transition-all active:scale-95"
-                                    >
-                                      <Printer size={11} />
-                                      Imprimir / Compartilhar
-                                    </button>
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const itemSizeGrid = sizeEntries.map(([sz, s]) => `${sz}x${s.toProduction}`).join('-');
+                                          setLabelModalProduct(product);
+                                          setLabelModalLot(selectedLot);
+                                          setLabelModalSizeGrid(itemSizeGrid);
+                                          setLabelModalBatchItems([{ product, variation, sizeGrid: itemSizeGrid, lotId: selectedLot.id, orderId: si.orderId, itemIdx: si.itemIdx }]);
+                                        }}
+                                        className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 transition-all active:scale-95"
+                                      >
+                                        <Printer size={11} />
+                                        Imprimir / Compartilhar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title="Print Studio"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          sendPCPItemsToPrintStudio([buildPCPShareItem({ product, variation, si })], { isDarkMode });
+                                        }}
+                                        className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full transition-all active:scale-95 ${isDarkMode ? 'bg-cyan-900/30 text-cyan-300 hover:bg-cyan-900/50' : 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100'}`}
+                                      >
+                                        <Printer size={11} />
+                                        Print Studio
+                                      </button>
+                                    </div>
                                   </div>
                                 )}
                                 {product && (
@@ -8832,7 +8987,7 @@ export default function PCPView({
                                         }
                                       });
                                     });
-                                    setShareModal({ isOpen: true, format: 'pdf', selectedItems: mappedFichas });
+                                    setShareModal({ isOpen: true, format: 'jpg', selectedItems: mappedFichas });
                                   }} className="flex-1 text-[11px] font-black uppercase text-orange-600 bg-orange-50 dark:bg-orange-950/20 hover:bg-orange-100 py-2.5 rounded-xl transition-all text-center">Compartilhar</button>
                                   <button type="button" onClick={() => {
                                     const printNextSectorName = selectedLot ? computeOSAdvanceOutcome(os, selectedLot, products, sectors).nextSectorName : 'CONCLUÍDO';
@@ -10648,91 +10803,7 @@ export default function PCPView({
         isOpen={shareModal.isOpen}
         onClose={() => setShareModal(prev => ({ ...prev, isOpen: false }))}
         onConfirm={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid) => {
-          const { selectedItems } = shareModal;
-
-          const uniqueLots = Array.from(new Set(selectedItems.map((f: any) => f.lot.id)))
-            .map((id: any) => lots.find((l: any) => l.id === id))
-            .filter(Boolean) as any[];
-
-          const items: PCPShareItem[] = selectedItems.map((f: any) => {
-            const order = f.order || productionOrders.find(o => o.id === (f.si?.orderId || f.productionOrderId || f.id));
-            const ordItem = f.orderItem || (
-              f.si && f.si.itemIdx !== undefined
-                ? order?.items[f.si.itemIdx]
-                : order?.items.find((i: any) => i.productId === (f.si?.productId || f.productId) && i.variationId === (f.si?.variationId || f.variationId))
-            );
-
-            const prod = f.product || products.find(p => p.id === (ordItem?.productId || f.si?.productId || f.productId));
-            const vari = f.variation || prod?.variations.find((v: any) => v.id === (ordItem?.variationId || f.si?.variationId || f.variationId));
-
-            const sizes = Object.entries(ordItem?.sizes || {})
-              .map(([sz, sData]: [string, any]) => ({ size: sz, qty: Number(sData.toProduction) || 0 }))
-              .filter(s => s.qty > 0)
-              .sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
-
-            const totalQty = sizes.reduce((acc, s) => acc + s.qty, 0);
-
-            // Instruções por setor: vêm do cadastro do produto (variation.sectorNotes).
-            // Quando o item está vinculado a uma OS, mostra só a instrução do setor
-            // em que ELA foi emitida — não as de todos os setores cadastrados.
-            const os: ServiceOrder | undefined = f.coveringOS;
-            const secEntries = Object.entries(vari?.sectorNotes || {})
-              .filter(([sid]) => !os || sid === os.sectorId)
-              .map(([sid, notes]) => ({ sid, notes: (notes as any[]).filter(n => n.text).map(n => n.text) }))
-              .filter(({ notes }) => notes.length > 0)
-              .map(({ sid, notes }) => {
-                const sectorName = sectors.find(s => s.id === sid)?.name || 'Setor Desconhecido';
-                return { sectorName, notes };
-              });
-
-            return {
-              orderNumber: order?.saleOrderNumber || f.si.orderId.substring(0, 6),
-              reference: prod?.reference || prod?.name || '---',
-              color: vari?.colorName || '---',
-              totalPairs: totalQty,
-              sizeGrid: sizes,
-              sectorNotes: secEntries,
-              osNumber: os?.osNumber,
-              providerName: os?.providerName,
-              osValue: os?.totalValue,
-              osDate: os?.createdAt,
-              osSectorName: os ? (sectors.find(s => s.id === os.sectorId)?.name || os.sectorName) : undefined,
-              soleInfo: buildSoleInfoForItem(prod, vari, ordItem, totalQty),
-            };
-          });
-
-          let finalItems = items;
-          if (groupMode !== 'none') {
-            const groupedMap = new Map<string, PCPShareItem>();
-            for (const item of items) {
-              const key = groupMode === 'ref' ? item.reference : `${item.reference}::${item.color}`;
-              if (groupedMap.has(key)) {
-                const existing = groupedMap.get(key)!;
-                existing.totalPairs += item.totalPairs;
-                if (groupMode === 'ref') {
-                  if (existing.color !== 'Várias' && existing.color !== item.color) {
-                    existing.color = 'Várias';
-                  }
-                }
-                existing.orderNumber = existing.orderNumber.includes(',') ? existing.orderNumber : `${existing.orderNumber}, ${item.orderNumber}`;
-
-                const sizeMap = new Map<string, number>();
-                for (const s of existing.sizeGrid) sizeMap.set(s.size, s.qty);
-                for (const s of item.sizeGrid) sizeMap.set(s.size, (sizeMap.get(s.size) || 0) + s.qty);
-                existing.sizeGrid = Array.from(sizeMap.entries()).map(([size, qty]) => ({ size, qty })).sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
-
-                existing.soleInfo = mergeSoleInfo(existing.soleInfo, item.soleInfo);
-              } else {
-                groupedMap.set(key, { ...item });
-              }
-            }
-            finalItems = Array.from(groupedMap.values());
-            for (const fi of finalItems) {
-              if (fi.orderNumber.includes(',')) fi.orderNumber = 'Vários';
-            }
-          }
-
-          const lotNumbers = uniqueLots.map(l => l.orderNumber).filter(Boolean).join(', ');
+          const { finalItems, lotNumbers } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
 
           const success = await generatePCPShareExport({
             lotNumber: lotNumbers || 'Vários',
@@ -10755,88 +10826,7 @@ export default function PCPView({
           }
         }}
         onPreview={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid) => {
-          const { selectedItems } = shareModal;
-
-          const uniqueLots = Array.from(new Set(selectedItems.map((f: any) => f.lot.id)))
-            .map((id: any) => lots.find((l: any) => l.id === id))
-            .filter(Boolean) as any[];
-
-          const items: PCPShareItem[] = selectedItems.map((f: any) => {
-            const order = f.order || productionOrders.find(o => o.id === (f.si?.orderId || f.productionOrderId || f.id));
-            const ordItem = f.orderItem || (
-              f.si && f.si.itemIdx !== undefined
-                ? order?.items[f.si.itemIdx]
-                : order?.items.find((i: any) => i.productId === (f.si?.productId || f.productId) && i.variationId === (f.si?.variationId || f.variationId))
-            );
-
-            const prod = f.product || products.find(p => p.id === (ordItem?.productId || f.si?.productId || f.productId));
-            const vari = f.variation || prod?.variations.find((v: any) => v.id === (ordItem?.variationId || f.si?.variationId || f.variationId));
-
-            const sizes = Object.entries(ordItem?.sizes || {})
-              .map(([sz, sData]: [string, any]) => ({ size: sz, qty: Number(sData.toProduction) || 0 }))
-              .filter(s => s.qty > 0)
-              .sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
-
-            const totalQty = sizes.reduce((acc, s) => acc + s.qty, 0);
-
-            const os: ServiceOrder | undefined = f.coveringOS;
-            const secEntries = Object.entries(vari?.sectorNotes || {})
-              .filter(([sid]) => !os || sid === os.sectorId)
-              .map(([sid, notes]) => ({ sid, notes: (notes as any[]).filter(n => n.text).map(n => n.text) }))
-              .filter(({ notes }) => notes.length > 0)
-              .map(({ sid, notes }) => {
-                const sectorName = sectors.find(s => s.id === sid)?.name || 'Setor Desconhecido';
-                return { sectorName, notes };
-              });
-
-            return {
-              orderNumber: order?.saleOrderNumber || f.si.orderId.substring(0, 6),
-              reference: prod?.reference || prod?.name || '---',
-              color: vari?.colorName || '---',
-              totalPairs: totalQty,
-              sizeGrid: sizes,
-              sectorNotes: secEntries,
-              osNumber: os?.osNumber,
-              providerName: os?.providerName,
-              osValue: os?.totalValue,
-              osDate: os?.createdAt,
-              osSectorName: os ? (sectors.find(s => s.id === os.sectorId)?.name || os.sectorName) : undefined,
-              soleInfo: buildSoleInfoForItem(prod, vari, ordItem, totalQty),
-            };
-          });
-
-          let finalItems = items;
-          if (groupMode !== 'none') {
-            const groupedMap = new Map<string, PCPShareItem>();
-            for (const item of items) {
-              const key = groupMode === 'ref' ? item.reference : `${item.reference}::${item.color}`;
-              if (groupedMap.has(key)) {
-                const existing = groupedMap.get(key)!;
-                existing.totalPairs += item.totalPairs;
-                if (groupMode === 'ref') {
-                  if (existing.color !== 'Várias' && existing.color !== item.color) {
-                    existing.color = 'Várias';
-                  }
-                }
-                existing.orderNumber = existing.orderNumber.includes(',') ? existing.orderNumber : `${existing.orderNumber}, ${item.orderNumber}`;
-
-                const sizeMap = new Map<string, number>();
-                for (const s of existing.sizeGrid) sizeMap.set(s.size, s.qty);
-                for (const s of item.sizeGrid) sizeMap.set(s.size, (sizeMap.get(s.size) || 0) + s.qty);
-                existing.sizeGrid = Array.from(sizeMap.entries()).map(([size, qty]) => ({ size, qty })).sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
-
-                existing.soleInfo = mergeSoleInfo(existing.soleInfo, item.soleInfo);
-              } else {
-                groupedMap.set(key, { ...item });
-              }
-            }
-            finalItems = Array.from(groupedMap.values());
-            for (const fi of finalItems) {
-              if (fi.orderNumber.includes(',')) fi.orderNumber = 'Vários';
-            }
-          }
-
-          const lotNumbers = uniqueLots.map(l => l.orderNumber).filter(Boolean).join(', ');
+          const { finalItems, lotNumbers } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
 
           return await generatePCPShareExport({
             lotNumber: lotNumbers || 'Vários',
@@ -10854,6 +10844,16 @@ export default function PCPView({
             showSoleGrid
           }, format, true);
         }}
+        onOpenInPrintStudio={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid) => {
+          // Print Studio trabalha com blocos de imagem (bitmap), nunca PDF — por isso
+          // ignora o formato escolhido no popup (sempre gera como JPG), mas respeita as
+          // mesmas opções de conteúdo (grade, materiais, instruções etc.) já configuradas.
+          const { finalItems } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
+          await sendPCPItemsToPrintStudio(finalItems, {
+            isDarkMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, showProvider, showOSData, showSoleGrid,
+          });
+          setShareModal(prev => ({ ...prev, isOpen: false }));
+        }}
         isDarkMode={isDarkMode}
         initialFormat={shareModal.format}
         title="Central de Compartilhamento - PCP"
@@ -10867,6 +10867,7 @@ export default function PCPView({
         showProviderToggle={true}
         showOSDataToggle={true}
         showSoleGridToggle={true}
+        showOpenInPrintStudioToggle={true}
       />
 
       <Modal
