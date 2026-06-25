@@ -90,14 +90,20 @@ async function generatePDF(data: PCPShareData, filename: string, previewOnly: bo
   doc.setTextColor(0);
   doc.text('FICHA TÉCNICA - MATERIAIS E GRADE', 163, 17.5, { align: 'center' });
 
+  // LOTE/EMISSÃO numa linha própria, em largura total — antes ficava à direita, na
+  // mesma faixa vertical de "SISTEMA DE PRODUÇÃO & PCP", e sobrepunha esse texto quando
+  // o lote reunia vários números (ex.: vários pedidos do mesmo lote agrupados).
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
-  doc.text(`LOTE: ${lotNumber} • EMISSÃO: ${format(new Date(), 'dd/MM/yyyy')}`, 196, 26, { align: 'right' });
+  doc.setTextColor(60);
+  const loteLines = doc.splitTextToSize(`LOTE: ${lotNumber}  •  EMISSÃO: ${format(new Date(), 'dd/MM/yyyy')}`, 182);
+  doc.text(loteLines, 14, 36);
 
+  const dividerY = 36 + (loteLines.length - 1) * 4 + 4;
   doc.setLineWidth(0.8);
-  doc.line(14, 32, 196, 32);
+  doc.line(14, dividerY, 196, dividerY);
 
-  let currentY = 40;
+  let currentY = dividerY + 8;
 
   for (const item of items) {
     if (currentY > 250) {
@@ -401,7 +407,13 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
   }
   const notesH = noteLines.length ? 40 + noteLines.length * 24 + 10 : 0;
 
-  const HEADER_OVERHEAD = 140; // header + linha divisória, desenhados no topo de toda página
+  // Linha "LOTE: ... • EMISSÃO: ..." numa linha própria, embaixo do título (ver
+  // desenho mais abaixo) — quebra em várias linhas quando o lote reúne vários números
+  // (antes ficava à direita, na mesma faixa de "SISTEMA DE PRODUÇÃO & PCP", e sobrepunha
+  // esse texto quando o lote ficava longo). A altura do header cresce conforme precisar.
+  measureCtx.font = '700 13px Inter';
+  const loteLineCount = wrapText(measureCtx, `LOTE: ${lotNumber} • EMISSÃO: ${format(new Date(), 'dd/MM/yyyy')}`, W - pad * 2).length;
+  const HEADER_OVERHEAD = 120 + loteLineCount * 18; // header + linha do lote + linha divisória
   const FOOTER_H = 50;
 
   // Agrupa itens em páginas — só quebra ENTRE itens, nunca no meio de um.
@@ -473,13 +485,18 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
     ctx.textAlign = 'center';
     ctx.fillText('FICHA TÉCNICA - MATERIAIS E GRADE', W - pad - 160, y + 25);
 
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#0f172a';
-    ctx.font = '700 14px Inter';
-    const pageLabel = pages.length > 1 ? ` • PÁG. ${pages.indexOf(pageItems) + 1}/${pages.length}` : '';
-    ctx.fillText(`LOTE: ${lotNumber} • EMISSÃO: ${format(new Date(), 'dd/MM/yyyy')}${pageLabel}`, W - pad, y + 60);
-
+    // LOTE/EMISSÃO numa linha própria, em largura total, abaixo do título — antes
+    // ficava à direita na mesma faixa de "SISTEMA DE PRODUÇÃO & PCP" e sobrepunha esse
+    // texto quando o lote reunia vários números (texto longo).
     y += 70;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#475569';
+    ctx.font = '700 13px Inter';
+    const pageLabel = pages.length > 1 ? ` • PÁG. ${pages.indexOf(pageItems) + 1}/${pages.length}` : '';
+    const loteLines = wrapText(ctx, `LOTE: ${lotNumber} • EMISSÃO: ${format(new Date(), 'dd/MM/yyyy')}${pageLabel}`, W - pad * 2);
+    loteLines.forEach((line, i) => ctx.fillText(line, pad, y + i * 18));
+    y += loteLines.length * 18 + 14;
+
     ctx.strokeStyle = '#0f172a';
     ctx.lineWidth = 2.5;
     ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
@@ -834,7 +851,7 @@ export async function sendPCPItemsToPrintStudio(
     return;
   }
   try {
-    const lotNumber = items.map(i => i.orderNumber).filter(Boolean).join(', ') || 'PCP';
+    const lotNumber = Array.from(new Set(items.map(i => i.orderNumber).filter(Boolean))).join(', ') || 'PCP';
     const result = await generatePCPShareExport(
       {
         lotNumber,

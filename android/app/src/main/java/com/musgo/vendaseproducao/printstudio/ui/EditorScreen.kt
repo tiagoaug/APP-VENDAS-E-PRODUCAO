@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AssistChip
@@ -41,6 +43,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -113,24 +117,37 @@ fun EditorScreen(
 
     var showSaveDialog by remember { mutableStateOf(false) }
     var paperExpanded by remember { mutableStateOf(false) }
+    // `remember` sem chave de persistência — volta a true a cada vez que a tela é
+    // recriada (toda vez que o Print Studio é aberto), mesmo que o usuário tenha
+    // fechado o informativo numa sessão anterior.
+    var showInfoBanner by remember { mutableStateOf(true) }
 
     Scaffold(
         containerColor = Color.White,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = "Print Studio",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onClose) {
-                        Icon(Icons.Filled.Close, contentDescription = "Fechar")
-                    }
-                },
-            )
+            Box(
+                modifier = Modifier
+                    .shadow(elevation = 4.dp)
+                    .background(Brush.horizontalGradient(listOf(Color(0xFFBAE6FD), Color(0xFFE0F2FE)))),
+            ) {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = "Print Studio",
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFF0C4A6E),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onClose) {
+                            Icon(Icons.Filled.Close, contentDescription = "Fechar", tint = Color(0xFF0C4A6E))
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent),
+                )
+            }
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
@@ -147,14 +164,42 @@ fun EditorScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
         ) {
-            Text(
-                text = "Monte etiquetas e fichas em folhas virtuais: posicione e redimensione imagens, duplique blocos, alinhe com snap automático e gere PDF/JPG ou imprima direto.",
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
-            )
+            if (showInfoBanner) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Info,
+                            contentDescription = null,
+                            tint = Color(0xFFC2410C),
+                            modifier = Modifier.size(16.dp).padding(top = 2.dp),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "Monte etiquetas e fichas em folhas virtuais: posicione e redimensione imagens, duplique blocos, alinhe com snap automático e gere PDF/JPG ou imprima direto.",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFFC2410C),
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = { showInfoBanner = false }, modifier = Modifier.size(24.dp)) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Fechar informativo",
+                                tint = Color(0xFFC2410C),
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                }
+            }
 
             EditorActionBar(
                 onOpenProfiles = onOpenProfiles,
@@ -243,15 +288,10 @@ fun EditorScreen(
                 }
 
                 // Mover bloco selecionado pra outra página — só aparece com 2+ páginas.
+                // Card próprio (mesmo GradientCard das demais seções) em vez de texto solto,
+                // pra destacar a ação visualmente.
                 if (selectedBlockId != null && layout.pages.size > 1) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)) {
-                        Text(
-                            text = "Mover bloco para:",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 6.dp, start = 4.dp),
-                        )
+                    SectionCard(label = "Mover Bloco Para") {
                         Row(
                             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
