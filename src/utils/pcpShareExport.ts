@@ -50,6 +50,9 @@ export interface PCPShareData {
   showOSData?: boolean;
   /** Detalhes de Setor > Exibe a grade de solado (molde/cor/numeração) necessária por pedido */
   showSoleGrid?: boolean;
+  /** Quando false (só JPG), omite o cabeçalho (logo, "FICHA TÉCNICA", LOTE/EMISSÃO) — usado
+   * pra mandar vários blocos ao Print Studio sem repetir o cabeçalho em cada um. */
+  showHeader?: boolean;
 }
 
 export async function generatePCPShareExport(data: PCPShareData, formatType: 'pdf' | 'jpg', previewOnly: boolean = false): Promise<boolean | string[]> {
@@ -349,8 +352,83 @@ async function generatePDF(data: PCPShareData, filename: string, previewOnly: bo
   return true;
 }
 
+/** Gera, como imagem isolada, só o cabeçalho (logo + "FICHA TÉCNICA" + LOTE/EMISSÃO)
+ * usado nas fichas em JPG — pro Print Studio, quando manda vários pedidos como blocos
+ * separados (showHeader: false em cada um), enviar esse bloco de cabeçalho uma vez só
+ * em vez de repetir o cabeçalho dentro de cada bloco de pedido. */
+function generatePCPHeaderImage(lotNumber: string): string {
+  const W = 900;
+  const pad = 40;
+  const SCALE = 3;
+  const measureCtx = document.createElement('canvas').getContext('2d')!;
+
+  const wrapText = (c: CanvasRenderingContext2D, text: string, maxW: number): string[] => {
+    const words = text.split(' ');
+    const lines: string[] = [];
+    let cur = '';
+    for (const w of words) {
+      const test = cur ? `${cur} ${w}` : w;
+      if (c.measureText(test).width > maxW && cur) { lines.push(cur); cur = w; }
+      else cur = test;
+    }
+    if (cur) lines.push(cur);
+    return lines.length ? lines : [''];
+  };
+
+  measureCtx.font = '700 13px Inter';
+  const loteLineCount = wrapText(measureCtx, `LOTE: ${lotNumber} • EMISSÃO: ${format(new Date(), 'dd/MM/yyyy')}`, W - pad * 2).length;
+  const logicalH = 90 + loteLineCount * 18;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = W * SCALE;
+  canvas.height = logicalH * SCALE;
+  const ctx = canvas.getContext('2d')!;
+  ctx.scale(SCALE, SCALE);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, W, logicalH);
+
+  let y = pad;
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '900 36px Inter';
+  ctx.fillText('GESTÃO PRO', pad, y + 26);
+
+  ctx.fillStyle = '#64748b';
+  ctx.font = '700 16px Inter';
+  ctx.letterSpacing = "2px";
+  ctx.fillText('SISTEMA DE PRODUÇÃO & PCP', pad, y + 54);
+  ctx.letterSpacing = "0px";
+
+  ctx.fillStyle = '#e0e7ff';
+  ctx.beginPath();
+  ctx.roundRect(W - pad - 320, y + 4, 320, 32, 6);
+  ctx.fill();
+
+  ctx.fillStyle = '#0f172a';
+  ctx.font = '800 14px Inter';
+  ctx.textAlign = 'center';
+  ctx.fillText('FICHA TÉCNICA - MATERIAIS E GRADE', W - pad - 160, y + 25);
+
+  y += 70;
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#475569';
+  ctx.font = '700 13px Inter';
+  const loteLines = wrapText(ctx, `LOTE: ${lotNumber} • EMISSÃO: ${format(new Date(), 'dd/MM/yyyy')}`, W - pad * 2);
+  loteLines.forEach((line, i) => ctx.fillText(line, pad, y + i * 18));
+  y += loteLines.length * 18 + 14;
+
+  ctx.strokeStyle = '#0f172a';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
+
+  return canvas.toDataURL('image/jpeg', 0.9);
+}
+
 async function generateJPG(data: PCPShareData, filename: string, previewOnly: boolean = false): Promise<boolean | string[]> {
   const { lotNumber, items, additionalNote, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid } = data;
+  const showHeader = data.showHeader !== false;
   const W = 900;
   const pad = 40;
   const SCALE = 3; // 3x melhora muito a qualidade em celulares/zoom
@@ -413,7 +491,7 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
   // esse texto quando o lote ficava longo). A altura do header cresce conforme precisar.
   measureCtx.font = '700 13px Inter';
   const loteLineCount = wrapText(measureCtx, `LOTE: ${lotNumber} • EMISSÃO: ${format(new Date(), 'dd/MM/yyyy')}`, W - pad * 2).length;
-  const HEADER_OVERHEAD = 120 + loteLineCount * 18; // header + linha do lote + linha divisória
+  const HEADER_OVERHEAD = showHeader ? 120 + loteLineCount * 18 : 0; // header + linha do lote + linha divisória
   const FOOTER_H = 50;
 
   // Agrupa itens em páginas — só quebra ENTRE itens, nunca no meio de um.
@@ -463,44 +541,47 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, W, logicalH);
 
-    // Draw Header
+    // Draw Header — omitido quando showHeader=false (blocos do Print Studio que vão
+    // junto de um bloco de cabeçalho separado, pra não repetir o cabeçalho em cada um).
     let y = pad;
-    ctx.fillStyle = '#0f172a';
-    ctx.font = '900 36px Inter';
-    ctx.fillText('GESTÃO PRO', pad, y + 26);
+    if (showHeader) {
+      ctx.fillStyle = '#0f172a';
+      ctx.font = '900 36px Inter';
+      ctx.fillText('GESTÃO PRO', pad, y + 26);
 
-    ctx.fillStyle = '#64748b';
-    ctx.font = '700 16px Inter';
-    ctx.letterSpacing = "2px";
-    ctx.fillText('SISTEMA DE PRODUÇÃO & PCP', pad, y + 54);
-    ctx.letterSpacing = "0px";
+      ctx.fillStyle = '#64748b';
+      ctx.font = '700 16px Inter';
+      ctx.letterSpacing = "2px";
+      ctx.fillText('SISTEMA DE PRODUÇÃO & PCP', pad, y + 54);
+      ctx.letterSpacing = "0px";
 
-    ctx.fillStyle = '#e0e7ff';
-    ctx.beginPath();
-    ctx.roundRect(W - pad - 320, y + 4, 320, 32, 6);
-    ctx.fill();
+      ctx.fillStyle = '#e0e7ff';
+      ctx.beginPath();
+      ctx.roundRect(W - pad - 320, y + 4, 320, 32, 6);
+      ctx.fill();
 
-    ctx.fillStyle = '#0f172a';
-    ctx.font = '800 14px Inter';
-    ctx.textAlign = 'center';
-    ctx.fillText('FICHA TÉCNICA - MATERIAIS E GRADE', W - pad - 160, y + 25);
+      ctx.fillStyle = '#0f172a';
+      ctx.font = '800 14px Inter';
+      ctx.textAlign = 'center';
+      ctx.fillText('FICHA TÉCNICA - MATERIAIS E GRADE', W - pad - 160, y + 25);
 
-    // LOTE/EMISSÃO numa linha própria, em largura total, abaixo do título — antes
-    // ficava à direita na mesma faixa de "SISTEMA DE PRODUÇÃO & PCP" e sobrepunha esse
-    // texto quando o lote reunia vários números (texto longo).
-    y += 70;
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#475569';
-    ctx.font = '700 13px Inter';
-    const pageLabel = pages.length > 1 ? ` • PÁG. ${pages.indexOf(pageItems) + 1}/${pages.length}` : '';
-    const loteLines = wrapText(ctx, `LOTE: ${lotNumber} • EMISSÃO: ${format(new Date(), 'dd/MM/yyyy')}${pageLabel}`, W - pad * 2);
-    loteLines.forEach((line, i) => ctx.fillText(line, pad, y + i * 18));
-    y += loteLines.length * 18 + 14;
+      // LOTE/EMISSÃO numa linha própria, em largura total, abaixo do título — antes
+      // ficava à direita na mesma faixa de "SISTEMA DE PRODUÇÃO & PCP" e sobrepunha esse
+      // texto quando o lote reunia vários números (texto longo).
+      y += 70;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#475569';
+      ctx.font = '700 13px Inter';
+      const pageLabel = pages.length > 1 ? ` • PÁG. ${pages.indexOf(pageItems) + 1}/${pages.length}` : '';
+      const loteLines = wrapText(ctx, `LOTE: ${lotNumber} • EMISSÃO: ${format(new Date(), 'dd/MM/yyyy')}${pageLabel}`, W - pad * 2);
+      loteLines.forEach((line, i) => ctx.fillText(line, pad, y + i * 18));
+      y += loteLines.length * 18 + 14;
 
-    ctx.strokeStyle = '#0f172a';
-    ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
-    y += 30;
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(pad, y); ctx.lineTo(W - pad, y); ctx.stroke();
+      y += 30;
+    }
 
     // Draw Items
     ctx.textAlign = 'left';
@@ -852,10 +933,25 @@ export async function sendPCPItemsToPrintStudio(
   }
   try {
     const uris: string[] = [];
-    // Cada item selecionado gera sua própria imagem (em vez de uma imagem única com
-    // tudo empilhado) — assim, ao chegar no Print Studio, addImageBlocks cria 1
-    // ImageBlock por item, isto é, 1 bloco por pedido/ficha selecionada, já separados
-    // para o usuário tratar individualmente em vez de precisar "Separar Bloco" na mão.
+    const writeJpg = async (dataUri: string, tag: string) => {
+      const base64 = dataUri.includes('base64,') ? dataUri.split('base64,')[1] : dataUri;
+      const written = await Filesystem.writeFile({
+        path: `printstudio_ficha_${Date.now()}_${tag}.jpg`,
+        data: base64,
+        directory: Directory.Cache,
+      });
+      uris.push(written.uri);
+    };
+
+    // Bloco de cabeçalho único — vai uma vez só (1 bloco), no lugar de repetir o
+    // cabeçalho (logo/LOTE/data) dentro de cada bloco de pedido.
+    const lotNumber = Array.from(new Set(items.map(i => i.orderNumber).filter(Boolean))).join(', ') || 'PCP';
+    await writeJpg(generatePCPHeaderImage(lotNumber), 'header');
+
+    // Cada item selecionado gera sua própria imagem sem cabeçalho (showHeader: false)
+    // — assim, ao chegar no Print Studio, addImageBlocks cria 1 ImageBlock por item,
+    // isto é, 1 bloco por pedido/ficha selecionada, já separados para o usuário tratar
+    // individualmente em vez de precisar "Separar Bloco" na mão.
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const result = await generatePCPShareExport(
@@ -871,6 +967,7 @@ export async function sendPCPItemsToPrintStudio(
           showProvider: options.showProvider,
           showOSData: options.showOSData,
           showSoleGrid: options.showSoleGrid,
+          showHeader: false,
           // Print Studio recebe sempre a imagem completa, sem cortes — a divisão em
           // páginas é feita lá dentro (manualmente, com linhas de corte + blocos),
           // nunca antes de chegar lá.
@@ -883,18 +980,12 @@ export async function sendPCPItemsToPrintStudio(
       if (!Array.isArray(result)) continue;
 
       for (let j = 0; j < result.length; j++) {
-        const dataUri = result[j];
-        const base64 = dataUri.includes('base64,') ? dataUri.split('base64,')[1] : dataUri;
-        const written = await Filesystem.writeFile({
-          path: `printstudio_ficha_${Date.now()}_${i}_${j}.jpg`,
-          data: base64,
-          directory: Directory.Cache,
-        });
-        uris.push(written.uri);
+        await writeJpg(result[j], `${i}_${j}`);
       }
     }
 
-    if (uris.length === 0) {
+    if (uris.length <= 1) {
+      // Só o bloco de cabeçalho foi gerado — nenhum pedido virou imagem de fato.
       toast.show('Não foi possível gerar a imagem da ficha.');
       return;
     }
