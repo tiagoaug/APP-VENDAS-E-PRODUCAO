@@ -11,7 +11,7 @@ import {
   Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart,
   DollarSign, Hammer, FileText, CheckSquare, Scissors, Printer, Share2, Truck,
   QrCode, ScanLine, Hash, Lock, ChevronDown, List, ArrowLeftRight, MessageSquare, Eye, EyeOff,
-  Footprints, Scale, Database, TrendingDown, Zap, Palette
+  Footprints, Scale, Database, TrendingDown, Zap, Palette, Bell
 } from 'lucide-react';
 import {
   ProductionLot, Product, Sector,
@@ -28,6 +28,7 @@ import DateTimePicker from '../components/DateTimePicker';
 import ScannerModal from '../components/ScannerModal';
 import PrintOSModal from '../components/PrintOSModal';
 import PrintLabelEditorModal from '../components/PrintLabelEditorModal';
+import CompletedServiceOrdersModal from '../components/CompletedServiceOrdersModal';
 import { Camera } from 'lucide-react';
 import { labelService } from '../services/labelService';
 import { printLotSheet, printOrderItemSheet, shareImage, sharePDF } from '../utils/pdfExport';
@@ -58,6 +59,18 @@ const getContrastingColor = (hexcolor: string) => {
   return (yiq >= 128) ? '#000000' : '#ffffff';
 };
 
+// Converte a cor do setor (hex) num rgba() com a opacidade pedida — usado pro card
+// "Atrelado à OS" assumir um tom bem claro da cor do PRÓPRIO setor (em vez de sempre
+// laranja), tanto no claro quanto no escuro.
+const hexToRgba = (hexcolor: string | undefined, alpha: number): string => {
+  if (!hexcolor || hexcolor.length < 6) return `rgba(245,158,11,${alpha})`; // fallback: laranja
+  const cleanHex = hexcolor.replace('#', '');
+  const r = parseInt(cleanHex.substring(0, 2), 16);
+  const g = parseInt(cleanHex.substring(2, 4), 16);
+  const b = parseInt(cleanHex.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
 // Um modelo (pedido/produto) que compõe um mapa, com o setor que SEU PRÓPRIO roteiro
 // de produção indica como próximo passo (`suggestedSectorId`) e o setor finalmente
 // escolhido para ele (`chosenSectorId`) — igual ao sugerido por padrão, mas ajustável
@@ -77,6 +90,7 @@ type LotAdvanceItem = {
   chosenSectorId: string;
   lotId?: string;
   saleType?: SaleType;
+  siIdx?: number;
 };
 
 interface PCPViewProps {
@@ -116,6 +130,7 @@ interface PCPViewProps {
   purchases?: Purchase[];
   sales?: import('../types').Sale[];
   stockLots?: StockLot[];
+  transactions?: Transaction[];
   appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite' | 'hcWhite' | 'hcBlack' | 'hcIndustrial';
 }
 
@@ -156,6 +171,7 @@ export default function PCPView({
   purchases = [],
   sales = [],
   stockLots = [],
+  transactions = [],
   appTheme = 'light',
 }: PCPViewProps) {
   // Temas de chrome neutro: Industrial e os de Alto Contraste removem o
@@ -207,7 +223,29 @@ export default function PCPView({
   const [osBadgeText, setOsBadgeText] = useState(() => localStorage.getItem('pcp_os_badge_text') || '#ffffff');
   const [osBadgeBold, setOsBadgeBold] = useState(() => localStorage.getItem('pcp_os_badge_bold') !== 'false');
   const [osBadgeItalic, setOsBadgeItalic] = useState(() => localStorage.getItem('pcp_os_badge_italic') === 'true');
+  const [providerBadgeBg, setProviderBadgeBg] = useState(() => localStorage.getItem('pcp_provider_badge_bg') || '#eab308');
+  const [providerBadgeText, setProviderBadgeText] = useState(() => localStorage.getItem('pcp_provider_badge_text') || '#000000');
+  const [providerBadgeBold, setProviderBadgeBold] = useState(() => localStorage.getItem('pcp_provider_badge_bold') !== 'false');
+  const [providerBadgeItalic, setProviderBadgeItalic] = useState(() => localStorage.getItem('pcp_provider_badge_italic') === 'true');
   const [isBadgeColorPickerOpen, setIsBadgeColorPickerOpen] = useState(false);
+
+  const updateProviderBadgeColors = (bg: string, text: string) => {
+    setProviderBadgeBg(bg);
+    setProviderBadgeText(text);
+    localStorage.setItem('pcp_provider_badge_bg', bg);
+    localStorage.setItem('pcp_provider_badge_text', text);
+  };
+  const toggleProviderBadgeBold = () => {
+    const next = !providerBadgeBold;
+    setProviderBadgeBold(next);
+    localStorage.setItem('pcp_provider_badge_bold', String(next));
+  };
+  const toggleProviderBadgeItalic = () => {
+    const next = !providerBadgeItalic;
+    setProviderBadgeItalic(next);
+    localStorage.setItem('pcp_provider_badge_italic', String(next));
+  };
+
   const updateProductBadgeColors = (bg: string, text: string) => {
     setProductBadgeBg(bg);
     setProductBadgeText(text);
@@ -315,6 +353,12 @@ export default function PCPView({
   }, [lots, selectedLot]);
   const [selectedLots, setSelectedLots] = useState<ProductionLot[]>([]);
   const [showQuickActions, setShowQuickActions] = useState(false);
+  const [showCompletedOSModal, setShowCompletedOSModal] = useState(false);
+  // Diagnóstico temporário — encontra StockLots duplicados (mesmo lote/pedido/item
+  // repetido várias vezes), causados pelo bug da baixa de Expedição sem proteção
+  // contra repetição. Só pra localizar o excesso exato a corrigir; pode ser removido
+  // depois que os números de estoque forem corrigidos.
+  const [showStockDiagnosticModal, setShowStockDiagnosticModal] = useState(false);
   const [selectedSectorId, setSelectedSectorId] = useState<string | null>(initialSectorId ?? null);
   const [isSectorSwitcherOpen, setIsSectorSwitcherOpen] = useState(false);
   // Override manual de setor: escapatória para quando o cálculo automático erra
@@ -421,6 +465,9 @@ export default function PCPView({
   const [pendingOsSectorOverride, setPendingOsSectorOverride] = useState<string>('');
   const [pendingOsQuantityOverride, setPendingOsQuantityOverride] = useState<number | null>(null);
   const [osCompleteConfirm, setOsCompleteConfirm] = useState<ServiceOrder | null>(null);
+  // OS cujo popup de Observações/Lembrete está aberto — campos saíram do card pra
+  // ocupar menos espaço, abrem num popup separado só quando precisa.
+  const [osNotesPopup, setOsNotesPopup] = useState<ServiceOrder | null>(null);
 
   // QR Baixa modal state
   const [qrBaixaModal, setQrBaixaModal] = useState<{
@@ -1350,6 +1397,69 @@ export default function PCPView({
     return (productionConfigs || []).filter(c => c.type === 'DEADLINE');
   }, [productionConfigs]);
 
+  // Diagnóstico temporário (ver showStockDiagnosticModal) — agrupa StockLots
+  // "EM_ESTOQUE" pela mesma origem (lote + pedido de produção + item) e reporta grupos
+  // com mais de 1 entrada — cada entrada extra é uma baixa duplicada (mesma produção
+  // creditada de novo no estoque por um ciclo de "Dar Baixa" repetido).
+  const duplicateStockLotGroups = useMemo(() => {
+    const groups = new Map<string, StockLot[]>();
+    (stockLots || []).forEach(sl => {
+      if (sl.status !== 'EM_ESTOQUE') return;
+      const key = `${sl.lotId}::${sl.productionOrderId || ''}::${sl.itemIdx ?? ''}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(sl);
+    });
+    return Array.from(groups.values())
+      .filter(entries => entries.length > 1)
+      .map(entries => {
+        const sorted = [...entries].sort((a, b) => a.createdAt - b.createdAt);
+        const first = sorted[0];
+        const excessCount = sorted.length - 1;
+        const excessPairs = excessCount * (first.totalPairs || 0);
+        const excessBoxes = excessCount * (first.boxQty || 0);
+        return {
+          key: `${first.lotId}::${first.productionOrderId || ''}::${first.itemIdx ?? ''}`,
+          lotOrderNumber: first.lotOrderNumber || '—',
+          productName: first.productName,
+          productReference: first.productReference || '',
+          variationName: first.variationName,
+          gradeLabel: first.gradeLabel,
+          count: sorted.length,
+          excessCount,
+          eachPairs: first.totalPairs || 0,
+          eachBoxes: first.boxQty || 0,
+          excessPairs,
+          excessBoxes,
+          entries: sorted,
+        };
+      })
+      .sort((a, b) => b.excessCount - a.excessCount);
+  }, [stockLots]);
+
+  // Soma o excesso de todos os mapas/pedidos duplicados pela MESMA referência+cor —
+  // o número final que importa pra corrigir o estoque (não interessa de quantos mapas
+  // diferentes veio a duplicidade, só o total a descontar daquela referência/cor).
+  const duplicateStockByRefColor = useMemo(() => {
+    const groups = new Map<string, {
+      productReference: string; productName: string; variationName: string;
+      excessBoxes: number; excessPairs: number; lotOrderNumbers: Set<string>;
+    }>();
+    duplicateStockLotGroups.forEach(g => {
+      const key = `${g.productReference}::${g.variationName}`;
+      let entry = groups.get(key);
+      if (!entry) {
+        entry = { productReference: g.productReference, productName: g.productName, variationName: g.variationName, excessBoxes: 0, excessPairs: 0, lotOrderNumbers: new Set() };
+        groups.set(key, entry);
+      }
+      entry.excessBoxes += g.excessBoxes;
+      entry.excessPairs += g.excessPairs;
+      entry.lotOrderNumbers.add(g.lotOrderNumber);
+    });
+    return Array.from(groups.values())
+      .map(e => ({ ...e, lotOrderNumbers: Array.from(e.lotOrderNumbers).sort() }))
+      .sort((a, b) => (b.excessBoxes + b.excessPairs) - (a.excessBoxes + a.excessPairs));
+  }, [duplicateStockLotGroups]);
+
 
 
   // Bloqueia avanço do mapa inteiro se houver OS pendente
@@ -1443,7 +1553,33 @@ export default function PCPView({
     if (!lot) return;
     const currentOrderSectors: Record<string, string> = (lot as any).metadata?.orderSectors || {};
     const updatedOrderSectors = { ...currentOrderSectors };
-    items.forEach(it => { updatedOrderSectors[getSourceItemKey(it)] = targetSectorId; });
+    items.forEach(it => {
+      const order = productionOrders.find(o => o.id === it.orderId);
+      const orderItem: any = it.itemIdx !== undefined
+        ? order?.items[it.itemIdx]
+        : order?.items.find((i: any) => i.productId === it.productId && i.variationId === it.variationId);
+      const resolvedProductId = it.productId || orderItem?.productId;
+      const resolvedVariationId = it.variationId || orderItem?.variationId;
+
+      const keyDirect = getSourceItemKey(it);
+      const keyResolved = getSourceItemKey({
+        orderId: it.orderId,
+        itemIdx: it.itemIdx,
+        productId: resolvedProductId,
+        variationId: resolvedVariationId,
+      });
+      const keyUnresolved = getSourceItemKey({
+        orderId: it.orderId,
+        itemIdx: it.itemIdx,
+        productId: '',
+        variationId: '',
+      });
+
+      updatedOrderSectors[keyDirect] = targetSectorId;
+      updatedOrderSectors[keyResolved] = targetSectorId;
+      updatedOrderSectors[keyUnresolved] = targetSectorId;
+      delete updatedOrderSectors[it.orderId];
+    });
     await firebaseService.updateDocument('productionLots', lotId, {
       metadata: { ...(lot as any).metadata, orderSectors: updatedOrderSectors }
     });
@@ -1487,9 +1623,63 @@ export default function PCPView({
       if (toFinalize.length > 0) {
         const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalize.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx })));
         await applyExpedicaoStockUpdate(currentLot, stockItems, customerItems);
-        toFinalize.forEach(it => { updatedOrderSectors[getSourceItemKey(it)] = ORDER_FINALIZED; });
+        toFinalize.forEach(it => {
+          const originalSi: any = it.siIdx !== undefined ? currentLot.metadata?.sourceItems?.[it.siIdx] : undefined;
+          const order = productionOrders.find(o => o.id === it.orderId);
+          const orderItem: any = it.itemIdx !== undefined
+            ? order?.items[it.itemIdx]
+            : order?.items.find((i: any) => i.productId === it.productId && i.variationId === it.variationId);
+          const resolvedProductId = it.productId || originalSi?.productId || orderItem?.productId;
+          const resolvedVariationId = it.variationId || originalSi?.variationId || orderItem?.variationId;
+
+          const keyDirect = getSourceItemKey(it);
+          const keyResolved = getSourceItemKey({
+            orderId: it.orderId,
+            itemIdx: it.itemIdx,
+            productId: resolvedProductId,
+            variationId: resolvedVariationId,
+          });
+          const keyUnresolved = getSourceItemKey({
+            orderId: it.orderId,
+            itemIdx: it.itemIdx,
+            productId: '',
+            variationId: '',
+          });
+
+          updatedOrderSectors[keyDirect] = ORDER_FINALIZED;
+          updatedOrderSectors[keyResolved] = ORDER_FINALIZED;
+          updatedOrderSectors[keyUnresolved] = ORDER_FINALIZED;
+          delete updatedOrderSectors[it.orderId];
+        });
       }
-      toMove.forEach(it => { updatedOrderSectors[getSourceItemKey(it)] = it.chosenSectorId; });
+      toMove.forEach(it => {
+        const originalSi: any = it.siIdx !== undefined ? currentLot.metadata?.sourceItems?.[it.siIdx] : undefined;
+        const order = productionOrders.find(o => o.id === it.orderId);
+        const orderItem: any = it.itemIdx !== undefined
+          ? order?.items[it.itemIdx]
+          : order?.items.find((i: any) => i.productId === it.productId && i.variationId === it.variationId);
+        const resolvedProductId = it.productId || originalSi?.productId || orderItem?.productId;
+        const resolvedVariationId = it.variationId || originalSi?.variationId || orderItem?.variationId;
+
+        const keyDirect = getSourceItemKey(it);
+        const keyResolved = getSourceItemKey({
+          orderId: it.orderId,
+          itemIdx: it.itemIdx,
+          productId: resolvedProductId,
+          variationId: resolvedVariationId,
+        });
+        const keyUnresolved = getSourceItemKey({
+          orderId: it.orderId,
+          itemIdx: it.itemIdx,
+          productId: '',
+          variationId: '',
+        });
+
+        updatedOrderSectors[keyDirect] = it.chosenSectorId;
+        updatedOrderSectors[keyResolved] = it.chosenSectorId;
+        updatedOrderSectors[keyUnresolved] = it.chosenSectorId;
+        delete updatedOrderSectors[it.orderId];
+      });
 
       const allSI: any[] = (currentLot as any).metadata?.sourceItems
         || [{ orderId: currentLot.productionOrderId, itemIdx: 0, qty: currentLot.quantity }];
@@ -1537,7 +1727,34 @@ export default function PCPView({
   const handleRouteOrderToCorrectSector = async (lot: ProductionLot, si: { orderId: string; itemIdx?: number; productId?: string; variationId?: string }, targetSectorId: string, targetSectorName: string, productName: string) => {
     if (!confirm(`Direcionar o pedido do modelo "${productName}" diretamente para o setor "${targetSectorName}", conforme o roteiro de produção cadastrado para este modelo?`)) return;
     const currentOrderSectors: Record<string, string> = (lot as any).metadata?.orderSectors || {};
-    const updatedOrderSectors = { ...currentOrderSectors, [getSourceItemKey(si)]: targetSectorId };
+    const order = productionOrders.find(o => o.id === si.orderId);
+    const orderItem: any = si.itemIdx !== undefined
+      ? order?.items[si.itemIdx]
+      : order?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+    const resolvedProductId = si.productId || orderItem?.productId;
+    const resolvedVariationId = si.variationId || orderItem?.variationId;
+
+    const keyDirect = getSourceItemKey(si);
+    const keyResolved = getSourceItemKey({
+      orderId: si.orderId,
+      itemIdx: si.itemIdx,
+      productId: resolvedProductId,
+      variationId: resolvedVariationId,
+    });
+    const keyUnresolved = getSourceItemKey({
+      orderId: si.orderId,
+      itemIdx: si.itemIdx,
+      productId: '',
+      variationId: '',
+    });
+
+    const updatedOrderSectors = {
+      ...currentOrderSectors,
+      [keyDirect]: targetSectorId,
+      [keyResolved]: targetSectorId,
+      [keyUnresolved]: targetSectorId,
+    };
+    delete updatedOrderSectors[si.orderId];
     await firebaseService.updateDocument('productionLots', lot.id, {
       metadata: { ...(lot as any).metadata, orderSectors: updatedOrderSectors },
     });
@@ -1598,6 +1815,7 @@ export default function PCPView({
     const buildItem = (
       key: string, orderId: string, productId: string, variationId: string | undefined,
       qty: number, fallbackProductName?: string, fallbackColorName?: string, itemIdx?: number,
+      siIdx?: number,
     ): LotAdvanceItem => {
       const product = products.find(p => p.id === productId);
       const variation = product?.variations.find(v => v.id === variationId);
@@ -1614,6 +1832,7 @@ export default function PCPView({
         // Setor de destino nunca vem pré-selecionado — força escolha manual de cada
         // modelo antes de poder confirmar (ver botão "Confirmar e Avançar" abaixo).
         chosenSectorId: '__PENDING_SELECTION__',
+        siIdx,
       };
     };
 
@@ -1642,7 +1861,7 @@ export default function PCPView({
           : order?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
         const resolvedProductId = si.productId || orderItem?.productId;
         const resolvedVariationId = si.variationId || orderItem?.variationId;
-        return buildItem(`${si.orderId}-${idx}`, si.orderId, resolvedProductId, resolvedVariationId, si.qty || 0, orderItem?.productName, orderItem?.variationName, si.itemIdx);
+        return buildItem(`${si.orderId}-${idx}`, si.orderId, resolvedProductId, resolvedVariationId, si.qty || 0, orderItem?.productName, orderItem?.variationName, si.itemIdx, idx);
       });
     }
     return [buildItem(lot.id, lot.productionOrderId || lot.id, lot.productId, lot.variationId, lot.quantity || 0)];
@@ -1815,22 +2034,146 @@ export default function PCPView({
   const applyLotAdvance = async (
     lot: ProductionLot, items: LotAdvanceItem[], currentSectorId: string, nextStatusId: string, notes: string,
   ): Promise<{ destSectorId: string; destSectorName: string; isFinished: boolean; skippedSectorNames: string[] }> => {
-    const destSectorId = resolveLotDestination(items);
-    const isFinished = destSectorId === '';
+    const allSourceItems: any[] = (lot as any).metadata?.sourceItems || [];
+    const reconstructedItems: { chosenSectorId: string; qty: number; skippedSectorNames: string[] }[] = [];
+
+    if (allSourceItems.length > 0) {
+      allSourceItems.forEach((si, idx) => {
+        const movingItem = items.find(it => 
+          it.siIdx === idx || getSourceItemKey(it) === getSourceItemKey({ orderId: si.orderId, ...si })
+        );
+        if (movingItem) {
+          reconstructedItems.push({
+            chosenSectorId: movingItem.chosenSectorId,
+            qty: si.qty || 0,
+            skippedSectorNames: movingItem.skippedSectorNames || [],
+          });
+        } else {
+          const currentSector = getOrderEffectiveSector(lot, si.orderId, si);
+          reconstructedItems.push({
+            chosenSectorId: currentSector === ORDER_FINALIZED ? '' : currentSector,
+            qty: si.qty || 0,
+            skippedSectorNames: [],
+          });
+        }
+      });
+    } else {
+      items.forEach(it => {
+        reconstructedItems.push({
+          chosenSectorId: it.chosenSectorId,
+          qty: it.qty,
+          skippedSectorNames: it.skippedSectorNames || [],
+        });
+      });
+    }
+
+    const isFinished = reconstructedItems.every(it => it.chosenSectorId === '');
+    let destSectorId = '';
+    if (!isFinished) {
+      const activeReconstructed = reconstructedItems.filter(it => it.chosenSectorId !== '');
+      const totals = new Map<string, number>();
+      activeReconstructed.forEach(it => totals.set(it.chosenSectorId, (totals.get(it.chosenSectorId) || 0) + it.qty));
+      let bestQty = -1;
+      totals.forEach((qty, sectorId) => { if (qty > bestQty) { bestQty = qty; destSectorId = sectorId; } });
+    }
     const destSectorName = isFinished ? 'CONCLUÍDO' : (sectors.find(s => s.id === destSectorId)?.name || destSectorId);
 
     const currentOrderSectors: Record<string, string> = (lot as any).metadata?.orderSectors || {};
     const updatedOrderSectors = { ...currentOrderSectors };
-    items.forEach(it => {
-      // Override por item (mesma chave usada por getOrderEffectiveSector/getSourceItemKey)
-      // — escrever por orderId aqui deixava esse override "sombreado" pela chave por item
-      // já gravada por outras ações (Direcionar p/, Transferir de Setor, etc.), fazendo o
-      // pedido continuar aparecendo no setor antigo mesmo após confirmar o novo destino.
-      const itemKey = getSourceItemKey(it);
-      if (it.chosenSectorId === destSectorId) delete updatedOrderSectors[itemKey];
-      else if (it.chosenSectorId === '') updatedOrderSectors[itemKey] = ORDER_FINALIZED;
-      else updatedOrderSectors[itemKey] = it.chosenSectorId;
-    });
+
+    if (allSourceItems.length > 0) {
+      allSourceItems.forEach((si, idx) => {
+        const movingItem = items.find(it => 
+          it.siIdx === idx || getSourceItemKey(it) === getSourceItemKey({ orderId: si.orderId, ...si })
+        );
+        const targetSector = movingItem 
+          ? movingItem.chosenSectorId 
+          : getOrderEffectiveSector(lot, si.orderId, si);
+
+        const order = productionOrders.find(o => o.id === si.orderId);
+        const orderItem: any = si.itemIdx !== undefined
+          ? order?.items[si.itemIdx]
+          : order?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+        const resolvedProductId = si.productId || orderItem?.productId;
+        const resolvedVariationId = si.variationId || orderItem?.variationId;
+
+        const keyDirect = getSourceItemKey({ orderId: si.orderId, ...si });
+        const keyResolved = getSourceItemKey({
+          orderId: si.orderId,
+          itemIdx: si.itemIdx,
+          productId: resolvedProductId,
+          variationId: resolvedVariationId,
+        });
+        const keyUnresolved = getSourceItemKey({
+          orderId: si.orderId,
+          itemIdx: si.itemIdx,
+          productId: '',
+          variationId: '',
+        });
+
+        if (movingItem && targetSector !== '' && targetSector !== ORDER_FINALIZED) {
+          // Item que o usuário confirmou explicitamente no popup — grava o setor
+          // escolhido sempre como override direto, mesmo quando ele bate com
+          // destSectorId. destSectorId é só a maioria de pares do MAPA INTEIRO
+          // (pode incluir outros itens não restritos por esta OS); depender dele
+          // pra decidir "não precisa de override, o ponteiro do mapa já resolve"
+          // é frágil — foi a causa de mapas com a escolha manual confirmada (ex.:
+          // "Expedição") não saírem do setor atual, mesmo após "Confirmar e Avançar".
+          updatedOrderSectors[keyDirect] = targetSector;
+          updatedOrderSectors[keyResolved] = targetSector;
+          updatedOrderSectors[keyUnresolved] = targetSector;
+        } else if (targetSector === destSectorId) {
+          delete updatedOrderSectors[keyDirect];
+          delete updatedOrderSectors[keyResolved];
+          delete updatedOrderSectors[keyUnresolved];
+        } else if (targetSector === '' || targetSector === ORDER_FINALIZED) {
+          updatedOrderSectors[keyDirect] = ORDER_FINALIZED;
+          updatedOrderSectors[keyResolved] = ORDER_FINALIZED;
+          updatedOrderSectors[keyUnresolved] = ORDER_FINALIZED;
+        } else {
+          updatedOrderSectors[keyDirect] = targetSector;
+          updatedOrderSectors[keyResolved] = targetSector;
+          updatedOrderSectors[keyUnresolved] = targetSector;
+        }
+        delete updatedOrderSectors[si.orderId];
+      });
+    } else {
+      items.forEach(it => {
+        const order = productionOrders.find(o => o.id === it.orderId);
+        const orderItem: any = it.itemIdx !== undefined
+          ? order?.items[it.itemIdx]
+          : order?.items.find((i: any) => i.productId === it.productId && i.variationId === it.variationId);
+        const resolvedProductId = it.productId || orderItem?.productId;
+        const resolvedVariationId = it.variationId || orderItem?.variationId;
+
+        const keyDirect = getSourceItemKey(it);
+        const keyResolved = getSourceItemKey({
+          orderId: it.orderId,
+          itemIdx: it.itemIdx,
+          productId: resolvedProductId,
+          variationId: resolvedVariationId,
+        });
+        const keyUnresolved = getSourceItemKey({
+          orderId: it.orderId,
+          itemIdx: it.itemIdx,
+          productId: '',
+          variationId: '',
+        });
+
+        if (it.chosenSectorId === '') {
+          updatedOrderSectors[keyDirect] = ORDER_FINALIZED;
+          updatedOrderSectors[keyResolved] = ORDER_FINALIZED;
+          updatedOrderSectors[keyUnresolved] = ORDER_FINALIZED;
+        } else {
+          // Sempre grava override direto pro setor escolhido, mesmo quando ele bate
+          // com destSectorId — ver comentário equivalente no ramo allSourceItems acima.
+          updatedOrderSectors[keyDirect] = it.chosenSectorId;
+          updatedOrderSectors[keyResolved] = it.chosenSectorId;
+          updatedOrderSectors[keyUnresolved] = it.chosenSectorId;
+        }
+        delete updatedOrderSectors[it.orderId];
+      });
+    }
 
     const route = lot.route || [];
     const advancedRoute = isFinished ? route : ensureSectorInRoute(route, destSectorId, sectors);
@@ -2028,8 +2371,31 @@ export default function PCPView({
         const updatedOrderSectors = { ...currentOrderSectors };
 
         lotFichas.forEach(f => {
-          const itemKey = getSourceItemKey(f.si);
-          updatedOrderSectors[itemKey] = targetSectorId;
+          const order = productionOrders.find(o => o.id === f.si.orderId);
+          const orderItem: any = f.si.itemIdx !== undefined
+            ? order?.items[f.si.itemIdx]
+            : order?.items.find((i: any) => i.productId === f.si.productId && i.variationId === f.si.variationId);
+          const resolvedProductId = f.si.productId || orderItem?.productId;
+          const resolvedVariationId = f.si.variationId || orderItem?.variationId;
+
+          const keyDirect = getSourceItemKey(f.si);
+          const keyResolved = getSourceItemKey({
+            orderId: f.si.orderId,
+            itemIdx: f.si.itemIdx,
+            productId: resolvedProductId,
+            variationId: resolvedVariationId,
+          });
+          const keyUnresolved = getSourceItemKey({
+            orderId: f.si.orderId,
+            itemIdx: f.si.itemIdx,
+            productId: '',
+            variationId: '',
+          });
+
+          updatedOrderSectors[keyDirect] = targetSectorId;
+          updatedOrderSectors[keyResolved] = targetSectorId;
+          updatedOrderSectors[keyUnresolved] = targetSectorId;
+          delete updatedOrderSectors[f.si.orderId];
         });
 
         const updatedLot: ProductionLot = {
@@ -2323,6 +2689,72 @@ export default function PCPView({
     return { prodOrder, ordItem, prod, vari, pairs, totalQty, gradeLabel, itemIdx };
   };
 
+  // Pré-visualização completa (projeção de estoque por pedido + baixa de solados) pra
+  // finalizar um grupo de itens — mesmo formato que alimenta o popup de "Concluir/Dar
+  // Baixa" manual (`finalizeSelectedConfirm`/`handleFinalizeSelectedSourceItems`).
+  // Reaproveitado aqui pra "Dar Baixa" de OS num setor de Fim de Ciclo também abrir essa
+  // prévia rica, em vez de um texto simples sem o detalhe de solados/projeção de estoque.
+  const buildFinalizePreview = (lot: ProductionLot, toFinalize: LotAdvanceItem[], headerLine: string) => {
+    const lines: string[] = [headerLine];
+    const stockInfo: Record<string, { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string }> = {};
+    const soleInfo: { moldName: string; colorName: string; rows: { size: string; before: number; deducted: number; after: number }[]; contributions: { orderLabel: string; lotNumber: string; qty: number }[] }[] = [];
+    if (toFinalize.length === 0) return { lines, stockInfo, soleInfo };
+
+    const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalize.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx })));
+    lines.push('');
+    if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
+    if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} pedido(s) → ENTRADA EM ESTOQUE (+ baixa de solados)`);
+
+    toFinalize.forEach(it => {
+      const isStock = stockItems.some(si => si.orderId === it.orderId && si.itemIdx === it.itemIdx);
+      const order = productionOrders.find(o => o.id === it.orderId);
+      const customerName = order?.customerName || lot.customerName;
+      const info = computeStockProjection(it, { isStock, customerName });
+      if (info) stockInfo[it.key] = info;
+    });
+
+    const consumptionByKey = new Map<string, { moldId: string; colorId: string; gradeQuantities: Record<string, number>; contributions: { orderLabel: string; lotNumber: string; qty: number }[] }>();
+    toFinalize.forEach(it => {
+      const resolvedSI = resolveSourceItem(it);
+      if (!resolvedSI || resolvedSI.totalQty <= 0) return;
+      const { prod, vari, pairs, totalQty } = resolvedSI;
+      const consumption = resolveSoleConsumption(prod, vari, pairs, totalQty, soleStock);
+      if (!consumption) return;
+      const key = `${consumption.moldId}_${consumption.colorId || 'default'}`;
+
+      let existing = consumptionByKey.get(key);
+      if (!existing) {
+        existing = { moldId: consumption.moldId, colorId: consumption.colorId, gradeQuantities: {}, contributions: [] };
+        consumptionByKey.set(key, existing);
+      }
+      Object.entries(consumption.gradeQuantities).forEach(([gradeKey, qty]) => {
+        existing!.gradeQuantities[gradeKey] = (existing!.gradeQuantities[gradeKey] || 0) + qty;
+      });
+      existing.contributions.push({
+        orderLabel: `${prod?.name || '—'} ${vari?.colorName || ''}`,
+        lotNumber: lot.orderNumber,
+        qty: it.qty,
+      });
+    });
+    consumptionByKey.forEach(({ moldId, colorId, gradeQuantities, contributions }) => {
+      const entry = soleStock.find(s => String(s.moldId).trim() === moldId && String(s.colorId || '').trim() === colorId);
+      const mold = productionConfigs.find(c => c.id === moldId);
+      const color = colors.find(c => c.id === colorId);
+      const rows = Object.entries(gradeQuantities)
+        .filter(([k]) => k !== 'pesagem' && k !== 'total')
+        .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
+        .map(([size, qty]) => ({
+          size,
+          before: entry?.stock[size] || 0,
+          deducted: Number(qty) || 0,
+          after: (entry?.stock[size] || 0) - (Number(qty) || 0),
+        }));
+      soleInfo.push({ moldName: entry?.moldName || mold?.name || '', colorName: entry?.colorName || color?.name || '', rows, contributions });
+    });
+
+    return { lines, stockInfo, soleInfo };
+  };
+
   // Aplica a baixa de estoque para pedidos que saíram da Expedição. Para pedidos com
   // destino "Estoque", incrementa o estoque geral do produto e registra um StockLot
   // EM_ESTOQUE com a grade exata produzida. Para pedidos vinculados a um cliente,
@@ -2340,6 +2772,21 @@ export default function PCPView({
     // de finalizações "pedido inteiro", ex.: conclusão de OS/avanço de mapa).
     const matchesItem = (si: any, item: { orderId: string; itemIdx?: number }) =>
       si.orderId === item.orderId && (item.itemIdx === undefined || si.itemIdx === item.itemIdx);
+
+    // Proteção contra baixa duplicada: esta função NÃO tinha nenhuma guarda contra ser
+    // chamada mais de uma vez pro mesmo item (ex.: o mesmo pedido passando por "Dar
+    // Baixa" + "Confirmar e Avançar" repetidas vezes por um ciclo que não avançava de
+    // verdade) — cada chamada creditava estoque de novo, inflando os números. Um item
+    // já marcado ORDER_FINALIZED (por uma chamada anterior desta mesma função) nunca
+    // deve ser processado de novo.
+    const lotSIForGuard: any[] = (lot as any).metadata?.sourceItems || [];
+    const isAlreadyFinalized = (item: { orderId: string; itemIdx?: number }) => {
+      const si = lotSIForGuard.find((s: any) => matchesItem(s, item));
+      if (!si) return false;
+      return getOrderEffectiveSector(lot, item.orderId, si) === ORDER_FINALIZED;
+    };
+    stockItems = stockItems.filter(it => !isAlreadyFinalized(it));
+    customerItems = customerItems.filter(it => !isAlreadyFinalized(it));
 
     // Dá baixa real no estoque de solados (soleStock) para todos os pedidos que saíram da
     // Expedição, independente do destino (estoque ou cliente), consumindo os pares por
@@ -2551,12 +2998,31 @@ export default function PCPView({
       if (os.transactionId) {
         try { await financeService.settleTransaction(os.transactionId); } catch { /* ignore */ }
       }
-      // 3. Always open sector change confirmation popup to manually select destination —
-      // restrito aos itens que esta OS realmente cobre, não o Mapa inteiro.
-      openSectorChangeConfirm(lotObj, '', `Baixa via OS ${os.osNumber} concluída.`, {
-        sourceItemKeys: os.sourceItemKeys,
-        sourceOrderIds: os.sourceOrderIds,
-      });
+
+      const restrictTo = { sourceItemKeys: os.sourceItemKeys, sourceOrderIds: os.sourceOrderIds };
+      const osSectorObj = sectors.find(s => s.id === os.sectorId);
+      const isCycleEndSector = !!osSectorObj?.isProductionCycleEnd ||
+        !!osSectorObj?.name?.toUpperCase().includes('EXPEDIÇÃO') ||
+        !!osSectorObj?.name?.toUpperCase().includes('EXPEDICAO');
+
+      if (isCycleEndSector) {
+        // Setor marcado como "Fim do Ciclo de Produção" (ex.: Expedição) — não existe
+        // "próximo setor" pra perguntar, então concluir a OS aqui já fecha o ciclo direto.
+        // Abre a mesma prévia rica (projeção de estoque + baixa de solados) do "Concluir/
+        // Dar Baixa" manual, em vez de um confirm() de texto puro sem esse detalhe.
+        const route = lotObj.route || [];
+        const currentSectorId = route[lotObj.currentSectorIndex] || os.sectorId;
+        const items = buildLotAdvanceItems(lotObj, currentSectorId, restrictTo).map(it => ({ ...it, chosenSectorId: '' }));
+        const { lines, stockInfo, soleInfo } = buildFinalizePreview(
+          lotObj, items, `OS ${os.osNumber} concluída em "${osSectorObj?.name || os.sectorName}"`,
+        );
+        setFinalizeSelectedConfirm({ lot: lotObj, items, lines, stockInfo, soleInfo });
+        return;
+      }
+
+      // 3. Setores normais ainda abrem a confirmação manual de destino — restrito aos
+      // itens que esta OS realmente cobre, não o Mapa inteiro.
+      openSectorChangeConfirm(lotObj, '', `Baixa via OS ${os.osNumber} concluída.`, restrictTo);
     } catch (e) {
       console.error(e);
       toast.show('Erro ao concluir OS: ' + (e instanceof Error ? e.message : String(e)));
@@ -3868,6 +4334,8 @@ export default function PCPView({
                 { label: 'Mapas', icon: <ListTodo size={20} />, color: 'text-emerald-500', bg: isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50', run: () => { setActiveTab('lots'); setSelectedSectorId(null); } },
                 { label: 'Cor Mapa', icon: <Palette size={20} />, color: 'text-indigo-500', bg: isDarkMode ? 'bg-indigo-500/10' : 'bg-indigo-50', run: () => { setColorPickerLot(null); setIsColorPickerOpen(true); } },
                 { label: 'Cor Badges', icon: <Tag size={20} />, color: 'text-rose-500', bg: isDarkMode ? 'bg-rose-500/10' : 'bg-rose-50', run: () => setIsBadgeColorPickerOpen(true) },
+                { label: 'OS Concluídas', icon: <CheckSquare size={20} />, color: 'text-emerald-500', bg: isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50', run: () => setShowCompletedOSModal(true) },
+                { label: 'Diag. Estoque', icon: <AlertTriangle size={20} />, color: 'text-rose-500', bg: isDarkMode ? 'bg-rose-500/10' : 'bg-rose-50', run: () => setShowStockDiagnosticModal(true), dot: duplicateStockLotGroups.length > 0 },
               ].map((action) => (
                 <button
                   key={action.label}
@@ -4102,7 +4570,7 @@ export default function PCPView({
                       const lotSI: any[] = (lot as any).metadata?.sourceItems
                         || (lot.productionOrderId ? [{ orderId: lot.productionOrderId, itemIdx: 0, qty: lot.quantity }] : []);
 
-                      lotSI.forEach((si: any) => {
+                      lotSI.forEach((si: any, idx: number) => {
                         const effectiveSector = getOrderEffectiveSector(lot, si.orderId, si);
                         if (effectiveSector !== selectedSectorId) return;
 
@@ -4110,12 +4578,27 @@ export default function PCPView({
                         const vari = prod?.variations.find((v: any) => v.id === si.variationId);
                         const ord = productionOrders.find(o => o.id === si.orderId);
                         const ordItem: any = si.itemIdx !== undefined ? ord?.items[si.itemIdx] : ord?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
-                        const siIdx = lotSI.indexOf(si);
+                        const siIdx = idx;
+                        // O casamento por sourceItemKeys/sourceOrderIds já identifica o item exato
+                        // coberto pela OS — não precisa (e não deve) também exigir os.sectorId ===
+                        // selectedSectorId aqui: esse campo é só um denormalizado da OS, e exigir
+                        // os dois batendo causava o caso real de uma OS pendente que comprovadamente
+                        // cobria o item (confirmado abrindo "Visualizar" na OS) ficar sem o feedback
+                        // de "Atrelado à OS" só porque sectorId não coincidia. O filtro por setor
+                        // continua só no fallback genérico (OS sem nenhuma restrição de item), onde
+                        // é a única forma de não misturar OS de outro setor com nenhuma precisão.
+                        //
+                        // status: 'PENDING' é essencial aqui — sourceItemKeys casa pra sempre, então
+                        // toda OS antiga já concluída do mesmo item também "bate" na busca. Sem esse
+                        // filtro, o .find() podia parar numa OS antiga concluída (ordem do array) e
+                        // nunca chegar a achar a OS nova pendente, deixando o item sem o feedback de
+                        // "Atrelado à OS" mesmo com uma OS pendente genuína cobrindo ele.
                         const coveringOS = serviceOrders.find(os =>
+                          os.status === 'PENDING' &&
                           (os.lotId === lot.id || (os.lotIds && os.lotIds.includes(lot.id))) &&
-                          os.sectorId === selectedSectorId &&
                           osCoversItem(os, lot.id, si.orderId, siIdx)
                         ) || serviceOrders.find(os =>
+                          os.status === 'PENDING' &&
                           (os.lotId === lot.id || (os.lotIds && os.lotIds.includes(lot.id))) &&
                           os.sectorId === selectedSectorId &&
                           (!os.sourceOrderIds || os.sourceOrderIds.length === 0) &&
@@ -4125,6 +4608,10 @@ export default function PCPView({
                       });
                     });
                     if (allFichas.length === 0) return null;
+
+                    // Cor do setor atual — usada no card "Atrelado à OS" (era sempre laranja,
+                    // agora assume um tom bem claro da cor do próprio setor selecionado).
+                    const sectorColor = sectors.find(s => s.id === selectedSectorId)?.color || '#f59e0b';
 
                     // ── State helpers (using fichaListOpen / fichaFilters keyed by '__pedidos__')
                     const mainKey = `__pedidos__${selectedSectorId}`;
@@ -4182,8 +4669,16 @@ export default function PCPView({
                       return true;
                     });
 
+                    // Fichas com OS pendente saem da lista normal e vão pro card "Fichas com
+                    // OS Ativas" (fora de "Pedidos Vinculados", acordeão fechado por padrão) —
+                    // só fichas livres (sem OS ou com OS já concluída) continuam selecionáveis aqui.
+                    const fichasComOSAtivas = filteredFichas.filter(f => !!f.coveringOS && f.coveringOS.status === 'PENDING');
+                    const fichasSemOSAtiva = filteredFichas.filter(f => !(f.coveringOS && f.coveringOS.status === 'PENDING'));
+                    const osCardKey = `__fichas_os_ativas__${selectedSectorId}`;
+                    const isOSCardOpen = fichaListOpen.has(osCardKey + '_open');
+
                     // Selectable = fichas with no pending OS
-                    const selectable = filteredFichas.filter(f => !f.coveringOS || f.coveringOS.status !== 'PENDING');
+                    const selectable = fichasSemOSAtiva;
                     const selected = selectable.filter(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
                     const allSelected = selectable.length > 0 && selectable.every(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
                     const selectedQty = selected.reduce((s, f) => s + (f.si.qty || 0), 0);
@@ -4196,6 +4691,7 @@ export default function PCPView({
                     });
 
                     return (
+                      <>
                       <div className={`mt-4 rounded-3xl border overflow-hidden ${isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-sky-100 shadow-sm'}`}>
 
                         {/* ── Cabeçalho acordeão ── */}
@@ -4206,7 +4702,7 @@ export default function PCPView({
                           <div className="flex items-center gap-2 min-w-0 flex-1">
                             <Hash size={13} className="text-indigo-500 shrink-0" />
                             <div className="min-w-0">
-                              <h3 className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Pedidos Vinculados</h3>
+                              <h3 className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Pedidos no Setor</h3>
                             </div>
                             <span className={`text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 ${isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}>
                               {allFichas.length}
@@ -4233,7 +4729,7 @@ export default function PCPView({
 
                         {isMainOpen && (
                           <div className="p-4 pt-0 flex flex-col gap-3">
-                            <p className="text-[9px] text-slate-400 uppercase font-bold">{filteredFichas.length} fichas · {selectable.length} disponíveis</p>
+                            <p className="text-[9px] text-slate-400 uppercase font-bold">{fichasSemOSAtiva.length} fichas · {selectable.length} disponíveis</p>
 
                             {/* Select-all row */}
                             <div className="flex items-center justify-between pt-1">
@@ -4260,15 +4756,15 @@ export default function PCPView({
                               </div>
                             </div>
 
-                            {/* Botão que abre o popup de filtros */}
-                            <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                            {/* Botão que abre o popup de filtros com fundo laranja claro e badge de Filtrar pulsante */}
+                            <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-orange-900/40 bg-orange-950/20' : 'border-orange-200 bg-orange-50/50'}`}>
                               <button type="button"
                                 onClick={() => { const n = new Set(fichaListOpen); isFilterOpen ? n.delete(filterKey) : n.add(filterKey); setFichaListOpen(n); }}
-                                className={`w-full flex items-center gap-2 px-4 py-2.5 transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50'}`}
+                                className={`w-full flex items-center gap-2 px-4 py-2.5 transition-colors ${isDarkMode ? 'hover:bg-orange-900/20' : 'hover:bg-orange-100/40'}`}
                               >
-                                <Filter size={12} className="text-orange-500" />
+                                <Filter size={12} className="text-orange-500 animate-bounce" />
                                 <span className="flex-1 text-left">
-                                  <span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ${isDarkMode ? 'bg-slate-700 text-slate-200' : 'bg-slate-200 text-slate-600'}`}>Filtrar</span>
+                                  <span className={`inline-block text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full animate-pulse ${isDarkMode ? 'bg-orange-900/60 text-orange-200' : 'bg-orange-100 text-orange-700'}`}>Filtrar</span>
                                 </span>
                                 {(activeFilt.model || activeFilt.color || activeFilt.customerName || activeFilt.providerName) && (
                                   <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-indigo-500 text-white">Ativo</span>
@@ -4377,7 +4873,7 @@ export default function PCPView({
 
                             {/* Ficha cards — flat list */}
                             <div className="flex flex-col gap-1.5">
-                              {filteredFichas.map((f) => {
+                              {fichasSemOSAtiva.map((f) => {
                                 const itemKey = `${f.lot.id}::${f.si.orderId}::${f.siIdx}`;
                                 const hasOS = !!f.coveringOS && f.coveringOS.status === 'PENDING';
                                 const isChecked = fichaSelection.has(itemKey);
@@ -4843,6 +5339,7 @@ export default function PCPView({
                                             chosenSectorId,
                                             lotId: f.lot.id,
                                             saleType: f.orderItem?.saleType,
+                                            siIdx: f.siIdx,
                                           };
                                         });
 
@@ -4983,99 +5480,96 @@ export default function PCPView({
                                   : '';
                                 const nextSName = sectors.find(s => s.id === nextSId)?.name ?? 'CONCLUÍDO';
                                 return (
-                                  <div key={os.id} id={`os-card-${os.id}`} className={`rounded-2xl border flex flex-col gap-2.5 px-3 py-3 transition-all ${highlightedOSId === os.id ? 'ring-4 ring-indigo-500/60 border-indigo-500 dark:border-indigo-500 shadow-lg shadow-indigo-500/30 scale-[1.02]' : ''} ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
-                                    {/* Info — prestador numa extremidade, número da OS em cápsula na outra (cor própria da OS, configurável em Cor de Badges PCP — não herda do Mapa, já que uma OS pode reunir pedidos de mapas diferentes) */}
+                                  <div key={os.id} id={`os-card-${os.id}`} className={`rounded-2xl border flex flex-col gap-3 px-3 py-3 transition-all ${highlightedOSId === os.id ? 'ring-4 ring-indigo-500/60 border-indigo-500 dark:border-indigo-500 shadow-lg shadow-indigo-500/30 scale-[1.02]' : ''} ${isDarkMode ? 'bg-gradient-to-br from-slate-900 to-slate-950 border-slate-700/60' : 'bg-gradient-to-br from-white to-slate-50 border-slate-200/70 shadow-md'}`}>
+                                    {/* Info — prestador, botão "Visualizar" (única ação fora da grade) e número
+                                        da OS em cápsula (cor própria da OS, configurável em Cor de Badges PCP —
+                                        não herda do Mapa, já que uma OS pode reunir pedidos de mapas diferentes). */}
                                     <div className="flex items-center justify-between gap-2">
-                                      <p className={`text-[11px] font-black truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{os.providerName || '—'}</p>
                                       <span
-                                        className="text-[10px] px-2.5 py-1 rounded-full uppercase shrink-0"
+                                        className="text-[9px] px-2.5 py-1 rounded-full uppercase tracking-wider shrink-0 truncate max-w-[130px]"
                                         style={{
-                                          backgroundColor: osBadgeBg,
-                                          color: osBadgeText,
-                                          boxShadow: `0 1px 2px ${osBadgeBg}30`,
-                                          fontWeight: osBadgeBold ? 900 : 400,
-                                          fontStyle: osBadgeItalic ? 'italic' : 'normal',
+                                          backgroundColor: providerBadgeBg,
+                                          color: providerBadgeText,
+                                          boxShadow: `0 1px 2px ${providerBadgeBg}30`,
+                                          fontWeight: providerBadgeBold ? 900 : 400,
+                                          fontStyle: providerBadgeItalic ? 'italic' : 'normal',
                                         }}
                                       >
-                                        {os.osNumber}
+                                        {os.providerName || '—'}
+                                      </span>
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        <button type="button" title="Visualizar pedidos da OS" onClick={() => setViewOSModal({ isOpen: true, os, items: getFichasForOS(os) })}
+                                          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl shrink-0 transition-all active:scale-95 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300' : 'bg-white border-slate-200/60 hover:bg-slate-50 text-slate-600'}`}>
+                                          <Eye size={13} className="text-indigo-500 dark:text-indigo-400" />
+                                          <span className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Visualizar</span>
+                                        </button>
+                                        <span
+                                          className="text-[10px] px-2.5 py-1 rounded-full uppercase shrink-0"
+                                          style={{
+                                            backgroundColor: osBadgeBg,
+                                            color: osBadgeText,
+                                            boxShadow: `0 1px 2px ${osBadgeBg}30`,
+                                            fontWeight: osBadgeBold ? 900 : 400,
+                                            fontStyle: osBadgeItalic ? 'italic' : 'normal',
+                                          }}
+                                        >
+                                          {os.osNumber}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between gap-2 px-0.5">
+                                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                                        {new Date(os.createdAt).toLocaleDateString('pt-BR')}
+                                      </span>
+                                      <span className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                                        R$ {os.totalValue.toFixed(2)}
                                       </span>
                                     </div>
 
-                                    {/* Ações — Visualizar/Editar e Excluir/Compartilhar divididos ao meio, Dar Baixa cheio. Padrão industrial: fundo cinza, só o ícone tem cor. */}
-                                    <div className="flex flex-col gap-1.5">
-                                      <div className="grid grid-cols-2 gap-1.5">
-                                        <button type="button" title="Visualizar pedidos da OS" onClick={() => setViewOSModal({ isOpen: true, os, items: getFichasForOS(os) })}
-                                          className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                                          <Eye size={12} className="text-indigo-500" /> Visualizar
-                                        </button>
+                                    {/* Ações — grade 3x2, fundo branco e apenas os ícones coloridos para visual limpo */}
+                                    <div className="flex flex-col gap-2">
+                                      <div className="grid grid-cols-3 gap-2">
                                         <button type="button" title="Editar OS" onClick={() => handleEditOS(os)}
-                                          className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                                          <Edit2 size={12} className="text-amber-500" /> Editar
+                                          className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
+                                          <Edit2 size={16} className="text-amber-500 dark:text-amber-400" />
+                                          <span className="text-[8px] font-black uppercase tracking-widest text-center leading-tight text-slate-600 dark:text-slate-400">Editar</span>
                                         </button>
-                                      </div>
-                                      <div className="grid grid-cols-2 gap-1.5">
                                         <button type="button" title="Excluir OS" onClick={() => handleDeleteOS(os)}
-                                          className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                                          <Trash2 size={12} className="text-rose-500" /> Excluir
+                                          className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
+                                          <Trash2 size={16} className="text-rose-500 dark:text-rose-400" />
+                                          <span className="text-[8px] font-black uppercase tracking-widest text-center leading-tight text-slate-600 dark:text-slate-400">Excluir</span>
                                         </button>
                                         <button type="button" title="Compartilhar OS" onClick={() => setShareModal({ isOpen: true, format: 'jpg', selectedItems: getFichasForOS(os) })}
-                                          className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                                          <Share2 size={12} className="text-orange-500" /> Compartilhar
+                                          className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
+                                          <Share2 size={16} className="text-orange-500 dark:text-orange-400" />
+                                          <span className="text-[8px] font-black uppercase tracking-widest text-center leading-tight text-slate-600 dark:text-slate-400">Compartilhar</span>
                                         </button>
-                                      </div>
-                                      <button type="button" title="Imprimir Etiqueta / OS" onClick={() => {
-                                        setPrintOSData({ os, nextSectorName: nextSName });
-                                        setIsPrintOSModalOpen(true);
-                                      }}
-                                        className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                                        <Printer size={12} className="text-emerald-500" /> Imprimir Etiqueta / OS
-                                      </button>
-
-                                      <button type="button" title="Print Studio" onClick={() => sendPCPItemsToPrintStudio(getFichasForOS(os).map(buildPCPShareItem), { isDarkMode })}
-                                        className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                                        <Printer size={12} className="text-cyan-500" /> Print Studio
-                                      </button>
-
-                                      {/* Observações + Lembrete — anotações sobre a OS, com título e data/hora opcionais para entrar no card de Lembretes do Dashboard */}
-                                      <div className="flex flex-col gap-1.5">
-                                        <textarea
-                                          defaultValue={os.notes || ''}
-                                          placeholder="Observações sobre esta OS..."
-                                          title="Observações da OS"
-                                          onBlur={(e) => {
-                                            if (e.target.value !== (os.notes || '')) {
-                                              firebaseService.updateDocument('serviceOrders', os.id, { notes: e.target.value || null });
-                                            }
-                                          }}
-                                          className={`w-full px-3 py-2 rounded-xl text-[10px] font-bold outline-none border resize-none h-16 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-700 placeholder:text-slate-400'}`}
-                                        />
-                                        <input
-                                          type="text"
-                                          defaultValue={os.reminderTitle || ''}
-                                          placeholder="Título do lembrete..."
-                                          title="Título do lembrete"
-                                          onBlur={(e) => {
-                                            if (e.target.value !== (os.reminderTitle || '')) {
-                                              const reminderTitle = e.target.value || null;
-                                              firebaseService.updateDocument('serviceOrders', os.id, { reminderTitle });
-                                              syncOSReminderNotification(os, { reminderTitle });
-                                            }
-                                          }}
-                                          className={`w-full px-3 py-2 rounded-xl text-[10px] font-bold outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-700 placeholder:text-slate-400'}`}
-                                        />
-                                        <DateTimePicker
-                                          value={os.reminderAt}
-                                          isDarkMode={isDarkMode}
-                                          placeholder="Definir lembrete"
-                                          onChange={(ts) => {
-                                            firebaseService.updateDocument('serviceOrders', os.id, { reminderAt: ts });
-                                            syncOSReminderNotification(os, { reminderAt: ts });
-                                          }}
-                                        />
+                                        <button type="button" title="Imprimir Etiqueta / OS" onClick={() => {
+                                          setPrintOSData({ os, nextSectorName: nextSName });
+                                          setIsPrintOSModalOpen(true);
+                                        }}
+                                          className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
+                                          <Printer size={16} className="text-emerald-500 dark:text-emerald-400" />
+                                          <span className="text-[8px] font-black uppercase tracking-widest text-center leading-tight text-slate-600 dark:text-slate-400">Etiqueta / OS</span>
+                                        </button>
+                                        <button type="button" title="Print Studio" onClick={() => sendPCPItemsToPrintStudio(getFichasForOS(os).map(buildPCPShareItem), { isDarkMode })}
+                                          className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
+                                          <Printer size={16} className="text-cyan-500 dark:text-cyan-400" />
+                                          <span className="text-[8px] font-black uppercase tracking-widest text-center leading-tight text-slate-600 dark:text-slate-400">Print Studio</span>
+                                        </button>
+                                        <button type="button" title="Lembretes" onClick={() => setOsNotesPopup(os)}
+                                          className={`relative flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
+                                          {(os.notes || os.reminderTitle || os.reminderAt) && (
+                                            <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                          )}
+                                          <Bell size={16} className="text-amber-500 dark:text-amber-400" />
+                                          <span className="text-[8px] font-black uppercase tracking-widest text-center leading-tight text-slate-600 dark:text-slate-400">Lembretes</span>
+                                        </button>
                                       </div>
 
                                       <button type="button" onClick={() => handleCompleteOS(os)}
-                                        className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 hover:bg-emerald-600">
+                                        className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 hover:from-emerald-500 hover:to-emerald-700">
                                         <CheckCircle2 size={13} /> Dar Baixa
                                       </button>
                                     </div>
@@ -5089,6 +5583,85 @@ export default function PCPView({
                           </div>
                         )}
                       </div>
+
+                      {/* ── Fichas com OS Ativas — card separado de "Pedidos Vinculados",
+                          acordeão fechado por padrão. Toda ficha que já tem uma OS pendente
+                          neste setor sai da lista normal e aparece aqui. */}
+                      {fichasComOSAtivas.length > 0 && (
+                        <div className={`mt-3 rounded-3xl border overflow-hidden ${isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-sky-100 shadow-sm'}`}>
+                          <button type="button"
+                            onClick={() => { const n = new Set(fichaListOpen); isOSCardOpen ? n.delete(osCardKey + '_open') : n.add(osCardKey + '_open'); setFichaListOpen(n); }}
+                            className={`w-full flex items-center justify-between p-4 transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-sky-50/50'}`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <Hammer size={13} className="text-amber-500 shrink-0" />
+                              <div className="min-w-0">
+                                <h3 className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Fichas com OS Ativas</h3>
+                              </div>
+                              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 ${isDarkMode ? 'bg-amber-900/40 text-amber-400' : 'bg-amber-100 text-amber-600'}`}>
+                                {fichasComOSAtivas.length}
+                              </span>
+                            </div>
+                            <ChevronDown size={15} className={`text-slate-400 transition-transform duration-200 shrink-0 ${isOSCardOpen ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {isOSCardOpen && (
+                            <div className="p-4 pt-0 flex flex-col gap-1.5">
+                              {fichasComOSAtivas.map((f) => {
+                                const itemKey = `${f.lot.id}::${f.si.orderId}::${f.siIdx}`;
+                                const product = f.product;
+                                const variation = f.variation;
+                                const orderItem = f.orderItem;
+                                const productName = product?.name || orderItem?.productName || '-';
+                                const productRef = product?.reference || '';
+                                const colorName = variation?.colorName || orderItem?.variationName || '';
+                                const os = f.coveringOS!;
+                                const cardSectorColor = sectors.find(s => s.id === os.sectorId)?.color || '#f59e0b';
+                                return (
+                                  <div key={itemKey}
+                                    className="rounded-2xl border p-3"
+                                    style={{ backgroundColor: hexToRgba(cardSectorColor, isDarkMode ? 0.14 : 0.1), borderColor: hexToRgba(cardSectorColor, isDarkMode ? 0.5 : 0.35) }}
+                                  >
+                                    <div className="flex items-center gap-2 mb-1.5">
+                                      <div className="shrink-0 animate-pulse" style={{ color: cardSectorColor }}>
+                                        <AlertTriangle size={14} />
+                                      </div>
+                                      <span className="text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider leading-none shrink-0" style={{ backgroundColor: productBadgeBg, color: productBadgeText, fontWeight: productBadgeBold ? 900 : 400, fontStyle: productBadgeItalic ? 'italic' : 'normal' }}>
+                                        {`${productRef || productName}${colorName ? ` ${colorName}` : ''}`.trim()}
+                                      </span>
+                                      <span
+                                        className="text-[8px] font-black px-2 py-0.5 rounded-full uppercase tracking-widest leading-none shrink-0 ml-auto"
+                                        style={(() => {
+                                          const bg = (f.lot as any).metadata?.badgeColor || mapBadgeBg;
+                                          const txt = (f.lot as any).metadata?.badgeTextColor || getContrastingColor(bg);
+                                          return { backgroundColor: bg, color: txt, boxShadow: `0 1px 2px ${bg}40` };
+                                        })()}
+                                      >
+                                        MAPA{f.lot.orderNumber}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                                      <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">PED. {f.lot.orderNumber}</span>
+                                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">{f.order?.customerName || 'ESTOQUE'}</span>
+                                      <span className="text-[9px] font-black text-indigo-600 dark:text-indigo-400">· {f.si.qty} {f.si.qty === 1 ? 'par' : 'pares'}</span>
+                                    </div>
+                                    <span
+                                      className="inline-flex text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border"
+                                      style={{ backgroundColor: hexToRgba(cardSectorColor, 0.12), color: cardSectorColor, borderColor: hexToRgba(cardSectorColor, 0.3) }}
+                                    >
+                                      Atrelado à {os.osNumber} (Já possui OS neste setor!)
+                                    </span>
+                                    <p className="text-[8px] font-bold text-slate-900 dark:text-white uppercase tracking-widest mt-1">
+                                      Prestador: {os.providerName || '—'} · Criada em {new Date(os.createdAt).toLocaleDateString('pt-BR')}
+                                    </p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      </>
                     );
                   })()}
                 </>
@@ -8052,19 +8625,23 @@ export default function PCPView({
                             .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
                           : [];
 
+                        const orderOSSectorColor = sectors.find(s => s.id === orderOS?.sectorId)?.color || '#f59e0b';
+
                         return (
                           <div key={idx} id={`pedido-card-${key}`} className={`rounded-2xl border overflow-hidden transition-all ${hasOS
-                            ? (isDarkMode ? 'bg-amber-950/20 border-amber-700/40' : 'bg-amber-50 border-amber-200')
+                            ? ''
                             : hasCompletedOS
                               ? (isDarkMode ? 'bg-emerald-950/20 border-emerald-700/40' : 'bg-emerald-50/60 border-emerald-200')
                               : isChecked
                                 ? (isDarkMode ? 'bg-indigo-950/30 border-indigo-700' : 'bg-indigo-50 border-indigo-200')
                                 : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm')
-                            }`}>
+                            }`}
+                            style={hasOS ? { backgroundColor: hexToRgba(orderOSSectorColor, isDarkMode ? 0.14 : 0.1), borderColor: hexToRgba(orderOSSectorColor, isDarkMode ? 0.5 : 0.35) } : undefined}
+                          >
                             {/* ── Cabeçalho (sempre visível) ── */}
                             <div className="p-3 flex items-center gap-3">
                               {hasOS ? (
-                                <div className="w-4 h-4 rounded-full bg-amber-400 flex items-center justify-center shrink-0" title="OS pendente">
+                                <div className="w-4 h-4 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: orderOSSectorColor }} title="OS pendente">
                                   <div className="w-2 h-2 rounded-full bg-white" />
                                 </div>
                               ) : hasCompletedOS ? (
@@ -8682,7 +9259,7 @@ export default function PCPView({
                             <button
                               type="button"
                               onClick={() => {
-                                setPendingOsSourceOrderIds(selectedItemsList.map((si: any) => `${selectedLot.id}::${si.orderId}::${si.itemIdx !== undefined ? si.itemIdx : sourceItems.indexOf(si)}`));
+                                setPendingOsSourceOrderIds(selectedItemsList.map((si: any) => `${selectedLot.id}::${si.orderId}::${sourceItems.indexOf(si)}`));
                                 handleOpenOSModal({ ...selectedLot, quantity: selectedQty } as any);
                               }}
                               className={`w-full px-4 py-2.5 rounded-xl text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 ${isDarkMode ? 'bg-slate-600 hover:bg-slate-500' : 'bg-slate-700 hover:bg-slate-800'}`}
@@ -8766,6 +9343,7 @@ export default function PCPView({
                                       chosenSectorId,
                                       lotId: selectedLot.id,
                                       saleType: orderItem?.saleType,
+                                      siIdx: sourceItems.indexOf(si),
                                     };
                                   });
                                   const toFinalize = resolved.filter(it => it.chosenSectorId === '');
@@ -10037,6 +10615,151 @@ export default function PCPView({
       )}
 
       {/* ── Modal: Confirmação de Conclusão da OS ── */}
+      <CompletedServiceOrdersModal
+        isOpen={showCompletedOSModal}
+        onClose={() => setShowCompletedOSModal(false)}
+        serviceOrders={serviceOrders}
+        lots={lots}
+        sectors={sectors}
+        transactions={transactions}
+        isDarkMode={isDarkMode}
+        onViewOS={(os) => setViewOSModal({ isOpen: true, os, items: getFichasForOS(os) })}
+        onDeleteOS={handleDeleteOS}
+        onShareOS={(os) => setShareModal({ isOpen: true, format: 'jpg', selectedItems: getFichasForOS(os) })}
+        onPrintOS={(os) => { setPrintOSData({ os, nextSectorName: 'CONCLUÍDO' }); setIsPrintOSModalOpen(true); }}
+        onPrintStudio={(os) => sendPCPItemsToPrintStudio(getFichasForOS(os).map(buildPCPShareItem), { isDarkMode })}
+        onOpenReminders={(os) => setOsNotesPopup(os)}
+        osBadgeBg={osBadgeBg}
+        osBadgeText={osBadgeText}
+        osBadgeBold={osBadgeBold}
+        osBadgeItalic={osBadgeItalic}
+      />
+
+      {/* ── Diagnóstico temporário de StockLots duplicados ── */}
+      {showStockDiagnosticModal && createPortal(
+        <div className="fixed inset-0 z-[300000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowStockDiagnosticModal(false)}>
+          <div onClick={(e) => e.stopPropagation()} className={`w-full max-w-lg max-h-[85vh] flex flex-col rounded-[2.5rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+            <div className="p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-rose-500/20 text-rose-400' : 'bg-rose-50 text-rose-500'}`}>
+                  <AlertTriangle size={22} strokeWidth={2.5} />
+                </div>
+                <div>
+                  <h3 className={`text-base font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Diagnóstico de Estoque Duplicado</h3>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">{duplicateStockByRefColor.length} referência(s)/cor(es) afetada(s)</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setShowStockDiagnosticModal(false)} aria-label="Fechar" title="Fechar"
+                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}>
+                <X size={20} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-3 custom-scrollbar">
+              {duplicateStockByRefColor.length === 0 && (
+                <p className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400 py-10">Nenhuma duplicidade encontrada.</p>
+              )}
+              {duplicateStockByRefColor.map(g => (
+                <div key={`${g.productReference}::${g.variationName}`} className={`rounded-2xl border p-4 flex flex-col gap-2 ${isDarkMode ? 'bg-rose-900/15 border-rose-800/40' : 'bg-rose-50 border-rose-100'}`}>
+                  <p className={`text-[12px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    {g.productReference ? `${g.productReference} — ` : ''}{g.productName} · {g.variationName}
+                  </p>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
+                    Veio de: {g.lotOrderNumbers.join(', ')}
+                  </p>
+                  <div className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total a descontar</span>
+                    <span className="text-[14px] font-black text-rose-500">
+                      {g.excessBoxes > 0 ? `${g.excessBoxes} cx` : `${g.excessPairs} pares`}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {duplicateStockByRefColor.length > 0 && (
+                <button type="button"
+                  onClick={() => {
+                    const text = duplicateStockByRefColor.map(g =>
+                      `${g.productReference} ${g.productName} ${g.variationName} (origem: ${g.lotOrderNumbers.join(', ')}): descontar ${g.excessBoxes > 0 ? `${g.excessBoxes} cx` : `${g.excessPairs} pares`}`
+                    ).join('\n');
+                    navigator.clipboard.writeText(text);
+                    toast.show('Resumo copiado.');
+                  }}
+                  className={`py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+                  Copiar Resumo
+                </button>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ── Popup de Observações/Lembrete da OS — saiu do card pra ocupar menos espaço ── */}
+      {osNotesPopup && createPortal(
+        <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" style={{ zIndex: 60000 }} onClick={() => setOsNotesPopup(null)}>
+          <div onClick={(e) => e.stopPropagation()} className={`w-full max-w-sm rounded-[2rem] p-6 flex flex-col gap-4 shadow-2xl animate-in zoom-in-95 duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
+                  <Bell size={18} />
+                </div>
+                <div>
+                  <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Observações &amp; Lembrete</h3>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500">{osNotesPopup.osNumber}</p>
+                </div>
+              </div>
+              <button type="button" title="Fechar" onClick={() => setOsNotesPopup(null)} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <textarea
+              defaultValue={osNotesPopup.notes || ''}
+              placeholder="Observações sobre esta OS..."
+              title="Observações da OS"
+              onBlur={(e) => {
+                if (e.target.value !== (osNotesPopup.notes || '')) {
+                  firebaseService.updateDocument('serviceOrders', osNotesPopup.id, { notes: e.target.value || null });
+                }
+              }}
+              className={`w-full px-3 py-2 rounded-xl text-[11px] font-bold outline-none border resize-none h-20 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-700 placeholder:text-slate-400'}`}
+            />
+            <input
+              type="text"
+              defaultValue={osNotesPopup.reminderTitle || ''}
+              placeholder="Título do lembrete..."
+              title="Título do lembrete"
+              onBlur={(e) => {
+                if (e.target.value !== (osNotesPopup.reminderTitle || '')) {
+                  const reminderTitle = e.target.value || null;
+                  firebaseService.updateDocument('serviceOrders', osNotesPopup.id, { reminderTitle });
+                  syncOSReminderNotification(osNotesPopup, { reminderTitle });
+                }
+              }}
+              className={`w-full px-3 py-2 rounded-xl text-[11px] font-bold outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-700 placeholder:text-slate-400'}`}
+            />
+            <DateTimePicker
+              value={osNotesPopup.reminderAt}
+              isDarkMode={isDarkMode}
+              placeholder="Definir lembrete"
+              onChange={(ts) => {
+                firebaseService.updateDocument('serviceOrders', osNotesPopup.id, { reminderAt: ts });
+                syncOSReminderNotification(osNotesPopup, { reminderAt: ts });
+              }}
+            />
+
+            <button
+              type="button"
+              onClick={() => setOsNotesPopup(null)}
+              className="w-full py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-amber-500 text-white shadow-lg shadow-amber-500/20 active:scale-95 transition-all hover:bg-amber-600"
+            >
+              Concluído
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {osCompleteConfirm && createPortal(
         <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" style={{ zIndex: 60000 }}>
           <div className={`w-full max-w-sm rounded-[2rem] p-6 flex flex-col gap-5 shadow-2xl animate-in zoom-in-95 duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}>
@@ -10802,8 +11525,19 @@ export default function PCPView({
       <ExportNoteModal
         isOpen={shareModal.isOpen}
         onClose={() => setShareModal(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid) => {
-          const { finalItems, lotNumbers } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
+        onConfirm={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds) => {
+          let { finalItems, lotNumbers } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
+
+          if (showSectorNotes && selectedSectorIds && selectedSectorIds.length > 0) {
+            finalItems = finalItems.map(item => {
+              const filteredNotes = item.sectorNotes.filter(n => {
+                const sec = sectors.find(s => s.name === n.sectorName);
+                if (!sec) return false;
+                return selectedSectorIds.includes(sec.id);
+              });
+              return { ...item, sectorNotes: filteredNotes };
+            });
+          }
 
           const success = await generatePCPShareExport({
             lotNumber: lotNumbers || 'Vários',
@@ -10825,8 +11559,19 @@ export default function PCPView({
             setShareModal(prev => ({ ...prev, isOpen: false }));
           }
         }}
-        onPreview={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid) => {
-          const { finalItems, lotNumbers } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
+        onPreview={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds) => {
+          let { finalItems, lotNumbers } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
+
+          if (showSectorNotes && selectedSectorIds && selectedSectorIds.length > 0) {
+            finalItems = finalItems.map(item => {
+              const filteredNotes = item.sectorNotes.filter(n => {
+                const sec = sectors.find(s => s.name === n.sectorName);
+                if (!sec) return false;
+                return selectedSectorIds.includes(sec.id);
+              });
+              return { ...item, sectorNotes: filteredNotes };
+            });
+          }
 
           return await generatePCPShareExport({
             lotNumber: lotNumbers || 'Vários',
@@ -10844,11 +11589,23 @@ export default function PCPView({
             showSoleGrid
           }, format, true);
         }}
-        onOpenInPrintStudio={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid) => {
+        onOpenInPrintStudio={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds) => {
           // Print Studio trabalha com blocos de imagem (bitmap), nunca PDF — por isso
           // ignora o formato escolhido no popup (sempre gera como JPG), mas respeita as
           // mesmas opções de conteúdo (grade, materiais, instruções etc.) já configuradas.
-          const { finalItems } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
+          let { finalItems } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
+
+          if (showSectorNotes && selectedSectorIds && selectedSectorIds.length > 0) {
+            finalItems = finalItems.map(item => {
+              const filteredNotes = item.sectorNotes.filter(n => {
+                const sec = sectors.find(s => s.name === n.sectorName);
+                if (!sec) return false;
+                return selectedSectorIds.includes(sec.id);
+              });
+              return { ...item, sectorNotes: filteredNotes };
+            });
+          }
+
           await sendPCPItemsToPrintStudio(finalItems, {
             isDarkMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, showProvider, showOSData, showSoleGrid,
           });
@@ -10857,6 +11614,7 @@ export default function PCPView({
         isDarkMode={isDarkMode}
         initialFormat={shareModal.format}
         title="Central de Compartilhamento - PCP"
+        sectors={sectors}
         showGroupingToggle={true}
         showPCPTotalGridToggle={true}
         showMaterialsToggle={true}
@@ -11346,6 +12104,111 @@ export default function PCPView({
                 type="button"
                 onClick={toggleOSBadgeItalic}
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${osBadgeItalic
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                  }`}
+              >
+                <span className="italic font-black">I</span> Itálico
+              </button>
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 dark:border-slate-800" />
+
+          {/* Badge de Prestador de Serviço */}
+          <div className="flex flex-col gap-3">
+            <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
+              Cor de fundo e do texto da cápsula com o nome do Prestador de Serviço, exibida no card de cada Ordem de Serviço.
+            </p>
+            <div className="flex flex-col gap-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pré-visualização</label>
+              <div className="flex justify-center py-6 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800">
+                <span
+                  className="text-[11px] px-3.5 py-1.5 rounded-full uppercase tracking-widest shadow-lg"
+                  style={{
+                    backgroundColor: providerBadgeBg,
+                    color: providerBadgeText,
+                    boxShadow: `0 4px 12px ${providerBadgeBg}30`,
+                    fontWeight: providerBadgeBold ? 900 : 400,
+                    fontStyle: providerBadgeItalic ? 'italic' : 'normal',
+                  }}
+                >
+                  Fábrica Musgo
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2.5">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cor de Fundo</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={providerBadgeBg}
+                  onChange={(e) => updateProviderBadgeColors(e.target.value, providerBadgeText)}
+                  className="w-10 h-10 rounded-xl cursor-pointer border-2 border-slate-200 dark:border-slate-700 bg-transparent shrink-0"
+                  title="Escolher cor personalizada"
+                />
+                <div className="flex flex-wrap gap-2 max-w-[320px]">
+                  {[
+                    '#000000', '#1e293b', '#475569', '#7c3aed', '#4f46e5',
+                    '#2563eb', '#0891b2', '#0d9488', '#059669', '#16a34a',
+                    '#ca8a04', '#d97706', '#ea580c', '#dc2626', '#e11d48',
+                    // Tons suaves/pastéis
+                    '#ffffff', '#f1f5f9', '#fce7f3', '#fae8ff', '#ede9fe',
+                    '#e0e7ff', '#dbeafe', '#cffafe', '#ccfbf1', '#d1fae5',
+                    '#dcfce7', '#fef9c3', '#fef3c7', '#ffedd5', '#fee2e2',
+                    '#ffe4e6',
+                  ].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => updateProviderBadgeColors(c, getContrastingColor(c))}
+                      className={`w-7 h-7 rounded-lg border transition-all ${providerBadgeBg === c ? 'border-indigo-500 scale-110 ring-2 ring-indigo-500/20' : 'border-slate-200 dark:border-slate-700 hover:scale-105'}`}
+                      style={{ backgroundColor: c }}
+                      title={c}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => updateProviderBadgeColors(providerBadgeBg, '#ffffff')}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${providerBadgeText === '#ffffff'
+                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                  }`}
+              >
+                <div className="w-3.5 h-3.5 rounded-full bg-white border border-slate-300 shrink-0" />
+                Texto Branco
+              </button>
+              <button
+                type="button"
+                onClick={() => updateProviderBadgeColors(providerBadgeBg, '#000000')}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${providerBadgeText === '#000000'
+                  ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-800 dark:border-slate-700'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                  }`}
+              >
+                <div className="w-3.5 h-3.5 rounded-full bg-black shrink-0" />
+                Texto Preto
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={toggleProviderBadgeBold}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${providerBadgeBold
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+                  }`}
+              >
+                <span className="font-black">N</span> Negrito
+              </button>
+              <button
+                type="button"
+                onClick={toggleProviderBadgeItalic}
+                className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-[11px] font-black uppercase tracking-wider transition-all ${providerBadgeItalic
                   ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                   : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
                   }`}

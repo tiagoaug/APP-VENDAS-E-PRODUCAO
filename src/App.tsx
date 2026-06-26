@@ -4741,6 +4741,7 @@ export default function App() {
             purchases={purchases}
             sales={sales}
             stockLots={stockLots}
+            transactions={transactions}
           />
         );
       case ViewType.PRODUCTION_SERVICE_ORDER_FORM:

@@ -1420,7 +1420,16 @@ const StockCard: React.FC<{
                                     className="w-7 h-7 rounded-full bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center text-sm font-black hover:bg-indigo-200 transition-all active:scale-95"
                                     aria-label={`Aumentar tamanho ${size}`}
                                   >+</button>
-                                  <span className="text-base font-black text-slate-900 dark:text-white">{qty as number}</span>
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    value={qty as number}
+                                    onChange={(e) => onUpdateStock(v.id, size, Math.max(0, Number(e.target.value) || 0))}
+                                    onFocus={(e) => e.target.select()}
+                                    title={`Editar tamanho ${size}`}
+                                    aria-label={`Editar tamanho ${size}`}
+                                    className="w-10 text-center text-base font-black text-slate-900 dark:text-white bg-transparent border-none outline-none focus:ring-2 focus:ring-indigo-500/30 rounded-lg [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                  />
                                   <button
                                     type="button"
                                     onClick={() => onUpdateStock(v.id, size, Math.max(0, (qty as number) - 1))}
@@ -1457,7 +1466,16 @@ const StockCard: React.FC<{
                                 className="w-9 h-9 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 flex items-center justify-center text-lg font-black hover:bg-rose-200 transition-all active:scale-95"
                                 aria-label="Diminuir grade"
                               >−</button>
-                              <span className="w-12 text-center text-xl font-black text-slate-900 dark:text-white">{boxQty}</span>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                value={boxQty}
+                                onChange={(e) => onUpdateStock(v.id, 'WHOLESALE', Math.max(0, Number(e.target.value) || 0))}
+                                onFocus={(e) => e.target.select()}
+                                title="Editar quantidade de caixas"
+                                aria-label="Editar quantidade de caixas"
+                                className="w-14 text-center text-xl font-black text-slate-900 dark:text-white bg-transparent border-none outline-none focus:ring-2 focus:ring-indigo-500/30 rounded-lg [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                              />
                               <button
                                 type="button"
                                 onClick={() => onUpdateStock(v.id, 'WHOLESALE', boxQty + 1)}
@@ -1566,7 +1584,22 @@ const StockCard: React.FC<{
                                           className="w-8 h-8 shrink-0 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 flex items-center justify-center text-base font-black hover:bg-rose-200 transition-all active:scale-95"
                                           aria-label="Diminuir quantidade"
                                         >−</button>
-                                        <span className="w-7 text-center text-base font-black text-slate-900 dark:text-white shrink-0">{alloc.qty}</span>
+                                        <input
+                                          type="number"
+                                          inputMode="numeric"
+                                          value={alloc.qty}
+                                          onChange={(e) => {
+                                            const maxAllowed = boxQty - (totalAllocated - alloc.qty);
+                                            const next = Math.max(0, Math.min(maxAllowed, Number(e.target.value) || 0));
+                                            const updated = [...allocations];
+                                            updated[idx] = { ...alloc, qty: next };
+                                            onUpdatePkgAllocations(v.id, updated);
+                                          }}
+                                          onFocus={(e) => e.target.select()}
+                                          title="Editar quantidade"
+                                          aria-label="Editar quantidade"
+                                          className="w-10 text-center text-base font-black text-slate-900 dark:text-white bg-transparent border-none outline-none focus:ring-2 focus:ring-indigo-500/30 rounded-lg shrink-0 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                                        />
                                         <button
                                           type="button"
                                           onClick={() => {

@@ -1,0 +1,66 @@
+{"users": [
+{
+  "localId": "QSfeSQvurJNNdpFD86Vh7a32Pch2",
+  "email": "cesarrodri5753@gmail.com",
+  "emailVerified": true,
+  "displayName": "cesartremor",
+  "photoUrl": "https://lh3.googleusercontent.com/a/ACg8ocIw1Bf59P2DIqpLgSUZT0rMlwY_kjv4Ve5397PtL6NU6hxUA64Y=s96-c",
+  "lastSignedInAt": "1778458226904",
+  "createdAt": "1778458226903",
+  "providerUserInfo": [
+    {
+      "providerId": "google.com",
+      "rawId": "117980735185999232954",
+      "email": "cesarrodri5753@gmail.com",
+      "displayName": "cesartremor",
+      "photoUrl": "https://lh3.googleusercontent.com/a/ACg8ocIw1Bf59P2DIqpLgSUZT0rMlwY_kjv4Ve5397PtL6NU6hxUA64Y=s96-c"
+    }
+  ]
+},
+{
+  "localId": "S6IABAtMM6YbgDo3fmnLMQX9GPp1",
+  "email": "test@test.com",
+  "emailVerified": false,
+  "passwordHash": "hTK6d8mqiJgu/ynthNZa/5K6Ce5CfdUZFZTukpItXwqQC0u8uGHW52m+oVF5N+zpFkud060gK5X2jLoWPmt6Aw==",
+  "salt": "nzfmfm48jH4hlQ==",
+  "lastSignedInAt": "1777817052814",
+  "createdAt": "1777817052814",
+  "providerUserInfo": []
+},
+{
+  "localId": "TftLr8WERhVZK0sXfGt6EXWKAZf1",
+  "email": "fabricananet@gmail.com",
+  "emailVerified": true,
+  "displayName": "Tiago Augusto",
+  "photoUrl": "https://lh3.googleusercontent.com/a/ACg8ocJQoFgLWt1VpuKAnD3cesVePDSBJ49qfdjdG7Gr27IA-xDooOmT=s96-c",
+  "lastSignedInAt": "1782220881422",
+  "createdAt": "1777748838836",
+  "disabled": false,
+  "providerUserInfo": [
+    {
+      "providerId": "google.com",
+      "rawId": "112659917106322465031",
+      "email": "fabricananet@gmail.com",
+      "displayName": "Tiago Augusto",
+      "photoUrl": "https://lh3.googleusercontent.com/a/ACg8ocJQoFgLWt1VpuKAnD3cesVePDSBJ49qfdjdG7Gr27IA-xDooOmT=s96-c"
+    }
+  ]
+},
+{
+  "localId": "cqv0gQ4gikPWxctMdxsEE3Ne9VJ2",
+  "email": "tiagoaugusto.ns@gmail.com",
+  "emailVerified": true,
+  "displayName": "Tiago Augusto",
+  "photoUrl": "https://lh3.googleusercontent.com/a/ACg8ocKugAVnaecu4EuIcCCkwQHgJ0ZSEkI9Q1m0XBOpFRtWRe8B3YID8w=s96-c",
+  "lastSignedInAt": "1781271451365",
+  "createdAt": "1777751194640",
+  "providerUserInfo": [
+    {
+      "providerId": "google.com",
+      "rawId": "100095857855811352954",
+      "email": "tiagoaugusto.ns@gmail.com",
+      "displayName": "Tiago Augusto",
+      "photoUrl": "https://lh3.googleusercontent.com/a/ACg8ocKugAVnaecu4EuIcCCkwQHgJ0ZSEkI9Q1m0XBOpFRtWRe8B3YID8w=s96-c"
+    }
+  ]
+}]}
