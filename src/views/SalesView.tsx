@@ -766,7 +766,7 @@ export default function SalesView({
                           <Factory size={12} strokeWidth={2.5} />
                           <span className="text-[10px] font-bold">{d.productionPairs} pares deste produto em produção</span>
                         </div>
-                        {Object.keys(d.productionBySector).length > 1 && (
+                        {Object.keys(d.productionBySector).length > 0 && (
                           <span className="text-[9px] font-semibold opacity-80 pl-[18px]">
                             {Object.entries(d.productionBySector)
                               .map(([sectorId, qty]) => `${sectors.find(s => s.id === sectorId)?.name || sectorId}: ${qty}`)

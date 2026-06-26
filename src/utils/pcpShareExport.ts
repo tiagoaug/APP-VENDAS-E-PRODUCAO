@@ -851,44 +851,52 @@ export async function sendPCPItemsToPrintStudio(
     return;
   }
   try {
-    const lotNumber = Array.from(new Set(items.map(i => i.orderNumber).filter(Boolean))).join(', ') || 'PCP';
-    const result = await generatePCPShareExport(
-      {
-        lotNumber,
-        items,
-        isDarkMode: options.isDarkMode,
-        showTotalGrid: options.showTotalGrid,
-        showMaterials: options.showMaterials ?? true,
-        showItemGrid: options.showItemGrid ?? true,
-        showSectorNotes: options.showSectorNotes,
-        showOrderList: options.showOrderList,
-        showProvider: options.showProvider,
-        showOSData: options.showOSData,
-        showSoleGrid: options.showSoleGrid,
-        // Print Studio recebe sempre a imagem completa, sem cortes — a divisão em
-        // páginas é feita lá dentro (manualmente, com linhas de corte + blocos),
-        // nunca antes de chegar lá.
-        splitPages: false,
-      },
-      'jpg',
-      true,
-    );
+    const uris: string[] = [];
+    // Cada item selecionado gera sua própria imagem (em vez de uma imagem única com
+    // tudo empilhado) — assim, ao chegar no Print Studio, addImageBlocks cria 1
+    // ImageBlock por item, isto é, 1 bloco por pedido/ficha selecionada, já separados
+    // para o usuário tratar individualmente em vez de precisar "Separar Bloco" na mão.
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const result = await generatePCPShareExport(
+        {
+          lotNumber: item.orderNumber || 'PCP',
+          items: [item],
+          isDarkMode: options.isDarkMode,
+          showTotalGrid: options.showTotalGrid,
+          showMaterials: options.showMaterials ?? true,
+          showItemGrid: options.showItemGrid ?? true,
+          showSectorNotes: options.showSectorNotes,
+          showOrderList: options.showOrderList,
+          showProvider: options.showProvider,
+          showOSData: options.showOSData,
+          showSoleGrid: options.showSoleGrid,
+          // Print Studio recebe sempre a imagem completa, sem cortes — a divisão em
+          // páginas é feita lá dentro (manualmente, com linhas de corte + blocos),
+          // nunca antes de chegar lá.
+          splitPages: false,
+        },
+        'jpg',
+        true,
+      );
 
-    if (!Array.isArray(result) || result.length === 0) {
-      toast.show('Não foi possível gerar a imagem da ficha.');
-      return;
+      if (!Array.isArray(result)) continue;
+
+      for (let j = 0; j < result.length; j++) {
+        const dataUri = result[j];
+        const base64 = dataUri.includes('base64,') ? dataUri.split('base64,')[1] : dataUri;
+        const written = await Filesystem.writeFile({
+          path: `printstudio_ficha_${Date.now()}_${i}_${j}.jpg`,
+          data: base64,
+          directory: Directory.Cache,
+        });
+        uris.push(written.uri);
+      }
     }
 
-    const uris: string[] = [];
-    for (let i = 0; i < result.length; i++) {
-      const dataUri = result[i];
-      const base64 = dataUri.includes('base64,') ? dataUri.split('base64,')[1] : dataUri;
-      const written = await Filesystem.writeFile({
-        path: `printstudio_ficha_${Date.now()}_${i}.jpg`,
-        data: base64,
-        directory: Directory.Cache,
-      });
-      uris.push(written.uri);
+    if (uris.length === 0) {
+      toast.show('Não foi possível gerar a imagem da ficha.');
+      return;
     }
 
     await openPrintStudio(uris);
