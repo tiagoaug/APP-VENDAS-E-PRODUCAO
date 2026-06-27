@@ -33,6 +33,15 @@ function loadFilters(): Filters {
   }
 }
 
+const hexToRgba = (hexcolor: string | undefined, alpha: number): string => {
+  if (!hexcolor || hexcolor.length < 6) return `rgba(99, 102, 241, ${alpha})`;
+  const cleanHex = hexcolor.replace('#', '');
+  const r = parseInt(cleanHex.substring(0, 2), 16);
+  const g = parseInt(cleanHex.substring(2, 4), 16);
+  const b = parseInt(cleanHex.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
 interface CompletedServiceOrdersModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -79,7 +88,7 @@ export default function CompletedServiceOrdersModal({
     osLotIds.forEach(lId => {
       const l = lots.find(lot => lot.id === lId);
       if (!l) return;
-      if (l.customerName === 'ESTOQUE') {
+      if (l.customerName?.toUpperCase().trim() === 'ESTOQUE') {
         names.add('ESTOQUE');
         return;
       }
@@ -89,11 +98,11 @@ export default function CompletedServiceOrdersModal({
         sourceItems.forEach(si => {
           const ord = productionOrders.find(o => o.id === si.orderId);
           if (ord?.customerName) {
-            names.add(ord.customerName);
+            names.add(ord.customerName.toUpperCase().trim());
           }
         });
       } else if (l.customerName) {
-        names.add(l.customerName);
+        names.add(l.customerName.toUpperCase().trim());
       }
     });
     const result = Array.from(names);
@@ -248,11 +257,24 @@ export default function CompletedServiceOrdersModal({
               const osCustomers = getOSCustomers(os).join(', ') || 'ESTOQUE';
               const prodRef = getProductReference(os);
               const paymentStatus = getPaymentStatus(os);
+              const sectorColor = sectors.find(s => s.name === os.sectorName || s.id === os.sectorId)?.color || '#6366f1';
               return (
                 <div key={os.id} className={`rounded-2xl border flex flex-col gap-2.5 px-3 py-3 ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50/60 border-slate-200'}`}>
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
-                      <p className={`text-[11px] font-black truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{os.providerName || '—'}</p>
+                      <p className={`text-[11px] font-black truncate flex items-center gap-2 ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                        <span>{os.providerName || '—'}</span>
+                        <span 
+                          className="text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-md border"
+                          style={{
+                            backgroundColor: hexToRgba(sectorColor, isDarkMode ? 0.15 : 0.1),
+                            borderColor: hexToRgba(sectorColor, isDarkMode ? 0.4 : 0.25),
+                            color: sectorColor
+                          }}
+                        >
+                          {os.sectorName}
+                        </span>
+                      </p>
                       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
                         {prodRef} {os.variationName ? `• ${os.variationName}` : ''}{osCustomers ? ` • ${osCustomers}` : ''}
                       </p>
