@@ -57,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -353,6 +354,70 @@ fun EditorScreen(
                                         viewModel.updateCutLinePosition(page.id, cutLine.id, cutLine.positionMm + deltaMm)
                                     },
                                 )
+                            }
+
+                            // Régua (Ruler) nas laterais da página
+                            androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                                val tickColor = Color(0x3B000000)
+                                val scale = scalePxPerMm
+                                val majorTickLength = with(density) { 8.dp.toPx() }
+                                val minorTickLength = with(density) { 4.dp.toPx() }
+                                val strokeWidthPx = with(density) { 1.dp.toPx() }
+                                val labelTextSize = with(density) { 9.sp.toPx() }
+                                val textOffsetHoriz = with(density) { 2.dp.toPx() }
+                                val textOffsetVert = with(density) { 11.dp.toPx() }
+                                val textOffsetLeft = with(density) { 10.dp.toPx() }
+                                val textOffsetBaseline = with(density) { 3.dp.toPx() }
+
+                                val paint = android.graphics.Paint().apply {
+                                    color = android.graphics.Color.argb(120, 0, 0, 0)
+                                    textSize = labelTextSize
+                                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                                }
+
+                                // Régua Superior (Horizontal)
+                                val widthLimit = paper.widthMm.toInt()
+                                for (i in 0..widthLimit step 10) {
+                                    val x = i * scale
+                                    val isMajor = i % 50 == 0
+                                    val tickLength = if (isMajor) majorTickLength else minorTickLength
+                                    drawLine(
+                                        color = tickColor,
+                                        start = androidx.compose.ui.geometry.Offset(x, 0f),
+                                        end = androidx.compose.ui.geometry.Offset(x, tickLength),
+                                        strokeWidth = strokeWidthPx
+                                    )
+                                    if (isMajor && i > 0) {
+                                        drawContext.canvas.nativeCanvas.drawText(
+                                            "${i}mm",
+                                            x + textOffsetHoriz,
+                                            textOffsetVert,
+                                            paint
+                                        )
+                                    }
+                                }
+
+                                // Régua Lateral Esquerda (Vertical)
+                                val heightLimit = paper.heightMm.toInt()
+                                for (i in 0..heightLimit step 10) {
+                                    val y = i * scale
+                                    val isMajor = i % 50 == 0
+                                    val tickLength = if (isMajor) majorTickLength else minorTickLength
+                                    drawLine(
+                                        color = tickColor,
+                                        start = androidx.compose.ui.geometry.Offset(0f, y),
+                                        end = androidx.compose.ui.geometry.Offset(tickLength, y),
+                                        strokeWidth = strokeWidthPx
+                                    )
+                                    if (isMajor && i > 0) {
+                                        drawContext.canvas.nativeCanvas.drawText(
+                                            "${i}mm",
+                                            textOffsetLeft,
+                                            y + textOffsetBaseline,
+                                            paint
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

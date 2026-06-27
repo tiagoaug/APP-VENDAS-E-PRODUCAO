@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
   X, Filter, Download, Eye, Trash2, Share2, Printer, Bell, CheckSquare, Search,
 } from 'lucide-react';
-import { ServiceOrder, ProductionLot, Sector, Transaction } from '../types';
+import { ServiceOrder, ProductionLot, Sector, Transaction, Product, ProductionOrder } from '../types';
 import DatePicker from './DatePicker';
 import { exportCompletedServiceOrders, CompletedOSExportItem } from '../utils/completedServiceOrderExport';
 import { formatCurrency } from '../utils/numbers';
@@ -51,12 +51,15 @@ interface CompletedServiceOrdersModalProps {
   osBadgeText: string;
   osBadgeBold: boolean;
   osBadgeItalic: boolean;
+  products: Product[];
+  productionOrders: ProductionOrder[];
 }
 
 export default function CompletedServiceOrdersModal({
   isOpen, onClose, serviceOrders, lots, sectors, transactions, isDarkMode,
   onViewOS, onDeleteOS, onShareOS, onPrintOS, onPrintStudio, onOpenReminders,
   osBadgeBg, osBadgeText, osBadgeBold, osBadgeItalic,
+  products, productionOrders,
 }: CompletedServiceOrdersModalProps) {
   const [filters, setFilters] = useState<Filters>(loadFilters);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
@@ -70,7 +73,38 @@ export default function CompletedServiceOrdersModal({
     localStorage.setItem(FILTERS_KEY, JSON.stringify(filters));
   }, [filters]);
 
-  const getCustomerName = (os: ServiceOrder) => lots.find(l => l.id === (os.lotId || os.lotIds?.[0]))?.customerName || '';
+  const getOSCustomers = (os: ServiceOrder): string[] => {
+    const osLotIds = os.lotIds || [os.lotId];
+    const names = new Set<string>();
+    osLotIds.forEach(lId => {
+      const l = lots.find(lot => lot.id === lId);
+      if (!l) return;
+      if (l.customerName === 'ESTOQUE') {
+        names.add('ESTOQUE');
+        return;
+      }
+      // Se for grupo/agrupado, busca os clientes dos pedidos de origem
+      if (l.customerName?.includes('Grupos') || l.customerName?.includes('Pedidos Agrupados')) {
+        const sourceItems = l.metadata?.sourceItems || [];
+        sourceItems.forEach(si => {
+          const ord = productionOrders.find(o => o.id === si.orderId);
+          if (ord?.customerName) {
+            names.add(ord.customerName);
+          }
+        });
+      } else if (l.customerName) {
+        names.add(l.customerName);
+      }
+    });
+    const result = Array.from(names);
+    return result.length > 0 ? result : ['ESTOQUE'];
+  };
+
+  const getProductReference = (os: ServiceOrder): string => {
+    const prod = products.find(p => p.id === os.productId);
+    return prod?.reference || os.productName || '—';
+  };
+
   // OS lançada como "Não Contábil" (toggle em ServiceOrderFormView) nunca recebe
   // transactionId — por isso essa ausência é o sinal de que ela não deve contar como
   // valor financeiro (nem Pago/Pendente, nem nos totais do relatório de exportação).
@@ -84,44 +118,48 @@ export default function CompletedServiceOrdersModal({
 
   const filterOptions = useMemo(() => {
     const customers = new Set<string>();
-    const products = new Set<string>();
+    const productsSet = new Set<string>();
     const colorsSet = new Set<string>();
     const providers = new Set<string>();
     completedOS.forEach(os => {
-      const c = getCustomerName(os);
-      if (c) customers.add(c);
-      if (os.productName) products.add(os.productName);
+      getOSCustomers(os).forEach(c => {
+        if (c) customers.add(c);
+      });
+      const ref = getProductReference(os);
+      if (ref) productsSet.add(ref);
       if (os.variationName) colorsSet.add(os.variationName);
       if (os.providerName) providers.add(os.providerName);
     });
     return {
       customers: Array.from(customers).sort(),
-      products: Array.from(products).sort(),
+      products: Array.from(productsSet).sort(),
       colors: Array.from(colorsSet).sort(),
       providers: Array.from(providers).sort(),
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completedOS, lots]);
+  }, [completedOS, lots, products, productionOrders]);
 
   const filtered = useMemo(() => {
     const term = filters.search.trim().toLowerCase();
     return completedOS.filter(os => {
-      const customerName = getCustomerName(os);
-      if (filters.customerName && customerName !== filters.customerName) return false;
-      if (filters.productName && os.productName !== filters.productName) return false;
+      const osCustomers = getOSCustomers(os);
+      if (filters.customerName && !osCustomers.includes(filters.customerName)) return false;
+      const prodRef = getProductReference(os);
+      if (filters.productName && prodRef !== filters.productName) return false;
       if (filters.variationName && os.variationName !== filters.variationName) return false;
       if (filters.providerName && os.providerName !== filters.providerName) return false;
       const refDate = os.finishedAt || os.createdAt;
       if (filters.dateFrom && refDate < new Date(`${filters.dateFrom}T00:00:00`).getTime()) return false;
       if (filters.dateTo && refDate > new Date(`${filters.dateTo}T23:59:59`).getTime()) return false;
       if (term) {
-        const haystack = `${os.osNumber} ${os.productName} ${os.variationName} ${os.providerName} ${customerName}`.toLowerCase();
+        const osCustomersStr = osCustomers.join(' ');
+        const haystack = `${os.osNumber} ${prodRef} ${os.variationName} ${os.providerName} ${osCustomersStr}`.toLowerCase();
         if (!haystack.includes(term)) return false;
       }
       return true;
     }).sort((a, b) => (b.finishedAt || b.createdAt) - (a.finishedAt || a.createdAt));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [completedOS, filters, lots, transactions]);
+  }, [completedOS, filters, lots, transactions, products, productionOrders]);
 
   const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
@@ -137,8 +175,8 @@ export default function CompletedServiceOrdersModal({
       osNumber: os.osNumber,
       sectorName: os.sectorName,
       providerName: os.providerName,
-      customerName: getCustomerName(os),
-      productName: os.productName,
+      customerName: getOSCustomers(os).join(', ') || 'ESTOQUE',
+      productName: getProductReference(os),
       variationName: os.variationName,
       quantity: os.quantity,
       valuePerPair: os.valuePerPair,
@@ -207,7 +245,8 @@ export default function CompletedServiceOrdersModal({
               <p className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400 py-10">Nenhuma OS concluída encontrada.</p>
             )}
             {filtered.map(os => {
-              const customerName = getCustomerName(os);
+              const osCustomers = getOSCustomers(os).join(', ') || 'ESTOQUE';
+              const prodRef = getProductReference(os);
               const paymentStatus = getPaymentStatus(os);
               return (
                 <div key={os.id} className={`rounded-2xl border flex flex-col gap-2.5 px-3 py-3 ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50/60 border-slate-200'}`}>
@@ -215,7 +254,7 @@ export default function CompletedServiceOrdersModal({
                     <div className="min-w-0">
                       <p className={`text-[11px] font-black truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{os.providerName || '—'}</p>
                       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
-                        {os.productName} {os.variationName ? `• ${os.variationName}` : ''}{customerName ? ` • ${customerName}` : ''}
+                        {prodRef} {os.variationName ? `• ${os.variationName}` : ''}{osCustomers ? ` • ${osCustomers}` : ''}
                       </p>
                     </div>
                     <span

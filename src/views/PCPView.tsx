@@ -4700,6 +4700,10 @@ export default function PCPView({
                     const fichasSemOSAtiva = filteredFichas.filter(f => !(f.coveringOS && f.coveringOS.status === 'PENDING'));
                     const osCardKey = `__fichas_os_ativas__${selectedSectorId}`;
                     const isOSCardOpen = fichaListOpen.has(osCardKey + '_open');
+                    const sectorOSList = serviceOrders.filter(os => os.sectorId === selectedSectorId && os.status === 'PENDING' &&
+                      filteredActiveLots.some(l => os.lotId === l.id));
+                    const activeOSCardKey = `__os_ativas__${selectedSectorId}`;
+                    const isActiveOSCardOpen = !fichaListOpen.has(activeOSCardKey + '_closed');
 
                     // Selectable = fichas with no pending OS
                     const selectable = fichasSemOSAtiva;
@@ -5489,16 +5493,47 @@ export default function PCPView({
                               </div>
                             )}
 
-                            {/* OS emitidas neste setor */}
-                            {(() => {
-                              const sectorOSList = serviceOrders.filter(os => os.sectorId === selectedSectorId && os.status === 'PENDING' &&
-                                filteredActiveLots.some(l => os.lotId === l.id));
-                              if (sectorOSList.length === 0) return null;
-                              return (
-                                <>
-                                  <h3 className="px-1 text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none mt-2">Ordem de Serviço por Setor</h3>
-                                  {sectorOSList.map(os => {
-                                    const lot = filteredActiveLots.find(l => os.lotId === l.id) ?? null;
+                            {/* Fim do corpo de Pedidos no Setor */}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ── CARD: OS ATIVAS NO SETOR ── */}
+                      {sectorOSList.length > 0 && (
+                        <div className={`mt-3 rounded-3xl border overflow-hidden ${isDarkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white/80 border-sky-100 shadow-sm'}`}>
+                          
+                          {/* Cabeçalho acordeão */}
+                          <button type="button"
+                            onClick={() => { const n = new Set(fichaListOpen); isActiveOSCardOpen ? n.add(activeOSCardKey + '_closed') : n.delete(activeOSCardKey + '_closed'); setFichaListOpen(n); }}
+                            className={`w-full flex items-center justify-between p-4 transition-colors ${isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-sky-50/50'}`}
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <ClipboardList size={13} className="text-indigo-500 shrink-0" />
+                              <div className="min-w-0">
+                                <h3 className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">OS Ativas no Setor</h3>
+                              </div>
+                              <span className={`text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 ${isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}>
+                                {sectorOSList.length}
+                              </span>
+                            </div>
+                            <ChevronDown size={15} className={`text-slate-400 transition-transform duration-200 shrink-0 ${isActiveOSCardOpen ? 'rotate-180' : ''}`} />
+                          </button>
+
+                          {/* Hint when closed */}
+                          {!isActiveOSCardOpen && (
+                            <div className={`px-4 pb-3 flex flex-col gap-1.5 border-t ${isDarkMode ? 'border-slate-800' : 'border-sky-50'}`}>
+                              <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest leading-relaxed mt-1">
+                                Expandir para visualizar ordens de serviço ativas no setor
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Corpo (expandido) */}
+                          {isActiveOSCardOpen && (
+                            <div className="p-4 pt-0 flex flex-col gap-3">
+                              <div className="h-2" />
+                              {sectorOSList.map(os => {
+                                const lot = filteredActiveLots.find(l => os.lotId === l.id) ?? null;
                                 const nextSId = (lot?.route?.length ?? 0) > (lot?.currentSectorIndex ?? 0) + 1
                                   ? (lot?.route?.[(lot?.currentSectorIndex ?? 0) + 1] ?? '')
                                   : '';
@@ -5598,15 +5633,12 @@ export default function PCPView({
                                       </button>
                                     </div>
                                   </div>
-                                  );
-                                  })}
-                                </>
-                              );
-                            })()}
-
-                          </div>
-                        )}
-                      </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* ── Fichas com OS Ativas — card separado de "Pedidos Vinculados",
                           acordeão fechado por padrão. Toda ficha que já tem uma OS pendente
@@ -5628,6 +5660,15 @@ export default function PCPView({
                             </div>
                             <ChevronDown size={15} className={`text-slate-400 transition-transform duration-200 shrink-0 ${isOSCardOpen ? 'rotate-180' : ''}`} />
                           </button>
+                          
+                          {/* Hint when closed */}
+                          {!isOSCardOpen && (
+                            <div className={`px-4 pb-3 flex flex-col gap-1.5 border-t ${isDarkMode ? 'border-slate-800' : 'border-sky-50'}`}>
+                              <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest leading-relaxed mt-1">
+                                Expandir para visualizar fichas de pedidos vinculadas a ordens de serviço ativas
+                              </span>
+                            </div>
+                          )}
 
                           {isOSCardOpen && (
                             <div className="p-4 pt-0 flex flex-col gap-1.5">
@@ -10657,6 +10698,8 @@ export default function PCPView({
         osBadgeText={osBadgeText}
         osBadgeBold={osBadgeBold}
         osBadgeItalic={osBadgeItalic}
+        products={products}
+        productionOrders={productionOrders}
       />
 
       {/* ── Diagnóstico temporário de StockLots duplicados ── */}
@@ -11549,7 +11592,7 @@ export default function PCPView({
       <ExportNoteModal
         isOpen={shareModal.isOpen}
         onClose={() => setShareModal(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds) => {
+        onConfirm={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize) => {
           let { finalItems, lotNumbers } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
 
           if (showSectorNotes && selectedSectorIds && selectedSectorIds.length > 0) {
@@ -11576,14 +11619,15 @@ export default function PCPView({
             splitPages,
             showProvider,
             showOSData,
-            showSoleGrid
+            showSoleGrid,
+            pageSize
           }, format);
 
           if (success) {
             setShareModal(prev => ({ ...prev, isOpen: false }));
           }
         }}
-        onPreview={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds) => {
+        onPreview={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize) => {
           let { finalItems, lotNumbers } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
 
           if (showSectorNotes && selectedSectorIds && selectedSectorIds.length > 0) {
@@ -11610,10 +11654,11 @@ export default function PCPView({
             splitPages,
             showProvider,
             showOSData,
-            showSoleGrid
+            showSoleGrid,
+            pageSize
           }, format, true);
         }}
-        onOpenInPrintStudio={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds) => {
+        onOpenInPrintStudio={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize) => {
           // Print Studio trabalha com blocos de imagem (bitmap), nunca PDF — por isso
           // ignora o formato escolhido no popup (sempre gera como JPG), mas respeita as
           // mesmas opções de conteúdo (grade, materiais, instruções etc.) já configuradas.
@@ -11631,7 +11676,7 @@ export default function PCPView({
           }
 
           await sendPCPItemsToPrintStudio(finalItems, {
-            isDarkMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, showProvider, showOSData, showSoleGrid,
+            isDarkMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, showProvider, showOSData, showSoleGrid, pageSize,
           });
           setShareModal(prev => ({ ...prev, isOpen: false }));
         }}
@@ -11708,6 +11753,9 @@ export default function PCPView({
       >
         <div className="flex flex-col gap-5 p-1">
           <div>
+            <span className="text-xs font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400 block mb-1">
+              Badge de Mapa
+            </span>
             <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
               {colorPickerLot
                 ? `Defina a cor de fundo e do texto para o identificador do mapa ${colorPickerLot.orderNumber}.`
@@ -11841,6 +11889,9 @@ export default function PCPView({
         <div className="flex flex-col gap-6 p-1">
           {/* Badge de Produto/Cor */}
           <div className="flex flex-col gap-3">
+            <span className="text-xs font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400">
+              Badge de Referência (Produto / Cor)
+            </span>
             <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
               Cor de fundo e do texto do badge de produto/cor (ex: 310 BRANCO) exibido nas fichas.
             </p>
@@ -11946,6 +11997,9 @@ export default function PCPView({
 
           {/* Texto do Setor/Status */}
           <div className="flex flex-col gap-3">
+            <span className="text-xs font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400">
+              Badge de Setor / Status
+            </span>
             <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
               Cor do texto do setor/status atual (ex: PREPARAÇÃO E CONFERÊNCIA) exibido nas fichas.
             </p>
@@ -12036,6 +12090,9 @@ export default function PCPView({
 
           {/* Badge de OS — independente do Mapa, pois uma OS pode reunir pedidos de mapas diferentes */}
           <div className="flex flex-col gap-3">
+            <span className="text-xs font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400">
+              Badge de OS (Ordem de Serviço)
+            </span>
             <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
               Cor de fundo e do texto da cápsula com o número da OS, exibida no card de cada Ordem de Serviço.
             </p>
@@ -12141,6 +12198,9 @@ export default function PCPView({
 
           {/* Badge de Prestador de Serviço */}
           <div className="flex flex-col gap-3">
+            <span className="text-xs font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400">
+              Badge de Prestador de Serviço
+            </span>
             <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
               Cor de fundo e do texto da cápsula com o nome do Prestador de Serviço, exibida no card de cada Ordem de Serviço.
             </p>

@@ -10,6 +10,7 @@ val PAPER_PRESETS = listOf(
     PaperPreset("A4", 210f, 297f),
     PaperPreset("A5", 148f, 210f),
     PaperPreset("Carta", 216f, 279f),
+    PaperPreset("Marketplace", 100f, 150f),
     PaperPreset("Etiqueta 75×24", 75f, 24f),
     PaperPreset("Etiqueta 80×40", 80f, 40f),
     PaperPreset("Etiqueta 100×50", 100f, 50f),

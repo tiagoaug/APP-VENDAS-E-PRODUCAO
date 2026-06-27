@@ -42,7 +42,7 @@ export interface PCPShareData {
   showItemGrid?: boolean;
   showSectorNotes?: boolean;
   showOrderList?: boolean;
-  /** Quando true (só JPG), divide a imagem longa em várias imagens no estilo de página A4 */
+  /** Quando true (só JPG), divide a imagem longa em várias imagens no estilo de página A4 ou Marketplace */
   splitPages?: boolean;
   /** Exibe o nome do prestador de serviço da OS de origem do item */
   showProvider?: boolean;
@@ -53,6 +53,8 @@ export interface PCPShareData {
   /** Quando false (só JPG), omite o cabeçalho (logo, "FICHA TÉCNICA", LOTE/EMISSÃO) — usado
    * pra mandar vários blocos ao Print Studio sem repetir o cabeçalho em cada um. */
   showHeader?: boolean;
+  /** Tamanho do papel de exportação. Se marketplace, o tamanho final é 100mm x 150mm */
+  pageSize?: 'a4' | 'marketplace';
 }
 
 export async function generatePCPShareExport(data: PCPShareData, formatType: 'pdf' | 'jpg', previewOnly: boolean = false): Promise<boolean | string[]> {
@@ -60,6 +62,22 @@ export async function generatePCPShareExport(data: PCPShareData, formatType: 'pd
     const filename = `Ficha_PCP_${data.lotNumber.replace(/[^a-zA-Z0-9]/g, '')}_${format(new Date(), 'yyyyMMdd_HHmm')}`;
     
     if (formatType === 'pdf') {
+      if (data.pageSize === 'marketplace') {
+        // Gera como imagens fatiadas no tamanho Marketplace, e junta no PDF
+        const images = await generateJPG({ ...data, splitPages: true }, filename, true);
+        if (!Array.isArray(images)) return false;
+        
+        const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [100, 150] });
+        for (let i = 0; i < images.length; i++) {
+          if (i > 0) doc.addPage([100, 150], 'portrait');
+          doc.addImage(images[i], 'JPEG', 0, 0, 100, 150);
+        }
+        if (previewOnly) {
+          return [doc.output('datauristring')];
+        }
+        await sharePDF(doc, filename);
+        return true;
+      }
       return await generatePDF(data, filename, previewOnly);
     } else {
       return await generateJPG(data, filename, previewOnly);
@@ -377,7 +395,7 @@ function generatePCPHeaderImage(lotNumber: string): string {
 
   measureCtx.font = '700 13px Inter';
   const loteLineCount = wrapText(measureCtx, `LOTE: ${lotNumber} • EMISSÃO: ${format(new Date(), 'dd/MM/yyyy')}`, W - pad * 2).length;
-  const logicalH = 90 + loteLineCount * 18;
+  const logicalH = 140 + loteLineCount * 18;
 
   const canvas = document.createElement('canvas');
   canvas.width = W * SCALE;
@@ -495,8 +513,8 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
   const FOOTER_H = 50;
 
   // Agrupa itens em páginas — só quebra ENTRE itens, nunca no meio de um.
-  // Sem "Dividir em Páginas" (ou se tudo já cabe numa altura de A4), uma página só.
-  const PAGE_H = Math.round(W * Math.SQRT2);
+  // Sem "Dividir em Páginas" (ou se tudo já cabe numa altura de A4/Marketplace), uma página só.
+  const PAGE_H = data.pageSize === 'marketplace' ? Math.round(W * 1.5) : Math.round(W * Math.SQRT2);
   const pages: PCPShareItem[][] = [];
   if (splitPages) {
     const budget = PAGE_H - HEADER_OVERHEAD - FOOTER_H;
@@ -529,6 +547,12 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
     let logicalH = pad + HEADER_OVERHEAD + pageItemsH + FOOTER_H;
     if (isLastPage) logicalH += totalGridH + notesH;
     logicalH = Math.max(400, logicalH);
+
+    // Se estiver dividindo páginas, força a altura lógica para a altura da página
+    // para preservar a proporção correta na impressão e geração de PDFs.
+    if (splitPages) {
+      logicalH = PAGE_H;
+    }
 
     const canvas = document.createElement('canvas');
     canvas.width = W * SCALE;
@@ -925,6 +949,7 @@ export async function sendPCPItemsToPrintStudio(
     showProvider?: boolean;
     showOSData?: boolean;
     showSoleGrid?: boolean;
+    pageSize?: 'a4' | 'marketplace';
   },
 ): Promise<void> {
   if (items.length === 0) {
@@ -968,6 +993,7 @@ export async function sendPCPItemsToPrintStudio(
           showOSData: options.showOSData,
           showSoleGrid: options.showSoleGrid,
           showHeader: false,
+          pageSize: options.pageSize,
           // Print Studio recebe sempre a imagem completa, sem cortes — a divisão em
           // páginas é feita lá dentro (manualmente, com linhas de corte + blocos),
           // nunca antes de chegar lá.

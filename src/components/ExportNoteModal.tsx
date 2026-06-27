@@ -47,7 +47,7 @@ const loadLastState = (): Omit<ExportProfile, 'id' | 'name'> => {
 interface ExportNoteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[]) => void;
+  onConfirm: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace') => void;
   isDarkMode: boolean;
   title?: string;
   initialFormat?: 'pdf' | 'jpg';
@@ -74,11 +74,11 @@ interface ExportNoteModalProps {
    * "Dividir em Páginas"), pra pré-visualização poder navegar página a página
    * exatamente como o arquivo final vai ficar — em vez de mostrar tudo cortado
    * numa imagem só. */
-  onPreview?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[]) => Promise<string[] | boolean>;
+  onPreview?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace') => Promise<string[] | boolean>;
   /** Quando true, exibe a opção "Abrir no Print Studio" ao lado de "Visualizar Arquivo" —
    * só faz sentido pra quem gera fichas PCP (módulo nativo Android). */
   showOpenInPrintStudioToggle?: boolean;
-  onOpenInPrintStudio?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[]) => Promise<void>;
+  onOpenInPrintStudio?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace') => Promise<void>;
   sectors?: { id: string; name: string; color?: string }[];
 }
 
@@ -138,6 +138,7 @@ export default function ExportNoteModal({
 
   // Main config state
   const [selectedFormat, setSelectedFormat] = useState<'pdf' | 'jpg'>('jpg');
+  const [pageSize, setPageSize] = useState<'a4' | 'marketplace'>('a4');
   const [showFinancialValues, setShowFinancialValues] = useState(true);
   const [groupMode, setGroupMode] = useState<'none' | 'ref_color' | 'ref'>('none');
   const [pcpTotalGrid, setPcpTotalGrid] = useState(true);
@@ -272,7 +273,7 @@ export default function ExportNoteModal({
     if (!onPreview) return;
     setIsPreviewLoading(true);
     try {
-      const pages = await onPreview(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds);
+      const pages = await onPreview(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize);
       if (Array.isArray(pages) && pages.length > 0) {
         setPreviewPages(pages);
         setPreviewPageIdx(0);
@@ -288,7 +289,7 @@ export default function ExportNoteModal({
     if (!onOpenInPrintStudio) return;
     setIsOpeningPrintStudio(true);
     try {
-      await onOpenInPrintStudio(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds);
+      await onOpenInPrintStudio(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize);
     } catch (e) {
       console.error("Open in Print Studio failed", e);
     } finally {
@@ -752,7 +753,7 @@ export default function ExportNoteModal({
               {/* Generate */}
               <button
                 type="button"
-                onClick={() => onConfirm(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds)}
+                onClick={() => onConfirm(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize)}
                 className={`w-full py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
                   selectedFormat === 'pdf' ? 'bg-rose-500' : 'bg-indigo-600'
                 }`}
@@ -781,6 +782,31 @@ export default function ExportNoteModal({
                 >
                   Formato JPG
                 </button>
+              </div>
+
+              {/* Page Size Selection */}
+              <div className="flex flex-col gap-1.5 mt-0.5">
+                <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest px-1">Tamanho de Exportação</span>
+                <div className={`p-1.5 rounded-[20px] shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
+                  <button
+                    type="button"
+                    onClick={() => setPageSize('a4')}
+                    className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                      pageSize === 'a4' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    Papel A4
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPageSize('marketplace')}
+                    className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                      pageSize === 'marketplace' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    Marketplace (100x150)
+                  </button>
+                </div>
               </div>
             </SectionCard>
 
