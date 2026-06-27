@@ -31,22 +31,36 @@ export default function CalculatorModal({ isOpen, onClose, onResult, isDarkMode,
 
   if (!isOpen) return null;
 
+  const toggleSign = () => {
+    setDisplay(prev => {
+      if (prev === '0') return '-';
+      if (prev === '-') return '0';
+      if (prev.startsWith('-')) {
+        return prev.substring(1);
+      }
+      return '-' + prev;
+    });
+  };
+
   const handleNumber = (num: string) => {
     setDisplay(prev => {
       if (num === '.' && prev.includes('.')) return prev;
       if (prev === '0' && num !== '.') return num;
+      if (prev === '-' && num === '.') return '-0.';
       return prev + num;
     });
   };
 
   const handleOperator = (op: string) => {
-    setEquation(display + ' ' + op + ' ');
+    const cleanDisplay = display === '-' ? '0' : display;
+    setEquation(cleanDisplay + ' ' + op + ' ');
     setDisplay('0');
   };
 
   const calculate = () => {
     try {
-      const fullEquation = equation + display;
+      const displayVal = display === '-' ? '0' : display;
+      const fullEquation = equation + displayVal;
       // Note: simple eval for a calculator is usually okay if input is controlled
       // We'll use a safer approach for basic operators
       const parts = fullEquation.split(' ');
@@ -88,7 +102,7 @@ export default function CalculatorModal({ isOpen, onClose, onResult, isDarkMode,
   };
 
   const handleFinish = () => {
-    const val = parseFloat(display);
+    const val = display === '-' ? 0 : parseFloat(display);
     if (!isNaN(val)) {
       onResult(val);
       onClose();
@@ -112,7 +126,8 @@ export default function CalculatorModal({ isOpen, onClose, onResult, isDarkMode,
     { label: '2', onClick: () => handleNumber('2'), title: 'Dois' },
     { label: '3', onClick: () => handleNumber('3'), title: 'Três' },
     { label: '+', onClick: () => handleOperator('+'), icon: Plus, color: 'text-indigo-500', title: 'Somar' },
-    { label: '0', onClick: () => handleNumber('0'), colSpan: 2, title: 'Zero' },
+    { label: '0', onClick: () => handleNumber('0'), title: 'Zero' },
+    { label: '+/-', onClick: toggleSign, color: 'text-indigo-500', title: 'Inverter sinal' },
     { label: '.', onClick: () => handleNumber('.'), title: 'Ponto' },
     { label: '=', onClick: calculate, color: 'bg-indigo-600 text-white rounded-2xl shadow-lg shadow-indigo-600/20', title: 'Calcular' },
   ];
@@ -148,7 +163,7 @@ export default function CalculatorModal({ isOpen, onClose, onResult, isDarkMode,
               key={idx}
               onClick={btn.onClick}
               title={btn.title}
-              className={`h-14 flex items-center justify-center text-sm font-black uppercase transition-all active:scale-95 ${btn.colSpan === 2 ? 'col-span-2' : ''} ${btn.color || (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100')} rounded-2xl`}
+              className={`h-14 flex items-center justify-center text-sm font-black uppercase transition-all active:scale-95 ${btn.color || (isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-100')} rounded-2xl`}
             >
               {btn.icon ? <btn.icon size={18} strokeWidth={2.5} /> : btn.label}
             </button>

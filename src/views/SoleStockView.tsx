@@ -38,7 +38,7 @@ export default function SoleStockView({
   const [selectedMoldId, setSelectedMoldId] = useState<string>('');
   const [editingEntry, setEditingEntry] = useState<SoleStockEntry | null>(null);
   const [isBalanceMode, setIsBalanceMode] = useState(false);
-  const [balanceData, setBalanceData] = useState<Record<string, Record<string, number>>>({});
+  const [balanceData, setBalanceData] = useState<Record<string, Record<string, number | string>>>({});
   const [balanceCalculatorTarget, setBalanceCalculatorTarget] = useState<{ itemKey: string; size: string; currentVal: number } | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);;
   const [isPrintModalOpen, setIsPrintModalOpen] = useState(false);
@@ -658,7 +658,7 @@ export default function SoleStockView({
           onClose={() => setBalanceCalculatorTarget(null)}
           onResult={(val: number) => {
             const { itemKey, size } = balanceCalculatorTarget;
-            const newVal = Math.max(0, Math.round(val));
+            const newVal = Math.round(val);
             setBalanceData(prev => {
               const item = aggregatedStock.find(s => `${s.moldId}-${s.colorId}` === itemKey);
               return {
@@ -955,45 +955,51 @@ export default function SoleStockView({
             });
 
             const totalMissing = sizeBreakdown.reduce((sum, s) => sum + s.missingQty, 0);
+            const totalPending = sizeBreakdown.reduce((sum, s) => sum + s.pendingQty, 0);
             const isExpanded = !!expandedCards[itemKey];
             const orderSizeKeys = allSizeKeys.length > 0
               ? allSizeKeys
               : (molds.find(m => m.id === item.moldId)?.metadata?.sizes || []);
 
-            const displayTotal = isBalanceMode
-              ? Object.values(balanceData[itemKey] || item.sizes).reduce((a, b) => a + b, 0)
-              : item.total;
-            const paresRestantesTotal = displayTotal - totalReserved;
+            const displayTotal = (isBalanceMode
+              ? (Object.values(balanceData[itemKey] || item.sizes).reduce<number>((sum, v) => sum + (typeof v === 'number' ? v : (parseInt(v as string) || 0)), 0))
+              : item.total) as number;
+            const saldoFuturoTotal = (displayTotal + totalPending) - totalReserved;
 
             return (
               <div key={index} className={`p-5 rounded-3xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                 {/* Header */}
                 <div className="flex justify-between items-start mb-4">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                      {item.moldName}
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                        {item.moldName}
+                      </p>
+                      {item.colorName && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-100 dark:bg-sky-900/30 border border-sky-200 dark:border-sky-700/40">
+                          <Palette size={11} className="text-sky-500" />
+                          <span className="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-widest">{item.colorName}</span>
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wide mt-1">
+                      * Saldo futuro = saldo quando chegar todas as compras em estoque
                     </p>
-                    {item.colorName && (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-100 dark:bg-sky-900/30 border border-sky-200 dark:border-sky-700/40">
-                        <Palette size={11} className="text-sky-500" />
-                        <span className="text-[10px] font-black text-sky-600 dark:text-sky-400 uppercase tracking-widest">{item.colorName}</span>
-                      </span>
-                    )}
                   </div>
                   <div className="flex items-start gap-3 flex-wrap justify-end">
-                    <div className={`flex flex-col items-center justify-center px-4 py-2 rounded-2xl min-w-[56px] border ${
-                      paresRestantesTotal < 0
+                    <div className={`flex flex-col items-center justify-center px-3 py-2 rounded-2xl min-w-[80px] border ${
+                      saldoFuturoTotal < 0
                         ? 'bg-rose-50 border-rose-100 dark:bg-rose-900/20 dark:border-rose-700/40'
                         : 'bg-emerald-50 border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-700/40'
                     }`}>
                       <p className={`text-xl font-black leading-none ${
-                        paresRestantesTotal < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
+                        saldoFuturoTotal < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
                       }`}>
-                        {paresRestantesTotal}
+                        {saldoFuturoTotal}
                       </p>
-                      <p className={`text-[8px] font-black uppercase tracking-widest mt-0.5 ${
-                        paresRestantesTotal < 0 ? 'text-rose-500 dark:text-rose-400/70' : 'text-emerald-500 dark:text-emerald-400/70'
-                      }`}>restante</p>
+                      <p className={`text-[8px] font-black uppercase tracking-widest mt-0.5 text-center ${
+                        saldoFuturoTotal < 0 ? 'text-rose-500 dark:text-rose-400/70' : 'text-emerald-500 dark:text-emerald-400/70'
+                      }`}>saldo futuro*</p>
                     </div>
                   </div>
                 </div>
@@ -1007,6 +1013,7 @@ export default function SoleStockView({
                       const reservedQty = reservedByGrade[size] || 0;
                       const restanteQty = qty - reservedQty;
                       const pendingQty = pendingByGrade[size] || 0;
+                      const futureQty = (typeof currentVal === 'number' ? currentVal : (parseInt(currentVal as string) || 0)) + pendingQty - reservedQty;
 
                       return (
                         <div
@@ -1027,12 +1034,19 @@ export default function SoleStockView({
                                 title={`Quantidade do tamanho ${size}`}
                                 value={currentVal}
                                 onChange={(e) => {
-                                  const newVal = parseInt(e.target.value) || 0;
+                                  const rawVal = e.target.value;
+                                  let parsedVal: number | string;
+                                  if (rawVal === '' || rawVal === '-') {
+                                    parsedVal = rawVal;
+                                  } else {
+                                    parsedVal = parseInt(rawVal);
+                                    if (isNaN(parsedVal)) parsedVal = 0;
+                                  }
                                   setBalanceData(prev => ({
                                     ...prev,
                                     [itemKey]: {
                                       ...(prev[itemKey] || item.sizes),
-                                      [size]: newVal
+                                      [size]: parsedVal
                                     }
                                   }));
                                 }}
@@ -1040,7 +1054,10 @@ export default function SoleStockView({
                               />
                               <button
                                 type="button"
-                                onClick={() => setBalanceCalculatorTarget({ itemKey, size, currentVal })}
+                                onClick={() => {
+                                  const numericVal = typeof currentVal === 'number' ? currentVal : (parseInt(currentVal) || 0);
+                                  setBalanceCalculatorTarget({ itemKey, size, currentVal: numericVal });
+                                }}
                                 title={`Abrir calculadora para o tamanho ${size}`}
                                 className="shrink-0 p-1.5 rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-500/30 hover:bg-indigo-700 active:scale-95 transition-all"
                               >
@@ -1050,13 +1067,17 @@ export default function SoleStockView({
                           ) : (
                             <div className="flex items-center gap-2 ml-auto">
                               <span className={`font-black leading-none text-xl ${
-                                restanteQty < 0 ? 'text-rose-500 dark:text-rose-400' : 'text-slate-900 dark:text-white'
+                                futureQty < 0 ? 'text-rose-500 dark:text-rose-450' : 'text-emerald-500 dark:text-emerald-450'
                               }`}>
-                                {restanteQty}
+                                {futureQty}
                               </span>
-                              {detailFieldVisibility.pedido && pendingQty > 0 && (
+                              {pendingQty > 0 ? (
                                 <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest leading-none">
-                                  +{pendingQty} = {qty + pendingQty - reservedQty}
+                                  (+{pendingQty} compras)
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-none">
+                                  (sem compras)
                                 </span>
                               )}
                             </div>
@@ -1080,68 +1101,145 @@ export default function SoleStockView({
 
                   {isExpanded && (
                     <>
-                      <div className={`flex items-stretch rounded-xl border mt-2 overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
-                        <div className="flex-1 flex flex-col items-center justify-center py-2">
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <div className={`flex flex-col items-center justify-center py-2 rounded-2xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                           <p className="text-base font-black text-blue-500 leading-none">{displayTotal}</p>
                           <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Pares</p>
                         </div>
-                        <div className={`w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
-                        <div className="flex-1 flex flex-col items-center justify-center py-2">
+                        <div className={`flex flex-col items-center justify-center py-2 rounded-2xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                           <p className="text-base font-black text-amber-500 leading-none">{totalReserved}</p>
                           <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Reservado</p>
                         </div>
-                        <div className={`w-px ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
-                        <div className="flex-1 flex flex-col items-center justify-center py-2">
+                        <div className={`flex flex-col items-center justify-center py-2 rounded-2xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                           <p className="text-base font-black text-rose-500 leading-none">{totalMissing}</p>
                           <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Faltando</p>
                         </div>
+                        <div className={`flex flex-col items-center justify-center py-2 rounded-2xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
+                          <p className="text-base font-black text-sky-500 leading-none">{totalPending}</p>
+                          <p className="text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mt-0.5">Comprado</p>
+                        </div>
                       </div>
 
-                      <div className="mt-2 flex flex-col gap-1.5">
+                      <div className="mt-2 flex flex-col gap-2">
                         {sizeBreakdown.map(({ size, stockQty, reservedQty, missingQty, pendingQty, pendingSources }) => {
-                          const restanteQty = stockQty - reservedQty;
-                          const showPedido = detailFieldVisibility.pedido && pendingQty > 0;
-                          const showPedidoBreakdown = showPedido && pendingSources.length > 1;
+                          const futureTotal = stockQty + pendingQty - reservedQty;
                           return (
-                            <div key={size} className={`flex flex-col gap-1 px-3 py-2 rounded-xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                              <div className="flex items-center gap-3">
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-tight w-12 shrink-0">{size}</span>
-                                <span className="text-base font-black text-slate-900 dark:text-white w-8 text-center shrink-0">{stockQty}</span>
-                                <div className="flex items-center gap-3 flex-wrap justify-end ml-auto">
-                                  {detailFieldVisibility.mapas && reservedQty > 0 && (
-                                    <div className="flex items-center gap-1">
-                                      <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-tight">Mapas</span>
-                                      <span className="text-[11px] font-black text-amber-500 leading-none">{reservedQty}</span>
+                            <div
+                              key={size}
+                              className={`p-4 rounded-3xl border flex flex-col gap-3 transition-all ${
+                                isDarkMode ? 'bg-slate-900 border-slate-800/80' : 'bg-white border-slate-100'
+                              } shadow-sm`}
+                            >
+                              {/* Top Row: Size Badge & Help Icon */}
+                              <div className="flex items-center justify-between">
+                                <span className={`px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider ${
+                                  isDarkMode ? 'bg-slate-800 text-slate-350' : 'bg-slate-50 text-slate-655'
+                                } border ${isDarkMode ? 'border-slate-700/50' : 'border-slate-200/50'}`}>
+                                  Tamanho {size}
+                                </span>
+                                
+                                {/* Help Icon with Tooltip */}
+                                <div className="relative group">
+                                  <button
+                                    type="button"
+                                    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-black bg-orange-500 hover:bg-orange-600 text-white shadow-md shadow-orange-500/20 hover:shadow-orange-500/40 hover:scale-105 active:scale-95 transition-all duration-200 cursor-help"
+                                    title="Como são feitos os cálculos?"
+                                  >
+                                    ?
+                                  </button>
+                                  {/* Tooltip on hover */}
+                                  <div className={`absolute right-0 bottom-8 z-[60] w-64 p-3.5 rounded-2xl shadow-2xl text-[10px] font-bold leading-relaxed border transition-all scale-0 group-hover:scale-100 origin-bottom-right duration-200 ${
+                                    isDarkMode
+                                      ? 'bg-slate-950 border-slate-800 text-slate-400'
+                                      : 'bg-white border-slate-200 text-slate-600'
+                                  }`}>
+                                    <p className="font-black text-slate-800 dark:text-white uppercase mb-1.5 tracking-tight">Cálculo de Estoque Futuro</p>
+                                    <p className="mb-2.5">O estoque final da numeração é projetado somando o estoque atual às compras pendentes e subtraindo a necessidade dos mapas ativos:</p>
+                                    <div className={`p-2.5 rounded-xl border font-mono text-[9px] font-bold ${
+                                      isDarkMode ? 'bg-slate-900 border-slate-800/80' : 'bg-slate-50 border-slate-150'
+                                    }`}>
+                                      (<span className="text-emerald-500">Estoque Real</span> + <span className="text-blue-500">Comprado</span>) - <span className="text-orange-500">Mapas</span> = <span className={futureTotal < 0 ? 'text-rose-500' : 'text-emerald-500'}>Estoque Futuro</span>
                                     </div>
-                                  )}
-                                  {detailFieldVisibility.falta && missingQty > 0 && (
-                                    <div className="flex items-center gap-1">
-                                      <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-tight">Falta</span>
-                                      <span className="text-[11px] font-black text-rose-500 leading-none">{missingQty}</span>
-                                    </div>
-                                  )}
-                                  {detailFieldVisibility.restante && (
-                                    <div className="flex items-center gap-1">
-                                      <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-tight">Restante</span>
-                                      <span className={`text-[11px] font-black leading-none ${restanteQty < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{restanteQty}</span>
-                                    </div>
-                                  )}
-                                  {showPedido && (
-                                    <div className="flex items-center gap-1">
-                                      <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-tight">Comprado</span>
-                                      <span className="text-[11px] font-black text-blue-500 leading-none">{pendingQty} → {stockQty + pendingQty - reservedQty}</span>
-                                    </div>
-                                  )}
+                                  </div>
                                 </div>
                               </div>
-                              {showPedidoBreakdown && (
-                                <div className="flex flex-col gap-0.5 pl-[60px]">
-                                  {pendingSources.map((src, idx) => (
-                                    <div key={`${src.id}-${idx}`} className="flex items-center justify-between gap-2">
-                                      <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-tight truncate">{src.label}</span>
-                                      <span className="text-[10px] font-black text-blue-400 leading-none shrink-0">{src.qty}</span>
-                                    </div>
-                                  ))}
+
+                              {/* Main Grid: Real Stock, Map Lot Necessity, Purchased Total, Future Total */}
+                              <div className="grid grid-cols-4 gap-2">
+                                {/* Estoque Real */}
+                                <div className={`p-2.5 rounded-xl flex flex-col items-center justify-center border ${
+                                  isDarkMode ? 'bg-slate-950/40 border-slate-800/60' : 'bg-slate-50/50 border-slate-100'
+                                }`}>
+                                  <span className={`text-sm font-black ${
+                                    stockQty < 0 ? 'text-rose-500 dark:text-rose-450' : 'text-emerald-500 dark:text-emerald-450'
+                                  }`}>
+                                    {stockQty}
+                                  </span>
+                                  <span className="text-[7.5px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest mt-0.5 text-center">Estoque Real</span>
+                                </div>
+
+                                {/* Comprado */}
+                                <div className={`p-2.5 rounded-xl flex flex-col items-center justify-center border ${
+                                  isDarkMode ? 'bg-slate-950/40 border-slate-800/60' : 'bg-slate-50/50 border-slate-100'
+                                }`}>
+                                  <span className="text-sm font-black text-blue-500 dark:text-blue-400">
+                                    {pendingQty}
+                                  </span>
+                                  <span className="text-[7.5px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest mt-0.5 text-center">Comprado</span>
+                                </div>
+
+                                {/* Mapas (Necessidade) */}
+                                <div className={`p-2.5 rounded-xl flex flex-col items-center justify-center border ${
+                                  isDarkMode ? 'bg-slate-950/40 border-slate-800/60' : 'bg-slate-50/50 border-slate-100'
+                                }`}>
+                                  <span className="text-sm font-black text-orange-500 dark:text-orange-400">
+                                    {reservedQty}
+                                  </span>
+                                  <span className="text-[7.5px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest mt-0.5 text-center">Mapas</span>
+                                </div>
+
+                                {/* Estoque Futuro (Resultado) */}
+                                <div className={`p-2.5 rounded-xl flex flex-col items-center justify-center border ${
+                                  futureTotal < 0
+                                    ? 'bg-rose-50/30 border-rose-100/50 dark:bg-rose-950/20 dark:border-rose-900/30'
+                                    : 'bg-emerald-50/30 border-emerald-100/50 dark:bg-emerald-950/20 dark:border-emerald-900/30'
+                                }`}>
+                                  <span className={`text-sm font-black ${
+                                    futureTotal < 0
+                                      ? 'text-rose-500 dark:text-rose-455'
+                                      : 'text-emerald-500 dark:text-emerald-450'
+                                  }`}>
+                                    {futureTotal}
+                                  </span>
+                                  <span className="text-[7.5px] font-bold text-slate-400 dark:text-slate-555 uppercase tracking-widest mt-0.5 text-center">Saldo Final</span>
+                                </div>
+                              </div>
+
+                              {/* Calculation Summary Row (Inline Equation) */}
+                              <div className={`py-2 px-3 rounded-xl text-center border border-dashed text-[10px] font-bold ${
+                                isDarkMode
+                                  ? 'bg-slate-950/20 border-slate-800 text-slate-400'
+                                  : 'bg-slate-50/30 border-slate-200 text-slate-500'
+                              }`}>
+                                <span className={stockQty < 0 ? 'text-rose-500' : 'text-emerald-500'}>{stockQty}</span> (Estoque) + <span className="text-blue-500">{pendingQty}</span> (Comprado) - <span className="text-orange-500">{reservedQty}</span> (Mapas) = <span className={futureTotal < 0 ? 'text-rose-500' : 'text-emerald-500'}>{futureTotal}</span>
+                              </div>
+
+                              {/* Detail of individual purchase orders on the line below */}
+                              {pendingSources.length > 0 && (
+                                <div className={`p-3 rounded-2xl border flex flex-col gap-1.5 ${
+                                  isDarkMode ? 'bg-slate-950/30 border-slate-800/80' : 'bg-slate-50/30 border-slate-100'
+                                }`}>
+                                  <p className="text-[8px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-0.5">
+                                    Detalhamento de Compras (de todas as compras):
+                                  </p>
+                                  <div className="flex flex-col gap-1">
+                                    {pendingSources.map((src, idx) => (
+                                      <div key={`${src.id}-${idx}`} className="flex items-center justify-between text-[10px] font-bold text-slate-650 dark:text-slate-404">
+                                        <span className="truncate">{src.label}</span>
+                                        <span className="text-sky-500 font-extrabold shrink-0">+{src.qty} pares</span>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               )}
                             </div>
@@ -1232,7 +1330,11 @@ export default function SoleStockView({
                   
                   if (!mold || !color) continue;
 
-                  const totalPairs = Object.values(stock).reduce((a, b) => a + b, 0);
+                  const cleanStock: Record<string, number> = {};
+                  Object.entries(stock).forEach(([size, val]) => {
+                    cleanStock[size] = typeof val === 'number' ? val : (parseInt(val as string) || 0);
+                  });
+                  const totalPairs = Object.values(cleanStock).reduce((a, b) => a + b, 0);
                   
                   // Delete existing entries for this mold/color to avoid duplicates if they had different IDs
                   // Actually, if we just use the key as ID, it will create/overwrite ONE document.
@@ -1253,7 +1355,7 @@ export default function SoleStockView({
                     colorName: color.name,
                     supplierId: '',
                     supplierName: 'Balanço de Estoque',
-                    stock,
+                    stock: cleanStock,
                     totalPairs,
                     unitCost: 0,
                     totalCost: 0,

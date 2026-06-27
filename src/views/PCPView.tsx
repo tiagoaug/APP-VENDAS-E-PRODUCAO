@@ -384,6 +384,7 @@ export default function PCPView({
     notes: string;
     currentSectorId: string;
     items: LotAdvanceItem[];
+    os?: ServiceOrder;
   } | null>(null);
   // Fila de confirmações pendentes quando uma única ação dispara o avanço de VÁRIOS
   // mapas de uma vez (ex.: "Concluir e baixar setor imediatamente" com múltiplos mapas
@@ -450,7 +451,8 @@ export default function PCPView({
       colorName: string;
       rows: { size: string; before: number; deducted: number; after: number }[];
       contributions?: { orderLabel: string; lotNumber: string; qty: number }[]
-    }[]
+    }[];
+    os?: ServiceOrder;
   } | null>(null);
   const [historyExpanded, setHistoryExpanded] = useState(false);
   const [mappingWarningModal, setMappingWarningModal] = useState<{ itemName: string; reason: string; diagnostic: string } | null>(null);
@@ -1600,7 +1602,7 @@ export default function PCPView({
   // movido para o próximo setor do seu roteiro (orderSectors), ou, se o roteiro dele
   // já terminou, recebe a baixa de Expedição (estoque/entrega) e é marcado com
   // ORDER_FINALIZED. Os demais pedidos do mapa permanecem inalterados.
-  const handleFinalizeSelectedSourceItems = async (lot: ProductionLot, items: LotAdvanceItem[]) => {
+  const handleFinalizeSelectedSourceItems = async (lot: ProductionLot, items: LotAdvanceItem[], os?: ServiceOrder) => {
     // Agrupa os itens por lotId para atualizar cada lote individualmente
     const itemsByLotId: Record<string, LotAdvanceItem[]> = {};
     items.forEach(it => {
@@ -1720,6 +1722,16 @@ export default function PCPView({
         return `[Mapa ${itemLot.orderNumber}] ${describeMoveItem(itemLot, it)}`;
       }),
     });
+
+    if (os) {
+      await firebaseService.updateDocument('serviceOrders', os.id, {
+        status: 'COMPLETED',
+        finishedAt: Date.now(),
+      });
+      if (os.transactionId) {
+        try { await financeService.settleTransaction(os.transactionId); } catch { /* ignore */ }
+      }
+    }
   };
 
   // Direciona um único pedido (modelo) ao setor que corresponde ao SEU PRÓPRIO roteiro de produção,
@@ -2212,11 +2224,12 @@ export default function PCPView({
     nextStatusId: string,
     notes: string,
     restrictTo?: { sourceItemKeys?: string[]; sourceOrderIds?: string[] },
+    os?: ServiceOrder,
   ) => {
     const route = lot.route || [];
     const currentSectorId = route[lot.currentSectorIndex] || '';
     const items = buildLotAdvanceItems(lot, currentSectorId, restrictTo);
-    setSectorChangeConfirm({ lot, nextStatusId, notes, currentSectorId, items });
+    setSectorChangeConfirm({ lot, nextStatusId, notes, currentSectorId, items, os });
   };
 
   // Quando uma única ação precisa avançar VÁRIOS mapas de uma vez (ex.: "Concluir e
@@ -2260,7 +2273,7 @@ export default function PCPView({
 
   const handleConfirmSectorChange = async () => {
     if (!sectorChangeConfirm) return;
-    const { lot, nextStatusId, notes, currentSectorId, items } = sectorChangeConfirm;
+    const { lot, nextStatusId, notes, currentSectorId, items, os } = sectorChangeConfirm;
 
     // Proteção de estoque: se o lote está saindo da Expedição sem ter passado por OS,
     // aciona a mesma baixa de estoque/entrega que aconteceria via handleCompleteOS.
@@ -2289,6 +2302,17 @@ export default function PCPView({
     }
 
     const { destSectorName, isFinished } = await applyLotAdvance(lot, items, currentSectorId, nextStatusId, notes);
+
+    if (os) {
+      await firebaseService.updateDocument('serviceOrders', os.id, {
+        status: 'COMPLETED',
+        finishedAt: Date.now(),
+      });
+      if (os.transactionId) {
+        try { await financeService.settleTransaction(os.transactionId); } catch { /* ignore */ }
+      }
+    }
+
     setSectorChangeConfirm(null);
     setOsFeedback({
       osNumber: `Mapa #${lot.orderNumber}`,
@@ -11058,7 +11082,7 @@ export default function PCPView({
               <button
                 type="button"
                 onClick={() => {
-                  handleFinalizeSelectedSourceItems(finalizeSelectedConfirm.lot, finalizeSelectedConfirm.items);
+                  handleFinalizeSelectedSourceItems(finalizeSelectedConfirm.lot, finalizeSelectedConfirm.items, finalizeSelectedConfirm.os);
                   setFinalizeSelectedConfirm(null);
                 }}
                 className="flex-1 py-4 rounded-2xl bg-violet-600 text-white font-black uppercase tracking-[0.2em] text-[10px] shadow-lg active:scale-95 transition-all"
