@@ -20,7 +20,7 @@ export const THEME_VISUALS: Record<ThemeId, {
   // pra máxima legibilidade — sem os tons intermediários de cinza dos demais temas.
   hcWhite:      { cssClass: 'theme-hc-white', outerBg: 'bg-white', headerGradient: 'bg-gradient-to-b from-white to-white', pillGradient: 'bg-white border-2 border-black', baseText: 'text-black', swatch: 'linear-gradient(135deg,#ffffff,#000000)', label: 'Alto Contraste Branco' },
   hcBlack:      { cssClass: 'dark theme-hc-black', outerBg: 'bg-black', headerGradient: 'bg-gradient-to-b from-black to-black', pillGradient: 'bg-black border-2 border-white', baseText: 'text-white', swatch: 'linear-gradient(135deg,#000000,#ffffff)', label: 'Alto Contraste Preto' },
-  hcIndustrial: { cssClass: 'dark theme-hc-industrial', outerBg: 'bg-black', headerGradient: 'bg-gradient-to-b from-black to-black', pillGradient: 'bg-black border-2 border-yellow-400', baseText: 'text-yellow-300', swatch: 'linear-gradient(135deg,#000000,#facc15)', label: 'Alto Contraste Industrial' },
+  hcIndustrial: { cssClass: 'theme-hc-industrial', outerBg: 'bg-[#e5e7eb]', headerGradient: 'bg-gradient-to-b from-gray-100 to-gray-50', pillGradient: 'bg-gradient-to-b from-gray-50 to-gray-200 border-2 border-black', baseText: 'text-black', swatch: 'linear-gradient(135deg,#e5e7eb,#000000)', label: 'Alto Contraste Industrial' },
 };
 
 export const ALL_THEME_CLASSES = ['dark', 'industrial', 'theme-ocean', 'theme-forest', 'theme-sunset', 'theme-midnight', 'theme-graphite', 'theme-hc-white', 'theme-hc-black', 'theme-hc-industrial'];

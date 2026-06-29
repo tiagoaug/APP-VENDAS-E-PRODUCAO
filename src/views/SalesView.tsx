@@ -1644,6 +1644,7 @@ export default function SalesView({
                       )}
                     </div>
                   </div>
+                  </div>
                 </div>
 
                 {sale.status === SaleStatus.QUOTE && (

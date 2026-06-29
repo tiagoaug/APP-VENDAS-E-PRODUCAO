@@ -190,19 +190,19 @@
 .theme-hc-black .text-slate-500, .theme-hc-black .text-slate-400 { color: var(--color-text-muted) !important; }
 
 .theme-hc-industrial {
-  --color-background: #000000;
-  --color-surface: #0a0a0a;
-  --color-text-main: #fde047; /* yellow-300 */
-  --color-text-muted: #facc15; /* yellow-400 */
-  --color-text-dim: #ca8a04; /* yellow-600 */
-  --color-primary: #facc15;
-  --color-primary-dark: #ca8a04;
-  --color-primary-light: #fef08a;
+  --color-background: #e5e7eb; /* gray-200 — mesmo cinza do tema Industrial base */
+  --color-surface: #f3f4f6; /* gray-100 */
+  --color-text-main: #000000;
+  --color-text-muted: #000000;
+  --color-text-dim: #1f2937; /* gray-800 */
+  --color-primary: #000000;
+  --color-primary-dark: #000000;
+  --color-primary-light: #d1d5db; /* gray-300 */
 }
-.theme-hc-industrial .bg-white, .theme-hc-industrial .bg-slate-50, .theme-hc-industrial .bg-slate-900, .theme-hc-industrial .bg-slate-950 { background-color: var(--color-surface) !important; }
-.theme-hc-industrial .bg-slate-100, .theme-hc-industrial .bg-slate-800 { background-color: #1a1604 !important; }
-.theme-hc-industrial .border-slate-100, .theme-hc-industrial .border-slate-50, .theme-hc-industrial .border-slate-800, .theme-hc-industrial .border-slate-700 { border-color: #facc15 !important; }
-.theme-hc-industrial .text-slate-900, .theme-hc-industrial .text-slate-800, .theme-hc-industrial .text-white, .theme-hc-industrial .text-indigo-600, .theme-hc-industrial .text-indigo-400 { color: var(--color-text-main) !important; }
+.theme-hc-industrial .bg-white, .theme-hc-industrial .bg-slate-50 { background-color: var(--color-surface) !important; }
+.theme-hc-industrial .bg-slate-100 { background-color: #d1d5db !important; }
+.theme-hc-industrial .border-slate-100, .theme-hc-industrial .border-slate-50, .theme-hc-industrial .border-slate-200 { border-color: #000000 !important; }
+.theme-hc-industrial .text-slate-900, .theme-hc-industrial .text-slate-800, .theme-hc-industrial .text-indigo-600 { color: var(--color-text-main) !important; }
 .theme-hc-industrial .text-slate-500, .theme-hc-industrial .text-slate-400 { color: var(--color-text-muted) !important; }
 
 @keyframes filterPulse {
