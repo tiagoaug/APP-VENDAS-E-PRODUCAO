@@ -568,6 +568,7 @@ export type Sector = {
   defaultServiceProviderId?: string;
   defaultServiceProviderName?: string;
   isProductionCycleEnd?: boolean; // marca este setor como "fim do ciclo de produção": habilita a finalização (baixa de estoque/reserva) por pedido, independente do nome do setor
+  hidden?: boolean; // oculta o setor do PCP (dashboard, seletor de setor etc.) — só pode ser ativado se não houver pedidos pendentes nele
 };
 
 export type ProductionScreenType = 'MENU' | 'SECTORS' | 'FLOW_TAGS' | 'UNIDADES' | 'FACAS' | 'INFESTO' | 'PRAZOS' | 'FICHAS' | 'EMBALAGENS' | 'INSUMOS' | 'MATRIZES' | 'PECAS';

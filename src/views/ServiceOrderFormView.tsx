@@ -729,7 +729,7 @@ export default function ServiceOrderFormView({
                   Setor da Produção
                 </label>
                 <ComboBox
-                  options={sectors.map(s => ({ id: s.id || '', name: s.name }))}
+                  options={sectors.filter(s => !s.hidden || s.id === sectorId).map(s => ({ id: s.id || '', name: s.name }))}
                   value={sectorId}
                   onChange={handleSectorChange}
                   placeholder="Selecionar setor..."

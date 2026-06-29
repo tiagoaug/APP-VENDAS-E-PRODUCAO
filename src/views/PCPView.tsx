@@ -180,6 +180,10 @@ export default function PCPView({
   // Temas de chrome neutro: Industrial e os de Alto Contraste removem o
   // degradê/borda coloridos dos cards de setor, deixando só os ícones coloridos.
   const isIndustrial = appTheme === 'industrial' || appTheme === 'hcWhite' || appTheme === 'hcBlack' || appTheme === 'hcIndustrial';
+  // Setores ocultos (ver ProductionConfigView > Setores) somem de toda navegação/seleção
+  // no PCP — mas continuam resolvíveis via `sectors.find(...)` pra exibir nome/cor de
+  // lotes antigos que já passaram por eles.
+  const visibleSectors = useMemo(() => sectors.filter(s => !s.hidden), [sectors]);
   const [activeTab, setActiveTab] = useState<'monitor' | 'lots' | 'orders' | 'needs' | 'solados'>(initialTab);
   const [mapBadgeBg, setMapBadgeBg] = useState(() => localStorage.getItem('pcp_map_badge_bg') || '#7c3aed');
   const [mapBadgeText, setMapBadgeText] = useState(() => localStorage.getItem('pcp_map_badge_text') || '#ffffff');
@@ -4368,7 +4372,7 @@ export default function PCPView({
           {/* Sectors Dashboard or Specific Sector View */}
           {!selectedSectorId ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {sectors.map((sector) => {
+              {visibleSectors.map((sector) => {
                 const metric = sectorMetrics[sector.id];
                 return (
                   <button
@@ -4498,7 +4502,7 @@ export default function PCPView({
                         </button>
                       </div>
                       <div className="flex flex-col gap-1 max-h-[60vh] overflow-y-auto custom-scrollbar">
-                        {sectors.map(sector => (
+                        {visibleSectors.map(sector => (
                           <button
                             key={sector.id}
                             type="button"
@@ -7644,7 +7648,7 @@ export default function PCPView({
                 </button>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                {sectors.map(sec => {
+                {visibleSectors.map(sec => {
                   const active = shareFilterSectors.size === 0 || shareFilterSectors.has(sec.id);
                   const color = sec.color || '#6366f1';
                   return (
@@ -7653,8 +7657,8 @@ export default function PCPView({
                       type="button"
                       onClick={() => {
                         setShareFilterSectors(prev => {
-                          const next = new Set(prev.size === 0 ? sectors.map(s => s.id) : prev);
-                          if (next.has(sec.id)) { next.delete(sec.id); if (next.size === sectors.length) return new Set(); }
+                          const next = new Set(prev.size === 0 ? visibleSectors.map(s => s.id) : prev);
+                          if (next.has(sec.id)) { next.delete(sec.id); if (next.size === visibleSectors.length) return new Set(); }
                           else next.add(sec.id);
                           return next;
                         });
@@ -11127,7 +11131,7 @@ export default function PCPView({
               </button>
             </div>
             <div className="flex flex-col gap-1 max-h-[60vh] overflow-y-auto custom-scrollbar">
-              {sectors.map(sector => {
+              {visibleSectors.map(sector => {
                 const isCurrent = manualSectorPicker.lot
                   ? manualSectorPicker.lot.route?.[manualSectorPicker.lot.currentSectorIndex] === sector.id
                   : false;
@@ -11335,7 +11339,7 @@ export default function PCPView({
                       >
                         <option value="__PENDING_SELECTION__" disabled>-- SELECIONE O SETOR DE DESTINO --</option>
                         <option value="">CONCLUÍDO (finalizar)</option>
-                        {sectors.map(sector => (
+                        {visibleSectors.map(sector => (
                           <option key={sector.id} value={sector.id}>{sector.name}</option>
                         ))}
                       </select>

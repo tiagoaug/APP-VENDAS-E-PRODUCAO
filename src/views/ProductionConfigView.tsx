@@ -77,7 +77,9 @@ import {
   RefreshCw,
   Settings,
   Percent,
-  AlertTriangle
+  AlertTriangle,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, ProductionScreenType, ViewType, Product, SoleStockEntry, ProductionLot } from '../types';
 import Modal from '../components/Modal';
@@ -586,6 +588,29 @@ export default function ProductionConfigView({
     setIsAddingSector(false);
   };
 
+  // Quantos lotes estão NO MOMENTO ATUAL neste setor (passo presente da rota) — não
+  // conta lotes que já passaram por aqui nem os que ainda vão chegar. É diferente de
+  // "lote ativo" (não finalizado): um lote ativo que já saiu deste setor não bloqueia.
+  const getSectorPendingCount = (sectorId: string): number => {
+    return lots.filter(l => !l.finishedAt && l.route?.[l.currentSectorIndex] === sectorId).length;
+  };
+
+  const handleToggleSectorHidden = async (sector: Sector) => {
+    if (!sector.hidden) {
+      const pendingCount = getSectorPendingCount(sector.id);
+      if (pendingCount > 0) {
+        toast.show(`Não é possível ocultar "${sector.name}": há ${pendingCount} ${pendingCount === 1 ? 'pedido no setor' : 'pedidos no setor'} agora. Conclua ou mova-os antes de ocultar.`);
+        return;
+      }
+      if (!confirm(`Ocultar o setor "${sector.name}"? Ele deixará de aparecer no PCP (painel de setores, seletores etc.) até ser exibido novamente.`)) return;
+      await onSaveSector({ ...sector, hidden: true });
+      toast.show(`Setor "${sector.name}" ocultado.`);
+      return;
+    }
+    await onSaveSector({ ...sector, hidden: false });
+    toast.show(`Setor "${sector.name}" voltou a aparecer no PCP.`);
+  };
+
   const toggleTagInSector = (tagId: string) => {
     if (!editingSector) return;
     const currentIds = editingSector.flowTagIds || [];
@@ -794,11 +819,13 @@ export default function ProductionConfigView({
                 sector={sector}
                 flowTags={flowTags}
                 isDarkMode={isDarkMode}
+                pendingCount={getSectorPendingCount(sector.id)}
                 onEdit={() => {
                   setEditingSector({ ...sector });
                   setIsAddingSector(false);
                 }}
                 onDelete={() => onDeleteSector(sector.id)}
+                onToggleHidden={() => handleToggleSectorHidden(sector)}
               />
             ))}
           </Reorder.Group>
@@ -3381,12 +3408,14 @@ function GenericConfigList({
 }
 
 
-function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: {
+function SectorCard({ sector, flowTags, isDarkMode, pendingCount, onEdit, onDelete, onToggleHidden }: {
   sector: Sector;
   flowTags: FlowTag[];
   isDarkMode: boolean;
+  pendingCount: number;
   onEdit: () => void;
   onDelete: () => void | Promise<void>;
+  onToggleHidden: () => void | Promise<void>;
   key?: React.Key;
 }) {
   const controls = useDragControls();
@@ -3397,7 +3426,7 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: {
       value={sector}
       dragListener={false}
       dragControls={controls}
-      className={`p-5 rounded-[2.5rem] border flex flex-col gap-4 group transition-shadow ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-50 shadow-sm'}`}
+      className={`p-5 rounded-[2.5rem] border flex flex-col gap-4 group transition-shadow ${sector.hidden ? 'opacity-60' : ''} ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-50 shadow-sm'}`}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4 flex-1">
@@ -3416,13 +3445,28 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: {
               <Factory size={22} className="text-white" />
             </div>
             <div>
-              <h4 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{sector.name}</h4>
-              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Setor de Produção</p>
+              <div className="flex items-center gap-2">
+                <h4 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{sector.name}</h4>
+                {sector.hidden && (
+                  <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 tracking-widest">Oculto</span>
+                )}
+              </div>
+              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                Setor de Produção{pendingCount > 0 ? ` · ${pendingCount} ${pendingCount === 1 ? 'pedido ativo' : 'pedidos ativos'}` : ''}
+              </p>
             </div>
           </div>
         </div>
 
         <div className="flex gap-2">
+          <button
+            onClick={onToggleHidden}
+            title={sector.hidden ? 'Exibir Setor no PCP' : 'Ocultar Setor do PCP'}
+            aria-label={sector.hidden ? 'Exibir Setor no PCP' : 'Ocultar Setor do PCP'}
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-500 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-indigo-600'}`}
+          >
+            {sector.hidden ? <EyeOff size={18} /> : <Eye size={18} />}
+          </button>
           <button
             onClick={onEdit}
             title="Editar Setor"
@@ -3443,6 +3487,13 @@ function SectorCard({ sector, flowTags, isDarkMode, onEdit, onDelete }: {
           </button>
         </div>
       </div>
+
+      {sector.isProductionCycleEnd && (
+        <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-violet-900/20 text-violet-400' : 'bg-violet-50 text-violet-600'}`}>
+          <CheckCircle2 size={14} className="shrink-0" />
+          <p className="text-[9px] font-black uppercase tracking-widest leading-tight">Fim do Ciclo de Produção — finaliza o pedido (baixa de estoque/reserva) ao concluir aqui</p>
+        </div>
+      )}
 
       {(sector.defaultServiceValue !== undefined || sector.defaultServiceProviderName) && (
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-bold px-2 py-1">
