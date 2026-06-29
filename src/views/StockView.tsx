@@ -27,6 +27,9 @@ import PrintLabelEditorModal from "../components/PrintLabelEditorModal";
 import Modal from "../components/Modal";
 import { toast } from '../utils/toast';
 import { isHybridProduct, getWholesaleBoxes, getRetailPairs, getStockValue, getWholesaleValue, getRetailValue, productHasSaleType } from '../utils/stockPools';
+import { useStockLotDuplicates } from '../hooks/useStockLotDuplicates';
+import StockDuplicateBanner from '../components/StockDuplicateBanner';
+import StockDuplicateDiagnosticModal from '../components/StockDuplicateDiagnosticModal';
 
 // Capacidade (pares) de uma embalagem avulsa: usa `metadata.capacity` quando
 // configurado; senão recai para o número embutido no nome (ex.: "12 pares
@@ -75,6 +78,9 @@ export default function StockView({
   const [fixingAlloc, setFixingAlloc] = useState(false);
   const [fixAllocResult, setFixAllocResult] = useState<{ fixed: number; total: number } | null>(null);
   const [showFixAllocModal, setShowFixAllocModal] = useState(false);
+  const [showStockDiagnosticModal, setShowStockDiagnosticModal] = useState(false);
+
+  const { duplicateStockLotGroups, duplicateStockByRefColor, markResolved: markStockDuplicatesResolved } = useStockLotDuplicates(stockLots);
 
   const packagingItems = productionConfigs.filter(c => c.type === 'PACKAGING');
 
@@ -229,6 +235,14 @@ export default function StockView({
             </div>
           )}
         </div>
+
+        {!isEditing && (
+          <StockDuplicateBanner
+            count={duplicateStockLotGroups.length}
+            onOpen={() => setShowStockDiagnosticModal(true)}
+            isDarkMode={isDarkMode}
+          />
+        )}
 
         {!isEditing && (
           <button
@@ -479,6 +493,14 @@ export default function StockView({
           </div>
         )}
       </Modal>
+
+      <StockDuplicateDiagnosticModal
+        isOpen={showStockDiagnosticModal}
+        onClose={() => setShowStockDiagnosticModal(false)}
+        isDarkMode={isDarkMode}
+        groups={duplicateStockByRefColor}
+        onMarkResolved={markStockDuplicatesResolved}
+      />
     </div>
   );
 }

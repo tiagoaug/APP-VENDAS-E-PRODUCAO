@@ -1135,13 +1135,19 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     sharePDF(doc, `${statusText}_#${orderNumber}_${customer?.name || 'Venda'}.pdf`);
   };
 
+  // Pedido já entregue (expedido) — trava a edição pra evitar inconsistência entre o
+  // que foi abatido do estoque e o que o usuário altera no formulário depois. Pra
+  // editar, primeiro precisa "Reverter Expedição" (em Vendas, no pedido).
+  const existingSale = saleId ? sales.find(s => s.id === saleId) : null;
+  const isDeliveryLocked = !!existingSale && existingSale.deliveryStatus === 'DELIVERED' && existingSale.status !== SaleStatus.CANCELLED;
+
   return (
-    <div className={`flex flex-col gap-6 pb-40 px-1 ${status === SaleStatus.CANCELLED ? 'grayscale-[0.8] opacity-80 pointer-events-none' : ''}`}>
+    <div className={`flex flex-col gap-6 pb-40 px-1 ${status === SaleStatus.CANCELLED || isDeliveryLocked ? 'grayscale-[0.8] opacity-80 pointer-events-none' : ''}`}>
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-4 min-w-0">
             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-xl shrink-0 ${
-              status === SaleStatus.CANCELLED
+              status === SaleStatus.CANCELLED || isDeliveryLocked
                 ? 'bg-slate-700 shadow-none'
                 : status === SaleStatus.QUOTE
                   ? 'bg-orange-500 shadow-orange-200'
@@ -1152,13 +1158,20 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               <Receipt size={22} className="text-white" strokeWidth={2.5} />
             </div>
             <div className="min-w-0">
-              <h2 className={`text-lg font-black uppercase tracking-tight leading-none truncate ${status === SaleStatus.CANCELLED ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>
+              <h2 className={`text-lg font-black uppercase tracking-tight leading-none truncate ${status === SaleStatus.CANCELLED || isDeliveryLocked ? 'text-rose-500' : 'text-slate-900 dark:text-white'}`}>
                 {status === SaleStatus.CANCELLED
                   ? 'Venda Cancelada'
-                  : saleId
-                    ? `Editando ${status === SaleStatus.QUOTE ? 'Orçamento' : status === SaleStatus.CONFIRMED ? 'Pedido' : 'Venda'}`
-                    : `Novo ${status === SaleStatus.QUOTE ? 'Orçamento' : status === SaleStatus.CONFIRMED ? 'Pedido' : 'Venda'}`}
+                  : isDeliveryLocked
+                    ? 'Pedido Entregue'
+                    : saleId
+                      ? `Editando ${status === SaleStatus.QUOTE ? 'Orçamento' : status === SaleStatus.CONFIRMED ? 'Pedido' : 'Venda'}`
+                      : `Novo ${status === SaleStatus.QUOTE ? 'Orçamento' : status === SaleStatus.CONFIRMED ? 'Pedido' : 'Venda'}`}
               </h2>
+              {isDeliveryLocked && (
+                <p className="text-[9px] font-bold text-rose-500 uppercase tracking-widest mt-1">
+                  Edição bloqueada — reverta a expedição em Vendas para editar
+                </p>
+              )}
               <div className="flex items-center gap-3 mt-2">
                 <label className="flex items-center gap-2 cursor-pointer group">
                   <div className="relative">

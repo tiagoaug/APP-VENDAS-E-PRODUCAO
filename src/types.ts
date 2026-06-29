@@ -136,6 +136,7 @@ export type Variation = {
   stockPkgAllocations?: StockPkgAllocation[]; // Múltiplos padrões de embalagem por variação
   photoUrl?: string;   // Optional photo URL for this variation (used in labels)
   sectorNotes?: Record<string, SectorNote[]>; // sectorId → list of named notes for that sector
+  stockNote?: string; // Observação livre sobre o estoque desta cor (ver "Disponível em Estoque")
 };
 
 export type SectorNote = {

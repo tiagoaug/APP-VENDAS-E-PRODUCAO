@@ -48,6 +48,9 @@ import { generateId } from '../utils/id';
 import { getMaterialStockForColor } from '../utils/materialStock';
 import ExportNoteModal from '../components/ExportNoteModal';
 import { generatePCPShareExport, PCPShareItem, sendPCPItemsToPrintStudio } from '../utils/pcpShareExport';
+import { useStockLotDuplicates } from '../hooks/useStockLotDuplicates';
+import StockDuplicateBanner from '../components/StockDuplicateBanner';
+import StockDuplicateDiagnosticModal from '../components/StockDuplicateDiagnosticModal';
 
 const getContrastingColor = (hexcolor: string) => {
   if (!hexcolor || hexcolor.length < 6) return '#ffffff';
@@ -1399,68 +1402,9 @@ export default function PCPView({
     return (productionConfigs || []).filter(c => c.type === 'DEADLINE');
   }, [productionConfigs]);
 
-  // Diagnóstico temporário (ver showStockDiagnosticModal) — agrupa StockLots
-  // "EM_ESTOQUE" pela mesma origem (lote + pedido de produção + item) e reporta grupos
-  // com mais de 1 entrada — cada entrada extra é uma baixa duplicada (mesma produção
-  // creditada de novo no estoque por um ciclo de "Dar Baixa" repetido).
-  const duplicateStockLotGroups = useMemo(() => {
-    const groups = new Map<string, StockLot[]>();
-    (stockLots || []).forEach(sl => {
-      if (sl.status !== 'EM_ESTOQUE') return;
-      const key = `${sl.lotId}::${sl.productionOrderId || ''}::${sl.itemIdx ?? ''}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(sl);
-    });
-    return Array.from(groups.values())
-      .filter(entries => entries.length > 1)
-      .map(entries => {
-        const sorted = [...entries].sort((a, b) => a.createdAt - b.createdAt);
-        const first = sorted[0];
-        const excessCount = sorted.length - 1;
-        const excessPairs = excessCount * (first.totalPairs || 0);
-        const excessBoxes = excessCount * (first.boxQty || 0);
-        return {
-          key: `${first.lotId}::${first.productionOrderId || ''}::${first.itemIdx ?? ''}`,
-          lotOrderNumber: first.lotOrderNumber || '—',
-          productName: first.productName,
-          productReference: first.productReference || '',
-          variationName: first.variationName,
-          gradeLabel: first.gradeLabel,
-          count: sorted.length,
-          excessCount,
-          eachPairs: first.totalPairs || 0,
-          eachBoxes: first.boxQty || 0,
-          excessPairs,
-          excessBoxes,
-          entries: sorted,
-        };
-      })
-      .sort((a, b) => b.excessCount - a.excessCount);
-  }, [stockLots]);
-
-  // Soma o excesso de todos os mapas/pedidos duplicados pela MESMA referência+cor —
-  // o número final que importa pra corrigir o estoque (não interessa de quantos mapas
-  // diferentes veio a duplicidade, só o total a descontar daquela referência/cor).
-  const duplicateStockByRefColor = useMemo(() => {
-    const groups = new Map<string, {
-      productReference: string; productName: string; variationName: string;
-      excessBoxes: number; excessPairs: number; lotOrderNumbers: Set<string>;
-    }>();
-    duplicateStockLotGroups.forEach(g => {
-      const key = `${g.productReference}::${g.variationName}`;
-      let entry = groups.get(key);
-      if (!entry) {
-        entry = { productReference: g.productReference, productName: g.productName, variationName: g.variationName, excessBoxes: 0, excessPairs: 0, lotOrderNumbers: new Set() };
-        groups.set(key, entry);
-      }
-      entry.excessBoxes += g.excessBoxes;
-      entry.excessPairs += g.excessPairs;
-      entry.lotOrderNumbers.add(g.lotOrderNumber);
-    });
-    return Array.from(groups.values())
-      .map(e => ({ ...e, lotOrderNumbers: Array.from(e.lotOrderNumbers).sort() }))
-      .sort((a, b) => (b.excessBoxes + b.excessPairs) - (a.excessBoxes + a.excessPairs));
-  }, [duplicateStockLotGroups]);
+  // Diagnóstico de StockLots duplicados (ver showStockDiagnosticModal) — compartilhado
+  // com a tela de Estoques via useStockLotDuplicates.
+  const { duplicateStockLotGroups, duplicateStockByRefColor, markResolved: markStockDuplicatesResolved } = useStockLotDuplicates(stockLots);
 
 
 
@@ -4381,6 +4325,12 @@ export default function PCPView({
 
       {activeTab === 'monitor' && (
         <div className="flex flex-col gap-8">
+          <StockDuplicateBanner
+            count={duplicateStockLotGroups.length}
+            onOpen={() => setShowStockDiagnosticModal(true)}
+            isDarkMode={isDarkMode}
+          />
+
           {/* WIP Overview — Produção Total (todos os mapas, histórico) / Em Produção
               (pares ainda pendentes nos setores, já descontando pedidos do mapa que
               tiveram sua expedição finalizada via activePendingPairs) / Pedidos em
@@ -10702,64 +10652,13 @@ export default function PCPView({
         productionOrders={productionOrders}
       />
 
-      {/* ── Diagnóstico temporário de StockLots duplicados ── */}
-      {showStockDiagnosticModal && createPortal(
-        <div className="fixed inset-0 z-[300000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowStockDiagnosticModal(false)}>
-          <div onClick={(e) => e.stopPropagation()} className={`w-full max-w-lg max-h-[85vh] flex flex-col rounded-[2.5rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
-            <div className="p-6 flex items-center justify-between border-b border-slate-100 dark:border-slate-800 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-rose-500/20 text-rose-400' : 'bg-rose-50 text-rose-500'}`}>
-                  <AlertTriangle size={22} strokeWidth={2.5} />
-                </div>
-                <div>
-                  <h3 className={`text-base font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Diagnóstico de Estoque Duplicado</h3>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">{duplicateStockByRefColor.length} referência(s)/cor(es) afetada(s)</p>
-                </div>
-              </div>
-              <button type="button" onClick={() => setShowStockDiagnosticModal(false)} aria-label="Fechar" title="Fechar"
-                className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}>
-                <X size={20} strokeWidth={2.5} />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-3 custom-scrollbar">
-              {duplicateStockByRefColor.length === 0 && (
-                <p className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400 py-10">Nenhuma duplicidade encontrada.</p>
-              )}
-              {duplicateStockByRefColor.map(g => (
-                <div key={`${g.productReference}::${g.variationName}`} className={`rounded-2xl border p-4 flex flex-col gap-2 ${isDarkMode ? 'bg-rose-900/15 border-rose-800/40' : 'bg-rose-50 border-rose-100'}`}>
-                  <p className={`text-[12px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                    {g.productReference ? `${g.productReference} — ` : ''}{g.productName} · {g.variationName}
-                  </p>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
-                    Veio de: {g.lotOrderNumbers.join(', ')}
-                  </p>
-                  <div className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total a descontar</span>
-                    <span className="text-[14px] font-black text-rose-500">
-                      {g.excessBoxes > 0 ? `${g.excessBoxes} cx` : `${g.excessPairs} pares`}
-                    </span>
-                  </div>
-                </div>
-              ))}
-              {duplicateStockByRefColor.length > 0 && (
-                <button type="button"
-                  onClick={() => {
-                    const text = duplicateStockByRefColor.map(g =>
-                      `${g.productReference} ${g.productName} ${g.variationName} (origem: ${g.lotOrderNumbers.join(', ')}): descontar ${g.excessBoxes > 0 ? `${g.excessBoxes} cx` : `${g.excessPairs} pares`}`
-                    ).join('\n');
-                    navigator.clipboard.writeText(text);
-                    toast.show('Resumo copiado.');
-                  }}
-                  className={`py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
-                  Copiar Resumo
-                </button>
-              )}
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      <StockDuplicateDiagnosticModal
+        isOpen={showStockDiagnosticModal}
+        onClose={() => setShowStockDiagnosticModal(false)}
+        isDarkMode={isDarkMode}
+        groups={duplicateStockByRefColor}
+        onMarkResolved={markStockDuplicatesResolved}
+      />
 
       {/* ── Popup de Observações/Lembrete da OS — saiu do card pra ocupar menos espaço ── */}
       {osNotesPopup && createPortal(

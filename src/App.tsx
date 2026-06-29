@@ -1397,12 +1397,52 @@ export default function App() {
         if (!variation) return item;
         const key = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
         const available = variation.stock?.[key] || 0;
-        if (available >= item.quantity) {
-          variation.stock[key] = available - item.quantity;
-          anyExpedited = true;
-          return { ...item, fulfilled: true };
+        if (available < item.quantity) return item;
+
+        const newQty = available - item.quantity;
+        variation.stock[key] = newQty;
+        anyExpedited = true;
+
+        // Recorta stockPkgAllocations na mesma proporção do abate (mesma lógica de
+        // "Separar Caixas") e guarda o snapshot em separatedPkgAllocations — sem isso,
+        // reverter a expedição depois devolve a quantidade como "Avulso" (perde a
+        // categorização de embalagem) por não ter de onde restaurar.
+        let consumedAllocations: any[] = [];
+        if (key === 'WHOLESALE') {
+          const allocsBefore: any[] = (variation.stockPkgAllocations || []).map((a: any) => ({ ...a }));
+          const totalAlloc = allocsBefore.reduce((s: number, a: any) => s + a.qty, 0);
+          if (newQty < totalAlloc) {
+            let excess = totalAlloc - newQty;
+            const trimmed = allocsBefore.map((a: any) => ({ ...a }));
+            for (let i = trimmed.length - 1; i >= 0 && excess > 0; i--) {
+              const cut = Math.min(trimmed[i].qty, excess);
+              trimmed[i].qty -= cut;
+              excess -= cut;
+            }
+            variation.stockPkgAllocations = trimmed.filter((a: any) => a.qty > 0);
+            consumedAllocations = trimmed
+              .map((after: any, i: number) => ({
+                ...allocsBefore[i],
+                qty: allocsBefore[i].qty - after.qty,
+              }))
+              .filter((a: any) => a.qty > 0);
+          }
         }
-        return item;
+
+        if (consumedAllocations.length === 0) return { ...item, fulfilled: true };
+
+        const prevConsumed: any[] = item.separatedPkgAllocations || [];
+        const mergedConsumed = [...prevConsumed];
+        for (const ca of consumedAllocations) {
+          const isAvulsa = ca.pkgId === 'AVULSA';
+          if (!isAvulsa) {
+            const idx = mergedConsumed.findIndex((x: any) => x.pkgId === ca.pkgId);
+            if (idx >= 0) { mergedConsumed[idx] = { ...mergedConsumed[idx], qty: mergedConsumed[idx].qty + ca.qty }; continue; }
+          }
+          mergedConsumed.push({ ...ca });
+        }
+
+        return { ...item, fulfilled: true, separatedPkgAllocations: mergedConsumed };
       });
 
       if (!anyExpedited) {
@@ -1493,7 +1533,12 @@ export default function App() {
         };
       });
 
-      if (!anyReverted) {
+      // Se nenhum item tinha separação mas a venda está marcada como "Entregue" (ex.:
+      // pedido editado depois da expedição, ficando com itens novos nunca abatidos),
+      // ainda assim limpa a marcação — senão a venda fica travada sem nenhuma saída
+      // pra desfazer o status de entrega.
+      const wasDelivered = sale.deliveryStatus === 'DELIVERED';
+      if (!anyReverted && !wasDelivered) {
         toast.show('Não há itens expedidos para reverter.');
         return;
       }
@@ -1507,11 +1552,24 @@ export default function App() {
         deliveryStatus: 'PENDING',
       });
 
-      toast.show('Expedição revertida — estoque e embalagens restaurados.');
+      toast.show(anyReverted
+        ? 'Expedição revertida — estoque e embalagens restaurados.'
+        : 'Marcação de "Pedido Entregue" removida.');
     } catch (e: any) {
       console.error(e);
       toast.show('Erro ao reverter expedição: ' + (e.message || e));
     }
+  };
+
+  // Observação livre por cor — usada em "Disponível em Estoque" (StockGlanceView),
+  // que é só-leitura pra estoque/balanço mas precisa permitir essa anotação pontual.
+  const handleUpdateVariationStockNote = async (productId: string, variationId: string, note: string) => {
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+    const updatedVariations = product.variations.map(v =>
+      v.id === variationId ? { ...v, stockNote: note || undefined } : v
+    );
+    await firebaseService.saveDocument('products', { ...product, variations: updatedVariations });
   };
 
   // "Separar Caixas" — registra a separação física por item.
@@ -4293,6 +4351,8 @@ export default function App() {
             products={products}
             isDarkMode={isDarkMode}
             onBack={goBack}
+            onUpdateVariationNote={handleUpdateVariationStockNote}
+            grids={grids}
           />
         );
       case ViewType.SALE_FORM:

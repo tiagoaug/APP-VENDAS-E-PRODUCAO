@@ -1,26 +1,62 @@
-import { useState, useMemo } from 'react';
-import { Product } from '../types';
+import { useState, useMemo, useEffect } from 'react';
+import { Product, Grid } from '../types';
 import { SaleType } from '../types';
-import { ArrowLeft, Search, Boxes, Package, Filter, X } from 'lucide-react';
+import { ArrowLeft, Search, Boxes, Package, Filter, X, MessageSquare, MessageSquarePlus, Settings2, Grid3X3, CheckCircle2, Trash2 } from 'lucide-react';
 import { getWholesaleBoxes, getRetailPairs, productHasSaleType } from '../utils/stockPools';
+import { toast } from '../utils/toast';
 
 interface StockGlanceViewProps {
   products: Product[];
   isDarkMode: boolean;
   onBack: () => void;
+  /** Observação livre por cor — única "edição" permitida nesta tela, que é só-leitura
+   * pra estoque/balanço. */
+  onUpdateVariationNote?: (productId: string, variationId: string, note: string) => Promise<void>;
+  /** Usado só pra resolver a grade de tamanhos (defaultGridId) do modelo, no atalho
+   * "Grade" do popup de observação — não exibida em mais nada nesta tela. */
+  grids?: Grid[];
 }
 
 type RetailSizeRow = { size: string; ready: number };
-type ProductRow = { variationId: string; colorName: string; ready: number; sizeRows?: RetailSizeRow[] };
+type ProductRow = { variationId: string; colorName: string; ready: number; note?: string; sizeRows?: RetailSizeRow[] };
 type ProductCard = { product: Product; rows: ProductRow[] };
 
+// Mensagens rápidas pra observação por cor — mesmo padrão de "Textos Rápidos" do
+// ExportNoteModal (lista configurável, persistida em localStorage).
+const QUICK_MESSAGES_KEY = 'stock_note_quick_messages_v1';
+const DEFAULT_QUICK_MESSAGES = ['CAIXA ABERTA FALTANDO PARES'];
+
+function loadQuickMessages(): string[] {
+  try {
+    const raw = localStorage.getItem(QUICK_MESSAGES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.filter(t => typeof t === 'string');
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_QUICK_MESSAGES;
+}
+
+function persistQuickMessages(list: string[]) {
+  try { localStorage.setItem(QUICK_MESSAGES_KEY, JSON.stringify(list)); } catch { /* ignore */ }
+}
+
 /** Visão de estoque 100% somente leitura — sem opção de editar/balanço em nenhum lugar
- * desta tela, e sem informação de produção: mostra só o estoque real (Variation.stock). */
-export default function StockGlanceView({ products, isDarkMode, onBack }: StockGlanceViewProps) {
+ * desta tela, e sem informação de produção: mostra só o estoque real (Variation.stock).
+ * Única exceção: observação livre por cor (não altera estoque, só anotação). */
+export default function StockGlanceView({ products, isDarkMode, onBack, onUpdateVariationNote, grids = [] }: StockGlanceViewProps) {
   const [activeTab, setActiveTab] = useState<SaleType>(SaleType.WHOLESALE);
   const [search, setSearch] = useState('');
   const [colorFilter, setColorFilter] = useState<string | null>(null);
   const [showFilterModal, setShowFilterModal] = useState(false);
+  const [notesProductId, setNotesProductId] = useState<string | null>(null);
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
+  const [gradeOpenRowId, setGradeOpenRowId] = useState<string | null>(null);
+  const [gradeQty, setGradeQty] = useState<Record<string, number>>({});
+  const [quickMessages, setQuickMessages] = useState<string[]>(() => loadQuickMessages());
+  const [isManagingMessages, setIsManagingMessages] = useState(false);
+  const [newMessageDraft, setNewMessageDraft] = useState('');
+  const [viewNoteRow, setViewNoteRow] = useState<{ productId: string; variationId: string; colorName: string; note: string } | null>(null);
 
   const colorOptions = useMemo(() => {
     const set = new Set<string>();
@@ -44,6 +80,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack }: StockG
                 variationId: variation.id,
                 colorName: variation.colorName,
                 ready: getWholesaleBoxes(product, variation),
+                note: variation.stockNote,
               };
             }
             const readyBySize = variation.stock || {};
@@ -54,6 +91,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack }: StockG
               variationId: variation.id,
               colorName: variation.colorName,
               ready: getRetailPairs(product, variation),
+              note: variation.stockNote,
               sizeRows: sizes.map(size => ({ size, ready: readyBySize[size] || 0 })),
             };
           })
@@ -66,6 +104,93 @@ export default function StockGlanceView({ products, isDarkMode, onBack }: StockG
 
   const unit = activeTab === SaleType.WHOLESALE ? 'cx' : 'pr';
   const activeFilterCount = (search.trim() ? 1 : 0) + (colorFilter ? 1 : 0);
+
+  const notesCard = useMemo(
+    () => (notesProductId ? cards.find(c => c.product.id === notesProductId) || null : null),
+    [notesProductId, cards]
+  );
+
+  const gridSizes = useMemo(() => {
+    if (!notesCard) return [];
+    const grid = grids.find(g => g.id === notesCard.product.defaultGridId);
+    return grid?.sizes || [];
+  }, [notesCard, grids]);
+
+  // Inicializa os rascunhos de observação a cada vez que o popup abre pra um produto
+  // diferente — edição fica só local até "Concluído" salvar de fato.
+  useEffect(() => {
+    if (!notesCard) { setNoteDrafts({}); setGradeOpenRowId(null); setGradeQty({}); return; }
+    const drafts: Record<string, string> = {};
+    notesCard.rows.forEach(r => { drafts[r.variationId] = r.note || ''; });
+    setNoteDrafts(drafts);
+    setGradeOpenRowId(null);
+    setGradeQty({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notesProductId]);
+
+  const insertMessageIntoRow = (variationId: string, text: string) => {
+    setNoteDrafts(prev => {
+      const current = prev[variationId] || '';
+      if (current.includes(text)) return prev;
+      return { ...prev, [variationId]: current ? `${current}\n${text}` : text };
+    });
+  };
+
+  const insertGradeIntoRow = (variationId: string) => {
+    const parts = Object.entries(gradeQty)
+      .filter(([, qty]) => qty > 0)
+      .map(([size, qty]) => `${size} (${qty} ${qty === 1 ? 'par' : 'pares'})`);
+    if (parts.length > 0) {
+      const snippet = `Faltam: ${parts.join(', ')}`;
+      setNoteDrafts(prev => {
+        const current = prev[variationId] || '';
+        return { ...prev, [variationId]: current ? `${current}\n${snippet}` : snippet };
+      });
+    }
+    setGradeOpenRowId(null);
+    setGradeQty({});
+  };
+
+  const addQuickMessage = () => {
+    const text = newMessageDraft.trim().toUpperCase();
+    if (!text || quickMessages.includes(text)) { setNewMessageDraft(''); return; }
+    const next = [...quickMessages, text];
+    setQuickMessages(next);
+    persistQuickMessages(next);
+    setNewMessageDraft('');
+  };
+
+  const removeQuickMessage = (idx: number) => {
+    const next = quickMessages.filter((_, i) => i !== idx);
+    setQuickMessages(next);
+    persistQuickMessages(next);
+  };
+
+  const handleCloseNotesModal = async () => {
+    if (notesCard && onUpdateVariationNote) {
+      for (const row of notesCard.rows) {
+        const draft = (noteDrafts[row.variationId] ?? '').trim();
+        if (draft !== (row.note || '')) {
+          await onUpdateVariationNote(notesCard.product.id, row.variationId, draft);
+        }
+      }
+    }
+    setNotesProductId(null);
+  };
+
+  const handleResolveViewedNote = async () => {
+    if (!viewNoteRow || !onUpdateVariationNote) return;
+    await onUpdateVariationNote(viewNoteRow.productId, viewNoteRow.variationId, '');
+    toast.show('Observação concluída.');
+    setViewNoteRow(null);
+  };
+
+  const handleDeleteViewedNote = async () => {
+    if (!viewNoteRow || !onUpdateVariationNote) return;
+    await onUpdateVariationNote(viewNoteRow.productId, viewNoteRow.variationId, '');
+    toast.show('Observação excluída.');
+    setViewNoteRow(null);
+  };
 
   return (
     <div className="flex flex-col gap-4 pb-10">
@@ -128,17 +253,43 @@ export default function StockGlanceView({ products, isDarkMode, onBack }: StockG
             key={card.product.id}
             className={`p-4 rounded-[2rem] border shadow-sm bg-gradient-to-br ${isDarkMode ? 'from-slate-900 to-slate-900/80 border-slate-800' : 'from-white to-slate-50 border-slate-100'}`}
           >
-            <h3 className={`text-[13px] font-black uppercase tracking-tight mb-3 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-              {card.product.reference ? `${card.product.reference} — ` : ''}{card.product.name}
-            </h3>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h3 className={`text-[13px] font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                {card.product.reference ? `${card.product.reference} — ` : ''}{card.product.name}
+              </h3>
+              {onUpdateVariationNote && (
+                <button
+                  type="button"
+                  onClick={() => setNotesProductId(card.product.id)}
+                  title="Adicionar observação por cor"
+                  aria-label="Adicionar observação por cor"
+                  className={`shrink-0 p-1.5 rounded-lg transition-all ${card.rows.some(r => r.note) ? (isDarkMode ? 'text-amber-400 bg-amber-500/10' : 'text-amber-500 bg-amber-50') : isDarkMode ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  <MessageSquarePlus size={16} />
+                </button>
+              )}
+            </div>
 
             <div className="flex flex-col gap-2">
               {card.rows.map(row => (
                 <div key={row.variationId} className={`flex flex-col gap-1.5 p-2.5 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50/80'}`}>
-                  {/* Quantidade sempre na frente da cor */}
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{row.ready} {unit}</span>
-                    <span className={`text-[11px] font-bold uppercase tracking-tight ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{row.colorName}</span>
+                  {/* Quantidade sempre na frente da cor — observação fica na outra extremidade */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{row.ready} {unit}</span>
+                      <span className={`text-[11px] font-bold uppercase tracking-tight truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{row.colorName}</span>
+                    </div>
+                    {row.note && (
+                      <button
+                        type="button"
+                        onClick={() => setViewNoteRow({ productId: card.product.id, variationId: row.variationId, colorName: row.colorName, note: row.note! })}
+                        title={row.note}
+                        aria-label={`Observação de ${row.colorName}: ${row.note}`}
+                        className={`shrink-0 flex items-center justify-center w-7 h-7 rounded-full animate-pulse-amber-ring ${isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-100 text-amber-600'}`}
+                      >
+                        <MessageSquare size={14} className={isDarkMode ? 'fill-amber-500/20' : 'fill-amber-200'} />
+                      </button>
+                    )}
                   </div>
 
                   {activeTab === SaleType.RETAIL && (
@@ -242,6 +393,259 @@ export default function StockGlanceView({ products, isDarkMode, onBack }: StockG
                 className="flex-1 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white"
               >
                 Aplicar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup — Observação por cor (única "edição" permitida nesta tela) */}
+      {notesCard && onUpdateVariationNote && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
+          onClick={handleCloseNotesModal}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-sm max-h-[85vh] flex flex-col rounded-[2rem] shadow-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+          >
+            <div className="p-5 flex items-center justify-between border-b border-slate-100 dark:border-slate-800 shrink-0">
+              <div className="min-w-0">
+                <h3 className={`text-sm font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Observações por Cor</h3>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-0.5 truncate">
+                  {notesCard.product.reference ? `${notesCard.product.reference} — ` : ''}{notesCard.product.name}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleCloseNotesModal}
+                title="Fechar"
+                aria-label="Fechar"
+                className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-5 flex flex-col gap-5 overflow-y-auto">
+              {notesCard.rows.map(row => {
+                const draft = noteDrafts[row.variationId] ?? '';
+                const isGradeOpen = gradeOpenRowId === row.variationId;
+                return (
+                  <div key={row.variationId} className="flex flex-col gap-2">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">{row.colorName}</label>
+                    <textarea
+                      value={draft}
+                      onChange={(e) => setNoteDrafts(prev => ({ ...prev, [row.variationId]: e.target.value }))}
+                      placeholder="Adicionar observação sobre esta cor..."
+                      title={`Observação — ${row.colorName}`}
+                      className={`w-full px-3 py-2.5 rounded-xl text-[12px] font-bold outline-none border resize-none h-16 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-700 placeholder:text-slate-400'}`}
+                    />
+
+                    {/* Mensagens rápidas + atalho de Grade */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {quickMessages.map((msg, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => insertMessageIntoRow(row.variationId, msg)}
+                          title={msg}
+                          className={`px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest truncate max-w-[140px] transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 border border-slate-700 hover:border-slate-600' : 'bg-slate-100 text-slate-600 border border-slate-200 hover:border-slate-300'}`}
+                        >
+                          {msg}
+                        </button>
+                      ))}
+                      {activeTab === SaleType.WHOLESALE && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setGradeOpenRowId(isGradeOpen ? null : row.variationId);
+                            setGradeQty({});
+                          }}
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest transition-all ${isGradeOpen ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-indigo-500/10 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}
+                        >
+                          <Grid3X3 size={14} /> Grade
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setIsManagingMessages(true)}
+                        title="Configurar mensagens rápidas"
+                        aria-label="Configurar mensagens rápidas"
+                        className={`flex items-center justify-center w-7 h-7 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                      >
+                        <Settings2 size={14} />
+                      </button>
+                    </div>
+
+                    {/* Atalho de Grade — escolhe quantos pares faltam por tamanho (ex.: caixa aberta) */}
+                    {isGradeOpen && (
+                      <div className={`p-3 rounded-xl border flex flex-col gap-2.5 ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                        {gridSizes.length === 0 ? (
+                          <p className="text-[10px] font-bold text-slate-400">Nenhuma grade de tamanhos cadastrada para este modelo.</p>
+                        ) : (
+                          <>
+                            <div className="flex flex-wrap gap-2">
+                              {gridSizes.map(size => (
+                                <div key={size} className={`flex flex-col items-center gap-1 px-2 py-1.5 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                  <span className="text-[9px] font-black text-slate-400 uppercase">{size}</span>
+                                  <input
+                                    type="number"
+                                    inputMode="numeric"
+                                    min={0}
+                                    value={gradeQty[size] || ''}
+                                    onChange={(e) => setGradeQty(prev => ({ ...prev, [size]: Math.max(0, Number(e.target.value) || 0) }))}
+                                    onFocus={(e) => e.target.select()}
+                                    placeholder="0"
+                                    title={`Pares faltando no tamanho ${size}`}
+                                    aria-label={`Pares faltando no tamanho ${size}`}
+                                    className={`w-9 text-center text-[12px] font-black outline-none bg-transparent [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => insertGradeIntoRow(row.variationId)}
+                              className="py-2 rounded-xl text-[9px] font-black uppercase tracking-widest bg-indigo-600 text-white active:scale-95 transition-all"
+                            >
+                              Inserir na Observação
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-5 pt-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleCloseNotesModal}
+                className="w-full py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white"
+              >
+                Concluído
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup — Configurar mensagens rápidas */}
+      {isManagingMessages && (
+        <div
+          className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+          onClick={() => setIsManagingMessages(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-xs flex flex-col max-h-[70vh] rounded-[2rem] shadow-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+          >
+            <div className="p-4 flex items-center justify-between border-b border-slate-100 dark:border-slate-800 shrink-0">
+              <h4 className={`text-xs font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Mensagens Rápidas</h4>
+              <button
+                type="button"
+                onClick={() => setIsManagingMessages(false)}
+                title="Fechar"
+                aria-label="Fechar"
+                className={`w-7 h-7 rounded-full flex items-center justify-center ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}
+              >
+                <X size={14} />
+              </button>
+            </div>
+            <div className="p-4 flex flex-col gap-2 overflow-y-auto">
+              {quickMessages.map((msg, i) => (
+                <div key={i} className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                  <span className={`text-[10px] font-bold uppercase tracking-tight truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{msg}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeQuickMessage(i)}
+                    title="Remover"
+                    aria-label={`Remover mensagem ${msg}`}
+                    className="text-rose-500 shrink-0"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+              {quickMessages.length === 0 && (
+                <p className="text-[10px] font-bold text-slate-400 text-center py-2">Nenhuma mensagem configurada.</p>
+              )}
+            </div>
+            <div className="p-4 pt-2 shrink-0 flex gap-2">
+              <input
+                type="text"
+                value={newMessageDraft}
+                onChange={(e) => setNewMessageDraft(e.target.value)}
+                placeholder="Nova mensagem..."
+                title="Nova mensagem rápida"
+                aria-label="Nova mensagem rápida"
+                onKeyDown={(e) => { if (e.key === 'Enter') addQuickMessage(); }}
+                className={`flex-1 px-3 py-2 rounded-xl text-[11px] font-bold outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-700 placeholder:text-slate-400'}`}
+              />
+              <button
+                type="button"
+                onClick={addQuickMessage}
+                className="px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white shrink-0"
+              >
+                Adicionar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Popup — Observação de uma cor (atalho do ícone pulsante) */}
+      {viewNoteRow && onUpdateVariationNote && (
+        <div
+          className="fixed inset-0 z-[220] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm"
+          onClick={() => setViewNoteRow(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-xs rounded-[2rem] shadow-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+          >
+            <div className="p-5 flex items-start justify-between gap-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-100 text-amber-600'}`}>
+                  <MessageSquare size={18} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Observação</p>
+                  <p className={`text-sm font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{viewNoteRow.colorName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewNoteRow(null)}
+                title="Fechar"
+                aria-label="Fechar"
+                className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-5">
+              <p className={`text-[13px] font-bold whitespace-pre-wrap leading-relaxed ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{viewNoteRow.note}</p>
+            </div>
+
+            <div className="p-5 pt-0 flex gap-2">
+              <button
+                type="button"
+                onClick={handleDeleteViewedNote}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-rose-500/15 text-rose-400 hover:bg-rose-500/25' : 'bg-rose-50 text-rose-600 hover:bg-rose-100'}`}
+              >
+                <Trash2 size={14} /> Excluir
+              </button>
+              <button
+                type="button"
+                onClick={handleResolveViewedNote}
+                className="flex-[1.3] flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 active:scale-95 transition-all hover:bg-emerald-700"
+              >
+                <CheckCircle2 size={14} /> Concluído
               </button>
             </div>
           </div>

@@ -1387,8 +1387,8 @@ export default function SalesView({
 
               {/* Action Bar (Footer) */}
               <div className="flex flex-col gap-4 pt-4 border-t border-slate-100 dark:border-slate-800/50 z-10">
-                <div className="flex justify-between items-center w-full">
-                  <div className="flex items-center gap-2">
+                <div className="flex justify-between items-center w-full gap-2">
+                  <div className="flex items-center gap-2 shrink-0">
                     {/* Note Indicator if exists */}
                     {sale.notes && (
                       <button
@@ -1405,8 +1405,11 @@ export default function SalesView({
                     )}
                   </div>
 
-                  {/* Actions Group (Floating Island) - MATCHING IMAGE */}
-                  <div className="flex items-center gap-1.5 p-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm">
+                  {/* Actions Group (Floating Island) — em telas estreitas, a pílula tem mais
+                      ícones do que cabe no card; em vez de vazar pra fora (cortado pelo
+                      overflow-hidden do card), agora rola horizontalmente dentro do card. */}
+                  <div className="min-w-0 max-w-full overflow-x-auto no-scrollbar">
+                  <div className="flex items-center gap-1.5 p-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm w-max">
                     {/* View Order Button */}
                     <button
                       type="button"
@@ -1417,12 +1420,32 @@ export default function SalesView({
                       <Eye size={18} />
                     </button>
 
-                    {/* Quick Expedite Button (Truck Icon) */}
+                    {/* Quick Expedite Button (Truck Icon) — quando já entregue, vira atalho
+                        direto pra "Reverter Expedição" (caso a expedição/entrega tenha sido
+                        feita por engano), sem precisar abrir o menu "Mais Opções". */}
                     {(() => {
                       const isCompleted = sale.items.length > 0 && sale.items.every(it => it.fulfilled === true || (it.boxesSeparated || 0) >= it.quantity);
                       const isDelivered = sale.deliveryStatus === 'DELIVERED';
                       const isQuote = sale.status === SaleStatus.QUOTE;
                       const canExpedite = isCompleted && !isDelivered && !isQuote;
+                      // Inclui isDelivered no OR: mesmo que nenhum item esteja marcado
+                      // fulfilled/separado (pedido entregue de forma inconsistente, ex.:
+                      // editado depois da entrega), ainda precisa dar pra reverter a
+                      // marcação de "Entregue" — senão o pedido fica travado sem saída.
+                      const canRevert = sale.status === SaleStatus.SALE && (isDelivered || sale.items.some(it => it.fulfilled === true) || sale.items.some(it => (it.boxesSeparated || 0) > 0));
+
+                      if (isDelivered && canRevert) {
+                        return (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); setRevertSale(sale); }}
+                            className="w-10 h-10 flex items-center justify-center bg-amber-50 dark:bg-amber-500/10 text-amber-600 rounded-full active:scale-90 transition-all"
+                            title="Pedido entregue — reverter expedição"
+                          >
+                            <RotateCcw size={18} />
+                          </button>
+                        );
+                      }
 
                       return (
                         <button
@@ -1497,14 +1520,27 @@ export default function SalesView({
                     )}
 
 
-                    {/* Edit Button */}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onEdit(sale); }}
-                      className="w-10 h-10 flex items-center justify-center bg-blue-50 dark:bg-blue-500/10 text-blue-500 rounded-full active:scale-90 transition-all"
-                      title="Editar"
-                    >
-                      <Edit2 size={18} />
-                    </button>
+                    {/* Edit Button — bloqueado depois de entregue, pra não dessincronizar o
+                        pedido do que já foi abatido do estoque na expedição. Reverter a
+                        expedição (botão/menu acima) libera a edição de novo. */}
+                    {(() => {
+                      const isDelivered = sale.deliveryStatus === 'DELIVERED';
+                      return (
+                        <button
+                          type="button"
+                          disabled={isDelivered}
+                          onClick={(e) => { e.stopPropagation(); if (isDelivered) return; onEdit(sale); }}
+                          className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
+                            isDelivered
+                              ? 'bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-50'
+                              : 'bg-blue-50 dark:bg-blue-500/10 text-blue-500 active:scale-90'
+                          }`}
+                          title={isDelivered ? "Pedido entregue — reverta a expedição para editar" : "Editar"}
+                        >
+                          <Edit2 size={18} />
+                        </button>
+                      );
+                    })()}
 
                     {/* More Options Menu */}
                     <div className="relative">
@@ -1576,7 +1612,7 @@ export default function SalesView({
                                   <Truck size={16} /> Expedir / Baixar
                                 </button>
                               ) : null}
-                              {sale.status === SaleStatus.SALE && (sale.items.some(it => it.fulfilled === true) || sale.items.some(it => (it.boxesSeparated || 0) > 0)) && (
+                              {sale.status === SaleStatus.SALE && (sale.deliveryStatus === 'DELIVERED' || sale.items.some(it => it.fulfilled === true) || sale.items.some(it => (it.boxesSeparated || 0) > 0)) && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setRevertSale(sale); setActiveMenuId(null); }}
                                   className="w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all active:scale-[0.98]"
@@ -2014,7 +2050,7 @@ export default function SalesView({
                   </div>
                 </div>
                 {(() => {
-                  const hasSeparated = s.items.some(it => it.fulfilled === true || (it.boxesSeparated || 0) > 0);
+                  const hasSeparated = s.deliveryStatus === 'DELIVERED' || s.items.some(it => it.fulfilled === true || (it.boxesSeparated || 0) > 0);
                   return (
                     <div className={`flex items-stretch rounded-2xl overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800' : 'bg-white border border-slate-200'}`}>
                       <button
@@ -2159,6 +2195,14 @@ export default function SalesView({
                 <button onClick={() => setRevertSale(null)} title="Fechar" aria-label="Fechar" className={`p-2 rounded-xl ${isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-slate-400 hover:bg-slate-100'}`}><X size={20} strokeWidth={2.5} /></button>
               </div>
               <div className="overflow-y-auto max-h-[55vh] p-4 flex flex-col gap-2 custom-scrollbar">
+                {rows.length === 0 && (
+                  <div className={`p-3 rounded-2xl border flex items-start gap-2.5 ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                    <Info size={16} className="text-slate-400 shrink-0 mt-0.5" />
+                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 leading-snug">
+                      Nenhum item deste pedido está marcado como abatido do estoque — não há nada pra devolver. A reversão vai apenas remover a marcação de "Pedido Entregue".
+                    </p>
+                  </div>
+                )}
                 {rows.map(r => (
                   <div key={r.idx} className={`p-3 rounded-2xl border flex items-center justify-between gap-2 ${isDarkMode ? 'bg-amber-900/15 border-amber-800/40' : 'bg-amber-50 border-amber-100'}`}>
                     <div className="min-w-0">
@@ -2177,7 +2221,7 @@ export default function SalesView({
                 <button type="button" onClick={() => setRevertSale(null)} disabled={processingExpedite} className={`flex-1 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-700 border border-slate-100'}`}>Cancelar</button>
                 <button
                   type="button"
-                  disabled={processingExpedite || rows.length === 0}
+                  disabled={processingExpedite || (rows.length === 0 && s.deliveryStatus !== 'DELIVERED')}
                   onClick={async () => { setProcessingExpedite(true); try { await onRevertExpedition(s.id); setRevertSale(null); } finally { setProcessingExpedite(false); } }}
                   className="flex-[1.5] py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95 bg-amber-500 text-white shadow-lg shadow-amber-500/20"
                 >

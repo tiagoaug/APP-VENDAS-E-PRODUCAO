@@ -84,6 +84,7 @@ export default function DashboardView({
   const [reminderFilter, setReminderFilter] = useState<'ALL' | 'debt' | 'sale' | 'os' | 'order'>('ALL');
   const [expandedCheckId, setExpandedCheckId] = useState<string | null>(null);
   const [isRecentActivityExpanded, setIsRecentActivityExpanded] = useState(false);
+  const [topProductsRankMode, setTopProductsRankMode] = useState<'model' | 'color'>('model');
 
   // Scanner Rápido (Dashboard)
   const [isQuickScannerOpen, setIsQuickScannerOpen] = useState(false);
@@ -560,20 +561,32 @@ export default function DashboardView({
       .slice(0, 3);
 
     // Top Products
-    const productQty: Record<string, { name: string, qty: number }> = {};
+    const productQty: Record<string, { name: string, reference: string, qty: number }> = {};
+    // Top Models by Color (mesma referência pode ter cores diferentes vendendo melhor)
+    const colorQty: Record<string, { name: string, reference: string, colorName: string, qty: number }> = {};
     accountableSales.forEach(s => {
       (s.items || []).forEach(item => {
         const product = products.find(p => p.id === item.productId);
         const name = product ? product.name : 'Produto';
-        if (!productQty[item.productId]) productQty[item.productId] = { name, qty: 0 };
+        const reference = product?.reference || '';
+        if (!productQty[item.productId]) productQty[item.productId] = { name, reference, qty: 0 };
         productQty[item.productId].qty += item.quantity;
+
+        const variation = product?.variations.find(v => v.id === item.variationId);
+        const colorKey = `${item.productId}-${item.variationId}`;
+        const colorName = variation?.colorName || '?';
+        if (!colorQty[colorKey]) colorQty[colorKey] = { name, reference, colorName, qty: 0 };
+        colorQty[colorKey].qty += item.quantity;
       });
     });
     const topProducts = Object.values(productQty)
       .sort((a, b) => b.qty - a.qty)
       .slice(0, 3);
+    const topColors = Object.values(colorQty)
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 3);
 
-    return { topCustomers, topProducts };
+    return { topCustomers, topProducts, topColors };
   }, [sales, products]);
 
   const sortedCards = useMemo(() => {
@@ -900,21 +913,41 @@ export default function DashboardView({
 
                   {/* Top Products */}
                   <div className="flex flex-col gap-4">
-                    <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 tracking-widest">Top Produtos (Qtd)</p>
-                      <div className="h-px flex-1 bg-slate-100 dark:bg-slate-800 ml-4" />
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 tracking-widest shrink-0">Top Produtos (Qtd)</p>
+                      <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setTopProductsRankMode('model')}
+                          className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-widest transition-all ${topProductsRankMode === 'model' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-400'}`}
+                        >
+                          Modelo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setTopProductsRankMode('color')}
+                          className={`px-2 py-1 rounded-md text-[8px] font-black uppercase tracking-widest transition-all ${topProductsRankMode === 'color' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-400'}`}
+                        >
+                          Cor
+                        </button>
+                      </div>
                     </div>
                     <div className="flex flex-col gap-3">
-                      {topRankings.topProducts.map((p, i) => (
-                        <div key={`rank-prod-${i}`} className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black ${i === 0 ? 'bg-indigo-500 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-slate-100 text-slate-400')}`}>{i + 1}</span>
-                            <span className={`text-[13px] font-black truncate max-w-[120px] ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{p.name}</span>
+                      {(topProductsRankMode === 'model' ? topRankings.topProducts : topRankings.topColors).map((p: any, i) => (
+                        <div key={`rank-prod-${i}`} className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 ${i === 0 ? 'bg-indigo-500 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-slate-100 text-slate-400')}`}>{i + 1}</span>
+                            <div className="flex flex-col min-w-0">
+                              <span className={`text-[13px] font-black truncate max-w-[120px] ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{p.name}</span>
+                              <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest truncate max-w-[120px]">
+                                {p.reference ? `Ref. ${p.reference}` : 'Sem ref.'}{topProductsRankMode === 'color' ? ` · ${p.colorName}` : ''}
+                              </span>
+                            </div>
                           </div>
-                          <span className="text-[10px] font-black text-emerald-500">{p.qty} un.</span>
+                          <span className="text-[10px] font-black text-emerald-500 shrink-0">{p.qty} un.</span>
                         </div>
                       ))}
-                      {topRankings.topProducts.length === 0 && <p className="text-[10px] text-slate-400 italic">Sem dados de estoque.</p>}
+                      {(topProductsRankMode === 'model' ? topRankings.topProducts : topRankings.topColors).length === 0 && <p className="text-[10px] text-slate-400 italic">Sem dados de estoque.</p>}
                     </div>
                   </div>
                 </div>

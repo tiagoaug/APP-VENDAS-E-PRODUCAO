@@ -1,8 +1,10 @@
 import jsPDF from 'jspdf';
 import { format, startOfDay, startOfWeek, startOfMonth } from 'date-fns';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 import { sharePDF, shareImage } from './pdfExport';
 import { toast } from './toast';
 import { formatCurrency } from './numbers';
+import { openPrintStudio } from '../lib/printStudio';
 
 // Mesmo padrão visual/de cálculo já usado em serviceOrderReportExport.ts (relatório de OS
 // por prestador, gerado pela IA) — generalizado aqui pra aceitar qualquer lista já
@@ -25,8 +27,10 @@ export interface CompletedOSExportItem {
 export interface CompletedOSExportData {
   title: string;
   periodLabel: string;
-  groupBy: 'none' | 'day' | 'week' | 'month';
+  groupBy: 'none' | 'day' | 'week' | 'month' | 'custom';
   items: CompletedOSExportItem[];
+  /** Usado quando groupBy === 'custom' — define o intervalo único que forma o grupo */
+  customRange?: { start: number; end: number };
 }
 
 const HEADER_BG: [number, number, number] = [15, 23, 42]; // slate-900
@@ -45,7 +49,24 @@ interface PeriodGroup {
   totalPending: number;
 }
 
-function groupByPeriod(items: CompletedOSExportItem[], groupBy: 'day' | 'week' | 'month'): PeriodGroup[] {
+function groupByPeriod(items: CompletedOSExportItem[], groupBy: 'day' | 'week' | 'month' | 'custom', customRange?: { start: number; end: number }): PeriodGroup[] {
+  if (groupBy === 'custom') {
+    const start = customRange?.start ?? -Infinity;
+    const end = customRange?.end ?? Infinity;
+    const g: PeriodGroup = {
+      label: customRange ? `${format(start, 'dd/MM/yyyy')} – ${format(end, 'dd/MM/yyyy')}` : 'Período Selecionado',
+      sortKey: start, count: 0, totalPairs: 0, totalValue: 0, totalPaid: 0, totalPending: 0,
+    };
+    items.filter(item => item.finishedAt >= start && item.finishedAt <= end).forEach(item => {
+      g.count += 1;
+      g.totalPairs += item.quantity;
+      g.totalValue += item.totalValue;
+      if (item.paymentStatus === 'COMPLETED') g.totalPaid += item.totalValue;
+      else g.totalPending += item.totalValue;
+    });
+    return [g];
+  }
+
   const groups = new Map<string, PeriodGroup>();
   items.forEach(item => {
     const d = new Date(item.finishedAt);
@@ -90,22 +111,24 @@ const itemLine = (item: CompletedOSExportItem): string => {
 export const exportCompletedServiceOrders = async (
   data: CompletedOSExportData,
   formatType: 'pdf' | 'jpg',
-  filename: string
-) => {
+  filename: string,
+  previewOnly: boolean = false
+): Promise<boolean | string[]> => {
   try {
     if (formatType === 'pdf') {
-      await generatePDF(data, filename);
+      return await generatePDF(data, filename, previewOnly);
     } else {
-      await generateJPG(data, filename);
+      return await generateJPG(data, filename, previewOnly);
     }
   } catch (error) {
     console.error('Completed OS export error:', error);
     toast.show('Erro ao gerar arquivo. Por favor, tente novamente.');
+    return false;
   }
 };
 
-async function generatePDF(data: CompletedOSExportData, filename: string) {
-  const { title, periodLabel, groupBy, items } = data;
+async function generatePDF(data: CompletedOSExportData, filename: string, previewOnly: boolean = false): Promise<boolean | string[]> {
+  const { title, periodLabel, groupBy, items, customRange } = data;
   const totalPairs = items.reduce((a, i) => a + i.quantity, 0);
   const totalAmount = items.reduce((a, i) => a + i.totalValue, 0);
   const totalPaid = items.reduce((a, i) => a + (i.paymentStatus === 'COMPLETED' ? i.totalValue : 0), 0);
@@ -187,7 +210,7 @@ async function generatePDF(data: CompletedOSExportData, filename: string) {
       y += cardH + 5;
     });
   } else {
-    const groups = groupByPeriod(items, groupBy);
+    const groups = groupByPeriod(items, groupBy, customRange);
     groups.forEach((g) => {
       const cardH = 26;
       if (y + cardH > pageH - BOTTOM_MARGIN) { doc.addPage(); y = 20; }
@@ -220,11 +243,15 @@ async function generatePDF(data: CompletedOSExportData, filename: string) {
   doc.setTextColor(180);
   doc.text(`Gerado em ${format(new Date(), 'dd/MM/yyyy HH:mm')} - App Vendas e Produção`, 105, 285, { align: 'center' });
 
+  if (previewOnly) {
+    return [doc.output('datauristring')];
+  }
   await sharePDF(doc, filename);
+  return true;
 }
 
-async function generateJPG(data: CompletedOSExportData, filename: string) {
-  const { title, periodLabel, groupBy, items } = data;
+async function generateJPG(data: CompletedOSExportData, filename: string, previewOnly: boolean = false): Promise<boolean | string[]> {
+  const { title, periodLabel, groupBy, items, customRange } = data;
   const totalPairs = items.reduce((a, i) => a + i.quantity, 0);
   const totalAmount = items.reduce((a, i) => a + i.totalValue, 0);
   const totalPaid = items.reduce((a, i) => a + (i.paymentStatus === 'COMPLETED' ? i.totalValue : 0), 0);
@@ -278,7 +305,7 @@ async function generateJPG(data: CompletedOSExportData, filename: string) {
       return { os, lines, cardH };
     })
     : [];
-  const groups = groupBy !== 'none' ? groupByPeriod(items, groupBy) : [];
+  const groups = groupBy !== 'none' ? groupByPeriod(items, groupBy, customRange) : [];
 
   const bodyH = groupBy === 'none'
     ? orderData.reduce((a, o) => a + o.cardH + 8, 0)
@@ -386,5 +413,44 @@ async function generateJPG(data: CompletedOSExportData, filename: string) {
     });
   }
 
-  await shareImage(canvas.toDataURL('image/jpeg', 0.95), filename);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+  if (previewOnly) {
+    return [dataUrl];
+  }
+  await shareImage(dataUrl, filename);
+  return true;
+}
+
+// Gera a mesma imagem JPG do relatório e abre o Print Studio já com ela carregada —
+// mesmo padrão de sendPCPItemsToPrintStudio (pcpShareExport.ts): grava em arquivo via
+// Filesystem antes de abrir, pra ponte JS↔nativo do Capacitor não receber o base64 bruto.
+export async function sendCompletedOSToPrintStudio(data: CompletedOSExportData, filename: string): Promise<void> {
+  if (data.items.length === 0) {
+    toast.show('Nada para enviar ao Print Studio.');
+    return;
+  }
+  try {
+    const result = await generateJPG(data, filename, true);
+    if (!Array.isArray(result) || result.length === 0) {
+      toast.show('Não foi possível gerar a imagem.');
+      return;
+    }
+
+    const uris: string[] = [];
+    for (let i = 0; i < result.length; i++) {
+      const dataUri = result[i];
+      const base64 = dataUri.includes('base64,') ? dataUri.split('base64,')[1] : dataUri;
+      const written = await Filesystem.writeFile({
+        path: `printstudio_os_${Date.now()}_${i}.jpg`,
+        data: base64,
+        directory: Directory.Cache,
+      });
+      uris.push(written.uri);
+    }
+
+    await openPrintStudio(uris);
+  } catch (error) {
+    console.error('Error sending completed OS to Print Studio:', error);
+    toast.show('Erro ao enviar para o Print Studio.');
+  }
 }

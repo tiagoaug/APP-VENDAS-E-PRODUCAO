@@ -1269,23 +1269,13 @@ export default function PurchaseFormView({
 
       {type === PurchaseType.GENERAL && (
         <section>
-          <div className="flex items-center justify-between mb-4 px-2">
-            <div>
-              <h3 className="text-[12px] font-black uppercase tracking-[0.15em] text-slate-900 dark:text-white leading-none">
-                Itens da Compra Geral
-              </h3>
-              <p className="text-[9px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-widest mt-1">
-                Despesas Diversas
-              </p>
-            </div>
-            <button
-              onClick={addGeneralItem}
-              className={`flex items-center gap-2 font-black text-[10px] uppercase tracking-widest bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-xl active:scale-95 transition-all ${isDarkMode ? "shadow-none" : "shadow-slate-200"}`}
-              aria-label="Adicionar item geral"
-              title="Adicionar Item"
-            >
-              <Plus size={14} strokeWidth={3} /> Adicionar
-            </button>
+          <div className="mb-4 px-2">
+            <h3 className="text-[12px] font-black uppercase tracking-[0.15em] text-slate-900 dark:text-white leading-none">
+              Itens da Compra Geral
+            </h3>
+            <p className="text-[9px] text-slate-600 dark:text-slate-400 font-bold uppercase tracking-widest mt-1">
+              Despesas Diversas
+            </p>
           </div>
 
           <div className="flex flex-col gap-4">
@@ -1513,6 +1503,15 @@ export default function PurchaseFormView({
                 </p>
               </div>
             )}
+
+            <button
+              onClick={addGeneralItem}
+              className={`flex items-center justify-center gap-2 font-black text-[10px] uppercase tracking-widest bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-xl active:scale-95 transition-all ${isDarkMode ? "shadow-none" : "shadow-slate-200"}`}
+              aria-label="Adicionar item geral"
+              title="Adicionar Item"
+            >
+              <Plus size={14} strokeWidth={3} /> Adicionar
+            </button>
           </div>
         </section>
       )}
