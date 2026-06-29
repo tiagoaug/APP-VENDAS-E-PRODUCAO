@@ -1405,19 +1405,17 @@ export default function SalesView({
                     )}
                   </div>
 
-                  {/* Actions Group (Floating Island) — em telas estreitas, a pílula tem mais
-                      ícones do que cabe numa linha só; em vez de rolar (que cortava/esmagava
-                      o último ícone) ou vazar pra fora do card, agora quebra em uma 2ª linha,
-                      mantendo cada ícone no tamanho cheio. */}
-                  <div className="flex flex-wrap justify-end items-center gap-1.5 p-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm max-w-full">
+                  {/* Actions Group (Floating Island) — ícones um pouco menores pra caber
+                      numa linha só em telas estreitas, sem cortar/quebrar linha. */}
+                  <div className="flex flex-nowrap items-center gap-1 p-1 rounded-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm">
                     {/* View Order Button */}
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); setItemsPopupSale(sale); }}
-                      className="w-10 h-10 flex items-center justify-center bg-sky-50 dark:bg-sky-500/10 text-sky-500 rounded-full active:scale-90 transition-all"
+                      className="w-8 h-8 flex items-center justify-center bg-sky-50 dark:bg-sky-500/10 text-sky-500 rounded-full active:scale-90 transition-all"
                       title="Visualizar pedido"
                     >
-                      <Eye size={18} />
+                      <Eye size={14} />
                     </button>
 
                     {/* Quick Expedite Button (Truck Icon) — quando já entregue, vira atalho
@@ -1439,10 +1437,10 @@ export default function SalesView({
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); setRevertSale(sale); }}
-                            className="w-10 h-10 flex items-center justify-center bg-amber-50 dark:bg-amber-500/10 text-amber-600 rounded-full active:scale-90 transition-all"
+                            className="w-8 h-8 flex items-center justify-center bg-amber-50 dark:bg-amber-500/10 text-amber-600 rounded-full active:scale-90 transition-all"
                             title="Pedido entregue — reverter expedição"
                           >
-                            <RotateCcw size={18} />
+                            <RotateCcw size={14} />
                           </button>
                         );
                       }
@@ -1455,7 +1453,7 @@ export default function SalesView({
                             e.stopPropagation();
                             setExpediteSale(sale);
                           }}
-                          className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
+                          className={`w-8 h-8 flex items-center justify-center rounded-full transition-all ${
                             canExpedite
                               ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500 active:scale-90 animate-pulse-dispatch'
                               : 'bg-slate-100 dark:bg-slate-700/50 text-slate-400 dark:text-slate-400 cursor-not-allowed'
@@ -1470,7 +1468,7 @@ export default function SalesView({
                               : "Aguardando separação completa"
                           }
                         >
-                          <Truck size={18} />
+                          <Truck size={14} />
                         </button>
                       );
                     })()}
@@ -1479,17 +1477,17 @@ export default function SalesView({
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); setSimplePreviewSale(sale); }}
-                      className="w-10 h-10 flex items-center justify-center bg-amber-50 dark:bg-amber-500/10 text-amber-500 rounded-full active:scale-90 transition-all"
+                      className="w-8 h-8 flex items-center justify-center bg-amber-50 dark:bg-amber-500/10 text-amber-500 rounded-full active:scale-90 transition-all"
                       title="Visualizar resumo do pedido"
                     >
-                      <FileText size={18} />
+                      <FileText size={14} />
                     </button>
 
                     {/* JPG/PDF Export Button */}
                     <button
                       type="button"
                       onClick={(e) => handleOpenExport(e, sale, 'jpg')}
-                      className="w-10 h-10 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 rounded-full font-black text-[10px] tracking-tighter active:scale-90 transition-all"
+                      className="w-8 h-8 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 rounded-full font-black text-[7px] tracking-tighter active:scale-90 transition-all"
                       title="Exportar (JPG/PDF)"
                     >
                       JPG
@@ -1497,16 +1495,16 @@ export default function SalesView({
 
                     {/* Payment/Dollar Button */}
                     {sale.status !== SaleStatus.QUOTE && (
-                      <button 
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setPaymentModalMode(totalPaid >= sale.total ? 'HISTORY' : 'PAYMENT');
                           setPaymentModalSale(sale);
                         }}
-                        className="w-10 h-10 flex items-center justify-center bg-purple-50 dark:bg-purple-500/10 text-purple-500 rounded-full active:scale-90 transition-all"
+                        className="w-8 h-8 flex items-center justify-center bg-purple-50 dark:bg-purple-500/10 text-purple-500 rounded-full active:scale-90 transition-all"
                         title="Pagamento"
                       >
-                        <DollarSign size={20} />
+                        <DollarSign size={15} />
                       </button>
                     )}
 
@@ -1521,29 +1519,29 @@ export default function SalesView({
                           type="button"
                           disabled={isDelivered}
                           onClick={(e) => { e.stopPropagation(); if (isDelivered) return; onEdit(sale); }}
-                          className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
+                          className={`w-8 h-8 flex items-center justify-center rounded-full transition-all ${
                             isDelivered
                               ? 'bg-slate-100 dark:bg-slate-700/50 text-slate-400 dark:text-slate-400 cursor-not-allowed'
                               : 'bg-blue-50 dark:bg-blue-500/10 text-blue-500 active:scale-90'
                           }`}
                           title={isDelivered ? "Pedido entregue — reverta a expedição para editar" : "Editar"}
                         >
-                          <Edit2 size={18} />
+                          <Edit2 size={14} />
                         </button>
                       );
                     })()}
 
                     {/* More Options Menu */}
                     <div className="relative">
-                      <button 
+                      <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setActiveMenuId(activeMenuId === sale.id ? null : sale.id);
                         }}
-                        className={`w-10 h-10 flex items-center justify-center bg-rose-50 dark:bg-slate-700/50 text-slate-500 rounded-full active:scale-90 transition-all ${activeMenuId === sale.id ? 'bg-rose-100' : ''}`}
+                        className={`w-8 h-8 flex items-center justify-center bg-rose-50 dark:bg-slate-700/50 text-slate-500 rounded-full active:scale-90 transition-all ${activeMenuId === sale.id ? 'bg-rose-100' : ''}`}
                         title="Mais Opções"
                       >
-                        <MoreVertical size={18} />
+                        <MoreVertical size={14} />
                       </button>
 
                       {activeMenuId === sale.id && createPortal(
