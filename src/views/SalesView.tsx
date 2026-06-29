@@ -1406,10 +1406,10 @@ export default function SalesView({
                   </div>
 
                   {/* Actions Group (Floating Island) — em telas estreitas, a pílula tem mais
-                      ícones do que cabe no card; em vez de vazar pra fora (cortado pelo
-                      overflow-hidden do card), agora rola horizontalmente dentro do card. */}
-                  <div className="min-w-0 max-w-full overflow-x-auto no-scrollbar">
-                  <div className="flex items-center gap-1.5 p-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm w-max">
+                      ícones do que cabe numa linha só; em vez de rolar (que cortava/esmagava
+                      o último ícone) ou vazar pra fora do card, agora quebra em uma 2ª linha,
+                      mantendo cada ícone no tamanho cheio. */}
+                  <div className="flex flex-wrap justify-end items-center gap-1.5 p-1.5 rounded-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm max-w-full">
                     {/* View Order Button */}
                     <button
                       type="button"
@@ -1458,7 +1458,7 @@ export default function SalesView({
                           className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
                             canExpedite
                               ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500 active:scale-90 animate-pulse-dispatch'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-50'
+                              : 'bg-slate-100 dark:bg-slate-700/50 text-slate-400 dark:text-slate-400 cursor-not-allowed'
                           }`}
                           title={
                             isDelivered
@@ -1495,15 +1495,6 @@ export default function SalesView({
                       JPG
                     </button>
 
-                    {/* WhatsApp Button */}
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); handleShareWhatsApp(sale); }}
-                      className="w-10 h-10 flex items-center justify-center bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500 rounded-full active:scale-90 transition-all"
-                      title="WhatsApp"
-                    >
-                      <MessageSquare size={18} />
-                    </button>
-
                     {/* Payment/Dollar Button */}
                     {sale.status !== SaleStatus.QUOTE && (
                       <button 
@@ -1532,7 +1523,7 @@ export default function SalesView({
                           onClick={(e) => { e.stopPropagation(); if (isDelivered) return; onEdit(sale); }}
                           className={`w-10 h-10 flex items-center justify-center rounded-full transition-all ${
                             isDelivered
-                              ? 'bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-50'
+                              ? 'bg-slate-100 dark:bg-slate-700/50 text-slate-400 dark:text-slate-400 cursor-not-allowed'
                               : 'bg-blue-50 dark:bg-blue-500/10 text-blue-500 active:scale-90'
                           }`}
                           title={isDelivered ? "Pedido entregue — reverta a expedição para editar" : "Editar"}
@@ -1549,7 +1540,7 @@ export default function SalesView({
                           e.stopPropagation();
                           setActiveMenuId(activeMenuId === sale.id ? null : sale.id);
                         }}
-                        className={`w-10 h-10 flex items-center justify-center bg-slate-50 dark:bg-slate-700/50 text-slate-500 rounded-full active:scale-90 transition-all ${activeMenuId === sale.id ? 'bg-slate-200' : ''}`}
+                        className={`w-10 h-10 flex items-center justify-center bg-rose-50 dark:bg-slate-700/50 text-slate-500 rounded-full active:scale-90 transition-all ${activeMenuId === sale.id ? 'bg-rose-100' : ''}`}
                         title="Mais Opções"
                       >
                         <MoreVertical size={18} />
@@ -1643,7 +1634,6 @@ export default function SalesView({
                         document.body
                       )}
                     </div>
-                  </div>
                   </div>
                 </div>
 
@@ -1769,12 +1759,19 @@ export default function SalesView({
                     <span className="text-[12px] font-black text-rose-500">R$ {remainingPrev.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                   </div>
                 )}
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between mb-3">
                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total</span>
                   <span className={`text-[17px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     R$ {s.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                   </span>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => handleShareWhatsApp(s)}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all hover:bg-emerald-700"
+                >
+                  <MessageSquare size={16} /> Compartilhar via WhatsApp
+                </button>
               </div>
             </div>
           </div>
