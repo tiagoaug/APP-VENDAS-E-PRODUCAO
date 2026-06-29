@@ -419,6 +419,8 @@ export default function PCPView({
 
   // Service Order (OS) state declarations
   const [viewOSModal, setViewOSModal] = useState<{ isOpen: boolean; os: ServiceOrder | null; items: any[] }>({ isOpen: false, os: null, items: [] });
+  // Mostra/oculta a grade de tamanhos de cada pedido no popup "Visualizar Pedidos da OS"
+  const [showViewOSGrid, setShowViewOSGrid] = useState(true);
   const [osNumber, setOsNumber] = useState('');
   const [osType, setOsType] = useState<'INTERNAL' | 'OUTSOURCED'>('OUTSOURCED');
   const [osProviderId, setOsProviderId] = useState('');
@@ -3228,7 +3230,11 @@ export default function PCPView({
       productionOrderId: selectedData[0].orderId,
       saleOrderNumber: selectedData[0].saleOrderNumber,
       metadata: {
-        sourceItems: selectedData.map(i => ({ orderId: i.orderId, itemIdx: i.itemIdx, qty: i.toProductionQty, productId: i.productId, variationId: i.variationId })),
+        // sizes: snapshot da grade por tamanho no momento da criação do lote — sem isso,
+        // a grade some no "Visualizar Pedidos da OS" se o Pedido de Produção original
+        // for editado/excluído depois (o total em "qty" fica congelado, mas a grade era
+        // buscada ao vivo no pedido).
+        sourceItems: selectedData.map(i => ({ orderId: i.orderId, itemIdx: i.itemIdx, qty: i.toProductionQty, productId: i.productId, variationId: i.variationId, sizes: i.sizes })),
         groups: groupEntries.map(g => ({
           productId: g.productId,
           variationId: g.variationId,
@@ -4857,8 +4863,11 @@ export default function PCPView({
                                 const isChecked = fichaSelection.has(itemKey);
                                 const gradeKey = `grade-${itemKey}`;
                                 const gradeOpen = fichaItemExpanded.has(gradeKey);
-                                const szEntries = (f.orderItem?.sizes)
-                                  ? Object.entries(f.orderItem.sizes as Record<string, any>)
+                                // Fallback pro snapshot salvo no lote (f.si.sizes) — sem isso,
+                                // a grade some se o Pedido de Produção original for editado/excluído.
+                                const szSizesSource = f.orderItem?.sizes || f.si?.sizes;
+                                const szEntries = szSizesSource
+                                  ? Object.entries(szSizesSource as Record<string, any>)
                                     .filter(([, s]) => (s?.toProduction || 0) > 0)
                                     .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
                                   : [];
@@ -5488,6 +5497,7 @@ export default function PCPView({
                                   ? (lot?.route?.[(lot?.currentSectorIndex ?? 0) + 1] ?? '')
                                   : '';
                                 const nextSName = sectors.find(s => s.id === nextSId)?.name ?? 'CONCLUÍDO';
+                                const isOSActionsOpen = fichaListOpen.has(os.id + '_actions_open');
                                 return (
                                   <div key={os.id} id={`os-card-${os.id}`} className={`rounded-2xl border flex flex-col gap-3 px-3 py-3 transition-all ${highlightedOSId === os.id ? 'ring-4 ring-indigo-500/60 border-indigo-500 dark:border-indigo-500 shadow-lg shadow-indigo-500/30 scale-[1.02]' : ''} ${isDarkMode ? 'bg-gradient-to-br from-slate-900 to-slate-950 border-slate-700/60' : 'bg-gradient-to-br from-white to-slate-50 border-slate-200/70 shadow-md'}`}>
                                     {/* Info — prestador, botão "Visualizar" (única ação fora da grade) e número
@@ -5506,25 +5516,18 @@ export default function PCPView({
                                       >
                                         {os.providerName || '—'}
                                       </span>
-                                      <div className="flex items-center gap-1.5 shrink-0">
-                                        <button type="button" title="Visualizar pedidos da OS" onClick={() => setViewOSModal({ isOpen: true, os, items: getFichasForOS(os) })}
-                                          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl shrink-0 transition-all active:scale-95 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800 text-slate-300' : 'bg-white border-slate-200/60 hover:bg-slate-50 text-slate-600'}`}>
-                                          <Eye size={13} className="text-indigo-500 dark:text-indigo-400" />
-                                          <span className="text-[8px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-300">Visualizar</span>
-                                        </button>
-                                        <span
-                                          className="text-[10px] px-2.5 py-1 rounded-full uppercase shrink-0"
-                                          style={{
-                                            backgroundColor: osBadgeBg,
-                                            color: osBadgeText,
-                                            boxShadow: `0 1px 2px ${osBadgeBg}30`,
-                                            fontWeight: osBadgeBold ? 900 : 400,
-                                            fontStyle: osBadgeItalic ? 'italic' : 'normal',
-                                          }}
-                                        >
-                                          {os.osNumber}
-                                        </span>
-                                      </div>
+                                      <span
+                                        className="text-[10px] px-2.5 py-1 rounded-full uppercase shrink-0"
+                                        style={{
+                                          backgroundColor: osBadgeBg,
+                                          color: osBadgeText,
+                                          boxShadow: `0 1px 2px ${osBadgeBg}30`,
+                                          fontWeight: osBadgeBold ? 900 : 400,
+                                          fontStyle: osBadgeItalic ? 'italic' : 'normal',
+                                        }}
+                                      >
+                                        {os.osNumber}
+                                      </span>
                                     </div>
 
                                     <div className="flex items-center justify-between gap-2 px-0.5">
@@ -5536,8 +5539,27 @@ export default function PCPView({
                                       </span>
                                     </div>
 
-                                    {/* Ações — grade 3x2, fundo branco e apenas os ícones coloridos para visual limpo */}
+                                    {/* Ações — grade 3x2 dentro de acordeão (fechado por padrão), fundo branco
+                                        e apenas os ícones coloridos para visual limpo */}
                                     <div className="flex flex-col gap-2">
+                                      {/* Cores fixas via valor arbitrário (bg-[#...]) de propósito — os temas
+                                          (Industrial, Oceano, Alto Contraste etc.) sobrescrevem bg-white/
+                                          border-slate-200/text-indigo-600 globalmente; este botão deve manter
+                                          a mesma cara em qualquer tema, só respeitando claro/escuro. */}
+                                      <button type="button" title="Visualizar pedidos da OS" onClick={() => setViewOSModal({ isOpen: true, os, items: getFichasForOS(os) })}
+                                        className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border border-[#e2e8f0] dark:border-[#334155] bg-[#ffffff] dark:bg-[#0f172a] text-[#4f46e5] dark:text-[#818cf8] shadow-sm hover:bg-[#eef2ff] dark:hover:bg-[#1e293b]">
+                                        <Eye size={13} /> Visualizar Pedidos O.S
+                                      </button>
+
+                                      <button type="button"
+                                        onClick={() => { const n = new Set(fichaListOpen); isOSActionsOpen ? n.delete(os.id + '_actions_open') : n.add(os.id + '_actions_open'); setFichaListOpen(n); }}
+                                        className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-[#e2e8f0] dark:border-[#334155] bg-[#ffffff] dark:bg-[#0f172a] transition-all active:scale-[0.98] hover:bg-[#f8fafc] dark:hover:bg-[#1e293b]"
+                                      >
+                                        <span className="text-[9px] font-black uppercase tracking-widest text-[#64748b] dark:text-[#94a3b8]">Mais Ações</span>
+                                        <ChevronDown size={14} className={`text-[#94a3b8] transition-transform duration-200 ${isOSActionsOpen ? 'rotate-180' : ''}`} />
+                                      </button>
+
+                                      {isOSActionsOpen && (
                                       <div className="grid grid-cols-3 gap-2">
                                         <button type="button" title="Editar OS" onClick={() => handleEditOS(os)}
                                           className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
@@ -5576,9 +5598,10 @@ export default function PCPView({
                                           <span className="text-[8px] font-black uppercase tracking-widest text-center leading-tight text-slate-600 dark:text-slate-400">Lembretes</span>
                                         </button>
                                       </div>
+                                      )}
 
                                       <button type="button" onClick={() => handleCompleteOS(os)}
-                                        className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 bg-gradient-to-br from-emerald-400 to-emerald-600 text-white shadow-lg shadow-emerald-500/25 hover:from-emerald-500 hover:to-emerald-700">
+                                        className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border border-emerald-200 dark:border-emerald-800/40 bg-gradient-to-br from-white to-emerald-50 dark:from-slate-900 dark:to-emerald-950/30 text-emerald-600 dark:text-emerald-400 shadow-sm hover:to-emerald-100 dark:hover:to-emerald-950/50">
                                         <CheckCircle2 size={13} /> Dar Baixa
                                       </button>
                                     </div>
@@ -11604,6 +11627,23 @@ export default function PCPView({
         maxWidth="max-w-md"
       >
         <div className="p-5 flex flex-col gap-3 max-h-[70vh] overflow-y-auto">
+          {viewOSModal.items.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowViewOSGrid(v => !v)}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800/50 border-slate-700 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}
+            >
+              <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Mostrar Grade por Tamanho</span>
+              <span
+                role="switch"
+                aria-checked={showViewOSGrid}
+                aria-label="Mostrar grade por tamanho"
+                className={`w-10 h-6 rounded-full relative transition-colors shrink-0 ${showViewOSGrid ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}
+              >
+                <span className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${showViewOSGrid ? 'left-5' : 'left-1'}`} />
+              </span>
+            </button>
+          )}
           {viewOSModal.items.length === 0 && (
             <p className="text-[11px] font-bold uppercase tracking-widest text-slate-400 text-center py-6">Nenhum pedido encontrado para esta OS.</p>
           )}
@@ -11611,8 +11651,11 @@ export default function PCPView({
             const productName = f.product?.name || f.orderItem?.productName || '—';
             const productRef = f.product?.reference || '';
             const colorName = f.variation?.colorName || f.orderItem?.variationName || '';
-            const szEntries = (f.orderItem?.sizes)
-              ? Object.entries(f.orderItem.sizes as Record<string, any>)
+            // Fallback pro snapshot salvo no lote (f.si.sizes) — sem isso, a grade some
+            // se o Pedido de Produção original for editado/excluído depois da criação.
+            const szSizesSource = f.orderItem?.sizes || f.si?.sizes;
+            const szEntries = szSizesSource
+              ? Object.entries(szSizesSource as Record<string, any>)
                 .filter(([, s]) => (s?.toProduction || 0) > 0)
                 .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
               : [];
@@ -11627,7 +11670,7 @@ export default function PCPView({
                   </div>
                   <span className="text-[11px] font-black text-indigo-600 dark:text-indigo-400 shrink-0">{f.si?.qty || 0} pares</span>
                 </div>
-                {szEntries.length > 0 && (
+                {showViewOSGrid && szEntries.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     {szEntries.map(([sz, s]: [string, any]) => (
                       <div key={sz} className={`px-2 py-1 rounded-lg border text-center min-w-[32px] ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>

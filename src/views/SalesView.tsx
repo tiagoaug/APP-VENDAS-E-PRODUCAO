@@ -1387,7 +1387,7 @@ export default function SalesView({
 
               {/* Action Bar (Footer) */}
               <div className="flex flex-col gap-4 pt-4 border-t border-slate-100 dark:border-slate-800/50 z-10">
-                <div className="flex justify-between items-center w-full gap-2">
+                <div className="flex items-center w-full gap-2">
                   <div className="flex items-center gap-2 shrink-0">
                     {/* Note Indicator if exists */}
                     {sale.notes && (
@@ -1405,9 +1405,9 @@ export default function SalesView({
                     )}
                   </div>
 
-                  {/* Actions Group (Floating Island) — ícones um pouco menores pra caber
-                      numa linha só em telas estreitas, sem cortar/quebrar linha. */}
-                  <div className="flex flex-nowrap items-center gap-1 p-1 rounded-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm">
+                  {/* Actions Group (Floating Island) — agora ocupa a largura toda do card
+                      (flex-1 + justify-between), em vez de ficar compacta numa pontinha. */}
+                  <div className="flex flex-1 flex-nowrap items-center justify-between gap-1 p-1 rounded-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm">
                     {/* View Order Button */}
                     <button
                       type="button"

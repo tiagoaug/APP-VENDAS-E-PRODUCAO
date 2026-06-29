@@ -397,7 +397,12 @@ export default function PurchaseFormView({
   }, [supplierId, people, sellerId]);
 
   // Calculator Modal State
-  const [calcModal, setCalcModal] = useState<{ isOpen: boolean; field: 'blocks' | 'generalItems' | 'generalItemsQty'; index: number; value: number } | null>(null);
+  const [calcModal, setCalcModal] = useState<{ isOpen: boolean; field: 'blocks' | 'generalItems' | 'generalItemsQty' | 'soleManualValue'; index: number; value: number } | null>(null);
+
+  // Solados — valor total digitado manualmente, ignorando a soma dos itens da grade
+  // (útil pra lançar rápido sem detalhar molde/cor/tamanho item a item).
+  const [soleManualValueEnabled, setSoleManualValueEnabled] = useState(false);
+  const [soleManualValue, setSoleManualValue] = useState(0);
 
   const [showChecks, setShowChecks] = useState<boolean>(
     existing?.checks && existing.checks.length > 0 ? true : false,
@@ -475,13 +480,13 @@ export default function PurchaseFormView({
       return generalItems.reduce((acc, item) => acc + itemTotal(item), 0);
     }
     if (type === PurchaseType.SOLE) {
-      return soleItems.reduce((acc, item) => acc + (Number(item.totalCost) || 0), 0);
+      return soleManualValueEnabled ? soleManualValue : soleItems.reduce((acc, item) => acc + (Number(item.totalCost) || 0), 0);
     }
     return blocks.reduce((acc, block) => {
       const qtySum = Object.values(block.variations).reduce((sum: number, v: any) => sum + Number(v.quantity || 0), 0) as number;
       return acc + block.cost * qtySum;
     }, 0);
-  }, [blocks, type, generalItems, soleItems]);
+  }, [blocks, type, generalItems, soleItems, soleManualValueEnabled, soleManualValue]);
 
   const addBlock = (pId: string) => {
     const p = products.find(prod => prod.id === pId);
@@ -943,12 +948,14 @@ export default function PurchaseFormView({
     return items;
   }, [blocks, products, packagingPerVar, productionConfigs]);
 
-  const openCalculator = (index: number, type: 'blocks' | 'generalItems' | 'generalItemsQty') => {
+  const openCalculator = (index: number, type: 'blocks' | 'generalItems' | 'generalItemsQty' | 'soleManualValue') => {
     let value = 0;
     if (type === 'generalItems') {
       value = generalItems[index].value || 0;
     } else if (type === 'generalItemsQty') {
       value = generalItems[index].quantity || 0;
+    } else if (type === 'soleManualValue') {
+      value = soleManualValue || 0;
     } else {
       value = blocks[index].cost || 0;
     }
@@ -1633,6 +1640,53 @@ export default function PurchaseFormView({
 
           {soleItems.length === 0 && (
             <p className="text-center text-xs text-slate-400 py-6">Nenhum item adicionado. Clique em "Adicionar Item".</p>
+          )}
+
+          {/* Inserir Valor Manualmente — ignora a soma dos itens da grade e usa este
+              valor como total da compra, útil pra lançar rápido sem detalhar item a item. */}
+          <div className={`rounded-2xl border-2 p-4 flex items-center justify-between gap-3 ${isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-100 bg-slate-50'}`}>
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-tight text-rose-600 dark:text-rose-400">Inserir Valor Manualmente</p>
+              <p className="text-[9px] font-bold text-rose-500/80 dark:text-rose-400/80 uppercase tracking-widest mt-0.5">Ignora a soma dos itens e usa este valor como total</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={soleManualValueEnabled}
+              onClick={() => setSoleManualValueEnabled(v => !v)}
+              title="Inserir valor manualmente"
+              aria-label="Inserir valor manualmente"
+              className={`w-12 h-7 rounded-full relative transition-colors shrink-0 ${soleManualValueEnabled ? 'bg-cyan-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}
+            >
+              <div className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow transition-all ${soleManualValueEnabled ? 'left-6' : 'left-1'}`} />
+            </button>
+          </div>
+
+          {soleManualValueEnabled && (
+            <div className="flex flex-col gap-1">
+              <label className="text-[8px] font-black text-slate-600 dark:text-slate-400 uppercase tracking-widest ml-1">Valor Total (R$)</label>
+              <div className="flex gap-2">
+                <input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={soleManualValue || ''}
+                  onChange={(e) => setSoleManualValue(parseFloat(e.target.value) || 0)}
+                  onFocus={(e) => e.target.select()}
+                  placeholder="0,00"
+                  className={`flex-1 px-4 py-3 rounded-xl text-sm font-black border-2 outline-none ${isDarkMode ? 'bg-slate-900 border-slate-800 focus:border-cyan-500' : 'bg-white border-slate-200 focus:border-cyan-600'}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => openCalculator(-1, 'soleManualValue')}
+                  title="Abrir calculadora"
+                  aria-label="Abrir calculadora"
+                  className="w-12 shrink-0 flex items-center justify-center rounded-xl bg-cyan-50 dark:bg-cyan-900/30 text-cyan-600 dark:text-cyan-400"
+                >
+                  <Calculator size={18} strokeWidth={2.5} />
+                </button>
+              </div>
+            </div>
           )}
 
           {/* Toggle: Já foi entregue? */}
@@ -2354,6 +2408,7 @@ export default function PurchaseFormView({
             if (calcModal.field === 'generalItems') updateGeneralItem(calcModal.index, { value: res });
             if (calcModal.field === 'generalItemsQty') updateGeneralItem(calcModal.index, { quantity: res });
             if (calcModal.field === 'blocks') updateBlock(calcModal.index, { cost: res });
+            if (calcModal.field === 'soleManualValue') setSoleManualValue(res);
         }}
       />
 

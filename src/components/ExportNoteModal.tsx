@@ -152,7 +152,7 @@ export default function ExportNoteModal({
   const [showSoleGrid, setShowSoleGrid] = useState(false);
   // Subcards em acordeão — um por grupo de configurações (Valores, Resumo da
   // Grade, Agrupamento, Dados da OS, Detalhes de Setor). Recolhidos por padrão.
-  const [openSections, setOpenSections] = useState<Set<string>>(new Set(['share_actions']));
+  const [openSections, setOpenSections] = useState<Set<string>>(new Set());
   const [previewPages, setPreviewPages] = useState<string[]>([]);
   const [previewPageIdx, setPreviewPageIdx] = useState(0);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
@@ -185,7 +185,7 @@ export default function ExportNoteModal({
       setSplitPages(false);
       setShowProvider(true);
       setShowOSData(true);
-      setOpenSections(new Set(['share_actions']));
+      setOpenSections(new Set());
       setPreviewPages([]);
       setPreviewPageIdx(0);
       setIsPreviewLoading(false);
@@ -723,7 +723,11 @@ export default function ExportNoteModal({
           {/* Cards Actions — agrupadas num acordeão (igual aos demais SectionCard da tela);
               só "Cancelar" fica sempre visível, fora do acordeão. */}
           <div className="flex flex-col gap-2">
-            <SectionCard id="share_actions" icon={<Send size={13} className="text-cyan-500" />} label="Opções de Compartilhamento">
+            <SectionCard id="share_actions" icon={
+              <span className={`flex items-center justify-center w-6 h-6 rounded-full animate-pulse-cyan-ring ${isDarkMode ? 'bg-cyan-500/15' : 'bg-cyan-100'}`}>
+                <Send size={13} className="text-cyan-500" />
+              </span>
+            } label="Opções de Compartilhamento">
               {/* Visualizar / Abrir no Print Studio */}
               {(onPreview || (showOpenInPrintStudioToggle && onOpenInPrintStudio)) && (
                 <div className="flex gap-1.5">

@@ -229,8 +229,10 @@ export default function ProductionOrderModal({
           createdAt: Date.now(),
           // Sem isso, o lote não aparece em "Pedidos Vinculados" (lista por Setor) —
           // essa tela só monta as fichas a partir de metadata.sourceItems.
+          // sizes: snapshot da grade por tamanho — sem isso, a grade some no "Visualizar
+          // Pedidos da OS" se o Pedido de Produção original for editado/excluído depois.
           metadata: {
-            sourceItems: [{ orderId, itemIdx, qty: g.toProductionQty, productId: g.productId, variationId: g.variationId }]
+            sourceItems: [{ orderId, itemIdx, qty: g.toProductionQty, productId: g.productId, variationId: g.variationId, sizes: g.sizesResult }]
           }
         } as any;
         lots.push(lot);

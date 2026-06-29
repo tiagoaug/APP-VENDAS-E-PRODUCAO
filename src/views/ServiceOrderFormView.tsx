@@ -218,20 +218,11 @@ export default function ServiceOrderFormView({
         const { sectorId: initSectorId, preselectedLots, orderIds } = initialParams;
         if (initSectorId) {
           setSectorId(initSectorId);
-          // Set sector price defaults if available
+          // Prestador fica sempre em branco ao criar — sem sugestão automática (nem do
+          // padrão do setor, nem de "primeiro prestador cadastrado"), pra forçar escolha
+          // manual (digitar ou selecionar no combo) em toda nova OS.
           const sectorObj = sectors.find(s => s.id === initSectorId);
           if (sectorObj) {
-            if (sectorObj.defaultServiceProviderId) {
-              setProviderId(sectorObj.defaultServiceProviderId);
-              setProviderManualName(sectorObj.defaultServiceProviderName || '');
-            } else {
-              const workers = people.filter(p => p.isSupplier || p.isServiceProvider);
-              if (workers.length > 0) {
-                setProviderId(workers[0].id || '');
-                setProviderManualName(workers[0].name);
-              }
-            }
-
             if (sectorObj.defaultServiceValue !== undefined) {
               setDefaultValuePerPair(sectorObj.defaultServiceValue);
             }
@@ -289,10 +280,6 @@ export default function ServiceOrderFormView({
     setSectorId(newSectorId);
     const sectorObj = sectors.find(s => s.id === newSectorId);
     if (sectorObj) {
-      if (sectorObj.defaultServiceProviderId) {
-        setProviderId(sectorObj.defaultServiceProviderId);
-        setProviderManualName(sectorObj.defaultServiceProviderName || '');
-      }
       if (sectorObj.defaultServiceValue !== undefined) {
         setDefaultValuePerPair(sectorObj.defaultServiceValue);
         // Update basket items that do not have custom override prices
