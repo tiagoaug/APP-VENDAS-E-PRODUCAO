@@ -1,4 +1,4 @@
-﻿import { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { Purchase, Person, Product, PurchaseType, PaymentStatus, PaymentTerm, SaleType } from "../types";
 import {
   ShoppingCart,
@@ -576,7 +576,9 @@ export default function PurchasesView({
                         <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-rose-500 border border-white dark:border-slate-900 rounded-full animate-pulse" />
                       </button>
                     )}
-                    {purchase.paymentTerm === PaymentTerm.CASH ? (
+                    {purchase.generateTransaction === false ? (
+                      <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-black tracking-wider shrink-0">Não Contábil</span>
+                    ) : purchase.paymentTerm === PaymentTerm.CASH ? (
                       <span className="px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[10px] font-black tracking-wider shrink-0">Quitada</span>
                     ) : (
                       <span className={`px-2 py-1 rounded-lg text-[10px] font-black tracking-wider shrink-0 ${purchase.paymentStatus === PaymentStatus.PAID ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : 'animate-pulse-orange-yellow'}`}>
@@ -632,15 +634,12 @@ export default function PurchasesView({
                   </div>
 
                   {/* Linha 3: badges extras */}
-                  {(purchase.sellerName || purchase.generateTransaction === false || (!isExpanded && itemCount > 0)) && (
+                  {(purchase.sellerName || (!isExpanded && itemCount > 0)) && (
                     <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                       {purchase.sellerName && (
                         <span className="text-[9px] font-bold px-2 py-0.5 rounded-md leading-none tracking-wider bg-indigo-600 text-white shadow-sm w-fit">
                           {purchase.sellerName}
                         </span>
-                      )}
-                      {purchase.generateTransaction === false && (
-                        <span className="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-500 text-[10px] font-bold tracking-wider">Não Contábil</span>
                       )}
                       {!isExpanded && itemCount > 0 && (
                         <span className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] font-black uppercase tracking-wider">

@@ -85,6 +85,7 @@ type LotAdvanceItem = {
   variationId?: string;
   productId: string;
   productName: string;
+  productReference?: string;
   colorName: string;
   qty: number;
   suggestedSectorId: string;
@@ -94,6 +95,7 @@ type LotAdvanceItem = {
   lotId?: string;
   saleType?: SaleType;
   siIdx?: number;
+  fractionLabel?: string;
 };
 
 interface PCPViewProps {
@@ -475,7 +477,33 @@ export default function PCPView({
   const [pendingOsSourceOrderIds, setPendingOsSourceOrderIds] = useState<string[]>([]);
   const [pendingOsSectorOverride, setPendingOsSectorOverride] = useState<string>('');
   const [pendingOsQuantityOverride, setPendingOsQuantityOverride] = useState<number | null>(null);
-  const [osCompleteConfirm, setOsCompleteConfirm] = useState<ServiceOrder | null>(null);
+  // Painel de baixa de OS — substitui o antigo confirm() simples de "concluir OS".
+  // Mostra todos os pedidos cobertos pela OS, cada um com checkbox (pronto p/ baixa,
+  // marcado por padrão) e setor de destino pré-preenchido com a sugestão do roteiro
+  // do próprio modelo — editável por pedido. Pedidos desmarcados permanecem na MESMA
+  // OS (que segue PENDENTE só com eles); a OS só fecha/liquida quando o último
+  // pedido for baixado.
+  const [osBaixaPanel, setOsBaixaPanel] = useState<{
+    os: ServiceOrder;
+    items: (LotAdvanceItem & { included: boolean; lotId: string; currentSectorId: string })[];
+  } | null>(null);
+  // Painel de "Fracionar Pedido": divide uma ficha (sourceItem) em N sub-fichas
+  // nomeadas A, B, C... cada uma virando uma ficha independente (própria OS, próprio
+  // avanço de setor). A última fração da lista é sempre o "resto" — recalculada
+  // automaticamente conforme as outras são editadas, então a soma nunca desbate.
+  const [fractionModal, setFractionModal] = useState<{
+    lot: ProductionLot;
+    si: any;
+    siIdx: number;
+    product: Product;
+    variation: Variation | undefined;
+    baseSizes: Record<string, number>;
+    gridConfig: Record<string, number> | null;
+    gridMaxMultiplier: number;
+    mode: 'grade' | 'free';
+    rootKey: string;
+    fractions: { label: string; multiplier: number; sizes: Record<string, number> }[];
+  } | null>(null);
   // OS cujo popup de Observações/Lembrete está aberto — campos saíram do card pra
   // ocupar menos espaço, abrem num popup separado só quando precisa.
   const [osNotesPopup, setOsNotesPopup] = useState<ServiceOrder | null>(null);
@@ -1573,7 +1601,7 @@ export default function PCPView({
       const toMove = lotItems.filter(it => it.chosenSectorId !== '');
 
       if (toFinalize.length > 0) {
-        const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalize.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx })));
+        const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalize.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx, fractionLabel: it.fractionLabel })));
         await applyExpedicaoStockUpdate(currentLot, stockItems, customerItems);
         toFinalize.forEach(it => {
           const originalSi: any = it.siIdx !== undefined ? currentLot.metadata?.sourceItems?.[it.siIdx] : undefined;
@@ -1590,12 +1618,14 @@ export default function PCPView({
             itemIdx: it.itemIdx,
             productId: resolvedProductId,
             variationId: resolvedVariationId,
+            fractionLabel: it.fractionLabel,
           });
           const keyUnresolved = getSourceItemKey({
             orderId: it.orderId,
             itemIdx: it.itemIdx,
             productId: '',
             variationId: '',
+            fractionLabel: it.fractionLabel,
           });
 
           updatedOrderSectors[keyDirect] = ORDER_FINALIZED;
@@ -1619,12 +1649,14 @@ export default function PCPView({
           itemIdx: it.itemIdx,
           productId: resolvedProductId,
           variationId: resolvedVariationId,
+          fractionLabel: it.fractionLabel,
         });
         const keyUnresolved = getSourceItemKey({
           orderId: it.orderId,
           itemIdx: it.itemIdx,
           productId: '',
           variationId: '',
+          fractionLabel: it.fractionLabel,
         });
 
         updatedOrderSectors[keyDirect] = it.chosenSectorId;
@@ -1686,7 +1718,7 @@ export default function PCPView({
 
   // Direciona um único pedido (modelo) ao setor que corresponde ao SEU PRÓPRIO roteiro de produção,
   // mesmo que isso difira do setor para onde o restante do mapa está indo (mapas com modelos divergentes).
-  const handleRouteOrderToCorrectSector = async (lot: ProductionLot, si: { orderId: string; itemIdx?: number; productId?: string; variationId?: string }, targetSectorId: string, targetSectorName: string, productName: string) => {
+  const handleRouteOrderToCorrectSector = async (lot: ProductionLot, si: { orderId: string; itemIdx?: number; productId?: string; variationId?: string; fractionLabel?: string }, targetSectorId: string, targetSectorName: string, productName: string) => {
     if (!confirm(`Direcionar o pedido do modelo "${productName}" diretamente para o setor "${targetSectorName}", conforme o roteiro de produção cadastrado para este modelo?`)) return;
     const currentOrderSectors: Record<string, string> = (lot as any).metadata?.orderSectors || {};
     const order = productionOrders.find(o => o.id === si.orderId);
@@ -1702,12 +1734,14 @@ export default function PCPView({
       itemIdx: si.itemIdx,
       productId: resolvedProductId,
       variationId: resolvedVariationId,
+      fractionLabel: si.fractionLabel,
     });
     const keyUnresolved = getSourceItemKey({
       orderId: si.orderId,
       itemIdx: si.itemIdx,
       productId: '',
       variationId: '',
+      fractionLabel: si.fractionLabel,
     });
 
     const updatedOrderSectors = {
@@ -1777,7 +1811,7 @@ export default function PCPView({
     const buildItem = (
       key: string, orderId: string, productId: string, variationId: string | undefined,
       qty: number, fallbackProductName?: string, fallbackColorName?: string, itemIdx?: number,
-      siIdx?: number,
+      siIdx?: number, fractionLabel?: string,
     ): LotAdvanceItem => {
       const product = products.find(p => p.id === productId);
       const variation = product?.variations.find(v => v.id === variationId);
@@ -1787,6 +1821,7 @@ export default function PCPView({
       return {
         key, orderId, productId, itemIdx, variationId,
         productName: product?.name || fallbackProductName || '—',
+        productReference: product?.reference || '',
         colorName: variation?.colorName || fallbackColorName || '',
         qty,
         suggestedSectorId, suggestedSectorName,
@@ -1795,6 +1830,7 @@ export default function PCPView({
         // modelo antes de poder confirmar (ver botão "Confirmar e Avançar" abaixo).
         chosenSectorId: '__PENDING_SELECTION__',
         siIdx,
+        fractionLabel,
       };
     };
 
@@ -1823,10 +1859,218 @@ export default function PCPView({
           : order?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
         const resolvedProductId = si.productId || orderItem?.productId;
         const resolvedVariationId = si.variationId || orderItem?.variationId;
-        return buildItem(`${si.orderId}-${idx}`, si.orderId, resolvedProductId, resolvedVariationId, si.qty || 0, orderItem?.productName, orderItem?.variationName, si.itemIdx, idx);
+        return buildItem(`${si.orderId}-${idx}`, si.orderId, resolvedProductId, resolvedVariationId, si.qty || 0, orderItem?.productName, orderItem?.variationName, si.itemIdx, idx, si.fractionLabel);
       });
     }
     return [buildItem(lot.id, lot.productionOrderId || lot.id, lot.productId, lot.variationId, lot.quantity || 0)];
+  };
+
+  // ── Fracionar Pedido ────────────────────────────────────────────────────────
+  // Resolve a composição da CAIXA (embalagem) cadastrada pro produto — mesma fonte já
+  // usada em computeStockProjection pra converter pares→caixas na baixa de Expedição
+  // (ATACADO): primeiro o padrão de embalagem vinculado à grade de produção
+  // (ProductionConfigItem tipo PACKAGING, metadata.sizeQuantities), com fallback pra
+  // grid.configuration quando não há embalagem cadastrada. É essa composição — não uma
+  // grade "livre" qualquer — que define os múltiplos válidos pra fracionar um pedido em
+  // grade padrão, pra não quebrar a contagem de caixas no estoque.
+  const resolveBoxBreakdown = (product: Product | undefined): Record<string, number> | null => {
+    if (!product) return null;
+    const gridId = product.productionGridId || product.defaultGridId;
+    if (!gridId) return null;
+    const pkg = productionConfigs.find(c => c.type === 'PACKAGING' && (c.metadata as any)?.productionGradeId === gridId);
+    const pkgBreakdown = (pkg?.metadata as any)?.sizeQuantities as Record<string, number> | undefined;
+    if (pkgBreakdown && Object.values(pkgBreakdown).some(q => (q || 0) > 0)) return pkgBreakdown;
+    return grids.find(g => g.id === gridId)?.configuration || null;
+  };
+
+  // Maior multiplicador inteiro da grade que cabe inteiro na grade do pedido (uma
+  // fração "1x grade" = grid.configuration; "2x" = o dobro de cada tamanho, etc.).
+  // Retorna 0 quando a grade do pedido não bate em múltiplos exatos da grade cadastrada
+  // (tamanho fora do padrão, ou quantidade não divisível) — força o modo Livre nesse caso.
+  const computeGridMaxMultiplier = (gridConfig: Record<string, number>, baseSizes: Record<string, number>): number => {
+    const baseKeys = Object.keys(baseSizes).filter(sz => baseSizes[sz] > 0);
+    if (baseKeys.length === 0) return 0;
+    let maxMult = Infinity;
+    for (const sz of baseKeys) {
+      const unit = gridConfig[sz];
+      if (!unit || unit <= 0) return 0;
+      if (baseSizes[sz] % unit !== 0) return 0;
+      maxMult = Math.min(maxMult, baseSizes[sz] / unit);
+    }
+    return Number.isFinite(maxMult) ? Math.floor(maxMult) : 0;
+  };
+
+  // Recalcula a ÚLTIMA fração da lista como "o que sobrou" da grade total depois de
+  // somar todas as outras — assim a soma das frações nunca desbate do pedido original,
+  // sem o usuário precisar digitar o resto manualmente.
+  const recomputeLastFraction = (
+    fractions: { label: string; multiplier: number; sizes: Record<string, number> }[],
+    baseSizes: Record<string, number>,
+    gridConfig: Record<string, number> | null,
+  ) => {
+    if (fractions.length === 0) return fractions;
+    const editable = fractions.slice(0, -1);
+    const lastLabel = fractions[fractions.length - 1].label;
+    const remainder: Record<string, number> = { ...baseSizes };
+    editable.forEach(fr => {
+      Object.entries(fr.sizes).forEach(([sz, qty]) => { remainder[sz] = (remainder[sz] || 0) - (qty || 0); });
+    });
+    let lastMultiplier = 0;
+    if (gridConfig) {
+      const sizesWithUnit = Object.keys(remainder).filter(sz => (gridConfig[sz] || 0) > 0);
+      const allConsistent = sizesWithUnit.length > 0 && sizesWithUnit.every(sz => remainder[sz] % gridConfig[sz] === remainder[sizesWithUnit[0]] % gridConfig[sizesWithUnit[0]]);
+      lastMultiplier = allConsistent ? Math.round(remainder[sizesWithUnit[0]] / gridConfig[sizesWithUnit[0]]) : 0;
+    }
+    return [...editable, { label: lastLabel, multiplier: lastMultiplier, sizes: remainder }];
+  };
+
+  const FRACTION_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+  // Abre o painel de fracionamento pra uma ficha (sourceItem) específica — só permitido
+  // pra fichas sem OS pendente vinculada (fracionar uma já comprometida com uma OS
+  // exigiria também reescrever a OS existente, fora do escopo desta primeira versão).
+  const handleOpenFractionModal = (f: { lot: ProductionLot; si: any; siIdx: number; product?: any; variation?: any; orderItem?: any }) => {
+    const product = f.product || products.find(p => p.id === f.si.productId);
+    const variation = f.variation || product?.variations.find((v: any) => v.id === f.si.variationId);
+    if (!product) { toast.show('Produto não encontrado.'); return; }
+
+    // Mesma prioridade usada na exibição da ficha: fração já existente sempre usa o
+    // próprio snapshot (f.si.sizes); pedido normal prioriza a grade viva do pedido
+    // (f.orderItem.sizes) e só cai pro snapshot do lote se o pedido não tiver a grade.
+    const rawSizes: Record<string, { total: number; fromStock: number; toProduction: number }> | undefined =
+      f.si.fractionLabel ? (f.si.sizes || f.orderItem?.sizes) : (f.orderItem?.sizes || f.si.sizes);
+    const baseSizes: Record<string, number> = {};
+    if (rawSizes) {
+      Object.entries(rawSizes).forEach(([sz, s]) => { if ((s?.toProduction || 0) > 0) baseSizes[sz] = s.toProduction; });
+    }
+    const totalQty = Object.values(baseSizes).reduce((a, b) => a + b, 0);
+    if (totalQty <= 1) { toast.show('Não há pares suficientes para fracionar este pedido.'); return; }
+
+    // Pedido em GRADE PADRÃO (ATACADO) só pode ser fracionado em múltiplos inteiros da
+    // embalagem cadastrada — fracionar livremente por tamanho quebraria a contagem de
+    // caixas na baixa de estoque. Pedido VAREJO não segue grade nenhuma, então fraciona
+    // livre por tamanho normalmente.
+    const saleType = f.orderItem?.saleType ?? product.type;
+    const gridConfig = resolveBoxBreakdown(product);
+    const gridMaxMultiplier = gridConfig ? computeGridMaxMultiplier(gridConfig, baseSizes) : 0;
+
+    if (saleType === SaleType.WHOLESALE && gridMaxMultiplier < 2) {
+      toast.show('Este pedido (grade padrão) não está em múltiplos exatos da embalagem cadastrada, ou já é de apenas 1 caixa — não é possível fracionar em caixas.');
+      return;
+    }
+
+    const mode: 'grade' | 'free' = saleType === SaleType.WHOLESALE ? 'grade' : 'free';
+    const rootKey = f.si.fractionRootKey || `${f.si.orderId}::${f.si.itemIdx ?? ''}`;
+
+    const usedLabels = new Set<string>(
+      ((f.lot as any).metadata?.sourceItems || [])
+        .filter((s: any) => s.fractionLabel && (s.fractionRootKey || `${s.orderId}::${s.itemIdx ?? ''}`) === rootKey)
+        .map((s: any) => s.fractionLabel as string)
+    );
+    const nextLabel = () => {
+      for (const ch of FRACTION_LETTERS) { if (!usedLabels.has(ch)) { usedLabels.add(ch); return ch; } }
+      return `X${usedLabels.size}`;
+    };
+
+    const zeroSizes = Object.fromEntries(Object.keys(baseSizes).map(sz => [sz, 0]));
+    const initialFractions = [
+      { label: nextLabel(), multiplier: 0, sizes: zeroSizes },
+      { label: nextLabel(), multiplier: gridMaxMultiplier, sizes: { ...baseSizes } },
+    ];
+
+    setFractionModal({
+      lot: f.lot, si: f.si, siIdx: f.siIdx, product, variation,
+      baseSizes, gridConfig: mode === 'grade' ? gridConfig : null, gridMaxMultiplier, mode, rootKey,
+      fractions: initialFractions,
+    });
+  };
+
+  const updateFractionMultiplier = (idx: number, multiplier: number) => {
+    setFractionModal(prev => {
+      if (!prev || !prev.gridConfig) return prev;
+      const clamped = Math.max(0, Math.round(multiplier));
+      const sizes: Record<string, number> = {};
+      Object.keys(prev.baseSizes).forEach(sz => { sizes[sz] = (prev.gridConfig![sz] || 0) * clamped; });
+      const next = prev.fractions.map((fr, i) => i === idx ? { ...fr, multiplier: clamped, sizes } : fr);
+      return { ...prev, fractions: recomputeLastFraction(next, prev.baseSizes, prev.gridConfig) };
+    });
+  };
+
+  const updateFractionSize = (idx: number, size: string, qty: number) => {
+    setFractionModal(prev => {
+      if (!prev) return prev;
+      const clamped = Math.max(0, Math.round(qty) || 0);
+      const next = prev.fractions.map((fr, i) => i === idx ? { ...fr, sizes: { ...fr.sizes, [size]: clamped } } : fr);
+      return { ...prev, fractions: recomputeLastFraction(next, prev.baseSizes, prev.gridConfig) };
+    });
+  };
+
+  const addFractionRow = () => {
+    setFractionModal(prev => {
+      if (!prev) return prev;
+      const usedLabels = new Set(prev.fractions.map(f => f.label));
+      let label = 'A';
+      for (const ch of FRACTION_LETTERS) { if (!usedLabels.has(ch)) { label = ch; break; } }
+      const zeroSizes = Object.fromEntries(Object.keys(prev.baseSizes).map(sz => [sz, 0]));
+      const newRow = { label, multiplier: 0, sizes: zeroSizes };
+      const next = [...prev.fractions.slice(0, -1), newRow, prev.fractions[prev.fractions.length - 1]];
+      return { ...prev, fractions: recomputeLastFraction(next, prev.baseSizes, prev.gridConfig) };
+    });
+  };
+
+  const removeFractionRow = (idx: number) => {
+    setFractionModal(prev => {
+      if (!prev || prev.fractions.length <= 2) return prev;
+      const next = prev.fractions.filter((_, i) => i !== idx);
+      return { ...prev, fractions: recomputeLastFraction(next, prev.baseSizes, prev.gridConfig) };
+    });
+  };
+
+  const isFractionPlanValid = (fm: NonNullable<typeof fractionModal>): boolean => {
+    if (fm.fractions.length < 2) return false;
+    const lastSizes = fm.fractions[fm.fractions.length - 1].sizes;
+    if (Object.values(lastSizes).some(q => q < 0)) return false;
+    return fm.fractions.every(fr => Object.values(fr.sizes).reduce((a, b) => a + b, 0) > 0);
+  };
+
+  // Confirma o fracionamento: substitui a ficha original (mesmo índice no array, pra
+  // não deslocar os índices de NENHUMA outra ficha do lote — outras OS já existentes
+  // referenciam fichas por índice exato em `sourceItemKeys`) pela 1ª fração, e empilha
+  // as demais no FINAL de `sourceItems`.
+  const executeFractionFicha = async () => {
+    if (!fractionModal) return;
+    if (!isFractionPlanValid(fractionModal)) {
+      toast.show('Confira as quantidades — alguma fração ficou negativa ou vazia.');
+      return;
+    }
+    const { lot, si, siIdx, fractions, rootKey } = fractionModal;
+
+    const buildFractionSourceItem = (fr: { label: string; sizes: Record<string, number> }) => {
+      const sizes: Record<string, { total: number; fromStock: number; toProduction: number }> = {};
+      let qty = 0;
+      Object.entries(fr.sizes).forEach(([sz, q]) => {
+        if (!q || q <= 0) return;
+        sizes[sz] = { total: q, fromStock: 0, toProduction: q };
+        qty += q;
+      });
+      return { ...si, qty, sizes, fractionLabel: fr.label, fractionRootKey: rootKey };
+    };
+
+    const newEntries = fractions.map(buildFractionSourceItem);
+    const sourceItems: any[] = [...((lot as any).metadata?.sourceItems || [])];
+    sourceItems[siIdx] = newEntries[0];
+    for (let i = 1; i < newEntries.length; i++) sourceItems.push(newEntries[i]);
+
+    try {
+      await firebaseService.updateDocument('productionLots', lot.id, {
+        metadata: { ...(lot as any).metadata, sourceItems },
+      });
+      toast.show(`Pedido fracionado em ${fractions.length} partes (${fractions.map(f => f.label).join(', ')}).`);
+      setFractionModal(null);
+    } catch (e) {
+      console.error(e);
+      toast.show('Erro ao fracionar pedido: ' + (e instanceof Error ? e.message : String(e)));
+    }
   };
 
   // O mapa só tem UM ponteiro de posição (`currentSectorIndex`), mas modelos com
@@ -1912,7 +2156,10 @@ export default function PCPView({
     const prod = f.product || products.find(p => p.id === (ordItem?.productId || f.si?.productId || f.productId));
     const vari = f.variation || prod?.variations.find((v: any) => v.id === (ordItem?.variationId || f.si?.variationId || f.variationId));
 
-    const sizes = Object.entries(ordItem?.sizes || {})
+    // Fichas FRACIONADAS priorizam f.si.sizes (a fatia da fração) — ordItem.sizes é a
+    // grade do pedido INTEIRO, compartilhada por todas as frações do mesmo pedido.
+    const sizesSource = f.si?.fractionLabel ? (f.si?.sizes || ordItem?.sizes) : (ordItem?.sizes || f.si?.sizes);
+    const sizes = Object.entries(sizesSource || {})
       .map(([sz, sData]: [string, any]) => ({ size: sz, qty: Number(sData.toProduction) || 0 }))
       .filter(s => s.qty > 0)
       .sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
@@ -1941,7 +2188,7 @@ export default function PCPView({
       osValue: os?.totalValue,
       osDate: os?.createdAt,
       osSectorName: os ? (sectors.find(s => s.id === os.sectorId)?.name || os.sectorName) : undefined,
-      soleInfo: buildSoleInfoForItem(prod, vari, ordItem, totalQty),
+      soleInfo: buildSoleInfoForItem(prod, vari, { sizes: sizesSource }, totalQty),
     };
   };
 
@@ -2065,12 +2312,14 @@ export default function PCPView({
           itemIdx: si.itemIdx,
           productId: resolvedProductId,
           variationId: resolvedVariationId,
+          fractionLabel: si.fractionLabel,
         });
         const keyUnresolved = getSourceItemKey({
           orderId: si.orderId,
           itemIdx: si.itemIdx,
           productId: '',
           variationId: '',
+          fractionLabel: si.fractionLabel,
         });
 
         if (movingItem && targetSector !== '' && targetSector !== ORDER_FINALIZED) {
@@ -2114,12 +2363,14 @@ export default function PCPView({
           itemIdx: it.itemIdx,
           productId: resolvedProductId,
           variationId: resolvedVariationId,
+          fractionLabel: it.fractionLabel,
         });
         const keyUnresolved = getSourceItemKey({
           orderId: it.orderId,
           itemIdx: it.itemIdx,
           productId: '',
           variationId: '',
+          fractionLabel: it.fractionLabel,
         });
 
         if (it.chosenSectorId === '') {
@@ -2618,9 +2869,9 @@ export default function PCPView({
   // identifica um pedido (orderId) ou, quando `itemIdx` é informado, um ÚNICO item
   // (modelo/cor) dentro de um pedido de compra que agrupa vários itens — preservado
   // até `applyExpedicaoStockUpdate` para que a baixa afete só o item finalizado.
-  const classifyExpedicaoOrders = (items: { orderId: string; itemIdx?: number }[]) => {
-    const customerItems: { orderId: string; itemIdx?: number }[] = [];
-    const stockItems: { orderId: string; itemIdx?: number }[] = [];
+  const classifyExpedicaoOrders = (items: { orderId: string; itemIdx?: number; fractionLabel?: string }[]) => {
+    const customerItems: { orderId: string; itemIdx?: number; fractionLabel?: string }[] = [];
+    const stockItems: { orderId: string; itemIdx?: number; fractionLabel?: string }[] = [];
     for (const item of items) {
       const prodOrder = productionOrders.find(o => o.id === item.orderId);
       if (!prodOrder) continue;
@@ -2652,8 +2903,12 @@ export default function PCPView({
     const vari = prod.variations.find(v => v.id === (si.variationId || ordItem.variationId));
     if (!vari) return null;
 
+    // Fichas FRACIONADAS usam a fatia própria (si.sizes) — ordItem.sizes é a grade do
+    // pedido INTEIRO, compartilhada por todas as frações do mesmo pedido, e baixaria/
+    // creditaria estoque e solado pela quantidade ERRADA (o pedido todo, não a fração).
+    const sizesSource = si.fractionLabel ? (si.sizes || ordItem.sizes) : (ordItem.sizes || si.sizes);
     const pairs: Record<string, number> = {};
-    Object.entries(ordItem.sizes || {}).forEach(([size, sData]: any) => {
+    Object.entries(sizesSource || {}).forEach(([size, sData]: any) => {
       const qty = Number(sData.toProduction) || 0;
       if (qty > 0) pairs[size] = qty;
     });
@@ -2661,72 +2916,6 @@ export default function PCPView({
     const gradeLabel = Object.entries(pairs).map(([sz, q]) => `${sz}x${q}`).join('-');
 
     return { prodOrder, ordItem, prod, vari, pairs, totalQty, gradeLabel, itemIdx };
-  };
-
-  // Pré-visualização completa (projeção de estoque por pedido + baixa de solados) pra
-  // finalizar um grupo de itens — mesmo formato que alimenta o popup de "Concluir/Dar
-  // Baixa" manual (`finalizeSelectedConfirm`/`handleFinalizeSelectedSourceItems`).
-  // Reaproveitado aqui pra "Dar Baixa" de OS num setor de Fim de Ciclo também abrir essa
-  // prévia rica, em vez de um texto simples sem o detalhe de solados/projeção de estoque.
-  const buildFinalizePreview = (lot: ProductionLot, toFinalize: LotAdvanceItem[], headerLine: string) => {
-    const lines: string[] = [headerLine];
-    const stockInfo: Record<string, { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string }> = {};
-    const soleInfo: { moldName: string; colorName: string; rows: { size: string; before: number; deducted: number; after: number }[]; contributions: { orderLabel: string; lotNumber: string; qty: number }[] }[] = [];
-    if (toFinalize.length === 0) return { lines, stockInfo, soleInfo };
-
-    const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalize.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx })));
-    lines.push('');
-    if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
-    if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} pedido(s) → ENTRADA EM ESTOQUE (+ baixa de solados)`);
-
-    toFinalize.forEach(it => {
-      const isStock = stockItems.some(si => si.orderId === it.orderId && si.itemIdx === it.itemIdx);
-      const order = productionOrders.find(o => o.id === it.orderId);
-      const customerName = order?.customerName || lot.customerName;
-      const info = computeStockProjection(it, { isStock, customerName });
-      if (info) stockInfo[it.key] = info;
-    });
-
-    const consumptionByKey = new Map<string, { moldId: string; colorId: string; gradeQuantities: Record<string, number>; contributions: { orderLabel: string; lotNumber: string; qty: number }[] }>();
-    toFinalize.forEach(it => {
-      const resolvedSI = resolveSourceItem(it);
-      if (!resolvedSI || resolvedSI.totalQty <= 0) return;
-      const { prod, vari, pairs, totalQty } = resolvedSI;
-      const consumption = resolveSoleConsumption(prod, vari, pairs, totalQty, soleStock);
-      if (!consumption) return;
-      const key = `${consumption.moldId}_${consumption.colorId || 'default'}`;
-
-      let existing = consumptionByKey.get(key);
-      if (!existing) {
-        existing = { moldId: consumption.moldId, colorId: consumption.colorId, gradeQuantities: {}, contributions: [] };
-        consumptionByKey.set(key, existing);
-      }
-      Object.entries(consumption.gradeQuantities).forEach(([gradeKey, qty]) => {
-        existing!.gradeQuantities[gradeKey] = (existing!.gradeQuantities[gradeKey] || 0) + qty;
-      });
-      existing.contributions.push({
-        orderLabel: `${prod?.name || '—'} ${vari?.colorName || ''}`,
-        lotNumber: lot.orderNumber,
-        qty: it.qty,
-      });
-    });
-    consumptionByKey.forEach(({ moldId, colorId, gradeQuantities, contributions }) => {
-      const entry = soleStock.find(s => String(s.moldId).trim() === moldId && String(s.colorId || '').trim() === colorId);
-      const mold = productionConfigs.find(c => c.id === moldId);
-      const color = colors.find(c => c.id === colorId);
-      const rows = Object.entries(gradeQuantities)
-        .filter(([k]) => k !== 'pesagem' && k !== 'total')
-        .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
-        .map(([size, qty]) => ({
-          size,
-          before: entry?.stock[size] || 0,
-          deducted: Number(qty) || 0,
-          after: (entry?.stock[size] || 0) - (Number(qty) || 0),
-        }));
-      soleInfo.push({ moldName: entry?.moldName || mold?.name || '', colorName: entry?.colorName || color?.name || '', rows, contributions });
-    });
-
-    return { lines, stockInfo, soleInfo };
   };
 
   // Aplica a baixa de estoque para pedidos que saíram da Expedição. Para pedidos com
@@ -2737,15 +2926,23 @@ export default function PCPView({
   // Chamado tanto pela conclusão de OS quanto pelo avanço direto de setor ("Próximo Setor").
   const applyExpedicaoStockUpdate = async (
     lot: ProductionLot,
-    stockItems: { orderId: string; itemIdx?: number }[],
-    customerItems: { orderId: string; itemIdx?: number }[],
+    stockItems: { orderId: string; itemIdx?: number; fractionLabel?: string }[],
+    customerItems: { orderId: string; itemIdx?: number; fractionLabel?: string }[],
   ) => {
     // Um pedido de compra pode agrupar vários itens (modelos/cores) sob o mesmo
     // orderId — quando `item.itemIdx` é informado, casa apenas o sourceItem daquele
     // item específico; quando não, casa TODOS os sourceItems daquele orderId (caso
     // de finalizações "pedido inteiro", ex.: conclusão de OS/avanço de mapa).
-    const matchesItem = (si: any, item: { orderId: string; itemIdx?: number }) =>
-      si.orderId === item.orderId && (item.itemIdx === undefined || si.itemIdx === item.itemIdx);
+    // `fractionLabel` distingue FRAÇÕES do mesmo pedido (mesmo orderId+itemIdx) por
+    // CONTEÚDO — não pela posição no array (frágil: some/reordena se outro item do
+    // mesmo mapa for removido entre montar a confirmação e aplicá-la). Sem essa
+    // distinção, baixar uma fração arrastaria junto a quantidade das frações irmãs
+    // ainda não baixadas, duplicando consumo de solado e crédito de estoque.
+    const matchesItem = (si: any, item: { orderId: string; itemIdx?: number; fractionLabel?: string }) => {
+      if (si.orderId !== item.orderId) return false;
+      if (item.itemIdx !== undefined && si.itemIdx !== item.itemIdx) return false;
+      return (si.fractionLabel || undefined) === (item.fractionLabel || undefined);
+    };
 
     // Proteção contra baixa duplicada: esta função NÃO tinha nenhuma guarda contra ser
     // chamada mais de uma vez pro mesmo item (ex.: o mesmo pedido passando por "Dar
@@ -2754,7 +2951,7 @@ export default function PCPView({
     // já marcado ORDER_FINALIZED (por uma chamada anterior desta mesma função) nunca
     // deve ser processado de novo.
     const lotSIForGuard: any[] = (lot as any).metadata?.sourceItems || [];
-    const isAlreadyFinalized = (item: { orderId: string; itemIdx?: number }) => {
+    const isAlreadyFinalized = (item: { orderId: string; itemIdx?: number; fractionLabel?: string }) => {
       const si = lotSIForGuard.find((s: any) => matchesItem(s, item));
       if (!si) return false;
       return getOrderEffectiveSector(lot, item.orderId, si) === ORDER_FINALIZED;
@@ -2950,58 +3147,156 @@ export default function PCPView({
     }
   };
 
+  // Abre o painel de baixa da OS: monta um item por pedido coberto por ela, já marcado
+  // como incluído (pronto) e com o setor de destino pré-preenchido pela sugestão do
+  // roteiro do próprio modelo — o usuário escolhe o destino (ou desmarca o pedido) ANTES
+  // de confirmar, em vez do fluxo antigo que já marcava a OS como concluída antes mesmo
+  // de perguntar pra onde os pedidos iam.
+  //
+  // Uma OS pode cobrir MAIS DE UM Mapa (os.lotIds, ex.: "OS em grupo" — ver criação em
+  // ServiceOrderFormView). Varre todos eles, igual o "Visualizar" (getFichasForOS) já faz
+  // — pegar só o primeiro lote fazia o painel mostrar menos pedidos do que a OS realmente
+  // cobre.
   const handleCompleteOS = (os: ServiceOrder) => {
-    setOsCompleteConfirm(os);
+    const osLotIds = os.lotIds && os.lotIds.length > 0 ? os.lotIds : (os.lotId ? [os.lotId] : []);
+    if (osLotIds.length === 0) { toast.show('OS sem lote vinculado.'); return; }
+
+    const restrictTo = { sourceItemKeys: os.sourceItemKeys, sourceOrderIds: os.sourceOrderIds };
+    const items: (LotAdvanceItem & { included: boolean; lotId: string; currentSectorId: string })[] = [];
+    osLotIds.forEach(lId => {
+      const lotObj = lots.find(l => l.id === lId);
+      if (!lotObj) return;
+      const route = lotObj.route || [];
+      const currentSectorId = route[lotObj.currentSectorIndex] || os.sectorId;
+      buildLotAdvanceItems(lotObj, currentSectorId, restrictTo).forEach(it => {
+        items.push({
+          ...it,
+          key: `${lotObj.id}::${it.key}`,
+          chosenSectorId: it.suggestedSectorId,
+          included: true,
+          lotId: lotObj.id,
+          currentSectorId,
+        });
+      });
+    });
+
+    if (items.length === 0) { toast.show('Nenhum pedido encontrado para esta OS.'); return; }
+    setOsBaixaPanel({ os, items });
   };
 
-  const executeCompleteOS = async (os: ServiceOrder) => {
+  const toggleOsBaixaItemIncluded = (key: string) => {
+    setOsBaixaPanel(prev => prev ? { ...prev, items: prev.items.map(it => it.key === key ? { ...it, included: !it.included } : it) } : prev);
+  };
+
+  const toggleOsBaixaSelectAll = () => {
+    setOsBaixaPanel(prev => {
+      if (!prev) return prev;
+      const allIncluded = prev.items.every(it => it.included);
+      return { ...prev, items: prev.items.map(it => ({ ...it, included: !allIncluded })) };
+    });
+  };
+
+  const updateOsBaixaItemSector = (key: string, sectorId: string) => {
+    setOsBaixaPanel(prev => prev ? { ...prev, items: prev.items.map(it => it.key === key ? { ...it, chosenSectorId: sectorId } : it) } : prev);
+  };
+
+  // Confirma a baixa do painel: avança SÓ os pedidos incluídos (os desmarcados ficam
+  // parados, sem nenhuma chamada de avanço/estoque sobre eles). Agrupa por Mapa, já que
+  // applyLotAdvance opera um lote por vez e a OS pode cobrir vários. A OS só é marcada
+  // COMPLETED e tem o financeiro liquidado quando TODOS os seus pedidos já tiverem sido
+  // baixados — enquanto sobrar pedido, a mesma OS (mesmo número) continua PENDENTE, só
+  // que com sourceItemKeys/sourceOrderIds encolhidos para o que ainda falta.
+  const executeOsBaixaPanel = async () => {
+    if (!osBaixaPanel) return;
+    const { os, items } = osBaixaPanel;
+    const includedItems = items.filter(it => it.included);
+    const stayedItems = items.filter(it => !it.included);
+
+    if (includedItems.length === 0) {
+      toast.show('Selecione ao menos um pedido para dar baixa.');
+      return;
+    }
+
     try {
-      const lotId = os.lotId || os.lotIds?.[0] || '';
-      if (!lotId) { toast.show('OS sem lote vinculado.'); return; }
-
-      const lotObj = lots.find(l => l.id === lotId || (os.lotIds && os.lotIds.includes(l.id)));
-      if (!lotObj) { toast.show('Lote não encontrado.'); return; }
-
-      // 1. Mark OS as completed
-      await firebaseService.updateDocument('serviceOrders', os.id, {
-        status: 'COMPLETED',
-        finishedAt: Date.now(),
+      const includedByLot = new Map<string, typeof includedItems>();
+      includedItems.forEach(it => {
+        if (!includedByLot.has(it.lotId)) includedByLot.set(it.lotId, []);
+        includedByLot.get(it.lotId)!.push(it);
       });
 
-      // 2. Settle transaction if present
-      if (os.transactionId) {
-        try { await financeService.settleTransaction(os.transactionId); } catch { /* ignore */ }
+      let lastDestSectorName = '';
+      let allFinished = true;
+
+      for (const [lotId, lotIncludedItems] of includedByLot.entries()) {
+        const lotObj = lots.find(l => l.id === lotId);
+        if (!lotObj) continue;
+        const currentSectorId = lotIncludedItems[0].currentSectorId;
+
+        // Proteção de estoque ao sair da Expedição — mesma lógica do avanço manual de
+        // setor (handleConfirmSectorChange), restrita só aos pedidos incluídos deste lote.
+        const currentSectorObj = sectors.find(s => s.id === currentSectorId);
+        const isCycleEndSector = !!currentSectorObj?.isProductionCycleEnd ||
+          !!currentSectorObj?.name?.toUpperCase().includes('EXPEDIÇÃO') ||
+          !!currentSectorObj?.name?.toUpperCase().includes('EXPEDICAO') ||
+          (lotObj.route && lotObj.route[lotObj.route.length - 1] === currentSectorId);
+
+        if (isCycleEndSector) {
+          const toFinalizeNow = lotIncludedItems.filter(it => it.chosenSectorId === '');
+          const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalizeNow.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx, fractionLabel: it.fractionLabel })));
+          if (stockItems.length > 0 || customerItems.length > 0) {
+            const lines: string[] = [`Baixa de ${lotIncludedItems.length} pedido(s) do Mapa #${lotObj.orderNumber} (OS ${os.osNumber})`];
+            if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
+            if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} pedido(s) → ENTRADA EM ESTOQUE`);
+            lines.push('\nConfirmar baixa?');
+            if (!confirm(lines.join('\n'))) return;
+            await applyExpedicaoStockUpdate(lotObj, stockItems, customerItems);
+          }
+        }
+
+        const notes = stayedItems.length === 0
+          ? `Baixa via OS ${os.osNumber} concluída.`
+          : `Baixa parcial via OS ${os.osNumber} (${includedItems.length}/${items.length} pedidos).`;
+        const { destSectorName, isFinished } = await applyLotAdvance(lotObj, lotIncludedItems, currentSectorId, '', notes);
+        lastDestSectorName = destSectorName;
+        if (!isFinished) allFinished = false;
       }
 
-      const restrictTo = { sourceItemKeys: os.sourceItemKeys, sourceOrderIds: os.sourceOrderIds };
-      const osSectorObj = sectors.find(s => s.id === os.sectorId);
-      const isCycleEndSector = !!osSectorObj?.isProductionCycleEnd ||
-        !!osSectorObj?.name?.toUpperCase().includes('EXPEDIÇÃO') ||
-        !!osSectorObj?.name?.toUpperCase().includes('EXPEDICAO');
-
-      if (isCycleEndSector) {
-        // Setor marcado como "Fim do Ciclo de Produção" (ex.: Expedição) — não existe
-        // "próximo setor" pra perguntar, então concluir a OS aqui já fecha o ciclo direto.
-        // Abre a mesma prévia rica (projeção de estoque + baixa de solados) do "Concluir/
-        // Dar Baixa" manual, em vez de um confirm() de texto puro sem esse detalhe.
-        const route = lotObj.route || [];
-        const currentSectorId = route[lotObj.currentSectorIndex] || os.sectorId;
-        const items = buildLotAdvanceItems(lotObj, currentSectorId, restrictTo).map(it => ({ ...it, chosenSectorId: '' }));
-        const { lines, stockInfo, soleInfo } = buildFinalizePreview(
-          lotObj, items, `OS ${os.osNumber} concluída em "${osSectorObj?.name || os.sectorName}"`,
-        );
-        setFinalizeSelectedConfirm({ lot: lotObj, items, lines, stockInfo, soleInfo });
-        return;
+      if (stayedItems.length === 0) {
+        // Baixa completa: fecha a OS e liquida o financeiro, como no fluxo antigo.
+        await firebaseService.updateDocument('serviceOrders', os.id, {
+          status: 'COMPLETED',
+          finishedAt: Date.now(),
+        });
+        if (os.transactionId) {
+          try { await financeService.settleTransaction(os.transactionId); } catch { /* ignore */ }
+        }
+      } else {
+        // Baixa parcial: a OS continua a MESMA, PENDENTE, agora só com os pedidos que
+        // ficaram de fora — valor e liquidação financeira só acontecem na última baixa.
+        const remainingKeys = os.sourceItemKeys && os.sourceItemKeys.length > 0
+          ? stayedItems.map(it => `${it.lotId}::${it.orderId}::${it.siIdx}`)
+          : undefined;
+        const remainingOrderIds = !remainingKeys
+          ? Array.from(new Set(stayedItems.map(it => it.orderId)))
+          : undefined;
+        await firebaseService.updateDocument('serviceOrders', os.id, {
+          ...(remainingKeys ? { sourceItemKeys: remainingKeys } : {}),
+          ...(remainingOrderIds ? { sourceOrderIds: remainingOrderIds } : {}),
+        });
       }
 
-      // 3. Setores normais ainda abrem a confirmação manual de destino — restrito aos
-      // itens que esta OS realmente cobre, não o Mapa inteiro.
-      openSectorChangeConfirm(lotObj, '', `Baixa via OS ${os.osNumber} concluída.`, restrictTo);
+      setOsBaixaPanel(null);
+      setOsFeedback({
+        osNumber: os.osNumber,
+        nextSector: allFinished ? 'FINALIZADO' : lastDestSectorName,
+        action: stayedItems.length === 0
+          ? 'OS concluída e baixada com sucesso.'
+          : `Baixa parcial: ${includedItems.length} de ${items.length} pedido(s) baixado(s). ${stayedItems.length} permanece(m) na OS.`,
+        type: 'os',
+      });
     } catch (e) {
       console.error(e);
-      toast.show('Erro ao concluir OS: ' + (e instanceof Error ? e.message : String(e)));
-    } finally {
-      setOsCompleteConfirm(null);
+      toast.show('Erro ao dar baixa: ' + (e instanceof Error ? e.message : String(e)));
     }
   };
 
@@ -4665,6 +4960,54 @@ export default function PCPView({
                     const activeOSCardKey = `__os_ativas__${selectedSectorId}`;
                     const isActiveOSCardOpen = !fichaListOpen.has(activeOSCardKey + '_closed');
 
+                    // ── Filtro de OS Ativas no Setor (mesmas funções do filtro de Pedidos no Setor) ──
+                    const osFilterKey = `__os_filter__${selectedSectorId}`;
+                    const isOSFilterOpen = fichaListOpen.has(osFilterKey);
+                    const activeOSFilt = fichaFilters[activeOSCardKey] || { model: '', color: '', search: '', customerName: '', providerName: '' };
+                    const osFilterSearch = (activeOSFilt.search || '').trim().toLowerCase();
+
+                    const osFichasMap = new Map<string, FichaItem[]>();
+                    sectorOSList.forEach(os => osFichasMap.set(os.id, getFichasForOS(os)));
+
+                    const osModelMap = new Map<string, { key: string; label: string }>();
+                    sectorOSList.forEach(os => {
+                      osFichasMap.get(os.id)!.forEach(f => {
+                        const name = f.product?.name || f.orderItem?.productName || '';
+                        if (!name) return;
+                        const label = f.product?.reference || name;
+                        if (!osModelMap.has(name)) osModelMap.set(name, { key: name, label });
+                      });
+                    });
+                    const osModelOptions = Array.from(osModelMap.values()).filter(opt =>
+                      !osFilterSearch || opt.label.toLowerCase().includes(osFilterSearch) || opt.key.toLowerCase().includes(osFilterSearch)
+                    );
+                    const osFichasForColors = (activeOSFilt.model
+                      ? sectorOSList.flatMap(os => osFichasMap.get(os.id)!.filter(f => (f.product?.name || f.orderItem?.productName || '') === activeOSFilt.model))
+                      : sectorOSList.flatMap(os => osFichasMap.get(os.id)!));
+                    const osUniqueColors = Array.from(new Set(osFichasForColors.map(f => f.variation?.colorName || f.orderItem?.variationName || '').filter(Boolean)))
+                      .filter(c => !osFilterSearch || c.toLowerCase().includes(osFilterSearch));
+
+                    const osCustomerMap = new Map<string, string>();
+                    sectorOSList.forEach(os => {
+                      osFichasMap.get(os.id)!.forEach(f => {
+                        const cname = f.order?.customerName || 'Estoque';
+                        const cid = f.order?.customerId || cname;
+                        if (!osCustomerMap.has(cid)) osCustomerMap.set(cid, cname);
+                      });
+                    });
+                    const osCustomerOptions = Array.from(osCustomerMap.entries()).map(([id, name]) => ({ id, name }));
+
+                    const osUniqueProviders = Array.from(new Set(sectorOSList.map(os => os.providerName).filter(Boolean)));
+
+                    const filteredSectorOSList = sectorOSList.filter(os => {
+                      if (activeOSFilt.providerName && os.providerName !== activeOSFilt.providerName) return false;
+                      const fichas = osFichasMap.get(os.id) || [];
+                      if (activeOSFilt.model && !fichas.some(f => (f.product?.name || f.orderItem?.productName || '') === activeOSFilt.model)) return false;
+                      if (activeOSFilt.color && !fichas.some(f => (f.variation?.colorName || f.orderItem?.variationName || '') === activeOSFilt.color)) return false;
+                      if (activeOSFilt.customerName && !fichas.some(f => (f.order?.customerName || 'Estoque') === activeOSFilt.customerName)) return false;
+                      return true;
+                    });
+
                     // Selectable = fichas with no pending OS
                     const selectable = fichasSemOSAtiva;
                     const selected = selectable.filter(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
@@ -4869,7 +5212,10 @@ export default function PCPView({
                                 const gradeOpen = fichaItemExpanded.has(gradeKey);
                                 // Fallback pro snapshot salvo no lote (f.si.sizes) — sem isso,
                                 // a grade some se o Pedido de Produção original for editado/excluído.
-                                const szSizesSource = f.orderItem?.sizes || f.si?.sizes;
+                                // Fichas FRACIONADAS sempre priorizam f.si.sizes (a fatia da fração) —
+                                // f.orderItem.sizes é a grade do pedido INTEIRO, compartilhada por
+                                // todas as frações do mesmo pedido, e mostraria o total errado aqui.
+                                const szSizesSource = f.si?.fractionLabel ? (f.si?.sizes || f.orderItem?.sizes) : (f.orderItem?.sizes || f.si?.sizes);
                                 const szEntries = szSizesSource
                                   ? Object.entries(szSizesSource as Record<string, any>)
                                     .filter(([, s]) => (s?.toProduction || 0) > 0)
@@ -4956,6 +5302,11 @@ export default function PCPView({
                                             <span className="text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider leading-none shrink-0" style={{ backgroundColor: productBadgeBg, color: productBadgeText, fontWeight: productBadgeBold ? 900 : 400, fontStyle: productBadgeItalic ? 'italic' : 'normal' }}>
                                               {`${productRef || productName}${colorName ? ` ${colorName}` : ''}`.trim()}
                                             </span>
+                                            {f.si.fractionLabel && (
+                                              <span title="Pedido fracionado — esta é uma das partes" className="text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider leading-none shrink-0 bg-amber-500 text-white flex items-center gap-1">
+                                                <Scissors size={9} /> Fração {f.si.fractionLabel}
+                                              </span>
+                                            )}
                                             {(() => {
                                               const effSec = getOrderEffectiveSector(f.lot, f.si.orderId, f.si);
                                               const secName = effSec === ORDER_FINALIZED
@@ -5171,8 +5522,9 @@ export default function PCPView({
                                                 const resolvedVariationId = f.si.variationId || f.orderItem?.variationId;
                                                 const itemProduct = products.find(p => p.id === resolvedProductId);
                                                 const itemVariation = itemProduct?.variations.find(v => v.id === resolvedVariationId);
-                                                if (itemProduct && itemVariation && f.orderItem?.sizes) {
-                                                  const szStr = Object.entries(f.orderItem.sizes as Record<string, { toProduction: number }>)
+                                                const labelSizesSource = f.si?.fractionLabel ? (f.si?.sizes || f.orderItem?.sizes) : (f.orderItem?.sizes || f.si?.sizes);
+                                                if (itemProduct && itemVariation && labelSizesSource) {
+                                                  const szStr = Object.entries(labelSizesSource as Record<string, { toProduction: number }>)
                                                     .filter(([, s]) => s.toProduction > 0)
                                                     .sort(([a], [b]) => Number(a) - Number(b))
                                                     .map(([sz, s]) => `${sz}x${s.toProduction}`)
@@ -5218,6 +5570,16 @@ export default function PCPView({
                                               <ArrowLeftRight size={14} /> Mudar Setor
                                             </button>
                                           </div>
+                                          {/* Fracionar Pedido — só pra fichas sem OS pendente (fracionar uma
+                                              já comprometida com OS exigiria reescrever a OS também). */}
+                                          {!hasOS && (f.si.qty || 0) > 1 && (
+                                            <button type="button"
+                                              onClick={() => handleOpenFractionModal({ lot: f.lot, si: f.si, siIdx: f.siIdx, product: f.product, variation: f.variation, orderItem: f.orderItem })}
+                                              className={`w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border ${isDarkMode ? 'border-amber-700/50 bg-amber-900/20 text-amber-400 hover:bg-amber-900/35' : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
+                                            >
+                                              <Scissors size={14} /> Fracionar Pedido
+                                            </button>
+                                          )}
                                         </div>
                                       </div>
                                     )}
@@ -5322,6 +5684,7 @@ export default function PCPView({
                                             variationId: f.si.variationId,
                                             productId: resolvedProductId,
                                             productName: itemProduct?.name || f.orderItem?.productName || '—',
+                                             productReference: itemProduct?.reference || '',
                                             colorName: '',
                                             qty: f.si.qty || 0,
                                             suggestedSectorId: chosenSectorId,
@@ -5346,13 +5709,13 @@ export default function PCPView({
                                         }[] = [];
 
                                         if (toFinalize.length > 0) {
-                                          const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalize.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx })));
+                                          const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalize.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx, fractionLabel: it.fractionLabel })));
                                           lines.push('');
                                           if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
                                           if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} pedido(s) → ENTRADA EM ESTOQUE (+ baixa de solados)`);
 
                                           resolved.forEach(it => {
-                                            const isStock = stockItems.some(si => si.orderId === it.orderId && si.itemIdx === it.itemIdx);
+                                            const isStock = stockItems.some(si => si.orderId === it.orderId && si.itemIdx === it.itemIdx && (si.fractionLabel || undefined) === (it.fractionLabel || undefined));
                                             const fichaItem = selectedFichasData.find(f =>
                                               f.lot.id === it.lotId &&
                                               f.si.orderId === it.orderId &&
@@ -5375,7 +5738,8 @@ export default function PCPView({
                                             );
                                             if (!fichaItem) return;
                                             const { product: prod, variation: vari, si, orderItem } = fichaItem;
-                                            const pairs = orderItem?.sizes ? Object.entries(orderItem.sizes).reduce((acc, [sz, data]: [string, any]) => ({ ...acc, [sz]: data.toProduction || 0 }), {}) : {};
+                                            const sizesForPairs = si?.fractionLabel ? (si?.sizes || orderItem?.sizes) : (orderItem?.sizes || si?.sizes);
+                                            const pairs = sizesForPairs ? Object.entries(sizesForPairs).reduce((acc, [sz, data]: [string, any]) => ({ ...acc, [sz]: data.toProduction || 0 }), {}) : {};
                                             const consumption = resolveSoleConsumption(prod, vari, pairs, it.qty, soleStock);
                                             if (!consumption) return;
                                             const key = `${consumption.moldId}_${consumption.colorId || 'default'}`;
@@ -5494,8 +5858,124 @@ export default function PCPView({
                           {/* Corpo (expandido) */}
                           {isActiveOSCardOpen && (
                             <div className="p-4 pt-0 flex flex-col gap-3">
-                              <div className="h-2" />
-                              {sectorOSList.map(os => {
+                              <p className="text-[9px] text-slate-400 uppercase font-bold">{filteredSectorOSList.length} de {sectorOSList.length} OS</p>
+
+                              {/* Botão que abre o popup de filtros — mesmas funções do filtro de Pedidos no Setor */}
+                              <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-orange-900/40 bg-orange-950/20' : 'border-orange-200 bg-orange-50/50'}`}>
+                                <button type="button"
+                                  onClick={() => { const n = new Set(fichaListOpen); isOSFilterOpen ? n.delete(osFilterKey) : n.add(osFilterKey); setFichaListOpen(n); }}
+                                  className={`w-full flex items-center gap-2 px-4 py-2.5 transition-colors ${isDarkMode ? 'hover:bg-orange-900/20' : 'hover:bg-orange-100/40'}`}
+                                >
+                                  <Filter size={12} className="text-orange-500 animate-bounce" />
+                                  <span className="flex-1 text-left">
+                                    <span className={`inline-block text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full animate-pulse ${isDarkMode ? 'bg-orange-900/60 text-orange-200' : 'bg-orange-100 text-orange-700'}`}>Filtrar</span>
+                                  </span>
+                                  {(activeOSFilt.model || activeOSFilt.color || activeOSFilt.customerName || activeOSFilt.providerName) && (
+                                    <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-indigo-500 text-white">Ativo</span>
+                                  )}
+                                </button>
+                              </div>
+
+                              {isOSFilterOpen && createPortal(
+                                <div className="fixed inset-0 z-[60000] flex items-center justify-center p-4">
+                                  <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { const n = new Set(fichaListOpen); n.delete(osFilterKey); setFichaListOpen(n); }} />
+                                  <div className={`relative w-full max-w-sm max-h-[85vh] overflow-y-auto rounded-[2rem] shadow-2xl border p-5 flex flex-col gap-4 bg-gradient-to-br ${isDarkMode ? 'from-slate-800 via-slate-900 to-slate-950 border-slate-800' : 'from-white via-slate-50 to-slate-100 border-slate-100'}`}>
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <Filter size={14} className="text-orange-500" />
+                                        <span className="text-[11px] font-black uppercase tracking-widest">Filtrar OS</span>
+                                      </div>
+                                      <button type="button" title="Fechar" onClick={() => { const n = new Set(fichaListOpen); n.delete(osFilterKey); setFichaListOpen(n); }}
+                                        className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
+                                        <X size={16} />
+                                      </button>
+                                    </div>
+
+                                    <input type="text"
+                                      placeholder="Buscar modelo ou referência..."
+                                      title="Buscar modelo ou referência"
+                                      value={activeOSFilt.search || ''}
+                                      onChange={(e) => setFichaFilters(prev => ({ ...prev, [activeOSCardKey]: { ...activeOSFilt, search: e.target.value } }))}
+                                      className={`w-full px-3 py-2.5 rounded-xl text-[11px] font-bold outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-200 text-slate-700 placeholder:text-slate-400'}`}
+                                    />
+
+                                    {osModelOptions.length > 0 && (
+                                      <div className={`rounded-2xl border p-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Referência</p>
+                                        <div className="grid grid-cols-3 gap-1.5">
+                                          {osModelOptions.map(({ key, label }) => (
+                                            <button type="button" key={key}
+                                              onClick={() => setFichaFilters(prev => ({ ...prev, [activeOSCardKey]: { ...activeOSFilt, model: activeOSFilt.model === key ? '' : key, color: '' } }))}
+                                              className={`w-full h-9 px-1 rounded-xl text-[9px] font-black uppercase truncate transition-all border active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${activeOSFilt.model === key ? 'from-indigo-500 to-indigo-700 text-white border-indigo-800 shadow-[0_3px_0_rgba(67,56,202,0.5)]' : isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_2px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-600 border-slate-300 shadow-[0_2px_0_rgba(0,0,0,0.08)]'}`}
+                                            >{label}</button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {osUniqueColors.length > 0 && (
+                                      <div className={`rounded-2xl border p-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Cor</p>
+                                        <div className="grid grid-cols-3 gap-1.5">
+                                          {osUniqueColors.map(c => (
+                                            <button type="button" key={c}
+                                              onClick={() => setFichaFilters(prev => ({ ...prev, [activeOSCardKey]: { ...activeOSFilt, color: activeOSFilt.color === c ? '' : c } }))}
+                                              className={`w-full h-9 px-1 rounded-xl text-[9px] font-black uppercase truncate transition-all border active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${activeOSFilt.color === c ? 'from-amber-400 to-amber-600 text-white border-amber-700 shadow-[0_3px_0_rgba(180,83,9,0.5)]' : isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_2px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-600 border-slate-300 shadow-[0_2px_0_rgba(0,0,0,0.08)]'}`}
+                                            >{c}</button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {osCustomerOptions.length > 0 && (
+                                      <div className={`rounded-2xl border p-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Cliente</p>
+                                        <ComboBox
+                                          options={osCustomerOptions}
+                                          value={osCustomerOptions.find(o => o.name === activeOSFilt.customerName)?.id || ''}
+                                          onChange={(val) => {
+                                            const opt = osCustomerOptions.find(o => o.id === val);
+                                            setFichaFilters(prev => ({ ...prev, [activeOSCardKey]: { ...activeOSFilt, customerName: opt?.name || '' } }));
+                                          }}
+                                          placeholder="Digite para buscar cliente..."
+                                          isDarkMode={isDarkMode}
+                                          compact
+                                        />
+                                      </div>
+                                    )}
+
+                                    {osUniqueProviders.length > 0 && (
+                                      <div className={`rounded-2xl border p-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Prestador de Serviço</p>
+                                        <div className="grid grid-cols-3 gap-1.5">
+                                          {osUniqueProviders.map(p => (
+                                            <button type="button" key={p}
+                                              onClick={() => setFichaFilters(prev => ({ ...prev, [activeOSCardKey]: { ...activeOSFilt, providerName: activeOSFilt.providerName === p ? '' : p } }))}
+                                              className={`w-full h-9 px-1 rounded-xl text-[9px] font-black uppercase truncate transition-all border active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${activeOSFilt.providerName === p ? 'from-emerald-500 to-emerald-700 text-white border-emerald-800 shadow-[0_3px_0_rgba(4,120,87,0.5)]' : isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_2px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-600 border-slate-300 shadow-[0_2px_0_rgba(0,0,0,0.08)]'}`}
+                                            >{p}</button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    <div className="flex items-center gap-2 pt-1">
+                                      {(activeOSFilt.model || activeOSFilt.color || activeOSFilt.search || activeOSFilt.customerName || activeOSFilt.providerName) && (
+                                        <button type="button" title="Limpar filtros"
+                                          onClick={() => setFichaFilters(prev => ({ ...prev, [activeOSCardKey]: { model: '', color: '', search: '', customerName: '', providerName: '' } }))}
+                                          className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all active:translate-y-0.5 active:shadow-none bg-gradient-to-b ${isDarkMode ? 'from-slate-700 to-slate-800 text-slate-300 border-slate-900 shadow-[0_3px_0_rgba(0,0,0,0.35)]' : 'from-white to-slate-100 text-slate-500 border-slate-300 shadow-[0_3px_0_rgba(0,0,0,0.08)]'}`}
+                                        >✕ Limpar</button>
+                                      )}
+                                      <button type="button"
+                                        onClick={() => { const n = new Set(fichaListOpen); n.delete(osFilterKey); setFichaListOpen(n); }}
+                                        className="flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white border border-indigo-800 bg-gradient-to-b from-indigo-500 to-indigo-700 shadow-[0_4px_0_rgba(67,56,202,0.5)] transition-all active:translate-y-0.5 active:shadow-none"
+                                      >Aplicar</button>
+                                    </div>
+                                  </div>
+                                </div>,
+                                document.body
+                              )}
+
+                              {filteredSectorOSList.map(os => {
                                 const lot = filteredActiveLots.find(l => os.lotId === l.id) ?? null;
                                 const nextSId = (lot?.route?.length ?? 0) > (lot?.currentSectorIndex ?? 0) + 1
                                   ? (lot?.route?.[(lot?.currentSectorIndex ?? 0) + 1] ?? '')
@@ -8488,8 +8968,9 @@ export default function PCPView({
                     const resolvedVariationId = si.variationId || orderItem?.variationId;
                     const itemProduct = products.find(p => p.id === resolvedProductId);
                     const itemVariation = itemProduct?.variations.find(v => v.id === resolvedVariationId);
-                    if (!itemProduct || !itemVariation || !orderItem?.sizes) return;
-                    const itemSizeGrid = Object.entries(orderItem.sizes as Record<string, { toProduction: number }>)
+                    const batchSizesSource = si.fractionLabel ? (si.sizes || orderItem?.sizes) : (orderItem?.sizes || si.sizes);
+                    if (!itemProduct || !itemVariation || !batchSizesSource) return;
+                    const itemSizeGrid = Object.entries(batchSizesSource as Record<string, { toProduction: number }>)
                       .filter(([, s]) => s.toProduction > 0)
                       .sort(([a], [b]) => Number(a) - Number(b))
                       .map(([sz, s]) => `${sz}x${s.toProduction}`)
@@ -8661,8 +9142,9 @@ export default function PCPView({
                         const hasCompletedOS = !!completedOS;
                         const isExpanded = expandedSourceItems.has(key);
 
-                        const sizeEntries = orderItem
-                          ? Object.entries(orderItem.sizes as Record<string, { toProduction: number }>)
+                        const sizeEntriesSource = si.fractionLabel ? (si.sizes || orderItem?.sizes) : (orderItem?.sizes || si.sizes);
+                        const sizeEntries = sizeEntriesSource
+                          ? Object.entries(sizeEntriesSource as Record<string, { toProduction: number }>)
                             .filter(([, s]) => s.toProduction > 0)
                             .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
                           : [];
@@ -9064,8 +9546,9 @@ export default function PCPView({
 
                             const key = `${si.orderId}-${idx}-other`;
                             const isExpanded = expandedSourceItems.has(key);
-                            const sizeEntries = orderItem
-                              ? Object.entries(orderItem.sizes as Record<string, { toProduction: number }>)
+                            const otherSizesSource = si.fractionLabel ? (si.sizes || orderItem?.sizes) : (orderItem?.sizes || si.sizes);
+                            const sizeEntries = otherSizesSource
+                              ? Object.entries(otherSizesSource as Record<string, { toProduction: number }>)
                                 .filter(([, s]) => s.toProduction > 0)
                                 .sort(([a], [b]) => parseFloat(a) - parseFloat(b))
                               : [];
@@ -9377,6 +9860,7 @@ export default function PCPView({
                                       variationId: si.variationId,
                                       productId: resolvedProductId,
                                       productName: itemProduct?.name || orderItem?.productName || '—',
+                                      productReference: itemProduct?.reference || '',
                                       colorName: '',
                                       qty: si.qty || 0,
                                       suggestedSectorId: chosenSectorId,
@@ -9399,12 +9883,12 @@ export default function PCPView({
                                     contributions: { orderLabel: string; lotNumber: string; qty: number }[]
                                   }[] = [];
                                   if (toFinalize.length > 0) {
-                                    const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalize.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx })));
+                                    const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalize.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx, fractionLabel: it.fractionLabel })));
                                     lines.push('');
                                     if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
                                     if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} pedido(s) → ENTRADA EM ESTOQUE (+ baixa de solados)`);
                                     toFinalize.forEach(it => {
-                                      const isStock = stockItems.some(si => si.orderId === it.orderId && si.itemIdx === it.itemIdx);
+                                      const isStock = stockItems.some(si => si.orderId === it.orderId && si.itemIdx === it.itemIdx && (si.fractionLabel || undefined) === (it.fractionLabel || undefined));
                                       const order = productionOrders.find(o => o.id === it.orderId);
                                       const customerName = order?.customerName || selectedLot.customerName;
                                       const info = computeStockProjection(it, { isStock, customerName });
@@ -10753,42 +11237,277 @@ export default function PCPView({
         document.body
       )}
 
-      {osCompleteConfirm && createPortal(
-        <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" style={{ zIndex: 60000 }}>
-          <div className={`w-full max-w-sm rounded-[2rem] p-6 flex flex-col gap-5 shadow-2xl animate-in zoom-in-95 duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center shrink-0">
-                <CheckCircle2 size={20} />
-              </div>
-              <div>
-                <h3 className={`text-base font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                  Concluir Ordem de Serviço
-                </h3>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-500">
-                  {osCompleteConfirm.osNumber}
+      {osBaixaPanel && createPortal(
+        <div
+          className="fixed inset-0 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-150"
+          style={{ zIndex: 60000 }}
+          onClick={() => setOsBaixaPanel(null)}
+        >
+          <div
+            className={`w-full max-w-lg rounded-[2rem] border shadow-2xl p-5 flex flex-col gap-3 animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-1">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <CheckSquare size={14} className="text-emerald-500 shrink-0" />
+                  <h3 className={`text-[11px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-900'}`}>
+                    Dar Baixa — {osBaixaPanel.os.osNumber}
+                  </h3>
+                </div>
+                <p className={`text-[9px] font-bold mt-0.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                  Marque os pedidos prontos e confira o destino de cada um antes de baixar
                 </p>
               </div>
-            </div>
-
-            <p className={`text-xs font-bold leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-650'}`}>
-              Deseja realmente dar baixa e concluir a Ordem de Serviço <span className="font-black text-indigo-500">{osCompleteConfirm.osNumber}</span>?
-              {osCompleteConfirm.providerName ? ` (Prestador: ${osCompleteConfirm.providerName})` : ''}
-            </p>
-
-            <div className="flex items-center gap-3 mt-2">
               <button
                 type="button"
-                onClick={() => setOsCompleteConfirm(null)}
-                className={`flex-1 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-450 hover:bg-slate-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                title="Fechar"
+                onClick={() => setOsBaixaPanel(null)}
+                className={`p-1.5 rounded-full transition-all shrink-0 ${isDarkMode ? 'text-slate-500 hover:bg-slate-800 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={toggleOsBaixaSelectAll}
+              className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl border transition-colors ${isDarkMode ? 'border-slate-800 hover:bg-slate-800/50' : 'border-slate-200 hover:bg-slate-50'}`}
+            >
+              <input
+                type="checkbox"
+                checked={osBaixaPanel.items.every(it => it.included)}
+                readOnly
+                className="w-4 h-4 accent-indigo-600 pointer-events-none"
+              />
+              <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                Selecionar todos ({osBaixaPanel.items.filter(it => it.included).length}/{osBaixaPanel.items.length})
+              </span>
+            </button>
+
+            <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
+              {osBaixaPanel.items.map(item => {
+                const isOverridden = item.included && item.chosenSectorId !== item.suggestedSectorId;
+                return (
+                  <div
+                    key={item.key}
+                    className={`flex flex-col gap-2 p-3 rounded-2xl border transition-opacity ${item.included
+                      ? (isDarkMode ? 'bg-slate-800/60 border-slate-700/60' : 'bg-slate-50 border-slate-200')
+                      : (isDarkMode ? 'bg-slate-900/40 border-slate-800/60 opacity-60' : 'bg-slate-100/60 border-slate-200/60 opacity-60')
+                      }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={item.included}
+                        onChange={() => toggleOsBaixaItemIncluded(item.key)}
+                        className="w-4 h-4 accent-indigo-600 cursor-pointer shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-[10px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-900'}`}>
+                          {item.productReference ? `${item.productReference} ` : ''}{item.productName}
+                        </p>
+                        {item.colorName && (
+                          <p className={`text-[11px] font-bold mt-0.5 truncate ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{item.colorName}</p>
+                        )}
+                      </div>
+                      <span className={`text-[10px] font-black uppercase tracking-widest shrink-0 px-2.5 py-1 rounded-full ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-white text-slate-600'}`}>
+                        {item.qty} {item.qty === 1 ? 'par' : 'pares'}
+                      </span>
+                    </div>
+                    {item.included ? (
+                      <div className="flex items-center gap-2 pl-7">
+                        <span className={`text-[9px] font-black uppercase tracking-widest shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Mover para</span>
+                        <select
+                          title={`Setor de destino para ${item.productName}`}
+                          value={item.chosenSectorId}
+                          onChange={(e) => updateOsBaixaItemSector(item.key, e.target.value)}
+                          className={`flex-1 min-w-0 text-[10px] font-black uppercase tracking-widest rounded-xl px-3 py-2 border outline-none transition-all ${isOverridden
+                            ? 'border-orange-500 text-orange-500 bg-orange-500/10'
+                            : isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-200' : 'border-slate-200 bg-white text-slate-700'
+                            }`}
+                        >
+                          <option value="">CONCLUÍDO (finalizar)</option>
+                          {visibleSectors.map(sector => (
+                            <option key={sector.id} value={sector.id}>{sector.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <p className={`text-[8px] font-bold uppercase tracking-widest pl-7 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                        Permanece nesta OS — não baixado agora
+                      </p>
+                    )}
+                    {item.included && isOverridden && (
+                      <p className="text-[8px] font-bold uppercase tracking-widest pl-7 text-orange-500">
+                        Ajustado manualmente — sugestão original: {item.suggestedSectorName}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setOsBaixaPanel(null)}
+                className={`flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
               >
                 Cancelar
               </button>
               <button
                 type="button"
-                onClick={() => executeCompleteOS(osCompleteConfirm)}
-                className="flex-1 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 active:scale-95 transition-all hover:bg-emerald-700"
+                disabled={!osBaixaPanel.items.some(it => it.included)}
+                onClick={executeOsBaixaPanel}
+                className={`flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all ${!osBaixaPanel.items.some(it => it.included)
+                  ? 'bg-slate-300 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-50'
+                  : 'bg-emerald-600 hover:bg-emerald-700'
+                  }`}
               >
-                Confirmar
+                Dar Baixa ({osBaixaPanel.items.filter(it => it.included).length}/{osBaixaPanel.items.length})
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {fractionModal && createPortal(
+        <div
+          className="fixed inset-0 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-150"
+          style={{ zIndex: 60000 }}
+          onClick={() => setFractionModal(null)}
+        >
+          <div
+            className={`w-full max-w-lg rounded-[2rem] border shadow-2xl p-5 flex flex-col gap-3 animate-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-1">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Scissors size={14} className="text-amber-500 shrink-0" />
+                  <h3 className={`text-[11px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-900'}`}>
+                    Fracionar Pedido
+                  </h3>
+                </div>
+                <p className={`text-[9px] font-bold mt-0.5 truncate ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                  {fractionModal.product.name}{fractionModal.variation?.colorName ? ` · ${fractionModal.variation.colorName}` : ''} — {Object.values(fractionModal.baseSizes).reduce((a, b) => a + b, 0)} pares
+                </p>
+              </div>
+              <button
+                type="button"
+                title="Fechar"
+                onClick={() => setFractionModal(null)}
+                className={`p-1.5 rounded-full transition-all shrink-0 ${isDarkMode ? 'text-slate-500 hover:bg-slate-800 hover:text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'}`}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modo determinado automaticamente pelo tipo do pedido — grade padrão (atacado)
+                só fraciona em caixas cheias, pra não quebrar a baixa de estoque por caixa;
+                varejo fraciona livre por tamanho, já que não segue embalagem nenhuma. */}
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+              <span className="text-[9px] font-black uppercase tracking-widest shrink-0 px-2 py-0.5 rounded-full bg-amber-500 text-white">
+                {fractionModal.mode === 'grade' ? 'Múltiplos da Embalagem' : 'Livre (Varejo)'}
+              </span>
+              <span className={`text-[8px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                {fractionModal.mode === 'grade' ? 'Pedido em grade padrão — só caixas cheias' : 'Pedido de varejo — quantidade livre por tamanho'}
+              </span>
+            </div>
+
+            <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
+              {fractionModal.fractions.map((fr, idx) => {
+                const isLast = idx === fractionModal.fractions.length - 1;
+                const total = Object.values(fr.sizes).reduce((a, b) => a + b, 0);
+                const hasNegative = Object.values(fr.sizes).some(q => q < 0);
+                return (
+                  <div key={idx} className={`flex flex-col gap-2 p-3 rounded-2xl border ${hasNegative
+                    ? (isDarkMode ? 'bg-rose-950/30 border-rose-700/50' : 'bg-rose-50 border-rose-200')
+                    : isLast
+                      ? (isDarkMode ? 'bg-slate-800/40 border-slate-700/40' : 'bg-slate-50/60 border-slate-200/60')
+                      : (isDarkMode ? 'bg-slate-800/60 border-slate-700/60' : 'bg-slate-50 border-slate-200')
+                    }`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest shrink-0 px-2.5 py-1 rounded-full bg-amber-500 text-white">
+                        Fração {fr.label}
+                      </span>
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${hasNegative ? 'text-rose-500' : isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                        {total} {total === 1 ? 'par' : 'pares'}{isLast ? ' (resto)' : ''}
+                      </span>
+                      {!isLast && fractionModal.fractions.length > 2 && (
+                        <button type="button" title="Remover fração" onClick={() => removeFractionRow(idx)}
+                          className={`p-1 rounded-full shrink-0 ${isDarkMode ? 'text-slate-500 hover:bg-slate-700 hover:text-white' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'}`}>
+                          <X size={13} />
+                        </button>
+                      )}
+                    </div>
+
+                    {fractionModal.mode === 'grade' && fractionModal.gridConfig ? (
+                      isLast ? (
+                        <p className={`text-[9px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                          {fr.multiplier > 0 ? `${fr.multiplier}× grade` : 'calculado automaticamente'}
+                        </p>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[9px] font-black uppercase tracking-widest shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>× Grade</span>
+                          <button type="button" onClick={() => updateFractionMultiplier(idx, fr.multiplier - 1)}
+                            className={`w-7 h-7 rounded-lg text-sm font-black ${isDarkMode ? 'bg-slate-900 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>−</button>
+                          <input type="number" min={0} value={fr.multiplier}
+                            onChange={(e) => updateFractionMultiplier(idx, Number(e.target.value))}
+                            className={`w-14 text-center text-[11px] font-black rounded-lg px-1 py-1.5 border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-700'}`}
+                          />
+                          <button type="button" onClick={() => updateFractionMultiplier(idx, fr.multiplier + 1)}
+                            className={`w-7 h-7 rounded-lg text-sm font-black ${isDarkMode ? 'bg-slate-900 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>+</button>
+                        </div>
+                      )
+                    ) : (
+                      <div className="flex flex-col gap-1">
+                        {Object.keys(fractionModal.baseSizes).sort((a, b) => parseFloat(a) - parseFloat(b)).map(sz => (
+                          <div key={sz} className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg ${isDarkMode ? 'bg-slate-900/60' : 'bg-white'}`}>
+                            <span className={`text-[10px] font-black uppercase ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Tam. {sz}</span>
+                            {isLast ? (
+                              <span className={`text-[12px] font-black ${(fr.sizes[sz] || 0) < 0 ? 'text-rose-500' : isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{fr.sizes[sz] || 0}</span>
+                            ) : (
+                              <input type="number" min={0} value={fr.sizes[sz] || 0}
+                                onChange={(e) => updateFractionSize(idx, sz, Number(e.target.value))}
+                                className={`w-16 text-center text-[11px] font-black rounded-lg px-1 py-1 border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-700'}`}
+                              />
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <button type="button" onClick={addFractionRow}
+              className={`w-full py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border border-dashed transition-all ${isDarkMode ? 'border-slate-700 text-slate-400 hover:bg-slate-800/50' : 'border-slate-300 text-slate-500 hover:bg-slate-50'}`}
+            >
+              + Adicionar Fração
+            </button>
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setFractionModal(null)}
+                className={`flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={!isFractionPlanValid(fractionModal)}
+                onClick={executeFractionFicha}
+                className={`flex-1 px-4 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest text-white transition-all ${!isFractionPlanValid(fractionModal)
+                  ? 'bg-slate-300 dark:bg-slate-800 text-slate-400 cursor-not-allowed opacity-50'
+                  : 'bg-amber-600 hover:bg-amber-700'
+                  }`}
+              >
+                Fracionar ({fractionModal.fractions.length})
               </button>
             </div>
           </div>
@@ -11233,7 +11952,7 @@ export default function PCPView({
                               <span className="text-slate-300 dark:text-slate-700">·</span>
                               <span className="truncate">{f.product?.reference || '---'}</span>
                             </div>
-                            <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider truncate mt-0.5">{f.variation?.colorName || '---'}</p>
+                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-wider truncate mt-0.5">{f.variation?.colorName || '---'}</p>
                           </div>
                           <span className="text-[10px] font-black px-2 py-0.5 bg-indigo-500/10 text-indigo-500 rounded-full shrink-0">
                             {f.si.qty} {f.si.qty === 1 ? 'par' : 'pares'}
@@ -11315,9 +12034,11 @@ export default function PCPView({
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
-                        <p className={`text-[10px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-900'}`}>{item.productName}</p>
+                        <p className={`text-[10px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-900'}`}>
+                          {item.productReference ? `${item.productReference} ` : ''}{item.productName}
+                        </p>
                         {item.colorName && (
-                          <p className={`text-[9px] font-bold mt-0.5 truncate ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{item.colorName}</p>
+                          <p className={`text-[11px] font-bold mt-0.5 truncate ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{item.colorName}</p>
                         )}
                       </div>
                       <span className={`text-[10px] font-black uppercase tracking-widest shrink-0 px-2.5 py-1 rounded-full ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-white text-slate-600'}`}>
@@ -11657,7 +12378,9 @@ export default function PCPView({
             const colorName = f.variation?.colorName || f.orderItem?.variationName || '';
             // Fallback pro snapshot salvo no lote (f.si.sizes) — sem isso, a grade some
             // se o Pedido de Produção original for editado/excluído depois da criação.
-            const szSizesSource = f.orderItem?.sizes || f.si?.sizes;
+            // Fichas FRACIONADAS sempre priorizam f.si.sizes (a fatia da fração) — ver
+            // mesmo comentário no card de "Pedidos no Setor".
+            const szSizesSource = f.si?.fractionLabel ? (f.si?.sizes || f.orderItem?.sizes) : (f.orderItem?.sizes || f.si?.sizes);
             const szEntries = szSizesSource
               ? Object.entries(szSizesSource as Record<string, any>)
                 .filter(([, s]) => (s?.toProduction || 0) > 0)

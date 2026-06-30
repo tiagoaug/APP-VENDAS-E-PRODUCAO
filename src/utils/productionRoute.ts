@@ -106,10 +106,20 @@ export const ORDER_FINALIZED = '__FINALIZADO__';
  * contribute multiple `sourceItems` to a lot (e.g. several colors of the same model) —
  * keying overrides by this composite key lets each of those move independently, instead
  * of an override on one item affecting every item that shares the same `orderId`.
+ *
+ * `fractionLabel` is the extra discriminator for FRACIONAMENTO: quando um pedido é
+ * fracionado (ver "Fracionar Pedido" em PCPView), as frações resultantes compartilham o
+ * MESMO `orderId`+`itemIdx` (são pedaços do mesmo pedido), então sem esse sufixo elas
+ * colidiriam na mesma chave de `orderSectors` e se sobrescreveriam assim que uma se
+ * movesse pra um setor diferente da outra. Itens sem fração (a esmagadora maioria) não
+ * passam esse campo, então a chave gerada continua idêntica à de antes — compatível com
+ * qualquer dado já salvo.
  */
-export function getSourceItemKey(si: { orderId: string; itemIdx?: number; productId?: string; variationId?: string }): string {
-  if (si.itemIdx !== undefined) return `${si.orderId}::${si.itemIdx}`;
-  return `${si.orderId}::${si.productId || ''}-${si.variationId || ''}`;
+export function getSourceItemKey(si: { orderId: string; itemIdx?: number; productId?: string; variationId?: string; fractionLabel?: string }): string {
+  const base = si.itemIdx !== undefined
+    ? `${si.orderId}::${si.itemIdx}`
+    : `${si.orderId}::${si.productId || ''}-${si.variationId || ''}`;
+  return si.fractionLabel ? `${base}::frac-${si.fractionLabel}` : base;
 }
 
 /**
@@ -121,7 +131,7 @@ export function getSourceItemKey(si: { orderId: string; itemIdx?: number; produc
 export function getOrderEffectiveSector(
   lot: Pick<ProductionLot, 'route' | 'currentSectorIndex' | 'metadata'>,
   orderId: string,
-  si?: { itemIdx?: number; productId?: string; variationId?: string },
+  si?: { itemIdx?: number; productId?: string; variationId?: string; fractionLabel?: string },
 ): string {
   const orderSectors = (lot.metadata as any)?.orderSectors || {};
   if (si) {
