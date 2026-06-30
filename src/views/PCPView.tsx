@@ -2903,15 +2903,77 @@ export default function PCPView({
     const vari = prod.variations.find(v => v.id === (si.variationId || ordItem.variationId));
     if (!vari) return null;
 
-    // Fichas FRACIONADAS usam a fatia própria (si.sizes) — ordItem.sizes é a grade do
-    // pedido INTEIRO, compartilhada por todas as frações do mesmo pedido, e baixaria/
-    // creditaria estoque e solado pela quantidade ERRADA (o pedido todo, não a fração).
-    const sizesSource = si.fractionLabel ? (si.sizes || ordItem.sizes) : (ordItem.sizes || si.sizes);
-    const pairs: Record<string, number> = {};
-    Object.entries(sizesSource || {}).forEach(([size, sData]: any) => {
-      const qty = Number(sData.toProduction) || 0;
-      if (qty > 0) pairs[size] = qty;
-    });
+    const siQty: number = si.qty || 0;
+
+    // Prioridade para montar a grade por tamanho que vai a resolveSoleConsumption:
+    //   1. Snapshot da fração (si.sizes com fractionLabel) — já tem a fatia exata.
+    //   2. Padrão de embalagem cadastrado × nº de caixas: é a fonte mais confiável para
+    //      a DISTRIBUIÇÃO por faixa em pedidos ATACADO (grade padrão), pois define exatamente
+    //      quantos pares por faixa cabem numa caixa (ex.: 38-39: 12, 40-41: 24, 42-43: 12).
+    //      ordItem.sizes pode ter distribuição diferente (ex.: igual entre tamanhos) que não
+    //      corresponde ao padrão físico de embalagem — isso causava desconto errado por faixa.
+    //   3. Fallback: ordItem.sizes ou si.sizes (qualquer um disponível), escalado por si.qty
+    //      quando o total diferir do qtd real do lote.
+    let pairs: Record<string, number> = {};
+
+    if (si.fractionLabel && si.sizes) {
+      // Fração explícita: usa sempre o snapshot da fração
+      Object.entries(si.sizes as Record<string, any>).forEach(([size, sData]) => {
+        const qty = Number(sData?.toProduction) || 0;
+        if (qty > 0) pairs[size] = qty;
+      });
+    } else if (siQty > 0) {
+      // Tenta embalagem cadastrada para obter a distribuição correta por faixa
+      const gridId = prod.productionGridId || prod.defaultGridId;
+      if (gridId) {
+        const pkg = productionConfigs.find(c => c.type === 'PACKAGING' && (c.metadata as any)?.productionGradeId === gridId);
+        const pkgBreakdown = (pkg?.metadata as any)?.sizeQuantities as Record<string, number> | undefined;
+        const boxConfig: Record<string, number> | null = (pkgBreakdown && Object.values(pkgBreakdown).some(q => (q || 0) > 0))
+          ? pkgBreakdown
+          : (grids.find(g => g.id === gridId)?.configuration || null);
+
+        if (boxConfig) {
+          const pairsPerBox = Object.values(boxConfig).reduce((s, q) => s + (q || 0), 0);
+          if (pairsPerBox > 0) {
+            const numBoxes = Math.round(siQty / pairsPerBox);
+            if (numBoxes > 0) {
+              Object.entries(boxConfig).forEach(([sz, qPerBox]) => {
+                const p = Math.round((qPerBox || 0) * numBoxes);
+                if (p > 0) pairs[sz] = p;
+              });
+            }
+          }
+        }
+      }
+
+      // Fallback: ordItem.sizes ou si.sizes escalado por si.qty
+      if (Object.keys(pairs).length === 0) {
+        const sizesSource = si.sizes || ordItem.sizes;
+        const rawPairs: Record<string, number> = {};
+        Object.entries(sizesSource || {}).forEach(([size, sData]: any) => {
+          const qty = Number(sData?.toProduction) || 0;
+          if (qty > 0) rawPairs[size] = qty;
+        });
+        const rawTotal = Object.values(rawPairs).reduce((s, q) => s + q, 0);
+        if (rawTotal > 0 && siQty !== rawTotal) {
+          const scale = siQty / rawTotal;
+          const sizeKeys = Object.keys(rawPairs);
+          let distributed = 0;
+          sizeKeys.forEach((sz, i) => {
+            if (i === sizeKeys.length - 1) {
+              const rem = siQty - distributed;
+              if (rem > 0) pairs[sz] = rem;
+            } else {
+              const s = Math.round(rawPairs[sz] * scale);
+              if (s > 0) { pairs[sz] = s; distributed += s; }
+            }
+          });
+        } else {
+          pairs = rawPairs;
+        }
+      }
+    }
+
     const totalQty = Object.values(pairs).reduce((s, q) => s + q, 0);
     const gradeLabel = Object.entries(pairs).map(([sz, q]) => `${sz}x${q}`).join('-');
 
@@ -5738,9 +5800,33 @@ export default function PCPView({
                                             );
                                             if (!fichaItem) return;
                                             const { product: prod, variation: vari, si, orderItem } = fichaItem;
-                                            const sizesForPairs = si?.fractionLabel ? (si?.sizes || orderItem?.sizes) : (orderItem?.sizes || si?.sizes);
-                                            const pairs = sizesForPairs ? Object.entries(sizesForPairs).reduce((acc, [sz, data]: [string, any]) => ({ ...acc, [sz]: data.toProduction || 0 }), {}) : {};
-                                            const consumption = resolveSoleConsumption(prod, vari, pairs, it.qty, soleStock);
+                                            // Mesma lógica de resolveSourceItem: embalagem cadastrada → ordItem.sizes escalado
+                                            let pairsPreview: Record<string, number> = {};
+                                            if (si?.fractionLabel && si?.sizes) {
+                                              Object.entries(si.sizes as Record<string, any>).forEach(([sz, d]) => { const q = Number(d?.toProduction) || 0; if (q > 0) pairsPreview[sz] = q; });
+                                            } else if (it.qty > 0) {
+                                              const gridIdP = prod?.productionGridId || prod?.defaultGridId;
+                                              if (gridIdP) {
+                                                const pkgP = productionConfigs.find(c => c.type === 'PACKAGING' && (c.metadata as any)?.productionGradeId === gridIdP);
+                                                const pkgBD = (pkgP?.metadata as any)?.sizeQuantities as Record<string, number> | undefined;
+                                                const boxCfg = (pkgBD && Object.values(pkgBD).some(q => (q || 0) > 0)) ? pkgBD : (grids.find(g => g.id === gridIdP)?.configuration || null);
+                                                if (boxCfg) {
+                                                  const ppb = Object.values(boxCfg).reduce((s, q) => s + (q || 0), 0);
+                                                  if (ppb > 0) { const nb = Math.round(it.qty / ppb); Object.entries(boxCfg).forEach(([sz, q]) => { const p = Math.round((q || 0) * nb); if (p > 0) pairsPreview[sz] = p; }); }
+                                                }
+                                              }
+                                              if (Object.keys(pairsPreview).length === 0) {
+                                                const sfp = si?.sizes || orderItem?.sizes;
+                                                const rpP: Record<string, number> = {};
+                                                Object.entries(sfp || {}).forEach(([sz, d]: [string, any]) => { const q = Number(d?.toProduction) || 0; if (q > 0) rpP[sz] = q; });
+                                                const rtP = Object.values(rpP).reduce((s, q) => s + q, 0);
+                                                if (rtP > 0 && it.qty !== rtP) {
+                                                  const sc = it.qty / rtP; const keys = Object.keys(rpP); let dist = 0;
+                                                  keys.forEach((sz, i) => { if (i === keys.length - 1) { const r = it.qty - dist; if (r > 0) pairsPreview[sz] = r; } else { const s = Math.round(rpP[sz] * sc); if (s > 0) { pairsPreview[sz] = s; dist += s; } } });
+                                                } else { pairsPreview = rpP; }
+                                              }
+                                            }
+                                            const consumption = resolveSoleConsumption(prod, vari, pairsPreview, it.qty, soleStock);
                                             if (!consumption) return;
                                             const key = `${consumption.moldId}_${consumption.colorId || 'default'}`;
 
@@ -9900,7 +9986,13 @@ export default function PCPView({
                                     // pedidos finalizados e mostra estoque atual → estoque após a baixa.
                                     const consumptionByKey = new Map<string, { moldId: string; colorId: string; gradeQuantities: Record<string, number>; contributions: { orderLabel: string; lotNumber: string; qty: number }[] }>();
                                     toFinalize.forEach(it => {
-                                      const resolvedSI = resolveSourceItem(it);
+                                      // Busca o sourceItem bruto (tem si.sizes com a grade da fração/lote)
+                                      // em vez de passar diretamente o LotAdvanceItem (que não tem .sizes
+                                      // e faria resolveSourceItem cair no ordItem.sizes do pedido inteiro).
+                                      const rawSI = it.siIdx !== undefined
+                                        ? (selectedLot as any).metadata?.sourceItems?.[it.siIdx]
+                                        : undefined;
+                                      const resolvedSI = resolveSourceItem(rawSI || it);
                                       if (!resolvedSI || resolvedSI.totalQty <= 0) return;
                                       const { prod, vari, pairs, totalQty } = resolvedSI;
                                       const consumption = resolveSoleConsumption(prod, vari, pairs, totalQty, soleStock);
@@ -11318,20 +11410,37 @@ export default function PCPView({
                     {item.included ? (
                       <div className="flex items-center gap-2 pl-7">
                         <span className={`text-[9px] font-black uppercase tracking-widest shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Mover para</span>
-                        <select
-                          title={`Setor de destino para ${item.productName}`}
-                          value={item.chosenSectorId}
-                          onChange={(e) => updateOsBaixaItemSector(item.key, e.target.value)}
-                          className={`flex-1 min-w-0 text-[10px] font-black uppercase tracking-widest rounded-xl px-3 py-2 border outline-none transition-all ${isOverridden
-                            ? 'border-orange-500 text-orange-500 bg-orange-500/10'
-                            : isDarkMode ? 'border-slate-700 bg-slate-900 text-slate-200' : 'border-slate-200 bg-white text-slate-700'
-                            }`}
-                        >
-                          <option value="">CONCLUÍDO (finalizar)</option>
-                          {visibleSectors.map(sector => (
-                            <option key={sector.id} value={sector.id}>{sector.name}</option>
-                          ))}
-                        </select>
+                        {/* Cápsula estilizada com nome do setor em laranja + ponto pulsante.
+                            O <select> nativo fica invisível sobre a cápsula para capturar o
+                            toque e abrir o picker nativo do Android sem perder o visual custom. */}
+                        <div className="relative flex-1 min-w-0">
+                          <div className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border transition-all ${
+                            isOverridden
+                              ? 'border-orange-400 bg-orange-500/15'
+                              : 'border-orange-300 bg-orange-50 dark:border-orange-700/50 dark:bg-orange-900/20'
+                          }`}>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 truncate">
+                              {item.chosenSectorId === ''
+                                ? 'CONCLUÍDO'
+                                : (visibleSectors.find(s => s.id === item.chosenSectorId)?.name || item.chosenSectorId)}
+                            </span>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+                              <ChevronDown size={13} className="text-orange-500" />
+                            </div>
+                          </div>
+                          <select
+                            title={`Setor de destino para ${item.productName}`}
+                            value={item.chosenSectorId}
+                            onChange={(e) => updateOsBaixaItemSector(item.key, e.target.value)}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                          >
+                            <option value="">CONCLUÍDO (finalizar)</option>
+                            {visibleSectors.map(sector => (
+                              <option key={sector.id} value={sector.id}>{sector.name}</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                     ) : (
                       <p className={`text-[8px] font-bold uppercase tracking-widest pl-7 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
