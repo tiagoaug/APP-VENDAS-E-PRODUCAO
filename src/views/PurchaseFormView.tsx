@@ -922,7 +922,7 @@ export default function PurchaseFormView({
 
   // Cesta de compras — itens configurados
   const cartItems = useMemo(() => {
-    const items: { blockId: string; blockIndex: number; productId: string; productName: string; reference: string; variationId: string; variationName: string; quantity: number; cost: number; pkgConfig?: { pkgId: string; pkgName: string; breakdown: Record<string, number>; pairsPerEmb: number } }[] = [];
+    const items: { blockId: string; blockIndex: number; productId: string; productName: string; reference: string; variationId: string; variationName: string; quantity: number; cost: number; saleType?: SaleType; pkgConfig?: { pkgId: string; pkgName: string; breakdown: Record<string, number>; pairsPerEmb: number } }[] = [];
     blocks.forEach((block, blockIndex) => {
       const product = products.find(p => p.id === block.productId);
       Object.entries(block.variations).forEach(([variationKey, varData]) => {
@@ -941,6 +941,7 @@ export default function PurchaseFormView({
           variationName: variation?.colorName || '',
           quantity: varData.quantity,
           cost: block.cost,
+          saleType: block.saleType,
           ...(pkg?.pkgId ? { pkgConfig: { pkgId: pkg.pkgId, pkgName: pkgConfig?.name || '', breakdown: pkg.breakdown, pairsPerEmb } } : {})
         });
       });
@@ -1817,7 +1818,39 @@ export default function PurchaseFormView({
             </div>
           </button>
 
-          {/* Info card quando OP ativa */}
+          {/* Card explicativo — solados/insumos e fluxo de produção (sempre visível) */}
+          <div className={`mb-4 flex items-start gap-3 p-4 rounded-2xl border ${isProductionOrder ? (isDarkMode ? 'bg-sky-900/20 border-sky-800/40' : 'bg-sky-50 border-sky-200') : (isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200')}`}>
+            <span className="relative shrink-0 mt-0.5 flex items-center justify-center">
+              <span className={`absolute inset-0 rounded-full animate-ping ${isProductionOrder ? 'bg-sky-400/50' : 'bg-red-500/50'}`} />
+              <Info size={15} className={isProductionOrder ? 'text-sky-400' : 'text-red-400'} />
+            </span>
+            <div className="flex flex-col gap-2">
+              {isProductionOrder ? (
+                <>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-sky-500 dark:text-sky-400 leading-none">
+                    Com controle de produção (OP ativa)
+                  </p>
+                  <p className="text-[9px] font-bold leading-relaxed text-slate-500 dark:text-slate-400">
+                    O pedido entra na fila do PCP e os mapas são criados lá. Se você controla <span className="font-black text-sky-500">solados e insumos</span>, o abate acontece <span className="font-black">automaticamente</span> ao dar baixa da OS na Expedição — o sistema deduz os pares consumidos do saldo de solados.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400 leading-none">
+                    Compra direta (sem produção)
+                  </p>
+                  <p className="text-[9px] font-bold leading-relaxed text-slate-500 dark:text-slate-400">
+                    O estoque de produtos é atualizado imediatamente. <span className="font-black text-amber-500">Solados e insumos NÃO são abatidos</span> — sem ciclo de produção o sistema não registra consumo de matéria-prima.
+                  </p>
+                  <p className="text-[9px] font-bold leading-relaxed text-slate-400">
+                    Se você usa controle de solados/insumos e os produtos já saíram prontos de um fabricante externo, abata os insumos manualmente no estoque de solados, ou ative a OP para que o fluxo cuide disso.
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Info card quando OP ativa — detalhe de configuração */}
           {isProductionOrder && (
             <div className={`mb-4 flex items-start gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-amber-900/20 border-amber-800/40' : 'bg-amber-50 border-amber-200'}`}>
               <Factory size={16} className="text-amber-500 shrink-0 mt-0.5" />
@@ -1958,7 +1991,12 @@ export default function PurchaseFormView({
                               <span className={`flex-1 font-black text-[11px] uppercase tracking-widest truncate ${selectedPkg ? 'text-violet-700 dark:text-violet-300' : 'text-slate-400'}`}>
                                 {selectedPkg ? `${selectedPkg.name} — ${selectedPkg.metadata?.capacity || 0} pares ${selectedPkg.metadata?.mode === 'FREE' ? '(Grade Livre)' : '(Grade Padrão)'}` : 'Selecione o padrão de embalagem…'}
                               </span>
-                              <Info size={14} className={selectedPkg ? 'text-violet-400' : 'text-slate-300'} />
+                              <span className="relative shrink-0 flex items-center justify-center">
+                                {!selectedPkg && (
+                                  <span className="absolute inset-0 rounded-full bg-amber-400/50 animate-ping" />
+                                )}
+                                <Info size={14} className={selectedPkg ? 'text-violet-400' : 'text-amber-400'} />
+                              </span>
                             </button>
                             {selectedPkg && capacity > 0 && (
                               <p className="text-[9px] text-violet-500 font-black px-1 flex items-center gap-1">
@@ -2130,7 +2168,12 @@ export default function PurchaseFormView({
                                       onClick={() => setGradeModalTarget({ blockId: block.id, variationId: v.id, variationName: v.colorName, productId: block.productId })}
                                       className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all ${gradePerVar[varPkgKey] ? isDarkMode ? 'bg-emerald-900/30 border border-emerald-700' : 'bg-emerald-50 border border-emerald-200' : isDarkMode ? 'bg-slate-800 border border-dashed border-slate-600' : 'bg-white border border-dashed border-slate-200'}`}>
                                       <div className="flex items-center gap-2">
-                                        <CheckCircle2 size={13} className={gradePerVar[varPkgKey] ? 'text-emerald-500' : 'text-slate-400'} />
+                                        <span className="relative shrink-0 flex items-center justify-center">
+                                          {!gradePerVar[varPkgKey] && (
+                                            <span className="absolute inset-0 rounded-full bg-amber-400/50 animate-ping" />
+                                          )}
+                                          <CheckCircle2 size={13} className={gradePerVar[varPkgKey] ? 'text-emerald-500' : 'text-amber-400'} />
+                                        </span>
                                         <span className={`text-[11px] font-black uppercase tracking-widest ${gradePerVar[varPkgKey] ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-400'}`}>
                                           {gradePerVar[varPkgKey] ? `Grade: ${Object.values(gradePerVar[varPkgKey]).reduce((a,b)=>a+b,0)} pares` : 'Configurar Grade'}
                                         </span>
@@ -2448,7 +2491,7 @@ export default function PurchaseFormView({
                     </div>
                     <div className="text-right shrink-0">
                       <p className={`text-sm font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{item.quantity}</p>
-                      <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">grades</p>
+                      <p className="text-[8px] font-bold text-slate-400 uppercase mt-0.5">{item.saleType === SaleType.RETAIL ? 'pares' : 'grades'}</p>
                     </div>
                   </div>
                   {item.pkgConfig && (
@@ -2457,7 +2500,7 @@ export default function PurchaseFormView({
                     </div>
                   )}
                   <p className={`text-[9px] font-black mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                    R$ {item.cost.toFixed(2)}/grade · Total: R$ {(item.cost * item.quantity).toFixed(2)}
+                    R$ {item.cost.toFixed(2)}/{item.saleType === SaleType.RETAIL ? 'par' : 'grade'} · Total: R$ {(item.cost * item.quantity).toFixed(2)}
                   </p>
                 </div>
               </div>

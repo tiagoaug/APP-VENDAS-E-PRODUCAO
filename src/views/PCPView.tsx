@@ -11,7 +11,7 @@ import {
   Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart,
   DollarSign, Hammer, FileText, CheckSquare, Scissors, Printer, Share2, Truck,
   QrCode, ScanLine, Hash, Lock, ChevronDown, List, ArrowLeftRight, MessageSquare, Eye, EyeOff,
-  Footprints, Scale, Database, TrendingDown, Zap, Palette, Bell
+  Footprints, Scale, Database, TrendingDown, Zap, Palette, Bell, Wrench, LayoutGrid
 } from 'lucide-react';
 import {
   ProductionLot, Product, Sector,
@@ -368,8 +368,32 @@ export default function PCPView({
   // contra repetição. Só pra localizar o excesso exato a corrigir; pode ser removido
   // depois que os números de estoque forem corrigidos.
   const [showStockDiagnosticModal, setShowStockDiagnosticModal] = useState(false);
+  type StockRepairItem =
+    | {
+        kind: 'fix_boxqty'; selected: boolean;
+        stockLotId: string; lotOrderNumber: string;
+        productId: string; productName: string;
+        variationId: string; variationName: string;
+        sizeBreakdown: Record<string, number>; totalPairs: number;
+        correctBoxQty: number; pairsPerBox: number;
+        currentWholesaleStock: number; pkgId?: string; pkgName?: string;
+      }
+    | {
+        kind: 'create_stocklot'; selected: boolean;
+        lotId: string; lotOrderNumber: string;
+        orderId: string; itemIdx?: number; fractionLabel?: string;
+        productName: string; variationName: string; qty: number;
+      };
+  const [stockRepairModal, setStockRepairModal] = useState<{
+    phase: 'preview' | 'running' | 'done';
+    items: StockRepairItem[];
+    appliedCount: number;
+    errorMsg?: string;
+  } | null>(null);
   const [selectedSectorId, setSelectedSectorId] = useState<string | null>(initialSectorId ?? null);
   const [isSectorSwitcherOpen, setIsSectorSwitcherOpen] = useState(false);
+  const [showOSPedidosInline, setShowOSPedidosInline] = useState(true);
+  const [showOSGradeInline, setShowOSGradeInline] = useState(false);
   // Override manual de setor: escapatória para quando o cálculo automático erra
   // (ex.: pedidos adiantados / mapas com modelos de roteiros diferentes fazem o
   // mapa "pular" setores). Permite escolher diretamente o setor de destino do mapa.
@@ -1494,7 +1518,12 @@ export default function PCPView({
     if ((it.saleType ?? product.type) === SaleType.WHOLESALE) {
       const gridId = product.productionGridId || product.defaultGridId;
       const defaultPkg = productionConfigs.find(c => c.type === 'PACKAGING' && c.metadata?.productionGradeId === gridId);
-      let pairsPerBox = defaultPkg?.metadata?.capacity as number | undefined;
+      // Prioridade: sizeQuantities (composição real da caixa) → capacity (campo direto) → grid sum
+      const pkgSizeQtys = (defaultPkg?.metadata as any)?.sizeQuantities as Record<string, number> | undefined;
+      const sizeQtysSum = pkgSizeQtys ? Object.values(pkgSizeQtys).reduce((s, q) => s + (q || 0), 0) : 0;
+      let pairsPerBox: number = sizeQtysSum > 0
+        ? sizeQtysSum
+        : ((defaultPkg?.metadata?.capacity as number | undefined) || 0);
       if (!pairsPerBox) {
         const grid = grids.find(gr => gr.id === gridId);
         pairsPerBox = grid ? Object.values(grid.configuration).reduce((a: number, b: number) => a + b, 0) : 12;
@@ -2879,7 +2908,7 @@ export default function PCPView({
       // Venda cancelada (excluída/estornada após a produção já ter "baixa" em algum
       // setor): a produção segue normalmente, mas as caixas deixam de ser reservadas
       // para essa venda e entram no estoque geral.
-      const isStockDestination = prodOrder.customerName === 'Estoque' || sale?.saleDestination === 'STOCK' || sale?.status === SaleStatus.CANCELLED;
+      const isStockDestination = prodOrder.customerName?.toLowerCase() === 'estoque' || sale?.saleDestination === 'STOCK' || sale?.status === SaleStatus.CANCELLED;
       if (isStockDestination) stockItems.push(item);
       else customerItems.push(item);
     }
@@ -3105,14 +3134,18 @@ export default function PCPView({
         const updVars = baseVariations.map((v, idx) => {
           if (idx !== variIdx) return v;
           const newStock = { ...v.stock };
-          if (ordItem.saleType === SaleType.WHOLESALE) {
+          if ((ordItem.saleType ?? prod.type) === SaleType.WHOLESALE) {
             // ATACADO: "Estoque Global" (CAIXAS) é incrementado convertendo os pares
             // produzidos pela embalagem cujo "Grade de Produção Padrão" corresponde à
-            // grade de produção do produto (pares por caixa), com fallback para a
-            // soma da própria grade de produção.
+            // grade de produção do produto (pares por caixa). Mesma prioridade de
+            // resolveSourceItem: sizeQuantities → capacity → grid.configuration sum.
             const gridId = prod.productionGridId || prod.defaultGridId;
             const defaultPkg = productionConfigs.find(c => c.type === 'PACKAGING' && c.metadata?.productionGradeId === gridId);
-            let pairsPerBox = defaultPkg?.metadata?.capacity as number | undefined;
+            const pkgSizeQtys = (defaultPkg?.metadata as any)?.sizeQuantities as Record<string, number> | undefined;
+            const sizeQtysSum = pkgSizeQtys ? Object.values(pkgSizeQtys).reduce((s, q) => s + (q || 0), 0) : 0;
+            let pairsPerBox: number = sizeQtysSum > 0
+              ? sizeQtysSum
+              : ((defaultPkg?.metadata?.capacity as number | undefined) || 0);
             if (!pairsPerBox) {
               const grid = grids.find(gr => gr.id === gridId);
               pairsPerBox = grid ? Object.values(grid.configuration).reduce((a: number, b: number) => a + b, 0) : 12;
@@ -3209,6 +3242,134 @@ export default function PCPView({
     }
   };
 
+  // Varre dois tipos de problema:
+  // A) StockLots EM_ESTOQUE de produtos ATACADO sem boxQty — bug onde ordItem.saleType
+  //    não tinha fallback para prod.type, creditando pares por tamanho em vez de caixas.
+  // B) sourceItems de lotes marcados ORDER_FINALIZED mas sem StockLot correspondente —
+  //    bug onde executeOsBaixaPanel não chamava applyExpedicaoStockUpdate fora de Expedição.
+  const buildStockRepairItems = (): StockRepairItem[] => {
+    const result: StockRepairItem[] = [];
+
+    // --- Tipo A: StockLot existe mas sem boxQty ---
+    for (const sl of stockLots) {
+      if (sl.status !== 'EM_ESTOQUE') continue;
+      if (sl.boxQty != null && sl.boxQty > 0) continue;
+      const prod = products.find(p => p.id === sl.productId);
+      if (!prod) continue;
+      if ((prod.type ?? SaleType.WHOLESALE) !== SaleType.WHOLESALE) continue;
+      const vari = prod.variations.find(v => v.id === sl.variationId);
+      if (!vari) continue;
+      const gridId = prod.productionGridId || prod.defaultGridId;
+      const defaultPkg = productionConfigs.find(c => c.type === 'PACKAGING' && (c.metadata as any)?.productionGradeId === gridId);
+      const pkgSizeQtys = (defaultPkg?.metadata as any)?.sizeQuantities as Record<string, number> | undefined;
+      const sizeQtysSum = pkgSizeQtys ? Object.values(pkgSizeQtys).reduce((s, q) => s + (q || 0), 0) : 0;
+      let pairsPerBox: number = sizeQtysSum > 0 ? sizeQtysSum : ((defaultPkg?.metadata?.capacity as number | undefined) || 0);
+      if (!pairsPerBox) {
+        const grid = grids.find(g => g.id === gridId);
+        pairsPerBox = grid ? Object.values(grid.configuration).reduce((a: number, b: number) => a + b, 0) : 12;
+      }
+      const correctBoxQty = Math.round((sl.totalPairs || 0) / Math.max(1, pairsPerBox));
+      if (correctBoxQty <= 0) continue;
+      result.push({
+        kind: 'fix_boxqty', selected: true,
+        stockLotId: sl.id, lotOrderNumber: sl.lotOrderNumber || '',
+        productId: prod.id, productName: prod.name,
+        variationId: vari.id, variationName: vari.colorName,
+        sizeBreakdown: (sl.sizeBreakdown as Record<string, number>) || {},
+        totalPairs: sl.totalPairs || 0, correctBoxQty, pairsPerBox,
+        currentWholesaleStock: (vari.stock as any)?.['WHOLESALE'] || 0,
+        pkgId: defaultPkg?.id, pkgName: defaultPkg?.name,
+      });
+    }
+
+    // --- Tipo B: Finalizado sem StockLot ---
+    for (const lot of lots) {
+      const sourceItems: any[] = (lot as any).metadata?.sourceItems || [];
+      if (sourceItems.length === 0) continue;
+      for (const si of sourceItems) {
+        if (getOrderEffectiveSector(lot, si.orderId, si) !== ORDER_FINALIZED) continue;
+        // Verifica se já existe StockLot para este item
+        const hasStockLot = stockLots.some(sl =>
+          sl.lotId === lot.id && sl.productionOrderId === si.orderId &&
+          (si.itemIdx === undefined || sl.itemIdx === si.itemIdx)
+        );
+        if (hasStockLot) continue;
+        // Verifica se é pedido de produção válido
+        const prodOrder = productionOrders.find(o => o.id === si.orderId);
+        if (!prodOrder) continue;
+        const ordItem: any = si.itemIdx !== undefined
+          ? prodOrder.items[si.itemIdx]
+          : prodOrder.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
+        if (!ordItem) continue;
+        const prod = products.find(p => p.id === (si.productId || ordItem.productId));
+        if (!prod) continue;
+        const vari = prod.variations.find(v => v.id === (si.variationId || ordItem.variationId));
+        if (!vari) continue;
+        result.push({
+          kind: 'create_stocklot', selected: true,
+          lotId: lot.id, lotOrderNumber: lot.orderNumber || '',
+          orderId: si.orderId, itemIdx: si.itemIdx, fractionLabel: si.fractionLabel,
+          productName: prod.name, variationName: vari.colorName,
+          qty: si.qty || 0,
+        });
+      }
+    }
+
+    return result;
+  };
+
+  const executeStockRepair = async () => {
+    if (!stockRepairModal) return;
+    const selected = stockRepairModal.items.filter(it => it.selected);
+    if (selected.length === 0) return;
+    setStockRepairModal(prev => prev ? { ...prev, phase: 'running' } : prev);
+    try {
+      // Tipo A: corrigir boxQty em StockLots que foram creditados como VAREJO
+      const fixBoxQty = selected.filter((it): it is Extract<StockRepairItem, { kind: 'fix_boxqty' }> => it.kind === 'fix_boxqty');
+      if (fixBoxQty.length > 0) {
+        const productVariationsMap = new Map<string, Product['variations']>();
+        for (const item of fixBoxQty) {
+          const prod = products.find(p => p.id === item.productId)!;
+          const baseVariations = productVariationsMap.get(prod.id) || prod.variations;
+          const variIdx = baseVariations.findIndex(v => v.id === item.variationId);
+          const updVars = baseVariations.map((v, idx) => {
+            if (idx !== variIdx) return v;
+            const newStock = { ...v.stock } as Record<string, number>;
+            Object.entries(item.sizeBreakdown).forEach(([sz, qty]) => {
+              newStock[sz] = Math.max(0, (newStock[sz] || 0) - qty);
+              if (!newStock[sz]) delete newStock[sz];
+            });
+            newStock['WHOLESALE'] = (newStock['WHOLESALE'] || 0) + item.correctBoxQty;
+            return { ...v, stock: newStock };
+          });
+          productVariationsMap.set(prod.id, updVars);
+          await firebaseService.updateDocument('stockLots', item.stockLotId, {
+            boxQty: item.correctBoxQty,
+            ...(item.pkgId ? { pkgId: item.pkgId, pkgName: item.pkgName } : {}),
+          });
+        }
+        for (const [productId, variations] of productVariationsMap.entries()) {
+          await firebaseService.updateDocument('products', productId, { variations });
+        }
+      }
+
+      // Tipo B: criar StockLot + atualizar estoque para finalizações sem registro
+      const createLots = selected.filter((it): it is Extract<StockRepairItem, { kind: 'create_stocklot' }> => it.kind === 'create_stocklot');
+      for (const item of createLots) {
+        const lot = lots.find(l => l.id === item.lotId);
+        if (!lot) continue;
+        const { stockItems, customerItems } = classifyExpedicaoOrders([{
+          orderId: item.orderId, itemIdx: item.itemIdx, fractionLabel: item.fractionLabel
+        }]);
+        await applyExpedicaoStockUpdate(lot, stockItems, customerItems);
+      }
+
+      setStockRepairModal(prev => prev ? { ...prev, phase: 'done', appliedCount: selected.length } : prev);
+    } catch (e) {
+      setStockRepairModal(prev => prev ? { ...prev, phase: 'preview', errorMsg: String(e) } : prev);
+    }
+  };
+
   // Abre o painel de baixa da OS: monta um item por pedido coberto por ela, já marcado
   // como incluído (pronto) e com o setor de destino pré-preenchido pela sugestão do
   // roteiro do próprio modelo — o usuário escolhe o destino (ou desmarca o pedido) ANTES
@@ -3294,19 +3455,18 @@ export default function PCPView({
         if (!lotObj) continue;
         const currentSectorId = lotIncludedItems[0].currentSectorId;
 
-        // Proteção de estoque ao sair da Expedição — mesma lógica do avanço manual de
-        // setor (handleConfirmSectorChange), restrita só aos pedidos incluídos deste lote.
-        const currentSectorObj = sectors.find(s => s.id === currentSectorId);
-        const isCycleEndSector = !!currentSectorObj?.isProductionCycleEnd ||
-          !!currentSectorObj?.name?.toUpperCase().includes('EXPEDIÇÃO') ||
-          !!currentSectorObj?.name?.toUpperCase().includes('EXPEDICAO') ||
-          (lotObj.route && lotObj.route[lotObj.route.length - 1] === currentSectorId);
-
-        if (isCycleEndSector) {
-          const toFinalizeNow = lotIncludedItems.filter(it => it.chosenSectorId === '');
+        // Atualiza estoque/reserva para TODOS os pedidos que o usuário escolheu
+        // finalizar (chosenSectorId === ''), independente do setor atual. O guarda
+        // anterior verificava isCycleEndSector, o que fazia pedidos finalizados
+        // adiantadamente (ex.: via OS em Pesponto ou Acabamento) nunca creditarem
+        // o estoque nem criarem StockLot — o usuário via "Finalizado" no lote mas
+        // sem nenhum registro de entrada. handleFinalizeSelectedSourceItems (Finalizar
+        // Selecionados) já se comportava corretamente (sem guarda de setor), alinhamos.
+        const toFinalizeNow = lotIncludedItems.filter(it => it.chosenSectorId === '');
+        if (toFinalizeNow.length > 0) {
           const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalizeNow.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx, fractionLabel: it.fractionLabel })));
           if (stockItems.length > 0 || customerItems.length > 0) {
-            const lines: string[] = [`Baixa de ${lotIncludedItems.length} pedido(s) do Mapa #${lotObj.orderNumber} (OS ${os.osNumber})`];
+            const lines: string[] = [`Baixa de ${toFinalizeNow.length} pedido(s) do Mapa #${lotObj.orderNumber} (OS ${os.osNumber})`];
             if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
             if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} pedido(s) → ENTRADA EM ESTOQUE`);
             lines.push('\nConfirmar baixa?');
@@ -4671,6 +4831,7 @@ export default function PCPView({
                 { label: 'Cor Badges', icon: <Tag size={20} />, color: 'text-rose-500', bg: isDarkMode ? 'bg-rose-500/10' : 'bg-rose-50', run: () => setIsBadgeColorPickerOpen(true) },
                 { label: 'OS Concluídas', icon: <CheckSquare size={20} />, color: 'text-emerald-500', bg: isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50', run: () => setShowCompletedOSModal(true) },
                 { label: 'Diag. Estoque', icon: <AlertTriangle size={20} />, color: 'text-rose-500', bg: isDarkMode ? 'bg-rose-500/10' : 'bg-rose-50', run: () => setShowStockDiagnosticModal(true), dot: duplicateStockLotGroups.length > 0 },
+                { label: 'Reparar Caixas', icon: <Wrench size={20} />, color: 'text-amber-500', bg: isDarkMode ? 'bg-amber-500/10' : 'bg-amber-50', run: () => { const items = buildStockRepairItems(); setStockRepairModal({ phase: 'preview', items, appliedCount: 0 }); } },
               ].map((action) => (
                 <button
                   key={action.label}
@@ -5946,21 +6107,47 @@ export default function PCPView({
                             <div className="p-4 pt-0 flex flex-col gap-3">
                               <p className="text-[9px] text-slate-400 uppercase font-bold">{filteredSectorOSList.length} de {sectorOSList.length} OS</p>
 
-                              {/* Botão que abre o popup de filtros — mesmas funções do filtro de Pedidos no Setor */}
-                              <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-orange-900/40 bg-orange-950/20' : 'border-orange-200 bg-orange-50/50'}`}>
-                                <button type="button"
-                                  onClick={() => { const n = new Set(fichaListOpen); isOSFilterOpen ? n.delete(osFilterKey) : n.add(osFilterKey); setFichaListOpen(n); }}
-                                  className={`w-full flex items-center gap-2 px-4 py-2.5 transition-colors ${isDarkMode ? 'hover:bg-orange-900/20' : 'hover:bg-orange-100/40'}`}
-                                >
-                                  <Filter size={12} className="text-orange-500 animate-bounce" />
-                                  <span className="flex-1 text-left">
-                                    <span className={`inline-block text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full animate-pulse ${isDarkMode ? 'bg-orange-900/60 text-orange-200' : 'bg-orange-100 text-orange-700'}`}>Filtrar</span>
-                                  </span>
-                                  {(activeOSFilt.model || activeOSFilt.color || activeOSFilt.customerName || activeOSFilt.providerName) && (
-                                    <span className="text-[8px] font-black px-2 py-0.5 rounded-full bg-indigo-500 text-white">Ativo</span>
-                                  )}
-                                </button>
-                              </div>
+                              {/* Card de controle — 3 seções: Filtrar | Pedidos | Grade */}
+                              {(() => {
+                                const hasOSFilter = !!(activeOSFilt.model || activeOSFilt.color || activeOSFilt.customerName || activeOSFilt.providerName);
+                                return (
+                                  <div className={`rounded-2xl border overflow-hidden shadow-sm ${isDarkMode ? 'border-slate-700/50 bg-slate-900/40' : 'border-slate-200 bg-white/90'}`}>
+                                    <div className={`grid grid-cols-3 divide-x ${isDarkMode ? 'divide-slate-700/50' : 'divide-slate-200'}`}>
+
+                                      {/* FILTRAR */}
+                                      <button type="button"
+                                        onClick={() => { const n = new Set(fichaListOpen); isOSFilterOpen ? n.delete(osFilterKey) : n.add(osFilterKey); setFichaListOpen(n); }}
+                                        className={`flex flex-col items-center gap-1 py-3 px-2 transition-all active:scale-95 ${hasOSFilter || isOSFilterOpen ? (isDarkMode ? 'bg-orange-950/40' : 'bg-orange-50/80') : (isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50')}`}
+                                      >
+                                        <Filter size={14} className={hasOSFilter || isOSFilterOpen ? 'text-orange-500 animate-bounce' : 'text-slate-400'} />
+                                        <span className={`text-[8px] font-black uppercase tracking-widest ${hasOSFilter || isOSFilterOpen ? (isDarkMode ? 'text-orange-300' : 'text-orange-600') : (isDarkMode ? 'text-slate-500' : 'text-slate-400')}`}>Filtrar</span>
+                                        <span className={`w-1.5 h-1.5 rounded-full transition-all ${hasOSFilter ? 'bg-orange-500 animate-pulse' : 'bg-transparent'}`} />
+                                      </button>
+
+                                      {/* PEDIDOS */}
+                                      <button type="button"
+                                        onClick={() => setShowOSPedidosInline(v => !v)}
+                                        className={`flex flex-col items-center gap-1 py-3 px-2 transition-all active:scale-95 ${showOSPedidosInline ? (isDarkMode ? 'bg-indigo-950/40' : 'bg-indigo-50/80') : (isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50')}`}
+                                      >
+                                        <Eye size={14} className={showOSPedidosInline ? 'text-indigo-400 animate-pulse' : 'text-slate-400'} />
+                                        <span className={`text-[8px] font-black uppercase tracking-widest ${showOSPedidosInline ? (isDarkMode ? 'text-indigo-300' : 'text-indigo-600') : (isDarkMode ? 'text-slate-500' : 'text-slate-400')}`}>Pedidos</span>
+                                        <span className={`w-1.5 h-1.5 rounded-full transition-all ${showOSPedidosInline ? 'bg-indigo-500 animate-pulse' : 'bg-transparent'}`} />
+                                      </button>
+
+                                      {/* GRADE */}
+                                      <button type="button"
+                                        onClick={() => setShowOSGradeInline(v => !v)}
+                                        className={`flex flex-col items-center gap-1 py-3 px-2 transition-all active:scale-95 ${showOSGradeInline ? (isDarkMode ? 'bg-emerald-950/40' : 'bg-emerald-50/80') : (isDarkMode ? 'hover:bg-slate-800/50' : 'hover:bg-slate-50')}`}
+                                      >
+                                        <LayoutGrid size={14} className={showOSGradeInline ? 'text-emerald-400 animate-pulse' : 'text-slate-400'} />
+                                        <span className={`text-[8px] font-black uppercase tracking-widest ${showOSGradeInline ? (isDarkMode ? 'text-emerald-300' : 'text-emerald-600') : (isDarkMode ? 'text-slate-500' : 'text-slate-400')}`}>Grade</span>
+                                        <span className={`w-1.5 h-1.5 rounded-full transition-all ${showOSGradeInline ? 'bg-emerald-500 animate-pulse' : 'bg-transparent'}`} />
+                                      </button>
+
+                                    </div>
+                                  </div>
+                                );
+                              })()}
 
                               {isOSFilterOpen && createPortal(
                                 <div className="fixed inset-0 z-[60000] flex items-center justify-center p-4">
@@ -6068,11 +6255,10 @@ export default function PCPView({
                                   : '';
                                 const nextSName = sectors.find(s => s.id === nextSId)?.name ?? 'CONCLUÍDO';
                                 const isOSActionsOpen = fichaListOpen.has(os.id + '_actions_open');
+                                const isNaoContabil = !os.transactionId && os.totalValue > 0;
                                 return (
                                   <div key={os.id} id={`os-card-${os.id}`} className={`rounded-2xl border flex flex-col gap-3 px-3 py-3 transition-all ${highlightedOSId === os.id ? 'ring-4 ring-indigo-500/60 border-indigo-500 dark:border-indigo-500 shadow-lg shadow-indigo-500/30 scale-[1.02]' : ''} ${isDarkMode ? 'bg-gradient-to-br from-slate-900 to-slate-950 border-slate-700/60' : 'bg-gradient-to-br from-white to-slate-50 border-slate-200/70 shadow-md'}`}>
-                                    {/* Info — prestador, botão "Visualizar" (única ação fora da grade) e número
-                                        da OS em cápsula (cor própria da OS, configurável em Cor de Badges PCP —
-                                        não herda do Mapa, já que uma OS pode reunir pedidos de mapas diferentes). */}
+                                    {/* Linha 1: prestador | número da OS */}
                                     <div className="flex items-center justify-between gap-2">
                                       <span
                                         className="text-[9px] px-2.5 py-1 rounded-full uppercase tracking-wider shrink-0 truncate max-w-[130px]"
@@ -6104,23 +6290,65 @@ export default function PCPView({
                                       <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
                                         {new Date(os.createdAt).toLocaleDateString('pt-BR')}
                                       </span>
-                                      <span className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                                        R$ {os.totalValue.toFixed(2)}
-                                      </span>
+                                      {isNaoContabil ? (
+                                        <span className="text-[7px] font-black px-2 py-0.5 rounded-full border border-amber-400/40 bg-amber-400/10 text-amber-500 uppercase tracking-widest shrink-0 whitespace-nowrap">
+                                          Não Contábil
+                                        </span>
+                                      ) : (
+                                        <span className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                                          R$ {os.totalValue.toFixed(2)}
+                                        </span>
+                                      )}
                                     </div>
+
+                                    {/* Pedidos inline — visível quando o toggle "Pedidos" está ativo */}
+                                    {showOSPedidosInline && (() => {
+                                      const fichas = osFichasMap.get(os.id) ?? [];
+                                      if (!fichas.length) return null;
+                                      return (
+                                        <div className={`flex flex-col gap-0 rounded-xl border overflow-hidden ${isDarkMode ? 'border-slate-800/60 bg-slate-900/40' : 'border-slate-100 bg-slate-50/80'}`}>
+                                          {fichas.map((f, fi) => {
+                                            const pName = f.product?.reference || f.product?.name || f.orderItem?.productName || '—';
+                                            const cName = f.variation?.colorName || f.orderItem?.variationName || '—';
+                                            const qty: number = f.si?.qty ?? f.orderItem?.quantity ?? 0;
+                                            const cust: string = f.order?.customerName || 'Estoque';
+                                            const rawSizes: Record<string, any> = (f.si?.fractionLabel ? f.si?.sizes : (f.orderItem?.sizes || f.si?.sizes)) || {};
+                                            const sizeEntries = Object.entries(rawSizes).filter(([, v]) => {
+                                              const q = typeof v === 'number' ? v : ((v as any)?.total ?? (v as any)?.toProduction ?? 0);
+                                              return q > 0;
+                                            });
+                                            return (
+                                              <div key={fi} className={`flex flex-col px-2.5 py-1.5 ${fi > 0 ? `border-t ${isDarkMode ? 'border-slate-800/50' : 'border-slate-100'}` : ''}`}>
+                                                <div className="flex items-center justify-between gap-2">
+                                                  <div className="flex flex-col min-w-0">
+                                                    <span className={`text-[9px] font-black truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{pName}</span>
+                                                    <span className={`text-[8px] truncate ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>{cName} · {cust}</span>
+                                                  </div>
+                                                  <span className={`text-[8px] font-black px-2 py-0.5 rounded-full shrink-0 ${isDarkMode ? 'bg-indigo-900/50 text-indigo-300' : 'bg-indigo-50 text-indigo-600'}`}>{qty} prs</span>
+                                                </div>
+                                                {showOSGradeInline && sizeEntries.length > 0 && (
+                                                  <div className="flex flex-wrap gap-1 mt-1.5">
+                                                    {sizeEntries.map(([sz, v]) => {
+                                                      const q = typeof v === 'number' ? v : ((v as any)?.total ?? (v as any)?.toProduction ?? 0);
+                                                      return (
+                                                        <span key={sz} className={`flex flex-col items-center px-2 py-1 rounded-lg border shadow-sm ${isDarkMode ? 'bg-slate-950 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                                          <span className={`text-[8px] font-black leading-tight ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{sz}</span>
+                                                          <span className={`text-[8px] font-black leading-tight ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>{q}</span>
+                                                        </span>
+                                                      );
+                                                    })}
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      );
+                                    })()}
 
                                     {/* Ações — grade 3x2 dentro de acordeão (fechado por padrão), fundo branco
                                         e apenas os ícones coloridos para visual limpo */}
                                     <div className="flex flex-col gap-2">
-                                      {/* Cores fixas via valor arbitrário (bg-[#...]) de propósito — os temas
-                                          (Industrial, Oceano, Alto Contraste etc.) sobrescrevem bg-white/
-                                          border-slate-200/text-indigo-600 globalmente; este botão deve manter
-                                          a mesma cara em qualquer tema, só respeitando claro/escuro. */}
-                                      <button type="button" title="Visualizar pedidos da OS" onClick={() => setViewOSModal({ isOpen: true, os, items: getFichasForOS(os) })}
-                                        className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border border-[#e2e8f0] dark:border-[#334155] bg-[#ffffff] dark:bg-[#0f172a] text-[#4f46e5] dark:text-[#818cf8] shadow-sm hover:bg-[#eef2ff] dark:hover:bg-[#1e293b]">
-                                        <Eye size={13} /> Visualizar Pedidos O.S
-                                      </button>
-
                                       <button type="button"
                                         onClick={() => { const n = new Set(fichaListOpen); isOSActionsOpen ? n.delete(os.id + '_actions_open') : n.add(os.id + '_actions_open'); setFichaListOpen(n); }}
                                         className="w-full flex items-center justify-between px-3 py-2 rounded-xl border border-[#e2e8f0] dark:border-[#334155] bg-[#ffffff] dark:bg-[#0f172a] transition-all active:scale-[0.98] hover:bg-[#f8fafc] dark:hover:bg-[#1e293b]"
@@ -8019,7 +8247,7 @@ export default function PCPView({
                             <span className="text-[8px] font-black uppercase tracking-widest bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 px-2 py-0.5 rounded-md">OP</span>
                           );
                           const linkedSale = linkedOrder.saleId ? sales?.find(s => s.id === linkedOrder.saleId) : undefined;
-                          const isStockOrder = linkedOrder.customerName === 'Estoque' || linkedSale?.saleDestination === 'STOCK';
+                          const isStockOrder = linkedOrder.customerName?.toLowerCase() === 'estoque' || linkedSale?.saleDestination === 'STOCK';
                           if (linkedOrder.status === 'COMPLETED') {
                             return isStockOrder ? (
                               <span className="text-[8px] font-black uppercase tracking-widest bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-md flex items-center gap-1">
@@ -11263,6 +11491,150 @@ export default function PCPView({
         onMarkResolved={markStockDuplicatesResolved}
       />
 
+      {/* ── Modal: Reparar Caixas ATACADO ── */}
+      {stockRepairModal && createPortal(
+        <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" style={{ zIndex: 70000 }} onClick={() => stockRepairModal.phase !== 'running' && setStockRepairModal(null)}>
+          <div onClick={e => e.stopPropagation()} className={`w-full max-w-md rounded-[2rem] flex flex-col shadow-2xl max-h-[85vh] ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}>
+            {/* Header */}
+            <div className={`flex items-center justify-between px-5 pt-5 pb-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center shrink-0">
+                  <Wrench size={18} />
+                </div>
+                <div>
+                  <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Reparar Estoque de Caixas</h3>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Corrige entradas sem boxQty (bug ATACADO)</p>
+                </div>
+              </div>
+              {stockRepairModal.phase !== 'running' && (
+                <button type="button" onClick={() => setStockRepairModal(null)} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`}>
+                  <X size={16} />
+                </button>
+              )}
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
+              {stockRepairModal.phase === 'done' ? (
+                <div className="flex flex-col items-center justify-center py-8 gap-3">
+                  <div className="w-14 h-14 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                    <CheckCircle2 size={28} />
+                  </div>
+                  <p className={`text-sm font-black text-center ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{stockRepairModal.appliedCount} entradas corrigidas!</p>
+                  <p className="text-[11px] text-slate-400 text-center">Estoque de caixas e histórico de StockLots atualizados.</p>
+                </div>
+              ) : stockRepairModal.items.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 gap-3">
+                  <div className="w-14 h-14 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                    <CheckCircle2 size={28} />
+                  </div>
+                  <p className={`text-sm font-black text-center ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Nenhuma entrada a reparar</p>
+                  <p className="text-[11px] text-slate-400 text-center">Todos os StockLots ATACADO já têm boxQty preenchido.</p>
+                </div>
+              ) : (
+                <>
+                  <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {stockRepairModal.items.length} entrada(s) encontrada(s) sem boxQty. Selecione as que deseja corrigir e confirme.
+                  </p>
+                  {stockRepairModal.errorMsg && (
+                    <div className="rounded-xl bg-rose-500/10 border border-rose-300 p-3 text-[11px] text-rose-600 font-bold">{stockRepairModal.errorMsg}</div>
+                  )}
+                  {stockRepairModal.items.map((it, i) => (
+                    <div key={i} className={`rounded-2xl border p-3.5 flex flex-col gap-2 ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${it.kind === 'fix_boxqty' ? 'bg-amber-500/15 text-amber-600' : 'bg-rose-500/15 text-rose-600'}`}>
+                              {it.kind === 'fix_boxqty' ? 'Corrigir boxQty' : 'Criar StockLot'}
+                            </span>
+                          </div>
+                          <p className={`text-[11px] font-black uppercase truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{it.productName}</p>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase truncate">{it.variationName} · Mapa #{it.lotOrderNumber}</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          aria-label={`Selecionar ${it.productName} ${it.variationName}`}
+                          checked={it.selected}
+                          onChange={e => setStockRepairModal(prev => prev ? {
+                            ...prev,
+                            items: prev.items.map((x, xi) => xi === i ? { ...x, selected: e.target.checked } : x)
+                          } : prev)}
+                          className="w-4 h-4 rounded accent-amber-500 shrink-0 mt-0.5"
+                          disabled={stockRepairModal.phase === 'running'}
+                        />
+                      </div>
+                      <div className={`rounded-xl p-2.5 text-[10px] font-bold flex flex-col gap-1 ${isDarkMode ? 'bg-slate-900/60' : 'bg-white'}`}>
+                        {it.kind === 'fix_boxqty' ? (
+                          <>
+                            <div className="flex justify-between">
+                              <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Total de pares:</span>
+                              <span className={isDarkMode ? 'text-white' : 'text-slate-800'}>{it.totalPairs} prs</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Pares por caixa:</span>
+                              <span className={isDarkMode ? 'text-white' : 'text-slate-800'}>{it.pairsPerBox} prs/cx</span>
+                            </div>
+                            <div className="flex justify-between text-rose-500">
+                              <span>Pares incorretos a remover:</span>
+                              <span>-{Object.values(it.sizeBreakdown).reduce((s, v) => s + v, 0)} prs</span>
+                            </div>
+                            <div className="flex justify-between text-emerald-500">
+                              <span>Caixas a creditar:</span>
+                              <span>+{it.correctBoxQty} cx → total {it.currentWholesaleStock + it.correctBoxQty} cx</span>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex justify-between">
+                              <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Qtd. finalizada:</span>
+                              <span className={isDarkMode ? 'text-white' : 'text-slate-800'}>{it.qty} prs</span>
+                            </div>
+                            <div className="flex justify-between text-emerald-500">
+                              <span>Ação:</span>
+                              <span>Criar StockLot + creditar estoque</span>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            {stockRepairModal.phase !== 'done' && stockRepairModal.items.length > 0 && (
+              <div className={`shrink-0 p-4 border-t flex gap-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                <button
+                  type="button"
+                  onClick={() => setStockRepairModal(null)}
+                  disabled={stockRepairModal.phase === 'running'}
+                  className={`flex-1 py-3.5 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={executeStockRepair}
+                  disabled={stockRepairModal.phase === 'running' || !stockRepairModal.items.some(it => it.selected)}
+                  className="flex-1 py-3.5 rounded-2xl bg-amber-500 text-white font-black uppercase tracking-widest text-[10px] shadow-lg active:scale-95 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {stockRepairModal.phase === 'running' ? <><Loader2 size={14} className="animate-spin" /> Corrigindo...</> : `Corrigir ${stockRepairModal.items.filter(it => it.selected).length} entrada(s)`}
+                </button>
+              </div>
+            )}
+            {stockRepairModal.phase === 'done' && (
+              <div className={`shrink-0 p-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                <button type="button" onClick={() => setStockRepairModal(null)} className="w-full py-3.5 rounded-2xl bg-emerald-600 text-white font-black uppercase tracking-widest text-[10px] shadow-lg active:scale-95 transition-all">
+                  Fechar
+                </button>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* ── Popup de Observações/Lembrete da OS — saiu do card pra ocupar menos espaço ── */}
       {osNotesPopup && createPortal(
         <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200" style={{ zIndex: 60000 }} onClick={() => setOsNotesPopup(null)}>
@@ -12530,15 +12902,34 @@ export default function PCPView({
         maxWidth="max-w-md"
       >
         <div className="flex flex-col gap-5 p-1">
-          <div>
-            <span className="text-xs font-black uppercase tracking-widest text-indigo-500 dark:text-indigo-400 block mb-1">
-              Badge de Mapa
-            </span>
-            <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-relaxed">
-              {colorPickerLot
-                ? `Defina a cor de fundo e do texto para o identificador do mapa ${colorPickerLot.orderNumber}.`
-                : "Defina a cor de fundo e do texto padrão para o identificador do mapa (ex: MAPA009) exibido em setores e mapas."}
-            </p>
+          {/* Seletor de Mapa */}
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Selecionar Mapa</label>
+            <div className="flex flex-col gap-1 max-h-44 overflow-y-auto pr-0.5">
+              {/* Opção global */}
+              <button type="button"
+                onClick={() => setColorPickerLot(null)}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-left transition-all ${!colorPickerLot ? (isDarkMode ? 'border-indigo-500 bg-indigo-900/20' : 'border-indigo-400 bg-indigo-50') : (isDarkMode ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-200 hover:bg-slate-50')}`}
+              >
+                <span className="text-[8px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ backgroundColor: mapBadgeBg, color: mapBadgeText }}>PADRÃO</span>
+                <span className={`text-[10px] font-bold truncate ${!colorPickerLot ? 'text-indigo-500' : (isDarkMode ? 'text-slate-400' : 'text-slate-500')}`}>Cor padrão (todos os mapas)</span>
+              </button>
+              {/* Mapas individuais */}
+              {[...lots].sort((a, b) => ((b as any).createdAt || 0) - ((a as any).createdAt || 0)).map(lot => {
+                const lBg: string = (lot as any).metadata?.badgeColor || mapBadgeBg;
+                const lTxt: string = (lot as any).metadata?.badgeTextColor || mapBadgeText;
+                const isSel = colorPickerLot?.id === lot.id;
+                return (
+                  <button key={lot.id} type="button"
+                    onClick={() => setColorPickerLot(lot)}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-left transition-all ${isSel ? (isDarkMode ? 'border-indigo-500 bg-indigo-900/20' : 'border-indigo-400 bg-indigo-50') : (isDarkMode ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-200 hover:bg-slate-50')}`}
+                  >
+                    <span className="text-[8px] font-black px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap" style={{ backgroundColor: lBg, color: lTxt }}>MAPA {lot.orderNumber}</span>
+                    <span className={`text-[10px] font-bold truncate ${isSel ? 'text-indigo-500' : (isDarkMode ? 'text-slate-400' : 'text-slate-600')}`}>{products.find(p => p.id === lot.productId)?.name || lot.customerName || `Mapa ${lot.orderNumber}`}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="flex flex-col gap-2">
