@@ -84,6 +84,7 @@ interface SalesViewProps {
   onExpediteSale: (saleId: string) => Promise<void>;
   onRevertExpedition: (saleId: string) => Promise<void>;
   onSepararCaixas: (saleId: string, separations: { itemIdx: number; quantity: number }[]) => Promise<void>;
+  onPartialRevertSeparacao: (saleId: string, reverts: { itemIdx: number; quantity: number }[]) => Promise<void>;
   onTransferToStock: (saleId: string) => Promise<void>;
   onNavigateStock: () => void;
   onNavigateStockGlance: () => void;
@@ -121,6 +122,7 @@ export default function SalesView({
   onExpediteSale,
   onRevertExpedition,
   onSepararCaixas,
+  onPartialRevertSeparacao,
   onTransferToStock,
   onNavigateStock,
   onNavigateStockGlance,
@@ -297,11 +299,15 @@ export default function SalesView({
   const [processingTransfer, setProcessingTransfer] = useState(false);
   // Quantidades de separação por índice de item dentro do popup de itens
   const [popupSepQtys, setPopupSepQtys] = useState<Record<number, number>>({});
+  // Quantidades de reversão parcial (itens já separados que o usuário quer "des-separar")
+  const [popupRevertQtys, setPopupRevertQtys] = useState<Record<number, number>>({});
+  // null = normal | 'choose' = mostrando opções | 'partial' = modo parcial com steppers
+  const [revertChoiceMode, setRevertChoiceMode] = useState<null | 'choose' | 'partial'>(null);
   const [processingPopupSep, setProcessingPopupSep] = useState(false);
 
   // Inicializa as quantidades de separação quando o popup de itens abre
   useEffect(() => {
-    if (!itemsPopupSale) { setPopupSepQtys({}); return; }
+    if (!itemsPopupSale) { setPopupSepQtys({}); setPopupRevertQtys({}); setRevertChoiceMode(null); return; }
     const reservedLots = stockLots.filter(l => l.saleId === itemsPopupSale.id && l.status === 'RESERVADO');
     const init: Record<number, number> = {};
     itemsPopupSale.items.forEach((item, idx) => {
@@ -320,6 +326,7 @@ export default function SalesView({
       init[idx] = maxSeparable;
     });
     setPopupSepQtys(init);
+    setPopupRevertQtys({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemsPopupSale?.id]);
 
@@ -1814,16 +1821,37 @@ export default function SalesView({
           setPopupSepQtys(prev => ({ ...prev, [idx]: Math.min(max, Math.max(0, val)) }));
         };
 
+        const setRevertQty = (idx: number, max: number, val: number) => {
+          if (isDelivered) return;
+          setPopupRevertQtys(prev => ({ ...prev, [idx]: Math.min(max, Math.max(0, val)) }));
+        };
+
         const toApply = rows
           .map(r => ({ itemIdx: r.idx, quantity: popupSepQtys[r.idx] || 0 }))
           .filter(x => x.quantity > 0);
         const totalToSeparate = toApply.reduce((s, x) => s + x.quantity, 0);
+
+        const toRevert = rows
+          .map(r => ({ itemIdx: r.idx, quantity: popupRevertQtys[r.idx] || 0 }))
+          .filter(x => x.quantity > 0);
+        const totalToRevert = toRevert.reduce((s, x) => s + x.quantity, 0);
 
         const handleConfirmSep = async () => {
           if (toApply.length === 0) return;
           setProcessingPopupSep(true);
           try {
             await onSepararCaixas(s.id, toApply);
+            setItemsPopupSale(null);
+          } finally {
+            setProcessingPopupSep(false);
+          }
+        };
+
+        const handleConfirmPartialRevert = async () => {
+          if (toRevert.length === 0) return;
+          setProcessingPopupSep(true);
+          try {
+            await onPartialRevertSeparacao(s.id, toRevert);
             setItemsPopupSale(null);
           } finally {
             setProcessingPopupSep(false);
@@ -1994,32 +2022,127 @@ export default function SalesView({
                 {doneRows.length > 0 && pendingRows.length > 0 && (
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 text-center pt-1">Já separados</p>
                 )}
-                {doneRows.map(row => (
-                  <div
-                    key={row.idx}
-                    className={`p-3 rounded-2xl border flex items-center justify-between gap-2 ${isDarkMode ? 'bg-emerald-900/10 border-emerald-800/30' : 'bg-emerald-50 border-emerald-100'}`}
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[9px] font-black uppercase tracking-wider">
-                          {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
-                          {row.variation?.colorName && ` · ${row.variation.colorName}`}
-                        </span>
+                {doneRows.map(row => {
+                  const revertQty = popupRevertQtys[row.idx] ?? 0;
+                  const isReverting = revertChoiceMode === 'partial' && revertQty > 0;
+                  return (
+                    <div
+                      key={row.idx}
+                      className={`p-3 rounded-2xl border transition-colors ${
+                        isReverting
+                          ? (isDarkMode ? 'bg-amber-900/10 border-amber-800/30' : 'bg-amber-50 border-amber-200')
+                          : (isDarkMode ? 'bg-emerald-900/10 border-emerald-800/30' : 'bg-emerald-50 border-emerald-100')
+                      }`}
+                    >
+                      {/* Header row */}
+                      <div className={`flex items-center justify-between gap-2 ${revertChoiceMode === 'partial' ? 'mb-2' : ''}`}>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[9px] font-black uppercase tracking-wider">
+                              {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
+                              {row.variation?.colorName && ` · ${row.variation.colorName}`}
+                            </span>
+                          </div>
+                          {row.item.size && (
+                            <p className={`text-[9px] font-bold mt-0.5 uppercase tracking-widest ${isReverting ? 'text-amber-500' : 'text-emerald-500'}`}>
+                              Nº {row.item.size}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {isReverting
+                            ? <RotateCcw size={13} className="text-amber-500" strokeWidth={2.5} />
+                            : <CheckCircle2 size={13} className="text-emerald-500" strokeWidth={2.5} />
+                          }
+                          <span className={`text-[10px] font-black ${isReverting ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                            {isReverting ? `${row.separated - revertQty}/${row.item.quantity}` : `${row.separated}/${row.item.quantity}`} {row.unit}
+                          </span>
+                        </div>
                       </div>
-                      {row.item.size && (
-                        <p className="text-[9px] font-bold text-emerald-500 mt-0.5 uppercase tracking-widest">
-                          Nº {row.item.size}
-                        </p>
+
+                      {/* Partial revert stepper — only in partial mode */}
+                      {revertChoiceMode === 'partial' && !isDelivered && (
+                        <div className="flex items-center gap-2.5 mt-0.5">
+                          <div className="flex flex-col shrink-0 min-w-[60px]">
+                            <span className="text-[11px] font-black uppercase tracking-wide text-rose-500 leading-tight">Remover</span>
+                            <span className="text-[10px] font-bold text-slate-400 leading-tight">{row.separated} separados</span>
+                          </div>
+                          <div className={`flex-1 flex items-center rounded-xl px-1 py-0.5 gap-0.5 ${isDarkMode ? 'bg-slate-900 border border-amber-800/30' : 'bg-white border border-amber-200'}`}>
+                            <button
+                              type="button"
+                              onClick={() => setRevertQty(row.idx, row.separated, revertQty - 1)}
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center active:scale-90 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-500'}`}
+                              aria-label="Diminuir reversão"
+                            >
+                              <Minus size={10} strokeWidth={3} />
+                            </button>
+                            <div className="flex-1 flex items-center justify-center gap-0.5">
+                              <input
+                                type="number"
+                                min={0}
+                                max={row.separated}
+                                value={revertQty === 0 ? '' : revertQty}
+                                onFocus={e => e.currentTarget.select()}
+                                onChange={e => setRevertQty(row.idx, row.separated, parseInt(e.target.value) || 0)}
+                                className={`w-7 text-center border-none p-0 text-sm font-black focus:ring-0 bg-transparent ${revertQty > 0 ? 'text-amber-500' : (isDarkMode ? 'text-slate-500' : 'text-slate-300')}`}
+                                aria-label="Quantidade a reverter"
+                              />
+                              <span className="text-[9px] font-bold text-slate-400 uppercase leading-none">{row.unit}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setRevertQty(row.idx, row.separated, revertQty + 1)}
+                              className="w-6 h-6 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center active:scale-90 transition-all"
+                              aria-label="Aumentar reversão"
+                            >
+                              <Plus size={10} strokeWidth={3} />
+                            </button>
+                          </div>
+                          {revertQty > 0 && (
+                            <div className="shrink-0 text-right">
+                              <span className="text-[11px] font-black text-amber-500 block leading-tight">{row.separated - revertQty}</span>
+                              <span className="text-[9px] font-bold text-slate-400 block leading-tight">ficará</span>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <CheckCircle2 size={14} className="text-emerald-500" strokeWidth={2.5} />
-                      <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400">
-                        {row.separated}/{row.item.quantity} {row.unit}
-                      </span>
+                  );
+                })}
+
+                {/* Choice panel — appears when user clicked REVERTER */}
+                {revertChoiceMode === 'choose' && doneRows.length > 0 && (
+                  <div className={`mt-1 p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2.5 text-center">Escolha o tipo de reversão</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPopupRevertQtys({});
+                          setRevertChoiceMode('partial');
+                        }}
+                        className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all active:scale-95 ${isDarkMode ? 'bg-amber-900/20 border-amber-700/40 text-amber-400 hover:bg-amber-900/30' : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'}`}
+                      >
+                        <RotateCcw size={18} strokeWidth={2.5} />
+                        <span className="text-[10px] font-black uppercase tracking-widest">Parcial</span>
+                        <span className="text-[8px] font-bold text-center leading-tight opacity-70">Escolho quanto remover por item</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRevertChoiceMode(null);
+                          setItemsPopupSale(null);
+                          setRevertSale(s);
+                        }}
+                        className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all active:scale-95 ${isDarkMode ? 'bg-rose-900/20 border-rose-700/40 text-rose-400 hover:bg-rose-900/30' : 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'}`}
+                      >
+                        <RotateCcw size={18} strokeWidth={2.5} />
+                        <span className="text-[10px] font-black uppercase tracking-widest">Total</span>
+                        <span className="text-[8px] font-bold text-center leading-tight opacity-70">Reverter tudo que está separado</span>
+                      </button>
                     </div>
                   </div>
-                ))}
+                )}
 
                 {/* All done */}
                 {pendingRows.length === 0 && doneRows.length > 0 && (
@@ -2047,28 +2170,56 @@ export default function SalesView({
                 </div>
                 {(() => {
                   const hasSeparated = s.deliveryStatus === 'DELIVERED' || s.items.some(it => it.fulfilled === true || (it.boxesSeparated || 0) > 0);
+                  if (revertChoiceMode === 'partial') {
+                    // Modo parcial: [CANCELAR] [CONFIRMAR REVERSÃO (X)]
+                    return (
+                      <div className={`flex items-stretch rounded-2xl overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800' : 'bg-white border border-slate-200'}`}>
+                        <button
+                          type="button"
+                          disabled={processingPopupSep}
+                          onClick={() => { setRevertChoiceMode(null); setPopupRevertQtys({}); }}
+                          className={`flex-1 py-4 text-[10px] font-black uppercase tracking-widest transition-all border-r ${isDarkMode ? 'text-slate-300 hover:bg-slate-700 border-slate-700' : 'text-slate-600 hover:bg-slate-50 border-slate-100'}`}
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          type="button"
+                          disabled={processingPopupSep || totalToRevert === 0}
+                          onClick={handleConfirmPartialRevert}
+                          className={`flex-[1.5] py-4 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all active:scale-95 ${
+                            totalToRevert === 0
+                              ? (isDarkMode ? 'text-slate-600 bg-slate-800/50 cursor-not-allowed' : 'text-slate-300 bg-slate-50 cursor-not-allowed')
+                              : 'bg-amber-500 text-white shadow-lg shadow-amber-500/20'
+                          }`}
+                        >
+                          <RotateCcw size={14} strokeWidth={2.5} />
+                          {processingPopupSep ? '...' : `Reverter (${totalToRevert})`}
+                        </button>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div className={`flex items-stretch rounded-2xl overflow-hidden shadow-sm ${isDarkMode ? 'bg-slate-800' : 'bg-white border border-slate-200'}`}>
                       <button
                         type="button"
-                        onClick={() => setItemsPopupSale(null)}
+                        onClick={() => { setItemsPopupSale(null); setRevertChoiceMode(null); }}
                         disabled={processingPopupSep}
                         className={`flex-[0.8] py-4 text-[10px] font-black uppercase tracking-widest transition-all border-r ${isDarkMode ? 'text-slate-300 hover:bg-slate-700 border-slate-700' : 'text-slate-600 hover:bg-slate-50 border-slate-100'}`}
                       >
                         Fechar
                       </button>
-                      
+
                       <button
                         type="button"
-                        disabled={processingPopupSep || !hasSeparated}
-                        onClick={() => {
-                          setItemsPopupSale(null);
-                          setRevertSale(s);
-                        }}
+                        disabled={processingPopupSep || !hasSeparated || isDelivered}
+                        onClick={() => setRevertChoiceMode('choose')}
                         className={`flex-1 py-4 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-all border-r ${
-                          !hasSeparated
+                          !hasSeparated || isDelivered
                             ? (isDarkMode ? 'text-slate-600 border-slate-700 bg-slate-800/50 cursor-not-allowed' : 'text-slate-300 border-slate-100 bg-slate-50 cursor-not-allowed')
-                            : (isDarkMode ? 'text-amber-500 hover:bg-amber-500/10 border-slate-700' : 'text-amber-600 hover:bg-amber-50 border-slate-100')
+                            : revertChoiceMode === 'choose'
+                              ? (isDarkMode ? 'text-amber-400 bg-amber-500/10 border-amber-700/40' : 'text-amber-700 bg-amber-100 border-amber-200')
+                              : (isDarkMode ? 'text-amber-500 hover:bg-amber-500/10 border-slate-700' : 'text-amber-600 hover:bg-amber-50 border-slate-100')
                         }`}
                       >
                         <RotateCcw size={14} strokeWidth={2.5} />

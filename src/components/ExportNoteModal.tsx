@@ -789,29 +789,48 @@ export default function ExportNoteModal({
               </div>
 
               {/* Page Size Selection */}
-              <div className="flex flex-col gap-1.5 mt-0.5">
-                <span className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest px-1">Tamanho de Exportação</span>
-                <div className={`p-1.5 rounded-[20px] shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
-                  <button
-                    type="button"
-                    onClick={() => setPageSize('a4')}
-                    className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                      pageSize === 'a4' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    Papel A4
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPageSize('marketplace')}
-                    className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                      pageSize === 'marketplace' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
-                    }`}
-                  >
-                    Marketplace (100x150)
-                  </button>
-                </div>
-              </div>
+              {(() => {
+                const pageSizeActive = selectedFormat === 'pdf' || splitPages;
+                return (
+                  <div className="flex flex-col gap-1.5 mt-0.5">
+                    <div className="flex items-center gap-2 px-1">
+                      <span className={`text-[9px] font-black uppercase tracking-widest ${pageSizeActive ? 'text-slate-400 dark:text-slate-500' : 'text-slate-300 dark:text-slate-600'}`}>
+                        Tamanho de Exportação
+                      </span>
+                      {!pageSizeActive && (
+                        <span className={`text-[7px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-widest ${isDarkMode ? 'bg-slate-700 text-slate-500' : 'bg-slate-100 text-slate-400'}`}>
+                          Inativo
+                        </span>
+                      )}
+                    </div>
+                    <div className={`p-1.5 rounded-[20px] shadow-sm flex gap-1.5 transition-opacity ${pageSizeActive ? 'opacity-100' : 'opacity-40 pointer-events-none'} ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>
+                      <button
+                        type="button"
+                        onClick={() => setPageSize('a4')}
+                        className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                          pageSize === 'a4' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        Papel A4
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPageSize('marketplace')}
+                        className={`flex-1 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                          pageSize === 'marketplace' ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/20 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700'
+                        }`}
+                      >
+                        Marketplace (100x150)
+                      </button>
+                    </div>
+                    {!pageSizeActive && (
+                      <p className={`text-[8px] font-bold px-1 leading-relaxed ${isDarkMode ? 'text-slate-600' : 'text-slate-400'}`}>
+                        Ativo apenas com <span className="font-black">Formato PDF</span> ou <span className="font-black">Dividir em Páginas</span> ligado. Em JPG simples o canvas cresce livremente e o tamanho não muda o resultado.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
             </SectionCard>
 
             {/* Cancelar — única ação que fica fora do acordeão, sempre visível */}

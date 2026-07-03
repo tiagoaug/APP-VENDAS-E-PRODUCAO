@@ -2189,7 +2189,10 @@ export default function PCPView({
     // grade do pedido INTEIRO, compartilhada por todas as frações do mesmo pedido.
     const sizesSource = f.si?.fractionLabel ? (f.si?.sizes || ordItem?.sizes) : (ordItem?.sizes || f.si?.sizes);
     const sizes = Object.entries(sizesSource || {})
-      .map(([sz, sData]: [string, any]) => ({ size: sz, qty: Number(sData.toProduction) || 0 }))
+      .map(([sz, sData]: [string, any]) => ({
+        size: sz,
+        qty: Number(sData?.toProduction) || Number(sData?.total) || (typeof sData === 'number' ? sData : 0),
+      }))
       .filter(s => s.qty > 0)
       .sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
 

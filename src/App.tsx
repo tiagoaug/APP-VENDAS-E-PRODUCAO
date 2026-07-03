@@ -1572,6 +1572,108 @@ export default function App() {
     await firebaseService.saveDocument('products', { ...product, variations: updatedVariations });
   };
 
+  const handlePartialRevertSeparacao = async (
+    saleId: string,
+    reverts: { itemIdx: number; quantity: number }[]
+  ) => {
+    const sale = sales.find(s => s.id === saleId);
+    if (!sale) return;
+    try {
+      const productUpdates = new Map<string, any>();
+      const getProd = (id: string) => {
+        if (productUpdates.has(id)) return productUpdates.get(id);
+        const p = products.find(pr => pr.id === id);
+        if (!p) return null;
+        const cloned = JSON.parse(JSON.stringify(p));
+        productUpdates.set(id, cloned);
+        return cloned;
+      };
+
+      const reservedLots = stockLots.filter(l => l.saleId === saleId && l.status === 'RESERVADO');
+      const newItems = sale.items.map(item => ({ ...item }));
+
+      for (const rev of reverts) {
+        if (rev.quantity <= 0) continue;
+        const item = newItems[rev.itemIdx];
+        if (!item) continue;
+
+        const currentSeparated = item.boxesSeparated || 0;
+        const qtyToRestore = Math.min(rev.quantity, currentSeparated);
+        if (qtyToRestore <= 0) continue;
+
+        const itemReservedLots = reservedLots.filter(
+          l => l.productId === item.productId && l.variationId === item.variationId
+        );
+
+        let updatedPkgSnapshot: any[] | undefined = item.separatedPkgAllocations;
+
+        if (itemReservedLots.length === 0) {
+          const prod = getProd(item.productId);
+          if (prod) {
+            const variation = prod.variations.find((v: any) => v.id === item.variationId);
+            if (variation) {
+              const key = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
+              variation.stock[key] = (variation.stock[key] || 0) + qtyToRestore;
+
+              // Restaura stockPkgAllocations com a embalagem padrão do produto —
+              // o pkgId é fixo e imutável: determinado pelo grid padrão do produto.
+              if (key === 'WHOLESALE') {
+                const gridId = (prod as any).productionGridId || (prod as any).defaultGridId;
+                const defaultPkg = gridId
+                  ? productionConfigs.find(c => c.type === 'PACKAGING' && (c.metadata as any)?.productionGradeId === gridId)
+                  : undefined;
+                // Fallback: primeiro pkgId do snapshot (se o produto ainda não tem grid configurado)
+                const pkgId = defaultPkg?.id || (item.separatedPkgAllocations?.[0]?.pkgId);
+
+                if (pkgId) {
+                  const currentAllocs: any[] = (variation.stockPkgAllocations || []).map((a: any) => ({ ...a }));
+                  const idx = currentAllocs.findIndex((a: any) => a.pkgId === pkgId);
+                  if (idx >= 0) {
+                    currentAllocs[idx] = { ...currentAllocs[idx], qty: currentAllocs[idx].qty + qtyToRestore };
+                  } else {
+                    currentAllocs.push({ pkgId, qty: qtyToRestore });
+                  }
+                  variation.stockPkgAllocations = currentAllocs;
+                }
+
+                // Reduz separatedPkgAllocations pelo que foi devolvido (LIFO)
+                // para que uma reversão total posterior não restaure mais do que o devido.
+                if (item.separatedPkgAllocations?.length) {
+                  const newSnapshot = item.separatedPkgAllocations.map((a: any) => ({ ...a }));
+                  let remaining = qtyToRestore;
+                  for (let i = newSnapshot.length - 1; i >= 0 && remaining > 0; i--) {
+                    const take = Math.min(newSnapshot[i].qty, remaining);
+                    newSnapshot[i] = { ...newSnapshot[i], qty: newSnapshot[i].qty - take };
+                    remaining -= take;
+                  }
+                  updatedPkgSnapshot = newSnapshot.filter((a: any) => a.qty > 0);
+                }
+              }
+            }
+          }
+        }
+
+        const newSeparated = currentSeparated - qtyToRestore;
+        newItems[rev.itemIdx] = {
+          ...item,
+          boxesSeparated: newSeparated,
+          fulfilled: newSeparated >= item.quantity,
+          separatedPkgAllocations: newSeparated === 0 ? undefined : (updatedPkgSnapshot?.length ? updatedPkgSnapshot : undefined),
+        };
+      }
+
+      for (const [, prod] of productUpdates) {
+        await firebaseService.saveDocument('products', prod);
+      }
+
+      await firebaseService.updateDocument('sales', saleId, { items: newItems });
+      toast.show('Reversão parcial registrada com sucesso.');
+    } catch (e: any) {
+      console.error(e);
+      toast.show('Erro ao reverter separação: ' + (e.message || e));
+    }
+  };
+
   // "Separar Caixas" — registra a separação física por item.
   // Para itens SEM lotes RESERVADO vinculados: abate do estoque geral do produto.
   // Para itens COM lotes RESERVADO (produção casada): apenas atualiza boxesSeparated
@@ -4142,6 +4244,7 @@ export default function App() {
             onExpediteSale={handleExpediteSale}
             onRevertExpedition={handleRevertExpedition}
             onSepararCaixas={handleSepararCaixas}
+            onPartialRevertSeparacao={handlePartialRevertSeparacao}
             onTransferToStock={handleTransferSaleToStock}
             onNavigateStock={() => navigateTo(ViewType.STOCK)}
             onNavigateStockGlance={() => navigateTo(ViewType.STOCK_GLANCE)}
