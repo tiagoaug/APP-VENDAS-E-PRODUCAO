@@ -5484,11 +5484,9 @@ export default function PCPView({
                                 return (
                                   <div key={itemKey} id={`pedido-card-${itemKey}`} className={`rounded-2xl border overflow-hidden transition-all ${hasOS
                                     ? (isDarkMode ? 'bg-amber-950/20 border-amber-700/40' : 'bg-amber-50 border-amber-200')
-                                    : hasCompletedOS
-                                      ? (isDarkMode ? 'bg-emerald-950/20 border-emerald-700/40' : 'bg-emerald-50/60 border-emerald-200')
-                                      : isChecked
-                                        ? (isDarkMode ? 'bg-indigo-950/30 border-indigo-700' : 'bg-indigo-50 border-indigo-200')
-                                        : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm')
+                                    : isChecked
+                                      ? (isDarkMode ? 'bg-indigo-950/30 border-indigo-700' : 'bg-indigo-50 border-indigo-200')
+                                      : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm')
                                     } ${highlightedPedidoKey === itemKey ? 'ring-4 ring-indigo-500/60 border-indigo-500 dark:border-indigo-500 shadow-lg shadow-indigo-500/30 scale-[1.02]' : ''}`}>
                                     {/* Cabeçalho */}
                                     <div className="p-3 flex items-center gap-3">

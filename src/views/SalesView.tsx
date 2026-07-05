@@ -697,7 +697,7 @@ export default function SalesView({
               </button>
             </div>
 
-            <div className="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-1">
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-1 pb-20">
               {crossCheckData.length === 0 && (
                 <p className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400 py-6">Nenhuma demanda nas vendas visíveis.</p>
               )}

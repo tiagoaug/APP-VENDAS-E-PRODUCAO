@@ -2401,7 +2401,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                     )}
                  </p>
               </div>
-              <button 
+              <button
+                type="button"
                 onClick={handleWhatsApp}
                 className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${customerId ? 'bg-emerald-500 text-white shadow-lg' : 'bg-slate-100 dark:bg-slate-800 text-slate-300'}`}
                 disabled={!customerId}
@@ -2411,6 +2412,32 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                 <MessageSquare size={20} />
               </button>
            </div>
+
+           {/* Não Contábil toggle */}
+           <button
+             type="button"
+             onClick={() => setIsAccounting(v => !v)}
+             className={`w-full mt-4 flex items-center gap-3 p-3 rounded-xl border transition-all active:scale-[0.98] text-left ${!isAccounting
+               ? (isDarkMode ? 'bg-amber-900/20 border-amber-700/40' : 'bg-amber-50 border-amber-200')
+               : (isDarkMode ? 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100')
+             }`}
+             aria-label="Alternar modo não contábil"
+           >
+             <Ban size={16} className={!isAccounting ? 'text-amber-500 shrink-0' : 'text-slate-400 shrink-0'} />
+             <div className="flex-1 min-w-0">
+               <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${!isAccounting ? 'text-amber-500' : (isDarkMode ? 'text-slate-400' : 'text-slate-500')}`}>
+                 Não Contábil
+               </p>
+               <p className={`text-[8px] font-bold mt-1 leading-tight ${!isAccounting ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
+                 {!isAccounting
+                   ? 'Abate estoque · Não gera valor financeiro'
+                   : 'Ativado: abate estoque sem gerar lançamento financeiro'}
+               </p>
+             </div>
+             <div className={`relative w-11 h-6 rounded-full shrink-0 transition-all ${!isAccounting ? 'bg-amber-500' : (isDarkMode ? 'bg-slate-700' : 'bg-slate-200')}`}>
+               <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all duration-200 ${!isAccounting ? 'left-6' : 'left-1'}`} />
+             </div>
+           </button>
         </div>
       </div>
 
@@ -2678,7 +2705,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
 
       <div className="mt-6 mx-2 flex flex-col xl:flex-row xl:items-center justify-between bg-slate-900 dark:bg-slate-800 p-4 rounded-[2rem] shadow-xl z-40 animate-in slide-in-from-bottom-5 gap-4 pointer-events-auto">
          <div className="pl-3">
-            <p className="text-[10px] uppercase font-bold text-slate-400 tracking-widest leading-none mb-1">Finalizar {status === SaleStatus.QUOTE ? 'Orçamento' : status === SaleStatus.CONFIRMED ? 'Pedido' : 'Venda'}</p>
+            <p className="text-[10px] uppercase font-bold text-white tracking-widest leading-none mb-1">Finalizar {status === SaleStatus.QUOTE ? 'Orçamento' : status === SaleStatus.CONFIRMED ? 'Pedido' : 'Venda'}</p>
             <p className="text-2xl font-black text-white leading-none">R$ {total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
          </div>
          <div className="flex flex-col gap-2 w-full xl:flex-row xl:w-auto">
