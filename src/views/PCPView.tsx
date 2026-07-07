@@ -480,7 +480,7 @@ export default function PCPView({
     lot: ProductionLot;
     items: LotAdvanceItem[];
     lines: string[];
-    stockInfo?: Record<string, { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string }>;
+    stockInfo?: Record<string, { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string; gradeKey: string }>;
     soleInfo?: {
       moldName: string;
       colorName: string;
@@ -672,14 +672,17 @@ export default function PCPView({
     return parts.join(' · ');
   };
 
-  // Chaves "orderId::itemIdx" de itens já vinculados a mapas ativos (não finalizados).
+  // Chaves "orderId::itemIdx" de itens já vinculados a algum mapa (ativo OU finalizado).
   // Mapas criados via seleção granular (handleBatchCreateLots) guardam metadata.sourceItems com o itemIdx exato;
   // mapas legados vinculados só por productionOrderId (sem metadata) assumem o pedido inteiro, pois foram
   // criados quando uma OP só podia gerar um mapa por vez.
+  // IMPORTANTE: inclui mapas finalizados também — `item.toProductionQty` nunca é decrementado no
+  // Pedido de Produção após a finalização, então excluir mapas finalizados daqui fazia o mesmo item
+  // "ressuscitar" em Pedidos Pendentes assim que seu mapa era concluído, permitindo criar um SEGUNDO
+  // mapa para a mesma produção (baixa duplicada de solado ao finalizar os dois).
   const linkedItemKeys = useMemo(() => {
     const keys = new Set<string>();
     lots.forEach(lot => {
-      if (lot.finishedAt) return;
       const sourceItems: any[] = (lot as any).metadata?.sourceItems || [];
       if (sourceItems.length > 0) {
         sourceItems.forEach((si: any) => keys.add(`${si.orderId}::${si.itemIdx}`));
@@ -1508,12 +1511,15 @@ export default function PCPView({
   const computeStockProjection = (
     it: { productId?: string; variationId?: string; qty: number; saleType?: SaleType },
     destino: { isStock: boolean; customerName?: string },
-  ): { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string } | null => {
+  ): { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string; gradeKey: string } | null => {
     const product = products.find(p => p.id === it.productId);
     const variation = product?.variations.find(v => v.id === it.variationId);
     if (!product || !variation) return null;
 
     const destinoLabel = destino.isStock ? 'Estoque' : `Reserva: ${destino.customerName || 'Cliente'}`;
+    // Identifica a MESMA fonte física de estoque (produto+cor+destino) — usado para deduplicar
+    // a base "estoque atual" no Resumo Geral quando 2+ pedidos selecionados batem no mesmo grade.
+    const gradeKey = `${it.productId}::${it.variationId}::${destinoLabel}`;
 
     if ((it.saleType ?? product.type) === SaleType.WHOLESALE) {
       const gridId = product.productionGridId || product.defaultGridId;
@@ -1536,6 +1542,7 @@ export default function PCPView({
         addQty: addedBoxes,
         projectedQty: destino.isStock ? currentBoxes + addedBoxes : currentBoxes,
         unit: 'caixas',
+        gradeKey,
       };
     }
 
@@ -1546,6 +1553,7 @@ export default function PCPView({
       addQty: it.qty,
       projectedQty: destino.isStock ? currentPairs + it.qty : currentPairs,
       unit: 'pares',
+      gradeKey,
     };
   };
 
@@ -3057,7 +3065,18 @@ export default function PCPView({
     // Expedição, independente do destino (estoque ou cliente), consumindo os pares por
     // molde/cor/grade usando a mesma lógica de mapeamento das reservas (resolveSoleConsumption).
     const allItems = [...stockItems, ...customerItems];
-    const lotSI: any[] = (lot as any).metadata?.sourceItems || [];
+    const rawLotSI: any[] = (lot as any).metadata?.sourceItems || [];
+    // Deduplica sourceItems por conteúdo (orderId+itemIdx+fractionLabel) antes de baixar
+    // estoque/solado: se o Mapa já tiver duas entradas idênticas (bug de seleção, edição manual
+    // de dados, etc.), processar as duas dobraria a baixa de solado e o crédito de caixas para
+    // uma produção física única. Mantém apenas a primeira ocorrência de cada chave.
+    const seenSIKeys = new Set<string>();
+    const lotSI: any[] = rawLotSI.filter((si: any) => {
+      const key = `${si.orderId}::${si.itemIdx}::${si.fractionLabel || ''}`;
+      if (seenSIKeys.has(key)) return false;
+      seenSIKeys.add(key);
+      return true;
+    });
     if (allItems.length > 0) {
       const consumedSI = lotSI.filter((si: any) => allItems.some(it => matchesItem(si, it)));
       const consumptionByKey = new Map<string, { moldId: string; colorId: string; gradeQuantities: Record<string, number> }>();
@@ -3696,9 +3715,19 @@ export default function PCPView({
   const handleBatchCreateLots = async () => {
     if (selectedOrderItems.length === 0) return;
 
+    // Deduplica por orderId::itemIdx antes de gravar em metadata.sourceItems — protege contra
+    // qualquer duplicidade que chegue em `selectedOrderItems` (ex.: race condition de duplo toque),
+    // que resultaria no mesmo pedido duplicado dentro de um único Mapa (baixa dupla de solado).
+    const seenOrderItemKeys = new Set<string>();
     const selectedData = selectedOrderItems
       .map(s => pendingItems.find(p => p.orderId === s.orderId && p.itemIdx === s.itemIdx))
-      .filter((i): i is any => !!i);
+      .filter((i): i is any => !!i)
+      .filter(i => {
+        const key = `${i.orderId}::${i.itemIdx}`;
+        if (seenOrderItemKeys.has(key)) return false;
+        seenOrderItemKeys.add(key);
+        return true;
+      });
 
     // Agrupa por produto/variação para metadados
     const groups: Record<string, { productId: string; variationId: string; productName: string; variationName: string; quantity: number; items: any[] }> = {};
@@ -5924,7 +5953,7 @@ export default function PCPView({
                                         const toFinalize = resolved.filter(it => it.chosenSectorId === '');
                                         const toMove = resolved.filter(it => it.chosenSectorId !== '');
                                         const lines: string[] = [`Avançar/finalizar ${resolved.length} pedido(s) selecionado(s)?`];
-                                        const stockInfo: Record<string, { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string }> = {};
+                                        const stockInfo: Record<string, { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string; gradeKey: string }> = {};
                                         const soleInfo: {
                                           moldName: string;
                                           colorName: string;
@@ -6829,11 +6858,16 @@ export default function PCPView({
                           <div
                             key={item.uniqueKey}
                             onClick={() => {
-                              if (isSelected) {
-                                setSelectedOrderItems(prev => prev.filter(s => s.orderId !== item.orderId || s.itemIdx !== item.itemIdx));
-                              } else {
-                                setSelectedOrderItems(prev => [...prev, { orderId: item.orderId, itemIdx: item.itemIdx }]);
-                              }
+                              // Recalcula a presença dentro do próprio updater (não usa `isSelected`
+                              // do fechamento do render) — um duplo toque rápido dispara dois cliques
+                              // antes do React re-renderizar; com `isSelected` "congelado" os dois
+                              // caem no mesmo ramo `else` e duplicam o item em `sourceItems` do Mapa.
+                              setSelectedOrderItems(prev => {
+                                const already = prev.some(s => s.orderId === item.orderId && s.itemIdx === item.itemIdx);
+                                return already
+                                  ? prev.filter(s => s.orderId !== item.orderId || s.itemIdx !== item.itemIdx)
+                                  : [...prev, { orderId: item.orderId, itemIdx: item.itemIdx }];
+                              });
                             }}
                             className={`flex flex-col p-4 rounded-2xl border-2 cursor-pointer transition-all ${isSelected ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10' : 'border-transparent bg-slate-50 dark:bg-slate-800/50 hover:border-slate-200 dark:hover:border-slate-700'}`}
                           >
@@ -10190,7 +10224,7 @@ export default function PCPView({
                                   const toFinalize = resolved.filter(it => it.chosenSectorId === '');
                                   const toMove = resolved.filter(it => it.chosenSectorId !== '');
                                   const lines: string[] = [`Avançar/finalizar ${resolved.length} pedido(s) selecionado(s)?`];
-                                  const stockInfo: Record<string, { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string }> = {};
+                                  const stockInfo: Record<string, { destino: string; currentQty: number; addQty: number; projectedQty: number; unit: string; gradeKey: string }> = {};
                                   const soleInfo: {
                                     moldName: string;
                                     colorName: string;
@@ -12108,29 +12142,35 @@ export default function PCPView({
 
                 let totalCurrentBoxes = 0;
                 let totalAddedBoxes = 0;
-                let totalProjectedBoxes = 0;
                 let hasBoxes = false;
 
                 let totalCurrentPairs = 0;
                 let totalAddedPairs = 0;
-                let totalProjectedPairs = 0;
                 let hasPairs = false;
 
+                // O estoque ATUAL de uma grade (produto+cor+destino) é o mesmo valor lido em toda
+                // linha selecionada que bate nessa grade — somar `currentQty` por linha duplicaria
+                // a base sempre que 2+ pedidos selecionados caem no mesmo produto/cor (duplicata
+                // real ou dois pedidos distintos do mesmo modelo). A base entra uma única vez por
+                // `gradeKey`; a produção (`addQty`) de cada linha soma normalmente.
+                const seenGradeKeys = new Set<string>();
                 Object.values(finalizeSelectedConfirm.stockInfo || {}).forEach(info => {
                   if (info.destino === 'Estoque') {
+                    const isNewGrade = !seenGradeKeys.has(info.gradeKey);
+                    if (isNewGrade) seenGradeKeys.add(info.gradeKey);
                     if (info.unit === 'caixas') {
-                      totalCurrentBoxes += info.currentQty;
+                      if (isNewGrade) totalCurrentBoxes += info.currentQty;
                       totalAddedBoxes += info.addQty;
-                      totalProjectedBoxes += info.projectedQty;
                       hasBoxes = true;
                     } else if (info.unit === 'pares') {
-                      totalCurrentPairs += info.currentQty;
+                      if (isNewGrade) totalCurrentPairs += info.currentQty;
                       totalAddedPairs += info.addQty;
-                      totalProjectedPairs += info.projectedQty;
                       hasPairs = true;
                     }
                   }
                 });
+                const totalProjectedBoxes = totalCurrentBoxes + totalAddedBoxes;
+                const totalProjectedPairs = totalCurrentPairs + totalAddedPairs;
 
                 if (totalSolesDeducted === 0 && !hasBoxes && !hasPairs) return null;
 
