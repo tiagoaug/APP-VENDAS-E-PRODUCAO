@@ -15,6 +15,7 @@ import ProductionOrderModal from '../components/ProductionOrderModal';
 import PackagingBuilderModal from '../components/PackagingBuilderModal';
 import GradeBuilderModal from '../components/GradeBuilderModal';
 import { toast } from '../utils/toast';
+import { mergeProductionOrderItems } from '../utils/productionOrderMerge';
 import { generateId } from '../utils/id';
 import DatePicker from '../components/DatePicker';
 import { seedProductionOrderSequence } from '../utils/sequenceSeeds';
@@ -871,7 +872,17 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
           });
         });
 
-        if (orderItems.length > 0) {
+        // Preserva a posição de itens que algum Mapa já referencia por índice — reordenar/
+        // remover linhas no formulário não pode invalidar o `itemIdx` de algo já em produção.
+        const { items: mergedItems, keptLinkedRemovals } = mergeProductionOrderItems(existingOrder, orderItems, orderId, lots);
+        if (keptLinkedRemovals.length > 0) {
+          toast.show(
+            `${keptLinkedRemovals.length} item(ns) removido(s) já estava(m) em produção e não pode(m) ser excluído(s) do pedido — a quantidade pendente foi zerada: ` +
+            keptLinkedRemovals.map(i => `${i.productName} (${i.variationName})`).join(', ')
+          );
+        }
+
+        if (mergedItems.length > 0) {
           const order: ProductionOrder = {
             id: orderId,
             orderNumber: orderNum,
@@ -881,7 +892,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             customerName: saleToSave.customerName || 'Avulso',
             orderDate: saleToSave.date,
             deliveryDate: saleToSave.deliveryDate || Date.now(),
-            items: orderItems,
+            items: mergedItems,
             status: existingOrder?.status || 'PENDING',
             lotIds: existingOrder?.lotIds || [], // mapas criados manualmente no PCP
             notes: productionGlobalNote?.trim() || undefined,

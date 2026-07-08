@@ -3531,6 +3531,7 @@ export default function App() {
             productionConfigs={productionConfigs}
             initialParams={currentParams}
             productionOrders={productionOrders}
+            lots={productionLots}
             onCreateProductionOrder={async (order, newLots, deductions) => {
               await firebaseService.saveDocument("productionOrders", order);
               for (const lot of newLots) {
@@ -4248,6 +4249,7 @@ export default function App() {
             onTransferToStock={handleTransferSaleToStock}
             onNavigateStock={() => navigateTo(ViewType.STOCK)}
             onNavigateStockGlance={() => navigateTo(ViewType.STOCK_GLANCE)}
+            onNavigatePCP={() => navigateTo(ViewType.PRODUCTION_PCP, { initialTab: 'monitor' })}
             productionConfigs={productionConfigs}
           />
         );
@@ -4445,7 +4447,9 @@ export default function App() {
             onRevertStockLot={handleRevertStockLot}
             sales={sales}
             productionOrders={productionOrders}
+            lots={productionLots}
             onFixPkgAllocations={handleFixPkgAllocations}
+            onNavigatePCP={() => navigateTo(ViewType.PRODUCTION_PCP, { initialTab: 'monitor' })}
           />
         );
       case ViewType.STOCK_GLANCE:

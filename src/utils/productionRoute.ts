@@ -123,6 +123,25 @@ export function getSourceItemKey(si: { orderId: string; itemIdx?: number; produc
 }
 
 /**
+ * True quando o item de índice `itemIdx` de um Pedido de Produção já foi referenciado por
+ * algum Mapa (ativo ou finalizado) — ou seja, já entrou em produção e não pode ter sua
+ * posição no array `items` alterada/removida sem invalidar esse vínculo (o Mapa guarda
+ * `itemIdx` fixo em `metadata.sourceItems`; reordenar/remover itens do pedido depois disso
+ * faz o índice apontar pro item errado ou sumir).
+ */
+export function isOrderItemLinkedToLot(orderId: string, itemIdx: number, lots: Pick<ProductionLot, 'metadata' | 'productionOrderId'>[]): boolean {
+  return lots.some(lot => {
+    const sourceItems: any[] = (lot as any).metadata?.sourceItems || [];
+    if (sourceItems.length > 0) {
+      return sourceItems.some((si: any) => si.orderId === orderId && si.itemIdx === itemIdx);
+    }
+    // Mapas legados (sem metadata.sourceItems) vinculam o pedido inteiro por productionOrderId —
+    // trata todo item desse pedido como vinculado, já que não há granularidade por índice.
+    return lot.productionOrderId === orderId;
+  });
+}
+
+/**
  * Resolves the sector an individual order/item within a lot is currently in: its
  * per-item `metadata.orderSectors` override (when `si` is given), falling back to a
  * legacy order-level override (`orderSectors[orderId]`, from before per-item overrides

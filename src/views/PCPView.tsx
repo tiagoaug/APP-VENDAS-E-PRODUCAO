@@ -51,6 +51,7 @@ import { generatePCPShareExport, PCPShareItem, sendPCPItemsToPrintStudio } from 
 import { useStockLotDuplicates } from '../hooks/useStockLotDuplicates';
 import StockDuplicateBanner from '../components/StockDuplicateBanner';
 import StockDuplicateDiagnosticModal from '../components/StockDuplicateDiagnosticModal';
+import StockRepairBanner from '../components/StockRepairBanner';
 
 const getContrastingColor = (hexcolor: string) => {
   if (!hexcolor || hexcolor.length < 6) return '#ffffff';
@@ -382,7 +383,19 @@ export default function PCPView({
         kind: 'create_stocklot'; selected: boolean;
         lotId: string; lotOrderNumber: string;
         orderId: string; itemIdx?: number; fractionLabel?: string;
+        productId?: string; variationId?: string;
         productName: string; variationName: string; qty: number;
+      }
+    | {
+        // Item marcado ORDER_FINALIZED, sem StockLot, mas que não dá pra resolver
+        // automaticamente (pedido/produto/variação não encontrado — ex.: pedido de
+        // produção excluído depois de finalizado). Não é corrigível por aqui: mostra
+        // o motivo pra investigação manual em vez de sumir em silêncio da varredura.
+        kind: 'unresolved_finalized'; selected: boolean;
+        lotId: string; lotOrderNumber: string;
+        orderId: string; itemIdx?: number; fractionLabel?: string;
+        productId?: string; variationId?: string;
+        qty: number; reason: string;
       };
   const [stockRepairModal, setStockRepairModal] = useState<{
     phase: 'preview' | 'running' | 'done';
@@ -2937,10 +2950,16 @@ export default function PCPView({
     const ordItem: any = itemIdx !== undefined
       ? prodOrder.items[itemIdx]
       : prodOrder.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
-    if (!ordItem) return null;
-    const prod = products.find(p => p.id === (si.productId || ordItem.productId));
+    // `ordItem` só é OBRIGATÓRIO quando o sourceItem não carrega seu próprio produto/variação
+    // (itens bem antigos). Editar um Pedido de Produção depois que um Mapa já referenciou um
+    // `itemIdx` específico (ex.: remover/reordenar itens) invalida esse índice — mas
+    // `handleBatchCreateLots` já grava productId/variationId/sizes direto no sourceItem na
+    // criação do Mapa, então não precisamos mais reconsultar o pedido pra identificar o item;
+    // `ordItem` vira só um fallback opcional (usado para `saleType`/`sizes` se faltarem no si).
+    if (!ordItem && !(si.productId && si.variationId)) return null;
+    const prod = products.find(p => p.id === (si.productId || ordItem?.productId));
     if (!prod) return null;
-    const vari = prod.variations.find(v => v.id === (si.variationId || ordItem.variationId));
+    const vari = prod.variations.find(v => v.id === (si.variationId || ordItem?.variationId));
     if (!vari) return null;
 
     const siQty: number = si.qty || 0;
@@ -2988,7 +3007,7 @@ export default function PCPView({
 
       // Fallback: ordItem.sizes ou si.sizes escalado por si.qty
       if (Object.keys(pairs).length === 0) {
-        const sizesSource = si.sizes || ordItem.sizes;
+        const sizesSource = si.sizes || ordItem?.sizes;
         const rawPairs: Record<string, number> = {};
         Object.entries(sizesSource || {}).forEach(([size, sData]: any) => {
           const qty = Number(sData?.toProduction) || 0;
@@ -3030,6 +3049,13 @@ export default function PCPView({
     lot: ProductionLot,
     stockItems: { orderId: string; itemIdx?: number; fractionLabel?: string }[],
     customerItems: { orderId: string; itemIdx?: number; fractionLabel?: string }[],
+    // "Reparar Caixas" (buildStockRepairItems, Tipo B) existe justamente pra tratar itens que
+    // JÁ estão ORDER_FINALIZED mas nunca creditaram estoque — a trava de baixa duplicada abaixo
+    // (isAlreadyFinalized) barra qualquer item nesse estado, então bloqueava a própria correção
+    // em silêncio (usuário apertava "Corrigir" e nada acontecia). O reparo passa `true` aqui
+    // pra pular essa trava de propósito, já que o objetivo dele é exatamente creditar um item
+    // finalizado que ficou sem StockLot.
+    skipAlreadyFinalizedGuard: boolean = false,
   ) => {
     // Um pedido de compra pode agrupar vários itens (modelos/cores) sob o mesmo
     // orderId — quando `item.itemIdx` é informado, casa apenas o sourceItem daquele
@@ -3058,21 +3084,26 @@ export default function PCPView({
       if (!si) return false;
       return getOrderEffectiveSector(lot, item.orderId, si) === ORDER_FINALIZED;
     };
-    stockItems = stockItems.filter(it => !isAlreadyFinalized(it));
-    customerItems = customerItems.filter(it => !isAlreadyFinalized(it));
+    if (!skipAlreadyFinalizedGuard) {
+      stockItems = stockItems.filter(it => !isAlreadyFinalized(it));
+      customerItems = customerItems.filter(it => !isAlreadyFinalized(it));
+    }
 
     // Dá baixa real no estoque de solados (soleStock) para todos os pedidos que saíram da
     // Expedição, independente do destino (estoque ou cliente), consumindo os pares por
     // molde/cor/grade usando a mesma lógica de mapeamento das reservas (resolveSoleConsumption).
     const allItems = [...stockItems, ...customerItems];
     const rawLotSI: any[] = (lot as any).metadata?.sourceItems || [];
-    // Deduplica sourceItems por conteúdo (orderId+itemIdx+fractionLabel) antes de baixar
-    // estoque/solado: se o Mapa já tiver duas entradas idênticas (bug de seleção, edição manual
-    // de dados, etc.), processar as duas dobraria a baixa de solado e o crédito de caixas para
-    // uma produção física única. Mantém apenas a primeira ocorrência de cada chave.
+    // Deduplica sourceItems por conteúdo antes de baixar estoque/solado: se o Mapa já tiver
+    // duas entradas idênticas (bug de seleção, edição manual de dados, etc.), processar as
+    // duas dobraria a baixa de solado e o crédito de caixas para uma produção física única.
+    // Usa `getSourceItemKey` (mesma chave usada em orderSectors) em vez de orderId+itemIdx
+    // cru: em Mapas legados sem `itemIdx`, ela cai para productId+variationId — necessário
+    // para NÃO colapsar dois modelos/cores diferentes do mesmo pedido, que também têm
+    // itemIdx undefined e colidiriam numa chave só (perdendo o crédito de um dos dois).
     const seenSIKeys = new Set<string>();
     const lotSI: any[] = rawLotSI.filter((si: any) => {
-      const key = `${si.orderId}::${si.itemIdx}::${si.fractionLabel || ''}`;
+      const key = getSourceItemKey(si);
       if (seenSIKeys.has(key)) return false;
       seenSIKeys.add(key);
       return true;
@@ -3156,7 +3187,7 @@ export default function PCPView({
         const updVars = baseVariations.map((v, idx) => {
           if (idx !== variIdx) return v;
           const newStock = { ...v.stock };
-          if ((ordItem.saleType ?? prod.type) === SaleType.WHOLESALE) {
+          if ((ordItem?.saleType ?? prod.type) === SaleType.WHOLESALE) {
             // ATACADO: "Estoque Global" (CAIXAS) é incrementado convertendo os pares
             // produzidos pela embalagem cujo "Grade de Produção Padrão" corresponde à
             // grade de produção do produto (pares por caixa). Mesma prioridade de
@@ -3275,6 +3306,7 @@ export default function PCPView({
     // --- Tipo A: StockLot existe mas sem boxQty ---
     for (const sl of stockLots) {
       if (sl.status !== 'EM_ESTOQUE') continue;
+      if (sl.repairAcknowledged) continue;
       if (sl.boxQty != null && sl.boxQty > 0) continue;
       const prod = products.find(p => p.id === sl.productId);
       if (!prod) continue;
@@ -3308,30 +3340,65 @@ export default function PCPView({
     for (const lot of lots) {
       const sourceItems: any[] = (lot as any).metadata?.sourceItems || [];
       if (sourceItems.length === 0) continue;
+      const repairAcknowledged: Record<string, boolean> = (lot as any).metadata?.repairAcknowledged || {};
+      // Se o próprio Mapa tiver 2 sourceItems idênticos (bug de seleção antigo, já corrigido na
+      // origem, mas pode existir em dados salvos antes da correção), reporta uma única entrada
+      // por chave — listar as duas e deixar o usuário selecionar as duas faria "Corrigir" creditar
+      // a mesma caixa física duas vezes.
+      const seenSIKeysThisLot = new Set<string>();
       for (const si of sourceItems) {
         if (getOrderEffectiveSector(lot, si.orderId, si) !== ORDER_FINALIZED) continue;
-        // Verifica se já existe StockLot para este item
-        const hasStockLot = stockLots.some(sl =>
-          sl.lotId === lot.id && sl.productionOrderId === si.orderId &&
-          (si.itemIdx === undefined || sl.itemIdx === si.itemIdx)
-        );
+        const siKey = getSourceItemKey(si);
+        if (seenSIKeysThisLot.has(siKey)) continue;
+        seenSIKeysThisLot.add(siKey);
+        // Usuário já marcou manualmente como resolvido (ex.: incluiu a caixa no estoque via
+        // Balanço/edição direta) — não mostra mais aqui, e NÃO credita estoque de novo.
+        if (repairAcknowledged[siKey]) continue;
+        // Verifica se já existe StockLot para este item. Quando `itemIdx` não está definido
+        // (Mapas/pedidos legados), NÃO basta bater lotId+orderId — um "PED. COMPRA" pode
+        // agrupar vários modelos/cores sob o mesmo orderId, e essa checagem sem produto+
+        // variação marcava TODOS os itens do pedido como "já tem StockLot" assim que o
+        // primeiro deles ganhava um, escondendo os demais (ex.: 320 CASTOR gravado normalmente,
+        // 320 GRAFITE do mesmo pedido nunca detectado como faltante).
+        const hasStockLot = stockLots.some(sl => {
+          if (sl.lotId !== lot.id || sl.productionOrderId !== si.orderId) return false;
+          if (si.itemIdx !== undefined) return sl.itemIdx === si.itemIdx;
+          return sl.productId === si.productId && sl.variationId === si.variationId;
+        });
         if (hasStockLot) continue;
-        // Verifica se é pedido de produção válido
+        // Verifica se é pedido de produção válido. Antes, qualquer falha de resolução aqui
+        // (pedido excluído, item/produto/variação não encontrado) fazia o item sumir da
+        // varredura em silêncio — "Reparar Caixas" mostrava "nada a corrigir" mesmo com
+        // itens genuinamente finalizados sem StockLot. Agora reporta como "não resolvido"
+        // com o motivo, em vez de esconder.
+        const pushUnresolved = (reason: string) => result.push({
+          kind: 'unresolved_finalized', selected: false,
+          lotId: lot.id, lotOrderNumber: lot.orderNumber || '',
+          orderId: si.orderId, itemIdx: si.itemIdx, fractionLabel: si.fractionLabel,
+          productId: si.productId, variationId: si.variationId,
+          qty: si.qty || 0, reason,
+        });
         const prodOrder = productionOrders.find(o => o.id === si.orderId);
-        if (!prodOrder) continue;
+        if (!prodOrder) { pushUnresolved('Pedido de produção não encontrado (ID: ' + si.orderId + ') — pode ter sido excluído.'); continue; }
         const ordItem: any = si.itemIdx !== undefined
           ? prodOrder.items[si.itemIdx]
           : prodOrder.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
-        if (!ordItem) continue;
-        const prod = products.find(p => p.id === (si.productId || ordItem.productId));
-        if (!prod) continue;
-        const vari = prod.variations.find(v => v.id === (si.variationId || ordItem.variationId));
-        if (!vari) continue;
+        // `ordItem` é só fallback — se o sourceItem já carrega productId/variationId próprios
+        // (todo Mapa criado via seleção granular carrega), não precisa achar o item no pedido
+        // atual pra identificar produto/cor. Sem isso, editar o pedido depois (removendo/
+        // reordenando itens) invalidava o `itemIdx` e escondia o item como "não resolvido"
+        // mesmo com produto/cor perfeitamente identificáveis pelo próprio sourceItem.
+        if (!ordItem && !(si.productId && si.variationId)) { pushUnresolved(si.itemIdx !== undefined ? `Item de índice ${si.itemIdx} não existe mais no pedido, e o item do Mapa não tem produto/cor própria salva.` : 'Produto/variação do item não encontrado no pedido.'); continue; }
+        const prod = products.find(p => p.id === (si.productId || ordItem?.productId));
+        if (!prod) { pushUnresolved('Produto não encontrado (pode ter sido excluído).'); continue; }
+        const vari = prod.variations.find(v => v.id === (si.variationId || ordItem?.variationId));
+        if (!vari) { pushUnresolved(`Cor/variação não encontrada no produto "${prod.name}".`); continue; }
         result.push({
           kind: 'create_stocklot', selected: true,
           lotId: lot.id, lotOrderNumber: lot.orderNumber || '',
           orderId: si.orderId, itemIdx: si.itemIdx, fractionLabel: si.fractionLabel,
-          productName: prod.name, variationName: vari.colorName,
+          productId: prod.id, variationId: vari.id,
+          productName: `${prod.reference ? prod.reference + ' ' : ''}${prod.name}`, variationName: vari.colorName,
           qty: si.qty || 0,
         });
       }
@@ -3339,6 +3406,16 @@ export default function PCPView({
 
     return result;
   };
+
+  // Alimenta o aviso "Existem N caixa(s) para reparar" — recalcula com os mesmos dados que
+  // abastecem o modal "Reparar Caixas" para nunca ficar dessincronizado dele.
+  const stockRepairSummary = useMemo(() => {
+    const items = buildStockRepairItems();
+    return {
+      fixable: items.filter(i => i.kind !== 'unresolved_finalized').length,
+      unresolved: items.filter(i => i.kind === 'unresolved_finalized').length,
+    };
+  }, [lots, stockLots, productionOrders, products, productionConfigs, grids]);
 
   const executeStockRepair = async () => {
     if (!stockRepairModal) return;
@@ -3375,20 +3452,47 @@ export default function PCPView({
         }
       }
 
-      // Tipo B: criar StockLot + atualizar estoque para finalizações sem registro
+      // Tipo B: criar StockLot + atualizar estoque para finalizações sem registro. Deduplica por
+      // Mapa+item — se a lista tiver 2 entradas pro mesmo item (sourceItems duplicado no próprio
+      // Mapa) e as duas forem selecionadas, processa só uma vez pra não creditar a mesma caixa 2x.
       const createLots = selected.filter((it): it is Extract<StockRepairItem, { kind: 'create_stocklot' }> => it.kind === 'create_stocklot');
+      const seenCreateLotKeys = new Set<string>();
       for (const item of createLots) {
+        const dedupeKey = `${item.lotId}::${getSourceItemKey(item)}`;
+        if (seenCreateLotKeys.has(dedupeKey)) continue;
+        seenCreateLotKeys.add(dedupeKey);
         const lot = lots.find(l => l.id === item.lotId);
         if (!lot) continue;
         const { stockItems, customerItems } = classifyExpedicaoOrders([{
           orderId: item.orderId, itemIdx: item.itemIdx, fractionLabel: item.fractionLabel
         }]);
-        await applyExpedicaoStockUpdate(lot, stockItems, customerItems);
+        await applyExpedicaoStockUpdate(lot, stockItems, customerItems, true);
       }
 
       setStockRepairModal(prev => prev ? { ...prev, phase: 'done', appliedCount: selected.length } : prev);
     } catch (e) {
       setStockRepairModal(prev => prev ? { ...prev, phase: 'preview', errorMsg: String(e) } : prev);
+    }
+  };
+
+  // "Já resolvi manualmente": para quando o usuário já incluiu a caixa no estoque por fora
+  // (Balanço de Estoque, edição direta do produto, etc.) — NÃO mexe em estoque nenhum, só
+  // marca a entrada como reconhecida pra sumir da varredura em futuras aberturas do painel.
+  const dismissStockRepairItem = async (item: StockRepairItem) => {
+    try {
+      if (item.kind === 'fix_boxqty') {
+        await firebaseService.updateDocument('stockLots', item.stockLotId, { repairAcknowledged: true });
+      } else {
+        const lot = lots.find(l => l.id === item.lotId);
+        if (!lot) return;
+        const key = getSourceItemKey({ orderId: item.orderId, itemIdx: item.itemIdx, productId: item.productId, variationId: item.variationId, fractionLabel: item.fractionLabel });
+        const repairAcknowledged = { ...((lot as any).metadata?.repairAcknowledged || {}), [key]: true };
+        await firebaseService.updateDocument('productionLots', lot.id, { metadata: { ...(lot as any).metadata, repairAcknowledged } });
+      }
+      setStockRepairModal(prev => prev ? { ...prev, items: prev.items.filter(it => it !== item) } : prev);
+      toast.show('Marcado como já resolvido — não vai mais aparecer aqui.');
+    } catch (e) {
+      toast.show('Erro ao marcar como resolvido: ' + (e instanceof Error ? e.message : String(e)));
     }
   };
 
@@ -4888,6 +4992,12 @@ export default function PCPView({
           <StockDuplicateBanner
             count={duplicateStockLotGroups.length}
             onOpen={() => setShowStockDiagnosticModal(true)}
+            isDarkMode={isDarkMode}
+          />
+          <StockRepairBanner
+            fixable={stockRepairSummary.fixable}
+            unresolved={stockRepairSummary.unresolved}
+            onOpen={() => { const items = buildStockRepairItems(); setStockRepairModal({ phase: 'preview', items, appliedCount: 0 }); }}
             isDarkMode={isDarkMode}
           />
 
@@ -11538,7 +11648,7 @@ export default function PCPView({
                 </div>
                 <div>
                   <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Reparar Estoque de Caixas</h3>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Corrige entradas sem boxQty (bug ATACADO)</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Pedidos finalizados sem entrada em estoque</p>
                 </div>
               </div>
               {stockRepairModal.phase !== 'running' && (
@@ -11569,7 +11679,7 @@ export default function PCPView({
               ) : (
                 <>
                   <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                    {stockRepairModal.items.length} entrada(s) encontrada(s) sem boxQty. Selecione as que deseja corrigir e confirme.
+                    {stockRepairModal.items.length} entrada(s) encontrada(s). Selecione as que deseja corrigir e confirme.
                   </p>
                   {stockRepairModal.errorMsg && (
                     <div className="rounded-xl bg-rose-500/10 border border-rose-300 p-3 text-[11px] text-rose-600 font-bold">{stockRepairModal.errorMsg}</div>
@@ -11579,24 +11689,37 @@ export default function PCPView({
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 mb-0.5">
-                            <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${it.kind === 'fix_boxqty' ? 'bg-amber-500/15 text-amber-600' : 'bg-rose-500/15 text-rose-600'}`}>
-                              {it.kind === 'fix_boxqty' ? 'Corrigir boxQty' : 'Criar StockLot'}
+                            <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${it.kind === 'fix_boxqty' ? 'bg-amber-500/15 text-amber-600' : it.kind === 'create_stocklot' ? 'bg-rose-500/15 text-rose-600' : 'bg-slate-500/15 text-slate-500'}`}>
+                              {it.kind === 'fix_boxqty' ? 'Corrigir boxQty' : it.kind === 'create_stocklot' ? 'Criar StockLot' : 'Não resolvido — investigar'}
                             </span>
                           </div>
-                          <p className={`text-[11px] font-black uppercase truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{it.productName}</p>
-                          <p className="text-[10px] text-slate-400 font-bold uppercase truncate">{it.variationName} · Mapa #{it.lotOrderNumber}</p>
+                          {it.kind === 'unresolved_finalized' ? (
+                            <>
+                              <p className={`text-[11px] font-black uppercase truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Mapa #{it.lotOrderNumber} · Pedido {it.orderId}</p>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase truncate">
+                                {it.itemIdx !== undefined ? `Item #${it.itemIdx}` : 'Sem índice'}{it.fractionLabel ? ` · Fração ${it.fractionLabel}` : ''} · {it.qty} pares
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <p className={`text-[11px] font-black uppercase truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{it.productName}</p>
+                              <p className="text-[10px] text-slate-400 font-bold uppercase truncate">{it.variationName} · Mapa #{it.lotOrderNumber}</p>
+                            </>
+                          )}
                         </div>
-                        <input
-                          type="checkbox"
-                          aria-label={`Selecionar ${it.productName} ${it.variationName}`}
-                          checked={it.selected}
-                          onChange={e => setStockRepairModal(prev => prev ? {
-                            ...prev,
-                            items: prev.items.map((x, xi) => xi === i ? { ...x, selected: e.target.checked } : x)
-                          } : prev)}
-                          className="w-4 h-4 rounded accent-amber-500 shrink-0 mt-0.5"
-                          disabled={stockRepairModal.phase === 'running'}
-                        />
+                        {it.kind !== 'unresolved_finalized' && (
+                          <input
+                            type="checkbox"
+                            aria-label={`Selecionar ${it.productName} ${it.variationName}`}
+                            checked={it.selected}
+                            onChange={e => setStockRepairModal(prev => prev ? {
+                              ...prev,
+                              items: prev.items.map((x, xi) => xi === i ? { ...x, selected: e.target.checked } : x)
+                            } : prev)}
+                            className="w-4 h-4 rounded accent-amber-500 shrink-0 mt-0.5"
+                            disabled={stockRepairModal.phase === 'running'}
+                          />
+                        )}
                       </div>
                       <div className={`rounded-xl p-2.5 text-[10px] font-bold flex flex-col gap-1 ${isDarkMode ? 'bg-slate-900/60' : 'bg-white'}`}>
                         {it.kind === 'fix_boxqty' ? (
@@ -11618,6 +11741,8 @@ export default function PCPView({
                               <span>+{it.correctBoxQty} cx → total {it.currentWholesaleStock + it.correctBoxQty} cx</span>
                             </div>
                           </>
+                        ) : it.kind === 'unresolved_finalized' ? (
+                          <div className="text-rose-500">{it.reason}</div>
                         ) : (
                           <>
                             <div className="flex justify-between">
@@ -11631,6 +11756,15 @@ export default function PCPView({
                           </>
                         )}
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => dismissStockRepairItem(it)}
+                        disabled={stockRepairModal.phase === 'running'}
+                        className={`self-start text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border transition-all ${isDarkMode ? 'bg-slate-700/60 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white' : 'bg-slate-200 border-slate-300 text-slate-600 hover:bg-slate-300 hover:text-slate-800'}`}
+                        title="Já incluí essa caixa no estoque por fora (Balanço/edição direta) — não mexe em estoque, só some daqui"
+                      >
+                        Já resolvi manualmente
+                      </button>
                     </div>
                   ))}
                 </>
@@ -12291,9 +12425,19 @@ export default function PCPView({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  handleFinalizeSelectedSourceItems(finalizeSelectedConfirm.lot, finalizeSelectedConfirm.items, finalizeSelectedConfirm.os);
+                onClick={async () => {
+                  // Antes: chamava sem `await`/try-catch — se a baixa falhasse no meio (ex.: item
+                  // que não resolve produto/variação), o erro era engolido em silêncio, o modal
+                  // fechava normalmente e o usuário via a confirmação sem o estoque ter sido
+                  // atualizado de verdade. Agora aguarda e avisa em caso de falha.
+                  const confirmData = finalizeSelectedConfirm;
                   setFinalizeSelectedConfirm(null);
+                  try {
+                    await handleFinalizeSelectedSourceItems(confirmData.lot, confirmData.items, confirmData.os);
+                  } catch (err) {
+                    console.error('Erro ao finalizar pedido(s):', err);
+                    toast.show('Erro ao finalizar pedido(s). Verifique o estoque e tente novamente.');
+                  }
                 }}
                 className="flex-1 py-4 rounded-2xl bg-violet-600 text-white font-black uppercase tracking-[0.2em] text-[10px] shadow-lg active:scale-95 transition-all"
               >

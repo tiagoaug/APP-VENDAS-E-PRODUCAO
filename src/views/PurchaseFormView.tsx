@@ -57,6 +57,7 @@ import ComboBox from "../components/ComboBox";
 import PackagingBuilderModal from '../components/PackagingBuilderModal';
 import GradeBuilderModal from '../components/GradeBuilderModal';
 import { toast } from '../utils/toast';
+import { mergeProductionOrderItems } from '../utils/productionOrderMerge';
 import { generateId } from '../utils/id';
 import { firebaseService } from '../services/firebaseService';
 import { seedProductionOrderSequence } from '../utils/sequenceSeeds';
@@ -85,6 +86,7 @@ interface PurchaseFormViewProps {
   productionConfigs?: ProductionConfigItem[];
   colors?: ColorValue[];
   productionOrders: ProductionOrder[];
+  lots: ProductionLot[];
   onCreateProductionOrder: (order: ProductionOrder, lots: ProductionLot[], deductions: { productId: string; variationId: string; size?: string; quantity: number }[]) => Promise<void>;
   onSave: (purchase: Purchase) => void;
   onCancel: () => void;
@@ -104,6 +106,7 @@ export default function PurchaseFormView({
   productionConfigs = [],
   colors = [],
   productionOrders,
+  lots,
   onCreateProductionOrder,
   onSave,
   // colors fallback handled below
@@ -252,7 +255,7 @@ export default function PurchaseFormView({
   );
   const [checks, setChecks] = useState<CompanyCheck[]>(existing?.checks || []);
   const [categoryId, setCategoryId] = useState(
-    existing?.categoryId || categories?.[0]?.id || "",
+    existing?.categoryId || "",
   );
   const [accountId, setAccountId] = useState(() => {
     if (existing?.accountId) return existing.accountId;
@@ -856,7 +859,17 @@ export default function PurchaseFormView({
         });
       });
 
-      if (orderItems.length > 0) {
+      // Preserva a posição de itens que algum Mapa já referencia por índice — reordenar/
+      // remover linhas no formulário não pode invalidar o `itemIdx` de algo já em produção.
+      const { items: mergedItems, keptLinkedRemovals } = mergeProductionOrderItems(existingOrder, orderItems, orderId, lots);
+      if (keptLinkedRemovals.length > 0) {
+        toast.show(
+          `${keptLinkedRemovals.length} item(ns) removido(s) já estava(m) em produção e não pode(m) ser excluído(s) do pedido — a quantidade pendente foi zerada: ` +
+          keptLinkedRemovals.map(i => `${i.productName} (${i.variationName})`).join(', ')
+        );
+      }
+
+      if (mergedItems.length > 0) {
         const order: ProductionOrder = {
           id: orderId,
           orderNumber: orderNum,
@@ -865,7 +878,7 @@ export default function PurchaseFormView({
           customerName: 'Estoque',
           orderDate: purchaseToSave.date,
           deliveryDate: purchaseToSave.deliveryDate || Date.now(),
-          items: orderItems,
+          items: mergedItems,
           status: 'PENDING',
           lotIds: [], // mapas criados manualmente no PCP
           notes: productionGlobalNote?.trim() || undefined,
@@ -1245,6 +1258,8 @@ export default function PurchaseFormView({
               value={categoryId}
               onChange={setCategoryId}
               isDarkMode={isDarkMode}
+              usePopupModal
+              placeholder="Categoria Financeira"
             />
           </div>
 

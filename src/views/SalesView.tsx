@@ -14,6 +14,8 @@ import { toast } from '../utils/toast';
 import { saleProductionHasProgressed, getLotPendingSectorGroups } from '../utils/productionRoute';
 import { firebaseService } from '../services/firebaseService';
 import { getWholesaleBoxes, getRetailPairs } from '../utils/stockPools';
+import { summarizeStockRepairIssues } from '../utils/stockRepair';
+import StockRepairBanner from '../components/StockRepairBanner';
 
 // Preferências de "Visualização" (Cards Compactos/Expandidos, Mostrar Produtos,
 // Mostrar Grade e Quantidades, Mostrar Padrão de Embalagem) persistem entre
@@ -88,6 +90,7 @@ interface SalesViewProps {
   onTransferToStock: (saleId: string) => Promise<void>;
   onNavigateStock: () => void;
   onNavigateStockGlance: () => void;
+  onNavigatePCP: () => void;
   productionConfigs: ProductionConfigItem[];
   appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite' | 'hcWhite' | 'hcBlack' | 'hcIndustrial';
 }
@@ -126,6 +129,7 @@ export default function SalesView({
   onTransferToStock,
   onNavigateStock,
   onNavigateStockGlance,
+  onNavigatePCP,
   productionConfigs,
   appTheme = 'light',
 }: SalesViewProps) {
@@ -387,6 +391,13 @@ export default function SalesView({
     return { delivered, pending, totalPendingAmount };
   }, [sales]);
 
+  // Mesma varredura do "Reparar Caixas" (PCP) — aviso aqui em Vendas pra não depender do
+  // usuário lembrar de checar o PCP quando uma produção não somou ao estoque.
+  const stockRepairSummary = useMemo(
+    () => summarizeStockRepairIssues(lots, stockLots, productionOrders, products),
+    [lots, stockLots, productionOrders, products]
+  );
+
   // Lotes RESERVADO (caixas já produzidas, com a grade exata, aguardando "Liberar
   // Pedido" para o cliente), agrupados por venda.
   const reservedLotsBySale = useMemo(() => {
@@ -627,6 +638,12 @@ export default function SalesView({
           />
         );
       })()}
+      <StockRepairBanner
+        fixable={stockRepairSummary.missingBoxQty + stockRepairSummary.missingStockLot}
+        unresolved={stockRepairSummary.unresolved}
+        onOpen={onNavigatePCP}
+        isDarkMode={isDarkMode}
+      />
       <div className="flex flex-col gap-4">
         {/* Card único dividido em 4 partes (2 por linha) — antes era uma barra de 4
             botões numa linha só, que espremia "Configurar" até cortar o texto. */}

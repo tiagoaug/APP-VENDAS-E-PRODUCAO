@@ -882,6 +882,10 @@ export type StockLot = {
   createdAt: number;
   deliveredAt?: number;
   updatedAt?: number;
+
+  // Usuário confirmou manualmente que essa entrada já foi corrigida por fora (ex.: Balanço
+  // de Estoque / edição direta) — some da varredura "Reparar Caixas" sem alterar estoque de novo.
+  repairAcknowledged?: boolean;
 };
 
 // Pré-visualização (e resumo, após executar) do que reverter um StockLot vai

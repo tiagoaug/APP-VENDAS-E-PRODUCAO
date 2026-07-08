@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { Product, SaleType, ProductionConfigItem, StockPkgAllocation, StockLot, StockLotRevertPreview, Sale, SaleStatus, ProductionOrder } from "../types";
+import { Product, SaleType, ProductionConfigItem, StockPkgAllocation, StockLot, StockLotRevertPreview, Sale, SaleStatus, ProductionOrder, ProductionLot } from "../types";
 import {
   Search,
   Package,
@@ -22,6 +22,7 @@ import {
   Factory,
   Users,
   Wrench,
+  Settings,
 } from "lucide-react";
 import PrintLabelEditorModal from "../components/PrintLabelEditorModal";
 import Modal from "../components/Modal";
@@ -30,6 +31,8 @@ import { isHybridProduct, getWholesaleBoxes, getRetailPairs, getStockValue, getW
 import { useStockLotDuplicates } from '../hooks/useStockLotDuplicates';
 import StockDuplicateBanner from '../components/StockDuplicateBanner';
 import StockDuplicateDiagnosticModal from '../components/StockDuplicateDiagnosticModal';
+import StockRepairBanner from '../components/StockRepairBanner';
+import { summarizeStockRepairIssues } from '../utils/stockRepair';
 
 // Capacidade (pares) de uma embalagem avulsa: usa `metadata.capacity` quando
 // configurado; senão recai para o número embutido no nome (ex.: "12 pares
@@ -52,7 +55,9 @@ interface StockViewProps {
   onRevertStockLot?: (stockLot: StockLot) => Promise<StockLotRevertPreview>;
   sales?: Sale[];
   productionOrders?: ProductionOrder[];
+  lots?: ProductionLot[];
   onFixPkgAllocations?: () => Promise<{ fixed: number; total: number }>;
+  onNavigatePCP?: () => void;
 }
 
 export default function StockView({
@@ -65,22 +70,36 @@ export default function StockView({
   onRevertStockLot,
   sales = [],
   productionOrders = [],
+  lots = [],
   onFixPkgAllocations,
+  onNavigatePCP,
 }: StockViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [editedStocks, setEditedStocks] = useState<Record<string, Product>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [productForLabels, setProductForLabels] = useState<Product | null>(null);
-  const [activeTab, setActiveTab] = useState<'estoque' | 'clientes' | 'lotes'>('clientes');
+  const [activeTab, setActiveTab] = useState<'estoque' | 'clientes' | 'lotes'>('estoque');
   const [showEntryHistory, setShowEntryHistory] = useState(false);
   const [stockTypeFilter, setStockTypeFilter] = useState<'ALL' | SaleType.WHOLESALE | SaleType.RETAIL>('ALL');
   const [fixingAlloc, setFixingAlloc] = useState(false);
   const [fixAllocResult, setFixAllocResult] = useState<{ fixed: number; total: number } | null>(null);
   const [showFixAllocModal, setShowFixAllocModal] = useState(false);
   const [showStockDiagnosticModal, setShowStockDiagnosticModal] = useState(false);
+  const [showConfigMenu, setShowConfigMenu] = useState(false);
 
   const { duplicateStockLotGroups, duplicateStockByRefColor, markResolved: markStockDuplicatesResolved } = useStockLotDuplicates(stockLots);
+
+  // Mesma varredura do "Reparar Caixas" (PCP) — alimenta o aviso e a bolinha vermelha no
+  // botão "Configurar" aqui em Estoque, pra não depender do usuário lembrar de checar o PCP.
+  const stockRepairSummary = useMemo(
+    () => summarizeStockRepairIssues(lots, stockLots, productionOrders, products),
+    [lots, stockLots, productionOrders, products]
+  );
+  const hasAnyStockIssue = stockRepairSummary.missingBoxQty > 0
+    || stockRepairSummary.missingStockLot > 0
+    || stockRepairSummary.unresolved > 0
+    || duplicateStockLotGroups.length > 0;
 
   const packagingItems = productionConfigs.filter(c => c.type === 'PACKAGING');
 
@@ -244,91 +263,77 @@ export default function StockView({
           />
         )}
 
-        {!isEditing && (
-          <button
-            type="button"
-            onClick={() => setShowEntryHistory(true)}
-            className={`w-full flex items-center gap-2 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-900 border border-slate-800 text-slate-300' : 'bg-white border border-slate-100 text-slate-500 shadow-sm'}`}
-            title="Histórico de Entradas em Estoque"
-            aria-label="Abrir histórico de entradas em estoque"
-          >
-            <History size={16} strokeWidth={2.5} className="text-yellow-500" />
-            <span className="text-[10px] font-black uppercase tracking-widest">Histórico de Entradas em Estoque</span>
-          </button>
+        {!isEditing && onNavigatePCP && (
+          <StockRepairBanner
+            fixable={stockRepairSummary.missingBoxQty + stockRepairSummary.missingStockLot}
+            unresolved={stockRepairSummary.unresolved}
+            onOpen={onNavigatePCP}
+            isDarkMode={isDarkMode}
+          />
         )}
 
-        {!isEditing && onFixPkgAllocations && (
-          <button
-            type="button"
-            disabled={fixingAlloc}
-            onClick={async () => {
-              setFixingAlloc(true);
-              try {
-                const result = await onFixPkgAllocations();
-                setFixAllocResult(result);
-                setShowFixAllocModal(true);
-              } finally {
-                setFixingAlloc(false);
-              }
-            }}
-            className={`w-full flex items-center justify-between gap-2 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] disabled:opacity-60 ${isDarkMode ? 'bg-slate-900 border border-slate-800 text-slate-300' : 'bg-white border border-slate-100 text-slate-500 shadow-sm'}`}
-            title="Corrigir alocações de embalagem inconsistentes"
-            aria-label="Corrigir inconsistências nas alocações de embalagem"
-          >
-            <div className="flex items-center gap-2">
-              <Wrench size={16} strokeWidth={2.5} className={pkgAllocIssuesCount > 0 ? 'text-orange-500' : 'text-emerald-500'} />
-              <span className="text-[10px] font-black uppercase tracking-widest">
-                {fixingAlloc ? 'Corrigindo...' : 'Corrigir Alocações de Embalagem'}
-              </span>
-            </div>
-            {!fixingAlloc && (
-              pkgAllocIssuesCount > 0 ? (
-                <span className="flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-amber-500 text-white text-[10px] font-black shrink-0">
+        {/* Card único 2x2: Expedição / Estoque / Lotes / Configurar (histórico de entradas +
+            correção de alocações de embalagem, antes 2 botões cheios ocupando a tela toda). */}
+        {!isEditing && (
+          <div className={`grid grid-cols-2 gap-2 p-2 rounded-[1.75rem] ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-slate-100'}`}>
+            <button
+              type="button"
+              onClick={() => setActiveTab('clientes')}
+              className={`flex flex-col items-center justify-center gap-1.5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                activeTab === 'clientes'
+                  ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm')
+                  : 'text-slate-400'
+              }`}
+            >
+              <Truck size={18} strokeWidth={2.5} className="text-sky-500" />
+              Expedição
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('estoque')}
+              className={`flex flex-col items-center justify-center gap-1.5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                activeTab === 'estoque'
+                  ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm')
+                  : 'text-slate-400'
+              }`}
+            >
+              <Package size={18} strokeWidth={2.5} className="text-violet-500" />
+              Estoque
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('lotes')}
+              className={`flex flex-col items-center justify-center gap-1.5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                activeTab === 'lotes'
+                  ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm')
+                  : 'text-slate-400'
+              }`}
+            >
+              <Boxes size={18} strokeWidth={2.5} className="text-emerald-500" />
+              Lotes
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowConfigMenu(true)}
+              className={`relative flex flex-col items-center justify-center gap-1.5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all text-slate-400 ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-white'}`}
+              title="Histórico de entradas e correção de alocações de embalagem"
+              aria-label="Abrir configurações de estoque"
+            >
+              <Settings size={18} strokeWidth={2.5} className="text-amber-500" />
+              Configurar
+              {pkgAllocIssuesCount > 0 ? (
+                <span className="absolute top-2 right-2 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-amber-500 text-white text-[8px] font-black">
                   {pkgAllocIssuesCount}
                 </span>
-              ) : (
-                <CheckCircle2 size={16} strokeWidth={2.5} className="text-emerald-500 shrink-0" />
-              )
-            )}
-          </button>
+              ) : hasAnyStockIssue ? (
+                // Problema detectado (Mapa finalizado sem StockLot, StockLot duplicado, etc.)
+                // que não se resolve dentro deste menu — sinaliza pra o usuário ir investigar
+                // no PCP/Reparar Caixas, sem depender de lembrar de checar por conta própria.
+                <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-rose-500" title="Problema detectado no estoque — veja o aviso acima ou o Reparar Caixas no PCP" />
+              ) : null}
+            </button>
+          </div>
         )}
-
-        {/* Toggle de abas */}
-        <div className={`flex gap-1 p-1 rounded-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-slate-100'}`}>
-          <button
-            type="button"
-            onClick={() => setActiveTab('clientes')}
-            className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              activeTab === 'clientes'
-                ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm')
-                : 'text-slate-400'
-            }`}
-          >
-            Clientes
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('estoque')}
-            className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              activeTab === 'estoque'
-                ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm')
-                : 'text-slate-400'
-            }`}
-          >
-            Estoque
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('lotes')}
-            className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              activeTab === 'lotes'
-                ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm')
-                : 'text-slate-400'
-            }`}
-          >
-            Lotes
-          </button>
-        </div>
 
         {activeTab === 'estoque' && (
           <div className={`p-6 rounded-[2rem] border shadow-xl relative overflow-hidden mb-2 ${
@@ -501,11 +506,110 @@ export default function StockView({
         groups={duplicateStockByRefColor}
         onMarkResolved={markStockDuplicatesResolved}
       />
+
+      <Modal
+        isOpen={showConfigMenu}
+        onClose={() => setShowConfigMenu(false)}
+        title="Configurar Estoque"
+        icon={<Settings size={20} />}
+        maxWidth="max-w-sm"
+      >
+        <div className="flex flex-col gap-2.5">
+          <button
+            type="button"
+            onClick={() => { setShowConfigMenu(false); setShowEntryHistory(true); }}
+            className={`w-full flex items-center gap-2 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
+            title="Histórico de Entradas em Estoque"
+            aria-label="Abrir histórico de entradas em estoque"
+          >
+            <History size={16} strokeWidth={2.5} className="text-yellow-500" />
+            <span className="text-[10px] font-black uppercase tracking-widest">Histórico de Entradas em Estoque</span>
+          </button>
+
+          {onFixPkgAllocations && (
+            <button
+              type="button"
+              disabled={fixingAlloc}
+              onClick={async () => {
+                setFixingAlloc(true);
+                try {
+                  const result = await onFixPkgAllocations();
+                  setFixAllocResult(result);
+                  setShowConfigMenu(false);
+                  setShowFixAllocModal(true);
+                } finally {
+                  setFixingAlloc(false);
+                }
+              }}
+              className={`w-full flex items-center justify-between gap-2 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] disabled:opacity-60 ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
+              title="Corrigir alocações de embalagem inconsistentes"
+              aria-label="Corrigir inconsistências nas alocações de embalagem"
+            >
+              <div className="flex items-center gap-2">
+                <Wrench size={16} strokeWidth={2.5} className={pkgAllocIssuesCount > 0 ? 'text-orange-500' : 'text-emerald-500'} />
+                <span className="text-[10px] font-black uppercase tracking-widest">
+                  {fixingAlloc ? 'Corrigindo...' : 'Corrigir Alocações de Embalagem'}
+                </span>
+              </div>
+              {!fixingAlloc && (
+                pkgAllocIssuesCount > 0 ? (
+                  <span className="flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-amber-500 text-white text-[10px] font-black shrink-0">
+                    {pkgAllocIssuesCount}
+                  </span>
+                ) : (
+                  <CheckCircle2 size={16} strokeWidth={2.5} className="text-emerald-500 shrink-0" />
+                )
+              )}
+            </button>
+          )}
+        </div>
+      </Modal>
     </div>
   );
 }
 
 // ─── Pedidos de Clientes ────────────────────────────────────────────────────
+
+// Precisa ficar em escopo de módulo (fora de PedidosClientesPanel) — definida dentro, era
+// recriada como um componente NOVO a cada render do painel (qualquer state mudando: busca,
+// balanço, etc.), e o React desmontava/remontava a Section inteira, resetando `open` pro
+// `defaultOpen` sempre. Por isso os acordeões nunca ficavam abertos/fechados de propósito.
+const Section: React.FC<{
+  title: string; icon: React.ReactNode; color: string; items: Sale[]; defaultOpen?: boolean;
+  isDarkMode: boolean; renderItem: (item: Sale) => React.ReactNode;
+}> = ({ title, icon, color, items, defaultOpen = true, isDarkMode, renderItem }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`flex items-center justify-between gap-3 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100 shadow-sm'}`}
+      >
+        <h3 className={`text-xs font-black uppercase tracking-widest flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+          <span className={color}>{icon}</span> {title}
+        </h3>
+        <div className="flex items-center gap-2">
+          <span className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
+            {items.length}
+          </span>
+          {open ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />}
+        </div>
+      </button>
+      {open && (
+        items.length === 0 ? (
+          <div className={`p-8 text-center border-2 border-dashed rounded-3xl ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-400'}`}>
+            <p className="text-xs font-bold uppercase tracking-widest">Nenhum pedido</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {items.map(renderItem)}
+          </div>
+        )
+      )}
+    </div>
+  );
+};
 
 const PedidosClientesPanel: React.FC<{
   sales: Sale[];
@@ -669,42 +773,6 @@ const PedidosClientesPanel: React.FC<{
     );
   };
 
-  const Section: React.FC<{ title: string; icon: React.ReactNode; color: string; items: Sale[]; defaultOpen?: boolean }> = ({
-    title, icon, color, items, defaultOpen = true
-  }) => {
-    const [open, setOpen] = useState(defaultOpen);
-    return (
-      <div className="flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={() => setOpen(o => !o)}
-          className={`flex items-center justify-between gap-3 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100 shadow-sm'}`}
-        >
-          <h3 className={`text-xs font-black uppercase tracking-widest flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-            <span className={color}>{icon}</span> {title}
-          </h3>
-          <div className="flex items-center gap-2">
-            <span className={`px-2.5 py-1 rounded-xl text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
-              {items.length}
-            </span>
-            {open ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />}
-          </div>
-        </button>
-        {open && (
-          items.length === 0 ? (
-            <div className={`p-8 text-center border-2 border-dashed rounded-3xl ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-400'}`}>
-              <p className="text-xs font-bold uppercase tracking-widest">Nenhum pedido</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {items.map(s => <SaleRow key={s.id} sale={s} />)}
-            </div>
-          )
-        )}
-      </div>
-    );
-  };
-
   if (customerSales.length === 0 && !term) {
     return (
       <div className={`p-12 text-center border-2 border-dashed rounded-3xl ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-400'}`}>
@@ -721,14 +789,18 @@ const PedidosClientesPanel: React.FC<{
         icon={<Truck size={16} />}
         color="text-emerald-500"
         items={prontos}
-        defaultOpen={true}
+        defaultOpen={false}
+        isDarkMode={isDarkMode}
+        renderItem={(s) => <SaleRow key={s.id} sale={s} />}
       />
       <Section
         title="Aguardando Expedição"
         icon={<Clock size={16} />}
         color="text-orange-500"
         items={aguardando}
-        defaultOpen={true}
+        defaultOpen={false}
+        isDarkMode={isDarkMode}
+        renderItem={(s) => <SaleRow key={s.id} sale={s} />}
       />
       {entregues.length > 0 && (
         <Section
@@ -737,6 +809,8 @@ const PedidosClientesPanel: React.FC<{
           color="text-slate-400"
           items={entregues}
           defaultOpen={false}
+          isDarkMode={isDarkMode}
+          renderItem={(s) => <SaleRow key={s.id} sale={s} />}
         />
       )}
     </div>
