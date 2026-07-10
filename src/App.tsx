@@ -4460,6 +4460,7 @@ export default function App() {
             onBack={goBack}
             onUpdateVariationNote={handleUpdateVariationStockNote}
             grids={grids}
+            lots={productionLots}
           />
         );
       case ViewType.SALE_FORM:

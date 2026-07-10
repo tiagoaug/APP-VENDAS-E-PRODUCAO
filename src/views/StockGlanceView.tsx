@@ -1,9 +1,15 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Product, Grid } from '../types';
+import { Product, Grid, ProductionLot } from '../types';
 import { SaleType } from '../types';
-import { ArrowLeft, Search, Boxes, Package, Filter, X, MessageSquare, MessageSquarePlus, Settings2, Grid3X3, CheckCircle2, Trash2 } from 'lucide-react';
+import { ArrowLeft, Search, Boxes, Package, Filter, X, MessageSquare, MessageSquarePlus, Settings2, Grid3X3, CheckCircle2, Trash2, ClipboardList, Factory } from 'lucide-react';
 import { getWholesaleBoxes, getRetailPairs, productHasSaleType } from '../utils/stockPools';
+import { getOrderEffectiveSector, ORDER_FINALIZED } from '../utils/productionRoute';
 import { toast } from '../utils/toast';
+
+// Aba extra além de Atacado/Varejo — reaproveita a listagem de caixas prontas (Atacado)
+// e soma o que ainda está em produção (PCP) por produto+cor, pra planejar reposição.
+const REPOSICAO_TAB = 'REPOSICAO' as const;
+type GlanceTab = SaleType | typeof REPOSICAO_TAB;
 
 interface StockGlanceViewProps {
   products: Product[];
@@ -15,10 +21,13 @@ interface StockGlanceViewProps {
   /** Usado só pra resolver a grade de tamanhos (defaultGridId) do modelo, no atalho
    * "Grade" do popup de observação — não exibida em mais nada nesta tela. */
   grids?: Grid[];
+  /** Usado só na aba "Reposição" — soma pares ainda em produção (não finalizados) por
+   * produto+cor, sem quebrar por setor. */
+  lots?: ProductionLot[];
 }
 
 type RetailSizeRow = { size: string; ready: number };
-type ProductRow = { variationId: string; colorName: string; ready: number; note?: string; sizeRows?: RetailSizeRow[] };
+type ProductRow = { variationId: string; colorName: string; ready: number; unit: string; note?: string; sizeRows?: RetailSizeRow[]; producing?: number };
 type ProductCard = { product: Product; rows: ProductRow[] };
 
 // Mensagens rápidas pra observação por cor — mesmo padrão de "Textos Rápidos" do
@@ -44,8 +53,12 @@ function persistQuickMessages(list: string[]) {
 /** Visão de estoque 100% somente leitura — sem opção de editar/balanço em nenhum lugar
  * desta tela, e sem informação de produção: mostra só o estoque real (Variation.stock).
  * Única exceção: observação livre por cor (não altera estoque, só anotação). */
-export default function StockGlanceView({ products, isDarkMode, onBack, onUpdateVariationNote, grids = [] }: StockGlanceViewProps) {
-  const [activeTab, setActiveTab] = useState<SaleType>(SaleType.WHOLESALE);
+export default function StockGlanceView({ products, isDarkMode, onBack, onUpdateVariationNote, grids = [], lots = [] }: StockGlanceViewProps) {
+  const [activeTab, setActiveTab] = useState<GlanceTab>(SaleType.WHOLESALE);
+  // Reposição reaproveita a mesma listagem/agrupamento do Atacado (caixas prontas) — só
+  // acrescenta a coluna de "produzindo" e some com a caixa de mensagens.
+  const isReposicao = activeTab === REPOSICAO_TAB;
+  const effectiveSaleType: SaleType = isReposicao ? SaleType.WHOLESALE : activeTab;
   const [search, setSearch] = useState('');
   const [colorFilter, setColorFilter] = useState<string | null>(null);
   const [showFilterModal, setShowFilterModal] = useState(false);
@@ -60,49 +73,92 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
 
   const colorOptions = useMemo(() => {
     const set = new Set<string>();
-    products.filter(p => productHasSaleType(p, activeTab)).forEach(p => {
+    products.filter(p => productHasSaleType(p, effectiveSaleType)).forEach(p => {
       p.variations.forEach(v => { if (v.colorName) set.add(v.colorName); });
     });
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [products, activeTab]);
+  }, [products, effectiveSaleType]);
+
+  // Soma pares ainda em produção (sourceItems cujo item ainda não foi finalizado/creditado
+  // ao estoque) por produto+cor, sem quebrar por setor — só o total, pra planejamento de
+  // reposição. Um Mapa com `finishedAt` está concluído por definição, mesmo que a marcação
+  // por item (`metadata.orderSectors`) tenha ficado inconsistente em algum item pontual
+  // (dados antigos, de antes das correções desta conversa) — por isso o Mapa inteiro é
+  // pulado aqui ANTES de olhar item por item, em vez de confiar só em orderSectors.
+  const producingByVariation = useMemo(() => {
+    const map = new Map<string, number>();
+    const add = (productId: string | undefined, variationId: string | undefined, qty: number) => {
+      if (!productId || !variationId || qty <= 0) return;
+      const key = `${productId}::${variationId}`;
+      map.set(key, (map.get(key) || 0) + qty);
+    };
+    lots.forEach(lot => {
+      if (lot.finishedAt) return;
+      const sourceItems: any[] = (lot as any).metadata?.sourceItems || [];
+      if (sourceItems.length > 0) {
+        sourceItems.forEach((si: any) => {
+          if (getOrderEffectiveSector(lot, si.orderId, si) === ORDER_FINALIZED) return;
+          add(si.productId, si.variationId, si.qty || 0);
+        });
+      } else {
+        add(lot.productId, lot.variationId, lot.quantity || 0);
+      }
+    });
+    return map;
+  }, [lots]);
 
   const cards = useMemo((): ProductCard[] => {
     const term = search.trim().toLowerCase();
     return products
-      .filter(p => productHasSaleType(p, activeTab))
+      // Reposição junta Atacado e Varejo — mostra qualquer produto que venda em um dos dois,
+      // em vez de restringir a um tipo só como as outras abas.
+      .filter(p => isReposicao
+        ? (productHasSaleType(p, SaleType.WHOLESALE) || productHasSaleType(p, SaleType.RETAIL))
+        : productHasSaleType(p, effectiveSaleType))
       .filter(p => !term || p.reference.toLowerCase().includes(term) || p.name.toLowerCase().includes(term))
       .map((product): ProductCard => {
+        const includeWholesale = isReposicao ? productHasSaleType(product, SaleType.WHOLESALE) : effectiveSaleType === SaleType.WHOLESALE;
+        const includeRetail = isReposicao ? productHasSaleType(product, SaleType.RETAIL) : effectiveSaleType === SaleType.RETAIL;
+
         const rows: ProductRow[] = product.variations
           .filter(v => !colorFilter || v.colorName === colorFilter)
-          .map((variation): ProductRow => {
-            if (activeTab === SaleType.WHOLESALE) {
-              return {
+          .flatMap((variation): ProductRow[] => {
+            const producing = producingByVariation.get(`${product.id}::${variation.id}`) || 0;
+            const variationRows: ProductRow[] = [];
+
+            if (includeWholesale) {
+              variationRows.push({
                 variationId: variation.id,
                 colorName: variation.colorName,
                 ready: getWholesaleBoxes(product, variation),
+                unit: 'cx',
                 note: variation.stockNote,
-              };
+                producing,
+              });
             }
-            const readyBySize = variation.stock || {};
-            const sizes = Object.keys(readyBySize)
-              .filter(s => s !== 'WHOLESALE' && (readyBySize[s] || 0) > 0)
-              .sort((a, b) => parseFloat(a) - parseFloat(b) || a.localeCompare(b));
-            return {
-              variationId: variation.id,
-              colorName: variation.colorName,
-              ready: getRetailPairs(product, variation),
-              note: variation.stockNote,
-              sizeRows: sizes.map(size => ({ size, ready: readyBySize[size] || 0 })),
-            };
+            if (includeRetail) {
+              const readyBySize = variation.stock || {};
+              const sizes = Object.keys(readyBySize)
+                .filter(s => s !== 'WHOLESALE' && (readyBySize[s] || 0) > 0)
+                .sort((a, b) => parseFloat(a) - parseFloat(b) || a.localeCompare(b));
+              variationRows.push({
+                variationId: variation.id,
+                colorName: variation.colorName,
+                ready: getRetailPairs(product, variation),
+                unit: 'pr',
+                note: variation.stockNote,
+                sizeRows: sizes.map(size => ({ size, ready: readyBySize[size] || 0 })),
+                producing,
+              });
+            }
+            return variationRows;
           })
-          .filter(row => row.ready > 0);
+          .filter(row => row.ready > 0 || (isReposicao && (row.producing || 0) > 0));
         return { product, rows };
       })
       .filter(card => card.rows.length > 0)
       .sort((a, b) => (a.product.reference || a.product.name).localeCompare(b.product.reference || b.product.name));
-  }, [products, activeTab, search, colorFilter]);
-
-  const unit = activeTab === SaleType.WHOLESALE ? 'cx' : 'pr';
+  }, [products, effectiveSaleType, isReposicao, search, colorFilter, producingByVariation]);
   const activeFilterCount = (search.trim() ? 1 : 0) + (colorFilter ? 1 : 0);
 
   const notesCard = useMemo(
@@ -225,7 +281,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
         </button>
       </div>
 
-      {/* Abas Atacado / Varejo */}
+      {/* Abas Atacado / Varejo / Reposição */}
       <div className={`flex p-1.5 rounded-2xl border gap-1 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
         <button
           type="button"
@@ -240,6 +296,14 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
           className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${activeTab === SaleType.RETAIL ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}
         >
           <Package size={14} /> Varejo
+        </button>
+        <button
+          type="button"
+          onClick={() => { setActiveTab(REPOSICAO_TAB); setColorFilter(null); }}
+          title="Planejamento de Reposição de Estoque"
+          className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${isReposicao ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}
+        >
+          <ClipboardList size={14} /> Reposição
         </button>
       </div>
 
@@ -257,7 +321,23 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
               <h3 className={`text-[13px] font-black uppercase tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                 {card.product.reference ? `${card.product.reference} — ` : ''}{card.product.name}
               </h3>
-              {onUpdateVariationNote && (
+              {isReposicao && (() => {
+                const hasWholesale = card.rows.some(r => r.unit === 'cx');
+                const hasRetail = card.rows.some(r => r.unit === 'pr');
+                const label = hasWholesale && hasRetail ? 'Atacado + Varejo' : hasWholesale ? 'Atacado' : 'Varejo';
+                return (
+                  <span className={`shrink-0 px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${
+                    hasWholesale && !hasRetail
+                      ? (isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-100 text-amber-700')
+                      : !hasWholesale && hasRetail
+                        ? (isDarkMode ? 'bg-sky-500/15 text-sky-400' : 'bg-sky-100 text-sky-700')
+                        : (isDarkMode ? 'bg-violet-500/15 text-violet-400' : 'bg-violet-100 text-violet-700')
+                  }`}>
+                    {label}
+                  </span>
+                );
+              })()}
+              {onUpdateVariationNote && !isReposicao && (
                 <button
                   type="button"
                   onClick={() => setNotesProductId(card.product.id)}
@@ -272,14 +352,14 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
 
             <div className="flex flex-col gap-2">
               {card.rows.map(row => (
-                <div key={row.variationId} className={`flex flex-col gap-1.5 p-2.5 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50/80'}`}>
+                <div key={`${row.variationId}-${row.unit}`} className={`flex flex-col gap-1.5 p-2.5 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50/80'}`}>
                   {/* Quantidade sempre na frente da cor — observação fica na outra extremidade */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{row.ready} {unit}</span>
+                      <span className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{row.ready} {row.unit}</span>
                       <span className={`text-[11px] font-bold uppercase tracking-tight truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{row.colorName}</span>
                     </div>
-                    {row.note && (
+                    {!isReposicao && row.note && (
                       <button
                         type="button"
                         onClick={() => setViewNoteRow({ productId: card.product.id, variationId: row.variationId, colorName: row.colorName, note: row.note! })}
@@ -292,7 +372,16 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                     )}
                   </div>
 
-                  {activeTab === SaleType.RETAIL && (
+                  {isReposicao && (
+                    <div className="flex items-center gap-1.5">
+                      <Factory size={12} className="text-indigo-400 shrink-0" />
+                      <span className={`text-[10px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-indigo-300' : 'text-indigo-600'}`}>
+                        Produzindo: {row.producing || 0} pares
+                      </span>
+                    </div>
+                  )}
+
+                  {row.unit === 'pr' && (
                     <div className="flex flex-wrap gap-1.5">
                       {(row.sizeRows || []).map(sr => (
                         <div
