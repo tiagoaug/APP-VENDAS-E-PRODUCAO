@@ -374,6 +374,18 @@ export default function SalesView({
     return count;
   }, [filter, paymentFilter, deliveryFilter, selectedStatuses]);
 
+  // `sale.customerName` é um snapshot gravado na criação da venda — editar o nome do
+  // cliente no cadastro de Pessoas depois não atualizava esse snapshot, então a lista de
+  // Vendas continuava mostrando o nome antigo pra sempre. Busca o nome ATUAL via
+  // customerId quando o cliente ainda existe no cadastro; cai pro snapshot só quando o
+  // vínculo não existe (venda avulsa, sem cliente cadastrado, ou cliente excluído).
+  const peopleById = useMemo(() => {
+    const map = new Map<string, Person>();
+    people.forEach(p => map.set(p.id, p));
+    return map;
+  }, [people]);
+  const getCustomerName = (sale: Sale) => (sale.customerId && peopleById.get(sale.customerId)?.name) || sale.customerName;
+
   // Métricas de entrega — fechadas pelo PCP ao concluir a expedição (ver SaleStatus.SALE não cancelados)
   const deliveryStats = useMemo(() => {
     const trackedSales = sales.filter(s => s.status === SaleStatus.SALE);
@@ -459,7 +471,7 @@ export default function SalesView({
         const cleanQuery = query.replace(/[()\-\s]/g, '');
         const cleanOrderNumber = s.orderNumber?.toLowerCase().replace(/[()\-\s]/g, '');
         
-        const matchesName = s.customerName?.toLowerCase().includes(query);
+        const matchesName = getCustomerName(s)?.toLowerCase().includes(query);
         const matchesId = cleanOrderNumber && cleanQuery ? cleanOrderNumber.includes(cleanQuery) : false;
         
         if (!matchesName && !matchesId) return false;
@@ -1082,7 +1094,7 @@ export default function SalesView({
                 }`}>
                   <div className="min-w-0">
                     <h3 className={`font-black text-base tracking-tight leading-none truncate ${sale.status === SaleStatus.CANCELLED ? 'text-slate-500' : isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                      {sale.saleDestination === 'STOCK' ? 'Estoque' : (sale.customerName || 'Cliente')}
+                      {sale.saleDestination === 'STOCK' ? 'Estoque' : (getCustomerName(sale) || 'Cliente')}
                     </h3>
                     <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                       <div className="flex items-center gap-1 text-[10px] text-slate-400 dark:text-slate-500 font-black tracking-widest">
@@ -1109,7 +1121,7 @@ export default function SalesView({
                     type="button"
                     onClick={() => setSelectedSale(sale)}
                     title="Ver Detalhes do Pedido"
-                    aria-label={`Ver detalhes do pedido de ${sale.customerName || 'Cliente'}`}
+                    aria-label={`Ver detalhes do pedido de ${getCustomerName(sale) || 'Cliente'}`}
                     className={`shrink-0 ml-3 transition-all hover:scale-110 ${
                       sale.status === SaleStatus.QUOTE
                         ? 'text-amber-500'
@@ -1720,7 +1732,7 @@ export default function SalesView({
                 <div>
                   <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Resumo do Pedido</p>
                   <p className={`text-[15px] font-black leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                    {s.customerName || 'Cliente'}
+                    {getCustomerName(s) || 'Cliente'}
                   </p>
                   <p className="text-[10px] font-bold text-slate-400 mt-0.5">#{s.orderNumber}</p>
                 </div>
@@ -1892,7 +1904,7 @@ export default function SalesView({
                   </div>
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pedido &amp; Separação</p>
-                    <p className={`text-base font-black leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>#{s.orderNumber} · {s.customerName}</p>
+                    <p className={`text-base font-black leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>#{s.orderNumber} · {getCustomerName(s)}</p>
                   </div>
                 </div>
                 <button
@@ -2445,7 +2457,7 @@ export default function SalesView({
               <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-3 custom-scrollbar">
                 <p className={`text-[11px] font-bold leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                   O pedido <span className="font-black text-violet-500">#{transferSale.orderNumber}</span> de{' '}
-                  <span className="font-black">{transferSale.customerName}</span> será cancelado e os produtos produzidos
+                  <span className="font-black">{getCustomerName(transferSale)}</span> será cancelado e os produtos produzidos
                   serão transferidos para o <span className="font-black">estoque geral</span>.
                 </p>
 
