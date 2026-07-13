@@ -178,6 +178,63 @@ export function getLotPendingSectorGroups(lot: ProductionLot): Map<string, any[]
   return groups;
 }
 
+export type ActiveProductionUnit = {
+  productId: string;
+  variationId: string;
+  /** size (cabedal) -> pares ainda a produzir */
+  pairs: Record<string, number>;
+  quantity: number;
+  lotOrderNumber: string;
+  /** Só populado no fallback de Mapa legado (sem metadata.sourceItems) — usado por materiais
+   * com consumptionBasis 'grade'; itens com granularidade por sourceItem não têm equivalente
+   * (o consumidor recai pro cálculo via grid/unitQty nesse caso). */
+  gradesQty?: number;
+};
+
+/**
+ * Fonte única de "quanto ainda falta produzir, por produto+cor, considerando só Mapas ativos
+ * e só os itens deles ainda não finalizados". Usada por todo cálculo de necessidade/reserva que
+ * depende de produção em andamento (materiais, solado, palmilha) — antes cada um reimplementava
+ * essa mesma varredura separadamente (PCPView.buildPurchaseNeeds, computeSoleMapaReservations,
+ * computePalmilhaMapaReservations), e cada cópia podia divergir/ficar desatualizada.
+ *
+ * Um Mapa com vários pedidos agrupados pode ter parte deles já enviada pra Expedição (material já
+ * debitado de verdade) enquanto o resto ainda produz — o que mantém o Mapa "ativo" (sem
+ * `finishedAt`) como um todo. Usar `lot.pairs`/`lot.quantity` (totais congelados na criação, nunca
+ * reduzidos por finalização parcial) sempre que o Mapa tem `metadata.sourceItems` somaria de novo
+ * a necessidade de pedidos que já foram produzidos — por isso, quando o Mapa tem essa granularidade,
+ * filtramos por item (`ORDER_FINALIZED`) e agrupamos por produto+cor; Mapas legados sem
+ * `metadata.sourceItems` não têm essa granularidade e mantêm o comportamento antigo (lote inteiro).
+ */
+export function getActiveProductionUnits(lots: ProductionLot[]): ActiveProductionUnit[] {
+  const units: ActiveProductionUnit[] = [];
+  lots.filter(l => !l.finishedAt).forEach(lot => {
+    const sourceItems: any[] = (lot as any).metadata?.sourceItems || [];
+    if (sourceItems.length > 0) {
+      const byVariation = new Map<string, ActiveProductionUnit>();
+      sourceItems.forEach((si: any) => {
+        if (getOrderEffectiveSector(lot, si.orderId, si) === ORDER_FINALIZED) return;
+        if (!si.productId || !si.variationId) return;
+        const vKey = `${si.productId}::${si.variationId}`;
+        let entry = byVariation.get(vKey);
+        if (!entry) {
+          entry = { productId: si.productId, variationId: si.variationId, pairs: {}, quantity: 0, lotOrderNumber: lot.orderNumber };
+          byVariation.set(vKey, entry);
+        }
+        entry.quantity += si.qty || 0;
+        Object.entries(si.sizes || {}).forEach(([size, s]: any) => {
+          const q = Number(s?.toProduction) || 0;
+          if (q > 0) entry!.pairs[size] = (entry!.pairs[size] || 0) + q;
+        });
+      });
+      byVariation.forEach(entry => units.push(entry));
+    } else {
+      units.push({ productId: lot.productId, variationId: lot.variationId, pairs: lot.pairs || {}, quantity: lot.quantity, lotOrderNumber: lot.orderNumber, gradesQty: lot.gradesQty });
+    }
+  });
+  return units;
+}
+
 /**
  * Returns `route` with `sectorId` guaranteed to be present, inserted at the
  * position matching the global canonical sector order if it isn't already there.

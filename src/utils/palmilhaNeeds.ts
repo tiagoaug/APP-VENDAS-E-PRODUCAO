@@ -1,4 +1,5 @@
 import { ProductionLot, Product, ProductionConfigItem, PalmilhaStockEntry, PurchaseRequest, Purchase, PalmilhaPurchaseItem } from '../types';
+import { getActiveProductionUnits } from './productionRoute';
 
 export type PalmilhaReservation = {
   toolId: string;
@@ -14,43 +15,15 @@ export type PalmilhaReservationsMap = Record<string, PalmilhaReservation>; // ke
 // Mirror de computeSoleMapaReservations (src/utils/soleNeeds.ts), porém mais simples: a grade de
 // estoque da palmilha é sempre o tamanho exato da faca (sem parsing de faixas "38-39"), mapeado
 // via ComponentConsumption.toolMapping (já existente, usado hoje só pelo EngineeringEditor).
+// A varredura de "quanto falta produzir por Mapa ativo" vem de `getActiveProductionUnits`
+// (fonte única compartilhada com computeSoleMapaReservations e PCPView.buildPurchaseNeeds).
 export function computePalmilhaMapaReservations(
   lots: ProductionLot[],
   products: Product[],
   productionConfigs: ProductionConfigItem[],
   palmilhaStock: PalmilhaStockEntry[]
 ): PalmilhaReservationsMap {
-  const activeLots = lots.filter(l => !l.finishedAt);
-
-  type ConsumptionUnit = {
-    productId: string;
-    variationId: string;
-    pairs: Record<string, number>;
-  };
-  const units: ConsumptionUnit[] = [];
-
-  activeLots.forEach(lot => {
-    if (!lot.variationId && (lot as any).metadata?.groups?.length > 0) {
-      const groupsMeta: any[] = (lot as any).metadata.groups;
-      const totalGroupQty = groupsMeta.reduce((s: number, g: any) => s + (g.quantity || 0), 0);
-      groupsMeta.forEach((g: any) => {
-        let gPairs: Record<string, number>;
-        if (g.pairs && Object.keys(g.pairs).length > 0) {
-          gPairs = g.pairs;
-        } else {
-          const ratio = totalGroupQty > 0 ? (g.quantity || 0) / totalGroupQty : 0;
-          gPairs = {};
-          Object.entries(lot.pairs || {}).forEach(([size, qty]) => {
-            const v = Math.round(Number(qty) * ratio);
-            if (v > 0) gPairs[size] = v;
-          });
-        }
-        units.push({ productId: g.productId, variationId: g.variationId, pairs: gPairs });
-      });
-    } else {
-      units.push({ productId: lot.productId, variationId: lot.variationId, pairs: lot.pairs || {} });
-    }
-  });
+  const units = getActiveProductionUnits(lots);
 
   const result: PalmilhaReservationsMap = {};
 

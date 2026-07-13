@@ -401,6 +401,36 @@
   .animate-pulse-cyan-ring {
     animation: pulse-cyan-ring 1.8s infinite;
   }
+
+  @keyframes pulse-indigo-ring {
+    0% {
+      box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.6);
+    }
+    70% {
+      box-shadow: 0 0 0 8px rgba(79, 70, 229, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(79, 70, 229, 0);
+    }
+  }
+  .animate-pulse-indigo-ring {
+    animation: pulse-indigo-ring 1.8s infinite;
+  }
+
+  @keyframes pulse-orange-ring {
+    0% {
+      box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.6);
+    }
+    70% {
+      box-shadow: 0 0 0 8px rgba(249, 115, 22, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(249, 115, 22, 0);
+    }
+  }
+  .animate-pulse-orange-ring {
+    animation: pulse-orange-ring 1.8s infinite;
+  }
 }
 
 /* ── Global Print Rules ───────────────────────────────────────────────────── */

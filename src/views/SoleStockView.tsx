@@ -6,6 +6,7 @@ import {
   Share2, FileText, Image, Info, ClipboardList, ShoppingCart, SlidersHorizontal
 } from 'lucide-react';
 import { firebaseService } from '../services/firebaseService';
+import Modal from '../components/Modal';
 import PrintSoleLabelModal from '../components/PrintSoleLabelModal';
 import CalculatorModal from '../components/CalculatorModal';
 import { exportSoleStockReport, StockShareItem } from '../utils/soleStockExport';
@@ -52,6 +53,11 @@ export default function SoleStockView({
 
   // Reservas de mapas (Parte A)
   const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+  // Tooltip "Como são feitos os cálculos?" por numeração — antes só abria em :hover (CSS puro),
+  // que não funciona em toque (Android/mobile: não há hover persistente). Agora abre/fecha por
+  // toque, guardando qual linha (mapa+cor+tamanho) está com o tooltip aberto.
+  const [helpTooltipKey, setHelpTooltipKey] = useState<string | null>(null);
+  const [showBalancoHelp, setShowBalancoHelp] = useState(false);
   const [showInfoBanner, setShowInfoBanner] = useState(
     () => localStorage.getItem('soleStockReservationInfoDismissed') !== 'true'
   );
@@ -819,31 +825,50 @@ export default function SoleStockView({
       </div>
 
       <div className="flex flex-col gap-1.5 mb-4">
-        <button
-          type="button"
-          disabled={isFormularPedidoMode}
-          onClick={() => {
-            if (isBalanceMode) {
-              setIsBalanceMode(false);
-              setBalanceData({});
-            } else {
-              const initialData: Record<string, Record<string, number>> = {};
-              aggregatedStock.forEach(item => {
-                initialData[`${item.moldId}-${item.colorId}`] = { ...item.sizes };
-              });
-              setBalanceData(initialData);
-              setIsBalanceMode(true);
-            }
-          }}
-          className={`w-full py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-            isBalanceMode
-              ? 'bg-rose-500 text-white shadow-lg shadow-rose-500/20'
-              : 'bg-slate-600 text-white hover:bg-slate-700'
-          }`}
-        >
-          {isBalanceMode ? <X size={14} strokeWidth={3} /> : <Calculator size={14} />}
-          {isBalanceMode ? 'Cancelar Balanço' : 'Balanço'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={isFormularPedidoMode}
+            onClick={() => {
+              if (isBalanceMode) {
+                setIsBalanceMode(false);
+                setBalanceData({});
+              } else {
+                const initialData: Record<string, Record<string, number>> = {};
+                aggregatedStock.forEach(item => {
+                  initialData[`${item.moldId}-${item.colorId}`] = { ...item.sizes };
+                });
+                setBalanceData(initialData);
+                setIsBalanceMode(true);
+              }
+            }}
+            className={`flex-1 py-3 px-4 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2.5 border active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+              isBalanceMode
+                ? 'bg-rose-500 border-rose-500 text-white shadow-lg shadow-rose-500/20'
+                : isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50'
+            }`}
+          >
+            {isBalanceMode ? (
+              <X size={14} strokeWidth={3} />
+            ) : (
+              <span className="w-6 h-6 rounded-full flex items-center justify-center bg-orange-500/15 text-orange-500 animate-pulse-orange-ring">
+                <Calculator size={13} />
+              </span>
+            )}
+            {isBalanceMode ? 'Cancelar Balanço' : 'Balanço'}
+          </button>
+          {!isBalanceMode && (
+            <button
+              type="button"
+              onClick={() => setShowBalancoHelp(true)}
+              title="O que é o Balanço?"
+              aria-label="O que é o Balanço?"
+              className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-black bg-orange-500 hover:bg-orange-600 text-white shadow-md shadow-orange-500/20 active:scale-95 transition-all shrink-0"
+            >
+              ?
+            </button>
+          )}
+        </div>
 
         <select
           value={selectedMoldId}
@@ -1138,30 +1163,50 @@ export default function SoleStockView({
                                   Tamanho {size}
                                 </span>
                                 
-                                {/* Help Icon with Tooltip */}
-                                <div className="relative group">
-                                  <button
-                                    type="button"
-                                    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-black bg-orange-500 hover:bg-orange-600 text-white shadow-md shadow-orange-500/20 hover:shadow-orange-500/40 hover:scale-105 active:scale-95 transition-all duration-200 cursor-help"
-                                    title="Como são feitos os cálculos?"
-                                  >
-                                    ?
-                                  </button>
-                                  {/* Tooltip on hover */}
-                                  <div className={`absolute right-0 bottom-8 z-[60] w-64 p-3.5 rounded-2xl shadow-2xl text-[10px] font-bold leading-relaxed border transition-all scale-0 group-hover:scale-100 origin-bottom-right duration-200 ${
-                                    isDarkMode
-                                      ? 'bg-slate-950 border-slate-800 text-slate-400'
-                                      : 'bg-white border-slate-200 text-slate-600'
-                                  }`}>
-                                    <p className="font-black text-slate-800 dark:text-white uppercase mb-1.5 tracking-tight">Cálculo de Estoque Futuro</p>
-                                    <p className="mb-2.5">O estoque final da numeração é projetado somando o estoque atual às compras pendentes e subtraindo a necessidade dos mapas ativos:</p>
-                                    <div className={`p-2.5 rounded-xl border font-mono text-[9px] font-bold ${
-                                      isDarkMode ? 'bg-slate-900 border-slate-800/80' : 'bg-slate-50 border-slate-150'
-                                    }`}>
-                                      (<span className="text-emerald-500">Estoque Real</span> + <span className="text-blue-500">Comprado</span>) - <span className="text-orange-500">Mapas</span> = <span className={futureTotal < 0 ? 'text-rose-500' : 'text-emerald-500'}>Estoque Futuro</span>
+                                {/* Help Icon with Tooltip — abre/fecha por toque (funciona no app
+                                    Android/mobile); antes dependia só de :hover, que não existe em toque. */}
+                                {(() => {
+                                  const helpKey = `${itemKey}-${size}`;
+                                  const isHelpOpen = helpTooltipKey === helpKey;
+                                  return (
+                                    <div className="relative">
+                                      <button
+                                        type="button"
+                                        onClick={() => setHelpTooltipKey(prev => prev === helpKey ? null : helpKey)}
+                                        className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-black bg-orange-500 hover:bg-orange-600 text-white shadow-md shadow-orange-500/20 hover:shadow-orange-500/40 hover:scale-105 active:scale-95 transition-all duration-200"
+                                        title="Como são feitos os cálculos?"
+                                        aria-label="Como são feitos os cálculos?"
+                                      >
+                                        ?
+                                      </button>
+                                      {isHelpOpen && (
+                                        <div className={`absolute right-0 bottom-8 z-[60] w-64 p-3.5 rounded-2xl shadow-2xl text-[10px] font-bold leading-relaxed border ${
+                                          isDarkMode
+                                            ? 'bg-slate-950 border-slate-800 text-slate-400'
+                                            : 'bg-white border-slate-200 text-slate-600'
+                                        }`}>
+                                          <div className="flex items-start justify-between gap-2 mb-1.5">
+                                            <p className="font-black text-slate-800 dark:text-white uppercase tracking-tight">Cálculo de Estoque Futuro</p>
+                                            <button
+                                              type="button"
+                                              onClick={() => setHelpTooltipKey(null)}
+                                              className="shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                              aria-label="Fechar"
+                                            >
+                                              <X size={14} />
+                                            </button>
+                                          </div>
+                                          <p className="mb-2.5">O estoque final da numeração é projetado somando o estoque atual às compras pendentes e subtraindo a necessidade dos mapas ativos:</p>
+                                          <div className={`p-2.5 rounded-xl border font-mono text-[9px] font-bold ${
+                                            isDarkMode ? 'bg-slate-900 border-slate-800/80' : 'bg-slate-50 border-slate-150'
+                                          }`}>
+                                            (<span className="text-emerald-500">Estoque Real</span> + <span className="text-blue-500">Comprado</span>) - <span className="text-orange-500">Mapas</span> = <span className={futureTotal < 0 ? 'text-rose-500' : 'text-emerald-500'}>Estoque Futuro</span>
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
-                                  </div>
-                                </div>
+                                  );
+                                })()}
                               </div>
 
                               {/* Main Grid: Real Stock, Map Lot Necessity, Purchased Total, Future Total */}
@@ -1414,6 +1459,30 @@ export default function SoleStockView({
           isDarkMode={isDarkMode}
         />
       )}
+
+      <Modal
+        isOpen={showBalancoHelp}
+        onClose={() => setShowBalancoHelp(false)}
+        title="O que é o Balanço?"
+        icon={<Calculator size={20} />}
+        maxWidth="max-w-sm"
+      >
+        <div className="flex flex-col gap-3 text-[12px] font-bold leading-relaxed text-slate-600 dark:text-slate-300">
+          <p>
+            O <strong className="text-slate-900 dark:text-white">Balanço</strong> serve pra corrigir o estoque de solados quando o número
+            que o sistema mostra não bate com a contagem física — depois de um inventário, por exemplo.
+          </p>
+          <p>
+            Ao entrar no modo Balanço, cada matriz/cor mostra um campo editável por numeração. Você digita a quantidade
+            REAL de pares que tem em mãos pra cada tamanho, e ao salvar o sistema substitui todo o histórico de entradas
+            daquela matriz/cor por um único registro com os valores corrigidos — é uma correção direta do saldo, não uma
+            entrada adicional.
+          </p>
+          <p className="text-rose-500 dark:text-rose-400">
+            Atenção: salvar o Balanço apaga os registros de entrada anteriores dessa matriz/cor e não pode ser desfeito.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

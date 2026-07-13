@@ -34,7 +34,7 @@ import { labelService } from '../services/labelService';
 import { printLotSheet, printOrderItemSheet, shareImage, sharePDF } from '../utils/pdfExport';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { resolveCorrectSectorForProduct, computeOSAdvanceOutcome, ensureSectorInRoute, ORDER_FINALIZED, getOrderEffectiveSector, getLotPendingSectorGroups, getSourceItemKey } from '../utils/productionRoute';
+import { resolveCorrectSectorForProduct, computeOSAdvanceOutcome, ensureSectorInRoute, ORDER_FINALIZED, getOrderEffectiveSector, getLotPendingSectorGroups, getSourceItemKey, getActiveProductionUnits } from '../utils/productionRoute';
 import { scannerService, SCAN_ERRORS } from '../services/scannerService';
 import { financeService } from '../services/financeService';
 import WebCameraScanner from '../components/WebCameraScanner';
@@ -192,6 +192,8 @@ export default function PCPView({
   const [mapBadgeText, setMapBadgeText] = useState(() => localStorage.getItem('pcp_map_badge_text') || '#ffffff');
   const [isColorPickerOpen, setIsColorPickerOpen] = useState(false);
   const [colorPickerLot, setColorPickerLot] = useState<ProductionLot | null>(null);
+  const [mapaBadgePickerOpen, setMapaBadgePickerOpen] = useState(false);
+  const [mapaBadgePickerSearch, setMapaBadgePickerSearch] = useState('');
   const updateLotColor = async (lot: ProductionLot, bg: string, text: string) => {
     await firebaseService.updateDocument('productionLots', lot.id, {
       metadata: {
@@ -828,35 +830,12 @@ export default function PCPView({
     const includeOrders = sourceFilter === 'ORDERS' || sourceFilter === 'BOTH' || sourceFilter === 'SELECTED_ORDERS';
 
     if (includeLots) {
-      activeLots.forEach(lot => {
-        // Para mapas multi-variação (variationId vazio), expande os grupos via metadata
-        if (!lot.variationId && (lot as any).metadata?.groups?.length > 0) {
-          const groupsMeta: any[] = (lot as any).metadata.groups;
-          const totalGroupQty = groupsMeta.reduce((s: number, g: any) => s + (g.quantity || 0), 0);
-          groupsMeta.forEach((g: any) => {
-            const ratio = totalGroupQty > 0 ? (g.quantity || 0) / totalGroupQty : 0;
-            let gPairs: Record<string, number>;
-            if (g.pairs && Object.keys(g.pairs).length > 0) {
-              // Novo: pares por grupo salvos corretamente
-              gPairs = g.pairs;
-            } else {
-              // Legado: distribui lot.pairs proporcionalmente pelo peso do grupo
-              gPairs = {};
-              Object.entries(lot.pairs || {}).forEach(([size, qty]) => {
-                const v = Math.round(Number(qty) * ratio);
-                if (v > 0) gPairs[size] = v;
-              });
-            }
-            // Cada grupo representa apenas a SUA fatia do mapa — usar o total do mapa (lot.quantity)
-            // aqui faria cada grupo consumir materiais como se fosse o mapa inteiro (ex: 1 par de
-            // etiqueta por par viraria N vezes o necessário, uma vez por grupo).
-            const gQuantity = g.quantity || 0;
-            const gGradesQty = lot.gradesQty ? Math.round(lot.gradesQty * ratio) : undefined;
-            units.push({ productId: g.productId, variationId: g.variationId, pairs: gPairs, quantity: gQuantity, gradesQty: gGradesQty, sourceType: 'LOT', sourceLabel: lot.orderNumber });
-          });
-        } else {
-          units.push({ productId: lot.productId, variationId: lot.variationId, pairs: lot.pairs || {}, quantity: lot.quantity, gradesQty: lot.gradesQty, sourceType: 'LOT', sourceLabel: lot.orderNumber });
-        }
+      // Fonte única compartilhada com computeSoleMapaReservations/computePalmilhaMapaReservations
+      // (src/utils/productionRoute.ts) — só considera itens de Mapas ativos ainda não finalizados,
+      // pra não somar de novo a necessidade de pedidos já enviados pra Expedição dentro de um Mapa
+      // com finalização parcial.
+      getActiveProductionUnits(activeLots).forEach(u => {
+        units.push({ productId: u.productId, variationId: u.variationId, pairs: u.pairs, quantity: u.quantity, gradesQty: u.gradesQty, sourceType: 'LOT', sourceLabel: u.lotOrderNumber });
       });
     }
 
@@ -13087,35 +13066,94 @@ export default function PCPView({
         maxWidth="max-w-md"
       >
         <div className="flex flex-col gap-5 p-1">
-          {/* Seletor de Mapa */}
+          {/* Seletor de Mapa — abre um popup centralizado com busca em vez de lista embutida
+              (a lista embutida virava rolagem dentro de rolagem, dentro de um modal já apertado). */}
           <div className="flex flex-col gap-2">
             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Selecionar Mapa</label>
-            <div className="flex flex-col gap-1 max-h-44 overflow-y-auto pr-0.5">
-              {/* Opção global */}
-              <button type="button"
-                onClick={() => setColorPickerLot(null)}
-                className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-left transition-all ${!colorPickerLot ? (isDarkMode ? 'border-indigo-500 bg-indigo-900/20' : 'border-indigo-400 bg-indigo-50') : (isDarkMode ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-200 hover:bg-slate-50')}`}
-              >
+            <button
+              type="button"
+              onClick={() => { setMapaBadgePickerSearch(''); setMapaBadgePickerOpen(true); }}
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${isDarkMode ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-200 hover:bg-slate-50'}`}
+            >
+              {colorPickerLot ? (
+                <span className="text-[8px] font-black px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap" style={{ backgroundColor: (colorPickerLot as any).metadata?.badgeColor || mapBadgeBg, color: (colorPickerLot as any).metadata?.badgeTextColor || mapBadgeText }}>MAPA {colorPickerLot.orderNumber}</span>
+              ) : (
                 <span className="text-[8px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ backgroundColor: mapBadgeBg, color: mapBadgeText }}>PADRÃO</span>
-                <span className={`text-[10px] font-bold truncate ${!colorPickerLot ? 'text-indigo-500' : (isDarkMode ? 'text-slate-400' : 'text-slate-500')}`}>Cor padrão (todos os mapas)</span>
-              </button>
-              {/* Mapas individuais */}
-              {[...lots].sort((a, b) => ((b as any).createdAt || 0) - ((a as any).createdAt || 0)).map(lot => {
-                const lBg: string = (lot as any).metadata?.badgeColor || mapBadgeBg;
-                const lTxt: string = (lot as any).metadata?.badgeTextColor || mapBadgeText;
-                const isSel = colorPickerLot?.id === lot.id;
-                return (
-                  <button key={lot.id} type="button"
-                    onClick={() => setColorPickerLot(lot)}
-                    className={`flex items-center gap-2.5 px-3 py-2 rounded-xl border text-left transition-all ${isSel ? (isDarkMode ? 'border-indigo-500 bg-indigo-900/20' : 'border-indigo-400 bg-indigo-50') : (isDarkMode ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-200 hover:bg-slate-50')}`}
-                  >
-                    <span className="text-[8px] font-black px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap" style={{ backgroundColor: lBg, color: lTxt }}>MAPA {lot.orderNumber}</span>
-                    <span className={`text-[10px] font-bold truncate ${isSel ? 'text-indigo-500' : (isDarkMode ? 'text-slate-400' : 'text-slate-600')}`}>{products.find(p => p.id === lot.productId)?.name || lot.customerName || `Mapa ${lot.orderNumber}`}</span>
-                  </button>
-                );
-              })}
-            </div>
+              )}
+              <span className={`flex-1 text-[10px] font-bold truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                {colorPickerLot ? (products.find(p => p.id === colorPickerLot.productId)?.name || colorPickerLot.customerName || `Mapa ${colorPickerLot.orderNumber}`) : 'Cor padrão (todos os mapas)'}
+              </span>
+              <ChevronDown size={14} className="text-slate-400 shrink-0" />
+            </button>
           </div>
+
+          {mapaBadgePickerOpen && createPortal(
+            <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 70000 }}>
+              <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setMapaBadgePickerOpen(false)} />
+              <div className={`relative w-full max-w-sm max-h-[80vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                <div className={`flex items-center justify-between px-5 py-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                  <h3 className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Selecionar Mapa</h3>
+                  <button type="button" onClick={() => setMapaBadgePickerOpen(false)} className={`p-1.5 rounded-lg ${isDarkMode ? 'hover:bg-slate-800 text-slate-400' : 'hover:bg-slate-100 text-slate-400'}`} aria-label="Fechar">
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="p-3">
+                  <div className={`relative flex items-center rounded-2xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                    <Search size={16} className="absolute left-4 text-slate-400" />
+                    <input
+                      type="text"
+                      autoFocus
+                      className={`flex-1 bg-transparent border-none outline-none py-3 pl-11 pr-4 text-[13px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'}`}
+                      placeholder="Digitar para buscar..."
+                      value={mapaBadgePickerSearch}
+                      onChange={(e) => setMapaBadgePickerSearch(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto px-3 pb-3 flex flex-col gap-1">
+                  {(() => {
+                    const term = mapaBadgePickerSearch.trim().toLowerCase();
+                    const matchesTerm = (label: string) => !term || label.toLowerCase().includes(term);
+                    const showDefault = matchesTerm('padrão cor padrão todos os mapas');
+                    const filteredLots = [...lots]
+                      .sort((a, b) => ((b as any).createdAt || 0) - ((a as any).createdAt || 0))
+                      .filter(lot => matchesTerm(`mapa ${lot.orderNumber} ${products.find(p => p.id === lot.productId)?.name || lot.customerName || ''}`));
+                    if (!showDefault && filteredLots.length === 0) {
+                      return <div className="px-4 py-3 text-[12px] text-slate-400 italic">Nenhum resultado encontrado</div>;
+                    }
+                    return (
+                      <>
+                        {showDefault && (
+                          <button type="button"
+                            onClick={() => { setColorPickerLot(null); setMapaBadgePickerOpen(false); }}
+                            className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${!colorPickerLot ? (isDarkMode ? 'border-indigo-500 bg-indigo-900/20' : 'border-indigo-400 bg-indigo-50') : (isDarkMode ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-200 hover:bg-slate-50')}`}
+                          >
+                            <span className="text-[8px] font-black px-2 py-0.5 rounded-full shrink-0" style={{ backgroundColor: mapBadgeBg, color: mapBadgeText }}>PADRÃO</span>
+                            <span className={`text-[10px] font-bold truncate ${!colorPickerLot ? 'text-indigo-500' : (isDarkMode ? 'text-slate-400' : 'text-slate-500')}`}>Cor padrão (todos os mapas)</span>
+                          </button>
+                        )}
+                        {filteredLots.map(lot => {
+                          const lBg: string = (lot as any).metadata?.badgeColor || mapBadgeBg;
+                          const lTxt: string = (lot as any).metadata?.badgeTextColor || mapBadgeText;
+                          const isSel = colorPickerLot?.id === lot.id;
+                          return (
+                            <button key={lot.id} type="button"
+                              onClick={() => { setColorPickerLot(lot); setMapaBadgePickerOpen(false); }}
+                              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-left transition-all ${isSel ? (isDarkMode ? 'border-indigo-500 bg-indigo-900/20' : 'border-indigo-400 bg-indigo-50') : (isDarkMode ? 'border-slate-700 hover:bg-slate-800' : 'border-slate-200 hover:bg-slate-50')}`}
+                            >
+                              <span className="text-[8px] font-black px-2 py-0.5 rounded-full shrink-0 whitespace-nowrap" style={{ backgroundColor: lBg, color: lTxt }}>MAPA {lot.orderNumber}</span>
+                              <span className={`text-[10px] font-bold truncate ${isSel ? 'text-indigo-500' : (isDarkMode ? 'text-slate-400' : 'text-slate-600')}`}>{products.find(p => p.id === lot.productId)?.name || lot.customerName || `Mapa ${lot.orderNumber}`}</span>
+                            </button>
+                          );
+                        })}
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>,
+            document.body
+          )}
 
           <div className="flex flex-col gap-2">
             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pré-visualização</label>

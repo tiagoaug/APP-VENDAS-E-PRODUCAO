@@ -1,4 +1,5 @@
 import { ProductionLot, Product, Variation, SoleStockEntry, PurchaseRequest, Purchase, SolePurchaseItem } from '../types';
+import { getActiveProductionUnits } from './productionRoute';
 
 export type SoleReservation = {
   moldId: string;
@@ -114,43 +115,14 @@ export function resolveSoleConsumption(
 // Subconjunto SOLE/LOTS de PCPView.buildPurchaseNeeds (src/views/PCPView.tsx, linhas ~252, ~409-756):
 // calcula apenas a quantidade de pares de sola já reservada pelos mapas de produção ativos,
 // por molde + cor + grade de numeração, sem considerar materiais ou pedidos pendentes.
+// A varredura de "quanto falta produzir por Mapa ativo" vem de `getActiveProductionUnits`
+// (fonte única compartilhada com computePalmilhaMapaReservations e PCPView.buildPurchaseNeeds).
 export function computeSoleMapaReservations(
   lots: ProductionLot[],
   products: Product[],
   soleStock: SoleStockEntry[]
 ): SoleReservationsMap {
-  const activeLots = lots.filter(l => !l.finishedAt);
-
-  type ConsumptionUnit = {
-    productId: string;
-    variationId: string;
-    pairs: Record<string, number>;
-    quantity: number;
-  };
-  const units: ConsumptionUnit[] = [];
-
-  activeLots.forEach(lot => {
-    if (!lot.variationId && (lot as any).metadata?.groups?.length > 0) {
-      const groupsMeta: any[] = (lot as any).metadata.groups;
-      const totalGroupQty = groupsMeta.reduce((s: number, g: any) => s + (g.quantity || 0), 0);
-      groupsMeta.forEach((g: any) => {
-        let gPairs: Record<string, number>;
-        if (g.pairs && Object.keys(g.pairs).length > 0) {
-          gPairs = g.pairs;
-        } else {
-          const ratio = totalGroupQty > 0 ? (g.quantity || 0) / totalGroupQty : 0;
-          gPairs = {};
-          Object.entries(lot.pairs || {}).forEach(([size, qty]) => {
-            const v = Math.round(Number(qty) * ratio);
-            if (v > 0) gPairs[size] = v;
-          });
-        }
-        units.push({ productId: g.productId, variationId: g.variationId, pairs: gPairs, quantity: lot.quantity });
-      });
-    } else {
-      units.push({ productId: lot.productId, variationId: lot.variationId, pairs: lot.pairs || {}, quantity: lot.quantity });
-    }
-  });
+  const units = getActiveProductionUnits(lots);
 
   const result: SoleReservationsMap = {};
 
