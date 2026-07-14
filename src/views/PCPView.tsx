@@ -541,7 +541,7 @@ export default function PCPView({
     gridMaxMultiplier: number;
     mode: 'grade' | 'free';
     rootKey: string;
-    fractions: { label: string; multiplier: number; sizes: Record<string, number> }[];
+    fractions: { label: string; multiplier: number; sizes: Record<string, number>; chosenSectorId: string }[];
   } | null>(null);
   // OS cujo popup de Observações/Lembrete está aberto — campos saíram do card pra
   // ocupar menos espaço, abrem num popup separado só quando precisa.
@@ -1933,13 +1933,14 @@ export default function PCPView({
   // somar todas as outras — assim a soma das frações nunca desbate do pedido original,
   // sem o usuário precisar digitar o resto manualmente.
   const recomputeLastFraction = (
-    fractions: { label: string; multiplier: number; sizes: Record<string, number> }[],
+    fractions: { label: string; multiplier: number; sizes: Record<string, number>; chosenSectorId: string }[],
     baseSizes: Record<string, number>,
     gridConfig: Record<string, number> | null,
   ) => {
     if (fractions.length === 0) return fractions;
     const editable = fractions.slice(0, -1);
     const lastLabel = fractions[fractions.length - 1].label;
+    const lastSectorId = fractions[fractions.length - 1].chosenSectorId;
     const remainder: Record<string, number> = { ...baseSizes };
     editable.forEach(fr => {
       Object.entries(fr.sizes).forEach(([sz, qty]) => { remainder[sz] = (remainder[sz] || 0) - (qty || 0); });
@@ -1950,7 +1951,7 @@ export default function PCPView({
       const allConsistent = sizesWithUnit.length > 0 && sizesWithUnit.every(sz => remainder[sz] % gridConfig[sz] === remainder[sizesWithUnit[0]] % gridConfig[sizesWithUnit[0]]);
       lastMultiplier = allConsistent ? Math.round(remainder[sizesWithUnit[0]] / gridConfig[sizesWithUnit[0]]) : 0;
     }
-    return [...editable, { label: lastLabel, multiplier: lastMultiplier, sizes: remainder }];
+    return [...editable, { label: lastLabel, multiplier: lastMultiplier, sizes: remainder, chosenSectorId: lastSectorId }];
   };
 
   const FRACTION_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -2001,10 +2002,14 @@ export default function PCPView({
       return `X${usedLabels.size}`;
     };
 
+    // Frações começam no MESMO setor onde o pedido original está agora — o usuário só
+    // precisa mexer no seletor se quiser que alguma fração siga pra um setor diferente.
+    const currentSectorId = getOrderEffectiveSector(f.lot, f.si.orderId, f.si);
+
     const zeroSizes = Object.fromEntries(Object.keys(baseSizes).map(sz => [sz, 0]));
     const initialFractions = [
-      { label: nextLabel(), multiplier: 0, sizes: zeroSizes },
-      { label: nextLabel(), multiplier: gridMaxMultiplier, sizes: { ...baseSizes } },
+      { label: nextLabel(), multiplier: 0, sizes: zeroSizes, chosenSectorId: currentSectorId },
+      { label: nextLabel(), multiplier: gridMaxMultiplier, sizes: { ...baseSizes }, chosenSectorId: currentSectorId },
     ];
 
     setFractionModal({
@@ -2034,6 +2039,14 @@ export default function PCPView({
     });
   };
 
+  const updateFractionSector = (idx: number, sectorId: string) => {
+    setFractionModal(prev => {
+      if (!prev) return prev;
+      const fractions = prev.fractions.map((fr, i) => i === idx ? { ...fr, chosenSectorId: sectorId } : fr);
+      return { ...prev, fractions };
+    });
+  };
+
   const addFractionRow = () => {
     setFractionModal(prev => {
       if (!prev) return prev;
@@ -2041,7 +2054,7 @@ export default function PCPView({
       let label = 'A';
       for (const ch of FRACTION_LETTERS) { if (!usedLabels.has(ch)) { label = ch; break; } }
       const zeroSizes = Object.fromEntries(Object.keys(prev.baseSizes).map(sz => [sz, 0]));
-      const newRow = { label, multiplier: 0, sizes: zeroSizes };
+      const newRow = { label, multiplier: 0, sizes: zeroSizes, chosenSectorId: prev.fractions[prev.fractions.length - 1].chosenSectorId };
       const next = [...prev.fractions.slice(0, -1), newRow, prev.fractions[prev.fractions.length - 1]];
       return { ...prev, fractions: recomputeLastFraction(next, prev.baseSizes, prev.gridConfig) };
     });
@@ -2074,7 +2087,7 @@ export default function PCPView({
     }
     const { lot, si, siIdx, fractions, rootKey } = fractionModal;
 
-    const buildFractionSourceItem = (fr: { label: string; sizes: Record<string, number> }) => {
+    const buildFractionSourceItem = (fr: { label: string; sizes: Record<string, number>; chosenSectorId: string }) => {
       const sizes: Record<string, { total: number; fromStock: number; toProduction: number }> = {};
       let qty = 0;
       Object.entries(fr.sizes).forEach(([sz, q]) => {
@@ -2090,9 +2103,20 @@ export default function PCPView({
     sourceItems[siIdx] = newEntries[0];
     for (let i = 1; i < newEntries.length; i++) sourceItems.push(newEntries[i]);
 
+    // Grava o setor escolhido pra cada fração — cada uma pode seguir pra um setor diferente
+    // do resto do pedido (ex.: uma fração já pronta avança, outra fica pra trás). Nunca escreve
+    // ORDER_FINALIZED aqui: finalizar de verdade precisa passar pelo fluxo normal (que credita
+    // estoque/solado via applyExpedicaoStockUpdate), não só marcar o setor.
+    const updatedOrderSectors = { ...(lot as any).metadata?.orderSectors };
+    newEntries.forEach((entry, i) => {
+      const chosenSectorId = fractions[i].chosenSectorId;
+      if (!chosenSectorId || chosenSectorId === ORDER_FINALIZED) return;
+      updatedOrderSectors[getSourceItemKey(entry)] = chosenSectorId;
+    });
+
     try {
       await firebaseService.updateDocument('productionLots', lot.id, {
-        metadata: { ...(lot as any).metadata, sourceItems },
+        metadata: { ...(lot as any).metadata, sourceItems, orderSectors: updatedOrderSectors },
       });
       toast.show(`Pedido fracionado em ${fractions.length} partes (${fractions.map(f => f.label).join(', ')}).`);
       setFractionModal(null);
@@ -2961,8 +2985,14 @@ export default function PCPView({
         if (qty > 0) pairs[size] = qty;
       });
     } else if (siQty > 0) {
-      // Tenta embalagem cadastrada para obter a distribuição correta por faixa
-      const gridId = prod.productionGridId || prod.defaultGridId;
+      // Tenta embalagem cadastrada para obter a distribuição correta por faixa — só faz sentido
+      // pra pedidos ATACADO (grade padrão de caixa fechada, ex.: 38-39:3, 40-41:6, 42-43:3 por
+      // caixa). Um pedido VAREJO/avulso desse MESMO produto (ex.: "Acabamento" com todos os
+      // pares numa numeração só, fora do padrão de caixa) não segue essa distribuição — usar o
+      // grid do produto aqui sobrescrevia a grade real do pedido (si.sizes) por uma distribuição
+      // de caixa que não tem nada a ver com o que foi realmente pedido/produzido.
+      const isWholesaleItem = (ordItem?.saleType ?? prod.type) === SaleType.WHOLESALE;
+      const gridId = isWholesaleItem ? (prod.productionGridId || prod.defaultGridId) : '';
       if (gridId) {
         const pkg = productionConfigs.find(c => c.type === 'PACKAGING' && (c.metadata as any)?.productionGradeId === gridId);
         const pkgBreakdown = (pkg?.metadata as any)?.sizeQuantities as Record<string, number> | undefined;
@@ -6036,6 +6066,7 @@ export default function PCPView({
                                             lotId: f.lot.id,
                                             saleType: f.orderItem?.saleType,
                                             siIdx: f.siIdx,
+                                            fractionLabel: f.si.fractionLabel,
                                           };
                                         });
 
@@ -6085,7 +6116,10 @@ export default function PCPView({
                                             if (si?.fractionLabel && si?.sizes) {
                                               Object.entries(si.sizes as Record<string, any>).forEach(([sz, d]) => { const q = Number(d?.toProduction) || 0; if (q > 0) pairsPreview[sz] = q; });
                                             } else if (it.qty > 0) {
-                                              const gridIdP = prod?.productionGridId || prod?.defaultGridId;
+                                              // Mesma regra de resolveSourceItem: distribuição de caixa padrão só se aplica a
+                                              // pedidos ATACADO — um pedido VAREJO/avulso não segue grade de caixa fechada.
+                                              const isWholesaleItemP = (orderItem?.saleType ?? prod?.type) === SaleType.WHOLESALE;
+                                              const gridIdP = isWholesaleItemP ? (prod?.productionGridId || prod?.defaultGridId) : '';
                                               if (gridIdP) {
                                                 const pkgP = productionConfigs.find(c => c.type === 'PACKAGING' && (c.metadata as any)?.productionGradeId === gridIdP);
                                                 const pkgBD = (pkgP?.metadata as any)?.sizeQuantities as Record<string, number> | undefined;
@@ -10308,6 +10342,7 @@ export default function PCPView({
                                       lotId: selectedLot.id,
                                       saleType: orderItem?.saleType,
                                       siIdx: sourceItems.indexOf(si),
+                                      fractionLabel: si.fractionLabel,
                                     };
                                   });
                                   const toFinalize = resolved.filter(it => it.chosenSectorId === '');
@@ -12085,6 +12120,7 @@ export default function PCPView({
                             className={`w-7 h-7 rounded-lg text-sm font-black ${isDarkMode ? 'bg-slate-900 text-slate-300 hover:bg-slate-700' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>−</button>
                           <input type="number" min={0} value={fr.multiplier}
                             onChange={(e) => updateFractionMultiplier(idx, Number(e.target.value))}
+                            onFocus={(e) => e.target.select()}
                             className={`w-14 text-center text-[11px] font-black rounded-lg px-1 py-1.5 border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-700'}`}
                           />
                           <button type="button" onClick={() => updateFractionMultiplier(idx, fr.multiplier + 1)}
@@ -12101,6 +12137,7 @@ export default function PCPView({
                             ) : (
                               <input type="number" min={0} value={fr.sizes[sz] || 0}
                                 onChange={(e) => updateFractionSize(idx, sz, Number(e.target.value))}
+                                onFocus={(e) => e.target.select()}
                                 className={`w-16 text-center text-[11px] font-black rounded-lg px-1 py-1 border outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-700'}`}
                               />
                             )}
@@ -12108,6 +12145,30 @@ export default function PCPView({
                         ))}
                       </div>
                     )}
+
+                    {/* Setor de destino desta fração — cápsula com <select> nativo invisível por
+                        cima, mesmo padrão usado no painel de baixa de OS. */}
+                    <div className="flex items-center gap-2 pt-1">
+                      <span className={`text-[9px] font-black uppercase tracking-widest shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Setor</span>
+                      <div className="relative flex-1 min-w-0">
+                        <div className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border transition-all ${isDarkMode ? 'border-orange-700/50 bg-orange-900/20' : 'border-orange-300 bg-orange-50'}`}>
+                          <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 truncate">
+                            {visibleSectors.find(s => s.id === fr.chosenSectorId)?.name || fr.chosenSectorId || 'Setor atual'}
+                          </span>
+                          <ChevronDown size={13} className="text-orange-500 shrink-0" />
+                        </div>
+                        <select
+                          title={`Setor de destino da Fração ${fr.label}`}
+                          value={fr.chosenSectorId}
+                          onChange={(e) => updateFractionSector(idx, e.target.value)}
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                        >
+                          {visibleSectors.map(sector => (
+                            <option key={sector.id} value={sector.id}>{sector.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                   </div>
                 );
               })}
