@@ -1879,7 +1879,12 @@ export default function PCPView({
             return true;
           })
         : sourceItems;
-      const itemsToUse = filteredSourceItems.length > 0 ? filteredSourceItems : sourceItems;
+      // Antes, quando a restrição (sourceItemKeys/sourceOrderIds da OS) não batia com NENHUM
+      // item deste Mapa — caso normal quando uma OS cobre vários Mapas e este em particular não
+      // tem nada dela —, caía num fallback que mostrava o Mapa INTEIRO em "Dar Baixa", trazendo
+      // pedidos que nunca fizeram parte da OS. "Zero itens deste Mapa" é uma resposta válida,
+      // não motivo pra mostrar tudo.
+      const itemsToUse = filteredSourceItems;
       return itemsToUse.map((si: any) => {
         const idx = sourceItems.indexOf(si);
         const order = productionOrders.find(o => o.id === si.orderId);
