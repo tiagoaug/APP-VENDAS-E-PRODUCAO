@@ -662,38 +662,6 @@ export default function SalesView({
         isDarkMode={isDarkMode}
       />
 
-      {/* Acesso rápido ao catálogo — Vendas precisa consultar/cadastrar produtos pra poder
-          vender, mas sem a parte de engenharia (isso ProductFormView já esconde sozinho
-          quando module === 'SALES', que é o que essas duas entradas navegam). */}
-      {(onNavigateProducts || onAddProduct) && (
-        <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-          {onNavigateProducts && (
-            <ConfigMenuItem
-              icon={<Package size={22} />}
-              label="Produtos Cadastrados"
-              desc="Catálogo pra vendas"
-              onClick={onNavigateProducts}
-              color="text-indigo-600"
-              bg="bg-indigo-50"
-              isDarkMode={isDarkMode}
-              isLast={!onAddProduct}
-            />
-          )}
-          {onAddProduct && (
-            <ConfigMenuItem
-              icon={<Plus size={22} />}
-              label="Cadastrar Novo Modelo"
-              desc="Nome, preço, cores e imagens"
-              onClick={onAddProduct}
-              color="text-emerald-600"
-              bg="bg-emerald-50"
-              isDarkMode={isDarkMode}
-              isLast
-            />
-          )}
-        </div>
-      )}
-
       <div className="flex flex-col gap-4">
         {/* Card único dividido em 4 partes (2 por linha) — antes era uma barra de 4
             botões numa linha só, que espremia "Configurar" até cortar o texto. */}

@@ -547,6 +547,7 @@ export default function App() {
       { id: 'reminders', label: 'Lembretes e Vencimentos', visible: true, order: 14.5, module: 'any' },
       { id: 'activity', label: 'Atividade Recente', visible: true, order: 15, module: 'any' },
       { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 16, module: 'sales' },
+      { id: 'business_overview', label: 'Visualização do Meu Negócio', visible: true, order: 16.5, module: 'sales' },
       { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 17, module: 'production' },
       { id: 'production_stock_control', label: 'Controle de Estoques', visible: true, order: 17.5, module: 'production' },
       { id: 'factory_config', label: 'Configurações de Fábrica', visible: true, order: 22, module: 'production' },
@@ -616,6 +617,12 @@ export default function App() {
     // Migration: ensure production_stock_control is present
     if (config.cards && !config.cards.find((c: any) => c.id === 'production_stock_control')) {
       config.cards.push({ id: 'production_stock_control', label: 'Controle de Estoques', visible: true, order: 17.5, module: 'production' });
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+
+    // Migration: ensure business_overview card is present
+    if (config.cards && !config.cards.find((c: any) => c.id === 'business_overview')) {
+      config.cards.push({ id: 'business_overview', label: 'Visualização do Meu Negócio', visible: true, order: 16.5, module: 'sales' });
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
 
@@ -936,12 +943,16 @@ export default function App() {
           title: s.reminderTitle || s.customerName || 'Venda',
           body: s.reminderTitle ? (s.customerName || 'Venda') : 'Lembrete de venda',
           at: s.reminderAt!,
+          alarmMode: s.reminderAlarmMode ?? true,
+          soundPattern: s.reminderSoundPattern || 'standard',
         }));
         serviceOrders.filter(os => os.reminderAt).forEach(os => reminders.push({
           id: `os-${os.id}`,
           title: os.reminderTitle || `OS ${os.osNumber}`,
           body: os.providerName ? `Fornecedor: ${os.providerName}` : 'Lembrete de Ordem de Serviço',
           at: os.reminderAt!,
+          alarmMode: os.reminderAlarmMode ?? true,
+          soundPattern: os.reminderSoundPattern || 'standard',
         }));
         productionOrders.forEach(order => (order.items || []).forEach((item: any) => {
           if (!item.reminderAt) return;
@@ -950,13 +961,23 @@ export default function App() {
             title: item.reminderTitle || `Pedido ${order.orderNumber}`,
             body: `${order.customerName || 'Estoque'} · Pedido ${order.orderNumber}`,
             at: item.reminderAt,
+            alarmMode: item.reminderAlarmMode ?? true,
+            soundPattern: item.reminderSoundPattern || 'standard',
           });
+        }));
+        purchases.filter(p => p.reminderAt).forEach(p => reminders.push({
+          id: `purchase-${p.id}`,
+          title: p.reminderTitle || `Vencimento — compra ${p.batchNumber || ''}`,
+          body: `Vencimento da compra ${p.batchNumber || ''}`,
+          at: p.reminderAt!,
+          alarmMode: p.reminderAlarmMode ?? true,
+          soundPattern: p.reminderSoundPattern || 'standard',
         }));
         notificationService.rescheduleAll(reminders);
       })();
     }, 4000);
     return () => clearTimeout(timer);
-  }, [user, sales, serviceOrders, productionOrders]);
+  }, [user, sales, serviceOrders, productionOrders, purchases]);
 
   // Selection state for editing
   const [selectedProductId, setSelectedProductId] = useState<string | null>(
@@ -1956,8 +1977,9 @@ export default function App() {
         }
       }
 
-      // Financial entry — financeService.createTransaction handles balance update internally
-      if (purchase.paymentTerm === PaymentTerm.CASH && purchase.accountId) {
+      // Financial entry — financeService.createTransaction handles balance update internally.
+      // "Não Contábil" (generateTransaction === false) não deve gerar título nem entrar em Despesas.
+      if (purchase.generateTransaction !== false && purchase.paymentTerm === PaymentTerm.CASH && purchase.accountId) {
         const transaction: Omit<Transaction, 'id'> = {
           type: TransactionType.EXPENSE,
           amount: parseLocaleNumber(purchase.total),
@@ -2082,8 +2104,9 @@ export default function App() {
         }
       }
 
-      // Financial entry — financeService.createTransaction handles balance update internally
-      if (purchase.paymentTerm === PaymentTerm.CASH && purchase.accountId) {
+      // Financial entry — financeService.createTransaction handles balance update internally.
+      // "Não Contábil" (generateTransaction === false) não deve gerar título nem entrar em Despesas.
+      if (purchase.generateTransaction !== false && purchase.paymentTerm === PaymentTerm.CASH && purchase.accountId) {
         const transaction: Omit<Transaction, 'id'> = {
           type: TransactionType.EXPENSE,
           amount: parseLocaleNumber(purchase.total),
@@ -3042,6 +3065,15 @@ export default function App() {
             onAddTransaction={(type) => {
               setTransactionModalType(type);
               setIsTransactionModalOpen(true);
+            }}
+            onDeleteTransaction={async (id) => {
+              try {
+                await financeService.deleteTransaction(id);
+                toast.show('Excluído com sucesso!');
+              } catch (err: any) {
+                console.error('onDeleteTransaction error:', err);
+                toast.show('Erro ao excluir: ' + (err.message || err));
+              }
             }}
             onOpenAIAssistant={() => setIsAIAssistantOpen(true)}
             activeCollaborator={activeCollaborator}
@@ -4287,6 +4319,7 @@ export default function App() {
             purchases={purchases}
             sales={sales}
             products={products}
+            productionLots={productionLots}
             onSave={async (newTx) => {
               try {
                 await financeService.createTransaction(newTx);

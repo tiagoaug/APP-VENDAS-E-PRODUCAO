@@ -16,6 +16,7 @@ import type { Collaborator } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import { notificationService } from '../services/notificationService';
 import DatePicker from '../components/DatePicker';
+import BusinessOverviewCard from '../components/BusinessOverviewCard';
 
 type DashboardScanItem = ScanHistoryEntry;
 
@@ -43,6 +44,7 @@ interface DashboardViewProps {
   onNavigateGrids: () => void;
   onAddProduct: () => void;
   onAddTransaction: (type: TransactionType) => void;
+  onDeleteTransaction?: (id: string) => Promise<void> | void;
   onOpenAIAssistant: () => void;
   aiEnabled?: boolean;
   isDarkMode: boolean;
@@ -71,6 +73,7 @@ export default function DashboardView({
   onNavigateGrids,
   onAddProduct,
   onAddTransaction,
+  onDeleteTransaction,
   onOpenAIAssistant,
   aiEnabled = true,
   isDarkMode,
@@ -1933,6 +1936,23 @@ export default function DashboardView({
                   </div>
                 </div>
               </div>
+            );
+
+          case "business_overview":
+            return (
+              <BusinessOverviewCard
+                key="business_overview"
+                isDarkMode={isDarkMode}
+                products={products}
+                productionLots={productionLots}
+                accounts={accounts}
+                sales={sales}
+                transactions={transactions}
+                purchases={purchases}
+                people={people}
+                categories={categories}
+                onDeleteTransaction={onDeleteTransaction || (() => {})}
+              />
             );
 
           case "activity":

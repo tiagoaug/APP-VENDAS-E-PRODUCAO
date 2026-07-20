@@ -224,12 +224,30 @@ export type PaymentHistory = {
   note?: string;
 };
 
+// Id de um toque da biblioteca de lembretes (30 opções — ver src/data/reminderTones.ts,
+// arquivos .wav correspondentes em android/app/src/main/res/raw/). String solta (não union
+// fechada) porque a biblioteca é maior e pode crescer sem precisar editar este tipo.
+export type ReminderTonePattern = string;
+
+// Perfil salvo de configuração de lembrete (alarme + padrão de toque), reutilizável
+// em qualquer tela que agende lembretes — não inclui data/hora, que é sempre por caso.
+export interface ReminderProfile {
+  id: string;
+  name: string;
+  alarmMode: boolean;
+  soundPattern: ReminderTonePattern;
+}
+
 export type Purchase = {
   id: string;
   supplierId: string;
   date: number;
   dueDate?: number; // Vencimento, para compras gerais
   paymentTerm?: PaymentTerm; // A vista ou a prazo
+  reminderAt?: number | null; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
+  reminderTitle?: string | null; // Título curto do lembrete
+  reminderAlarmMode?: boolean | null; // true = alarme insistente (precisa dispensar), false = notificação normal
+  reminderSoundPattern?: ReminderTonePattern | null;
   type: PurchaseType;
   items?: PurchaseItem[];
   generalItems?: GeneralPurchaseItem[];
@@ -333,6 +351,8 @@ export type Sale = {
   deliveredAt?: number;
   reminderAt?: number | null; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
   reminderTitle?: string | null; // Título curto do lembrete
+  reminderAlarmMode?: boolean | null;
+  reminderSoundPattern?: ReminderTonePattern | null;
 };
 
 export type Person = {
@@ -768,6 +788,8 @@ export type ProductionOrderItem = {
   notes?: string;
   reminderAt?: number | null; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
   reminderTitle?: string | null; // Título curto do lembrete
+  reminderAlarmMode?: boolean | null;
+  reminderSoundPattern?: ReminderTonePattern | null;
 };
 
 export type ProductionOrder = {
@@ -944,6 +966,8 @@ export interface ServiceOrder {
   sizeGrid?: string;        // Human-readable size range, e.g. "37-38-39-40-41"
   reminderAt?: number | null; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
   reminderTitle?: string | null; // Título curto do lembrete
+  reminderAlarmMode?: boolean | null;
+  reminderSoundPattern?: ReminderTonePattern | null;
   // Navigation helpers (derived from linked lot, not persisted)
   currentSectorIndex?: number;
   route?: string[];

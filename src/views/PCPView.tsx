@@ -18,13 +18,13 @@ import {
   FlowTag, Variation, ColorValue, ProductionOrder,
   ProductionConfigItem, SoleStockEntry, PalmilhaStockEntry, ViewType, PurchaseRequest, Grid,
   ServiceOrder, Person, Account, Category, Transaction, Purchase, PurchaseType, SectorNote,
-  ProductionScreenType, StockLot, SaleType, SaleStatus
+  ProductionScreenType, StockLot, SaleType, SaleStatus, ReminderTonePattern
 } from '../types';
 import { computePalmilhaMapaReservations, computePalmilhaPendingOrders } from '../utils/palmilhaNeeds';
 import { resolveSoleConsumption } from '../utils/soleNeeds';
 import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
-import DateTimePicker from '../components/DateTimePicker';
+import ReminderPickerModal from '../components/ReminderPickerModal';
 import ScannerModal from '../components/ScannerModal';
 import PrintOSModal from '../components/PrintOSModal';
 import PrintLabelEditorModal from '../components/PrintLabelEditorModal';
@@ -3771,15 +3771,19 @@ export default function PCPView({
   };
 
   // Agenda/cancela a notificação local do lembrete de uma OS, refletindo o título/data mais recentes
-  const syncOSReminderNotification = (os: ServiceOrder, updates: { reminderAt?: number | null; reminderTitle?: string | null }) => {
+  const syncOSReminderNotification = (os: ServiceOrder, updates: { reminderAt?: number | null; reminderTitle?: string | null; reminderAlarmMode?: boolean | null; reminderSoundPattern?: ReminderTonePattern | null }) => {
     const reminderAt = updates.reminderAt !== undefined ? updates.reminderAt : os.reminderAt;
     const reminderTitle = updates.reminderTitle !== undefined ? updates.reminderTitle : os.reminderTitle;
+    const reminderAlarmMode = updates.reminderAlarmMode !== undefined ? updates.reminderAlarmMode : os.reminderAlarmMode;
+    const reminderSoundPattern = updates.reminderSoundPattern !== undefined ? updates.reminderSoundPattern : os.reminderSoundPattern;
     if (reminderAt) {
       notificationService.scheduleReminder({
         id: `os-${os.id}`,
         title: reminderTitle || `OS ${os.osNumber}`,
         body: os.providerName ? `Fornecedor: ${os.providerName}` : 'Lembrete de Ordem de Serviço',
         at: reminderAt,
+        alarmMode: reminderAlarmMode ?? true,
+        soundPattern: reminderSoundPattern || 'standard',
       });
     } else {
       notificationService.cancelReminder(`os-${os.id}`);
@@ -5612,14 +5616,14 @@ export default function PCPView({
                                 const orderItemIdx = f.si.itemIdx !== undefined
                                   ? f.si.itemIdx
                                   : (f.order?.items.findIndex((i: any) => i.productId === f.si.productId && i.variationId === f.si.variationId) ?? -1);
-                                const updateOrderItemNote = (updates: { notes?: string | null; reminderAt?: number | null; reminderTitle?: string | null }) => {
+                                const updateOrderItemNote = (updates: { notes?: string | null; reminderAt?: number | null; reminderTitle?: string | null; reminderAlarmMode?: boolean | null; reminderSoundPattern?: ReminderTonePattern | null }) => {
                                   if (!f.order || orderItemIdx < 0) return;
                                   const newItems = [...f.order.items];
                                   const updatedItem = { ...newItems[orderItemIdx], ...updates };
                                   newItems[orderItemIdx] = updatedItem;
                                   firebaseService.updateDocument('productionOrders', f.order.id, { items: newItems });
 
-                                  if ('reminderAt' in updates || 'reminderTitle' in updates) {
+                                  if ('reminderAt' in updates || 'reminderTitle' in updates || 'reminderAlarmMode' in updates || 'reminderSoundPattern' in updates) {
                                     const reminderId = `order-${f.order.id}-${updatedItem.productId}-${updatedItem.variationId}`;
                                     if (updatedItem.reminderAt) {
                                       notificationService.scheduleReminder({
@@ -5627,6 +5631,8 @@ export default function PCPView({
                                         title: updatedItem.reminderTitle || `Pedido ${f.order.orderNumber}`,
                                         body: `${f.order.customerName || 'Estoque'} · Pedido ${f.order.orderNumber}`,
                                         at: updatedItem.reminderAt,
+                                        alarmMode: updatedItem.reminderAlarmMode ?? true,
+                                        soundPattern: updatedItem.reminderSoundPattern || 'standard',
                                       });
                                     } else {
                                       notificationService.cancelReminder(reminderId);
@@ -5802,23 +5808,17 @@ export default function PCPView({
                                               }}
                                               className={`w-full px-3 py-2 rounded-xl text-[10px] font-bold outline-none border resize-none h-16 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-700 placeholder:text-slate-400'}`}
                                             />
-                                            <input
-                                              type="text"
-                                              defaultValue={orderItem?.reminderTitle || ''}
-                                              placeholder="Título do lembrete..."
-                                              title="Título do lembrete"
-                                              onBlur={(e) => {
-                                                if (e.target.value !== (orderItem?.reminderTitle || '')) {
-                                                  updateOrderItemNote({ reminderTitle: e.target.value || null });
-                                                }
-                                              }}
-                                              className={`w-full px-3 py-2 rounded-xl text-[10px] font-bold outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-700 placeholder:text-slate-400'}`}
-                                            />
-                                            <DateTimePicker
-                                              value={orderItem?.reminderAt}
+                                            <ReminderPickerModal
                                               isDarkMode={isDarkMode}
-                                              placeholder="Definir lembrete"
-                                              onChange={(ts) => updateOrderItemNote({ reminderAt: ts })}
+                                              label="Lembrete"
+                                              title={orderItem?.reminderTitle || ''}
+                                              onTitleChange={(v) => updateOrderItemNote({ reminderTitle: v || null })}
+                                              at={orderItem?.reminderAt ?? null}
+                                              onAtChange={(ts) => updateOrderItemNote({ reminderAt: ts })}
+                                              alarmMode={orderItem?.reminderAlarmMode ?? true}
+                                              onAlarmModeChange={(v) => updateOrderItemNote({ reminderAlarmMode: v })}
+                                              soundPattern={orderItem?.reminderSoundPattern || 'standard'}
+                                              onSoundPatternChange={(v) => updateOrderItemNote({ reminderSoundPattern: v })}
                                             />
                                           </div>
                                         )}
@@ -11853,27 +11853,33 @@ export default function PCPView({
               }}
               className={`w-full px-3 py-2 rounded-xl text-[11px] font-bold outline-none border resize-none h-20 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-700 placeholder:text-slate-400'}`}
             />
-            <input
-              type="text"
-              defaultValue={osNotesPopup.reminderTitle || ''}
-              placeholder="Título do lembrete..."
-              title="Título do lembrete"
-              onBlur={(e) => {
-                if (e.target.value !== (osNotesPopup.reminderTitle || '')) {
-                  const reminderTitle = e.target.value || null;
-                  firebaseService.updateDocument('serviceOrders', osNotesPopup.id, { reminderTitle });
-                  syncOSReminderNotification(osNotesPopup, { reminderTitle });
-                }
-              }}
-              className={`w-full px-3 py-2 rounded-xl text-[11px] font-bold outline-none border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-500' : 'bg-slate-50 border-slate-100 text-slate-700 placeholder:text-slate-400'}`}
-            />
-            <DateTimePicker
-              value={osNotesPopup.reminderAt}
+            <ReminderPickerModal
               isDarkMode={isDarkMode}
-              placeholder="Definir lembrete"
-              onChange={(ts) => {
+              label="Lembrete"
+              title={osNotesPopup.reminderTitle || ''}
+              onTitleChange={(v) => {
+                const reminderTitle = v || null;
+                firebaseService.updateDocument('serviceOrders', osNotesPopup.id, { reminderTitle });
+                syncOSReminderNotification(osNotesPopup, { reminderTitle });
+                setOsNotesPopup({ ...osNotesPopup, reminderTitle });
+              }}
+              at={osNotesPopup.reminderAt ?? null}
+              onAtChange={(ts) => {
                 firebaseService.updateDocument('serviceOrders', osNotesPopup.id, { reminderAt: ts });
                 syncOSReminderNotification(osNotesPopup, { reminderAt: ts });
+                setOsNotesPopup({ ...osNotesPopup, reminderAt: ts ?? undefined });
+              }}
+              alarmMode={osNotesPopup.reminderAlarmMode ?? true}
+              onAlarmModeChange={(v) => {
+                firebaseService.updateDocument('serviceOrders', osNotesPopup.id, { reminderAlarmMode: v });
+                syncOSReminderNotification(osNotesPopup, { reminderAlarmMode: v });
+                setOsNotesPopup({ ...osNotesPopup, reminderAlarmMode: v });
+              }}
+              soundPattern={osNotesPopup.reminderSoundPattern || 'standard'}
+              onSoundPatternChange={(v) => {
+                firebaseService.updateDocument('serviceOrders', osNotesPopup.id, { reminderSoundPattern: v });
+                syncOSReminderNotification(osNotesPopup, { reminderSoundPattern: v });
+                setOsNotesPopup({ ...osNotesPopup, reminderSoundPattern: v });
               }}
             />
 

@@ -22,8 +22,11 @@ import {
   ProductionOrderItem,
   ProductionLot,
   AppModulesConfig,
+  ReminderTonePattern,
 } from "../types";
 import DatePicker from "../components/DatePicker";
+import ReminderPickerModal from "../components/ReminderPickerModal";
+import { notificationService } from "../services/notificationService";
 import {
   Save,
   Plus,
@@ -256,6 +259,12 @@ export default function PurchaseFormView({
   const [paymentTerm, setPaymentTerm] = useState<PaymentTerm>(
     existing?.paymentTerm || PaymentTerm.CASH,
   );
+  const [reminderTitle, setReminderTitle] = useState(existing?.reminderTitle || "");
+  const [reminderAt, setReminderAt] = useState<number | null>(existing?.reminderAt ?? null);
+  const [reminderAlarmMode, setReminderAlarmMode] = useState<boolean>(existing?.reminderAlarmMode ?? true);
+  const [reminderSoundPattern, setReminderSoundPattern] = useState<ReminderTonePattern>(
+    existing?.reminderSoundPattern || 'standard',
+  );
   const [checks, setChecks] = useState<CompanyCheck[]>(existing?.checks || []);
   const [categoryId, setCategoryId] = useState(
     existing?.categoryId || "",
@@ -419,6 +428,7 @@ export default function PurchaseFormView({
 
   const [showProductModal, setShowProductModal] = useState(false);
   const [productSearchQuery, setProductSearchQuery] = useState("");
+  const [showAllProductsInModal, setShowAllProductsInModal] = useState(false);
 
   const supplierName = useMemo(() => {
     return suppliers.find((s) => s.id === supplierId)?.name || "";
@@ -740,7 +750,24 @@ export default function PurchaseFormView({
       sellerId,
       sellerName: people.find(p => p.id === sellerId)?.name || sellerId || '',
       paymentStatus: paymentTerm === PaymentTerm.INSTALLMENTS ? PaymentStatus.PENDING : PaymentStatus.PAID,
+      reminderAt: paymentTerm === PaymentTerm.INSTALLMENTS ? (reminderAt ?? null) : null,
+      reminderTitle: paymentTerm === PaymentTerm.INSTALLMENTS ? (reminderTitle || null) : null,
+      reminderAlarmMode: paymentTerm === PaymentTerm.INSTALLMENTS ? reminderAlarmMode : null,
+      reminderSoundPattern: paymentTerm === PaymentTerm.INSTALLMENTS ? reminderSoundPattern : null,
     };
+
+    if (purchaseToSave.reminderAt) {
+      notificationService.scheduleReminder({
+        id: `purchase-${purchaseToSave.id}`,
+        title: purchaseToSave.reminderTitle || `Vencimento — ${supplierName || 'compra'}`,
+        body: `Vencimento da compra ${batchNumber} — ${supplierName || ''}`,
+        at: purchaseToSave.reminderAt,
+        alarmMode: purchaseToSave.reminderAlarmMode ?? true,
+        soundPattern: purchaseToSave.reminderSoundPattern || 'standard',
+      });
+    } else {
+      notificationService.cancelReminder(`purchase-${purchaseToSave.id}`);
+    }
 
     // Cria (ou atualiza) o Pedido de Produção (OP) na fila de espera do PCP — mapas são criados manualmente lá
     if (type === PurchaseType.REPLENISHMENT && isProductionOrder) {
@@ -1245,7 +1272,15 @@ export default function PurchaseFormView({
                 À Vista
               </button>
               <button
-                onClick={() => setPaymentTerm(PaymentTerm.INSTALLMENTS)}
+                onClick={() => {
+                  setPaymentTerm(PaymentTerm.INSTALLMENTS);
+                  if (!reminderAt) {
+                    const due = new Date(dueDate);
+                    due.setHours(9, 0, 0, 0);
+                    setReminderAt(due.getTime());
+                    setReminderTitle(`Vencimento — ${supplierName || 'fornecedor'}`);
+                  }
+                }}
                 className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${paymentTerm === PaymentTerm.INSTALLMENTS ? "bg-orange-500 shadow-lg shadow-orange-500/20 text-white" : "text-slate-600 dark:text-slate-300"}`}
                 aria-label="Pagamento a prazo"
                 title="A Prazo"
@@ -1254,6 +1289,23 @@ export default function PurchaseFormView({
               </button>
             </div>
           </div>
+
+          {paymentTerm === PaymentTerm.INSTALLMENTS && (
+            <div className="relative col-span-2">
+              <ReminderPickerModal
+                isDarkMode={isDarkMode}
+                label="Lembrete de vencimento"
+                title={reminderTitle}
+                onTitleChange={setReminderTitle}
+                at={reminderAt}
+                onAtChange={setReminderAt}
+                alarmMode={reminderAlarmMode}
+                onAlarmModeChange={setReminderAlarmMode}
+                soundPattern={reminderSoundPattern}
+                onSoundPatternChange={setReminderSoundPattern}
+              />
+            </div>
+          )}
 
           <div className="relative col-span-2">
             <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
@@ -2794,13 +2846,29 @@ export default function PurchaseFormView({
                    title="Pesquisar"
                  />
                </div>
+               {supplierId && (
+                 <label className="flex items-center gap-2.5 mt-3 cursor-pointer select-none">
+                   <input
+                     type="checkbox"
+                     checked={showAllProductsInModal}
+                     onChange={(e) => setShowAllProductsInModal(e.target.checked)}
+                     className="w-4 h-4 accent-indigo-600 shrink-0"
+                   />
+                   <span className="text-[10px] font-bold text-slate-400 leading-snug">
+                     Mostrar todos os produtos cadastrados <span className="text-slate-300 dark:text-slate-600">(em vez de só os de {supplierName || 'fornecedor selecionado'})</span>
+                   </span>
+                 </label>
+               )}
             </div>
 
             {/* List */}
             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
               <div className="flex flex-col gap-2">
                 {(() => {
-                  const filtered = activeProducts.filter(p =>
+                  const bySupplier = (supplierId && !showAllProductsInModal)
+                    ? activeProducts.filter(p => p.supplierId === supplierId)
+                    : activeProducts;
+                  const filtered = bySupplier.filter(p =>
                     !productSearchQuery ||
                     p.name.toLowerCase().includes(productSearchQuery.toLowerCase()) ||
                     p.reference?.toLowerCase().includes(productSearchQuery.toLowerCase())
@@ -2810,7 +2878,11 @@ export default function PurchaseFormView({
                       <div className="text-center py-12">
                         <Package size={32} className="text-slate-200 dark:text-slate-700 mx-auto mb-2" strokeWidth={1} />
                         <p className="text-[10px] font-black uppercase tracking-widest text-slate-300 dark:text-slate-600">
-                          {productSearchQuery ? 'Nenhum modelo encontrado' : 'Nenhum produto ativo cadastrado'}
+                          {productSearchQuery
+                            ? 'Nenhum modelo encontrado'
+                            : (supplierId && !showAllProductsInModal)
+                              ? `Nenhum produto de ${supplierName || 'fornecedor selecionado'}`
+                              : 'Nenhum produto ativo cadastrado'}
                         </p>
                       </div>
                     );

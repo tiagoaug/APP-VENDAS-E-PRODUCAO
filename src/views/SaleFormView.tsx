@@ -1,9 +1,9 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Sale, Product, SaleType, SaleItem, SaleExtraItem, SalePayment, Grid, Person, PaymentMethod, SaleStatus, PaymentTerm, Account, ProductStatus, PaymentStatus, ProductionOrder, ProductionLot, Sector, AppModulesConfig, ProductionConfigItem } from '../types';
+import { Sale, Product, SaleType, SaleItem, SaleExtraItem, SalePayment, Grid, Person, PaymentMethod, SaleStatus, PaymentTerm, Account, ProductStatus, PaymentStatus, ProductionOrder, ProductionLot, Sector, AppModulesConfig, ProductionConfigItem, ReminderTonePattern } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import { notificationService } from '../services/notificationService';
 import ComboBox from '../components/ComboBox';
-import DateTimePicker from '../components/DateTimePicker';
+import ReminderPickerModal from '../components/ReminderPickerModal';
 import { Save, Plus, Trash2, Tag, User, CreditCard, Info, Box, MessageSquare, AlertCircle, Hash, Percent, DollarSign, Receipt, TrendingUp, Wallet, Package, ChevronDown, ChevronUp, Search, X, CheckCircle2, Minus, FileText, Copy, Share, Share2, Calendar, Clock, RotateCcw, Ban, ShoppingCart, Users, Factory, Layers, Warehouse, Calculator } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import jsPDF from 'jspdf';
@@ -136,6 +136,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         setNotes(sale.notes || '');
         setReminderAt(sale.reminderAt || undefined);
         setReminderTitle(sale.reminderTitle || '');
+        setReminderAlarmMode(sale.reminderAlarmMode ?? true);
+        setReminderSoundPattern(sale.reminderSoundPattern || 'standard');
         if (sale.dueDate) {
           setDueDate(new Date(sale.dueDate).toISOString().split('T')[0]);
         }
@@ -242,6 +244,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
   const [notes, setNotes] = useState('');
   const [reminderAt, setReminderAt] = useState<number | undefined>(undefined);
   const [reminderTitle, setReminderTitle] = useState('');
+  const [reminderAlarmMode, setReminderAlarmMode] = useState<boolean>(true);
+  const [reminderSoundPattern, setReminderSoundPattern] = useState<ReminderTonePattern>('standard');
   const [productSearchQuery, setProductSearchQuery] = useState("");
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [whatsappMessage, setWhatsappMessage] = useState("");
@@ -788,6 +792,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     // nunca seria apagado e o lembrete continuaria aparecendo no Dashboard.
     saleToSave.reminderAt = reminderAt || null;
     saleToSave.reminderTitle = reminderTitle || null;
+    saleToSave.reminderAlarmMode = reminderAlarmMode;
+    saleToSave.reminderSoundPattern = reminderSoundPattern;
     if (isProductionOrder) {
       saleToSave.isProductionOrder = true;
     }
@@ -805,6 +811,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         title: saleToSave.reminderTitle || saleToSave.customerName || 'Venda',
         body: saleToSave.reminderTitle ? (saleToSave.customerName || 'Venda') : 'Lembrete de venda',
         at: saleToSave.reminderAt,
+        alarmMode: saleToSave.reminderAlarmMode ?? true,
+        soundPattern: saleToSave.reminderSoundPattern || 'standard',
       });
     } else {
       notificationService.cancelReminder(`sale-${saleToSave.id}`);
@@ -1438,23 +1446,19 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               />
           </div>
 
-          <div className="mt-4 flex flex-col gap-2">
-              <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 block tracking-widest leading-none">Lembrete (opcional)</label>
-              <input
-                type="text"
-                value={reminderTitle}
-                title="Título do lembrete"
-                aria-label="Título do lembrete"
-                onChange={(e) => setReminderTitle(e.target.value)}
-                placeholder="Título do lembrete..."
-                className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-4 py-3 text-[12px] font-bold outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-700 dark:text-slate-200"
-              />
-              <DateTimePicker
-                value={reminderAt}
-                onChange={(ts) => setReminderAt(ts || undefined)}
-                placeholder="Definir data e hora do lembrete"
-                isDarkMode={isDarkMode}
-              />
+          <div className="mt-4">
+            <ReminderPickerModal
+              isDarkMode={isDarkMode}
+              label="Lembrete (opcional)"
+              title={reminderTitle}
+              onTitleChange={setReminderTitle}
+              at={reminderAt ?? null}
+              onAtChange={(ts) => setReminderAt(ts ?? undefined)}
+              alarmMode={reminderAlarmMode}
+              onAlarmModeChange={setReminderAlarmMode}
+              soundPattern={reminderSoundPattern}
+              onSoundPatternChange={setReminderSoundPattern}
+            />
           </div>
 
           {/* Pedido de Produção (OP) — abaixo de Observações, card azul claro com degradê */}

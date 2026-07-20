@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
-import { motion } from 'motion/react';
-import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, Product, SaleType } from '../types';
+import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, Product, SaleType, ProductionLot } from '../types';
 import { Search, Plus, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash, ChevronDown, ChevronUp, Tag, FileText } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -8,6 +7,7 @@ import TransactionModal from '../components/TransactionModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import FinancialQueryModal from '../components/FinancialQueryModal';
 import PartialPaymentModal from '../components/PartialPaymentModal';
+import BusinessOverviewCard from '../components/BusinessOverviewCard';
 import { toast } from '../utils/toast';
 import { firebaseService } from '../services/firebaseService';
 
@@ -19,6 +19,7 @@ interface FinancialViewProps {
   purchases: Purchase[];
   sales: Sale[];
   products: Product[];
+  productionLots?: ProductionLot[];
   onSave: (transaction: Omit<Transaction, 'id'>) => Promise<void>;
   onEdit: (id: string, transaction: Partial<Transaction>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
@@ -37,6 +38,7 @@ export default function FinancialView({
   purchases,
   sales,
   products,
+  productionLots = [],
   onSave,
   onEdit,
   onDelete,
@@ -436,6 +438,19 @@ export default function FinancialView({
              </div>
           </div>
         </div>
+
+        <BusinessOverviewCard
+          isDarkMode={isDarkMode}
+          products={products}
+          productionLots={productionLots}
+          accounts={accounts}
+          sales={sales}
+          transactions={transactions}
+          purchases={purchases}
+          people={people}
+          categories={categories}
+          onDeleteTransaction={onDelete}
+        />
 
         <div className="flex flex-col gap-4 sticky top-0 z-30 py-4 bg-[#fafafa] dark:bg-slate-950 -mx-4 px-4 border-b border-slate-100 dark:border-slate-900 shadow-sm">
           {/* Filters Row */}

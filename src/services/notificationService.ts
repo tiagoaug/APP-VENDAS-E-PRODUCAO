@@ -1,5 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { ReminderTonePattern } from '../types';
+import { REMINDER_TONE_LIBRARY } from '../data/reminderTones';
 
 // Converte uma string de id em um inteiro positivo estável — a API nativa de
 // notificações exige um id numérico, mas nossos lembretes são identificados
@@ -17,21 +19,39 @@ export interface ReminderNotification {
   title: string;
   body: string;
   at: number;
+  // Compatibilidade: chamadas antigas não passam esses dois campos e continuam
+  // se comportando exatamente como antes (alarme insistente, canal único).
+  alarmMode?: boolean;
+  soundPattern?: ReminderTonePattern;
 }
 
 const isSupported = () => Capacitor.isNativePlatform();
 
-// Canal próprio (Android) com prioridade máxima + vibração — faz o lembrete se
-// comportar como um alarme (heads-up + vibra) em vez de uma notificação silenciosa.
+// Canal (Android) com prioridade máxima + vibração — usado quando "alarmMode"
+// está ativo: o lembrete se comporta como um alarme (heads-up, insistente,
+// precisa ser dispensado pelo botão "Parar Alarme").
 const ALARM_CHANNEL_ID = 'reminders_alarm';
 const ALARM_ACTION_TYPE_ID = 'reminder_alarm_actions';
 const STOP_ACTION_ID = 'stop';
-let channelReady = false;
+
+// 30 padrões de toque + vibração pra lembretes "sem alarme" (biblioteca completa
+// em src/data/reminderTones.ts) — cada um é o seu próprio canal Android porque,
+// a partir do Android 8, o som de um canal não pode mais ser trocado depois de
+// criado (é preciso um canal por som).
+export const REMINDER_TONE_META: { id: ReminderTonePattern; label: string; description: string }[] =
+  REMINDER_TONE_LIBRARY.map(t => ({ id: t.id, label: t.label, description: t.description }));
+
+const toneChannelId = (toneId: string) => `reminder_tone_${toneId}`;
+const toneSoundFile = (toneId: string) => `reminder_tone_${toneId}.wav`;
+
+const DEFAULT_TONE: ReminderTonePattern = 'standard';
+
+let channelsReady = false;
 let actionsReady = false;
 let listenersReady = false;
 
-async function ensureAlarmChannel(): Promise<void> {
-  if (!isSupported() || channelReady) return;
+async function ensureChannels(): Promise<void> {
+  if (!isSupported() || channelsReady) return;
   try {
     await LocalNotifications.createChannel({
       id: ALARM_CHANNEL_ID,
@@ -43,10 +63,28 @@ async function ensureAlarmChannel(): Promise<void> {
       lights: true,
       lightColor: '#4f46e5',
     });
-    channelReady = true;
   } catch (e) {
-    console.error('[notificationService] ensureAlarmChannel failed', e);
+    console.error('[notificationService] createChannel (alarm) failed', e);
   }
+
+  for (const meta of REMINDER_TONE_META) {
+    try {
+      await LocalNotifications.createChannel({
+        id: toneChannelId(meta.id),
+        name: `Lembrete — ${meta.label}`,
+        description: meta.description,
+        importance: meta.id === 'urgent' ? 5 : 4,
+        visibility: 1,
+        sound: toneSoundFile(meta.id),
+        vibration: true,
+        lights: true,
+        lightColor: '#4f46e5',
+      });
+    } catch (e) {
+      console.error(`[notificationService] createChannel (${meta.id}) failed`, e);
+    }
+  }
+  channelsReady = true;
 }
 
 async function ensureAlarmActions(): Promise<void> {
@@ -77,14 +115,20 @@ function ensureListeners(): void {
   });
 }
 
+async function ensureReady(): Promise<void> {
+  await ensureChannels();
+  await ensureAlarmActions();
+  ensureListeners();
+}
+
+const PREVIEW_ID = 999999001;
+
 export const notificationService = {
   async requestPermission(): Promise<boolean> {
     if (!isSupported()) return false;
     try {
       const result = await LocalNotifications.requestPermissions();
-      await ensureAlarmChannel();
-      await ensureAlarmActions();
-      ensureListeners();
+      await ensureReady();
       return result.display === 'granted';
     } catch (e) {
       console.error('[notificationService] requestPermission failed', e);
@@ -103,25 +147,24 @@ export const notificationService = {
     }
   },
 
-  async scheduleReminder({ id, title, body, at }: ReminderNotification): Promise<void> {
+  async scheduleReminder({ id, title, body, at, alarmMode, soundPattern }: ReminderNotification): Promise<void> {
     if (!isSupported()) return;
     const numericId = hashId(id);
     if (!at || at <= Date.now()) {
       await this.cancelReminder(id);
       return;
     }
+    const useAlarm = alarmMode !== false; // default: alarme (mantém comportamento anterior)
     try {
-      await ensureAlarmChannel();
-      await ensureAlarmActions();
-      ensureListeners();
+      await ensureReady();
       await LocalNotifications.schedule({
         notifications: [
           {
             id: numericId,
             title,
             body,
-            channelId: ALARM_CHANNEL_ID,
-            actionTypeId: ALARM_ACTION_TYPE_ID,
+            channelId: useAlarm ? ALARM_CHANNEL_ID : toneChannelId(soundPattern || DEFAULT_TONE),
+            ...(useAlarm ? { actionTypeId: ALARM_ACTION_TYPE_ID } : {}),
             schedule: { at: new Date(at), allowWhileIdle: true },
           },
         ],
@@ -144,6 +187,29 @@ export const notificationService = {
     if (!isSupported()) return;
     for (const reminder of reminders) {
       await this.scheduleReminder(reminder);
+    }
+  },
+
+  // Dispara uma notificação de teste ~2s no futuro, no canal do padrão escolhido —
+  // usado pelo seletor de toque pra ouvir a diferença antes de salvar.
+  async previewTone(soundPattern: ReminderTonePattern, alarmMode: boolean): Promise<void> {
+    if (!isSupported()) return;
+    try {
+      await ensureReady();
+      await LocalNotifications.schedule({
+        notifications: [
+          {
+            id: PREVIEW_ID,
+            title: 'Prévia do lembrete',
+            body: alarmMode ? 'Assim soa no modo alarme' : `Assim soa: ${REMINDER_TONE_META.find(m => m.id === soundPattern)?.label || soundPattern}`,
+            channelId: alarmMode ? ALARM_CHANNEL_ID : toneChannelId(soundPattern),
+            ...(alarmMode ? { actionTypeId: ALARM_ACTION_TYPE_ID } : {}),
+            schedule: { at: new Date(Date.now() + 1500), allowWhileIdle: true },
+          },
+        ],
+      });
+    } catch (e) {
+      console.error('[notificationService] previewTone failed', e);
     }
   },
 };
