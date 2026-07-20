@@ -21,6 +21,7 @@ import {
   ProductionOrder,
   ProductionOrderItem,
   ProductionLot,
+  AppModulesConfig,
 } from "../types";
 import DatePicker from "../components/DatePicker";
 import {
@@ -92,6 +93,7 @@ interface PurchaseFormViewProps {
   onCancel: () => void;
   isDarkMode: boolean;
   initialParams?: any;
+  modulesConfig?: AppModulesConfig;
 }
 
 export default function PurchaseFormView({
@@ -114,6 +116,7 @@ export default function PurchaseFormView({
   onCancel,
   isDarkMode,
   initialParams,
+  modulesConfig,
 }: PurchaseFormViewProps) {
   const DEFAULT_COLORS: ColorValue[] = [
     { id: 'BRANCO', name: 'BRANCO', hex: '#FFFFFF' } as ColorValue,
@@ -1037,19 +1040,24 @@ export default function PurchaseFormView({
           >
             <ShoppingCart size={14} strokeWidth={2.5} /> Geral
           </button>
-          <button
-            type="button"
-            onClick={() => setType(PurchaseType.SOLE)}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-              type === PurchaseType.SOLE
-                ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-400/25'
-                : 'text-slate-400 dark:text-slate-500 hover:text-cyan-500'
-            }`}
-            aria-label="Compra de solados"
-            title="Solados"
-          >
-            <ShoppingCart size={14} strokeWidth={2.5} /> Solados
-          </button>
+          {/* Compra de solado é insumo de produção — não faz sentido pra quem só tem o
+              módulo Vendas ativo. Mantém visível se já estiver editando uma compra de
+              solado antiga (criada quando Produção estava ativa). */}
+          {(!modulesConfig || modulesConfig.production || type === PurchaseType.SOLE) && (
+            <button
+              type="button"
+              onClick={() => setType(PurchaseType.SOLE)}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                type === PurchaseType.SOLE
+                  ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-400/25'
+                  : 'text-slate-400 dark:text-slate-500 hover:text-cyan-500'
+              }`}
+              aria-label="Compra de solados"
+              title="Solados"
+            >
+              <ShoppingCart size={14} strokeWidth={2.5} /> Solados
+            </button>
+          )}
         </div>
 
         {/* Identificação da Compra/Lote — acima do fornecedor */}
@@ -1806,7 +1814,8 @@ export default function PurchaseFormView({
           </div>
           )}
 
-          {/* OP Toggle — Ordem de Produção para Estoque */}
+          {/* OP Toggle — Ordem de Produção para Estoque (exclusivo do módulo Produção) */}
+          {(!modulesConfig || modulesConfig.production) && (
           <button
             type="button"
             onClick={() => setIsProductionOrder(v => !v)}
@@ -1832,8 +1841,10 @@ export default function PurchaseFormView({
               <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${isProductionOrder ? 'left-4' : 'left-0.5'}`} />
             </div>
           </button>
+          )}
 
-          {/* Card explicativo — solados/insumos e fluxo de produção (sempre visível) */}
+          {/* Card explicativo — solados/insumos e fluxo de produção (exclusivo do módulo Produção) */}
+          {(!modulesConfig || modulesConfig.production) && (
           <div className={`mb-4 flex items-start gap-3 p-4 rounded-2xl border ${isProductionOrder ? (isDarkMode ? 'bg-sky-900/20 border-sky-800/40' : 'bg-sky-50 border-sky-200') : (isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200')}`}>
             <span className="relative shrink-0 mt-0.5 flex items-center justify-center">
               <span className={`absolute inset-0 rounded-full animate-ping ${isProductionOrder ? 'bg-sky-400/50' : 'bg-red-500/50'}`} />
@@ -1864,6 +1875,7 @@ export default function PurchaseFormView({
               )}
             </div>
           </div>
+          )}
 
           {/* Info card quando OP ativa — detalhe de configuração */}
           {isProductionOrder && (

@@ -29,12 +29,15 @@ import {
   EyeOff,
   Lock,
   SlidersHorizontal,
-  Printer
+  Printer,
+  Plus,
+  Sparkles
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
 import { isViewAllowed, isSectorAllowed } from '../utils/collaborators';
 import { openPrintStudio } from '../lib/printStudio';
+import AIAssistantSettings from '../components/AIAssistantSettings';
 
 interface SettingsViewProps {
   onNavigate: (view: ViewType) => void;
@@ -80,6 +83,7 @@ export default function SettingsView({
   onLogout,
 }: SettingsViewProps) {
   const [showA11y, setShowA11y] = useState(false);
+  const [showAISettings, setShowAISettings] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showCollabSwitcher, setShowCollabSwitcher] = useState(false);
   const [switchTargetId, setSwitchTargetId] = useState<string | null>(null);
@@ -115,7 +119,13 @@ export default function SettingsView({
     {
       title: "Configurações de Negócio",
       items: [
-        { id: ViewType.PRODUCTION_ENGINEERING, label: "Modelos / Ficha Técnica", icon: <Package size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'sales' },
+        // Duas entradas em vez de uma só — mesmo padrão de "Parâmetros de Modelagem" em
+        // Configurações de Produção. Vão pro catálogo neutro (ProductsView) e direto pro
+        // formulário de cadastro, não pra Ficha Técnica de Produção (PRODUCTION_ENGINEERING),
+        // que é toda identificada como tela de Produção (título "Produção de Produtos",
+        // botões "Editar/Duplicar Engenharia") — errado pra quem só tem o módulo Vendas.
+        { id: ViewType.PRODUCTS, label: "Produtos Cadastrados", icon: <Package size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'sales' },
+        { id: ViewType.PRODUCT_FORM, label: "Cadastrar Novo Modelo", icon: <Plus size={22} />, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/30", module: 'sales' },
         { id: ViewType.STOCK, label: "Expedição e Estoque", icon: <Boxes size={22} />, color: "text-amber-700 dark:text-amber-500", bg: "bg-amber-50 dark:bg-amber-900/20", module: 'sales' },
         { id: ViewType.COLORS, label: "Paleta de Cores", icon: <Palette size={22} />, color: "text-pink-600 dark:text-pink-400", bg: "bg-pink-50 dark:bg-pink-900/30", module: 'any' },
         { id: ViewType.CATEGORIES, label: "Categorias e Grupos", icon: <Tags size={22} />, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/30", module: 'any' },
@@ -143,6 +153,7 @@ export default function SettingsView({
       title: "Sistema & Backup",
       items: [
         { id: ViewType.COLLABORATORS_CONFIG, label: "Colaboradores", icon: <UserCog size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'any' },
+        { id: 'AI_SETTINGS', label: "Assistente de IA", icon: <Sparkles size={22} />, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-900/20", module: 'any' },
         { id: ViewType.PRINT_STUDIO, label: "Print Studio", icon: <Printer size={22} />, color: "text-cyan-600 dark:text-cyan-400", bg: "bg-cyan-50 dark:bg-cyan-900/20", module: 'any' },
         { id: ViewType.BACKUP, label: "Ajustes Técnicos", icon: <Database size={22} />, color: "text-gray-600 dark:text-gray-400", bg: "bg-slate-100 dark:bg-slate-800", module: 'any' },
         { id: ViewType.MANUAL, label: "Manual do Sistema", icon: <BookOpen size={22} />, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/20", module: 'any' },
@@ -167,6 +178,8 @@ export default function SettingsView({
                   onClick={() => {
                     if (item.id === 'SOLE_MATRIX_DIRECT') {
                       onNavigateProduction('MATRIZES');
+                    } else if (item.id === 'AI_SETTINGS') {
+                      setShowAISettings(true);
                     } else if (item.id === ViewType.PRINT_STUDIO) {
                       openPrintStudio();
                     } else {
@@ -515,6 +528,8 @@ export default function SettingsView({
           </div>
         </div>
       )}
+
+      <AIAssistantSettings isOpen={showAISettings} onClose={() => setShowAISettings(false)} isDarkMode={isDarkMode} />
 
       {/* ── QUEM ESTÁ USANDO — TROCA DE COLABORADOR ── */}
       {showCollabSwitcher && (

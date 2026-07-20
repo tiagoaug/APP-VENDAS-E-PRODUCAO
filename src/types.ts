@@ -963,10 +963,24 @@ export interface AIUsageLimits {
   weeklyTokenLimit: number;
 }
 
+export type AIProvider = 'anthropic' | 'openai' | 'gemini';
+
+export interface AIProviderKeyConfig {
+  apiKey: string;
+  model?: string;
+}
+
+export interface AIProviderConfig {
+  activeProvider: AIProvider;
+  openai?: AIProviderKeyConfig;
+  gemini?: AIProviderKeyConfig;
+}
+
 export interface AIUsageEntry {
   id: string;
   timestamp: number;
   model: string;
+  provider?: AIProvider;
   input_tokens: number;
   output_tokens: number;
 }

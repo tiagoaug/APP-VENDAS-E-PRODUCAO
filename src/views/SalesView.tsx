@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, ProductionConfigItem } from '../types';
-import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus } from 'lucide-react';
+import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package } from 'lucide-react';
+import ConfigMenuItem from '../components/ConfigMenuItem';
 import ProductionOrderModal from '../components/ProductionOrderModal';
 import SeparacaoCaixasModal from '../components/SeparacaoCaixasModal';
 import { format } from 'date-fns';
@@ -91,6 +92,8 @@ interface SalesViewProps {
   onNavigateStock: () => void;
   onNavigateStockGlance: () => void;
   onNavigatePCP: () => void;
+  onNavigateProducts?: () => void;
+  onAddProduct?: () => void;
   productionConfigs: ProductionConfigItem[];
   appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite' | 'hcWhite' | 'hcBlack' | 'hcIndustrial';
 }
@@ -130,6 +133,8 @@ export default function SalesView({
   onNavigateStock,
   onNavigateStockGlance,
   onNavigatePCP,
+  onNavigateProducts,
+  onAddProduct,
   productionConfigs,
   appTheme = 'light',
 }: SalesViewProps) {
@@ -656,6 +661,39 @@ export default function SalesView({
         onOpen={onNavigatePCP}
         isDarkMode={isDarkMode}
       />
+
+      {/* Acesso rápido ao catálogo — Vendas precisa consultar/cadastrar produtos pra poder
+          vender, mas sem a parte de engenharia (isso ProductFormView já esconde sozinho
+          quando module === 'SALES', que é o que essas duas entradas navegam). */}
+      {(onNavigateProducts || onAddProduct) && (
+        <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+          {onNavigateProducts && (
+            <ConfigMenuItem
+              icon={<Package size={22} />}
+              label="Produtos Cadastrados"
+              desc="Catálogo pra vendas"
+              onClick={onNavigateProducts}
+              color="text-indigo-600"
+              bg="bg-indigo-50"
+              isDarkMode={isDarkMode}
+              isLast={!onAddProduct}
+            />
+          )}
+          {onAddProduct && (
+            <ConfigMenuItem
+              icon={<Plus size={22} />}
+              label="Cadastrar Novo Modelo"
+              desc="Nome, preço, cores e imagens"
+              onClick={onAddProduct}
+              color="text-emerald-600"
+              bg="bg-emerald-50"
+              isDarkMode={isDarkMode}
+              isLast
+            />
+          )}
+        </div>
+      )}
+
       <div className="flex flex-col gap-4">
         {/* Card único dividido em 4 partes (2 por linha) — antes era uma barra de 4
             botões numa linha só, que espremia "Configurar" até cortar o texto. */}
@@ -796,7 +834,7 @@ export default function SalesView({
                       ))}
                     </div>
 
-                    {d.isWholesale && d.productionPairs > 0 && (
+                    {modulesConfig.production && d.isWholesale && d.productionPairs > 0 && (
                       <div className="flex flex-col gap-0.5 px-2.5 py-1.5 rounded-lg bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400">
                         <div className="flex items-center gap-1.5">
                           <Factory size={12} strokeWidth={2.5} />
@@ -809,6 +847,18 @@ export default function SalesView({
                               .join(' · ')}
                           </span>
                         )}
+                      </div>
+                    )}
+
+                    {/* Sem o módulo Produção, não existe "está em produção" pra cobrir o déficit —
+                        só resta comprar mais estoque. Avisa isso explicitamente em vez de deixar
+                        o "Faltou X" sozinho sem indicar o que fazer a respeito. */}
+                    {!modulesConfig.production && isDeficit && (
+                      <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400">
+                        <AlertCircle size={12} strokeWidth={2.5} className="shrink-0" />
+                        <span className="text-[10px] font-bold">
+                          Estoque não cobre o pedido — compre mais {Math.abs(balance)} {unit} pra completar
+                        </span>
                       </div>
                     )}
                   </div>

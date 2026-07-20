@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "motion/react";
-import { X, Plus, Pencil, Trash2, Check, ListChecks, Gauge, ExternalLink, AlertTriangle } from "lucide-react";
-import { AIQuickPrompt, AIUsageEntry, AIUsageLimits } from "../types";
+import { X, Plus, Pencil, Trash2, Check, ListChecks, Gauge, ExternalLink, AlertTriangle, Power, Sparkles, KeyRound, Eye, EyeOff, Bot, Cpu } from "lucide-react";
+import { AIQuickPrompt, AIUsageEntry, AIUsageLimits, AIProvider, AIProviderConfig } from "../types";
 import {
   subscribeToQuickPrompts,
   saveQuickPrompt,
@@ -12,6 +12,12 @@ import {
   saveUsageLimits,
   computeUsageStats,
   AIUsageStats,
+  subscribeToAIGeneralSettings,
+  saveAIEnabled,
+  DEFAULT_GENERAL_SETTINGS,
+  subscribeToAIProviderConfig,
+  saveAIProviderConfig,
+  DEFAULT_PROVIDER_CONFIG,
 } from "../services/aiSettingsService";
 import { AI_PROMPT_ICON_KEYS, getPromptIcon } from "./aiPromptIcons";
 
@@ -30,6 +36,12 @@ type PromptFormState = {
 };
 
 const EMPTY_FORM: PromptFormState = { label: "", prompt: "", icon: "sparkles", autoSend: false };
+
+const PROVIDER_META: Record<AIProvider, { label: string; hint: string; defaultModel: string; icon: ReactNode }> = {
+  anthropic: { label: "Claude", hint: "Padrão do sistema — pronto pra usar", defaultModel: "claude-sonnet-4-6", icon: <Sparkles size={16} /> },
+  openai: { label: "ChatGPT", hint: "Sua conta OpenAI", defaultModel: "gpt-4.1", icon: <Bot size={16} /> },
+  gemini: { label: "Gemini", hint: "Sua conta Google AI", defaultModel: "gemini-2.0-flash", icon: <Cpu size={16} /> },
+};
 
 function formatTokens(n: number): string {
   return Math.round(n).toLocaleString("pt-BR");
@@ -60,18 +72,35 @@ function UsageBar({ label, used, limit, costUSD, isDarkMode }: { label: string; 
 }
 
 export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIAssistantSettingsProps) {
-  const [tab, setTab] = useState<"prompts" | "usage">("prompts");
+  const [tab, setTab] = useState<"general" | "prompts" | "usage">("general");
   const [prompts, setPrompts] = useState<AIQuickPrompt[]>([]);
   const [usageEntries, setUsageEntries] = useState<AIUsageEntry[]>([]);
   const [limits, setLimits] = useState<AIUsageLimits>({ dailyTokenLimit: 100000, weeklyTokenLimit: 500000 });
   const [limitsInput, setLimitsInput] = useState({ daily: "100000", weekly: "500000" });
   const [form, setForm] = useState<PromptFormState | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [aiEnabled, setAiEnabled] = useState(DEFAULT_GENERAL_SETTINGS.enabled);
+  const [providerConfig, setProviderConfig] = useState<AIProviderConfig>(DEFAULT_PROVIDER_CONFIG);
+  const [openaiKeyInput, setOpenaiKeyInput] = useState("");
+  const [openaiModelInput, setOpenaiModelInput] = useState("");
+  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
+  const [geminiKeyInput, setGeminiKeyInput] = useState("");
+  const [geminiModelInput, setGeminiModelInput] = useState("");
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [providerSaved, setProviderSaved] = useState<AIProvider | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
     const unsubPrompts = subscribeToQuickPrompts(setPrompts);
     const unsubUsage = subscribeToUsageEntries(setUsageEntries);
+    const unsubGeneral = subscribeToAIGeneralSettings((s) => setAiEnabled(s.enabled));
+    const unsubProvider = subscribeToAIProviderConfig((c) => {
+      setProviderConfig(c);
+      setOpenaiKeyInput(c.openai?.apiKey || "");
+      setOpenaiModelInput(c.openai?.model || "");
+      setGeminiKeyInput(c.gemini?.apiKey || "");
+      setGeminiModelInput(c.gemini?.model || "");
+    });
     getUsageLimits().then((l) => {
       setLimits(l);
       setLimitsInput({ daily: String(l.dailyTokenLimit), weekly: String(l.weeklyTokenLimit) });
@@ -79,6 +108,8 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
     return () => {
       unsubPrompts();
       unsubUsage();
+      unsubGeneral();
+      unsubProvider();
     };
   }, [isOpen]);
 
@@ -117,6 +148,32 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
     if (!deleteConfirmId) return;
     await deleteQuickPrompt(deleteConfirmId);
     setDeleteConfirmId(null);
+  };
+
+  const handleToggleAI = async () => {
+    const next = !aiEnabled;
+    setAiEnabled(next);
+    await saveAIEnabled(next);
+  };
+
+  const handleSelectProvider = async (provider: AIProvider) => {
+    const next: AIProviderConfig = { ...providerConfig, activeProvider: provider };
+    setProviderConfig(next);
+    await saveAIProviderConfig(next);
+  };
+
+  const handleSaveProviderKey = async (provider: "openai" | "gemini") => {
+    const key = provider === "openai" ? openaiKeyInput.trim() : geminiKeyInput.trim();
+    const model = provider === "openai" ? openaiModelInput.trim() : geminiModelInput.trim();
+    if (!key) return;
+    const next: AIProviderConfig = {
+      ...providerConfig,
+      [provider]: { apiKey: key, model: model || undefined },
+    };
+    setProviderConfig(next);
+    await saveAIProviderConfig(next);
+    setProviderSaved(provider);
+    setTimeout(() => setProviderSaved(null), 2000);
   };
 
   const handleSaveLimits = async () => {
@@ -170,6 +227,19 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
             <div className="flex gap-2 px-6 pt-4 shrink-0">
               <button
                 type="button"
+                onClick={() => setTab("general")}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
+                  tab === "general"
+                    ? "bg-indigo-600 text-white"
+                    : isDarkMode
+                    ? "bg-slate-800 text-slate-400"
+                    : "bg-slate-100 text-slate-500"
+                }`}
+              >
+                <Power size={14} /> Geral
+              </button>
+              <button
+                type="button"
                 onClick={() => setTab("prompts")}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${
                   tab === "prompts"
@@ -198,6 +268,125 @@ export default function AIAssistantSettings({ isOpen, onClose, isDarkMode }: AIA
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6 flex flex-col gap-3">
+              {tab === "general" && (
+                <>
+                  <div className={`flex items-center gap-4 p-4 rounded-2xl border ${isDarkMode ? "bg-slate-800/50 border-slate-700" : "bg-slate-50 border-slate-100"}`}>
+                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${aiEnabled ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400" : "bg-slate-200 dark:bg-slate-700 text-slate-400"}`}>
+                      <Sparkles size={20} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Assistente de IA</p>
+                      <p className="text-[10px] font-bold text-slate-400 mt-0.5 leading-relaxed">
+                        {aiEnabled ? "Ativo — visível no cabeçalho e no Dashboard para quem tem permissão." : "Desativado — oculto para todos os colaboradores até ser reativado."}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleToggleAI}
+                      role="switch"
+                      aria-checked={aiEnabled}
+                      title={aiEnabled ? "Desativar assistente" : "Ativar assistente"}
+                      className={`w-12 h-7 rounded-full relative shrink-0 transition-all ${aiEnabled ? "bg-indigo-600" : isDarkMode ? "bg-slate-700" : "bg-slate-300"}`}
+                    >
+                      <div className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow transition-all ${aiEnabled ? "left-6" : "left-1"}`} />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Provedor de IA</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(Object.keys(PROVIDER_META) as AIProvider[]).map((p) => {
+                        const meta = PROVIDER_META[p];
+                        const active = providerConfig.activeProvider === p;
+                        return (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => handleSelectProvider(p)}
+                            className={`flex flex-col items-center gap-1.5 py-3 px-1 rounded-2xl border-2 transition-all ${
+                              active
+                                ? "bg-indigo-600 border-indigo-500 text-white shadow-md"
+                                : isDarkMode
+                                ? "border-slate-800 text-slate-400 bg-slate-900"
+                                : "border-slate-100 text-slate-500 bg-white"
+                            }`}
+                          >
+                            {meta.icon}
+                            <span className="text-[10px] font-black uppercase tracking-widest">{meta.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-[10px] font-bold text-slate-400 px-1 leading-relaxed">
+                      {providerConfig.activeProvider === "anthropic"
+                        ? "Claude é o padrão do sistema — roda via função segura no servidor, sem precisar de chave sua."
+                        : `Usando sua própria chave de API da ${PROVIDER_META[providerConfig.activeProvider].label}, configurada abaixo.`}
+                    </p>
+                  </div>
+
+                  {(["openai", "gemini"] as const).map((p) => {
+                    const meta = PROVIDER_META[p];
+                    const keyInput = p === "openai" ? openaiKeyInput : geminiKeyInput;
+                    const setKeyInput = p === "openai" ? setOpenaiKeyInput : setGeminiKeyInput;
+                    const modelInput = p === "openai" ? openaiModelInput : geminiModelInput;
+                    const setModelInput = p === "openai" ? setOpenaiModelInput : setGeminiModelInput;
+                    const showKey = p === "openai" ? showOpenaiKey : showGeminiKey;
+                    const setShowKey = p === "openai" ? setShowOpenaiKey : setShowGeminiKey;
+                    const hasSavedKey = !!providerConfig[p]?.apiKey;
+                    return (
+                      <div key={p} className={`flex flex-col gap-2.5 p-4 rounded-2xl border ${isDarkMode ? "bg-slate-800/50 border-slate-700" : "bg-slate-50 border-slate-100"}`}>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-400">{meta.icon}</span>
+                          <p className={`text-xs font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>{meta.label}</p>
+                          {hasSavedKey && (
+                            <span className="ml-auto flex items-center gap-1 text-[9px] font-black uppercase tracking-widest text-emerald-500">
+                              <Check size={12} /> Configurada
+                            </span>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <KeyRound size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                          <input
+                            type={showKey ? "text" : "password"}
+                            placeholder={`Chave de API da ${meta.label}`}
+                            value={keyInput}
+                            onChange={(e) => setKeyInput(e.target.value)}
+                            className={`${inputClass} pl-9 pr-9`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowKey(!showKey)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                            aria-label={showKey ? "Ocultar chave" : "Mostrar chave"}
+                          >
+                            {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder={`Modelo (padrão: ${meta.defaultModel})`}
+                          value={modelInput}
+                          onChange={(e) => setModelInput(e.target.value)}
+                          className={inputClass}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSaveProviderKey(p)}
+                          disabled={!keyInput.trim()}
+                          className="py-2.5 rounded-xl text-[11px] font-black uppercase tracking-widest bg-indigo-600 text-white flex items-center justify-center gap-1.5 disabled:opacity-40"
+                        >
+                          {providerSaved === p ? (<><Check size={14} /> Salvo</>) : "Salvar chave"}
+                        </button>
+                      </div>
+                    );
+                  })}
+
+                  <div className={`flex flex-col gap-1 p-4 rounded-2xl text-[10px] font-bold leading-relaxed ${isDarkMode ? "bg-slate-800/60 text-slate-400" : "bg-slate-50 text-slate-500"}`}>
+                    <p>Sua chave fica guardada nos seus próprios dados no Firestore, com a mesma proteção por conta que já protege clientes, vendas e financeiro — nunca fica visível para outras contas.</p>
+                  </div>
+                </>
+              )}
+
               {tab === "prompts" && (
                 <>
                   {prompts.map((p) => (

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Product, Grid, ProductionLot } from '../types';
+import { Product, Grid, ProductionLot, AppModulesConfig } from '../types';
 import { SaleType } from '../types';
 import { ArrowLeft, Search, Boxes, Package, Filter, X, MessageSquare, MessageSquarePlus, Settings2, Grid3X3, CheckCircle2, Trash2, ClipboardList, Factory } from 'lucide-react';
 import { getWholesaleBoxes, getRetailPairs, productHasSaleType } from '../utils/stockPools';
@@ -24,6 +24,9 @@ interface StockGlanceViewProps {
   /** Usado só na aba "Reposição" — soma pares ainda em produção (não finalizados) por
    * produto+cor, sem quebrar por setor. */
   lots?: ProductionLot[];
+  /** Aba "Reposição" depende de dados de produção — some do seletor quando o módulo
+   * Produção não está ativo (Vendas sozinho não tem "produzindo" pra mostrar). */
+  modulesConfig?: AppModulesConfig;
 }
 
 type RetailSizeRow = { size: string; ready: number };
@@ -53,8 +56,9 @@ function persistQuickMessages(list: string[]) {
 /** Visão de estoque 100% somente leitura — sem opção de editar/balanço em nenhum lugar
  * desta tela, e sem informação de produção: mostra só o estoque real (Variation.stock).
  * Única exceção: observação livre por cor (não altera estoque, só anotação). */
-export default function StockGlanceView({ products, isDarkMode, onBack, onUpdateVariationNote, grids = [], lots = [] }: StockGlanceViewProps) {
+export default function StockGlanceView({ products, isDarkMode, onBack, onUpdateVariationNote, grids = [], lots = [], modulesConfig }: StockGlanceViewProps) {
   const [activeTab, setActiveTab] = useState<GlanceTab>(SaleType.WHOLESALE);
+  const showReposicaoTab = !modulesConfig || modulesConfig.production;
   // Reposição reaproveita a mesma listagem/agrupamento do Atacado (caixas prontas) — só
   // acrescenta a coluna de "produzindo" e some com a caixa de mensagens.
   const isReposicao = activeTab === REPOSICAO_TAB;
@@ -297,14 +301,16 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
         >
           <Package size={14} /> Varejo
         </button>
-        <button
-          type="button"
-          onClick={() => { setActiveTab(REPOSICAO_TAB); setColorFilter(null); }}
-          title="Planejamento de Reposição de Estoque"
-          className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${isReposicao ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}
-        >
-          <ClipboardList size={14} /> Reposição
-        </button>
+        {showReposicaoTab && (
+          <button
+            type="button"
+            onClick={() => { setActiveTab(REPOSICAO_TAB); setColorFilter(null); }}
+            title="Planejamento de Reposição de Estoque"
+            className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${isReposicao ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}
+          >
+            <ClipboardList size={14} /> Reposição
+          </button>
+        )}
       </div>
 
       {/* Cards por referência — sem acordeão, tudo sempre visível */}

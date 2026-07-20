@@ -605,8 +605,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                           </div>
                         </div>
 
-                        {/* Observações por Setor */}
-                        {sectors.length > 0 && (
+                        {/* Observações por Setor — instrução de produção por setor de fábrica,
+                            não faz sentido pra quem só tem o módulo Vendas ativo. */}
+                        {module === 'PRODUCTION' && sectors.length > 0 && (
                           <div className={`rounded-2xl border-2 overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                             {/* Header do card */}
                             <div className={`flex items-center gap-2 px-4 py-3 border-b ${isDarkMode ? 'border-slate-800 bg-slate-800/40' : 'border-slate-100 bg-slate-50'}`}>
@@ -1930,7 +1931,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     <div className="flex flex-col">
                       <p className="text-base font-black text-slate-900 dark:text-white tracking-tight uppercase leading-none mb-2">{v.colorName || 'Nova Variação'}</p>
                       <div className="flex flex-wrap gap-2">
-                        {modulesConfig.production && (
+                        {modulesConfig.production && module === 'PRODUCTION' && (
                           <div className="flex items-center gap-1.5 px-3 py-1 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm">
                             <Layers size={12} className="text-indigo-500" />
                             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
@@ -1938,7 +1939,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                             </span>
                           </div>
                         )}
-                        {modulesConfig.production && Object.keys(v.soleMapping || {}).length > 0 && (
+                        {modulesConfig.production && module === 'PRODUCTION' && Object.keys(v.soleMapping || {}).length > 0 && (
                           <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-100 dark:border-emerald-900/30">
                             <Footprints size={12} className="text-emerald-500" />
                             <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">Mapeado</span>

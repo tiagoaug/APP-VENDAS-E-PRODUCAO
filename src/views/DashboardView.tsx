@@ -44,6 +44,7 @@ interface DashboardViewProps {
   onAddProduct: () => void;
   onAddTransaction: (type: TransactionType) => void;
   onOpenAIAssistant: () => void;
+  aiEnabled?: boolean;
   isDarkMode: boolean;
   dashboardConfig: DashboardConfig;
   modulesConfig: import("../types").AppModulesConfig;
@@ -71,6 +72,7 @@ export default function DashboardView({
   onAddProduct,
   onAddTransaction,
   onOpenAIAssistant,
+  aiEnabled = true,
   isDarkMode,
   dashboardConfig,
   modulesConfig,
@@ -606,7 +608,7 @@ export default function DashboardView({
 
         // Mostra só os cards do(s) setor(es) do colaborador ativo — sem colaborador
         // ativo (ou colaborador de acesso total), nada muda do comportamento atual.
-        if (card.id === 'ai_assistant' && !collaboratorCanUseAI(activeCollaborator)) return null;
+        if (card.id === 'ai_assistant' && (!aiEnabled || !collaboratorCanUseAI(activeCollaborator))) return null;
         if (!isDashboardCardAllowed(activeCollaborator, card.id)) return null;
 
         // Strict Modular Gating
@@ -1967,19 +1969,19 @@ export default function DashboardView({
                 <div className="flex justify-between items-start">
                   <div>
                     <h3 className={`text-sm font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Central de Impressões</h3>
-                    <p className="text-[10px] font-bold text-slate-400 tracking-[0.2em] mt-0.5">OS • Lotes • Pedidos • Fichas</p>
+                    <p className="text-[10px] font-bold text-slate-400 tracking-[0.2em] mt-0.5">{modulesConfig.production ? 'OS • Lotes • Pedidos • Fichas' : 'Pedidos'}</p>
                   </div>
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
                     <Printer size={20} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className={`grid gap-2.5 ${modulesConfig.production ? 'grid-cols-2' : 'grid-cols-1'}`}>
                   {[
-                    { label: 'Ordens de Serviço', icon: <ClipboardList size={20}/>, color: 'text-rose-500', bg: isDarkMode ? 'bg-rose-500/10 border-rose-500/20' : 'bg-rose-50 border-rose-100' },
-                    { label: 'Mapa de Produção', icon: <Factory size={20}/>, color: 'text-violet-500', bg: isDarkMode ? 'bg-violet-500/10 border-violet-500/20' : 'bg-violet-50 border-violet-100' },
-                    { label: 'Pedidos de Venda', icon: <ShoppingBag size={20}/>, color: 'text-indigo-500', bg: isDarkMode ? 'bg-indigo-500/10 border-indigo-500/20' : 'bg-indigo-50 border-indigo-100' },
-                    { label: 'Fichas de Produto', icon: <BookOpen size={20}/>, color: 'text-amber-500', bg: isDarkMode ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 border-amber-100' },
-                  ].map(item => (
+                    { label: 'Ordens de Serviço', icon: <ClipboardList size={20}/>, color: 'text-rose-500', bg: isDarkMode ? 'bg-rose-500/10 border-rose-500/20' : 'bg-rose-50 border-rose-100', productionOnly: true },
+                    { label: 'Mapa de Produção', icon: <Factory size={20}/>, color: 'text-violet-500', bg: isDarkMode ? 'bg-violet-500/10 border-violet-500/20' : 'bg-violet-50 border-violet-100', productionOnly: true },
+                    { label: 'Pedidos de Venda', icon: <ShoppingBag size={20}/>, color: 'text-indigo-500', bg: isDarkMode ? 'bg-indigo-500/10 border-indigo-500/20' : 'bg-indigo-50 border-indigo-100', productionOnly: false },
+                    { label: 'Fichas de Produto', icon: <BookOpen size={20}/>, color: 'text-amber-500', bg: isDarkMode ? 'bg-amber-500/10 border-amber-500/20' : 'bg-amber-50 border-amber-100', productionOnly: true },
+                  ].filter(item => modulesConfig.production || !item.productionOnly).map(item => (
                     <button key={item.label} type="button"
                       onClick={() => onNavigate(ViewType.PRINT_CENTER)}
                       className={`h-24 p-4 rounded-[1.5rem] flex flex-col items-center justify-center gap-2 transition-all active:scale-95 border ${item.bg}`}>

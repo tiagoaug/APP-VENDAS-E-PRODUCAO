@@ -123,13 +123,14 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
       setMessages([...newMessages, { role: "assistant", content: response.text, formProposal: response.formProposal }]);
       setLastUsage(response.usage);
     } catch (err: any) {
+      const backendMessage: string | undefined = err?.message;
+      const content =
+        backendMessage && !backendMessage.toLowerCase().includes("internal")
+          ? backendMessage
+          : "Não foi possível conectar ao assistente de IA. Verifique se o backend (Cloud Functions) já foi configurado e implantado.";
       setMessages([
         ...newMessages,
-        {
-          role: "assistant",
-          content:
-            "Não foi possível conectar ao assistente de IA. Verifique se o backend (Cloud Functions + chave da Anthropic) já foi configurado e implantado.",
-        },
+        { role: "assistant", content },
       ]);
     } finally {
       setIsLoading(false);

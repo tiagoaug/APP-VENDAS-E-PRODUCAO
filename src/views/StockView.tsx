@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { Product, SaleType, ProductionConfigItem, StockPkgAllocation, StockLot, StockLotRevertPreview, Sale, SaleStatus, ProductionOrder, ProductionLot } from "../types";
+import { Product, SaleType, ProductionConfigItem, StockPkgAllocation, StockLot, StockLotRevertPreview, Sale, SaleStatus, ProductionOrder, ProductionLot, AppModulesConfig } from "../types";
 import {
   Search,
   Package,
@@ -58,6 +58,10 @@ interface StockViewProps {
   lots?: ProductionLot[];
   onFixPkgAllocations?: () => Promise<{ fixed: number; total: number }>;
   onNavigatePCP?: () => void;
+  /** "Lotes" (registro de produção) e "Configurar" (histórico de entradas + correção de
+   * alocações) só existem por causa de StockLots criados na finalização de produção — sem o
+   * módulo Produção ativo essa coleção fica sempre vazia, então as duas abas somem. */
+  modulesConfig?: AppModulesConfig;
 }
 
 export default function StockView({
@@ -73,7 +77,9 @@ export default function StockView({
   lots = [],
   onFixPkgAllocations,
   onNavigatePCP,
+  modulesConfig,
 }: StockViewProps) {
+  const showProductionTabs = !modulesConfig || modulesConfig.production;
   const [searchTerm, setSearchTerm] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [editedStocks, setEditedStocks] = useState<Record<string, Product>>({});
@@ -300,38 +306,42 @@ export default function StockView({
               <Package size={18} strokeWidth={2.5} className="text-violet-500" />
               Estoque
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('lotes')}
-              className={`flex flex-col items-center justify-center gap-1.5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                activeTab === 'lotes'
-                  ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm')
-                  : 'text-slate-400'
-              }`}
-            >
-              <Boxes size={18} strokeWidth={2.5} className="text-emerald-500" />
-              Lotes
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowConfigMenu(true)}
-              className={`relative flex flex-col items-center justify-center gap-1.5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all text-slate-400 ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-white'}`}
-              title="Histórico de entradas e correção de alocações de embalagem"
-              aria-label="Abrir configurações de estoque"
-            >
-              <Settings size={18} strokeWidth={2.5} className="text-amber-500" />
-              Configurar
-              {pkgAllocIssuesCount > 0 ? (
-                <span className="absolute top-2 right-2 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-amber-500 text-white text-[8px] font-black">
-                  {pkgAllocIssuesCount}
-                </span>
-              ) : hasAnyStockIssue ? (
-                // Problema detectado (Mapa finalizado sem StockLot, StockLot duplicado, etc.)
-                // que não se resolve dentro deste menu — sinaliza pra o usuário ir investigar
-                // no PCP/Reparar Caixas, sem depender de lembrar de checar por conta própria.
-                <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-rose-500" title="Problema detectado no estoque — veja o aviso acima ou o Reparar Caixas no PCP" />
-              ) : null}
-            </button>
+            {showProductionTabs && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('lotes')}
+                className={`flex flex-col items-center justify-center gap-1.5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  activeTab === 'lotes'
+                    ? (isDarkMode ? 'bg-slate-800 text-indigo-400 shadow-sm' : 'bg-white text-indigo-600 shadow-sm')
+                    : 'text-slate-400'
+                }`}
+              >
+                <Boxes size={18} strokeWidth={2.5} className="text-emerald-500" />
+                Lotes
+              </button>
+            )}
+            {showProductionTabs && (
+              <button
+                type="button"
+                onClick={() => setShowConfigMenu(true)}
+                className={`relative flex flex-col items-center justify-center gap-1.5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all text-slate-400 ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-white'}`}
+                title="Histórico de entradas e correção de alocações de embalagem"
+                aria-label="Abrir configurações de estoque"
+              >
+                <Settings size={18} strokeWidth={2.5} className="text-amber-500" />
+                Configurar
+                {pkgAllocIssuesCount > 0 ? (
+                  <span className="absolute top-2 right-2 flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-amber-500 text-white text-[8px] font-black">
+                    {pkgAllocIssuesCount}
+                  </span>
+                ) : hasAnyStockIssue ? (
+                  // Problema detectado (Mapa finalizado sem StockLot, StockLot duplicado, etc.)
+                  // que não se resolve dentro deste menu — sinaliza pra o usuário ir investigar
+                  // no PCP/Reparar Caixas, sem depender de lembrar de checar por conta própria.
+                  <span className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-rose-500" title="Problema detectado no estoque — veja o aviso acima ou o Reparar Caixas no PCP" />
+                ) : null}
+              </button>
+            )}
           </div>
         )}
 
@@ -845,7 +855,7 @@ const StockLotsPanel: React.FC<{
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-violet-100 dark:bg-violet-950/30">
           <h3 className={`text-xs font-black uppercase tracking-widest flex items-center gap-2 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-            <Boxes size={16} className="text-indigo-500" /> Em Estoque
+            <Boxes size={16} className="text-indigo-500" /> Registro de Produção
           </h3>
           <div className="px-3 py-1.5 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-violet-700 text-white text-center leading-tight">
             <p>{totalBoxes(emEstoque)} caixa(s)</p>

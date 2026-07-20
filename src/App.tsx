@@ -155,6 +155,7 @@ import { generateId } from './utils/id';
 import { seedProductionOrderSequence } from './utils/sequenceSeeds';
 import { ThemeId, THEME_VISUALS, ALL_THEME_CLASSES, FONT_OPTIONS, NavIconMode, NAV_TAB_COLORS } from './utils/themes';
 import { isViewAllowed, collaboratorCanUseAI, getEffectiveDashboardCards } from './utils/collaborators';
+import { subscribeToAIGeneralSettings } from './services/aiSettingsService';
 
 const MODAL_VIEWS = [
   ViewType.PRODUCTS,
@@ -465,6 +466,7 @@ export default function App() {
   const [transactionModalType, setTransactionModalType] = useState<TransactionType>(TransactionType.INCOME);
   const [isSolePurchaseModalOpen, setIsSolePurchaseModalOpen] = useState(false);
   const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(true);
   const [isHeaderScannerOpen, setIsHeaderScannerOpen] = useState(false);
   const [aiPersonPrefill, setAiPersonPrefill] = useState<Partial<Person> | null>(null);
   const [solePurchaseParams, setSolePurchaseParams] = useState<{
@@ -658,6 +660,13 @@ export default function App() {
       await firebaseService.saveDocument("app_modules_config", { ...newConfig, id: 'main_modules_config' });
     }
   };
+
+  // Liga/desliga global do Assistente de IA — configurado em Mais Opções > Sistema & Backup > Assistente de IA
+  useEffect(() => {
+    if (!user) return;
+    const unsubAIEnabled = subscribeToAIGeneralSettings((s) => setAiEnabled(s.enabled));
+    return () => unsubAIEnabled();
+  }, [user]);
 
   // Firebase Subscriptions
   useEffect(() => {
@@ -2994,9 +3003,14 @@ export default function App() {
     const isSalesView = MODULE_VIEWS.sales.includes(view);
     const isProductionView = MODULE_VIEWS.production.includes(view);
     const isPersonalView = MODULE_VIEWS.personal.includes(view);
+    // "Modelos / Ficha Técnica" é o catálogo de produtos — Vendas precisa dele sozinho
+    // (tem que cadastrar o que vende) mesmo com o módulo Produção desativado. As outras
+    // telas de Produção (rota, matriz, grade etc.) continuam exigindo os dois módulos juntos.
+    const isProductCatalogView = view === ViewType.PRODUCTION_ENGINEERING;
 
     if (isSalesView && !modulesConfig.sales) return renderView(ViewType.DASHBOARD);
-    if (isProductionView && (!modulesConfig.sales || !modulesConfig.production)) return renderView(ViewType.DASHBOARD);
+    if (isProductCatalogView && !modulesConfig.sales && !modulesConfig.production) return renderView(ViewType.DASHBOARD);
+    if (isProductionView && !isProductCatalogView && (!modulesConfig.sales || !modulesConfig.production)) return renderView(ViewType.DASHBOARD);
     if (isPersonalView && !modulesConfig.personal) return renderView(ViewType.DASHBOARD);
     if (!isViewAllowed(activeCollaborator, view)) return renderView(ViewType.DASHBOARD);
 
@@ -3031,6 +3045,7 @@ export default function App() {
             }}
             onOpenAIAssistant={() => setIsAIAssistantOpen(true)}
             activeCollaborator={activeCollaborator}
+            aiEnabled={aiEnabled}
           />
         );
       case ViewType.DASHBOARD_CONFIG:
@@ -3385,6 +3400,7 @@ export default function App() {
             serviceOrders={serviceOrders}
             people={people}
             sectors={sectors}
+            modulesConfig={modulesConfig}
             onDeleteItems={async (section, ids) => {
               try {
                 let collection = '';
@@ -3430,7 +3446,12 @@ export default function App() {
         );
       case ViewType.PRODUCT_FORM:
         const productToEdit = selectedProductId ? products.find((p) => p.id === selectedProductId) : undefined;
-        const module = (lastNonModalView === ViewType.PRODUCTION_MENU || lastNonModalView === ViewType.PRODUCTION_ENGINEERING) ? 'PRODUCTION' : 'SALES';
+        // "Modelos / Ficha Técnica" (PRODUCTION_ENGINEERING) agora também é acessível com o
+        // módulo Produção desativado (é só o catálogo de produtos, útil pra Vendas sozinho) —
+        // por isso não basta checar de qual tela o usuário veio: sem o módulo Produção
+        // realmente ativo, o formulário nunca deve mostrar os campos de engenharia, mesmo
+        // vindo dessa tela.
+        const module = modulesConfig.production && (lastNonModalView === ViewType.PRODUCTION_MENU || lastNonModalView === ViewType.PRODUCTION_ENGINEERING) ? 'PRODUCTION' : 'SALES';
         return (
           <ProductFormView
             module={module}
@@ -3532,6 +3553,7 @@ export default function App() {
             initialParams={currentParams}
             productionOrders={productionOrders}
             lots={productionLots}
+            modulesConfig={modulesConfig}
             onCreateProductionOrder={async (order, newLots, deductions) => {
               await firebaseService.saveDocument("productionOrders", order);
               for (const lot of newLots) {
@@ -4250,6 +4272,8 @@ export default function App() {
             onNavigateStock={() => navigateTo(ViewType.STOCK)}
             onNavigateStockGlance={() => navigateTo(ViewType.STOCK_GLANCE)}
             onNavigatePCP={() => navigateTo(ViewType.PRODUCTION_PCP, { initialTab: 'monitor' })}
+            onNavigateProducts={() => navigateTo(ViewType.PRODUCTS)}
+            onAddProduct={() => navigateTo(ViewType.PRODUCT_FORM)}
             productionConfigs={productionConfigs}
           />
         );
@@ -4450,6 +4474,7 @@ export default function App() {
             lots={productionLots}
             onFixPkgAllocations={handleFixPkgAllocations}
             onNavigatePCP={() => navigateTo(ViewType.PRODUCTION_PCP, { initialTab: 'monitor' })}
+            modulesConfig={modulesConfig}
           />
         );
       case ViewType.STOCK_GLANCE:
@@ -4461,6 +4486,7 @@ export default function App() {
             onUpdateVariationNote={handleUpdateVariationStockNote}
             grids={grids}
             lots={productionLots}
+            modulesConfig={modulesConfig}
           />
         );
       case ViewType.SALE_FORM:
@@ -5400,6 +5426,7 @@ export default function App() {
           </h1>
         </div>
         <div className="flex items-center gap-3 text-slate-500">
+          {modulesConfig.production && (
           <motion.button
             type="button"
             onClick={() => setIsHeaderScannerOpen(true)}
@@ -5413,7 +5440,8 @@ export default function App() {
           >
             <ScanLine size={20} />
           </motion.button>
-          {collaboratorCanUseAI(activeCollaborator) && (
+          )}
+          {aiEnabled && collaboratorCanUseAI(activeCollaborator) && (
             <motion.button
               type="button"
               onClick={() => setIsAIAssistantOpen(true)}

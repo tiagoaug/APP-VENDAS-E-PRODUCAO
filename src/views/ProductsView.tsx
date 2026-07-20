@@ -8,6 +8,7 @@ import {
   Package,
   Filter,
   ChevronDown,
+  ChevronUp,
   Copy
 } from "lucide-react";
 import PrintLabelEditorModal from "../components/PrintLabelEditorModal";
@@ -175,16 +176,21 @@ function ProductCard({
   onDuplicate,
   isDarkMode,
 }: ProductCardProps) {
+  const [isExpanded, setIsExpanded] = useState(false);
   return (
     <div
       className={`rounded-3xl border shadow-sm dark:shadow-none relative flex flex-col ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
     >
-      {/* Linha 1: info */}
-      <div className="px-4 pt-4 flex items-center gap-3">
+      {/* Linha 1: info — toca pra abrir/fechar as ações (acordeão) */}
+      <button
+        type="button"
+        onClick={() => setIsExpanded(v => !v)}
+        className="px-4 pt-4 pb-3 flex items-center gap-3 w-full text-left"
+      >
         <div className="w-11 h-11 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700 flex-shrink-0">
           <Package size={22} className="text-indigo-500" />
         </div>
-        <div className="flex flex-col min-w-0">
+        <div className="flex flex-col min-w-0 flex-1">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
             {product.reference}
           </span>
@@ -192,35 +198,42 @@ function ProductCard({
             {product.name}
           </h3>
         </div>
-      </div>
+        {isExpanded ? (
+          <ChevronUp size={18} className="text-slate-400 shrink-0" />
+        ) : (
+          <ChevronDown size={18} className="text-slate-400 shrink-0" />
+        )}
+      </button>
 
-      {/* Linha 2: ações */}
-      <div className={`mx-4 mt-3 flex items-center gap-2 pb-3 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-        <button
-          type="button"
-          onClick={onDuplicate}
-          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 active:scale-95 transition-all"
-          title="Duplicar Modelo"
-        >
-          <Copy size={14} strokeWidth={2.5} /> Duplicar
-        </button>
-        <button
-          type="button"
-          onClick={onEdit}
-          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest hover:bg-indigo-700 active:scale-95 transition-all"
-          title="Editar"
-        >
-          <Edit size={14} strokeWidth={2.5} /> Editar
-        </button>
-        <button
-          type="button"
-          onClick={onDelete}
-          className="w-10 h-10 flex items-center justify-center rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-500 hover:bg-rose-500 hover:text-white active:scale-95 transition-all"
-          title="Excluir"
-        >
-          <Trash2 size={16} strokeWidth={2.5} />
-        </button>
-      </div>
+      {/* Linha 2: ações — cápsulas neutras (fundo branco/3D), texto colorido */}
+      {isExpanded && (
+        <div className={`mx-4 mt-0.5 flex items-center gap-2 pb-3 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+          <button
+            type="button"
+            onClick={onDuplicate}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-full border text-emerald-600 dark:text-emerald-400 text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all shadow-[0_2px_6px_rgba(0,0,0,0.06)] ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
+            title="Duplicar Modelo"
+          >
+            <Copy size={14} strokeWidth={2.5} /> Duplicar
+          </button>
+          <button
+            type="button"
+            onClick={onEdit}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-full border text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all shadow-[0_2px_6px_rgba(0,0,0,0.06)] ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-white border-slate-200 hover:bg-slate-50'}`}
+            title="Editar"
+          >
+            <Edit size={14} strokeWidth={2.5} /> Editar
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className={`w-10 h-10 flex items-center justify-center rounded-full border text-rose-500 active:scale-95 transition-all shadow-[0_2px_6px_rgba(0,0,0,0.06)] ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-rose-900/30' : 'bg-white border-slate-200 hover:bg-rose-50'}`}
+            title="Excluir"
+          >
+            <Trash2 size={16} strokeWidth={2.5} />
+          </button>
+        </div>
+      )}
 
       {/* Badges */}
       <div className="px-4 py-2.5 flex gap-2 items-center flex-wrap">

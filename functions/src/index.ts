@@ -1,23 +1,34 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
-import Anthropic from "@anthropic-ai/sdk";
-import type {
-  PromptCachingBetaMessageParam,
-  PromptCachingBetaTextBlockParam,
-  PromptCachingBetaImageBlockParam,
-  PromptCachingBetaToolResultBlockParam,
-} from "@anthropic-ai/sdk/resources/beta/prompt-caching/messages";
 import { TOOLS, executeTool } from "./tools";
+import { runAnthropicChat } from "./providers/anthropic";
+import { runOpenAIChat } from "./providers/openai";
+import { runGeminiChat } from "./providers/gemini";
+import { AIProviderMessage, RunChatFn } from "./providers/types";
 
 admin.initializeApp();
 const db = admin.firestore();
 
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
 
-const MODEL = "claude-sonnet-4-6";
+type AIProviderId = "anthropic" | "openai" | "gemini";
+
+const DEFAULT_MODELS: Record<AIProviderId, string> = {
+  anthropic: "claude-sonnet-4-6",
+  openai: "gpt-4.1",
+  gemini: "gemini-2.0-flash",
+};
+
+const RUNNERS: Record<AIProviderId, RunChatFn> = {
+  anthropic: runAnthropicChat,
+  openai: runOpenAIChat,
+  gemini: runGeminiChat,
+};
+
 const MAX_HISTORY_MESSAGES = 20;
 const MAX_TOOL_ITERATIONS = 5;
+const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
 // Ferramentas que não consultam o Firestore — seu "input" é a própria proposta
 // devolvida ao frontend para o usuário revisar e preencher um formulário manualmente.
@@ -68,150 +79,87 @@ export const aiChat = onCall(
       throw new HttpsError("invalid-argument", "É necessário enviar ao menos uma mensagem.");
     }
 
-    const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
-
     const slicedMessages = incomingMessages.slice(-MAX_HISTORY_MESSAGES);
-    const lastIndex = slicedMessages.length - 1;
+    const messages: AIProviderMessage[] = slicedMessages.map((m: any) => ({
+      role: m.role === "assistant" ? "assistant" : "user",
+      content: String(m.content || ""),
+      images: Array.isArray(m.images)
+        ? m.images.filter((img: any) => img?.data && ALLOWED_IMAGE_TYPES.has(img.mediaType))
+        : [],
+    }));
 
-    // Apenas a última mensagem pode levar imagens — evita reenviar (e re-cobrar)
-    // fotos já enviadas em mensagens anteriores da mesma conversa.
-    const conversation: PromptCachingBetaMessageParam[] = slicedMessages.map((m: any, idx: number) => {
-      const role: "user" | "assistant" = m.role === "assistant" ? "assistant" : "user";
-      const images = idx === lastIndex && Array.isArray(m.images) ? m.images : [];
-      const hadOlderImages = idx !== lastIndex && Array.isArray(m.images) && m.images.length > 0;
+    // Provedor ativo + chave própria (OpenAI/Gemini) configurados em Mais Opções >
+    // Sistema & Backup > Assistente de IA. Ficam na árvore do próprio usuário no
+    // Firestore (mesma proteção por conta que todo o resto dos dados do negócio).
+    // O Claude é o padrão embutido e usa a chave fixa do servidor (secret) — não
+    // depende de o usuário configurar nada.
+    const configSnap = await db.collection("users").doc(uid).collection("aiSettings").doc("providerConfig").get();
+    const config = configSnap.exists ? (configSnap.data() as any) : null;
+    const activeProvider: AIProviderId =
+      config?.activeProvider === "openai" || config?.activeProvider === "gemini" ? config.activeProvider : "anthropic";
 
-      if (images.length === 0) {
-        const text = hadOlderImages
-          ? `${m.content ? String(m.content) + "\n" : ""}[Imagem enviada anteriormente nesta conversa]`
-          : String(m.content || "");
-        return { role, content: text };
+    let apiKey: string;
+    let model: string;
+    if (activeProvider === "openai") {
+      apiKey = config?.openai?.apiKey;
+      model = config?.openai?.model || DEFAULT_MODELS.openai;
+      if (!apiKey) {
+        throw new HttpsError("failed-precondition", "Configure a chave da OpenAI em Mais Opções > Assistente de IA.");
       }
+    } else if (activeProvider === "gemini") {
+      apiKey = config?.gemini?.apiKey;
+      model = config?.gemini?.model || DEFAULT_MODELS.gemini;
+      if (!apiKey) {
+        throw new HttpsError("failed-precondition", "Configure a chave do Gemini em Mais Opções > Assistente de IA.");
+      }
+    } else {
+      apiKey = anthropicApiKey.value();
+      model = DEFAULT_MODELS.anthropic;
+    }
 
-      const blocks: Array<PromptCachingBetaTextBlockParam | PromptCachingBetaImageBlockParam> = [];
-      for (const img of images) {
-        if (img?.data && ALLOWED_IMAGE_TYPES.has(img.mediaType)) {
-          blocks.push({
-            type: "image",
-            source: { type: "base64", media_type: img.mediaType, data: img.data },
-          });
-        }
-      }
-      if (m.content) {
-        blocks.push({ type: "text", text: String(m.content) });
-      }
-      return { role, content: blocks };
+    let result;
+    try {
+      result = await RUNNERS[activeProvider]({
+        apiKey,
+        model,
+        systemPrompt: buildSystemPrompt(),
+        tools: TOOLS,
+        messages,
+        proposalToolNames: PROPOSAL_TOOL_NAMES,
+        maxToolIterations: MAX_TOOL_ITERATIONS,
+        executeTool: (name, input) => executeTool(db, uid, name, input),
+      });
+    } catch (err: any) {
+      throw new HttpsError("internal", err?.message || "Falha ao consultar o assistente de IA.");
+    }
+
+    await db.collection("users").doc(uid).collection("aiUsage").add({
+      timestamp: Date.now(),
+      model,
+      provider: activeProvider,
+      input_tokens: result.usage.input_tokens,
+      output_tokens: result.usage.output_tokens,
+      cache_read_input_tokens: result.usage.cache_read_input_tokens || 0,
+      cache_creation_input_tokens: result.usage.cache_creation_input_tokens || 0,
     });
 
-    const anthropic = new Anthropic({ apiKey: anthropicApiKey.value() });
-
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
-    let totalCacheReadTokens = 0;
-    let totalCacheCreationTokens = 0;
-
-    // System prompt + tools são marcados como cacheáveis: são idênticos em toda
-    // chamada (dentro do mesmo dia), então a Anthropic cobra ~10% por esses tokens
-    // em vez do preço cheio a partir da segunda chamada dentro da janela de cache.
-    const system: PromptCachingBetaTextBlockParam[] = [
-      { type: "text", text: buildSystemPrompt(), cache_control: { type: "ephemeral" } },
-    ];
-
-    for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
-      const response = await anthropic.beta.promptCaching.messages.create({
-        model: MODEL,
-        max_tokens: 2048,
-        system,
-        tools: TOOLS,
-        messages: conversation,
-      });
-
-      totalInputTokens += response.usage.input_tokens;
-      totalOutputTokens += response.usage.output_tokens;
-      totalCacheReadTokens += response.usage.cache_read_input_tokens || 0;
-      totalCacheCreationTokens += response.usage.cache_creation_input_tokens || 0;
-
-      const proposalBlock = response.content.find(
-        (b): b is Anthropic.ToolUseBlock => b.type === "tool_use" && PROPOSAL_TOOL_NAMES.has(b.name)
-      );
-      if (proposalBlock) {
-        const text = response.content
-          .filter((b): b is Anthropic.TextBlock => b.type === "text")
-          .map((b) => b.text)
-          .join("\n");
-
-        await db.collection("users").doc(uid).collection("aiUsage").add({
-          timestamp: Date.now(),
-          model: MODEL,
-          input_tokens: totalInputTokens,
-          output_tokens: totalOutputTokens,
-          cache_read_input_tokens: totalCacheReadTokens,
-          cache_creation_input_tokens: totalCacheCreationTokens,
-        });
-
-        const proposalType =
-          proposalBlock.name === "propose_purchase_registration"
-            ? "purchase"
-            : proposalBlock.name === "propose_sole_purchase_registration"
-            ? "sole_purchase"
-            : proposalBlock.name === "propose_provider_service_report"
-            ? "provider_service_report"
-            : "person";
-
-        return {
-          text,
-          usage: {
-            input_tokens: totalInputTokens,
-            output_tokens: totalOutputTokens,
-            cache_read_input_tokens: totalCacheReadTokens,
-            cache_creation_input_tokens: totalCacheCreationTokens,
-          },
-          formProposal: { type: proposalType, data: proposalBlock.input },
-        };
-      }
-
-      if (response.stop_reason === "tool_use") {
-        conversation.push({ role: "assistant", content: response.content });
-
-        const toolResults: PromptCachingBetaToolResultBlockParam[] = [];
-        for (const block of response.content) {
-          if (block.type === "tool_use") {
-            const result = await executeTool(db, uid, block.name, block.input);
-            toolResults.push({
-              type: "tool_result",
-              tool_use_id: block.id,
-              content: JSON.stringify(result),
-            });
-          }
-        }
-        conversation.push({ role: "user", content: toolResults });
-        continue;
-      }
-
-      const text = response.content
-        .filter((b): b is Anthropic.TextBlock => b.type === "text")
-        .map((b) => b.text)
-        .join("\n");
-
-      await db.collection("users").doc(uid).collection("aiUsage").add({
-        timestamp: Date.now(),
-        model: MODEL,
-        input_tokens: totalInputTokens,
-        output_tokens: totalOutputTokens,
-        cache_read_input_tokens: totalCacheReadTokens,
-        cache_creation_input_tokens: totalCacheCreationTokens,
-      });
+    if (result.proposal) {
+      const proposalType =
+        result.proposal.toolName === "propose_purchase_registration"
+          ? "purchase"
+          : result.proposal.toolName === "propose_sole_purchase_registration"
+          ? "sole_purchase"
+          : result.proposal.toolName === "propose_provider_service_report"
+          ? "provider_service_report"
+          : "person";
 
       return {
-        text,
-        usage: {
-          input_tokens: totalInputTokens,
-          output_tokens: totalOutputTokens,
-          cache_read_input_tokens: totalCacheReadTokens,
-          cache_creation_input_tokens: totalCacheCreationTokens,
-        },
+        text: result.text,
+        usage: result.usage,
+        formProposal: { type: proposalType, data: result.proposal.input },
       };
     }
 
-    throw new HttpsError("internal", "O assistente não conseguiu concluir a resposta (muitas etapas de ferramentas).");
+    return { text: result.text, usage: result.usage };
   }
 );

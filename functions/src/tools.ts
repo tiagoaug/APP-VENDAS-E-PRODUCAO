@@ -1,10 +1,11 @@
 import { Firestore } from "firebase-admin/firestore";
-import type { PromptCachingBetaTool } from "@anthropic-ai/sdk/resources/beta/prompt-caching/messages";
 import { computeSoleMapaReservations, computeSolePendingOrders } from "./soleNeeds";
+import { AIToolDef } from "./providers/types";
 
-// Tool schemas exposed to Claude (Anthropic Messages API "tools" format).
+// Tool schemas expostas à IA (JSON Schema simples — cada adaptador de provedor
+// converte para o formato nativo de tools da Anthropic/OpenAI/Gemini).
 // All tools are READ-ONLY for now — they only query the user's Firestore data.
-export const TOOLS: PromptCachingBetaTool[] = [
+export const TOOLS: AIToolDef[] = [
   {
     name: "search_products",
     description:

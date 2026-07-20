@@ -71,6 +71,7 @@ interface Props {
   people: Person[];
   sectors: any[];
   onDeleteItems?: (section: Section, ids: string[]) => void;
+  modulesConfig?: { production?: boolean; sales?: boolean; personal?: boolean };
 }
 
 // ─── Section config ───────────────────────────────────────────────────────────
@@ -78,13 +79,14 @@ interface Props {
 const SECTIONS: {
   id: Section; label: string; shortLabel: string;
   icon: React.ReactNode; accent: string; accentBg: string; accentBorder: string;
+  productionOnly?: boolean;
 }[] = [
-  { id: 'os',        label: 'Ordens de Serviço', shortLabel: 'OS',       icon: <ClipboardList size={20}/>, accent: 'text-rose-600',   accentBg: 'bg-rose-500',   accentBorder: 'border-rose-400' },
-  { id: 'lots',      label: 'Mapa de Produção',  shortLabel: 'Mapa',     icon: <Factory size={20}/>,       accent: 'text-violet-600', accentBg: 'bg-violet-600', accentBorder: 'border-violet-400' },
+  { id: 'os',        label: 'Ordens de Serviço', shortLabel: 'OS',       icon: <ClipboardList size={20}/>, accent: 'text-rose-600',   accentBg: 'bg-rose-500',   accentBorder: 'border-rose-400', productionOnly: true },
+  { id: 'lots',      label: 'Mapa de Produção',  shortLabel: 'Mapa',     icon: <Factory size={20}/>,       accent: 'text-violet-600', accentBg: 'bg-violet-600', accentBorder: 'border-violet-400', productionOnly: true },
   { id: 'sales',     label: 'Pedidos de Venda',  shortLabel: 'Vendas',   icon: <ShoppingBag size={20}/>,   accent: 'text-indigo-600', accentBg: 'bg-indigo-600', accentBorder: 'border-indigo-400' },
   { id: 'purchases', label: 'Pedidos de Compra', shortLabel: 'Compras',  icon: <Truck size={20}/>,         accent: 'text-teal-600',   accentBg: 'bg-teal-600',   accentBorder: 'border-teal-400' },
   { id: 'products',  label: 'Produtos',           shortLabel: 'Produtos', icon: <BookOpen size={20}/>,      accent: 'text-amber-600',  accentBg: 'bg-amber-500',  accentBorder: 'border-amber-400' },
-  { id: 'labels',    label: 'Etiquetas',          shortLabel: 'Etiquetas',icon: <Tag size={20}/>,           accent: 'text-pink-600',   accentBg: 'bg-pink-600',   accentBorder: 'border-pink-400' },
+  { id: 'labels',    label: 'Etiquetas',          shortLabel: 'Etiquetas',icon: <Tag size={20}/>,           accent: 'text-pink-600',   accentBg: 'bg-pink-600',   accentBorder: 'border-pink-400', productionOnly: true },
 ];
 
 // ─── Default layouts per section ─────────────────────────────────────────────
@@ -848,8 +850,10 @@ function Badge({ label, color }: { label: string; color: string }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function PrintCenterView({ isDarkMode, products, sales, purchases, productionLots, serviceOrders, people, sectors, onDeleteItems }: Props) {
-  const [activeSection, setActiveSection] = useState<Section>('os');
+export default function PrintCenterView({ isDarkMode, products, sales, purchases, productionLots, serviceOrders, people, sectors, onDeleteItems, modulesConfig }: Props) {
+  const showProductionSections = !modulesConfig || modulesConfig.production;
+  const visibleSections = SECTIONS.filter(s => showProductionSections || !s.productionOnly);
+  const [activeSection, setActiveSection] = useState<Section>(showProductionSections ? 'os' : 'sales');
   const [view, setView] = useState<'list' | 'editor'>('list');
   const [search, setSearch] = useState('');
   const [printing, setPrinting] = useState(false);
@@ -1433,7 +1437,7 @@ export default function PrintCenterView({ isDarkMode, products, sales, purchases
       {/* ── Section tabs (2×3 grid, no horizontal scroll) ── */}
       <div className={`px-4 pt-3 pb-0 border-b ${dk?'border-slate-800 bg-slate-900':'border-slate-100 bg-white'}`}>
         <div className="grid grid-cols-3 gap-1.5 mb-3">
-          {SECTIONS.map(s => (
+          {visibleSections.map(s => (
             <button key={s.id} type="button"
               onClick={() => { setActiveSection(s.id); setSearch(''); setSelectedElem(null); if(view==='editor') setView('list'); }}
               className={`flex flex-col items-center gap-1 py-2.5 px-1 rounded-2xl border-2 font-black text-[9px] uppercase tracking-widest transition-all ${
