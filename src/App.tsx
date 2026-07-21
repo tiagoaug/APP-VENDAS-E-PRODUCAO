@@ -529,24 +529,19 @@ export default function App() {
   const defaultDashboardConfig: DashboardConfig = {
     cards: [
       { id: 'ai_assistant', label: 'Assistente IA (Claude)', visible: true, order: -1, module: 'any' },
-      { id: 'balance', label: 'Saldo Consolidado', visible: true, order: 0, module: 'sales' },
       { id: 'sales_products', label: 'Produtos e Catálogo', visible: true, order: 1, module: 'sales' },
       { id: 'manual_entries', label: 'Lançamentos Manuais', visible: true, order: 2, module: 'sales' },
       { id: 'report_center', label: 'Central de Relatórios', visible: true, order: 3, module: 'sales' },
       { id: 'quick_reports', label: 'Relatórios Rápidos', visible: true, order: 4, module: 'sales' },
       { id: 'dashboard_rankings', label: 'Rankings de Performance', visible: true, order: 5, module: 'sales' },
-      { id: 'cash_flow', label: 'Balanço Mensal', visible: true, order: 6, module: 'sales' },
-      { id: 'receivables', label: 'A Receber (Vendas)', visible: true, order: 7, module: 'sales' },
       { id: 'stock_alerts', label: 'Alertas de Estoque', visible: true, order: 8, module: 'sales' },
       { id: 'customers', label: 'Relacionamento Clientes', visible: true, order: 9, module: 'sales' },
       { id: 'suppliers', label: 'Relacionamento Fornecedores', visible: true, order: 10, module: 'sales' },
       { id: 'debt_management', label: 'Gestão de Dívidas', visible: true, order: 11, module: 'sales' },
-      { id: 'stock_value', label: 'Patrimônio em Estoque', visible: true, order: 12, module: 'sales' },
       { id: 'estimated_profit', label: 'Lucro Total Estimado', visible: true, order: 13, module: 'sales' },
       { id: 'checks', label: 'Relatório de Cheques', visible: true, order: 14, module: 'sales' },
       { id: 'reminders', label: 'Lembretes e Vencimentos', visible: true, order: 14.5, module: 'any' },
       { id: 'activity', label: 'Atividade Recente', visible: true, order: 15, module: 'any' },
-      { id: 'monthly_profit_detailed', label: 'Análise de Lucro Detalhada', visible: true, order: 16, module: 'sales' },
       { id: 'business_overview', label: 'Visualização do Meu Negócio', visible: true, order: 16.5, module: 'sales' },
       { id: 'engineering_config', label: 'Configurações de Ficha Técnica', visible: true, order: 17, module: 'production' },
       { id: 'production_stock_control', label: 'Controle de Estoques', visible: true, order: 17.5, module: 'production' },
@@ -623,6 +618,18 @@ export default function App() {
     // Migration: ensure business_overview card is present
     if (config.cards && !config.cards.find((c: any) => c.id === 'business_overview')) {
       config.cards.push({ id: 'business_overview', label: 'Visualização do Meu Negócio', visible: true, order: 16.5, module: 'sales' });
+      localStorage.setItem('dashboard_config', JSON.stringify(config));
+    }
+
+    // Migration: Análise de Lucro, Saldo Consolidado, A Receber, Balanço Mensal
+    // e Patrimônio em Estoque foram reunidos dentro do card "Visualização do
+    // Meu Negócio" — remove os 5 cards separados por completo (v2: a v1 só
+    // ocultava; roda de novo pra quem já passou pela v1 e ainda tem os 5
+    // registros escondidos no array).
+    if (config.cards && !config.consolidatedIntoBusinessOverviewV2) {
+      const idsToRemove = ['monthly_profit_detailed', 'balance', 'receivables', 'cash_flow', 'stock_value'];
+      config.cards = config.cards.filter((c: any) => !idsToRemove.includes(c.id));
+      config.consolidatedIntoBusinessOverviewV2 = true;
       localStorage.setItem('dashboard_config', JSON.stringify(config));
     }
 

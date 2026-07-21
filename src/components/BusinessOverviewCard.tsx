@@ -2,17 +2,20 @@ import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PurchaseType, Sale, Product, SaleType, ProductionLot } from '../types';
-import { TrendingUp, DollarSign, Wallet, CheckCircle2, AlertCircle, Package, ChevronDown, Tag, Factory, X, ShoppingBag } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Wallet, CheckCircle2, AlertCircle, Package, ChevronDown, Tag, Factory, X, ShoppingBag, Landmark, Boxes, Calendar, Receipt } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '../utils/toast';
 import {
   getPeriodRange,
   computeStockProfit,
+  computeStockValue,
   computeProductionProfit,
   computeAccountBalance,
   computePendingReceivables,
+  computeMonthlySettledBalance,
   computeSalesProfitInPeriod,
+  computeReceivedSalesRevenueInPeriod,
   computePeriodFinancials,
   OverviewPeriodType,
 } from '../utils/businessOverview';
@@ -21,6 +24,7 @@ import {
   saveBusinessOverviewConfig,
   DEFAULT_BUSINESS_OVERVIEW_CONFIG,
   BusinessOverviewConfig,
+  OverviewComparisonMode,
 } from '../services/businessOverviewService';
 
 interface BusinessOverviewCardProps {
@@ -42,6 +46,7 @@ const OVERVIEW_SOURCE_COLORS: Record<string, { chip: string; icon: string; iconB
   violet: { chip: 'text-violet-600 dark:text-violet-400', icon: 'text-violet-600 dark:text-violet-400', iconBg: 'bg-violet-50 dark:bg-violet-900/30', solid: 'bg-violet-500', ring: 'border-violet-300 dark:border-violet-700' },
   amber: { chip: 'text-amber-600 dark:text-amber-400', icon: 'text-amber-600 dark:text-amber-400', iconBg: 'bg-amber-50 dark:bg-amber-900/30', solid: 'bg-amber-500', ring: 'border-amber-300 dark:border-amber-700' },
   teal: { chip: 'text-teal-600 dark:text-teal-400', icon: 'text-teal-600 dark:text-teal-400', iconBg: 'bg-teal-50 dark:bg-teal-900/30', solid: 'bg-teal-500', ring: 'border-teal-300 dark:border-teal-700' },
+  indigo: { chip: 'text-indigo-600 dark:text-indigo-400', icon: 'text-indigo-600 dark:text-indigo-400', iconBg: 'bg-indigo-50 dark:bg-indigo-900/30', solid: 'bg-indigo-500', ring: 'border-indigo-300 dark:border-indigo-700' },
 };
 
 const OVERVIEW_PERIOD_LABELS: Record<OverviewPeriodType, string> = {
@@ -141,6 +146,7 @@ export default function BusinessOverviewCard({
   const businessAccounts = useMemo(() => accounts.filter(a => a.type !== AccountType.PERSONAL), [accounts]);
 
   const [isOverviewExpanded, setIsOverviewExpanded] = useState(true);
+  const [isResumoExpanded, setIsResumoExpanded] = useState(true);
   const [overviewConfig, setOverviewConfig] = useState<BusinessOverviewConfig>(DEFAULT_BUSINESS_OVERVIEW_CONFIG);
 
   useEffect(() => {
@@ -148,7 +154,7 @@ export default function BusinessOverviewCard({
     return () => unsub();
   }, []);
 
-  const toggleOverviewSource = (key: 'includeStock' | 'includeAccounts' | 'includeProduction' | 'includeReceivables' | 'includeSalesProfit') => {
+  const toggleOverviewSource = (key: 'includeStock' | 'includeAccounts' | 'includeProduction' | 'includeReceivables' | 'includeReceivedSalesRevenue') => {
     const next = { ...overviewConfig, [key]: !overviewConfig[key] };
     setOverviewConfig(next);
     saveBusinessOverviewConfig(next);
@@ -156,6 +162,30 @@ export default function BusinessOverviewCard({
 
   const setOverviewPeriod = (periodType: OverviewPeriodType) => {
     const next = { ...overviewConfig, periodType };
+    setOverviewConfig(next);
+    saveBusinessOverviewConfig(next);
+  };
+
+  const setPeriodDate = (periodDate: string) => {
+    const next = { ...overviewConfig, periodDate };
+    setOverviewConfig(next);
+    saveBusinessOverviewConfig(next);
+  };
+
+  const setComparisonMode = (comparisonMode: OverviewComparisonMode) => {
+    const next = { ...overviewConfig, comparisonMode };
+    setOverviewConfig(next);
+    saveBusinessOverviewConfig(next);
+  };
+
+  const setCompPeriodType = (compPeriodType: OverviewPeriodType) => {
+    const next = { ...overviewConfig, compPeriodType };
+    setOverviewConfig(next);
+    saveBusinessOverviewConfig(next);
+  };
+
+  const setCompPeriodDate = (compPeriodDate: string) => {
+    const next = { ...overviewConfig, compPeriodDate };
     setOverviewConfig(next);
     saveBusinessOverviewConfig(next);
   };
@@ -218,17 +248,22 @@ export default function BusinessOverviewCard({
   const [selectedPurchaseForCart, setSelectedPurchaseForCart] = useState<Purchase | null>(null);
 
   const periodExpenseBreakdown = useMemo(() => {
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
-    const { start, end } = getPeriodRange(overviewConfig.periodType, todayStr);
+    const { start, end } = getPeriodRange(overviewConfig.periodType, overviewConfig.periodDate);
     const items = transactions.filter(t => !t.isPersonal && t.status === 'COMPLETED' && t.type === TransactionType.EXPENSE && t.date >= start && t.date <= end);
     const linkedToPurchase = items.filter(t => !!t.relatedId).reduce((a, t) => a + t.amount, 0);
     const other = items.filter(t => !t.relatedId).reduce((a, t) => a + t.amount, 0);
     return { items: [...items].sort((a, b) => b.amount - a.amount), linkedToPurchase, other };
-  }, [transactions, overviewConfig.periodType]);
+  }, [transactions, overviewConfig.periodType, overviewConfig.periodDate]);
+
+  const resumo = useMemo(() => ({
+    consolidatedBalance: computeAccountBalance(accounts),
+    pendingReceivables: computePendingReceivables(sales),
+    monthlyBalance: computeMonthlySettledBalance(transactions, accounts),
+    stockValue: computeStockValue(products),
+  }), [accounts, sales, transactions, products]);
 
   const businessOverview = useMemo(() => {
-    const todayStr = format(new Date(), 'yyyy-MM-dd');
-    const { start, end } = getPeriodRange(overviewConfig.periodType, todayStr);
+    const { start, end } = getPeriodRange(overviewConfig.periodType, overviewConfig.periodDate);
     const { income, expenses } = computePeriodFinancials(transactions, start, end);
 
     const stockProfit = computeStockProfit(products);
@@ -236,6 +271,7 @@ export default function BusinessOverviewCard({
     const accountBalance = computeAccountBalance(accounts, overviewConfig.selectedAccountIds);
     const pendingReceivables = computePendingReceivables(sales);
     const salesProfit = computeSalesProfitInPeriod(sales, products, start, end);
+    const receivedSalesRevenue = computeReceivedSalesRevenueInPeriod(sales, start, end);
 
     const accountsDesc = overviewConfig.selectedAccountIds
       ? `${overviewConfig.selectedAccountIds.length} de ${businessAccounts.length} contas selecionadas`
@@ -246,14 +282,42 @@ export default function BusinessOverviewCard({
       { key: 'includeAccounts' as const, label: 'Saldos em Conta', desc: accountsDesc, value: accountBalance, color: 'sky', icon: Wallet, onConfigure: () => setShowAccountPicker(true) },
       { key: 'includeProduction' as const, label: 'Lucro em Produção', desc: 'Pares em andamento × lucro unitário cadastrado', value: productionProfit, color: 'violet', icon: Factory },
       { key: 'includeReceivables' as const, label: 'Vendas a Receber', desc: 'Pedidos fechados, ainda não pagos', value: pendingReceivables, color: 'amber', icon: DollarSign },
-      { key: 'includeSalesProfit' as const, label: 'Lucro em Vendas', desc: `Vendas fechadas no período − custo dos produtos`, value: salesProfit, color: 'teal', icon: ShoppingBag },
+      { key: 'includeReceivedSalesRevenue' as const, label: 'Vendas Recebidas (Valor Cheio)', desc: 'Total recebido no período, sem descontar custo — diferente do "Lucro em Vendas" do Resumo Financeiro, que já é só a margem', value: receivedSalesRevenue, color: 'indigo', icon: Receipt },
     ];
 
     const includedTotal = sources.filter(s => overviewConfig[s.key]).reduce((acc, s) => acc + s.value, 0);
     const profit = includedTotal - expenses;
     const margin = income > 0 ? (profit / income) * 100 : 0;
 
-    return { sources, includedTotal, expenses, income, profit, margin };
+    // Comparação com outro período — só as partes que variam por período (Despesas,
+    // Vendas Recebidas) mudam de fato; Estoque/Produção/Saldo/A Receber são "de agora"
+    // e não têm histórico salvo, então entram com o mesmo valor nos dois lados.
+    let comparison: { profit: number; delta: number; label: string } | null = null;
+    if (overviewConfig.comparisonMode !== 'NONE') {
+      let compStart: number, compEnd: number, label: string;
+      if (overviewConfig.comparisonMode === 'AUTO') {
+        const duration = end - start;
+        compStart = start - duration - 1000;
+        compEnd = start - 1;
+        label = 'Período anterior (automático)';
+      } else {
+        const r = getPeriodRange(overviewConfig.compPeriodType, overviewConfig.compPeriodDate);
+        compStart = r.start;
+        compEnd = r.end;
+        label = format(new Date(overviewConfig.compPeriodDate + '-01T12:00:00'), 'MMM/yy', { locale: ptBR });
+      }
+      const compFin = computePeriodFinancials(transactions, compStart, compEnd);
+      const compReceivedSalesRevenue = computeReceivedSalesRevenueInPeriod(sales, compStart, compEnd);
+      const compIncludedTotal = sources.reduce((acc, s) => {
+        if (!overviewConfig[s.key]) return acc;
+        return acc + (s.key === 'includeReceivedSalesRevenue' ? compReceivedSalesRevenue : s.value);
+      }, 0);
+      const compProfit = compIncludedTotal - compFin.expenses;
+      const delta = compProfit === 0 ? (profit > 0 ? 100 : profit < 0 ? -100 : 0) : ((profit - compProfit) / Math.abs(compProfit)) * 100;
+      comparison = { profit: compProfit, delta, label };
+    }
+
+    return { sources, includedTotal, expenses, income, profit, margin, comparison, salesProfitInPeriod: salesProfit };
   }, [overviewConfig, products, productionLots, accounts, sales, transactions, businessAccounts]);
 
   const cashFlowTrend = useMemo(() => {
@@ -261,7 +325,7 @@ export default function BusinessOverviewCard({
     const now = new Date();
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const dateStr = format(d, 'yyyy-MM-dd');
+      const dateStr = format(d, 'yyyy-MM');
       const { start, end } = getPeriodRange('MONTH', dateStr);
       const { income, expenses } = computePeriodFinancials(transactions, start, end);
       months.push({ label: format(d, 'MMM', { locale: ptBR }).toUpperCase(), profit: income - expenses });
@@ -309,12 +373,91 @@ export default function BusinessOverviewCard({
               ))}
             </div>
 
+            <div className="flex items-center gap-2">
+              <Calendar size={13} className="text-slate-400 shrink-0" />
+              <input
+                type="month"
+                value={overviewConfig.periodDate}
+                onChange={(e) => setPeriodDate(e.target.value)}
+                className={`flex-1 border-none rounded-xl px-3 py-2 text-[10px] font-bold outline-none ${isDarkMode ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-700'}`}
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 px-1">Comparar com</p>
+              <div className="flex gap-1.5 p-1 bg-slate-50 dark:bg-slate-950 rounded-2xl">
+                {([
+                  ['NONE', 'Sem comparação'],
+                  ['AUTO', 'Automático'],
+                  ['MANUAL', 'Período específico'],
+                ] as [OverviewComparisonMode, string][]).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setComparisonMode(mode)}
+                    className={`flex-1 py-2 rounded-xl text-[8.5px] font-black uppercase tracking-widest transition-all ${
+                      overviewConfig.comparisonMode === mode ? 'bg-white dark:bg-slate-800 shadow-sm text-indigo-600 dark:text-indigo-400' : 'text-slate-400'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {overviewConfig.comparisonMode === 'MANUAL' && (
+                <div className="flex gap-2">
+                  <select
+                    title="Tipo do período de comparação"
+                    value={overviewConfig.compPeriodType}
+                    onChange={(e) => setCompPeriodType(e.target.value as OverviewPeriodType)}
+                    className={`rounded-xl px-2 py-2.5 text-[9px] font-bold border-none outline-none ${isDarkMode ? 'bg-indigo-900/30 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}
+                  >
+                    {(Object.keys(OVERVIEW_PERIOD_LABELS) as OverviewPeriodType[]).map((p) => (
+                      <option key={p} value={p}>{OVERVIEW_PERIOD_LABELS[p]}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="month"
+                    title="Mês/ano de referência da comparação"
+                    value={overviewConfig.compPeriodDate}
+                    onChange={(e) => setCompPeriodDate(e.target.value)}
+                    className={`flex-1 rounded-xl px-3 py-2.5 text-[10px] font-bold border-none outline-none ${isDarkMode ? 'bg-indigo-900/30 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}
+                  />
+                </div>
+              )}
+            </div>
+
             <div>
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Lucro real agora</p>
-              <h2 className={`text-3xl font-black tracking-tighter mt-1 ${businessOverview.profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                R$ {businessOverview.profit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </h2>
-              <p className="text-[10px] font-bold text-slate-400 mt-1 leading-relaxed">
+              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                <h2 className={`text-3xl font-black tracking-tighter ${businessOverview.profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                  R$ {businessOverview.profit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </h2>
+                {businessOverview.comparison && (
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black ${businessOverview.comparison.delta >= 0 ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' : 'bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400'}`}>
+                    {businessOverview.comparison.delta >= 0 ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
+                    {Math.abs(businessOverview.comparison.delta).toFixed(1).replace('.', ',')}%
+                  </span>
+                )}
+              </div>
+              {businessOverview.comparison && (
+                <div className="mt-2">
+                  <div className="flex justify-between text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                    <span>{businessOverview.comparison.label}: R$ {businessOverview.comparison.profit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span>Agora</span>
+                  </div>
+                  <div className="flex h-2 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 gap-0.5">
+                    <div
+                      className="bg-indigo-300 dark:bg-indigo-700"
+                      style={{ width: `${Math.max(5, Math.min(95, (Math.abs(businessOverview.comparison.profit) / (Math.abs(businessOverview.comparison.profit) + Math.abs(businessOverview.profit) || 1)) * 100))}%` }}
+                    />
+                    <div
+                      className={businessOverview.profit >= 0 ? 'bg-emerald-500' : 'bg-rose-500'}
+                      style={{ width: `${Math.max(5, Math.min(95, (Math.abs(businessOverview.profit) / (Math.abs(businessOverview.comparison.profit) + Math.abs(businessOverview.profit) || 1)) * 100))}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              <p className="text-[10px] font-bold text-slate-400 mt-2 leading-relaxed">
                 Fontes marcadas abaixo (valor de agora) − despesas do período selecionado.
               </p>
               <div className="flex gap-3 mt-4">
@@ -348,6 +491,64 @@ export default function BusinessOverviewCard({
                   </div>
                 </button>
               )}
+            </div>
+
+            <div className={`rounded-3xl border overflow-hidden ${isDarkMode ? 'border-slate-800 bg-slate-950/40' : 'border-slate-100 bg-slate-50/60'}`}>
+              <button
+                type="button"
+                onClick={() => setIsResumoExpanded((v) => !v)}
+                className="w-full flex items-center justify-between p-3.5"
+                aria-expanded={isResumoExpanded}
+              >
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Resumo Financeiro</p>
+                <ChevronDown size={14} className={`text-slate-400 transition-transform ${isResumoExpanded ? 'rotate-180' : ''}`} />
+              </button>
+              <AnimatePresence initial={false}>
+                {isResumoExpanded && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2, ease: 'easeInOut' }}
+                    className="overflow-hidden"
+                  >
+                    <div className="flex flex-col gap-2 px-3 pb-3.5">
+                      <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                        <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><Landmark size={10} /> Saldo Consolidado</p>
+                        <p className={`text-sm font-black mt-0.5 ${resumo.consolidatedBalance >= 0 ? (isDarkMode ? 'text-white' : 'text-slate-900') : 'text-rose-500'}`}>
+                          R$ {resumo.consolidatedBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Soma do saldo de todas as contas do negócio agora (contas de uso Pessoal não entram).</p>
+                      </div>
+
+                      <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                        <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><DollarSign size={10} /> A Receber (Pendente)</p>
+                        <p className="text-sm font-black mt-0.5 text-amber-500">R$ {resumo.pendingReceivables.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Vendas já fechadas (não orçamento, não cancelada) que ainda não foram pagas por completo: total do pedido menos o que já foi pago.</p>
+                      </div>
+
+                      <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                        <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><TrendingUp size={10} /> Balanço do Mês (Liquidados)</p>
+                        <p className={`text-sm font-black mt-0.5 ${resumo.monthlyBalance >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>R$ {resumo.monthlyBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Receitas menos despesas já confirmadas (liquidadas) desde o dia 1º deste mês até agora — sempre o mês calendário atual, independente do período escolhido acima.</p>
+                      </div>
+
+                      <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                        <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><Boxes size={10} /> Patrimônio em Estoque</p>
+                        <p className={`text-[11px] font-black mt-0.5 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Custo: R$ {resumo.stockValue.costValue.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                        <p className="text-[9px] font-bold text-emerald-500">Venda: R$ {resumo.stockValue.saleValue.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Custo e valor de venda de tudo que está pronto no estoque agora, pelo preço de custo/venda cadastrado em cada modelo × quantidade em estoque.</p>
+                      </div>
+
+                      <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                        <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><ShoppingBag size={10} /> Lucro em Vendas</p>
+                        <p className={`text-sm font-black mt-0.5 ${businessOverview.salesProfitInPeriod >= 0 ? 'text-teal-500' : 'text-rose-500'}`}>R$ {businessOverview.salesProfitInPeriod.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Vendas fechadas no período selecionado acima, menos o custo dos produtos vendidos — a margem já ganha ao vender, receba ou não ainda o dinheiro. Só informativo: não entra na soma de "Lucro Real" (pra isso, use "Vendas Recebidas" em Fontes Incluídas).</p>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             <div className="flex flex-col gap-2">

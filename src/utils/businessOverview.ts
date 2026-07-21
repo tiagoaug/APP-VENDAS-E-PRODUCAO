@@ -1,4 +1,4 @@
-import { Product, ProductionLot, Sale, Account, AccountType, Transaction, TransactionType, SaleStatus, SaleType } from '../types';
+import { Product, ProductionLot, Sale, Account, AccountType, Transaction, TransactionType, SaleStatus, SaleType, PaymentStatus } from '../types';
 import { getActiveProductionUnits } from './productionRoute';
 import { getStockValue } from './stockPools';
 
@@ -6,8 +6,9 @@ export type OverviewPeriodType = 'MONTH' | 'QUARTER' | 'SEMESTER' | 'YEAR';
 
 // Mesma lógica de "getRange" da Análise de Lucro do Dashboard — mantém as duas
 // telas consistentes sobre o que significa "este trimestre/semestre/ano".
+// `dateStr` no formato "yyyy-MM" (mesmo valor de um <input type="month">).
 export function getPeriodRange(type: OverviewPeriodType, dateStr: string): { start: number; end: number } {
-  const date = new Date(dateStr + 'T12:00:00');
+  const date = new Date(dateStr + '-01T12:00:00');
   let start: Date;
   let end: Date;
 
@@ -35,16 +36,24 @@ export function getPeriodRange(type: OverviewPeriodType, dateStr: string): { sta
   return { start: start.getTime(), end: end.getTime() };
 }
 
-// Lucro parado em estoque pronto (venda - custo de tudo que já saiu da produção).
-export function computeStockProfit(products: Product[]): number {
-  let profit = 0;
+// Custo e venda total do estoque pronto (mesma base do card "Patrimônio em
+// Estoque" do Dashboard) — profit = saleValue - costValue.
+export function computeStockValue(products: Product[]): { costValue: number; saleValue: number; profit: number } {
+  let costValue = 0;
+  let saleValue = 0;
   for (const p of products) {
     for (const v of p.variations || []) {
-      const { costValue, saleValue } = getStockValue(p, v);
-      profit += saleValue - costValue;
+      const val = getStockValue(p, v);
+      costValue += val.costValue;
+      saleValue += val.saleValue;
     }
   }
-  return profit;
+  return { costValue, saleValue, profit: saleValue - costValue };
+}
+
+// Lucro parado em estoque pronto (venda - custo de tudo que já saiu da produção).
+export function computeStockProfit(products: Product[]): number {
+  return computeStockValue(products).profit;
 }
 
 // Lucro represado em pares ainda em produção (mapas ativos, sem contar o que já
@@ -107,6 +116,20 @@ export function computeSalesProfitInPeriod(sales: Sale[], products: Product[], s
   return profit;
 }
 
+// Valor CHEIO (sem descontar custo) de vendas fechadas no período e já
+// totalmente recebidas — dinheiro que já entrou de fato, não margem. Por não
+// descontar custo, NÃO deve ser somado junto de "Lucro em Vendas" no mesmo
+// cálculo (a UI avisa quando as duas fontes estão marcadas ao mesmo tempo).
+export function computeReceivedSalesRevenueInPeriod(sales: Sale[], start: number, end: number): number {
+  return sales
+    .filter(s => s.status === SaleStatus.SALE && s.isAccounting !== false && s.date >= start && s.date <= end)
+    .reduce((acc, sale) => {
+      const totalPaid = (sale.paymentHistory || []).reduce((a, p) => a + p.amount, 0);
+      const isFullyReceived = sale.paymentStatus === PaymentStatus.PAID || totalPaid >= sale.total;
+      return isFullyReceived ? acc + sale.total : acc;
+    }, 0);
+}
+
 // Receita e despesa de um período, a partir das transações confirmadas — mesmo
 // filtro usado na Análise de Lucro do Dashboard.
 export function computePeriodFinancials(transactions: Transaction[], start: number, end: number): { income: number; expenses: number } {
@@ -114,4 +137,18 @@ export function computePeriodFinancials(transactions: Transaction[], start: numb
   const income = periodTx.filter(t => t.type === TransactionType.INCOME).reduce((a, t) => a + t.amount, 0);
   const expenses = periodTx.filter(t => t.type === TransactionType.EXPENSE).reduce((a, t) => a + t.amount, 0);
   return { income, expenses };
+}
+
+// Balanço do mês corrente (liquidados) — mesmo cálculo do card "Balanço Mensal"
+// do Dashboard: só transações COMPLETED do mês calendário atual (não segue o
+// período selecionado no card, sempre "este mês").
+export function computeMonthlySettledBalance(transactions: Transaction[], accounts: Account[]): number {
+  const businessTx = transactions.filter(t => !t.isPersonal && accounts.find(a => a.id === t.accountId)?.type !== AccountType.PERSONAL);
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const monthEnd = now.getTime();
+  const periodTx = businessTx.filter(t => t.status === 'COMPLETED' && t.date >= monthStart && t.date <= monthEnd);
+  const income = periodTx.filter(t => t.type === TransactionType.INCOME).reduce((a, t) => a + t.amount, 0);
+  const expenses = periodTx.filter(t => t.type === TransactionType.EXPENSE).reduce((a, t) => a + t.amount, 0);
+  return income - expenses;
 }
