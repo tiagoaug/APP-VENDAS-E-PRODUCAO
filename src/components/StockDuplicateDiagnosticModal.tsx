@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, AlertTriangle, Check } from 'lucide-react';
+import { X, AlertTriangle, Check, Wrench } from 'lucide-react';
 import { toast } from '../utils/toast';
 import { DuplicateStockByRefColor } from '../hooks/useStockLotDuplicates';
 
@@ -9,11 +10,15 @@ interface StockDuplicateDiagnosticModalProps {
   isDarkMode: boolean;
   groups: DuplicateStockByRefColor[];
   onMarkResolved: (groupKeys: { key: string; count: number }[]) => void;
+  // Ausente = não mostra "Corrigir Agora" (a tela de Estoque ainda não tem essa ação
+  // ligada) — só o "Marcar como Resolvido" de sempre.
+  onFixNow?: (group: DuplicateStockByRefColor) => Promise<void>;
 }
 
 export default function StockDuplicateDiagnosticModal({
-  isOpen, onClose, isDarkMode, groups, onMarkResolved,
+  isOpen, onClose, isDarkMode, groups, onMarkResolved, onFixNow,
 }: StockDuplicateDiagnosticModalProps) {
+  const [fixingKey, setFixingKey] = useState<string | null>(null);
   if (!isOpen) return null;
 
   return createPortal(
@@ -53,16 +58,40 @@ export default function StockDuplicateDiagnosticModal({
                   {g.excessBoxes > 0 ? `${g.excessBoxes} cx` : `${g.excessPairs} pares`}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  onMarkResolved(g.groupKeys);
-                  toast.show('Marcado como resolvido.');
-                }}
-                className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
-              >
-                <Check size={12} strokeWidth={3} /> Marcar como Resolvido
-              </button>
+              <div className="flex items-center gap-2">
+                {onFixNow && (
+                  <button
+                    type="button"
+                    disabled={fixingKey === `${g.productReference}::${g.variationName}`}
+                    onClick={async () => {
+                      const key = `${g.productReference}::${g.variationName}`;
+                      setFixingKey(key);
+                      try {
+                        await onFixNow(g);
+                      } finally {
+                        setFixingKey(prev => prev === key ? null : prev);
+                      }
+                    }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30' : 'bg-rose-600 text-white hover:bg-rose-700'}`}
+                    title="Desconta o excedente do estoque e remove o(s) registro(s) duplicado(s) — corrige de verdade"
+                  >
+                    <Wrench size={12} strokeWidth={3} /> {fixingKey === `${g.productReference}::${g.variationName}` ? 'Corrigindo...' : 'Corrigir Agora'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    onMarkResolved(g.groupKeys);
+                    toast.show('Marcado como resolvido — não corrige o estoque, só esconde este aviso.');
+                  }}
+                  title="Já corrigi manualmente por fora — só esconde este aviso, não mexe em estoque"
+                  className={onFixNow
+                    ? `p-2.5 rounded-xl transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-slate-200' : 'bg-slate-100 text-slate-500 hover:text-slate-700'}`
+                    : `flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'}`}
+                >
+                  <Check size={onFixNow ? 14 : 12} strokeWidth={3} />{!onFixNow && ' Marcar como Resolvido'}
+                </button>
+              </div>
             </div>
           ))}
           {groups.length > 0 && (

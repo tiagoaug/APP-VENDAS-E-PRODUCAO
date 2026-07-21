@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
-import { Sale, SaleType, Product, StockLot } from '../types';
+import { Sale, Product, StockLot } from '../types';
 import { X, Minus, Plus, Boxes, Package, CheckCircle2, Factory } from 'lucide-react';
+import { buildSeparationRows } from '../utils/separationRows';
 
 interface Props {
   sale: Sale;
@@ -12,40 +13,7 @@ interface Props {
 }
 
 export default function SeparacaoCaixasModal({ sale, products, stockLots, isDarkMode, onConfirm, onClose }: Props) {
-  const reservedLots = useMemo(
-    () => stockLots.filter(l => l.saleId === sale.id && l.status === 'RESERVADO'),
-    [stockLots, sale.id]
-  );
-
-  const rows = useMemo(() => {
-    return sale.items.map((item, idx) => {
-      const product = products.find(p => p.id === item.productId);
-      const variation = product?.variations.find(v => v.id === item.variationId);
-      const unit = item.saleType === SaleType.WHOLESALE ? 'cx' : 'pares';
-      const separated = item.boxesSeparated || 0;
-      const remaining = Math.max(0, item.quantity - separated);
-
-      const itemLots = reservedLots.filter(
-        l => l.productId === item.productId && l.variationId === item.variationId
-      );
-      const hasReserved = itemLots.length > 0;
-
-      const stockKey = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || '');
-      const stockAvailable = variation?.stock?.[stockKey] || 0;
-
-      // Max separable: from reserved lots qty OR from stock qty.
-      // Venda com produção atrelada = grade avulsa feita sob medida para o cliente
-      // (o produto padrão não atendia). Por isso, nunca cai no estoque agregado —
-      // só pode vir do lote reservado para esta venda (mesma composição exata).
-      // Vale para qualquer saleType (caixa fechada ou par avulso).
-      const maxFromLots = itemLots.reduce((s, l) => s + (l.boxQty || 1), 0);
-      const maxSeparable = sale.productionOrderId
-        ? (hasReserved ? Math.min(remaining, maxFromLots) : 0)
-        : Math.min(remaining, stockAvailable);
-
-      return { idx, item, product, variation, unit, separated, remaining, itemLots, hasReserved, stockAvailable, maxSeparable };
-    });
-  }, [sale.items, products, reservedLots]);
+  const rows = useMemo(() => buildSeparationRows(sale, products, stockLots), [sale, products, stockLots]);
 
   const pendingRows = rows.filter(r => r.remaining > 0);
   const doneRows = rows.filter(r => r.remaining === 0);

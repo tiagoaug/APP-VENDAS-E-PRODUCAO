@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PurchaseType, Sale, Product, SaleType, ProductionLot } from '../types';
-import { TrendingUp, TrendingDown, DollarSign, Wallet, CheckCircle2, AlertCircle, Package, ChevronDown, Tag, Factory, X, ShoppingBag, Landmark, Boxes, Calendar, Receipt, Banknote } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Wallet, CheckCircle2, AlertCircle, Package, ChevronDown, Tag, Factory, X, ShoppingBag, Landmark, Boxes, Calendar, Banknote } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '../utils/toast';
@@ -15,7 +15,6 @@ import {
   computePendingReceivables,
   computeMonthlySettledBalance,
   computeSalesProfitInPeriod,
-  computeReceivedSalesRevenueInPeriod,
   computePeriodFinancials,
   OverviewPeriodType,
 } from '../utils/businessOverview';
@@ -155,7 +154,7 @@ export default function BusinessOverviewCard({
     return () => unsub();
   }, []);
 
-  const toggleOverviewSource = (key: 'includeStock' | 'includeAccounts' | 'includeProduction' | 'includeReceivables' | 'includeReceivedSalesRevenue' | 'includeAllIncome') => {
+  const toggleOverviewSource = (key: 'includeStock' | 'includeAccounts' | 'includeProduction' | 'includeReceivables' | 'includeAllIncome') => {
     const next = { ...overviewConfig, [key]: !overviewConfig[key] };
     setOverviewConfig(next);
     saveBusinessOverviewConfig(next);
@@ -284,7 +283,6 @@ export default function BusinessOverviewCard({
     const accountBalance = computeAccountBalance(accounts, overviewConfig.selectedAccountIds);
     const pendingReceivables = computePendingReceivables(sales);
     const salesProfit = computeSalesProfitInPeriod(sales, products, start, end);
-    const receivedSalesRevenue = computeReceivedSalesRevenueInPeriod(sales, start, end);
 
     const accountsDesc = overviewConfig.selectedAccountIds
       ? `${overviewConfig.selectedAccountIds.length} de ${businessAccounts.length} contas selecionadas`
@@ -295,8 +293,7 @@ export default function BusinessOverviewCard({
       { key: 'includeAccounts' as const, label: 'Saldos em Conta', desc: accountsDesc, value: accountBalance, color: 'sky', icon: Wallet, onConfigure: () => setShowAccountPicker(true) },
       { key: 'includeProduction' as const, label: 'Lucro em Produção', desc: 'Pares em andamento × lucro unitário cadastrado', value: productionProfit, color: 'violet', icon: Factory },
       { key: 'includeReceivables' as const, label: 'Vendas a Receber', desc: 'Pedidos fechados, ainda não pagos', value: pendingReceivables, color: 'amber', icon: DollarSign },
-      { key: 'includeReceivedSalesRevenue' as const, label: 'Vendas Recebidas (Valor Cheio)', desc: 'Total recebido no período, sem descontar custo — diferente do "Lucro em Vendas" do Resumo Financeiro, que já é só a margem', value: receivedSalesRevenue, color: 'indigo', icon: Receipt },
-      { key: 'includeAllIncome' as const, label: 'Receitas Totais (Transações)', desc: 'Soma de toda entrada confirmada em Financeiro no período — venda ou não. Não marque junto de "Vendas Recebidas": uma venda recebida normalmente já vira uma transação de receita, então as duas juntas contam o mesmo dinheiro em dobro', value: income, color: 'cyan', icon: Banknote, onConfigure: () => setShowIncomeBreakdown(true) },
+      { key: 'includeAllIncome' as const, label: 'Receitas Totais (Transações)', desc: 'Soma de toda entrada confirmada em Financeiro no período — venda ou não', value: income, color: 'cyan', icon: Banknote, onConfigure: () => setShowIncomeBreakdown(true) },
     ];
 
     const includedTotal = sources.filter(s => overviewConfig[s.key]).reduce((acc, s) => acc + s.value, 0);
@@ -304,9 +301,8 @@ export default function BusinessOverviewCard({
     const margin = income > 0 ? (profit / income) * 100 : 0;
 
     // Comparação com outro período — só as partes que variam por período (Despesas,
-    // Vendas Recebidas, Receitas Totais) mudam de fato; Estoque/Produção/Saldo/A
-    // Receber são "de agora" e não têm histórico salvo, então entram com o mesmo
-    // valor nos dois lados.
+    // Receitas Totais) mudam de fato; Estoque/Produção/Saldo/A Receber são "de agora"
+    // e não têm histórico salvo, então entram com o mesmo valor nos dois lados.
     let comparison: { profit: number; delta: number; label: string } | null = null;
     if (overviewConfig.comparisonMode !== 'NONE') {
       let compStart: number, compEnd: number, label: string;
@@ -322,10 +318,8 @@ export default function BusinessOverviewCard({
         label = format(new Date(overviewConfig.compPeriodDate + '-01T12:00:00'), 'MMM/yy', { locale: ptBR });
       }
       const compFin = computePeriodFinancials(transactions, compStart, compEnd);
-      const compReceivedSalesRevenue = computeReceivedSalesRevenueInPeriod(sales, compStart, compEnd);
       const compIncludedTotal = sources.reduce((acc, s) => {
         if (!overviewConfig[s.key]) return acc;
-        if (s.key === 'includeReceivedSalesRevenue') return acc + compReceivedSalesRevenue;
         if (s.key === 'includeAllIncome') return acc + compFin.income;
         return acc + s.value;
       }, 0);
@@ -591,7 +585,7 @@ export default function BusinessOverviewCard({
                       <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
                         <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><ShoppingBag size={10} /> Lucro em Vendas</p>
                         <p className={`text-sm font-black mt-0.5 ${businessOverview.salesProfitInPeriod >= 0 ? 'text-teal-500' : 'text-rose-500'}`}>R$ {businessOverview.salesProfitInPeriod.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Vendas fechadas no período selecionado acima, menos o custo dos produtos vendidos — a margem já ganha ao vender, receba ou não ainda o dinheiro. Só informativo: não entra na soma de "Lucro Real" (pra isso, use "Vendas Recebidas" em Fontes Incluídas).</p>
+                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Vendas fechadas no período selecionado acima, menos o custo dos produtos vendidos — a margem já ganha ao vender, receba ou não ainda o dinheiro. Só informativo: não entra na soma de "Lucro Real".</p>
                       </div>
                     </div>
                   </motion.div>
@@ -638,22 +632,7 @@ export default function BusinessOverviewCard({
                             </span>
                           )}
                         </p>
-                        <p className="text-[9px] font-bold text-slate-400">
-                          {s.key === 'includeAllIncome' ? (
-                            <>
-                              Soma de toda entrada confirmada em Financeiro no período — venda ou não. Não marque junto de{' '}
-                              <span className="inline-flex items-center gap-1 font-black text-rose-500">
-                                "Vendas Recebidas"
-                                <span className="relative inline-flex items-center justify-center w-3 h-3 rounded-full bg-rose-500 animate-pulse-rose-ring shrink-0">
-                                  <span className="text-white text-[7px] font-black leading-none">!</span>
-                                </span>
-                              </span>
-                              : uma venda recebida normalmente já vira uma transação de receita, então as duas juntas contam o mesmo dinheiro em dobro.
-                            </>
-                          ) : (
-                            s.desc
-                          )}
-                        </p>
+                        <p className="text-[9px] font-bold text-slate-400">{s.desc}</p>
                       </div>
                     </button>
                     <p className={`text-[12px] font-black shrink-0 ${checked ? colors.chip : 'text-slate-400'}`}>
@@ -662,14 +641,6 @@ export default function BusinessOverviewCard({
                   </div>
                 );
               })}
-              {overviewConfig.includeReceivedSalesRevenue && overviewConfig.includeAllIncome && (
-                <div className="w-full flex items-start gap-2.5 p-3 rounded-2xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20">
-                  <AlertCircle size={15} className="text-amber-500 shrink-0 mt-0.5" />
-                  <p className="text-[9.5px] font-bold text-amber-700 dark:text-amber-400 leading-relaxed">
-                    "Vendas Recebidas" e "Receitas Totais (Transações)" estão marcadas juntas — uma venda recebida normalmente já gera uma transação de receita, então esse dinheiro entra contado duas vezes no total. Desmarque uma das duas.
-                  </p>
-                </div>
-              )}
             </div>
 
             {businessOverview.includedTotal > 0 && (

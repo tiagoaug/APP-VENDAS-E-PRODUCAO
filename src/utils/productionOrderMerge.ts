@@ -12,6 +12,31 @@ export interface MergeProductionOrderItemsResult {
 const itemIdentityKey = (it: Pick<ProductionOrderItem, 'productId' | 'variationId' | 'saleType'>) =>
   `${it.productId}::${it.variationId}::${it.saleType}`;
 
+// Soma dois ProductionOrderItem que colidiram na mesma chave produto+cor+modalidade — hoje
+// isso acontece quando o formulário tem dois blocos para o mesmo produto/cor (ex.: bloco
+// duplicado via "Duplicar" e depois editado), cada um gerando seu próprio push. Sem essa
+// soma, um dos dois era descartado em silêncio (o Map ficava só com o último), perdendo
+// pares que o usuário via corretamente somados na Compra/Venda mas que nunca chegavam a
+// virar produção. `lineId`/`boxIds` são idênticos nos dois lados por construção (mesma
+// chave já foi resolvida uma única vez em reconcileLineIds antes de chegar aqui).
+const sumProductionOrderItems = (a: ProductionOrderItem, b: ProductionOrderItem): ProductionOrderItem => {
+  const sizes: ProductionOrderItem['sizes'] = { ...a.sizes };
+  Object.entries(b.sizes).forEach(([sz, s]) => {
+    const cur = sizes[sz] || { total: 0, fromStock: 0, toProduction: 0 };
+    sizes[sz] = { total: cur.total + s.total, fromStock: cur.fromStock + s.fromStock, toProduction: cur.toProduction + s.toProduction };
+  });
+  return {
+    ...a,
+    sizes,
+    totalQuantity: a.totalQuantity + b.totalQuantity,
+    fromStockQty: a.fromStockQty + b.fromStockQty,
+    toProductionQty: a.toProductionQty + b.toProductionQty,
+    notes: [a.notes, b.notes].filter(Boolean).join('\n') || undefined,
+    lineId: a.lineId || b.lineId,
+    boxIds: a.boxIds || b.boxIds,
+  };
+};
+
 /**
  * Monta o array final de `ProductionOrder.items` ao editar uma Compra/Venda já vinculada a
  * uma OP, preservando a POSIÇÃO original de qualquer item que um Mapa já referencia por
@@ -37,12 +62,16 @@ export function mergeProductionOrderItems(
   orderId: string,
   lots: ProductionLot[],
 ): MergeProductionOrderItemsResult {
-  if (!existingOrder) {
-    return { items: newItemsFromForm, keptLinkedRemovals: [] };
-  }
-
   const pending = new Map<string, ProductionOrderItem>();
-  newItemsFromForm.forEach(it => pending.set(itemIdentityKey(it), it));
+  newItemsFromForm.forEach(it => {
+    const key = itemIdentityKey(it);
+    const cur = pending.get(key);
+    pending.set(key, cur ? sumProductionOrderItems(cur, it) : it);
+  });
+
+  if (!existingOrder) {
+    return { items: Array.from(pending.values()), keptLinkedRemovals: [] };
+  }
 
   const items: ProductionOrderItem[] = [];
   const keptLinkedRemovals: { productName: string; variationName: string }[] = [];
@@ -51,7 +80,15 @@ export function mergeProductionOrderItems(
     const key = itemIdentityKey(oldItem);
     const match = pending.get(key);
     if (match) {
-      items.push(match);
+      // Nunca encolhe boxIds de um item já vinculado a um Mapa — uma caixa que já entrou em
+      // produção não pode perder seu ID só porque o formulário foi salvo de novo com uma
+      // quantidade menor. A grade/quantidade refletem a redução normalmente; o ID da caixa
+      // permanece rastreável (ver "Reparar Caixas" / sourceItemKey em PCPView.tsx).
+      if (isOrderItemLinkedToLot(orderId, idx, lots) && (oldItem.boxIds?.length || 0) > (match.boxIds?.length || 0)) {
+        items.push({ ...match, boxIds: oldItem.boxIds });
+      } else {
+        items.push(match);
+      }
       pending.delete(key);
       return;
     }

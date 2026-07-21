@@ -192,6 +192,13 @@ export type PurchaseItem = {
   note?: string;
   unitCost?: number;
   saleType?: SaleType; // pool de estoque a reabastecer (produtos híbridos); ausente = usa product.type
+  // Identidade estável da linha (productId+variationId+saleType), preservada entre reedições
+  // do pedido — usada para rastrear a caixa/linha até o Mapa de Produção e o Estoque. Ver
+  // src/utils/lineIdentity.ts.
+  lineId?: string;
+  // Um ID por caixa física (só ATACADO) — length === quantity. Fatiado proporcionalmente no
+  // fracionamento (PCPView.tsx, buildFractionSourceItem) para manter rastreabilidade por caixa.
+  boxIds?: string[];
 };
 
 export type GeneralPurchaseItem = {
@@ -301,6 +308,16 @@ export type SaleItem = {
   fulfilled?: boolean; // true = estoque já abatido; false/undefined = aguardando estoque
   boxesSeparated?: number; // qtd já separada fisicamente (cx para atacado, pares para varejo)
   separatedPkgAllocations?: StockPkgAllocation[]; // snapshot das alocações de embalagem consumidas na separação (para restaurar no revert)
+  // Identidade estável da linha, preservada entre reedições — ver PurchaseItem.lineId e
+  // src/utils/lineIdentity.ts.
+  lineId?: string;
+  // Um ID por caixa física (só ATACADO) — ver PurchaseItem.boxIds.
+  boxIds?: string[];
+  // Ids de StockLot reservados por esta separação (Separar Caixas/Expedir Venda) — tanto
+  // lotes pool-picked do estoque geral quanto lotes nativos de produção casada. Ausência
+  // (item legado ou estoque sem StockLot, ex. reposição sem Pedido de Produção) cai no
+  // fallback de contador/separatedPkgAllocations acima. Ver src/utils/stockLotPicker.ts.
+  separatedStockLotIds?: string[];
 };
 
 export type SaleExtraItem = {
@@ -790,6 +807,11 @@ export type ProductionOrderItem = {
   reminderTitle?: string | null; // Título curto do lembrete
   reminderAlarmMode?: boolean | null;
   reminderSoundPattern?: ReminderTonePattern | null;
+  // Identidade estável da linha, herdada do PurchaseItem/SaleItem que a originou — ver
+  // src/utils/lineIdentity.ts. Propaga automaticamente para ProductionLot.metadata.sourceItems
+  // e StockLot ao longo de todo o fluxo de produção.
+  lineId?: string;
+  boxIds?: string[];
 };
 
 export type ProductionOrder = {
@@ -860,7 +882,10 @@ export type ProductionLot = {
   status?: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
   currentSectorId?: string;
   metadata?: {
-    sourceItems?: Array<{ orderId: string; variationId?: string; variationName?: string; productName?: string }>;
+    // Nota: forma real em runtime é mais ampla que este tipo declarado — inclui também
+    // itemIdx, qty, productId, sizes, fractionLabel, fractionRootKey, lineId, boxIds. Todo
+    // ponto de leitura em PCPView.tsx trata isso como `any[]` por esse motivo histórico.
+    sourceItems?: Array<{ orderId: string; variationId?: string; variationName?: string; productName?: string; lineId?: string; boxIds?: string[] }>;
     [key: string]: unknown;
   };
 };
@@ -890,11 +915,31 @@ export type StockLot = {
   productionOrderId?: string;
   productionOrderNumber?: string; // nº do pedido de produção (denormalizado, ex: "P-0123")
   itemIdx?: number;
+  // Identidade estável, herdada do PurchaseItem/SaleItem original (ver src/utils/lineIdentity.ts)
+  // — sobrevive a reordenação/edição do pedido, ao contrário de itemIdx.
+  lineId?: string;
+  // Subconjunto de boxIds da linha original que esta entrada de estoque representa (após
+  // eventual fracionamento). Só presente para linhas ATACADO.
+  boxIds?: string[];
+  // Snapshot de getSourceItemKey(si) no momento da criação — chave única já resolvida
+  // (lineId ou orderId::itemIdx, mais sufixo de fração), usada por ferramentas de
+  // auditoria/reparo para casar esta entrada com o sourceItem que a originou sem
+  // reimplementar a lógica de fallback em cada consumidor.
+  sourceItemKey?: string;
 
   // Vínculo com venda (RESERVADO / ENTREGUE)
   saleId?: string;
   saleOrderNumber?: string;
   customerName?: string;
+  // true só quando Separar Caixas/Expedir Venda reservou este lote a partir do pool
+  // EM_ESTOQUE (src/utils/stockLotPicker.ts) — distingue de RESERVADO nativo de produção
+  // (criado direto como RESERVADO em applyExpedicaoStockUpdate), que nunca mexe em
+  // estoque/contador ao reverter uma separação. Ausente/false = produção-casada nativa.
+  reservedViaSeparation?: boolean;
+  // Quando este doc nasceu de um split parcial de outro StockLot (só uma fração das
+  // caixas/pares foi separada), aponta pro id do doc original que ficou com o
+  // remanescente — usado pra remontar as duas metades no revert.
+  splitFromLotId?: string;
 
   // Caixas/embalagem (produtos ATACADO, registrado em applyExpedicaoStockUpdate)
   boxQty?: number; // quantidade de CAIXAS desta entrada (conversão pares -> caixas)

@@ -16,6 +16,7 @@ import { saleProductionHasProgressed, getLotPendingSectorGroups } from '../utils
 import { firebaseService } from '../services/firebaseService';
 import { getWholesaleBoxes, getRetailPairs } from '../utils/stockPools';
 import { summarizeStockRepairIssues } from '../utils/stockRepair';
+import { buildSeparationRows } from '../utils/separationRows';
 import StockRepairBanner from '../components/StockRepairBanner';
 
 // Preferências de "Visualização" (Cards Compactos/Expandidos, Mostrar Produtos,
@@ -317,23 +318,9 @@ export default function SalesView({
   // Inicializa as quantidades de separação quando o popup de itens abre
   useEffect(() => {
     if (!itemsPopupSale) { setPopupSepQtys({}); setPopupRevertQtys({}); setRevertChoiceMode(null); return; }
-    const reservedLots = stockLots.filter(l => l.saleId === itemsPopupSale.id && l.status === 'RESERVADO');
+    const rows = buildSeparationRows(itemsPopupSale, products, stockLots);
     const init: Record<number, number> = {};
-    itemsPopupSale.items.forEach((item, idx) => {
-      const separated = item.boxesSeparated || 0;
-      const remaining = Math.max(0, item.quantity - separated);
-      const itemLots = reservedLots.filter(l => l.productId === item.productId && l.variationId === item.variationId);
-      const hasReserved = itemLots.length > 0;
-      const product = products.find(p => p.id === item.productId);
-      const variation = product?.variations.find(v => v.id === item.variationId);
-      const stockKey = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || '');
-      const stockAvailable = (variation?.stock?.[stockKey] as number) || 0;
-      const maxFromLots = itemLots.reduce((s, l) => s + (l.boxQty || 1), 0);
-      const maxSeparable = itemsPopupSale.productionOrderId
-        ? (hasReserved ? Math.min(remaining, maxFromLots) : 0)
-        : Math.min(remaining, stockAvailable);
-      init[idx] = maxSeparable;
-    });
+    rows.forEach(row => { init[row.idx] = row.maxSeparable; });
     setPopupSepQtys(init);
     setPopupRevertQtys({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1833,30 +1820,20 @@ export default function SalesView({
       {/* Popup — Itens da Venda + Separação Inline */}
       {itemsPopupSale && (() => {
         const s = itemsPopupSale;
-        const reservedLots = stockLots.filter(l => l.saleId === s.id && l.status === 'RESERVADO');
+        const separationRows = buildSeparationRows(s, products, stockLots);
 
         const rows = s.items.map((item, idx) => {
           const product = getProductInfo(item.productId);
           const variation = getVariationInfo(item.productId, item.variationId);
           const unit = item.saleType === SaleType.WHOLESALE ? 'cx' : 'pares';
-          const separated = item.boxesSeparated || 0;
-          const remaining = Math.max(0, item.quantity - separated);
           const lineTotal = item.price * item.quantity;
+          const sepRow = separationRows[idx];
 
-          const itemLots = reservedLots.filter(l => l.productId === item.productId && l.variationId === item.variationId);
-          const hasReserved = itemLots.length > 0;
-          const fullProduct = products.find(p => p.id === item.productId);
-          const fullVariation = fullProduct?.variations.find(v => v.id === item.variationId);
-          const stockKey = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || '');
-          const stockAvailable = (fullVariation?.stock?.[stockKey] as number) || 0;
-          // Venda com produção atrelada = grade avulsa feita sob medida para o cliente.
-          // Nunca cai no estoque agregado — só pode vir do lote reservado para esta venda.
-          const maxFromLots = itemLots.reduce((sum, l) => sum + (l.boxQty || 1), 0);
-          const maxSeparable = s.productionOrderId
-            ? (hasReserved ? Math.min(remaining, maxFromLots) : 0)
-            : Math.min(remaining, stockAvailable);
-
-          return { idx, item, product, variation, unit, separated, remaining, lineTotal, hasReserved, itemLots, stockAvailable, maxSeparable };
+          return {
+            idx, item, product, variation, unit, lineTotal,
+            separated: sepRow.separated, remaining: sepRow.remaining, hasReserved: sepRow.hasReserved,
+            itemLots: sepRow.itemLots, stockAvailable: sepRow.stockAvailable, maxSeparable: sepRow.maxSeparable,
+          };
         });
 
         const isDelivered = s.deliveryStatus === 'DELIVERED';

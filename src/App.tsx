@@ -44,12 +44,14 @@ import { firebaseService } from "./services/firebaseService";
 import { notificationService, ReminderNotification } from "./services/notificationService";
 import { resolveSoleConsumption } from "./utils/soleNeeds";
 import { getSourceItemKey, saleProductionHasProgressed } from "./utils/productionRoute";
+import { pickWholesaleStockLots, pickRetailStockLots } from "./utils/stockLotPicker";
 import { financeService } from "./services/financeService";
 import {
   ViewType,
   Product,
   Purchase,
   Sale,
+  SaleItem,
   SaleType,
   PurchaseType,
   Grid,
@@ -1365,8 +1367,13 @@ export default function App() {
     }
   };
 
-  // "Liberar Pedido" — baixa manual de uma venda: marca todos os StockLots RESERVADO
-  // vinculados a essa venda como ENTREGUE e marca a venda/itens como entregues.
+  // "Liberar Pedido" — baixa manual de uma venda: marca como ENTREGUE os StockLots
+  // RESERVADO efetivamente cobertos pela separação de cada item. Item que NUNCA passou por
+  // "Separar Caixas"/"Expedir" (sem separatedStockLotIds nem boxesSeparated) mantém o
+  // comportamento de sempre — libera tudo que estiver reservado pra ele, já que produção
+  // casada sem separação granular sempre foi liberada de uma vez. Item com separação
+  // parcial só libera o que foi de fato separado, deixando o resto pendente (antes disso,
+  // "Liberar Pedido" entregava tudo de uma vez independente do progresso da separação).
   const handleReleaseSale = async (saleId: string) => {
     const sale = sales.find(s => s.id === saleId);
     if (!sale) return;
@@ -1376,7 +1383,22 @@ export default function App() {
 
     try {
       const now = Date.now();
+      const lotsToDeliver = new Set<string>();
+      const updatedItems = sale.items.map(item => {
+        const hasTracking = (item.separatedStockLotIds && item.separatedStockLotIds.length > 0) || (item.boxesSeparated || 0) > 0;
+        if (!hasTracking) {
+          reservedLots
+            .filter(l => l.productId === item.productId && l.variationId === item.variationId)
+            .forEach(l => lotsToDeliver.add(l.id));
+          return { ...item, fulfilled: true };
+        }
+        (item.separatedStockLotIds || []).forEach(id => lotsToDeliver.add(id));
+        const isFullySeparated = (item.boxesSeparated || 0) >= item.quantity;
+        return { ...item, fulfilled: isFullySeparated ? true : item.fulfilled };
+      });
+
       for (const lot of reservedLots) {
+        if (!lotsToDeliver.has(lot.id)) continue;
         await firebaseService.updateDocument('stockLots', lot.id, {
           status: 'ENTREGUE',
           deliveredAt: now,
@@ -1384,23 +1406,283 @@ export default function App() {
         });
       }
 
-      const updatedItems = sale.items.map(item => ({ ...item, fulfilled: true }));
+      const allFulfilled = updatedItems.every(it => it.fulfilled === true);
       await firebaseService.updateDocument('sales', saleId, {
         items: updatedItems,
-        deliveryStatus: 'DELIVERED',
-        deliveredAt: now,
+        ...(allFulfilled ? { deliveryStatus: 'DELIVERED', deliveredAt: now } : {}),
       });
 
-      toast.show('Pedido liberado para o cliente.');
+      toast.show(allFulfilled
+        ? 'Pedido liberado para o cliente.'
+        : 'Itens separados liberados — restam itens pendentes de separação.');
     } catch (e: any) {
       console.error(e);
       toast.show('Erro ao liberar pedido: ' + (e.message || e));
     }
   };
 
-  // "Expedir" — dá baixa no ESTOQUE GERAL (variation.stock) dos itens da venda que
-  // ainda não foram abatidos (fulfilled !== true) e que têm estoque suficiente.
-  // Marca esses itens como fulfilled; se todos forem atendidos, marca como entregue.
+  // Resolve a separação de `qty` unidades (caixas ATACADO ou pares VAREJO) de um item de
+  // venda, em 3 camadas, na ordem: (1) lotes StockLot já RESERVADO pra ESTA venda via
+  // produção casada — nunca mexe em estoque, só marca como separados; (2) pool geral de
+  // StockLot EM_ESTOQUE do mesmo produto/cor (FIFO, com split quando o lote não bate exato
+  // — ver src/utils/stockLotPicker.ts) — reserva o(s) StockLot(s) reais, preservando
+  // lineId/boxIds/grade; (3) fallback pro que não tiver StockLot nenhum por trás (ex.:
+  // reposição sem Pedido de Produção, que credita variation.stock direto sem nunca criar
+  // StockLot) — contador agregado + snapshot de embalagem, igual ao comportamento antigo.
+  // Usada tanto por "Separar Caixas" quanto por "Expedir Venda" — sem isso os dois
+  // divergiam e reverter um não sabia desfazer o que o outro tinha feito.
+  const resolveSeparationSupply = (
+    item: SaleItem,
+    qty: number,
+    sale: Sale,
+    getProd: (id: string) => any,
+    stockLotWrites: Map<string, any>,
+    stockLotCreates: any[],
+    poolReservedIdsThisRun: Set<string>,
+  ): SaleItem => {
+    if (qty <= 0) return item;
+    const isWholesale = item.saleType === SaleType.WHOLESALE;
+    const newLotIds: string[] = [];
+    let remaining = qty;
+
+    // (1) Lotes nativos de produção já reservados pra esta venda.
+    if (remaining > 0) {
+      const nativeReserved = stockLots.filter(l =>
+        l.status === 'RESERVADO' && l.saleId === sale.id && !l.reservedViaSeparation &&
+        l.productId === item.productId && l.variationId === item.variationId &&
+        !poolReservedIdsThisRun.has(l.id) &&
+        (isWholesale || (l.sizeBreakdown?.[item.size || ''] || 0) > 0)
+      );
+      if (nativeReserved.length > 0) {
+        const plan = isWholesale
+          ? pickWholesaleStockLots(nativeReserved, remaining)
+          : pickRetailStockLots(nativeReserved, item.size || '', remaining);
+        plan.fullyConsumed.forEach(lot => { poolReservedIdsThisRun.add(lot.id); newLotIds.push(lot.id); });
+        // Split de um lote nativo reservado: não muda status/doc (a venda já é dona do
+        // lote inteiro), só registra o id pra rastreio — a quantidade exata da separação
+        // fica implícita em `qty`, não precisa fatiar o doc físico aqui.
+        plan.splitConsumed.forEach(({ original }) => { poolReservedIdsThisRun.add(original.id); newLotIds.push(original.id); });
+        remaining -= plan.totalPicked;
+      }
+    }
+
+    // (2) Pool geral EM_ESTOQUE do mesmo produto/cor.
+    if (remaining > 0) {
+      const poolCandidates = stockLots.filter(l =>
+        l.status === 'EM_ESTOQUE' && l.productId === item.productId && l.variationId === item.variationId &&
+        !poolReservedIdsThisRun.has(l.id) && (isWholesale || (l.sizeBreakdown?.[item.size || ''] || 0) > 0)
+      );
+      const plan = isWholesale
+        ? pickWholesaleStockLots(poolCandidates, remaining)
+        : pickRetailStockLots(poolCandidates, item.size || '', remaining);
+
+      plan.fullyConsumed.forEach(lot => {
+        poolReservedIdsThisRun.add(lot.id);
+        stockLotWrites.set(lot.id, {
+          status: 'RESERVADO', saleId: sale.id, saleOrderNumber: sale.orderNumber,
+          customerName: sale.customerName, reservedViaSeparation: true, updatedAt: Date.now(),
+        });
+        newLotIds.push(lot.id);
+      });
+      plan.splitConsumed.forEach(({ original, remainder, consumed }) => {
+        poolReservedIdsThisRun.add(original.id);
+        stockLotWrites.set(original.id, { ...remainder, updatedAt: Date.now() });
+        const newId = generateId();
+        stockLotCreates.push({
+          id: newId,
+          productId: original.productId, productName: original.productName, productReference: original.productReference,
+          variationId: original.variationId, variationName: original.variationName,
+          sizeBreakdown: consumed.sizeBreakdown, totalPairs: consumed.totalPairs, gradeLabel: consumed.gradeLabel,
+          status: 'RESERVADO', lotId: original.lotId, lotOrderNumber: original.lotOrderNumber,
+          productionOrderId: original.productionOrderId, productionOrderNumber: original.productionOrderNumber,
+          itemIdx: original.itemIdx, lineId: consumed.lineId, boxIds: consumed.boxIds, boxQty: consumed.boxQty,
+          pkgId: original.pkgId, pkgName: original.pkgName,
+          saleId: sale.id, saleOrderNumber: sale.orderNumber, customerName: sale.customerName,
+          reservedViaSeparation: true, splitFromLotId: consumed.splitFromLotId,
+          createdAt: Date.now(),
+        });
+        newLotIds.push(newId);
+      });
+      remaining -= plan.totalPicked;
+    }
+
+    // (3) Fallback: contador agregado + snapshot de embalagem, só pro que sobrar.
+    let mergedPkgAllocations: any[] = [...(item.separatedPkgAllocations || [])];
+    if (remaining > 0) {
+      const prod = getProd(item.productId);
+      if (prod) {
+        const variation = prod.variations.find((v: any) => v.id === item.variationId);
+        if (variation) {
+          const key = isWholesale ? 'WHOLESALE' : (item.size || 'WHOLESALE');
+          const available = variation.stock?.[key] || 0;
+          const newQty = Math.max(0, available - remaining);
+          variation.stock[key] = newQty;
+          if (key === 'WHOLESALE') {
+            const allocsBefore: any[] = (variation.stockPkgAllocations || []).map((a: any) => ({ ...a }));
+            const totalAlloc = allocsBefore.reduce((s: number, a: any) => s + a.qty, 0);
+            if (newQty < totalAlloc) {
+              let excess = totalAlloc - newQty;
+              const trimmed = allocsBefore.map((a: any) => ({ ...a }));
+              for (let i = trimmed.length - 1; i >= 0 && excess > 0; i--) {
+                const cut = Math.min(trimmed[i].qty, excess);
+                trimmed[i].qty -= cut;
+                excess -= cut;
+              }
+              variation.stockPkgAllocations = trimmed.filter((a: any) => a.qty > 0);
+              const consumedAllocations = trimmed
+                .map((after: any, i: number) => ({ ...allocsBefore[i], qty: allocsBefore[i].qty - after.qty }))
+                .filter((a: any) => a.qty > 0);
+              consumedAllocations.forEach(ca => {
+                const isAvulsa = ca.pkgId === 'AVULSA';
+                if (!isAvulsa) {
+                  const idx = mergedPkgAllocations.findIndex((x: any) => x.pkgId === ca.pkgId);
+                  if (idx >= 0) { mergedPkgAllocations[idx] = { ...mergedPkgAllocations[idx], qty: mergedPkgAllocations[idx].qty + ca.qty }; return; }
+                }
+                mergedPkgAllocations.push({ ...ca });
+              });
+            }
+          }
+        }
+      }
+    }
+
+    const newBoxesSeparated = (item.boxesSeparated || 0) + qty;
+    return {
+      ...item,
+      boxesSeparated: newBoxesSeparated,
+      fulfilled: newBoxesSeparated >= item.quantity ? true : item.fulfilled,
+      separatedStockLotIds: [...(item.separatedStockLotIds || []), ...newLotIds],
+      ...(mergedPkgAllocations.length > 0 ? { separatedPkgAllocations: mergedPkgAllocations } : {}),
+    };
+  };
+
+  // Reverte `qty` unidades já separadas de um item de venda — espelho de
+  // `resolveSeparationSupply`. Consome `separatedStockLotIds` do mais recente pro mais
+  // antigo (LIFO): lotes pool-picked (`reservedViaSeparation`) voltam pra EM_ESTOQUE
+  // (inteiros ou fatiados, ver stockLotPicker — se fatiado, o remanescente da fatia vira um
+  // doc EM_ESTOQUE novo em vez de tentar remontar no original, que pode já ter sido
+  // consumido por outra separação nesse meio tempo: sem perda de dado, só fragmenta em
+  // casos raros de concorrência); lotes nativos de produção só são desmarcados (nunca
+  // mexeram em estoque). O que sobrar (sem StockLot algum) cai no fallback de
+  // contador/separatedPkgAllocations, restaurando cada alocação pro seu pkgId original.
+  const revertSeparationSupply = (
+    item: SaleItem,
+    qty: number,
+    getProd: (id: string) => any,
+    stockLotWrites: Map<string, any>,
+    stockLotCreates: any[],
+  ): SaleItem => {
+    if (qty <= 0) return item;
+    const isWholesale = item.saleType === SaleType.WHOLESALE;
+    let remaining = qty;
+    const existingIds = [...(item.separatedStockLotIds || [])];
+    const keptIds: string[] = [...existingIds];
+
+    for (let i = existingIds.length - 1; i >= 0 && remaining > 0; i--) {
+      const lotId = existingIds[i];
+      const lot = stockLots.find(l => l.id === lotId);
+      if (!lot) {
+        const ki = keptIds.lastIndexOf(lotId); if (ki >= 0) keptIds.splice(ki, 1);
+        continue;
+      }
+
+      if (!lot.reservedViaSeparation) {
+        // Produção casada nativa: nunca mexeu em estoque, só desmarca a separação.
+        const availUnits = isWholesale ? (lot.boxQty || 0) : (lot.totalPairs || 0);
+        const take = availUnits > 0 ? Math.min(remaining, availUnits) : remaining;
+        remaining -= take;
+        const ki = keptIds.lastIndexOf(lotId); if (ki >= 0) keptIds.splice(ki, 1);
+        continue;
+      }
+
+      const plan = isWholesale
+        ? pickWholesaleStockLots([lot], remaining)
+        : pickRetailStockLots([lot], item.size || '', remaining);
+
+      if (plan.fullyConsumed.length > 0) {
+        stockLotWrites.set(lot.id, {
+          status: 'EM_ESTOQUE', saleId: deleteField(), saleOrderNumber: deleteField(),
+          customerName: deleteField(), reservedViaSeparation: deleteField(), updatedAt: Date.now(),
+        });
+        remaining -= plan.totalPicked;
+        const ki = keptIds.lastIndexOf(lotId); if (ki >= 0) keptIds.splice(ki, 1);
+      } else if (plan.splitConsumed.length > 0) {
+        const { remainder, consumed } = plan.splitConsumed[0];
+        // `remainder` continua RESERVADO pra esta venda (ainda parcialmente separado) — só
+        // encolhe a composição no doc original.
+        stockLotWrites.set(lot.id, { ...remainder, updatedAt: Date.now() });
+        const newId = generateId();
+        stockLotCreates.push({
+          id: newId,
+          productId: lot.productId, productName: lot.productName, productReference: lot.productReference,
+          variationId: lot.variationId, variationName: lot.variationName,
+          sizeBreakdown: consumed.sizeBreakdown, totalPairs: consumed.totalPairs, gradeLabel: consumed.gradeLabel,
+          status: 'EM_ESTOQUE', lotId: lot.lotId, lotOrderNumber: lot.lotOrderNumber,
+          productionOrderId: lot.productionOrderId, productionOrderNumber: lot.productionOrderNumber,
+          itemIdx: lot.itemIdx, lineId: consumed.lineId, boxIds: consumed.boxIds, boxQty: consumed.boxQty,
+          pkgId: lot.pkgId, pkgName: lot.pkgName, splitFromLotId: consumed.splitFromLotId,
+          createdAt: Date.now(),
+        });
+        remaining = 0;
+        // id do lote original permanece em separatedStockLotIds — ainda parcialmente separado.
+      }
+    }
+
+    let mergedPkgAllocations: any[] = [...(item.separatedPkgAllocations || [])];
+    if (remaining > 0) {
+      const prod = getProd(item.productId);
+      if (prod) {
+        const variation = prod.variations.find((v: any) => v.id === item.variationId);
+        if (variation) {
+          const key = isWholesale ? 'WHOLESALE' : (item.size || 'WHOLESALE');
+          variation.stock[key] = (variation.stock[key] || 0) + remaining;
+          if (key === 'WHOLESALE' && mergedPkgAllocations.length > 0) {
+            let toRestore = remaining;
+            const currentAllocs: any[] = (variation.stockPkgAllocations || []).map((a: any) => ({ ...a }));
+            for (let i = mergedPkgAllocations.length - 1; i >= 0 && toRestore > 0; i--) {
+              const entry = mergedPkgAllocations[i];
+              const take = Math.min(entry.qty, toRestore);
+              if (take <= 0) continue;
+              const idx = currentAllocs.findIndex((a: any) => a.pkgId === entry.pkgId);
+              if (idx >= 0) currentAllocs[idx] = { ...currentAllocs[idx], qty: currentAllocs[idx].qty + take };
+              else currentAllocs.push({ ...entry, qty: take });
+              mergedPkgAllocations[i] = { ...entry, qty: entry.qty - take };
+              toRestore -= take;
+            }
+            variation.stockPkgAllocations = currentAllocs;
+            mergedPkgAllocations = mergedPkgAllocations.filter((a: any) => a.qty > 0);
+          }
+        }
+      }
+    }
+
+    const newSeparated = Math.max(0, (item.boxesSeparated || 0) - qty);
+    return {
+      ...item,
+      boxesSeparated: newSeparated,
+      fulfilled: newSeparated >= item.quantity,
+      separatedStockLotIds: keptIds.length > 0 ? keptIds : undefined,
+      separatedPkgAllocations: mergedPkgAllocations.length > 0 ? mergedPkgAllocations : undefined,
+    };
+  };
+
+  // Aplica em lote as escritas de StockLot acumuladas por resolveSeparationSupply/
+  // revertSeparationSupply — um updateDocument por doc encolhido/alterado, um
+  // saveDocument por doc novo (splits).
+  const flushStockLotMutations = async (stockLotWrites: Map<string, any>, stockLotCreates: any[]) => {
+    for (const [id, data] of stockLotWrites.entries()) {
+      await firebaseService.updateDocument('stockLots', id, data);
+    }
+    for (const doc of stockLotCreates) {
+      await firebaseService.saveDocument('stockLots', doc);
+    }
+  };
+
+  // "Expedir" — dá baixa (via resolveSeparationSupply, mesma lógica de "Separar Caixas")
+  // dos itens da venda que ainda não foram totalmente separados/abatidos e que têm oferta
+  // suficiente (lotes reservados + estoque geral) pra cobrir o que falta. Marca esses itens
+  // como fulfilled quando a separação atinge a quantidade total; se todos forem atendidos,
+  // marca a venda como entregue.
   const handleExpediteSale = async (saleId: string) => {
     const sale = sales.find(s => s.id === saleId);
     if (!sale) return;
@@ -1424,62 +1706,34 @@ export default function App() {
         productUpdates.set(id, cloned);
         return cloned;
       };
+      const stockLotWrites = new Map<string, any>();
+      const stockLotCreates: any[] = [];
+      const poolReservedIdsThisRun = new Set<string>();
 
       let anyExpedited = false;
       const newItems = sale.items.map(item => {
         if (item.fulfilled === true) return item;
-        const prod = getProd(item.productId);
-        if (!prod) return item;
-        const variation = prod.variations.find((v: any) => v.id === item.variationId);
-        if (!variation) return item;
-        const key = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
-        const available = variation.stock?.[key] || 0;
-        if (available < item.quantity) return item;
+        const remaining = Math.max(0, item.quantity - (item.boxesSeparated || 0));
+        if (remaining <= 0) return { ...item, fulfilled: true };
 
-        const newQty = available - item.quantity;
-        variation.stock[key] = newQty;
+        // Só expede o item se der pra cobrir TUDO que falta (lotes reservados nativos +
+        // estoque geral) — mesma exigência de "tudo ou nada por item" do comportamento
+        // anterior, só que agora escopada ao que realmente falta, não à quantidade total
+        // (evita descontar de novo o que já tinha sido separado via "Separar Caixas").
+        const isWholesale = item.saleType === SaleType.WHOLESALE;
+        const nativeReservedTotal = stockLots
+          .filter(l => l.status === 'RESERVADO' && l.saleId === sale.id && !l.reservedViaSeparation &&
+            l.productId === item.productId && l.variationId === item.variationId &&
+            (isWholesale || (l.sizeBreakdown?.[item.size || ''] || 0) > 0))
+          .reduce((s, l) => s + (isWholesale ? (l.boxQty || 0) : (l.sizeBreakdown?.[item.size || ''] || 0)), 0);
+        const prodForCheck = products.find(p => p.id === item.productId);
+        const variForCheck = prodForCheck?.variations.find(v => v.id === item.variationId);
+        const stockKey = isWholesale ? 'WHOLESALE' : (item.size || 'WHOLESALE');
+        const counterAvailable = (variForCheck?.stock as any)?.[stockKey] || 0;
+        if (nativeReservedTotal + counterAvailable < remaining) return item;
+
         anyExpedited = true;
-
-        // Recorta stockPkgAllocations na mesma proporção do abate (mesma lógica de
-        // "Separar Caixas") e guarda o snapshot em separatedPkgAllocations — sem isso,
-        // reverter a expedição depois devolve a quantidade como "Avulso" (perde a
-        // categorização de embalagem) por não ter de onde restaurar.
-        let consumedAllocations: any[] = [];
-        if (key === 'WHOLESALE') {
-          const allocsBefore: any[] = (variation.stockPkgAllocations || []).map((a: any) => ({ ...a }));
-          const totalAlloc = allocsBefore.reduce((s: number, a: any) => s + a.qty, 0);
-          if (newQty < totalAlloc) {
-            let excess = totalAlloc - newQty;
-            const trimmed = allocsBefore.map((a: any) => ({ ...a }));
-            for (let i = trimmed.length - 1; i >= 0 && excess > 0; i--) {
-              const cut = Math.min(trimmed[i].qty, excess);
-              trimmed[i].qty -= cut;
-              excess -= cut;
-            }
-            variation.stockPkgAllocations = trimmed.filter((a: any) => a.qty > 0);
-            consumedAllocations = trimmed
-              .map((after: any, i: number) => ({
-                ...allocsBefore[i],
-                qty: allocsBefore[i].qty - after.qty,
-              }))
-              .filter((a: any) => a.qty > 0);
-          }
-        }
-
-        if (consumedAllocations.length === 0) return { ...item, fulfilled: true };
-
-        const prevConsumed: any[] = item.separatedPkgAllocations || [];
-        const mergedConsumed = [...prevConsumed];
-        for (const ca of consumedAllocations) {
-          const isAvulsa = ca.pkgId === 'AVULSA';
-          if (!isAvulsa) {
-            const idx = mergedConsumed.findIndex((x: any) => x.pkgId === ca.pkgId);
-            if (idx >= 0) { mergedConsumed[idx] = { ...mergedConsumed[idx], qty: mergedConsumed[idx].qty + ca.qty }; continue; }
-          }
-          mergedConsumed.push({ ...ca });
-        }
-
-        return { ...item, fulfilled: true, separatedPkgAllocations: mergedConsumed };
+        return resolveSeparationSupply(item, remaining, sale, getProd, stockLotWrites, stockLotCreates, poolReservedIdsThisRun);
       });
 
       if (!anyExpedited) {
@@ -1490,6 +1744,7 @@ export default function App() {
       for (const [, prod] of productUpdates) {
         await firebaseService.saveDocument('products', prod);
       }
+      await flushStockLotMutations(stockLotWrites, stockLotCreates);
 
       const allFulfilled = newItems.every(it => it.fulfilled === true);
       await firebaseService.updateDocument('sales', saleId, {
@@ -1523,51 +1778,24 @@ export default function App() {
         productUpdates.set(id, cloned);
         return cloned;
       };
+      const stockLotWrites = new Map<string, any>();
+      const stockLotCreates: any[] = [];
 
       let anyReverted = false;
       const newItems = sale.items.map(item => {
         const hasSeparation = item.fulfilled === true || (item.boxesSeparated || 0) > 0;
         if (!hasSeparation) return item;
 
-        // Calcula exatamente quanto foi separado (e portanto precisa voltar pro estoque)
+        // Calcula exatamente quanto foi separado (e portanto precisa voltar pro estoque) —
+        // itens legados marcados fulfilled=true sem boxesSeparated (de antes desta
+        // integração) caem no fallback de contador dentro de revertSeparationSupply, já
+        // que não têm separatedStockLotIds nenhum.
         const qtyToRestore = (item.boxesSeparated || 0) > 0 ? item.boxesSeparated! : (item.fulfilled ? item.quantity : 0);
-
-        if (qtyToRestore > 0) {
-          const prod = getProd(item.productId);
-          if (prod) {
-            const variation = prod.variations.find((v: any) => v.id === item.variationId);
-            if (variation) {
-              const key = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
-              variation.stock[key] = (variation.stock?.[key] || 0) + qtyToRestore;
-
-              // Restaura embalagens (stockPkgAllocations) para itens WHOLESALE
-              if (key === 'WHOLESALE' && item.separatedPkgAllocations && item.separatedPkgAllocations.length > 0) {
-                const currentAllocs: any[] = variation.stockPkgAllocations || [];
-                const restored = [...currentAllocs];
-                for (const ca of item.separatedPkgAllocations) {
-                  const isAvulsa = ca.pkgId === 'AVULSA';
-                  if (!isAvulsa) {
-                    const idx = restored.findIndex((a: any) => a.pkgId === ca.pkgId);
-                    if (idx >= 0) {
-                      restored[idx] = { ...restored[idx], qty: restored[idx].qty + ca.qty };
-                      continue;
-                    }
-                  }
-                  restored.push({ ...ca });
-                }
-                variation.stockPkgAllocations = restored;
-              }
-            }
-          }
-        }
+        if (qtyToRestore <= 0) return { ...item, fulfilled: false };
 
         anyReverted = true;
-        return {
-          ...item,
-          fulfilled: false,
-          boxesSeparated: 0,
-          separatedPkgAllocations: undefined,
-        };
+        const reverted = revertSeparationSupply(item, qtyToRestore, getProd, stockLotWrites, stockLotCreates);
+        return { ...reverted, fulfilled: false, boxesSeparated: 0, separatedStockLotIds: undefined, separatedPkgAllocations: undefined };
       });
 
       // Se nenhum item tinha separação mas a venda está marcada como "Entregue" (ex.:
@@ -1583,6 +1811,7 @@ export default function App() {
       for (const [, prod] of productUpdates) {
         await firebaseService.saveDocument('products', prod);
       }
+      await flushStockLotMutations(stockLotWrites, stockLotCreates);
 
       await firebaseService.updateDocument('sales', saleId, {
         items: newItems,
@@ -1625,83 +1854,22 @@ export default function App() {
         productUpdates.set(id, cloned);
         return cloned;
       };
+      const stockLotWrites = new Map<string, any>();
+      const stockLotCreates: any[] = [];
 
-      const reservedLots = stockLots.filter(l => l.saleId === saleId && l.status === 'RESERVADO');
-      const newItems = sale.items.map(item => ({ ...item }));
-
-      for (const rev of reverts) {
-        if (rev.quantity <= 0) continue;
-        const item = newItems[rev.itemIdx];
-        if (!item) continue;
-
+      const newItems = sale.items.map((item, idx) => {
+        const rev = reverts.find(r => r.itemIdx === idx);
+        if (!rev || rev.quantity <= 0) return item;
         const currentSeparated = item.boxesSeparated || 0;
         const qtyToRestore = Math.min(rev.quantity, currentSeparated);
-        if (qtyToRestore <= 0) continue;
-
-        const itemReservedLots = reservedLots.filter(
-          l => l.productId === item.productId && l.variationId === item.variationId
-        );
-
-        let updatedPkgSnapshot: any[] | undefined = item.separatedPkgAllocations;
-
-        if (itemReservedLots.length === 0) {
-          const prod = getProd(item.productId);
-          if (prod) {
-            const variation = prod.variations.find((v: any) => v.id === item.variationId);
-            if (variation) {
-              const key = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
-              variation.stock[key] = (variation.stock[key] || 0) + qtyToRestore;
-
-              // Restaura stockPkgAllocations com a embalagem padrão do produto —
-              // o pkgId é fixo e imutável: determinado pelo grid padrão do produto.
-              if (key === 'WHOLESALE') {
-                const gridId = (prod as any).productionGridId || (prod as any).defaultGridId;
-                const defaultPkg = gridId
-                  ? productionConfigs.find(c => c.type === 'PACKAGING' && (c.metadata as any)?.productionGradeId === gridId)
-                  : undefined;
-                // Fallback: primeiro pkgId do snapshot (se o produto ainda não tem grid configurado)
-                const pkgId = defaultPkg?.id || (item.separatedPkgAllocations?.[0]?.pkgId);
-
-                if (pkgId) {
-                  const currentAllocs: any[] = (variation.stockPkgAllocations || []).map((a: any) => ({ ...a }));
-                  const idx = currentAllocs.findIndex((a: any) => a.pkgId === pkgId);
-                  if (idx >= 0) {
-                    currentAllocs[idx] = { ...currentAllocs[idx], qty: currentAllocs[idx].qty + qtyToRestore };
-                  } else {
-                    currentAllocs.push({ pkgId, qty: qtyToRestore });
-                  }
-                  variation.stockPkgAllocations = currentAllocs;
-                }
-
-                // Reduz separatedPkgAllocations pelo que foi devolvido (LIFO)
-                // para que uma reversão total posterior não restaure mais do que o devido.
-                if (item.separatedPkgAllocations?.length) {
-                  const newSnapshot = item.separatedPkgAllocations.map((a: any) => ({ ...a }));
-                  let remaining = qtyToRestore;
-                  for (let i = newSnapshot.length - 1; i >= 0 && remaining > 0; i--) {
-                    const take = Math.min(newSnapshot[i].qty, remaining);
-                    newSnapshot[i] = { ...newSnapshot[i], qty: newSnapshot[i].qty - take };
-                    remaining -= take;
-                  }
-                  updatedPkgSnapshot = newSnapshot.filter((a: any) => a.qty > 0);
-                }
-              }
-            }
-          }
-        }
-
-        const newSeparated = currentSeparated - qtyToRestore;
-        newItems[rev.itemIdx] = {
-          ...item,
-          boxesSeparated: newSeparated,
-          fulfilled: newSeparated >= item.quantity,
-          separatedPkgAllocations: newSeparated === 0 ? undefined : (updatedPkgSnapshot?.length ? updatedPkgSnapshot : undefined),
-        };
-      }
+        if (qtyToRestore <= 0) return item;
+        return revertSeparationSupply(item, qtyToRestore, getProd, stockLotWrites, stockLotCreates);
+      });
 
       for (const [, prod] of productUpdates) {
         await firebaseService.saveDocument('products', prod);
       }
+      await flushStockLotMutations(stockLotWrites, stockLotCreates);
 
       await firebaseService.updateDocument('sales', saleId, { items: newItems });
       toast.show('Reversão parcial registrada com sucesso.');
@@ -1761,90 +1929,20 @@ export default function App() {
         productUpdates.set(id, cloned);
         return cloned;
       };
+      const stockLotWrites = new Map<string, any>();
+      const stockLotCreates: any[] = [];
+      const poolReservedIdsThisRun = new Set<string>();
 
-      const reservedLots = stockLots.filter(l => l.saleId === saleId && l.status === 'RESERVADO');
-      const newItems = sale.items.map((item, idx) => ({ ...item }));
-
-      for (const sep of separations) {
-        if (sep.quantity <= 0) continue;
-        const item = newItems[sep.itemIdx];
-        if (!item) continue;
-
-        const itemReservedLots = reservedLots.filter(
-          l => l.productId === item.productId && l.variationId === item.variationId
-        );
-
-        // Snapshot das alocações consumidas (para restaurar no revert)
-        let consumedAllocations: any[] = [];
-
-        if (itemReservedLots.length === 0) {
-          // Sem lotes reservados: abate do estoque geral
-          const prod = getProd(item.productId);
-          if (prod) {
-            const variation = prod.variations.find((v: any) => v.id === item.variationId);
-            if (variation) {
-              const key = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
-              const available = variation.stock?.[key] || 0;
-              const newQty = Math.max(0, available - sep.quantity);
-              variation.stock[key] = newQty;
-
-              // Trim pkg allocations so totalAllocated never exceeds new boxQty
-              // AND save a snapshot of what was consumed for later revert
-              if (key === 'WHOLESALE') {
-                const allocsBefore: any[] = (variation.stockPkgAllocations || []).map((a: any) => ({ ...a }));
-                const totalAlloc = allocsBefore.reduce((s: number, a: any) => s + a.qty, 0);
-                if (newQty < totalAlloc) {
-                  let excess = totalAlloc - newQty;
-                  const trimmed = allocsBefore.map((a: any) => ({ ...a }));
-                  for (let i = trimmed.length - 1; i >= 0 && excess > 0; i--) {
-                    const cut = Math.min(trimmed[i].qty, excess);
-                    trimmed[i].qty -= cut;
-                    excess -= cut;
-                  }
-                  const allocsAfter = trimmed.filter((a: any) => a.qty > 0);
-                  variation.stockPkgAllocations = allocsAfter;
-
-                  // Calcula o diff por índice (order-preserving) — garante corretude
-                  // mesmo com múltiplas entradas AVULSA de customBreakdown distintos
-                  consumedAllocations = trimmed
-                    .map((after: any, i: number) => ({
-                      ...allocsBefore[i], // preserva pkgId, customBreakdown, etc.
-                      qty: allocsBefore[i].qty - after.qty, // = quanto foi removido neste slot
-                    }))
-                    .filter((a: any) => a.qty > 0);
-                }
-              }
-            }
-          }
-        }
-        // Com lotes reservados: sem alteração no estoque (nunca foi creditado ao produto)
-
-        const newSeparated = (item.boxesSeparated || 0) + sep.quantity;
-        // Acumula o snapshot de alocações consumidas (merge com possíveis separações parciais anteriores)
-        const prevConsumed: any[] = item.separatedPkgAllocations || [];
-        const mergedConsumed = [...prevConsumed];
-        for (const ca of consumedAllocations) {
-          // Avulsas: append sempre (cada uma tem customBreakdown distinto)
-          // Padrões: merge por pkgId (soma qty)
-          const isAvulsa = ca.pkgId === 'AVULSA';
-          if (!isAvulsa) {
-            const idx = mergedConsumed.findIndex((x: any) => x.pkgId === ca.pkgId);
-            if (idx >= 0) { mergedConsumed[idx] = { ...mergedConsumed[idx], qty: mergedConsumed[idx].qty + ca.qty }; continue; }
-          }
-          mergedConsumed.push({ ...ca });
-        }
-
-        newItems[sep.itemIdx] = {
-          ...item,
-          boxesSeparated: newSeparated,
-          fulfilled: newSeparated >= item.quantity ? true : item.fulfilled,
-          ...(mergedConsumed.length > 0 ? { separatedPkgAllocations: mergedConsumed } : {}),
-        };
-      }
+      const newItems = sale.items.map((item, idx) => {
+        const sep = separations.find(s => s.itemIdx === idx);
+        if (!sep || sep.quantity <= 0) return item;
+        return resolveSeparationSupply(item, sep.quantity, sale, getProd, stockLotWrites, stockLotCreates, poolReservedIdsThisRun);
+      });
 
       for (const [, prod] of productUpdates) {
         await firebaseService.saveDocument('products', prod);
       }
+      await flushStockLotMutations(stockLotWrites, stockLotCreates);
 
       // Separar caixas só deixa o pedido PRONTO (reservado/abatido do estoque) — a
       // entrega em si é um passo manual e separado ("Liberar Pedido"), por isso não
@@ -2703,6 +2801,27 @@ export default function App() {
         metadata: { ...(lot as any).metadata, orderSectors: updatedOrderSectors },
         ...(lot.finishedAt ? { finishedAt: deleteField() } : {}),
       });
+    }
+
+    // Protege contra referência órfã: se este StockLot está marcado como "separado" numa
+    // venda ativa (separatedStockLotIds), limpa essa referência antes de apagar — senão a
+    // venda ficaria contando um id de StockLot que não existe mais como parte do que já
+    // foi separado.
+    const owningSales = sales.filter(s => s.items.some(it => it.separatedStockLotIds?.includes(stockLot.id)));
+    for (const s of owningSales) {
+      const unitsRepresented = stockLot.boxQty !== undefined ? (stockLot.boxQty || 0) : (stockLot.totalPairs || 0);
+      const updatedSaleItems = s.items.map(it => {
+        if (!it.separatedStockLotIds?.includes(stockLot.id)) return it;
+        const newIds = it.separatedStockLotIds.filter(id => id !== stockLot.id);
+        const newSeparated = Math.max(0, (it.boxesSeparated || 0) - unitsRepresented);
+        return {
+          ...it,
+          separatedStockLotIds: newIds.length > 0 ? newIds : undefined,
+          boxesSeparated: newSeparated,
+          fulfilled: newSeparated >= it.quantity,
+        };
+      });
+      await firebaseService.updateDocument('sales', s.id, { items: updatedSaleItems });
     }
 
     await firebaseService.deleteDocument('stockLots', stockLot.id);

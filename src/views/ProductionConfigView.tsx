@@ -1383,6 +1383,7 @@ function GenericConfigList({
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ProductionConfigItem | null>(null);
+  const [showColorPicker, setShowColorPicker] = useState(false);
   const [search, setSearch] = useState('');
   const [newSize, setNewSize] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -2536,21 +2537,58 @@ function GenericConfigList({
                 </div>
               </div>
               <div className="flex flex-col gap-4">
-                <div className="flex items-center gap-2"><Palette size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Cores Disponíveis e Sub-Ref</span></div>
-                <div className="flex flex-col gap-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2"><Palette size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Cores Selecionadas e Sub-Ref</span></div>
+                  <button
+                    type="button"
+                    onClick={() => setShowColorPicker(true)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-[10px] font-black uppercase tracking-widest transition-all"
+                  >
+                    <Plus size={13} strokeWidth={3} /> Adicionar Cor
+                  </button>
+                </div>
+                {(editingItem?.metadata?.colorVariations || []).length === 0 ? (
+                  <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest text-center py-4">Nenhuma cor selecionada — toque em "Adicionar Cor".</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                    {(editingItem?.metadata?.colorVariations || []).map((variation: any) => {
+                      const color = (colors || []).find(c => c.id === variation.colorId);
+                      const removeColor = () => { setEditingItem(prev => { if (!prev) return null; const variations = (prev.metadata?.colorVariations || []).filter((cv: any) => cv.colorId !== variation.colorId); return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } }; }); };
+                      return (
+                        <div key={variation.colorId} className={`p-3 rounded-2xl border-2 flex flex-col gap-2 transition-all border-indigo-500/30 bg-indigo-500/5`}>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`flex-1 min-w-0 truncate text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{color?.name || variation.colorName}</span>
+                            <button type="button" onClick={removeColor} aria-label={`Remover ${color?.name || variation.colorName}`} title="Remover" className="text-rose-400 hover:text-rose-500 shrink-0">
+                              <X size={16} strokeWidth={3} />
+                            </button>
+                          </div>
+                          <input type="text" placeholder="SUB-REF" value={variation.subRef || ''} onChange={(e) => { const subRef = e.target.value.toUpperCase(); setEditingItem(prev => { if (!prev) return null; const variations = [...(prev.metadata?.colorVariations || [])]; const idx = variations.findIndex((cv: any) => cv.colorId === variation.colorId); variations[idx] = { ...variations[idx], subRef }; return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } }; }); }} className={`w-full px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100'}`} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <Modal isOpen={showColorPicker} onClose={() => setShowColorPicker(false)} title="Escolher Cores" icon={<Palette size={20} />} maxWidth="max-w-md" zIndex={80000}>
+                <div className="grid grid-cols-2 gap-2">
                   {(colors || []).map(color => {
-                    const variation = (editingItem?.metadata?.colorVariations || []).find((cv: any) => cv.colorId === color.id);
-                    const isSelected = !!variation;
+                    const isSelected = (editingItem?.metadata?.colorVariations || []).some((cv: any) => cv.colorId === color.id);
+                    const toggleColor = () => { setEditingItem(prev => { if (!prev) return null; const variations = [...(prev.metadata?.colorVariations || [])]; const idx = variations.findIndex((cv: any) => cv.colorId === color.id); if (idx >= 0) variations.splice(idx, 1); else variations.push({ colorId: color.id, colorName: color.name, subRef: '' }); return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } }; }); };
                     return (
-                      <div key={color.id} className={`p-3 rounded-2xl border-2 flex items-center justify-between transition-all ${isSelected ? 'border-indigo-500/30 bg-indigo-500/5' : isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-50 bg-slate-50/50'}`}>
-                        <div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl shadow-sm border border-black/10" style={{ backgroundColor: color.hex }} /><span className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{color.name}</span></div>
-                        <div className="flex items-center gap-2">{isSelected && (<input type="text" placeholder="SUB-REF" value={variation.subRef || ''} onChange={(e) => { const subRef = e.target.value.toUpperCase(); setEditingItem(prev => { if (!prev) return null; const variations = [...(prev.metadata?.colorVariations || [])]; const idx = variations.findIndex((cv: any) => cv.colorId === color.id); variations[idx] = { ...variations[idx], subRef }; return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } }; }); }} className={`w-24 px-3 py-2 rounded-xl font-black text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100'}`} />)}<button type="button" onClick={() => { setEditingItem(prev => { if (!prev) return null; const variations = [...(prev.metadata?.colorVariations || [])]; const idx = variations.findIndex((cv: any) => cv.colorId === color.id); if (idx >= 0) variations.splice(idx, 1); else variations.push({ colorId: color.id, colorName: color.name, subRef: '' }); return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } }; }); }} className={`p-2 rounded-xl transition-all ${isSelected ? 'text-indigo-500' : 'text-slate-300'}`}>{isSelected ? <CheckCircle2 size={20} /> : <Circle size={20} />}</button></div>
-                      </div>
+                      <button
+                        key={color.id}
+                        type="button"
+                        onClick={toggleColor}
+                        className={`p-3 rounded-2xl border-2 flex items-center gap-2 min-w-0 transition-all ${isSelected ? 'border-indigo-500/30 bg-indigo-500/5' : isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-50 bg-slate-50/50'}`}
+                      >
+                        <span className={`flex-1 min-w-0 truncate text-left text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{color.name}</span>
+                        {isSelected ? <CheckCircle2 size={18} className="text-indigo-500 shrink-0" /> : <Circle size={18} className="text-slate-300 shrink-0" />}
+                      </button>
                     );
                   })}
                 </div>
-              </div>
-
+              </Modal>
 
               {/* CALCULATION CARD */}
               {(() => {

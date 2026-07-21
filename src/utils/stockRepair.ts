@@ -1,5 +1,5 @@
 import { Product, ProductionLot, ProductionOrder, SaleType, StockLot } from '../types';
-import { getOrderEffectiveSector, getSourceItemKey, ORDER_FINALIZED } from './productionRoute';
+import { getOrderEffectiveSector, getSourceItemKey, ORDER_FINALIZED, stockLotMatchesSourceItem } from './productionRoute';
 
 export interface StockRepairSummary {
   /** StockLots ATACADO sem boxQty preenchido (bug antigo de conversão pares→caixas). */
@@ -45,11 +45,7 @@ export function summarizeStockRepairIssues(
       if (seenSIKeysThisLot.has(siKey)) continue;
       seenSIKeysThisLot.add(siKey);
       if (repairAcknowledged[siKey]) continue;
-      const hasStockLot = stockLots.some(sl => {
-        if (sl.lotId !== lot.id || sl.productionOrderId !== si.orderId) return false;
-        if (si.itemIdx !== undefined) return sl.itemIdx === si.itemIdx;
-        return sl.productId === si.productId && sl.variationId === si.variationId;
-      });
+      const hasStockLot = stockLots.some(sl => stockLotMatchesSourceItem(sl, si, lot.id));
       if (hasStockLot) continue;
 
       const prodOrder = productionOrders.find(o => o.id === si.orderId);

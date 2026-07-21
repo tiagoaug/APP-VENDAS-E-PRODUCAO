@@ -16,6 +16,7 @@ import PackagingBuilderModal from '../components/PackagingBuilderModal';
 import GradeBuilderModal from '../components/GradeBuilderModal';
 import { toast } from '../utils/toast';
 import { mergeProductionOrderItems } from '../utils/productionOrderMerge';
+import { reconcileLineIds } from '../utils/lineIdentity';
 import { generateId } from '../utils/id';
 import DatePicker from '../components/DatePicker';
 import { seedProductionOrderSequence } from '../utils/sequenceSeeds';
@@ -735,6 +736,31 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       return;
     }
 
+    // Identidade estável por linha (productId+variationId+saleType) — sobrevive a
+    // reedições do pedido e alimenta o rastreio de caixa até o Estoque (ver
+    // src/utils/lineIdentity.ts). Mesma lógica usada em PurchaseFormView.tsx.
+    const existingSaleItems = saleId ? sales.find(s => s.id === saleId)?.items : undefined;
+    const lineKeyAgg = new Map<string, { productId: string; variationId: string; saleType?: SaleType; boxCount: number }>();
+    items.forEach(it => {
+      const key = `${it.productId}::${it.variationId}::${it.saleType || ''}`;
+      const agg = lineKeyAgg.get(key) || { productId: it.productId, variationId: it.variationId, saleType: it.saleType, boxCount: 0 };
+      if (it.saleType === SaleType.WHOLESALE) agg.boxCount += it.quantity;
+      lineKeyAgg.set(key, agg);
+    });
+    const lineIdMap = reconcileLineIds(existingSaleItems, Array.from(lineKeyAgg.values()));
+    const boxIdCursor = new Map<string, number>();
+    items.forEach(it => {
+      const key = `${it.productId}::${it.variationId}::${it.saleType || ''}`;
+      const resolved = lineIdMap.get(key);
+      if (!resolved) return;
+      it.lineId = resolved.lineId;
+      if (resolved.boxIds && it.saleType === SaleType.WHOLESALE) {
+        const start = boxIdCursor.get(key) || 0;
+        it.boxIds = resolved.boxIds.slice(start, start + it.quantity);
+        boxIdCursor.set(key, start + it.quantity);
+      }
+    });
+
     // Optional stock warning
     const stockIssues = items.filter(item => !checkStock(item.productId, item.variationId, item.saleType, item.size, item.quantity));
     if (stockIssues.length > 0 && status === SaleStatus.SALE) {
@@ -864,6 +890,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               fromStockTotal += fs;
             });
             const combinedNote = [productionGlobalNote?.trim(), varData.note?.trim()].filter(Boolean).join('\n') || undefined;
+            const lineKey = `${block.productId}::${variationId}::${block.saleType || ''}`;
+            const lineIdentity = lineIdMap.get(lineKey);
             orderItems.push({
               productId: block.productId,
               productName: product?.name || '',
@@ -876,6 +904,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               toProductionQty: totalPairs - fromStockTotal,
               ...(pkg?.pkgId ? { pkgId: pkg.pkgId } : {}),
               ...(combinedNote ? { notes: combinedNote } : {}),
+              ...(lineIdentity ? { lineId: lineIdentity.lineId, boxIds: lineIdentity.boxIds } : {}),
             });
           });
         });

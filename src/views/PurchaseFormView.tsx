@@ -62,6 +62,7 @@ import PackagingBuilderModal from '../components/PackagingBuilderModal';
 import GradeBuilderModal from '../components/GradeBuilderModal';
 import { toast } from '../utils/toast';
 import { mergeProductionOrderItems } from '../utils/productionOrderMerge';
+import { reconcileLineIds } from '../utils/lineIdentity';
 import { generateId } from '../utils/id';
 import { firebaseService } from '../services/firebaseService';
 import { seedProductionOrderSequence } from '../utils/sequenceSeeds';
@@ -684,6 +685,10 @@ export default function PurchaseFormView({
     setIsSaving(true);
     try {
     const finalItems: PurchaseItem[] = [];
+    // Populado abaixo (Reposição) e reaproveitado mais adiante pelo bloco de Pedido de
+    // Produção, pra que PurchaseItem e ProductionOrderItem da mesma linha compartilhem
+    // exatamente o mesmo lineId/boxIds.
+    let lineIdMap: Map<string, { lineId: string; boxIds?: string[] }> | null = null;
     if (type === PurchaseType.REPLENISHMENT) {
       blocks.forEach((b) => {
         Object.entries(b.variations).forEach(([varKey, data]) => {
@@ -712,6 +717,34 @@ export default function PurchaseFormView({
         toast.show("Adicione pelo menos um item para compra de estoque.");
         return;
       }
+
+      // Identidade estável por linha (productId+variationId+saleType) — sobrevive a
+      // reedições do pedido e alimenta o rastreio de caixa até o Estoque (ver
+      // src/utils/lineIdentity.ts). Um mesmo produto/cor pode aparecer em mais de um
+      // `finalItems` (ex.: blocos duplicados via "Duplicar") — agrega a contagem de
+      // caixas de todos antes de gerar/reaproveitar os IDs, e depois fatia o array
+      // resultante sequencialmente entre as entradas que compartilham a chave, pra
+      // nenhuma entrada repetir o ID de caixa de outra.
+      const lineKeyAgg = new Map<string, { productId: string; variationId: string; saleType?: SaleType; boxCount: number }>();
+      finalItems.forEach(it => {
+        const key = `${it.productId}::${it.variationId}::${it.saleType || ''}`;
+        const agg = lineKeyAgg.get(key) || { productId: it.productId, variationId: it.variationId, saleType: it.saleType, boxCount: 0 };
+        if (it.saleType === SaleType.WHOLESALE) agg.boxCount += it.quantity;
+        lineKeyAgg.set(key, agg);
+      });
+      lineIdMap = reconcileLineIds(existing?.items, Array.from(lineKeyAgg.values()));
+      const boxIdCursor = new Map<string, number>();
+      finalItems.forEach(it => {
+        const key = `${it.productId}::${it.variationId}::${it.saleType || ''}`;
+        const resolved = lineIdMap!.get(key);
+        if (!resolved) return;
+        it.lineId = resolved.lineId;
+        if (resolved.boxIds && it.saleType === SaleType.WHOLESALE) {
+          const start = boxIdCursor.get(key) || 0;
+          it.boxIds = resolved.boxIds.slice(start, start + it.quantity);
+          boxIdCursor.set(key, start + it.quantity);
+        }
+      });
     } else if (type === PurchaseType.SOLE) {
       if (soleItems.length === 0) {
         toast.show("Adicione pelo menos um item de solado.");
@@ -829,6 +862,8 @@ export default function PurchaseFormView({
             });
             if (totalPairs === 0) return;
             const combinedNote = [productionGlobalNote?.trim(), entry.note].filter(Boolean).join('\n') || undefined;
+            const lineKey = `${block.productId}::${variationId}::${SaleType.RETAIL}`;
+            const lineIdentity = lineIdMap?.get(lineKey);
             orderItems.push({
               productId: block.productId,
               productName: product?.name || '',
@@ -840,6 +875,7 @@ export default function PurchaseFormView({
               fromStockQty: 0,
               toProductionQty: totalPairs,
               ...(combinedNote ? { notes: combinedNote } : {}),
+              ...(lineIdentity ? { lineId: lineIdentity.lineId } : {}),
             });
           });
           return;
@@ -874,6 +910,8 @@ export default function PurchaseFormView({
             fromStockTotal += fs;
           });
           const combinedNote = [productionGlobalNote?.trim(), typedVarData.note?.trim()].filter(Boolean).join('\n') || undefined;
+          const lineKey = `${block.productId}::${variationId}::${SaleType.WHOLESALE}`;
+          const lineIdentity = lineIdMap?.get(lineKey);
           orderItems.push({
             productId: block.productId,
             productName: product?.name || '',
@@ -885,6 +923,7 @@ export default function PurchaseFormView({
             fromStockQty: fromStockTotal,
             toProductionQty: totalPairs - fromStockTotal,
             ...(combinedNote ? { notes: combinedNote } : {}),
+            ...(lineIdentity ? { lineId: lineIdentity.lineId, boxIds: lineIdentity.boxIds } : {}),
           });
         });
       });

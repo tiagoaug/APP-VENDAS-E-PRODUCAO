@@ -1,4 +1,4 @@
-import { Product, ProductionLot, Sale, Account, AccountType, Transaction, TransactionType, SaleStatus, SaleType, PaymentStatus } from '../types';
+import { Product, ProductionLot, Sale, Account, AccountType, Transaction, TransactionType, SaleStatus, SaleType } from '../types';
 import { getActiveProductionUnits } from './productionRoute';
 import { getStockValue } from './stockPools';
 
@@ -114,20 +114,6 @@ export function computeSalesProfitInPeriod(sales: Sale[], products: Product[], s
     profit += sale.total - itemsCost;
   }
   return profit;
-}
-
-// Valor CHEIO (sem descontar custo) de vendas fechadas no período e já
-// totalmente recebidas — dinheiro que já entrou de fato, não margem. Por não
-// descontar custo, NÃO deve ser somado junto de "Lucro em Vendas" no mesmo
-// cálculo (a UI avisa quando as duas fontes estão marcadas ao mesmo tempo).
-export function computeReceivedSalesRevenueInPeriod(sales: Sale[], start: number, end: number): number {
-  return sales
-    .filter(s => s.status === SaleStatus.SALE && s.isAccounting !== false && s.date >= start && s.date <= end)
-    .reduce((acc, sale) => {
-      const totalPaid = (sale.paymentHistory || []).reduce((a, p) => a + p.amount, 0);
-      const isFullyReceived = sale.paymentStatus === PaymentStatus.PAID || totalPaid >= sale.total;
-      return isFullyReceived ? acc + sale.total : acc;
-    }, 0);
 }
 
 // Receita e despesa de um período, a partir das transações confirmadas — mesmo

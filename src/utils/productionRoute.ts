@@ -114,12 +114,45 @@ export const ORDER_FINALIZED = '__FINALIZADO__';
  * movesse pra um setor diferente da outra. Itens sem fração (a esmagadora maioria) não
  * passam esse campo, então a chave gerada continua idêntica à de antes — compatível com
  * qualquer dado já salvo.
+ *
+ * Quando `si.lineId` está presente (item criado após a introdução do rastreio de
+ * caixa/linha — ver src/utils/lineIdentity.ts), ele substitui `orderId::itemIdx` como
+ * base da chave: `lineId` é globalmente único e estável entre reedições do pedido, ao
+ * contrário de `itemIdx` (invalidado por reordenação) e não colide quando `itemIdx` é
+ * `undefined` (caso em que dois itens diferentes do mesmo pedido podiam cair na mesma
+ * chave via o fallback `productId-variationId`). Itens antigos sem `lineId` continuam
+ * usando a chave de sempre.
  */
-export function getSourceItemKey(si: { orderId: string; itemIdx?: number; productId?: string; variationId?: string; fractionLabel?: string }): string {
-  const base = si.itemIdx !== undefined
-    ? `${si.orderId}::${si.itemIdx}`
-    : `${si.orderId}::${si.productId || ''}-${si.variationId || ''}`;
+export function getSourceItemKey(si: { orderId: string; itemIdx?: number; productId?: string; variationId?: string; fractionLabel?: string; lineId?: string }): string {
+  const base = si.lineId
+    ? `line-${si.lineId}`
+    : si.itemIdx !== undefined
+      ? `${si.orderId}::${si.itemIdx}`
+      : `${si.orderId}::${si.productId || ''}-${si.variationId || ''}`;
   return si.fractionLabel ? `${base}::frac-${si.fractionLabel}` : base;
+}
+
+/**
+ * Compara um `StockLot` já salvo com um `sourceItem` de Mapa pra decidir se aquele
+ * StockLot é o registro de estoque correspondente a esse sourceItem. Centraliza a mesma
+ * lógica de fallback que antes existia duplicada em `buildStockRepairItems` (PCPView.tsx),
+ * `summarizeStockRepairIssues` (stockRepair.ts) e `useStockLotDuplicates` — as três cópias
+ * podiam divergir silenciosamente entre si (foi exatamente esse tipo de duplicação que
+ * deixou o bug de "caixa finalizada sem StockLot" passar despercebido por tempo demais).
+ *
+ * Prioridade: `sourceItemKey` exato (já resolve lineId+fração quando presentes) > mesmo
+ * `itemIdx` > fallback por produto+variação (só quando `itemIdx` não está definido em
+ * nenhum dos dois lados — dado legado).
+ */
+export function stockLotMatchesSourceItem(
+  sl: { lotId: string; productionOrderId?: string; itemIdx?: number; productId?: string; variationId?: string; sourceItemKey?: string },
+  si: { orderId: string; itemIdx?: number; productId?: string; variationId?: string; fractionLabel?: string; lineId?: string },
+  lotId: string,
+): boolean {
+  if (sl.lotId !== lotId || sl.productionOrderId !== si.orderId) return false;
+  if (sl.sourceItemKey) return sl.sourceItemKey === getSourceItemKey(si);
+  if (si.itemIdx !== undefined) return sl.itemIdx === si.itemIdx;
+  return sl.productId === si.productId && sl.variationId === si.variationId;
 }
 
 /**

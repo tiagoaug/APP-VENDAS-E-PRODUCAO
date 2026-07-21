@@ -29,6 +29,11 @@ export interface DuplicateStockByRefColor {
 
 const RESOLVED_KEY = 'pcp_resolved_stock_duplicates_v1';
 
+// Prefere `sourceItemKey` (já resolve lineId/fração quando presentes — ver
+// src/utils/productionRoute.ts) sobre a chave antiga baseada só em itemIdx, que colide
+// entre frações irmãs do mesmo item (StockLot ainda não guardava fractionLabel).
+const dupGroupKey = (sl: StockLot) => sl.sourceItemKey || `${sl.lotId}::${sl.productionOrderId || ''}::${sl.itemIdx ?? ''}`;
+
 function loadResolved(): Record<string, number> {
   try {
     const raw = localStorage.getItem(RESOLVED_KEY);
@@ -55,7 +60,7 @@ export function useStockLotDuplicates(stockLots: StockLot[]) {
     const groups = new Map<string, StockLot[]>();
     (stockLots || []).forEach(sl => {
       if (sl.status !== 'EM_ESTOQUE') return;
-      const key = `${sl.lotId}::${sl.productionOrderId || ''}::${sl.itemIdx ?? ''}`;
+      const key = dupGroupKey(sl);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(sl);
     });
@@ -68,7 +73,7 @@ export function useStockLotDuplicates(stockLots: StockLot[]) {
         const excessPairs = excessCount * (first.totalPairs || 0);
         const excessBoxes = excessCount * (first.boxQty || 0);
         return {
-          key: `${first.lotId}::${first.productionOrderId || ''}::${first.itemIdx ?? ''}`,
+          key: dupGroupKey(first),
           lotOrderNumber: first.lotOrderNumber || '—',
           productName: first.productName,
           productReference: first.productReference || '',

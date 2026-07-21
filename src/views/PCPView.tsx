@@ -34,7 +34,7 @@ import { labelService } from '../services/labelService';
 import { printLotSheet, printOrderItemSheet, shareImage, sharePDF } from '../utils/pdfExport';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { resolveCorrectSectorForProduct, computeOSAdvanceOutcome, ensureSectorInRoute, ORDER_FINALIZED, getOrderEffectiveSector, getLotPendingSectorGroups, getSourceItemKey, getActiveProductionUnits } from '../utils/productionRoute';
+import { resolveCorrectSectorForProduct, computeOSAdvanceOutcome, ensureSectorInRoute, ORDER_FINALIZED, getOrderEffectiveSector, getLotPendingSectorGroups, getSourceItemKey, getActiveProductionUnits, stockLotMatchesSourceItem } from '../utils/productionRoute';
 import { scannerService, SCAN_ERRORS } from '../services/scannerService';
 import { financeService } from '../services/financeService';
 import WebCameraScanner from '../components/WebCameraScanner';
@@ -48,7 +48,8 @@ import { generateId } from '../utils/id';
 import { getMaterialStockForColor } from '../utils/materialStock';
 import ExportNoteModal from '../components/ExportNoteModal';
 import { generatePCPShareExport, PCPShareItem, sendPCPItemsToPrintStudio } from '../utils/pcpShareExport';
-import { useStockLotDuplicates } from '../hooks/useStockLotDuplicates';
+import { useStockLotDuplicates, DuplicateStockByRefColor } from '../hooks/useStockLotDuplicates';
+import { buildStockDuplicateFixPlan } from '../utils/stockDuplicateFix';
 import StockDuplicateBanner from '../components/StockDuplicateBanner';
 import StockDuplicateDiagnosticModal from '../components/StockDuplicateDiagnosticModal';
 import StockRepairBanner from '../components/StockRepairBanner';
@@ -398,6 +399,20 @@ export default function PCPView({
         orderId: string; itemIdx?: number; fractionLabel?: string;
         productId?: string; variationId?: string;
         qty: number; reason: string;
+      }
+    | {
+        // Backfill: sourceItem de produção já em andamento (Mapa criado antes da
+        // introdução do rastreio de caixa/linha) sem `lineId` — atribui um novo ID
+        // agora pra passar a se beneficiar do casamento robusto (getSourceItemKey),
+        // igual a tudo que é criado a partir de agora. Não inventa `boxIds` retroativos
+        // (exigiria adivinhar o agrupamento físico de caixas de dados que não guardaram
+        // essa informação) — só a identidade de linha, que já é o suficiente pra fechar
+        // as colisões de chave/perda de rastreio investigadas.
+        kind: 'assign_line_id'; selected: boolean;
+        lotId: string; lotOrderNumber: string;
+        orderId: string; itemIdx?: number; fractionLabel?: string;
+        productId?: string; variationId?: string;
+        productName: string; variationName: string; qty: number;
       };
   const [stockRepairModal, setStockRepairModal] = useState<{
     phase: 'preview' | 'running' | 'done';
@@ -700,7 +715,13 @@ export default function PCPView({
     lots.forEach(lot => {
       const sourceItems: any[] = (lot as any).metadata?.sourceItems || [];
       if (sourceItems.length > 0) {
-        sourceItems.forEach((si: any) => keys.add(`${si.orderId}::${si.itemIdx}`));
+        sourceItems.forEach((si: any) => {
+          keys.add(`${si.orderId}::${si.itemIdx}`);
+          // lineId sobrevive a reordenação/edição do pedido, ao contrário de itemIdx —
+          // marca também por essa chave pra não "ressuscitar" um item já vinculado a um
+          // Mapa só porque a posição dele no array mudou (ver comentário acima).
+          if (si.lineId) keys.add(`line::${si.lineId}`);
+        });
       } else if (lot.productionOrderId) {
         const order = productionOrders.find(o => o.id === lot.productionOrderId);
         (order?.items || []).forEach((_, idx) => keys.add(`${lot.productionOrderId}::${idx}`));
@@ -727,7 +748,8 @@ export default function PCPView({
     productionOrders.forEach(order => {
       if (order.status === 'COMPLETED') return;
       order.items.forEach((item, idx) => {
-        if (item.toProductionQty > 0 && !linkedItemKeys.has(`${order.id}::${idx}`)) {
+        const alreadyLinked = linkedItemKeys.has(`${order.id}::${idx}`) || (!!item.lineId && linkedItemKeys.has(`line::${item.lineId}`));
+        if (item.toProductionQty > 0 && !alreadyLinked) {
           items.push({
             ...item,
             orderId: order.id,
@@ -1459,6 +1481,29 @@ export default function PCPView({
   // com a tela de Estoques via useStockLotDuplicates.
   const { duplicateStockLotGroups, duplicateStockByRefColor, markResolved: markStockDuplicatesResolved } = useStockLotDuplicates(stockLots);
 
+  // Corrige de verdade uma duplicidade de estoque: desconta do produto exatamente o que
+  // cada StockLot excedente creditou e apaga os registros excedentes, mantendo só o mais
+  // antigo (o legítimo) de cada grupo. Ao contrário de "Marcar como Resolvido" (que só
+  // esconde o aviso, sem mexer em nada), isso corrige o número de verdade.
+  const fixStockDuplicateGroup = async (group: DuplicateStockByRefColor) => {
+    try {
+      const plan = buildStockDuplicateFixPlan(group, duplicateStockLotGroups, products);
+      if (plan.stockLotIdsToDelete.length === 0) {
+        toast.show('Nada a corrigir — a duplicidade já não existe mais.');
+        return;
+      }
+      for (const prod of plan.productWrites) {
+        await firebaseService.saveDocument('products', prod);
+      }
+      for (const id of plan.stockLotIdsToDelete) {
+        await firebaseService.deleteDocument('stockLots', id);
+      }
+      toast.show(`Duplicidade corrigida — ${plan.stockLotIdsToDelete.length} registro(s) removido(s) e estoque ajustado.`);
+    } catch (e) {
+      toast.show('Erro ao corrigir duplicidade: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
 
 
   // Bloqueia avanço do mapa inteiro se houver OS pendente
@@ -2092,7 +2137,7 @@ export default function PCPView({
     }
     const { lot, si, siIdx, fractions, rootKey } = fractionModal;
 
-    const buildFractionSourceItem = (fr: { label: string; sizes: Record<string, number>; chosenSectorId: string }) => {
+    const buildFractionSourceItem = (fr: { label: string; multiplier: number; sizes: Record<string, number>; chosenSectorId: string }, boxIdsForFraction?: string[]) => {
       const sizes: Record<string, { total: number; fromStock: number; toProduction: number }> = {};
       let qty = 0;
       Object.entries(fr.sizes).forEach(([sz, q]) => {
@@ -2100,10 +2145,23 @@ export default function PCPView({
         sizes[sz] = { total: q, fromStock: 0, toProduction: q };
         qty += q;
       });
-      return { ...si, qty, sizes, fractionLabel: fr.label, fractionRootKey: rootKey };
+      return { ...si, qty, sizes, fractionLabel: fr.label, fractionRootKey: rootKey, boxIds: boxIdsForFraction };
     };
 
-    const newEntries = fractions.map(buildFractionSourceItem);
+    // Fatia os IDs de caixa da ficha original sequencialmente entre as frações, na
+    // proporção de caixas de cada uma (`multiplier`, só definido em modo grade/atacado —
+    // modo livre/varejo não tem conceito de caixa, então `boxIds` fica undefined) — cada
+    // fração resultante passa a rastrear seu próprio subconjunto exclusivo de caixas
+    // físicas, em vez de todas apontarem pro array inteiro da ficha original.
+    const originalBoxIds: string[] | undefined = (si as any).boxIds;
+    let boxCursor = 0;
+    const newEntries = fractions.map(fr => {
+      if (!originalBoxIds || originalBoxIds.length === 0) return buildFractionSourceItem(fr, undefined);
+      const count = Math.max(0, Math.round(fr.multiplier || 0));
+      const boxSlice = originalBoxIds.slice(boxCursor, boxCursor + count);
+      boxCursor += count;
+      return buildFractionSourceItem(fr, boxSlice);
+    });
     const sourceItems: any[] = [...((lot as any).metadata?.sourceItems || [])];
     sourceItems[siIdx] = newEntries[0];
     for (let i = 1; i < newEntries.length; i++) sourceItems.push(newEntries[i]);
@@ -2546,16 +2604,21 @@ export default function PCPView({
       (lot.route && lot.route[lot.route.length - 1] === currentSectorId);
     if (isCycleEndSector) {
       const lotMeta = (lot as any).metadata;
-      const sourceOrderIds: string[] = Array.from(new Set([
-        ...(lot.productionOrderId ? [lot.productionOrderId] : []),
-        ...(lotMeta?.sourceItems?.map((si: any) => si.orderId) || []),
-      ]));
-      if (sourceOrderIds.length > 0) {
-        const { customerItems, stockItems } = classifyExpedicaoOrders(sourceOrderIds.map(orderId => ({ orderId })));
+      // IMPORTANTE: itera os sourceItems de verdade (com itemIdx/fractionLabel/lineId), não
+      // só o orderId deduplicado — passar `{orderId}` sozinho fazia `matchesItem` (dentro de
+      // applyExpedicaoStockUpdate) bater com TODOS os sourceItems daquele pedido de uma vez,
+      // inclusive frações que ainda não deveriam ser baixadas juntas (cada fração tem seu
+      // próprio fractionLabel e pode estar em setores diferentes nesse momento).
+      const sourceItemsForExpedicao: { orderId: string; itemIdx?: number; fractionLabel?: string; lineId?: string }[] =
+        (lotMeta?.sourceItems && lotMeta.sourceItems.length > 0)
+          ? lotMeta.sourceItems.map((si: any) => ({ orderId: si.orderId, itemIdx: si.itemIdx, fractionLabel: si.fractionLabel, lineId: si.lineId }))
+          : (lot.productionOrderId ? [{ orderId: lot.productionOrderId }] : []);
+      if (sourceItemsForExpedicao.length > 0) {
+        const { customerItems, stockItems } = classifyExpedicaoOrders(sourceItemsForExpedicao);
         if (stockItems.length > 0 || customerItems.length > 0) {
           const lines: string[] = ['Mapa saindo da Expedição'];
-          if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} pedido(s) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
-          if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} pedido(s) → ENTRADA EM ESTOQUE`);
+          if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} item(ns) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
+          if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} item(ns) → ENTRADA EM ESTOQUE`);
           lines.push('\nConfirmar baixa de expedição?');
           if (!confirm(lines.join('\n'))) { setSectorChangeConfirm(null); return; }
           await applyExpedicaoStockUpdate(lot, stockItems, customerItems);
@@ -2930,9 +2993,9 @@ export default function PCPView({
   // identifica um pedido (orderId) ou, quando `itemIdx` é informado, um ÚNICO item
   // (modelo/cor) dentro de um pedido de compra que agrupa vários itens — preservado
   // até `applyExpedicaoStockUpdate` para que a baixa afete só o item finalizado.
-  const classifyExpedicaoOrders = (items: { orderId: string; itemIdx?: number; fractionLabel?: string }[]) => {
-    const customerItems: { orderId: string; itemIdx?: number; fractionLabel?: string }[] = [];
-    const stockItems: { orderId: string; itemIdx?: number; fractionLabel?: string }[] = [];
+  const classifyExpedicaoOrders = (items: { orderId: string; itemIdx?: number; fractionLabel?: string; lineId?: string }[]) => {
+    const customerItems: { orderId: string; itemIdx?: number; fractionLabel?: string; lineId?: string }[] = [];
+    const stockItems: { orderId: string; itemIdx?: number; fractionLabel?: string; lineId?: string }[] = [];
     for (const item of items) {
       const prodOrder = productionOrders.find(o => o.id === item.orderId);
       if (!prodOrder) continue;
@@ -3050,7 +3113,7 @@ export default function PCPView({
     const totalQty = Object.values(pairs).reduce((s, q) => s + q, 0);
     const gradeLabel = Object.entries(pairs).map(([sz, q]) => `${sz}x${q}`).join('-');
 
-    return { prodOrder, ordItem, prod, vari, pairs, totalQty, gradeLabel, itemIdx };
+    return { prodOrder, ordItem, prod, vari, pairs, totalQty, gradeLabel, itemIdx, lineId: si.lineId as string | undefined, boxIds: si.boxIds as string[] | undefined };
   };
 
   // Aplica a baixa de estoque para pedidos que saíram da Expedição. Para pedidos com
@@ -3061,8 +3124,8 @@ export default function PCPView({
   // Chamado tanto pela conclusão de OS quanto pelo avanço direto de setor ("Próximo Setor").
   const applyExpedicaoStockUpdate = async (
     lot: ProductionLot,
-    stockItems: { orderId: string; itemIdx?: number; fractionLabel?: string }[],
-    customerItems: { orderId: string; itemIdx?: number; fractionLabel?: string }[],
+    stockItems: { orderId: string; itemIdx?: number; fractionLabel?: string; lineId?: string }[],
+    customerItems: { orderId: string; itemIdx?: number; fractionLabel?: string; lineId?: string }[],
     // "Reparar Caixas" (buildStockRepairItems, Tipo B) existe justamente pra tratar itens que
     // JÁ estão ORDER_FINALIZED mas nunca creditaram estoque — a trava de baixa duplicada abaixo
     // (isAlreadyFinalized) barra qualquer item nesse estado, então bloqueava a própria correção
@@ -3080,7 +3143,14 @@ export default function PCPView({
     // mesmo mapa for removido entre montar a confirmação e aplicá-la). Sem essa
     // distinção, baixar uma fração arrastaria junto a quantidade das frações irmãs
     // ainda não baixadas, duplicando consumo de solado e crédito de estoque.
-    const matchesItem = (si: any, item: { orderId: string; itemIdx?: number; fractionLabel?: string }) => {
+    const matchesItem = (si: any, item: { orderId: string; itemIdx?: number; fractionLabel?: string; lineId?: string }) => {
+      // lineId é globalmente único e estável — quando os dois lados o têm, ele sozinho já
+      // decide o casamento (mais confiável que orderId+itemIdx, que quebra se o pedido foi
+      // reordenado/editado entre o momento em que `item` foi montado e agora).
+      if (si.lineId && item.lineId) {
+        if (si.lineId !== item.lineId) return false;
+        return (si.fractionLabel || undefined) === (item.fractionLabel || undefined);
+      }
       if (si.orderId !== item.orderId) return false;
       if (item.itemIdx !== undefined && si.itemIdx !== item.itemIdx) return false;
       return (si.fractionLabel || undefined) === (item.fractionLabel || undefined);
@@ -3263,6 +3333,9 @@ export default function PCPView({
           saleOrderNumber: prodOrder.saleOrderNumber,
           customerName: prodOrder.customerName,
           createdAt: Date.now(),
+          lineId: resolved.lineId,
+          boxIds: resolved.boxIds,
+          sourceItemKey: getSourceItemKey(si),
         };
         await firebaseService.saveDocument('stockLots', stockLot);
       }
@@ -3303,6 +3376,9 @@ export default function PCPView({
           saleOrderNumber: sale?.orderNumber || prodOrder.saleOrderNumber,
           customerName: sale?.customerName || prodOrder.customerName,
           createdAt: Date.now(),
+          lineId: resolved.lineId,
+          boxIds: resolved.boxIds,
+          sourceItemKey: getSourceItemKey(si),
         };
         await firebaseService.saveDocument('stockLots', stockLot);
       }
@@ -3374,11 +3450,7 @@ export default function PCPView({
         // variação marcava TODOS os itens do pedido como "já tem StockLot" assim que o
         // primeiro deles ganhava um, escondendo os demais (ex.: 320 CASTOR gravado normalmente,
         // 320 GRAFITE do mesmo pedido nunca detectado como faltante).
-        const hasStockLot = stockLots.some(sl => {
-          if (sl.lotId !== lot.id || sl.productionOrderId !== si.orderId) return false;
-          if (si.itemIdx !== undefined) return sl.itemIdx === si.itemIdx;
-          return sl.productId === si.productId && sl.variationId === si.variationId;
-        });
+        const hasStockLot = stockLots.some(sl => stockLotMatchesSourceItem(sl, si, lot.id));
         if (hasStockLot) continue;
         // Verifica se é pedido de produção válido. Antes, qualquer falha de resolução aqui
         // (pedido excluído, item/produto/variação não encontrado) fazia o item sumir da
@@ -3413,6 +3485,41 @@ export default function PCPView({
           orderId: si.orderId, itemIdx: si.itemIdx, fractionLabel: si.fractionLabel,
           productId: prod.id, variationId: vari.id,
           productName: `${prod.reference ? prod.reference + ' ' : ''}${prod.name}`, variationName: vari.colorName,
+          qty: si.qty || 0,
+        });
+      }
+    }
+
+    // --- Tipo C: produção em andamento (ou já finalizada) sem lineId — backfill de
+    // identidade de linha pra Mapas criados antes da introdução do rastreio de caixa.
+    // Ao contrário do Tipo B, não exige ORDER_FINALIZED nem checa StockLot: o objetivo
+    // aqui é só dar identidade estável a itens que ainda não têm, não creditar estoque.
+    for (const lot of lots) {
+      const sourceItems: any[] = (lot as any).metadata?.sourceItems || [];
+      if (sourceItems.length === 0) continue;
+      const repairAcknowledgedC: Record<string, boolean> = (lot as any).metadata?.repairAcknowledged || {};
+      const seenSIKeysThisLot = new Set<string>();
+      for (const si of sourceItems) {
+        if (si.lineId) continue;
+        const siKey = getSourceItemKey(si);
+        if (seenSIKeysThisLot.has(siKey)) continue;
+        seenSIKeysThisLot.add(siKey);
+        if (repairAcknowledgedC[siKey]) continue;
+        const prodOrder = productionOrders.find(o => o.id === si.orderId);
+        const ordItem: any = prodOrder
+          ? (si.itemIdx !== undefined
+            ? prodOrder.items[si.itemIdx]
+            : prodOrder.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId))
+          : undefined;
+        const prod = products.find(p => p.id === (si.productId || ordItem?.productId));
+        const vari = prod?.variations.find(v => v.id === (si.variationId || ordItem?.variationId));
+        result.push({
+          kind: 'assign_line_id', selected: true,
+          lotId: lot.id, lotOrderNumber: lot.orderNumber || '',
+          orderId: si.orderId, itemIdx: si.itemIdx, fractionLabel: si.fractionLabel,
+          productId: si.productId, variationId: si.variationId,
+          productName: prod ? `${prod.reference ? prod.reference + ' ' : ''}${prod.name}` : 'Produto não encontrado',
+          variationName: vari?.colorName || '—',
           qty: si.qty || 0,
         });
       }
@@ -3483,10 +3590,106 @@ export default function PCPView({
         await applyExpedicaoStockUpdate(lot, stockItems, customerItems, true);
       }
 
+      // Tipo C: backfill de lineId em sourceItems de produção já em andamento — não mexe
+      // em estoque, só grava o novo ID no Mapa e (quando possível) propaga o MESMO ID pro
+      // ProductionOrderItem correspondente, pra ficarem em sincronia caso o pedido seja
+      // reeditado depois. Agrupa por Mapa/Pedido pra escrever o array inteiro de uma vez
+      // (evita que updates concorrentes ao mesmo array se sobrescrevam).
+      const assignLineIds = selected.filter((it): it is Extract<StockRepairItem, { kind: 'assign_line_id' }> => it.kind === 'assign_line_id');
+      if (assignLineIds.length > 0) {
+        const byLot = new Map<string, typeof assignLineIds>();
+        assignLineIds.forEach(it => {
+          const arr = byLot.get(it.lotId) || [];
+          arr.push(it);
+          byLot.set(it.lotId, arr);
+        });
+        const orderItemUpdates = new Map<string, any[]>();
+        for (const [lotId, lotItems] of byLot.entries()) {
+          const lot = lots.find(l => l.id === lotId);
+          if (!lot) continue;
+          const sourceItems: any[] = [...((lot as any).metadata?.sourceItems || [])];
+          const orderSectors: Record<string, string> = { ...(lot as any).metadata?.orderSectors };
+          lotItems.forEach(it => {
+            const idx = sourceItems.findIndex((si: any) =>
+              si.orderId === it.orderId && si.itemIdx === it.itemIdx && (si.fractionLabel || undefined) === (it.fractionLabel || undefined)
+            );
+            if (idx === -1 || sourceItems[idx].lineId) return;
+            const newLineId = generateId();
+            // Migra a marcação de setor (inclusive ORDER_FINALIZED) da chave antiga
+            // (orderId::itemIdx) pra nova (line-<lineId>) — getSourceItemKey passa a
+            // preferir lineId assim que ele existe, então sem essa migração o item
+            // "perde" a marcação de finalizado (a chave antiga fica órfã em
+            // orderSectors) e reaparece como se ainda estivesse em produção mesmo já
+            // tendo creditado estoque.
+            const oldKey = getSourceItemKey(sourceItems[idx]);
+            const updatedSi = { ...sourceItems[idx], lineId: newLineId };
+            const newKey = getSourceItemKey(updatedSi);
+            sourceItems[idx] = updatedSi;
+            if (oldKey !== newKey && orderSectors[oldKey] !== undefined) {
+              orderSectors[newKey] = orderSectors[oldKey];
+              delete orderSectors[oldKey];
+            }
+            if (it.itemIdx !== undefined) {
+              const order = productionOrders.find(o => o.id === it.orderId);
+              const ordItem = order?.items[it.itemIdx];
+              if (order && ordItem && !ordItem.lineId) {
+                const updatedItems = orderItemUpdates.get(it.orderId) || [...order.items];
+                updatedItems[it.itemIdx] = { ...updatedItems[it.itemIdx], lineId: newLineId };
+                orderItemUpdates.set(it.orderId, updatedItems);
+              }
+            }
+          });
+          await firebaseService.updateDocument('productionLots', lotId, { metadata: { ...(lot as any).metadata, sourceItems, orderSectors } });
+        }
+        for (const [orderId, items] of orderItemUpdates.entries()) {
+          await firebaseService.updateDocument('productionOrders', orderId, { items });
+        }
+      }
+
       setStockRepairModal(prev => prev ? { ...prev, phase: 'done', appliedCount: selected.length } : prev);
     } catch (e) {
       setStockRepairModal(prev => prev ? { ...prev, phase: 'preview', errorMsg: String(e) } : prev);
     }
+  };
+
+  // Repara o efeito colateral de uma versão anterior do backfill "Atribuir ID de
+  // rastreio": adicionar lineId a um sourceItem que já tinha uma marcação em
+  // metadata.orderSectors (ex.: ORDER_FINALIZED) gravada sob a chave ANTIGA
+  // (orderId::itemIdx) fazia essa marcação ficar órfã, porque getSourceItemKey passa a
+  // preferir lineId assim que ele existe — o item "perdia" o status de finalizado e
+  // reaparecia como se ainda estivesse em produção, mesmo já tendo creditado estoque.
+  // Reconstrói a chave antiga de cada sourceItem com lineId e migra a marcação órfã
+  // (se existir) pra chave nova, sem mexer em estoque algum. Idempotente — rodar de
+  // novo em cima de Mapas já corrigidos não faz nada.
+  const repairOrphanedFinalizedKeys = async (): Promise<{ fixed: number; lotsTouched: number }> => {
+    let fixed = 0;
+    let lotsTouched = 0;
+    for (const lot of lots) {
+      const sourceItems: any[] = (lot as any).metadata?.sourceItems || [];
+      if (sourceItems.length === 0) continue;
+      const orderSectors: Record<string, string> = { ...(lot as any).metadata?.orderSectors };
+      let changed = false;
+      sourceItems.forEach((si: any) => {
+        if (!si.lineId) return;
+        const oldBase = si.itemIdx !== undefined
+          ? `${si.orderId}::${si.itemIdx}`
+          : `${si.orderId}::${si.productId || ''}-${si.variationId || ''}`;
+        const oldKey = si.fractionLabel ? `${oldBase}::frac-${si.fractionLabel}` : oldBase;
+        const newKey = getSourceItemKey(si);
+        if (oldKey === newKey) return;
+        if (orderSectors[oldKey] !== undefined && orderSectors[newKey] === undefined) {
+          orderSectors[newKey] = orderSectors[oldKey];
+          delete orderSectors[oldKey];
+          changed = true;
+          fixed++;
+        }
+      });
+      if (changed) {
+        await firebaseService.updateDocument('productionLots', lot.id, { metadata: { ...(lot as any).metadata, orderSectors } });
+        lotsTouched++;
+      }
+    }
+    return { fixed, lotsTouched };
   };
 
   // "Já resolvi manualmente": para quando o usuário já incluiu a caixa no estoque por fora
@@ -3909,7 +4112,7 @@ export default function PCPView({
         // a grade some no "Visualizar Pedidos da OS" se o Pedido de Produção original
         // for editado/excluído depois (o total em "qty" fica congelado, mas a grade era
         // buscada ao vivo no pedido).
-        sourceItems: selectedData.map(i => ({ orderId: i.orderId, itemIdx: i.itemIdx, qty: i.toProductionQty, productId: i.productId, variationId: i.variationId, sizes: i.sizes })),
+        sourceItems: selectedData.map(i => ({ orderId: i.orderId, itemIdx: i.itemIdx, qty: i.toProductionQty, productId: i.productId, variationId: i.variationId, sizes: i.sizes, lineId: i.lineId, boxIds: i.boxIds })),
         groups: groupEntries.map(g => ({
           productId: g.productId,
           variationId: g.variationId,
@@ -4986,6 +5189,12 @@ export default function PCPView({
                 { label: 'OS Concluídas', icon: <CheckSquare size={20} />, color: 'text-emerald-500', bg: isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50', run: () => setShowCompletedOSModal(true) },
                 { label: 'Diag. Estoque', icon: <AlertTriangle size={20} />, color: 'text-rose-500', bg: isDarkMode ? 'bg-rose-500/10' : 'bg-rose-50', run: () => setShowStockDiagnosticModal(true), dot: duplicateStockLotGroups.length > 0 },
                 { label: 'Reparar Caixas', icon: <Wrench size={20} />, color: 'text-amber-500', bg: isDarkMode ? 'bg-amber-500/10' : 'bg-amber-50', run: () => { const items = buildStockRepairItems(); setStockRepairModal({ phase: 'preview', items, appliedCount: 0 }); } },
+                { label: 'Reparar Finalizados', icon: <Wrench size={20} />, color: 'text-emerald-500', bg: isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50', run: async () => {
+                    const { fixed, lotsTouched } = await repairOrphanedFinalizedKeys();
+                    toast.show(fixed > 0
+                      ? `${fixed} item(ns) corrigido(s) em ${lotsTouched} mapa(s) — status de finalizado restaurado.`
+                      : 'Nenhum item órfão encontrado — nada a corrigir.');
+                  } },
               ].map((action) => (
                 <button
                   key={action.label}
@@ -8287,8 +8496,14 @@ export default function PCPView({
             {filteredLots.length > 0 && (
               <button
                 onClick={async () => {
-                  if (confirm(`Deseja excluir TODOS os ${filteredLots.length} mapas e voltar os pedidos para pendentes?`)) {
-                    for (const lot of filteredLots) {
+                  // Nunca exclui mapa com OS pendente vinculada — a exclusão só reabre a
+                  // OP como pendente, não cancela/limpa a OS, deixando-a órfã.
+                  const hasPendingOSFor = (lotId: string) => serviceOrders.some(os => os.status === 'PENDING' && (os.lotId === lotId || os.lotIds?.includes(lotId)));
+                  const toDelete = filteredLots.filter(lot => !hasPendingOSFor(lot.id));
+                  const skipped = filteredLots.length - toDelete.length;
+                  if (toDelete.length === 0) { toast.show('Nenhum mapa pode ser excluído — todos têm OS pendente vinculada.'); return; }
+                  if (confirm(`Deseja excluir ${toDelete.length} mapa(s) e voltar os pedidos para pendentes?${skipped > 0 ? `\n\n${skipped} mapa(s) com OS pendente vinculada serão mantidos.` : ''}`)) {
+                    for (const lot of toDelete) {
                       await onDeleteLot(lot.id);
                     }
                   }
@@ -8372,6 +8587,11 @@ export default function PCPView({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
+                        const hasPendingOS = serviceOrders.some(os => os.status === 'PENDING' && (os.lotId === lot.id || os.lotIds?.includes(lot.id)));
+                        if (hasPendingOS) {
+                          toast.show('Este mapa tem uma OS pendente vinculada — conclua ou cancele a OS antes de excluir.');
+                          return;
+                        }
                         if (confirm('Excluir este mapa permanentemente?')) {
                           onDeleteLot(lot.id);
                         }
@@ -10926,6 +11146,11 @@ export default function PCPView({
                 <button
                   type="button"
                   onClick={async () => {
+                    const hasPendingOS = serviceOrders.some(os => os.status === 'PENDING' && (os.lotId === selectedLot.id || os.lotIds?.includes(selectedLot.id)));
+                    if (hasPendingOS) {
+                      toast.show('Este mapa tem uma OS pendente vinculada — conclua ou cancele a OS antes de excluir.');
+                      return;
+                    }
                     if (confirm('Deseja excluir este mapa permanentemente?')) {
                       await onDeleteLot(selectedLot.id);
                       setIsDetailModalOpen(false);
@@ -11653,6 +11878,7 @@ export default function PCPView({
         isDarkMode={isDarkMode}
         groups={duplicateStockByRefColor}
         onMarkResolved={markStockDuplicatesResolved}
+        onFixNow={fixStockDuplicateGroup}
       />
 
       {/* ── Modal: Reparar Caixas ATACADO ── */}
@@ -11667,7 +11893,7 @@ export default function PCPView({
                 </div>
                 <div>
                   <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Reparar Estoque de Caixas</h3>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Pedidos finalizados sem entrada em estoque</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Estoque, StockLot e IDs de rastreio</p>
                 </div>
               </div>
               {stockRepairModal.phase !== 'running' && (
@@ -11708,8 +11934,8 @@ export default function PCPView({
                       <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 mb-0.5">
-                            <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${it.kind === 'fix_boxqty' ? 'bg-amber-500/15 text-amber-600' : it.kind === 'create_stocklot' ? 'bg-rose-500/15 text-rose-600' : 'bg-slate-500/15 text-slate-500'}`}>
-                              {it.kind === 'fix_boxqty' ? 'Corrigir boxQty' : it.kind === 'create_stocklot' ? 'Criar StockLot' : 'Não resolvido — investigar'}
+                            <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${it.kind === 'fix_boxqty' ? 'bg-amber-500/15 text-amber-600' : it.kind === 'create_stocklot' ? 'bg-rose-500/15 text-rose-600' : it.kind === 'assign_line_id' ? 'bg-sky-500/15 text-sky-600' : 'bg-slate-500/15 text-slate-500'}`}>
+                              {it.kind === 'fix_boxqty' ? 'Corrigir boxQty' : it.kind === 'create_stocklot' ? 'Criar StockLot' : it.kind === 'assign_line_id' ? 'Atribuir ID de rastreio' : 'Não resolvido — investigar'}
                             </span>
                           </div>
                           {it.kind === 'unresolved_finalized' ? (
@@ -11762,6 +11988,17 @@ export default function PCPView({
                           </>
                         ) : it.kind === 'unresolved_finalized' ? (
                           <div className="text-rose-500">{it.reason}</div>
+                        ) : it.kind === 'assign_line_id' ? (
+                          <>
+                            <div className="flex justify-between">
+                              <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Qtd.:</span>
+                              <span className={isDarkMode ? 'text-white' : 'text-slate-800'}>{it.qty} prs</span>
+                            </div>
+                            <div className="flex justify-between text-sky-500">
+                              <span>Ação:</span>
+                              <span>Atribuir novo ID de rastreio (não mexe em estoque)</span>
+                            </div>
+                          </>
                         ) : (
                           <>
                             <div className="flex justify-between">
