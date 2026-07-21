@@ -431,6 +431,21 @@
   .animate-pulse-orange-ring {
     animation: pulse-orange-ring 1.8s infinite;
   }
+
+  @keyframes pulse-rose-ring {
+    0% {
+      box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.6);
+    }
+    70% {
+      box-shadow: 0 0 0 8px rgba(244, 63, 94, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(244, 63, 94, 0);
+    }
+  }
+  .animate-pulse-rose-ring {
+    animation: pulse-rose-ring 1.8s infinite;
+  }
 }
 
 /* ── Global Print Rules ───────────────────────────────────────────────────── */

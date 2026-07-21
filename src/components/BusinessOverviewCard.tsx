@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PurchaseType, Sale, Product, SaleType, ProductionLot } from '../types';
-import { TrendingUp, TrendingDown, DollarSign, Wallet, CheckCircle2, AlertCircle, Package, ChevronDown, Tag, Factory, X, ShoppingBag, Landmark, Boxes, Calendar, Receipt } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Wallet, CheckCircle2, AlertCircle, Package, ChevronDown, Tag, Factory, X, ShoppingBag, Landmark, Boxes, Calendar, Receipt, Banknote } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '../utils/toast';
@@ -47,6 +47,7 @@ const OVERVIEW_SOURCE_COLORS: Record<string, { chip: string; icon: string; iconB
   amber: { chip: 'text-amber-600 dark:text-amber-400', icon: 'text-amber-600 dark:text-amber-400', iconBg: 'bg-amber-50 dark:bg-amber-900/30', solid: 'bg-amber-500', ring: 'border-amber-300 dark:border-amber-700' },
   teal: { chip: 'text-teal-600 dark:text-teal-400', icon: 'text-teal-600 dark:text-teal-400', iconBg: 'bg-teal-50 dark:bg-teal-900/30', solid: 'bg-teal-500', ring: 'border-teal-300 dark:border-teal-700' },
   indigo: { chip: 'text-indigo-600 dark:text-indigo-400', icon: 'text-indigo-600 dark:text-indigo-400', iconBg: 'bg-indigo-50 dark:bg-indigo-900/30', solid: 'bg-indigo-500', ring: 'border-indigo-300 dark:border-indigo-700' },
+  cyan: { chip: 'text-cyan-600 dark:text-cyan-400', icon: 'text-cyan-600 dark:text-cyan-400', iconBg: 'bg-cyan-50 dark:bg-cyan-900/30', solid: 'bg-cyan-500', ring: 'border-cyan-300 dark:border-cyan-700' },
 };
 
 const OVERVIEW_PERIOD_LABELS: Record<OverviewPeriodType, string> = {
@@ -154,7 +155,7 @@ export default function BusinessOverviewCard({
     return () => unsub();
   }, []);
 
-  const toggleOverviewSource = (key: 'includeStock' | 'includeAccounts' | 'includeProduction' | 'includeReceivables' | 'includeReceivedSalesRevenue') => {
+  const toggleOverviewSource = (key: 'includeStock' | 'includeAccounts' | 'includeProduction' | 'includeReceivables' | 'includeReceivedSalesRevenue' | 'includeAllIncome') => {
     const next = { ...overviewConfig, [key]: !overviewConfig[key] };
     setOverviewConfig(next);
     saveBusinessOverviewConfig(next);
@@ -255,6 +256,18 @@ export default function BusinessOverviewCard({
     return { items: [...items].sort((a, b) => b.amount - a.amount), linkedToPurchase, other };
   }, [transactions, overviewConfig.periodType, overviewConfig.periodDate]);
 
+  // Detalhamento de "Receitas Totais (Transações)" — mesma lógica da de Despesas,
+  // só que pro lado de entrada, pra conferir item a item o que compõe a soma.
+  const [showIncomeBreakdown, setShowIncomeBreakdown] = useState(false);
+
+  const periodIncomeBreakdown = useMemo(() => {
+    const { start, end } = getPeriodRange(overviewConfig.periodType, overviewConfig.periodDate);
+    const items = transactions.filter(t => !t.isPersonal && t.status === 'COMPLETED' && t.type === TransactionType.INCOME && t.date >= start && t.date <= end);
+    const linkedToSale = items.filter(t => !!t.relatedId).reduce((a, t) => a + t.amount, 0);
+    const other = items.filter(t => !t.relatedId).reduce((a, t) => a + t.amount, 0);
+    return { items: [...items].sort((a, b) => b.amount - a.amount), linkedToSale, other };
+  }, [transactions, overviewConfig.periodType, overviewConfig.periodDate]);
+
   const resumo = useMemo(() => ({
     consolidatedBalance: computeAccountBalance(accounts),
     pendingReceivables: computePendingReceivables(sales),
@@ -283,6 +296,7 @@ export default function BusinessOverviewCard({
       { key: 'includeProduction' as const, label: 'Lucro em Produção', desc: 'Pares em andamento × lucro unitário cadastrado', value: productionProfit, color: 'violet', icon: Factory },
       { key: 'includeReceivables' as const, label: 'Vendas a Receber', desc: 'Pedidos fechados, ainda não pagos', value: pendingReceivables, color: 'amber', icon: DollarSign },
       { key: 'includeReceivedSalesRevenue' as const, label: 'Vendas Recebidas (Valor Cheio)', desc: 'Total recebido no período, sem descontar custo — diferente do "Lucro em Vendas" do Resumo Financeiro, que já é só a margem', value: receivedSalesRevenue, color: 'indigo', icon: Receipt },
+      { key: 'includeAllIncome' as const, label: 'Receitas Totais (Transações)', desc: 'Soma de toda entrada confirmada em Financeiro no período — venda ou não. Não marque junto de "Vendas Recebidas": uma venda recebida normalmente já vira uma transação de receita, então as duas juntas contam o mesmo dinheiro em dobro', value: income, color: 'cyan', icon: Banknote, onConfigure: () => setShowIncomeBreakdown(true) },
     ];
 
     const includedTotal = sources.filter(s => overviewConfig[s.key]).reduce((acc, s) => acc + s.value, 0);
@@ -290,8 +304,9 @@ export default function BusinessOverviewCard({
     const margin = income > 0 ? (profit / income) * 100 : 0;
 
     // Comparação com outro período — só as partes que variam por período (Despesas,
-    // Vendas Recebidas) mudam de fato; Estoque/Produção/Saldo/A Receber são "de agora"
-    // e não têm histórico salvo, então entram com o mesmo valor nos dois lados.
+    // Vendas Recebidas, Receitas Totais) mudam de fato; Estoque/Produção/Saldo/A
+    // Receber são "de agora" e não têm histórico salvo, então entram com o mesmo
+    // valor nos dois lados.
     let comparison: { profit: number; delta: number; label: string } | null = null;
     if (overviewConfig.comparisonMode !== 'NONE') {
       let compStart: number, compEnd: number, label: string;
@@ -310,7 +325,9 @@ export default function BusinessOverviewCard({
       const compReceivedSalesRevenue = computeReceivedSalesRevenueInPeriod(sales, compStart, compEnd);
       const compIncludedTotal = sources.reduce((acc, s) => {
         if (!overviewConfig[s.key]) return acc;
-        return acc + (s.key === 'includeReceivedSalesRevenue' ? compReceivedSalesRevenue : s.value);
+        if (s.key === 'includeReceivedSalesRevenue') return acc + compReceivedSalesRevenue;
+        if (s.key === 'includeAllIncome') return acc + compFin.income;
+        return acc + s.value;
       }, 0);
       const compProfit = compIncludedTotal - compFin.expenses;
       const delta = compProfit === 0 ? (profit > 0 ? 100 : profit < 0 ? -100 : 0) : ((profit - compProfit) / Math.abs(compProfit)) * 100;
@@ -373,13 +390,13 @@ export default function BusinessOverviewCard({
               ))}
             </div>
 
-            <div className="flex items-center gap-2">
-              <Calendar size={13} className="text-slate-400 shrink-0" />
+            <div className={`flex items-center gap-2 rounded-xl px-3 py-2 border-2 ${isDarkMode ? 'bg-orange-900/20 border-orange-800/40' : 'bg-orange-50 border-orange-200'}`}>
+              <Calendar size={13} className="text-orange-500 shrink-0" />
               <input
                 type="month"
                 value={overviewConfig.periodDate}
                 onChange={(e) => setPeriodDate(e.target.value)}
-                className={`flex-1 border-none rounded-xl px-3 py-2 text-[10px] font-bold outline-none ${isDarkMode ? 'bg-slate-950 text-white' : 'bg-slate-50 text-slate-700'}`}
+                className={`flex-1 border-none bg-transparent px-0 py-0 text-[10px] font-black outline-none ${isDarkMode ? 'text-orange-400' : 'text-orange-700'}`}
               />
             </div>
 
@@ -474,6 +491,37 @@ export default function BusinessOverviewCard({
                   </p>
                   <p className="text-sm font-black mt-0.5 text-rose-500">R$ {businessOverview.expenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </button>
+              </div>
+
+              <div className="mt-4">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Fontes Marcadas × Despesas do Período</p>
+                <div className="flex flex-col gap-2.5">
+                  <div>
+                    <div className="flex justify-between items-baseline text-[9px] font-black mb-1">
+                      <span className="text-emerald-500 uppercase tracking-widest">Fontes marcadas</span>
+                      <span className="text-emerald-500">R$ {businessOverview.includedTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-emerald-500 transition-all"
+                        style={{ width: `${Math.max(3, Math.min(100, (Math.abs(businessOverview.includedTotal) / (Math.max(Math.abs(businessOverview.includedTotal), businessOverview.expenses) || 1)) * 100))}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between items-baseline text-[9px] font-black mb-1">
+                      <span className="text-rose-500 uppercase tracking-widest">Despesas</span>
+                      <span className="text-rose-500">R$ {businessOverview.expenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                    <div className="h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-rose-500 transition-all"
+                        style={{ width: `${Math.max(3, Math.min(100, (businessOverview.expenses / (Math.max(Math.abs(businessOverview.includedTotal), businessOverview.expenses) || 1)) * 100))}%` }}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[8.5px] font-bold text-slate-400 leading-relaxed">Reflete só as fontes marcadas em "Fontes Incluídas no Cálculo" abaixo — desmarque ou marque uma fonte e a barra muda.</p>
+                </div>
               </div>
 
               {nonAccountingLeaks.length > 0 && (
@@ -575,7 +623,7 @@ export default function BusinessOverviewCard({
                     <button
                       type="button"
                       onClick={() => (s.onConfigure ? s.onConfigure() : toggleOverviewSource(s.key))}
-                      title={s.onConfigure ? `Escolher contas incluídas` : undefined}
+                      title={s.onConfigure ? `Ver detalhes de ${s.label}` : undefined}
                       className="flex-1 min-w-0 flex items-center gap-3 text-left"
                     >
                       <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${colors.iconBg} ${colors.icon} ${checked ? '' : 'opacity-40'}`}>
@@ -590,7 +638,22 @@ export default function BusinessOverviewCard({
                             </span>
                           )}
                         </p>
-                        <p className="text-[9px] font-bold text-slate-400">{s.desc}</p>
+                        <p className="text-[9px] font-bold text-slate-400">
+                          {s.key === 'includeAllIncome' ? (
+                            <>
+                              Soma de toda entrada confirmada em Financeiro no período — venda ou não. Não marque junto de{' '}
+                              <span className="inline-flex items-center gap-1 font-black text-rose-500">
+                                "Vendas Recebidas"
+                                <span className="relative inline-flex items-center justify-center w-3 h-3 rounded-full bg-rose-500 animate-pulse-rose-ring shrink-0">
+                                  <span className="text-white text-[7px] font-black leading-none">!</span>
+                                </span>
+                              </span>
+                              : uma venda recebida normalmente já vira uma transação de receita, então as duas juntas contam o mesmo dinheiro em dobro.
+                            </>
+                          ) : (
+                            s.desc
+                          )}
+                        </p>
                       </div>
                     </button>
                     <p className={`text-[12px] font-black shrink-0 ${checked ? colors.chip : 'text-slate-400'}`}>
@@ -599,6 +662,14 @@ export default function BusinessOverviewCard({
                   </div>
                 );
               })}
+              {overviewConfig.includeReceivedSalesRevenue && overviewConfig.includeAllIncome && (
+                <div className="w-full flex items-start gap-2.5 p-3 rounded-2xl border-2 border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20">
+                  <AlertCircle size={15} className="text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-[9.5px] font-bold text-amber-700 dark:text-amber-400 leading-relaxed">
+                    "Vendas Recebidas" e "Receitas Totais (Transações)" estão marcadas juntas — uma venda recebida normalmente já gera uma transação de receita, então esse dinheiro entra contado duas vezes no total. Desmarque uma das duas.
+                  </p>
+                </div>
+              )}
             </div>
 
             {businessOverview.includedTotal > 0 && (
@@ -608,6 +679,12 @@ export default function BusinessOverviewCard({
                   {businessOverview.sources.filter((s) => overviewConfig[s.key] && s.value > 0).map((s) => (
                     <div key={s.key} className={OVERVIEW_SOURCE_COLORS[s.color].solid} style={{ width: `${(s.value / businessOverview.includedTotal) * 100}%` }} />
                   ))}
+                </div>
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-[9px] font-bold text-slate-400">Total das fontes marcadas</span>
+                  <span className={`text-[13px] font-black ${businessOverview.includedTotal >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    R$ {businessOverview.includedTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
                 </div>
               </div>
             )}
@@ -848,6 +925,67 @@ export default function BusinessOverviewCard({
               <button
                 type="button"
                 onClick={() => setShowExpenseBreakdown(false)}
+                className="w-full py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-indigo-600 text-white"
+              >
+                Concluído
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {showIncomeBreakdown && createPortal(
+        <div className="fixed inset-0 z-[65000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowIncomeBreakdown(false)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-sm max-h-[80vh] overflow-y-auto rounded-[2rem] shadow-2xl flex flex-col ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+          >
+            <div className="flex items-center justify-between p-6 pb-4 border-b border-slate-100 dark:border-slate-800">
+              <div>
+                <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Receitas do Período</h3>
+                <p className="text-[10px] font-bold text-slate-400 mt-0.5">{periodIncomeBreakdown.items.length} lançamento(s) — {OVERVIEW_PERIOD_LABELS[overviewConfig.periodType]} atual</p>
+              </div>
+              <button type="button" onClick={() => setShowIncomeBreakdown(false)} className={`p-2 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
+                <X size={18} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="flex gap-3 px-6 pt-4">
+              <div className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
+                <p className="text-[8px] font-black text-slate-400 tracking-widest">Vinculadas a venda</p>
+                <p className="text-sm font-black mt-0.5 text-emerald-500">R$ {periodIncomeBreakdown.linkedToSale.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              </div>
+              <div className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
+                <p className="text-[8px] font-black text-slate-400 tracking-widest">Outros lançamentos</p>
+                <p className="text-sm font-black mt-0.5 text-emerald-500">R$ {periodIncomeBreakdown.other.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 p-6">
+              {periodIncomeBreakdown.items.length === 0 && (
+                <p className="text-[10px] font-bold text-slate-400 text-center py-6">Nenhuma receita nesse período.</p>
+              )}
+              {periodIncomeBreakdown.items.map((t) => {
+                const categoryName = categories.find(c => c.id === t.categoryId)?.name;
+                return (
+                  <div key={t.id} className={`flex items-center gap-3 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-[11px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{t.description || categoryName || 'Receita'}</p>
+                      <p className="text-[9px] font-bold text-slate-400">
+                        {format(t.date, 'dd/MM/yyyy')}{categoryName ? ` · ${categoryName}` : ''}{t.contactName ? ` · ${t.contactName}` : ''}{t.relatedId ? ' · vinculada a venda' : ''}
+                      </p>
+                    </div>
+                    <p className="text-[11px] font-black text-emerald-500 shrink-0">R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="p-6 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowIncomeBreakdown(false)}
                 className="w-full py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-indigo-600 text-white"
               >
                 Concluído

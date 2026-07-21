@@ -9,6 +9,7 @@ export interface BusinessOverviewConfig {
   includeProduction: boolean;
   includeReceivables: boolean;
   includeReceivedSalesRevenue: boolean;
+  includeAllIncome: boolean;
   periodType: OverviewPeriodType;
   periodDate: string; // "yyyy-MM" — mês/ano de referência do período selecionado
   comparisonMode: OverviewComparisonMode;
@@ -38,6 +39,7 @@ export const DEFAULT_BUSINESS_OVERVIEW_CONFIG: BusinessOverviewConfig = {
   includeProduction: true,
   includeReceivables: false,
   includeReceivedSalesRevenue: false,
+  includeAllIncome: false,
   periodType: 'MONTH',
   periodDate: currentMonthStr(),
   comparisonMode: 'AUTO',
