@@ -265,6 +265,32 @@ export const firebaseService = {
     }
   },
 
+  // Aplica várias escritas (em coleções possivelmente diferentes) num único WriteBatch —
+  // ou tudo é gravado, ou nada é (ao contrário de uma sequência de saveDocument/
+  // updateDocument separados, onde uma falha no meio deixa gravações anteriores
+  // "penduradas" sem as que vinham depois). Usado por fluxos como Separar Caixas/Expedir
+  // Venda, onde estoque + StockLot + venda precisam mudar juntos ou não mudar nenhum,
+  // pra uma falha parcial nunca debitar estoque sem marcar a venda como separada (o que
+  // deixava um novo clique repetir o débito).
+  runBatchWrites: async (writes: Array<{ type: 'set' | 'update'; path: string; id: string; data: any }>): Promise<void> => {
+    if (!auth.currentUser) throw new Error('Not authenticated');
+    if (writes.length === 0) return;
+    const uid = auth.currentUser.uid;
+    const batch = writeBatch(db);
+    writes.forEach(w => {
+      const fullPath = `users/${uid}/${w.path}`;
+      const ref = doc(db, fullPath, w.id);
+      const clean = deepClean(w.data);
+      if (w.type === 'set') batch.set(ref, clean, { merge: true });
+      else batch.update(ref, clean);
+    });
+    try {
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, 'batch-write');
+    }
+  },
+
   // Move documentos de uma coleção para outra (copia + apaga da original) em lotes —
   // usado pelo arquivamento (DataCleanupView): cada "move" é 1 set + 1 delete = 2
   // operações, e o Firestore limita a 500 operações por batch, então no máximo 250

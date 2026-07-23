@@ -1,8 +1,8 @@
-import { 
-  Users, 
-  ShoppingBag, 
-  Factory, 
-  CheckCircle2, 
+import {
+  Users,
+  ShoppingBag,
+  Factory,
+  CheckCircle2,
   Circle,
   ArrowRight,
   Shield,
@@ -13,7 +13,8 @@ import {
   Wallet,
   Boxes,
   Lock,
-  AlertTriangle
+  AlertTriangle,
+  Store
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
@@ -45,7 +46,14 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
         setIsConfirmOpen(true);
         return;
       }
-      
+      if (module === 'marketplace') {
+        setConfirmTitle("Atualização Futura");
+        setConfirmMessage("O Módulo Marketplace está em atualização e será liberado em uma versão futura.");
+        setPendingModule(null);
+        setIsConfirmOpen(true);
+        return;
+      }
+
       // Activation is usually safe
       const newConfig = { ...config };
       newConfig[module] = true;
@@ -53,11 +61,12 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     } else {
       // Deactivation requires warning
       setPendingModule(module);
-      if (module === 'sales' && config.production) {
+      if (module === 'sales' && (config.production || config.marketplace)) {
+        const dependents = [config.production && 'Produção', config.marketplace && 'Marketplace'].filter(Boolean).join(' e ');
         setConfirmTitle("Desativar Vendas");
-        setConfirmMessage("Ao desativar o Módulo de Vendas, o Módulo de Produção também será desativado automaticamente. Deseja continuar?");
+        setConfirmMessage(`Ao desativar o Módulo de Vendas, o Módulo de ${dependents} também será desativado automaticamente. Deseja continuar?`);
       } else {
-        const moduleName = module === 'personal' ? 'Pessoal' : module === 'sales' ? 'Vendas' : 'Produção';
+        const moduleName = module === 'personal' ? 'Pessoal' : module === 'sales' ? 'Vendas' : module === 'production' ? 'Produção' : 'Marketplace';
         setConfirmTitle(`Desativar ${moduleName}`);
         setConfirmMessage(`Tem certeza que deseja ocultar o Módulo ${moduleName}? Os dados não serão apagados, mas as funções ficarão inacessíveis.`);
       }
@@ -75,10 +84,11 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     if (pendingModule === 'sales') {
       newConfig.sales = false;
       newConfig.production = false;
+      newConfig.marketplace = false;
     } else {
       newConfig[pendingModule] = false;
     }
-    
+
     onSave(newConfig);
     setIsConfirmOpen(false);
     setPendingModule(null);
@@ -112,6 +122,17 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       disabled: !config.sales,
       color: 'bg-indigo-600',
       features: ['Engenharia de Produto', 'Estoque de Insumos', 'Controle de PCP', 'Necessidade de Compras']
+    },
+    {
+      id: 'marketplace',
+      name: 'Módulo Marketplace',
+      description: 'Integração com plataformas externas (Shopee) — pedidos e estoque.',
+      icon: <Store size={28} />,
+      active: config.marketplace,
+      disabled: !config.marketplace,
+      locked: true,
+      color: 'bg-orange-500',
+      features: ['Pedidos Shopee', 'Sincronização de Estoque', 'Devoluções']
     }
   ];
 
@@ -121,6 +142,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     { label: 'Gerenciar Contas', icon: <Wallet size={20} />, view: ViewType.ACCOUNTS, module: 'sales' },
     { label: 'Relatórios', icon: <BarChart3 size={20} />, view: ViewType.REPORTS, module: 'sales' },
     { label: 'Config. Produção', icon: <Settings size={20} />, view: ViewType.PRODUCTION_CONFIG, module: 'production' },
+    { label: 'Config. Marketplace', icon: <Store size={20} />, view: ViewType.MARKETPLACE_CONNECTION, module: 'marketplace' },
     { label: 'Estoque Central', icon: <Boxes size={20} />, view: ViewType.STOCK, module: 'sales' },
     { label: 'Finanças Pessoais', icon: <Users size={20} />, view: ViewType.PERSONAL_FINANCIAL, module: 'personal' },
   ];
@@ -140,7 +162,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       </header>
 
       {/* Module Selector */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         {modules.map((module) => (
           <button
             key={module.id}
@@ -180,7 +202,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
             {module.disabled && (
               <div className="absolute inset-0 bg-slate-950/20 backdrop-blur-[1px] rounded-[2.5rem] flex items-center justify-center">
                 <div className="bg-slate-900/90 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-                  <Lock size={12} /> Requer Vendas
+                  <Lock size={12} /> {module.locked ? 'Atualização Futura' : 'Requer Vendas'}
                 </div>
               </div>
             )}

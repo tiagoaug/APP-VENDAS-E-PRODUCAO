@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, ProductionConfigItem } from '../types';
-import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package } from 'lucide-react';
+import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight } from 'lucide-react';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import ProductionOrderModal from '../components/ProductionOrderModal';
 import SeparacaoCaixasModal from '../components/SeparacaoCaixasModal';
@@ -17,6 +17,9 @@ import { firebaseService } from '../services/firebaseService';
 import { getWholesaleBoxes, getRetailPairs } from '../utils/stockPools';
 import { summarizeStockRepairIssues } from '../utils/stockRepair';
 import { buildSeparationRows } from '../utils/separationRows';
+import { buildSeparationReconcileGroups } from '../utils/separationReconcile';
+import { useStockLotDuplicates } from '../hooks/useStockLotDuplicates';
+import { buildOrphanedFinalizedKeyFixes } from '../utils/finalizedKeyRepair';
 import StockRepairBanner from '../components/StockRepairBanner';
 
 // Preferências de "Visualização" (Cards Compactos/Expandidos, Mostrar Produtos,
@@ -93,6 +96,9 @@ interface SalesViewProps {
   onNavigateStock: () => void;
   onNavigateStockGlance: () => void;
   onNavigatePCP: () => void;
+  onNavigateStockReconcile: () => void;
+  onNavigateStockDiagnostic: () => void;
+  onNavigateStockFinalizedRepair: () => void;
   onNavigateProducts?: () => void;
   onAddProduct?: () => void;
   productionConfigs: ProductionConfigItem[];
@@ -134,6 +140,9 @@ export default function SalesView({
   onNavigateStock,
   onNavigateStockGlance,
   onNavigatePCP,
+  onNavigateStockReconcile,
+  onNavigateStockDiagnostic,
+  onNavigateStockFinalizedRepair,
   onNavigateProducts,
   onAddProduct,
   productionConfigs,
@@ -402,6 +411,18 @@ export default function SalesView({
     [lots, stockLots, productionOrders, products]
   );
 
+  // Separações feitas antes da correção do desconto de estoque (StockLot reservado via
+  // pool sem descontar o contador do produto) — mesmo aviso disponível em Estoque >
+  // Configurar > Reconciliar Separações, replicado aqui pra não depender do usuário
+  // lembrar de checar Estoque depois de separar caixas.
+  const separationReconcileCount = useMemo(() => buildSeparationReconcileGroups(stockLots).length, [stockLots]);
+
+  // Mesmas varreduras de "Diagnóstico de Estoque" e "Reparar Finalizados" (Estoque >
+  // Configurar) — replicadas aqui só pra alimentar os avisos, a correção em si acontece
+  // sempre em Estoque.
+  const { duplicateStockLotGroups } = useStockLotDuplicates(stockLots);
+  const orphanedFinalizedKeyCount = useMemo(() => buildOrphanedFinalizedKeyFixes(lots).length, [lots]);
+
   // Lotes RESERVADO (caixas já produzidas, com a grade exata, aguardando "Liberar
   // Pedido" para o cliente), agrupados por venda.
   const reservedLotsBySale = useMemo(() => {
@@ -648,6 +669,66 @@ export default function SalesView({
         onOpen={onNavigatePCP}
         isDarkMode={isDarkMode}
       />
+      {separationReconcileCount > 0 && (
+        <button
+          type="button"
+          onClick={onNavigateStockReconcile}
+          className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all active:scale-[0.99] text-left ${isDarkMode ? 'bg-rose-500/10 border-rose-500/30 hover:bg-rose-500/15' : 'bg-rose-50 border-rose-200 hover:bg-rose-100'}`}
+        >
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-rose-500/20 text-rose-400' : 'bg-rose-100 text-rose-600'}`}>
+            <Wrench size={18} strokeWidth={2.5} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-rose-300' : 'text-rose-700'}`}>
+              {separationReconcileCount} produto{separationReconcileCount === 1 ? '' : 's'} com estoque a corrigir
+            </p>
+            <p className="text-[9px] font-bold text-rose-500/80 uppercase tracking-widest mt-0.5">
+              Separações de caixas ainda não descontadas do estoque — toque para corrigir
+            </p>
+          </div>
+          <ChevronRight size={16} className="text-rose-500 shrink-0" />
+        </button>
+      )}
+      {duplicateStockLotGroups.length > 0 && (
+        <button
+          type="button"
+          onClick={onNavigateStockDiagnostic}
+          className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all active:scale-[0.99] text-left ${isDarkMode ? 'bg-rose-500/10 border-rose-500/30 hover:bg-rose-500/15' : 'bg-rose-50 border-rose-200 hover:bg-rose-100'}`}
+        >
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-rose-500/20 text-rose-400' : 'bg-rose-100 text-rose-600'}`}>
+            <AlertCircle size={18} strokeWidth={2.5} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-rose-300' : 'text-rose-700'}`}>
+              {duplicateStockLotGroups.length} duplicidade{duplicateStockLotGroups.length === 1 ? '' : 's'} de estoque
+            </p>
+            <p className="text-[9px] font-bold text-rose-500/80 uppercase tracking-widest mt-0.5">
+              Mesma produção creditada mais de uma vez — toque para corrigir
+            </p>
+          </div>
+          <ChevronRight size={16} className="text-rose-500 shrink-0" />
+        </button>
+      )}
+      {orphanedFinalizedKeyCount > 0 && (
+        <button
+          type="button"
+          onClick={onNavigateStockFinalizedRepair}
+          className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all active:scale-[0.99] text-left ${isDarkMode ? 'bg-orange-500/10 border-orange-500/30 hover:bg-orange-500/15' : 'bg-orange-50 border-orange-200 hover:bg-orange-100'}`}
+        >
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-100 text-orange-600'}`}>
+            <Wrench size={18} strokeWidth={2.5} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-orange-300' : 'text-orange-700'}`}>
+              {orphanedFinalizedKeyCount} pedido{orphanedFinalizedKeyCount === 1 ? '' : 's'} de produção com status incorreto
+            </p>
+            <p className="text-[9px] font-bold text-orange-500/80 uppercase tracking-widest mt-0.5">
+              Mapa já finalizado aparecendo como pendente — toque para corrigir
+            </p>
+          </div>
+          <ChevronRight size={16} className="text-orange-500 shrink-0" />
+        </button>
+      )}
 
       <div className="flex flex-col gap-4">
         {/* Card único dividido em 4 partes (2 por linha) — antes era uma barra de 4
@@ -1200,9 +1281,9 @@ export default function SalesView({
                 const poLots = lots.filter(l => po.lotIds.includes(l.id));
                 const pendingLots = poLots.filter(l => !l.finishedAt);
                 return (
-                  <div className="w-full flex items-center gap-2 px-3 py-2 rounded-2xl bg-orange-50 dark:bg-orange-900/20 z-10">
-                    <Factory size={14} className="text-orange-500 shrink-0" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-orange-600 dark:text-orange-400 truncate">
+                  <div className="w-full flex items-start gap-2 px-3 py-2 rounded-2xl bg-orange-50 dark:bg-orange-900/20 z-10">
+                    <Factory size={14} className="text-orange-500 shrink-0 mt-0.5" />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-orange-600 dark:text-orange-400 leading-relaxed">
                       {label} · #{po.orderNumber}
                       {poLots.length > 0 && ` · Faltam ${pendingLots.length} de ${poLots.length} lote(s)`}
                     </span>

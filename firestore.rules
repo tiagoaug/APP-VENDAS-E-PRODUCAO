@@ -100,9 +100,31 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if isOwner(userId);
 
-      match /{allSubcollections=**} {
-        allow read, write: if isOwner(userId);
+      // Tokens de acesso da integração com marketplaces (ex.: Shopee) — só a Admin SDK
+      // (Cloud Functions) pode ler/escrever aqui, nunca o client. Isolado explicitamente
+      // por documentação; a exclusão real acontece na condição da regra coringa abaixo,
+      // porque no Firestore uma regra mais específica NÃO sobrescreve uma mais ampla que
+      // também bata no mesmo caminho — se qualquer regra aplicável permitir, o acesso é
+      // permitido. Por isso a regra coringa precisa excluir este caminho na própria condição.
+      match /shopeeIntegration/{document=**} {
+        allow read, write: if false;
       }
+
+      match /{collection}/{document=**} {
+        allow read, write: if isOwner(userId) && collection != 'shopeeIntegration';
+      }
+    }
+
+    // Índice global shopId -> uid, usado pelo webhook público da Shopee (chega sem
+    // contexto de usuário) pra descobrir de qual conta é aquela loja. Só Admin SDK.
+    match /shopeeShopIndex/{shopId} {
+      allow read, write: if false;
+    }
+
+    // Nonces temporários do fluxo de OAuth (state -> uid), consumidos pelo callback
+    // público da Shopee. Só Admin SDK.
+    match /shopeeAuthNonces/{nonce} {
+      allow read, write: if false;
     }
   }
 }

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Product, SaleType, ProductionConfigItem, StockPkgAllocation, StockLot, StockLotRevertPreview, Sale, SaleStatus, ProductionOrder, ProductionLot, AppModulesConfig } from "../types";
 import {
   Search,
@@ -23,16 +23,20 @@ import {
   Users,
   Wrench,
   Settings,
+  AlertTriangle,
 } from "lucide-react";
 import PrintLabelEditorModal from "../components/PrintLabelEditorModal";
 import Modal from "../components/Modal";
 import { toast } from '../utils/toast';
 import { isHybridProduct, getWholesaleBoxes, getRetailPairs, getStockValue, getWholesaleValue, getRetailValue, productHasSaleType } from '../utils/stockPools';
-import { useStockLotDuplicates } from '../hooks/useStockLotDuplicates';
+import { useStockLotDuplicates, DuplicateStockByRefColor } from '../hooks/useStockLotDuplicates';
 import StockDuplicateBanner from '../components/StockDuplicateBanner';
 import StockDuplicateDiagnosticModal from '../components/StockDuplicateDiagnosticModal';
 import StockRepairBanner from '../components/StockRepairBanner';
 import { summarizeStockRepairIssues } from '../utils/stockRepair';
+import { buildSeparationReconcileGroups, SeparationReconcileGroup } from '../utils/separationReconcile';
+import { buildStockDuplicateFixPlan, StockDuplicateFixPlan } from '../utils/stockDuplicateFix';
+import { buildOrphanedFinalizedKeyFixes } from '../utils/finalizedKeyRepair';
 
 // Capacidade (pares) de uma embalagem avulsa: usa `metadata.capacity` quando
 // configurado; senão recai para o número embutido no nome (ex.: "12 pares
@@ -58,6 +62,16 @@ interface StockViewProps {
   lots?: ProductionLot[];
   onFixPkgAllocations?: () => Promise<{ fixed: number; total: number }>;
   onNavigatePCP?: () => void;
+  onReconcileSeparationGroup?: (group: SeparationReconcileGroup) => Promise<void>;
+  onApplyStockDuplicateFix?: (plan: StockDuplicateFixPlan) => Promise<void>;
+  onRepairOrphanedFinalizedKeys?: () => Promise<{ fixed: number; lotsTouched: number }>;
+  /** Chega true quando a navegação pra cá veio de um aviso em Vendas — abre direto o
+   * painel/modal correspondente em vez de precisar achar em Configurar Estoque. */
+  initialShowReconcile?: boolean;
+  initialShowDiagnostic?: boolean;
+  /** Abre direto o menu "Configurar Estoque" — usado quando o destino não tem modal
+   * próprio (ex.: aviso de "Reparar Finalizados" vindo de Vendas). */
+  initialShowConfigMenu?: boolean;
   /** "Lotes" (registro de produção) e "Configurar" (histórico de entradas + correção de
    * alocações) só existem por causa de StockLots criados na finalização de produção — sem o
    * módulo Produção ativo essa coleção fica sempre vazia, então as duas abas somem. */
@@ -77,6 +91,12 @@ export default function StockView({
   lots = [],
   onFixPkgAllocations,
   onNavigatePCP,
+  onReconcileSeparationGroup,
+  onApplyStockDuplicateFix,
+  onRepairOrphanedFinalizedKeys,
+  initialShowReconcile,
+  initialShowDiagnostic,
+  initialShowConfigMenu,
   modulesConfig,
 }: StockViewProps) {
   const showProductionTabs = !modulesConfig || modulesConfig.production;
@@ -93,8 +113,36 @@ export default function StockView({
   const [showFixAllocModal, setShowFixAllocModal] = useState(false);
   const [showStockDiagnosticModal, setShowStockDiagnosticModal] = useState(false);
   const [showConfigMenu, setShowConfigMenu] = useState(false);
+  const [showReconcileModal, setShowReconcileModal] = useState(false);
 
   const { duplicateStockLotGroups, duplicateStockByRefColor, markResolved: markStockDuplicatesResolved } = useStockLotDuplicates(stockLots);
+
+  // Separações feitas antes da correção do desconto de estoque (StockLot reservado via
+  // pool sem descontar o contador do produto) — ver src/utils/separationReconcile.ts.
+  const separationReconcileGroups = useMemo(() => buildSeparationReconcileGroups(stockLots), [stockLots]);
+
+  // Marcações de ORDER_FINALIZED órfãs (ver src/utils/finalizedKeyRepair.ts) — mesma
+  // varredura que alimenta o botão "Reparar Finalizados" abaixo.
+  const orphanedFinalizedKeyFixes = useMemo(() => buildOrphanedFinalizedKeyFixes(lots), [lots]);
+  const [fixingFinalizedKeys, setFixingFinalizedKeys] = useState(false);
+
+  useEffect(() => {
+    if (initialShowReconcile) { setShowConfigMenu(false); setShowReconcileModal(true); }
+  }, [initialShowReconcile]);
+
+  useEffect(() => {
+    if (initialShowDiagnostic) { setShowConfigMenu(false); setShowStockDiagnosticModal(true); }
+  }, [initialShowDiagnostic]);
+
+  useEffect(() => {
+    if (initialShowConfigMenu) setShowConfigMenu(true);
+  }, [initialShowConfigMenu]);
+
+  const handleFixStockDuplicateGroup = async (group: DuplicateStockByRefColor) => {
+    if (!onApplyStockDuplicateFix) return;
+    const plan = buildStockDuplicateFixPlan(group, duplicateStockLotGroups, products);
+    await onApplyStockDuplicateFix(plan);
+  };
 
   // Mesma varredura do "Reparar Caixas" (PCP) — alimenta o aviso e a bolinha vermelha no
   // botão "Configurar" aqui em Estoque, pra não depender do usuário lembrar de checar o PCP.
@@ -515,6 +563,7 @@ export default function StockView({
         isDarkMode={isDarkMode}
         groups={duplicateStockByRefColor}
         onMarkResolved={markStockDuplicatesResolved}
+        onFixNow={onApplyStockDuplicateFix ? handleFixStockDuplicateGroup : undefined}
       />
 
       <Modal
@@ -528,11 +577,13 @@ export default function StockView({
           <button
             type="button"
             onClick={() => { setShowConfigMenu(false); setShowEntryHistory(true); }}
-            className={`w-full flex items-center gap-2 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
             title="Histórico de Entradas em Estoque"
             aria-label="Abrir histórico de entradas em estoque"
           >
-            <History size={16} strokeWidth={2.5} className="text-yellow-500" />
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-100 text-amber-600'}`}>
+              <History size={16} strokeWidth={2.5} />
+            </div>
             <span className="text-[10px] font-black uppercase tracking-widest">Histórico de Entradas em Estoque</span>
           </button>
 
@@ -551,19 +602,21 @@ export default function StockView({
                   setFixingAlloc(false);
                 }
               }}
-              className={`w-full flex items-center justify-between gap-2 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] disabled:opacity-60 ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
+              className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] disabled:opacity-60 ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
               title="Corrigir alocações de embalagem inconsistentes"
               aria-label="Corrigir inconsistências nas alocações de embalagem"
             >
-              <div className="flex items-center gap-2">
-                <Wrench size={16} strokeWidth={2.5} className={pkgAllocIssuesCount > 0 ? 'text-orange-500' : 'text-emerald-500'} />
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${pkgAllocIssuesCount > 0 ? (isDarkMode ? 'bg-orange-500/15 text-orange-400' : 'bg-orange-100 text-orange-600') : (isDarkMode ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-100 text-emerald-600')}`}>
+                  <Wrench size={16} strokeWidth={2.5} />
+                </div>
                 <span className="text-[10px] font-black uppercase tracking-widest">
                   {fixingAlloc ? 'Corrigindo...' : 'Corrigir Alocações de Embalagem'}
                 </span>
               </div>
               {!fixingAlloc && (
                 pkgAllocIssuesCount > 0 ? (
-                  <span className="flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-amber-500 text-white text-[10px] font-black shrink-0">
+                  <span className="flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-amber-500 text-white text-[10px] font-black shrink-0 animate-pulse-amber-ring">
                     {pkgAllocIssuesCount}
                   </span>
                 ) : (
@@ -572,7 +625,130 @@ export default function StockView({
               )}
             </button>
           )}
+
+          {onReconcileSeparationGroup && (
+            <button
+              type="button"
+              onClick={() => { setShowConfigMenu(false); setShowReconcileModal(true); }}
+              className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
+              title="Reconciliar Separações"
+              aria-label="Corrigir estoque de separações pendentes de reconciliação"
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${separationReconcileGroups.length > 0 ? (isDarkMode ? 'bg-rose-500/15 text-rose-400' : 'bg-rose-100 text-rose-600') : (isDarkMode ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-100 text-emerald-600')}`}>
+                  <Wrench size={16} strokeWidth={2.5} />
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-widest">Reconciliar Separações</span>
+              </div>
+              {separationReconcileGroups.length > 0 ? (
+                <span className="flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-black shrink-0 animate-pulse-rose-ring">
+                  {separationReconcileGroups.length}
+                </span>
+              ) : (
+                <CheckCircle2 size={16} strokeWidth={2.5} className="text-emerald-500 shrink-0" />
+              )}
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => { setShowConfigMenu(false); setShowStockDiagnosticModal(true); }}
+            className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
+            title="Diagnóstico de Estoque Duplicado"
+            aria-label="Ver diagnóstico de estoque duplicado"
+          >
+            <div className="flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${duplicateStockLotGroups.length > 0 ? (isDarkMode ? 'bg-rose-500/15 text-rose-400' : 'bg-rose-100 text-rose-600') : (isDarkMode ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-100 text-emerald-600')}`}>
+                <AlertTriangle size={16} strokeWidth={2.5} />
+              </div>
+              <span className="text-[10px] font-black uppercase tracking-widest">Diagnóstico de Estoque</span>
+            </div>
+            {duplicateStockLotGroups.length > 0 ? (
+              <span className="flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-black shrink-0 animate-pulse-rose-ring">
+                {duplicateStockLotGroups.length}
+              </span>
+            ) : (
+              <CheckCircle2 size={16} strokeWidth={2.5} className="text-emerald-500 shrink-0" />
+            )}
+          </button>
+
+          {onRepairOrphanedFinalizedKeys && (
+            <button
+              type="button"
+              disabled={fixingFinalizedKeys}
+              onClick={async () => {
+                setFixingFinalizedKeys(true);
+                try {
+                  const { fixed, lotsTouched } = await onRepairOrphanedFinalizedKeys();
+                  toast.show(fixed > 0
+                    ? `${fixed} item(ns) corrigido(s) em ${lotsTouched} mapa(s) — status de finalizado restaurado.`
+                    : 'Nenhum item órfão encontrado — nada a corrigir.');
+                } finally {
+                  setFixingFinalizedKeys(false);
+                }
+              }}
+              className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] disabled:opacity-60 ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
+              title="Reparar Finalizados"
+              aria-label="Corrigir marcações de finalizado órfãs"
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${orphanedFinalizedKeyFixes.length > 0 ? (isDarkMode ? 'bg-orange-500/15 text-orange-400' : 'bg-orange-100 text-orange-600') : (isDarkMode ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-100 text-emerald-600')}`}>
+                  <Wrench size={16} strokeWidth={2.5} />
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-widest">
+                  {fixingFinalizedKeys ? 'Corrigindo...' : 'Reparar Finalizados'}
+                </span>
+              </div>
+              {!fixingFinalizedKeys && (
+                orphanedFinalizedKeyFixes.length > 0 ? (
+                  <span className="flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-orange-500 text-white text-[10px] font-black shrink-0 animate-pulse-orange-ring">
+                    {orphanedFinalizedKeyFixes.length}
+                  </span>
+                ) : (
+                  <CheckCircle2 size={16} strokeWidth={2.5} className="text-emerald-500 shrink-0" />
+                )
+              )}
+            </button>
+          )}
         </div>
+      </Modal>
+
+      <Modal
+        isOpen={showReconcileModal}
+        onClose={() => setShowReconcileModal(false)}
+        title="Reconciliar Separações"
+        icon={<Wrench size={20} />}
+        maxWidth="max-w-lg"
+      >
+        {separationReconcileGroups.length === 0 ? (
+          <p className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400 py-10">Nenhuma pendência encontrada — nada a reconciliar.</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-1">
+              Separações feitas antes da correção do desconto de estoque — o valor abaixo ainda não foi descontado do produto. "Corrigir Agora" desconta e marca como resolvido.
+            </p>
+            {separationReconcileGroups.map(g => (
+              <div key={g.key} className={`rounded-2xl border p-4 flex flex-col gap-2 ${isDarkMode ? 'bg-rose-900/15 border-rose-800/40' : 'bg-rose-50 border-rose-100'}`}>
+                <p className={`text-[12px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  {g.productReference ? `${g.productReference} — ` : ''}{g.productName} · {g.variationName}
+                </p>
+                <div className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total a descontar</span>
+                  <span className="text-[14px] font-black text-rose-500">
+                    {g.isWholesale ? `${g.totalToDeduct} cx` : `${g.totalToDeduct} pares`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onReconcileSeparationGroup?.(g)}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30' : 'bg-rose-600 text-white hover:bg-rose-700'}`}
+                >
+                  <Wrench size={12} strokeWidth={3} /> Corrigir Agora
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </Modal>
     </div>
   );

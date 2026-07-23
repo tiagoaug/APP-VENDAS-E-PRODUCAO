@@ -34,7 +34,8 @@ import {
   Footprints,
   Sparkles,
   ScanLine,
-  Sun
+  Sun,
+  Store
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { auth, db, logout } from "./lib/firebase";
@@ -45,6 +46,9 @@ import { notificationService, ReminderNotification } from "./services/notificati
 import { resolveSoleConsumption } from "./utils/soleNeeds";
 import { getSourceItemKey, saleProductionHasProgressed } from "./utils/productionRoute";
 import { pickWholesaleStockLots, pickRetailStockLots } from "./utils/stockLotPicker";
+import { buildSeparationReconcileFixPlan, SeparationReconcileGroup } from "./utils/separationReconcile";
+import { buildOrphanedFinalizedKeyFixes } from "./utils/finalizedKeyRepair";
+import { StockDuplicateFixPlan } from "./utils/stockDuplicateFix";
 import { financeService } from "./services/financeService";
 import {
   ViewType,
@@ -138,6 +142,9 @@ const GeneralReceiptsView = lazy(() => import("./views/GeneralReceiptsView"));
 const SoleReceiptView = lazy(() => import("./views/SoleReceiptView"));
 
 const ProductionEngineeringView = lazy(() => import("./views/ProductionEngineeringView"));
+const MarketplaceConnectionView = lazy(() => import("./views/MarketplaceConnectionView"));
+const MarketplaceOrdersView = lazy(() => import("./views/MarketplaceOrdersView"));
+const MarketplaceSkuMappingView = lazy(() => import("./views/MarketplaceSkuMappingView"));
 
 
 // Modals
@@ -207,6 +214,12 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
   ],
   personal: [
     ViewType.PERSONAL_FINANCIAL
+  ],
+  marketplace: [
+    ViewType.MARKETPLACE_MENU,
+    ViewType.MARKETPLACE_CONNECTION,
+    ViewType.MARKETPLACE_ORDERS,
+    ViewType.MARKETPLACE_SKU_MAPPING,
   ]
 };
 
@@ -642,6 +655,7 @@ export default function App() {
     personal: true,
     sales: true,
     production: true,
+    marketplace: false,
   };
 
   const [modulesConfig, setModulesConfig] = useState<AppModulesConfig>(() => {
@@ -1476,11 +1490,46 @@ export default function App() {
         ? pickWholesaleStockLots(poolCandidates, remaining)
         : pickRetailStockLots(poolCandidates, item.size || '', remaining);
 
+      // Um StockLot EM_ESTOQUE já está refletido no contador agregado do produto (foi
+      // somado lá quando a produção creditou o estoque) — reservar o(s) StockLot(s) sem
+      // descontar esse mesmo tanto do contador deixava a caixa "reservada" mas ainda
+      // aparecendo como disponível no estoque geral do produto.
+      if (plan.fullyConsumed.length > 0 || plan.splitConsumed.length > 0) {
+        const prod = getProd(item.productId);
+        const variIdx = prod ? prod.variations.findIndex((v: any) => v.id === item.variationId) : -1;
+        if (prod && variIdx >= 0) {
+          const v = prod.variations[variIdx];
+          const newStock = { ...v.stock };
+          if (isWholesale) {
+            let allocations: any[] = [...(v.stockPkgAllocations || [])];
+            const decrementAlloc = (pkgId: string | undefined, boxQty: number) => {
+              if (!pkgId || boxQty <= 0) return;
+              const idx = allocations.findIndex((a: any) => a.pkgId === pkgId);
+              if (idx >= 0) allocations[idx] = { ...allocations[idx], qty: Math.max(0, allocations[idx].qty - boxQty) };
+            };
+            let totalBoxes = 0;
+            plan.fullyConsumed.forEach(lot => { totalBoxes += lot.boxQty || 0; decrementAlloc(lot.pkgId, lot.boxQty || 0); });
+            plan.splitConsumed.forEach(({ original, consumed }) => { totalBoxes += consumed.boxQty || 0; decrementAlloc(original.pkgId, consumed.boxQty || 0); });
+            newStock['WHOLESALE'] = Math.max(0, (newStock['WHOLESALE'] || 0) - totalBoxes);
+            allocations = allocations.filter((a: any) => a.qty > 0);
+            prod.variations[variIdx] = { ...v, stock: newStock, stockPkgAllocations: allocations };
+          } else {
+            plan.fullyConsumed.forEach(lot => {
+              Object.entries(lot.sizeBreakdown || {}).forEach(([size, q]) => { newStock[size] = Math.max(0, (newStock[size] || 0) - (Number(q) || 0)); });
+            });
+            plan.splitConsumed.forEach(({ consumed }) => {
+              Object.entries(consumed.sizeBreakdown || {}).forEach(([size, q]) => { newStock[size] = Math.max(0, (newStock[size] || 0) - (Number(q) || 0)); });
+            });
+            prod.variations[variIdx] = { ...v, stock: newStock };
+          }
+        }
+      }
+
       plan.fullyConsumed.forEach(lot => {
         poolReservedIdsThisRun.add(lot.id);
         stockLotWrites.set(lot.id, {
           status: 'RESERVADO', saleId: sale.id, saleOrderNumber: sale.orderNumber,
-          customerName: sale.customerName, reservedViaSeparation: true, updatedAt: Date.now(),
+          customerName: sale.customerName, reservedViaSeparation: true, stockDeductionApplied: true, updatedAt: Date.now(),
         });
         newLotIds.push(lot.id);
       });
@@ -1498,7 +1547,7 @@ export default function App() {
           itemIdx: original.itemIdx, lineId: consumed.lineId, boxIds: consumed.boxIds, boxQty: consumed.boxQty,
           pkgId: original.pkgId, pkgName: original.pkgName,
           saleId: sale.id, saleOrderNumber: sale.orderNumber, customerName: sale.customerName,
-          reservedViaSeparation: true, splitFromLotId: consumed.splitFromLotId,
+          reservedViaSeparation: true, splitFromLotId: consumed.splitFromLotId, stockDeductionApplied: true,
           createdAt: Date.now(),
         });
         newLotIds.push(newId);
@@ -1599,7 +1648,32 @@ export default function App() {
         ? pickWholesaleStockLots([lot], remaining)
         : pickRetailStockLots([lot], item.size || '', remaining);
 
+      // Espelho do desconto feito em resolveSeparationSupply: devolver o StockLot pra
+      // EM_ESTOQUE precisa também devolver a mesma quantidade ao contador agregado do
+      // produto (foi descontado de lá quando a separação reservou este lote).
+      const restoreCounter = (sizeBreakdown: Record<string, number> | undefined, boxQty: number | undefined, pkgId: string | undefined) => {
+        const prod = getProd(lot.productId);
+        const variIdx = prod ? prod.variations.findIndex((v: any) => v.id === lot.variationId) : -1;
+        if (!prod || variIdx < 0) return;
+        const v = prod.variations[variIdx];
+        const newStock = { ...v.stock };
+        if (isWholesale) {
+          newStock['WHOLESALE'] = (newStock['WHOLESALE'] || 0) + (boxQty || 0);
+          const allocations = [...(v.stockPkgAllocations || [])];
+          if (pkgId && (boxQty || 0) > 0) {
+            const idx = allocations.findIndex((a: any) => a.pkgId === pkgId);
+            if (idx >= 0) allocations[idx] = { ...allocations[idx], qty: allocations[idx].qty + (boxQty || 0) };
+            else allocations.push({ pkgId, qty: boxQty || 0 });
+          }
+          prod.variations[variIdx] = { ...v, stock: newStock, stockPkgAllocations: allocations };
+        } else {
+          Object.entries(sizeBreakdown || {}).forEach(([size, q]) => { newStock[size] = (newStock[size] || 0) + (Number(q) || 0); });
+          prod.variations[variIdx] = { ...v, stock: newStock };
+        }
+      };
+
       if (plan.fullyConsumed.length > 0) {
+        restoreCounter(lot.sizeBreakdown, lot.boxQty, lot.pkgId);
         stockLotWrites.set(lot.id, {
           status: 'EM_ESTOQUE', saleId: deleteField(), saleOrderNumber: deleteField(),
           customerName: deleteField(), reservedViaSeparation: deleteField(), updatedAt: Date.now(),
@@ -1608,6 +1682,7 @@ export default function App() {
         const ki = keptIds.lastIndexOf(lotId); if (ki >= 0) keptIds.splice(ki, 1);
       } else if (plan.splitConsumed.length > 0) {
         const { remainder, consumed } = plan.splitConsumed[0];
+        restoreCounter(consumed.sizeBreakdown, consumed.boxQty, lot.pkgId);
         // `remainder` continua RESERVADO pra esta venda (ainda parcialmente separado) — só
         // encolhe a composição no doc original.
         stockLotWrites.set(lot.id, { ...remainder, updatedAt: Date.now() });
@@ -1666,16 +1741,28 @@ export default function App() {
     };
   };
 
-  // Aplica em lote as escritas de StockLot acumuladas por resolveSeparationSupply/
-  // revertSeparationSupply — um updateDocument por doc encolhido/alterado, um
-  // saveDocument por doc novo (splits).
-  const flushStockLotMutations = async (stockLotWrites: Map<string, any>, stockLotCreates: any[]) => {
+  // Monta (sem gravar nada ainda) a lista de escritas de produtos + StockLots acumuladas
+  // por resolveSeparationSupply/revertSeparationSupply, pra ser combinada com a escrita
+  // final da venda e commitada num único WriteBatch atômico — ver comentário em
+  // firebaseService.runBatchWrites sobre por que isso substituiu a sequência de awaits
+  // separados (uma falha no meio deixava estoque debitado sem a venda marcar a separação,
+  // e um novo clique repetia o débito).
+  const buildSeparationWrites = (
+    productUpdates: Map<string, any>,
+    stockLotWrites: Map<string, any>,
+    stockLotCreates: any[],
+  ): Array<{ type: 'set' | 'update'; path: string; id: string; data: any }> => {
+    const writes: Array<{ type: 'set' | 'update'; path: string; id: string; data: any }> = [];
+    for (const [, prod] of productUpdates) {
+      writes.push({ type: 'set', path: 'products', id: prod.id, data: prod });
+    }
     for (const [id, data] of stockLotWrites.entries()) {
-      await firebaseService.updateDocument('stockLots', id, data);
+      writes.push({ type: 'update', path: 'stockLots', id, data });
     }
-    for (const doc of stockLotCreates) {
-      await firebaseService.saveDocument('stockLots', doc);
+    for (const docItem of stockLotCreates) {
+      writes.push({ type: 'set', path: 'stockLots', id: docItem.id, data: docItem });
     }
+    return writes;
   };
 
   // "Expedir" — dá baixa (via resolveSeparationSupply, mesma lógica de "Separar Caixas")
@@ -1741,16 +1828,13 @@ export default function App() {
         return;
       }
 
-      for (const [, prod] of productUpdates) {
-        await firebaseService.saveDocument('products', prod);
-      }
-      await flushStockLotMutations(stockLotWrites, stockLotCreates);
-
       const allFulfilled = newItems.every(it => it.fulfilled === true);
-      await firebaseService.updateDocument('sales', saleId, {
-        items: newItems,
-        ...(allFulfilled ? { deliveryStatus: 'DELIVERED', deliveredAt: Date.now() } : {}),
+      const writes = buildSeparationWrites(productUpdates, stockLotWrites, stockLotCreates);
+      writes.push({
+        type: 'update', path: 'sales', id: saleId,
+        data: { items: newItems, ...(allFulfilled ? { deliveryStatus: 'DELIVERED', deliveredAt: Date.now() } : {}) },
       });
+      await firebaseService.runBatchWrites(writes);
 
       toast.show(allFulfilled
         ? 'Venda expedida — estoque baixado e pedido entregue.'
@@ -1808,15 +1892,9 @@ export default function App() {
         return;
       }
 
-      for (const [, prod] of productUpdates) {
-        await firebaseService.saveDocument('products', prod);
-      }
-      await flushStockLotMutations(stockLotWrites, stockLotCreates);
-
-      await firebaseService.updateDocument('sales', saleId, {
-        items: newItems,
-        deliveryStatus: 'PENDING',
-      });
+      const writes = buildSeparationWrites(productUpdates, stockLotWrites, stockLotCreates);
+      writes.push({ type: 'update', path: 'sales', id: saleId, data: { items: newItems, deliveryStatus: 'PENDING' } });
+      await firebaseService.runBatchWrites(writes);
 
       toast.show(anyReverted
         ? 'Expedição revertida — estoque e embalagens restaurados.'
@@ -1866,12 +1944,9 @@ export default function App() {
         return revertSeparationSupply(item, qtyToRestore, getProd, stockLotWrites, stockLotCreates);
       });
 
-      for (const [, prod] of productUpdates) {
-        await firebaseService.saveDocument('products', prod);
-      }
-      await flushStockLotMutations(stockLotWrites, stockLotCreates);
-
-      await firebaseService.updateDocument('sales', saleId, { items: newItems });
+      const writes = buildSeparationWrites(productUpdates, stockLotWrites, stockLotCreates);
+      writes.push({ type: 'update', path: 'sales', id: saleId, data: { items: newItems } });
+      await firebaseService.runBatchWrites(writes);
       toast.show('Reversão parcial registrada com sucesso.');
     } catch (e: any) {
       console.error(e);
@@ -1939,18 +2014,13 @@ export default function App() {
         return resolveSeparationSupply(item, sep.quantity, sale, getProd, stockLotWrites, stockLotCreates, poolReservedIdsThisRun);
       });
 
-      for (const [, prod] of productUpdates) {
-        await firebaseService.saveDocument('products', prod);
-      }
-      await flushStockLotMutations(stockLotWrites, stockLotCreates);
-
       // Separar caixas só deixa o pedido PRONTO (reservado/abatido do estoque) — a
       // entrega em si é um passo manual e separado ("Liberar Pedido"), por isso não
       // marca deliveryStatus aqui mesmo quando todos os itens já foram separados.
       const allFulfilled = newItems.every(it => it.fulfilled === true);
-      await firebaseService.updateDocument('sales', saleId, {
-        items: newItems,
-      });
+      const writes = buildSeparationWrites(productUpdates, stockLotWrites, stockLotCreates);
+      writes.push({ type: 'update', path: 'sales', id: saleId, data: { items: newItems } });
+      await firebaseService.runBatchWrites(writes);
 
       toast.show(allFulfilled
         ? 'Todos os itens separados — pedido pronto para liberação.'
@@ -2829,6 +2899,61 @@ export default function App() {
     return preview;
   };
 
+  // Aplica a correção de um grupo de "Reconciliar Separações" (ver src/utils/
+  // separationReconcile.ts) — separações feitas antes da correção do desconto de
+  // estoque, que reservaram um StockLot sem descontar o contador do produto.
+  const handleReconcileSeparationGroup = async (group: SeparationReconcileGroup) => {
+    try {
+      const plan = buildSeparationReconcileFixPlan(group, products);
+      if (!plan.productWrite) {
+        toast.show('Produto ou cor não encontrado — pode ter sido excluído.');
+        return;
+      }
+      await firebaseService.saveDocument('products', plan.productWrite);
+      for (const id of plan.lotIds) {
+        await firebaseService.updateDocument('stockLots', id, { stockDeductionApplied: true });
+      }
+      toast.show(`Estoque ajustado — ${group.totalToDeduct} ${group.isWholesale ? 'caixa(s)' : 'par(es)'} descontado(s) de ${group.productName} · ${group.variationName}.`);
+    } catch (e) {
+      toast.show('Erro ao reconciliar: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
+  // Repara marcações de ORDER_FINALIZED órfãs deixadas por uma versão anterior do
+  // backfill de lineId (ver src/utils/finalizedKeyRepair.ts) — não mexe em estoque.
+  const handleRepairOrphanedFinalizedKeys = async (): Promise<{ fixed: number; lotsTouched: number }> => {
+    const fixes = buildOrphanedFinalizedKeyFixes(productionLots);
+    for (const fix of fixes) {
+      const lot = productionLots.find(l => l.id === fix.lotId);
+      if (!lot) continue;
+      await firebaseService.updateDocument('productionLots', fix.lotId, {
+        metadata: { ...(lot as any).metadata, orderSectors: fix.orderSectors },
+      });
+    }
+    return { fixed: fixes.reduce((s, f) => s + f.fixedCount, 0), lotsTouched: fixes.length };
+  };
+
+  // Aplica o plano de correção de uma duplicidade de StockLot (o plano em si é montado em
+  // StockView.tsx, que já tem os grupos calculados via useStockLotDuplicates — aqui só
+  // faz os writes, mesmo padrão de fixStockDuplicateGroup em PCPView.tsx).
+  const handleApplyStockDuplicateFix = async (plan: StockDuplicateFixPlan) => {
+    try {
+      if (plan.stockLotIdsToDelete.length === 0) {
+        toast.show('Nada a corrigir — a duplicidade já não existe mais.');
+        return;
+      }
+      for (const prod of plan.productWrites) {
+        await firebaseService.saveDocument('products', prod);
+      }
+      for (const id of plan.stockLotIdsToDelete) {
+        await firebaseService.deleteDocument('stockLots', id);
+      }
+      toast.show(`Duplicidade corrigida — ${plan.stockLotIdsToDelete.length} registro(s) removido(s) e estoque ajustado.`);
+    } catch (e) {
+      toast.show('Erro ao corrigir duplicidade: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
   const handleSaveProductionLot = async (lot: ProductionLot) => {
     try {
       // 0. Pegar o estado anterior do lote para detectar remoções
@@ -3152,6 +3277,7 @@ export default function App() {
     const isSalesView = MODULE_VIEWS.sales.includes(view);
     const isProductionView = MODULE_VIEWS.production.includes(view);
     const isPersonalView = MODULE_VIEWS.personal.includes(view);
+    const isMarketplaceView = MODULE_VIEWS.marketplace.includes(view);
     // "Modelos / Ficha Técnica" é o catálogo de produtos — Vendas precisa dele sozinho
     // (tem que cadastrar o que vende) mesmo com o módulo Produção desativado. As outras
     // telas de Produção (rota, matriz, grade etc.) continuam exigindo os dois módulos juntos.
@@ -3161,6 +3287,7 @@ export default function App() {
     if (isProductCatalogView && !modulesConfig.sales && !modulesConfig.production) return renderView(ViewType.DASHBOARD);
     if (isProductionView && !isProductCatalogView && (!modulesConfig.sales || !modulesConfig.production)) return renderView(ViewType.DASHBOARD);
     if (isPersonalView && !modulesConfig.personal) return renderView(ViewType.DASHBOARD);
+    if (isMarketplaceView && (!modulesConfig.sales || !modulesConfig.marketplace)) return renderView(ViewType.DASHBOARD);
     if (!isViewAllowed(activeCollaborator, view)) return renderView(ViewType.DASHBOARD);
 
     switch (view) {
@@ -4430,6 +4557,9 @@ export default function App() {
             onNavigateStock={() => navigateTo(ViewType.STOCK)}
             onNavigateStockGlance={() => navigateTo(ViewType.STOCK_GLANCE)}
             onNavigatePCP={() => navigateTo(ViewType.PRODUCTION_PCP, { initialTab: 'monitor' })}
+            onNavigateStockReconcile={() => navigateTo(ViewType.STOCK, { initialShowReconcile: true })}
+            onNavigateStockDiagnostic={() => navigateTo(ViewType.STOCK, { initialShowDiagnostic: true })}
+            onNavigateStockFinalizedRepair={() => navigateTo(ViewType.STOCK, { initialShowConfigMenu: true })}
             onNavigateProducts={() => navigateTo(ViewType.PRODUCTS)}
             onAddProduct={() => navigateTo(ViewType.PRODUCT_FORM)}
             productionConfigs={productionConfigs}
@@ -4633,6 +4763,12 @@ export default function App() {
             lots={productionLots}
             onFixPkgAllocations={handleFixPkgAllocations}
             onNavigatePCP={() => navigateTo(ViewType.PRODUCTION_PCP, { initialTab: 'monitor' })}
+            onReconcileSeparationGroup={handleReconcileSeparationGroup}
+            onApplyStockDuplicateFix={handleApplyStockDuplicateFix}
+            onRepairOrphanedFinalizedKeys={handleRepairOrphanedFinalizedKeys}
+            initialShowReconcile={currentParams?.initialShowReconcile}
+            initialShowDiagnostic={currentParams?.initialShowDiagnostic}
+            initialShowConfigMenu={currentParams?.initialShowConfigMenu}
             modulesConfig={modulesConfig}
           />
         );
@@ -5116,6 +5252,74 @@ export default function App() {
             initialParams={currentParams}
           />
         );
+      case ViewType.MARKETPLACE_MENU:
+        return (
+          <div className="flex flex-col gap-6 pb-32">
+            <div className="flex flex-col gap-3">
+              <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Marketplace</h3>
+              <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                {[
+                  { id: ViewType.MARKETPLACE_CONNECTION, label: 'Conexão Shopee', icon: <Store size={22} />, color: 'text-orange-500' },
+                  { id: ViewType.MARKETPLACE_ORDERS, label: 'Pedidos Marketplace', icon: <ClipboardList size={22} />, color: 'text-indigo-600' },
+                  { id: ViewType.MARKETPLACE_SKU_MAPPING, label: 'Mapeamento de SKU', icon: <Tags size={22} />, color: 'text-emerald-600' },
+                ].map((item, index, array) => (
+                  <button
+                    key={item.id}
+                    onClick={() => navigateTo(item.id)}
+                    className={`w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${index !== array.length - 1 ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 flex items-center justify-center shrink-0 ${item.color}`}>
+                        {item.icon}
+                      </div>
+                      <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.label}</p>
+                    </div>
+                    <ChevronRight size={20} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.8 }}
+              className="mt-4 p-8 rounded-[3rem] border-2 border-dashed border-slate-100 dark:border-slate-800 flex flex-col items-center text-center gap-4"
+            >
+              <div className={`w-16 h-16 rounded-[1.8rem] flex items-center justify-center ${isDarkMode ? 'bg-slate-900 text-orange-500' : 'bg-orange-50 text-orange-600'}`}>
+                <Store size={32} strokeWidth={1.5} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Módulo Marketplace</p>
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-1">
+                  Importe pedidos de plataformas externas, controle devoluções e mantenha o estoque sincronizado.
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        );
+      case ViewType.MARKETPLACE_CONNECTION:
+        return (
+          <MarketplaceConnectionView
+            isDarkMode={isDarkMode}
+            onNavigate={navigateTo}
+          />
+        );
+      case ViewType.MARKETPLACE_ORDERS:
+        return (
+          <MarketplaceOrdersView
+            isDarkMode={isDarkMode}
+            onNavigate={navigateTo}
+          />
+        );
+      case ViewType.MARKETPLACE_SKU_MAPPING:
+        return (
+          <MarketplaceSkuMappingView
+            isDarkMode={isDarkMode}
+            products={products}
+            grids={grids}
+          />
+        );
       case ViewType.PRODUCTION_STOCK:
         return (
           <ProductionConfigView 
@@ -5355,7 +5559,16 @@ export default function App() {
       return "production";
     if (
       [
-        ViewType.FINANCIAL, 
+        ViewType.MARKETPLACE_MENU,
+        ViewType.MARKETPLACE_CONNECTION,
+        ViewType.MARKETPLACE_ORDERS,
+        ViewType.MARKETPLACE_SKU_MAPPING,
+      ].includes(currentView)
+    )
+      return "marketplace";
+    if (
+      [
+        ViewType.FINANCIAL,
         ViewType.ACCOUNTS
       ].includes(currentView)
     )
@@ -5452,6 +5665,14 @@ export default function App() {
         return "Ficha Técnica";
       case ViewType.PRODUCTION_SERVICE_ORDER_FORM:
         return "Emissão de Ordem de Serviço";
+      case ViewType.MARKETPLACE_MENU:
+        return "Módulo Marketplace";
+      case ViewType.MARKETPLACE_CONNECTION:
+        return "Conexão Shopee";
+      case ViewType.MARKETPLACE_ORDERS:
+        return "Pedidos Marketplace";
+      case ViewType.MARKETPLACE_SKU_MAPPING:
+        return "Mapeamento de SKU";
       case ViewType.PRODUCT_FORM:
         return "Cadastro de Produto";
       case ViewType.SALE_FORM:
@@ -5507,7 +5728,11 @@ export default function App() {
       case ViewType.PRODUCTION_ENGINEERING: return <Database size={24} className="text-indigo-600 dark:text-indigo-400" />;
       case ViewType.PRODUCT_SHEET: return <FileText size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.PRODUCTION_SERVICE_ORDER_FORM: return <ClipboardList size={24} className="text-indigo-600 dark:text-indigo-400" />;
-      
+      case ViewType.MARKETPLACE_MENU:
+      case ViewType.MARKETPLACE_CONNECTION:
+      case ViewType.MARKETPLACE_ORDERS:
+      case ViewType.MARKETPLACE_SKU_MAPPING: return <Store size={24} className="text-orange-500 dark:text-orange-400" />;
+
       default: return <Shield size={24} className="text-blue-600 dark:text-blue-400" />;
     }
   }, [currentView, lastNonModalView]);
@@ -5800,6 +6025,18 @@ export default function App() {
               appTheme={appTheme}
               iconMode={navIconMode}
               tintColor={NAV_TAB_COLORS.production}
+              monoColor={navMonoColor}
+            />
+          )}
+          {modulesConfig.sales && modulesConfig.marketplace && isViewAllowed(activeCollaborator, ViewType.MARKETPLACE_MENU) && (
+            <TabItem
+              icon={<Store size={20} />}
+              label="Market."
+              active={activeTab === "marketplace"}
+              onClick={() => resetTo(ViewType.MARKETPLACE_MENU)}
+              appTheme={appTheme}
+              iconMode={navIconMode}
+              tintColor={NAV_TAB_COLORS.marketplace}
               monoColor={navMonoColor}
             />
           )}

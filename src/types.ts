@@ -533,6 +533,10 @@ export enum ViewType {
   // Sem view React própria — só um id estável pro item de menu que abre o módulo nativo
   // Android (ver src/lib/printStudio.ts); onClick nunca chama onNavigate com este valor.
   PRINT_STUDIO = 'PRINT_STUDIO',
+  MARKETPLACE_MENU = 'MARKETPLACE_MENU',
+  MARKETPLACE_CONNECTION = 'MARKETPLACE_CONNECTION',
+  MARKETPLACE_ORDERS = 'MARKETPLACE_ORDERS',
+  MARKETPLACE_SKU_MAPPING = 'MARKETPLACE_SKU_MAPPING',
 }
 
 export type DashboardCardConfig = {
@@ -616,6 +620,67 @@ export type AppModulesConfig = {
   personal: boolean;
   sales: boolean;
   production: boolean;
+  marketplace: boolean;
+};
+
+// ─── Marketplace (integração com plataformas externas, ex.: Shopee) ────────
+
+export type MarketplaceChannel = 'SHOPEE';
+
+// Status de conexão da loja — NUNCA contém token; tokens ficam em
+// users/{uid}/shopeeIntegration (só Admin SDK, ver firestore.rules).
+export type MarketplaceConnection = {
+  id: string; // = channel
+  channel: MarketplaceChannel;
+  shopId: string;
+  shopName?: string;
+  connected: boolean;
+  connectedAt?: number;
+  lastOrderSyncAt?: number;
+  lastStockPushAt?: number;
+};
+
+export type MarketplaceSkuMapping = {
+  id: string;
+  channel: MarketplaceChannel;
+  externalItemId: string; // Shopee item_id
+  externalModelId?: string; // Shopee model_id (variação) — ausente = item sem variação
+  externalSkuLabel?: string; // texto da Shopee, só exibição
+  productId: string;
+  productName?: string; // denormalizado, só exibição
+  variationId: string;
+  variationName?: string; // denormalizado, só exibição
+  size?: string; // ausente = mapeado como ATACADO (stock['WHOLESALE'])
+  saleType: SaleType;
+  createdAt: number;
+  updatedAt?: number;
+};
+
+export type MarketplaceOrderStatus = 'PENDING_IMPORT' | 'PARTIALLY_MAPPED' | 'STOCK_DEBITED' | 'RETURNED' | 'ERROR';
+
+export type MarketplaceOrderItem = {
+  externalItemId: string;
+  externalModelId?: string;
+  externalName: string; // nome da Shopee, exibido quando o item ainda não tem mapeamento
+  quantity: number;
+  price: number;
+  mapping?: { productId: string; variationId: string; size?: string; saleType: SaleType };
+};
+
+export type MarketplaceOrder = {
+  id: string;
+  channel: MarketplaceChannel;
+  externalOrderId: string; // Shopee order_sn
+  orderNumber: string; // sequência interna, ex. "MKT #0001"
+  status: MarketplaceOrderStatus;
+  buyerName?: string;
+  items: MarketplaceOrderItem[];
+  total: number;
+  errorReason?: string;
+  createdAt: number;
+  updatedAt?: number;
+  importedAt?: number;
+  returnedAt?: number;
 };
 
 export type SectorId =
@@ -940,6 +1005,11 @@ export type StockLot = {
   // caixas/pares foi separada), aponta pro id do doc original que ficou com o
   // remanescente — usado pra remontar as duas metades no revert.
   splitFromLotId?: string;
+  // true quando o desconto no contador de estoque do produto já foi aplicado pra este
+  // registro (marcado no momento da reserva, ou pela ferramenta de reconciliação —
+  // "Reconciliar Separações" no PCP — pra registros de um período com bug em que a
+  // reserva não descontava o contador). Idempotência: evita descontar duas vezes.
+  stockDeductionApplied?: boolean;
 
   // Caixas/embalagem (produtos ATACADO, registrado em applyExpedicaoStockUpdate)
   boxQty?: number; // quantidade de CAIXAS desta entrada (conversão pares -> caixas)
