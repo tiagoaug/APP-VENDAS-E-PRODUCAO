@@ -272,7 +272,7 @@ export const firebaseService = {
   // Venda, onde estoque + StockLot + venda precisam mudar juntos ou não mudar nenhum,
   // pra uma falha parcial nunca debitar estoque sem marcar a venda como separada (o que
   // deixava um novo clique repetir o débito).
-  runBatchWrites: async (writes: Array<{ type: 'set' | 'update'; path: string; id: string; data: any }>): Promise<void> => {
+  runBatchWrites: async (writes: Array<{ type: 'set' | 'update' | 'delete'; path: string; id: string; data?: any }>): Promise<void> => {
     if (!auth.currentUser) throw new Error('Not authenticated');
     if (writes.length === 0) return;
     const uid = auth.currentUser.uid;
@@ -280,6 +280,7 @@ export const firebaseService = {
     writes.forEach(w => {
       const fullPath = `users/${uid}/${w.path}`;
       const ref = doc(db, fullPath, w.id);
+      if (w.type === 'delete') { batch.delete(ref); return; }
       const clean = deepClean(w.data);
       if (w.type === 'set') batch.set(ref, clean, { merge: true });
       else batch.update(ref, clean);

@@ -100,6 +100,13 @@ type LotAdvanceItem = {
   fractionLabel?: string;
 };
 
+// Formato compartilhado por firebaseService.runBatchWrites / buildSeparationWrites (App.tsx)
+// — usado aqui pra deixar applyExpedicaoStockUpdate/applyLotAdvance/onSaveLot capazes de
+// combinar suas gravações (estoque/StockLot/solado + marcação de finalização do Mapa) num
+// único WriteBatch atômico, fechando o mesmo gap de "crédito duplicado se a última
+// gravação falhar" já corrigido em Separar Caixas/Expedir Venda.
+type BatchWrite = { type: 'set' | 'update' | 'delete'; path: string; id: string; data?: any };
+
 interface PCPViewProps {
   lots: ProductionLot[];
   products: Product[];
@@ -113,7 +120,7 @@ interface PCPViewProps {
   palmilhaStock?: PalmilhaStockEntry[];
   purchaseRequests?: PurchaseRequest[];
   isDarkMode: boolean;
-  onSaveLot: (lot: ProductionLot) => Promise<void>;
+  onSaveLot: (lot: ProductionLot, extraWrites?: BatchWrite[]) => Promise<void>;
   onDeleteLot: (id: string) => Promise<void>;
   onDeleteProductionOrder?: (orderId: string) => Promise<void>;
   onNavigate: (view: ViewType, idOrParams?: any, maybeParams?: any) => void;
@@ -1672,9 +1679,10 @@ export default function PCPView({
       const toFinalize = lotItems.filter(it => it.chosenSectorId === '');
       const toMove = lotItems.filter(it => it.chosenSectorId !== '');
 
+      let stockWrites: BatchWrite[] = [];
       if (toFinalize.length > 0) {
         const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalize.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx, fractionLabel: it.fractionLabel })));
-        await applyExpedicaoStockUpdate(currentLot, stockItems, customerItems);
+        stockWrites = await applyExpedicaoStockUpdate(currentLot, stockItems, customerItems);
         toFinalize.forEach(it => {
           const originalSi: any = it.siIdx !== undefined ? currentLot.metadata?.sourceItems?.[it.siIdx] : undefined;
           const order = productionOrders.find(o => o.id === it.orderId);
@@ -1757,11 +1765,12 @@ export default function PCPView({
             sectorId: currentSectorId, statusId: '', timestamp: Date.now(),
             userName: userName || 'Usuário', notes: 'Mapa finalizado (pedidos concluídos individualmente).',
           }],
-        });
+        }, stockWrites);
       } else {
-        await firebaseService.updateDocument('productionLots', currentLot.id, {
-          metadata: { ...(currentLot as any).metadata, orderSectors: updatedOrderSectors },
-        });
+        await firebaseService.runBatchWrites([
+          ...stockWrites,
+          { type: 'update', path: 'productionLots', id: currentLot.id, data: { metadata: { ...(currentLot as any).metadata, orderSectors: updatedOrderSectors } } },
+        ]);
       }
     }
 
@@ -2359,6 +2368,10 @@ export default function PCPView({
 
   const applyLotAdvance = async (
     lot: ProductionLot, items: LotAdvanceItem[], currentSectorId: string, nextStatusId: string, notes: string,
+    // Gravações extras (tipicamente de applyExpedicaoStockUpdate) pra commitar JUNTO com a
+    // gravação do Mapa via onSaveLot, num único batch atômico — ver comentário em
+    // applyExpedicaoStockUpdate sobre por que isso importa.
+    extraWrites: BatchWrite[] = [],
   ): Promise<{ destSectorId: string; destSectorName: string; isFinished: boolean; skippedSectorNames: string[] }> => {
     const allSourceItems: any[] = (lot as any).metadata?.sourceItems || [];
     const reconstructedItems: { chosenSectorId: string; qty: number; skippedSectorNames: string[] }[] = [];
@@ -2529,7 +2542,7 @@ export default function PCPView({
       ],
     };
 
-    await onSaveLot(updatedLot);
+    await onSaveLot(updatedLot, extraWrites);
     return { destSectorId, destSectorName, isFinished, skippedSectorNames };
   };
 
@@ -2600,6 +2613,7 @@ export default function PCPView({
       !!currentSectorObj?.name?.toUpperCase().includes('EXPEDIÇÃO') ||
       !!currentSectorObj?.name?.toUpperCase().includes('EXPEDICAO') ||
       (lot.route && lot.route[lot.route.length - 1] === currentSectorId);
+    let stockWrites: BatchWrite[] = [];
     if (isCycleEndSector) {
       const lotMeta = (lot as any).metadata;
       // IMPORTANTE: itera os sourceItems de verdade (com itemIdx/fractionLabel/lineId), não
@@ -2619,12 +2633,12 @@ export default function PCPView({
           if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} item(ns) → ENTRADA EM ESTOQUE`);
           lines.push('\nConfirmar baixa de expedição?');
           if (!confirm(lines.join('\n'))) { setSectorChangeConfirm(null); return; }
-          await applyExpedicaoStockUpdate(lot, stockItems, customerItems);
+          stockWrites = await applyExpedicaoStockUpdate(lot, stockItems, customerItems);
         }
       }
     }
 
-    const { destSectorName, isFinished } = await applyLotAdvance(lot, items, currentSectorId, nextStatusId, notes);
+    const { destSectorName, isFinished } = await applyLotAdvance(lot, items, currentSectorId, nextStatusId, notes, stockWrites);
 
     if (os) {
       await firebaseService.updateDocument('serviceOrders', os.id, {
@@ -3131,7 +3145,14 @@ export default function PCPView({
     // pra pular essa trava de propósito, já que o objetivo dele é exatamente creditar um item
     // finalizado que ficou sem StockLot.
     skipAlreadyFinalizedGuard: boolean = false,
-  ) => {
+  ): Promise<BatchWrite[]> => {
+    // Acumula todas as escritas (soleStock + stockLots + products) — quem chama decide como
+    // commitar: sozinho (firebaseService.runBatchWrites) ou combinado com a gravação que
+    // marca o pedido como ORDER_FINALIZED, pra que as duas coisas sejam atômicas juntas (ver
+    // applyLotAdvance/handleSaveProductionLot) — sem isso, uma falha bem no meio (crédito de
+    // estoque aplicado mas a marcação de finalizado não) deixava a porta aberta pra um
+    // reprocessamento creditar o mesmo estoque de novo.
+    const writes: BatchWrite[] = [];
     // Um pedido de compra pode agrupar vários itens (modelos/cores) sob o mesmo
     // orderId — quando `item.itemIdx` é informado, casa apenas o sourceItem daquele
     // item específico; quando não, casa TODOS os sourceItems daquele orderId (caso
@@ -3225,23 +3246,25 @@ export default function PCPView({
           .reduce((s, [, v]) => s + (Number(v) || 0), 0);
 
         if (entry) {
-          await firebaseService.updateDocument('soleStock', entry.id, { stock: updatedStock, totalPairs, updatedAt: Date.now() });
+          writes.push({ type: 'update', path: 'soleStock', id: entry.id, data: { stock: updatedStock, totalPairs, updatedAt: Date.now() } });
         } else {
           const mold = productionConfigs.find(c => c.id === moldId);
           const color = colors.find(c => c.id === colorId);
-          await firebaseService.saveDocument('soleStock', {
-            moldId,
-            moldName: mold?.name || '',
-            colorId,
-            colorName: color?.name || '',
-            supplierId: '',
-            supplierName: 'Baixa de Produção',
-            stock: updatedStock,
-            totalPairs,
-            unitCost: 0,
-            totalCost: 0,
-            purchaseDate: Date.now(),
-            notes: 'Criado automaticamente na baixa com estoque negativo'
+          writes.push({
+            type: 'set', path: 'soleStock', id: generateId(), data: {
+              moldId,
+              moldName: mold?.name || '',
+              colorId,
+              colorName: color?.name || '',
+              supplierId: '',
+              supplierName: 'Baixa de Produção',
+              stock: updatedStock,
+              totalPairs,
+              unitCost: 0,
+              totalCost: 0,
+              purchaseDate: Date.now(),
+              notes: 'Criado automaticamente na baixa com estoque negativo'
+            },
           });
         }
       }
@@ -3335,11 +3358,11 @@ export default function PCPView({
           boxIds: resolved.boxIds,
           sourceItemKey: getSourceItemKey(si),
         };
-        await firebaseService.saveDocument('stockLots', stockLot);
+        writes.push({ type: 'set', path: 'stockLots', id: generateId(), data: stockLot });
       }
 
       for (const [productId, variations] of productVariationsMap.entries()) {
-        await firebaseService.updateDocument('products', productId, { variations });
+        writes.push({ type: 'update', path: 'products', id: productId, data: { variations } });
       }
     }
 
@@ -3378,9 +3401,11 @@ export default function PCPView({
           boxIds: resolved.boxIds,
           sourceItemKey: getSourceItemKey(si),
         };
-        await firebaseService.saveDocument('stockLots', stockLot);
+        writes.push({ type: 'set', path: 'stockLots', id: generateId(), data: stockLot });
       }
     }
+
+    return writes;
   };
 
   // Varre dois tipos de problema:
@@ -3585,7 +3610,8 @@ export default function PCPView({
         const { stockItems, customerItems } = classifyExpedicaoOrders([{
           orderId: item.orderId, itemIdx: item.itemIdx, fractionLabel: item.fractionLabel
         }]);
-        await applyExpedicaoStockUpdate(lot, stockItems, customerItems, true);
+        const repairWrites = await applyExpedicaoStockUpdate(lot, stockItems, customerItems, true);
+        if (repairWrites.length > 0) await firebaseService.runBatchWrites(repairWrites);
       }
 
       // Tipo C: backfill de lineId em sourceItems de produção já em andamento — não mexe
@@ -3764,6 +3790,7 @@ export default function PCPView({
         // sem nenhum registro de entrada. handleFinalizeSelectedSourceItems (Finalizar
         // Selecionados) já se comportava corretamente (sem guarda de setor), alinhamos.
         const toFinalizeNow = lotIncludedItems.filter(it => it.chosenSectorId === '');
+        let stockWrites: BatchWrite[] = [];
         if (toFinalizeNow.length > 0) {
           const { customerItems, stockItems } = classifyExpedicaoOrders(toFinalizeNow.map(it => ({ orderId: it.orderId, itemIdx: it.itemIdx, fractionLabel: it.fractionLabel })));
           if (stockItems.length > 0 || customerItems.length > 0) {
@@ -3772,14 +3799,14 @@ export default function PCPView({
             if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} pedido(s) → ENTRADA EM ESTOQUE`);
             lines.push('\nConfirmar baixa?');
             if (!confirm(lines.join('\n'))) return;
-            await applyExpedicaoStockUpdate(lotObj, stockItems, customerItems);
+            stockWrites = await applyExpedicaoStockUpdate(lotObj, stockItems, customerItems);
           }
         }
 
         const notes = stayedItems.length === 0
           ? `Baixa via OS ${os.osNumber} concluída.`
           : `Baixa parcial via OS ${os.osNumber} (${includedItems.length}/${items.length} pedidos).`;
-        const { destSectorName, isFinished } = await applyLotAdvance(lotObj, lotIncludedItems, currentSectorId, '', notes);
+        const { destSectorName, isFinished } = await applyLotAdvance(lotObj, lotIncludedItems, currentSectorId, '', notes, stockWrites);
         lastDestSectorName = destSectorName;
         if (!isFinished) allFinished = false;
       }
