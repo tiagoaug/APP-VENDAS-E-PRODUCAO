@@ -195,6 +195,9 @@ export default function SalesView({
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [saleToDelete, setSaleToDelete] = useState<string | null>(null);
   const [expandedIds, setExpandedIds] = useState<string[]>([]);
+  // Colapsa "Localização de Entrega" por padrão — os campos em lista (um por linha, telas
+  // estreitas) ocupam bastante altura, e nem toda venda mexe com Entregas.
+  const [expandedDeliveryIds, setExpandedDeliveryIds] = useState<string[]>([]);
   const [showCrossCheckCard, setShowCrossCheckCard] = usePersistedToggle('salesView_showCrossCheckCard', false);
 
   const crossCheckData = useMemo(() => {
@@ -1343,23 +1346,34 @@ export default function SalesView({
                     );
                   })()}
 
-                  {modulesConfig.entregas && onUpdateDeliveryInfo && isIndividuallyExpanded && sale.status === SaleStatus.SALE && (
-                    <div className={`flex flex-col gap-2 px-4 py-3 rounded-2xl ${isDarkMode ? 'bg-teal-900/10 border border-teal-800/30' : 'bg-teal-50/60 border border-teal-100'}`} onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center gap-2">
-                        <Truck size={14} className="text-teal-600 shrink-0" />
-                        <span className="text-[10px] font-black text-teal-700 dark:text-teal-400 uppercase tracking-widest">
-                          Localização de Entrega
-                        </span>
+                  {modulesConfig.entregas && onUpdateDeliveryInfo && isIndividuallyExpanded && sale.status === SaleStatus.SALE && (() => {
+                    const isDeliveryOpen = expandedDeliveryIds.includes(sale.id);
+                    return (
+                      <div className={`flex flex-col gap-2 px-4 py-3 rounded-2xl ${isDarkMode ? 'bg-teal-900/10 border border-teal-800/30' : 'bg-teal-50/60 border border-teal-100'}`} onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedDeliveryIds(prev => prev.includes(sale.id) ? prev.filter(id => id !== sale.id) : [...prev, sale.id])}
+                          className="flex items-center justify-between gap-2 w-full"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Truck size={14} className="text-teal-600 shrink-0" />
+                            <span className="text-[10px] font-black text-teal-700 dark:text-teal-400 uppercase tracking-widest">
+                              Localização de Entrega
+                            </span>
+                          </span>
+                          {isDeliveryOpen ? <ChevronUp size={16} className="text-teal-600 shrink-0" /> : <ChevronDown size={16} className="text-teal-600 shrink-0" />}
+                        </button>
+                        <DeliveryAddressForm
+                          isDarkMode={isDarkMode}
+                          address={sale.deliveryAddress}
+                          priority={sale.deliveryPriority}
+                          fieldsExpanded={isDeliveryOpen}
+                          onChange={(address) => onUpdateDeliveryInfo(sale.id, { deliveryAddress: address })}
+                          onPriorityChange={(priority) => onUpdateDeliveryInfo(sale.id, { deliveryPriority: priority })}
+                        />
                       </div>
-                      <DeliveryAddressForm
-                        isDarkMode={isDarkMode}
-                        address={sale.deliveryAddress}
-                        priority={sale.deliveryPriority}
-                        onChange={(address) => onUpdateDeliveryInfo(sale.id, { deliveryAddress: address })}
-                        onPriorityChange={(priority) => onUpdateDeliveryInfo(sale.id, { deliveryPriority: priority })}
-                      />
-                    </div>
-                  )}
+                    );
+                  })()}
 
                 <div className={`flex ${sale.status === SaleStatus.QUOTE ? 'flex-col' : 'justify-between items-start'} gap-4`}>
                   {/* Items List (Left/Top) */}

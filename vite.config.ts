@@ -28,6 +28,14 @@ export default defineConfig(({mode}) => {
           manualChunks(id: string) {
             if (!id.includes('node_modules')) return undefined;
             if (id.includes('/react/') || id.includes('/react-dom/')) return 'vendor-react';
+            // leaflet/react-leaflet chamam React.createContext() assim que o módulo carrega
+            // (fora de qualquer componente) — se caírem no chunk genérico 'vendor' junto com
+            // dezenas de libs usadas fora da tela de Entregas, esse chunk vira parte do
+            // caminho eager e o createContext roda antes do React estar disponível (tela
+            // branca no boot, "Cannot read properties of undefined (reading 'createContext')"
+            // — reproduzido no Android em 24/07/2026). Chunk próprio garante que só carrega
+            // quando a tela de Entregas (lazy) realmente precisar dele.
+            if (id.includes('/leaflet/') || id.includes('react-leaflet')) return 'vendor-leaflet';
             if (id.includes('/firebase/') || id.includes('@firebase/')) return 'vendor-firebase';
             if (id.includes('/motion/') || id.includes('framer-motion')) return 'vendor-motion';
             if (id.includes('lucide-react')) return 'vendor-icons';

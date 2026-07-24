@@ -4,15 +4,26 @@ import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Share } from '@capacitor/share';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
-import { ArrowLeft, Navigation, Circle, MapPin, Radio, RotateCcw, Waypoints, Loader2, Camera as CameraIcon, Trash2, Share2, X, Plus } from 'lucide-react';
+import { ArrowLeft, Navigation, Circle, MapPin, Radio, RotateCcw, Waypoints, Loader2, Camera as CameraIcon, Trash2, Share2, X, Plus, PlayCircle, Timer, Milestone } from 'lucide-react';
 import { DeliveryRoute, DeliveryStop, Sale } from '../types';
 import DeliveryMap from '../components/DeliveryMap';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { openNavigation } from '../utils/deliveryNavLink';
 import { optimizeRoute } from '../utils/deliveryRouteOptimizer';
+import { getRoadRoute, RoadRouteResult } from '../utils/deliveryRoadRoute';
 import { photoToCompressedImage, CompressedImage } from '../utils/aiImageUtils';
 import { toast } from '../utils/toast';
+
+function formatDistance(m: number): string {
+  return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
+}
+
+function formatDuration(s: number): string {
+  const min = Math.round(s / 60);
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)}h${String(min % 60).padStart(2, '0')}`;
+}
 
 interface DeliveryRouteDetailViewProps {
   route: DeliveryRoute;
@@ -24,6 +35,16 @@ interface DeliveryRouteDetailViewProps {
   onUpdateStops: (stops: DeliveryStop[]) => Promise<void>;
   onUpdateDriverLocation?: (lat: number, lng: number) => Promise<void>;
   onDeleteRoute: () => Promise<void>;
+  onStartRoute: () => Promise<void>;
+}
+
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  if (h > 0) return `${h}h${String(m).padStart(2, '0')}min`;
+  return `${m}min${String(s).padStart(2, '0')}s`;
 }
 
 // Espaçamento mínimo entre gravações da posição do motorista — evita gerar uma
@@ -38,7 +59,7 @@ function timeAgoLabel(ts: number): string {
   return `há ${Math.floor(minutes / 60)}h`;
 }
 
-export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBack, onMarkDelivered, onUndoDelivered, onUpdateStops, onUpdateDriverLocation, onDeleteRoute }: DeliveryRouteDetailViewProps) {
+export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBack, onMarkDelivered, onUndoDelivered, onUpdateStops, onUpdateDriverLocation, onDeleteRoute, onStartRoute }: DeliveryRouteDetailViewProps) {
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [showLiveModal, setShowLiveModal] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
@@ -49,7 +70,19 @@ export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBa
   const [isSharingPhotos, setIsSharingPhotos] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
+  const [roadRoute, setRoadRoute] = useState<RoadRouteResult | null>(null);
+  const [isLoadingRoadRoute, setIsLoadingRoadRoute] = useState(false);
+  const [now, setNow] = useState(Date.now());
   const lastWriteAtRef = useRef(0);
+
+  // Relógio ao vivo do tempo decorrido — só roda enquanto a rota está em andamento
+  // (congela sozinho quando conclui, ver completedAt/onMarkDelivered em App.tsx).
+  useEffect(() => {
+    if (route.status !== 'IN_PROGRESS') return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [route.status]);
 
   const orderedStops = [...route.stops].sort((a, b) => a.order - b.order);
   const deliveredCount = orderedStops.filter(s => s.status === 'DELIVERED').length;
@@ -57,14 +90,38 @@ export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBa
   const nextStopSale = nextStop ? sales.find(s => s.id === nextStop.saleId) : undefined;
 
   const stopMarkers = [
-    ...orderedStops.map(s => ({
+    ...orderedStops.map((s, i) => ({
       id: s.id,
       lat: s.lat,
       lng: s.lng,
       color: s.status === 'DELIVERED' ? '#16a34a' : s.priority === 'URGENT' ? '#e11d48' : '#0d9488',
+      number: i + 1,
+      label: sales.find(sale => sale.id === s.saleId)?.customerName || `Parada ${i + 1}`,
     })),
     ...(route.driverLocation ? [{ id: 'driver', lat: route.driverLocation.lat, lng: route.driverLocation.lng, color: '#2563eb' }] : []),
   ];
+
+  // Chave estável da composição das paradas (id+posição+ordem) — `orderedStops` é um
+  // array novo a cada render (vem de `.sort()` sobre route.stops), então usá-lo direto
+  // como dependência do efeito abaixo faria recalcular a rota em TODO render (inclusive
+  // quando só a localização do motorista muda a cada poucos segundos).
+  const stopsKey = orderedStops.map(s => `${s.id}:${s.lat}:${s.lng}:${s.order}`).join('|');
+
+  // Trajeto seguindo ruas de verdade (OSRM) — mesmo padrão do Montar Rota. Recalcula
+  // sozinho quando a composição/ordem das paradas muda (entrega marcada, "Recalcular
+  // Rota"), mas NÃO a cada atualização de driverLocation (evitaria dezenas de chamadas
+  // ao serviço público de rota enquanto o GPS reporta a cada 15s).
+  useEffect(() => {
+    if (orderedStops.length === 0) return;
+    let cancelled = false;
+    setIsLoadingRoadRoute(true);
+    getRoadRoute({ lat: route.originLat, lng: route.originLng }, orderedStops.map(s => ({ lat: s.lat, lng: s.lng })))
+      .then(result => { if (!cancelled) setRoadRoute(result); })
+      .catch(() => { if (!cancelled) setRoadRoute(null); })
+      .finally(() => { if (!cancelled) setIsLoadingRoadRoute(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopsKey, route.originLat, route.originLng]);
 
   // Enquanto esta tela estiver aberta (o motorista fazendo a entrega), reporta a
   // posição atual pra quem estiver acompanhando a rota — só funciona com o app aberto
@@ -232,6 +289,37 @@ export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBa
           {deliveredCount}/{orderedStops.length} paradas entregues
         </div>
 
+        {route.status === 'DRAFT' ? (
+          <button
+            type="button"
+            disabled={isStarting}
+            onClick={async () => { setIsStarting(true); try { await onStartRoute(); } finally { setIsStarting(false); } }}
+            className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-60 active:scale-[0.98] transition-all"
+          >
+            {isStarting ? <Loader2 size={14} className="animate-spin" /> : <PlayCircle size={14} />}
+            Iniciar Entregas
+          </button>
+        ) : (
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <div className="flex items-center gap-1.5">
+              <Timer size={14} className="text-teal-600 shrink-0" />
+              <span className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                {formatElapsed((route.status === 'COMPLETED' ? (route.completedAt || now) : now) - (route.startedAt || now))}
+              </span>
+            </div>
+            <span className={`w-px h-4 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-200'}`} />
+            <div className="flex items-center gap-1.5">
+              <Milestone size={14} className="text-teal-600 shrink-0" />
+              <span className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                {roadRoute ? formatDistance(roadRoute.totalDistanceMeters) : isLoadingRoadRoute ? '...' : '—'}
+              </span>
+            </div>
+            {route.status === 'COMPLETED' && (
+              <span className="ml-auto text-[9px] font-black uppercase tracking-widest text-emerald-600">Concluída</span>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-2">
           {route.driverLocation && (
             <button
@@ -264,7 +352,11 @@ export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBa
           isDarkMode={isDarkMode}
           height={240}
           markers={stopMarkers}
-          polyline={[{ lat: route.originLat, lng: route.originLng }, ...orderedStops.map(s => ({ lat: s.lat, lng: s.lng }))]}
+          polyline={
+            roadRoute && roadRoute.coordinates.length > 1
+              ? roadRoute.coordinates
+              : [{ lat: route.originLat, lng: route.originLng }, ...orderedStops.map(s => ({ lat: s.lat, lng: s.lng }))]
+          }
         />
 
         <div className="flex gap-2">
@@ -358,6 +450,11 @@ export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBa
               isDarkMode={isDarkMode}
               height={420}
               markers={stopMarkers}
+              polyline={
+                roadRoute && roadRoute.coordinates.length > 1
+                  ? roadRoute.coordinates
+                  : [{ lat: route.originLat, lng: route.originLng }, ...orderedStops.map(s => ({ lat: s.lat, lng: s.lng }))]
+              }
             />
           </div>
         )}

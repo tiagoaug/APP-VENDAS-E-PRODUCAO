@@ -384,7 +384,7 @@ export type Sale = {
     lat?: number;
     lng?: number;
     geocodedAt?: number;
-    geocodeSource?: 'GEOCODED' | 'MANUAL_PIN';
+    geocodeSource?: 'GEOCODED' | 'MANUAL_PIN' | 'PASTED_LOCATION';
   };
   // Prioridade de roteirização de entrega (módulo Entregas) — distinta de `prioridade`,
   // que é SLA de produção/PCP e não tem relação com a ordem de uma rota de entrega.
@@ -417,6 +417,11 @@ export type DeliveryRoute = {
   stops: DeliveryStop[];
   status: 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED';
   optimizedAt?: number;
+  // "Iniciar Entregas" — quando o motorista sai de fato pra rua. Alimenta o relógio ao
+  // vivo (tempo decorrido) na tela de execução; completedAt trava esse tempo quando a
+  // última parada é entregue (ver handleMark, App.tsx).
+  startedAt?: number;
+  completedAt?: number;
   notes?: string;
   // Posição do motorista em tempo real — só atualiza enquanto a tela de entrega
   // (DeliveryRouteDetailView) está aberta no celular de quem está dirigindo; não

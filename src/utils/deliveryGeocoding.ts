@@ -41,10 +41,7 @@ function buildAddressText(address: {
   return parts.join(', ');
 }
 
-export async function geocodeAddress(address: {
-  street?: string; number?: string; neighborhood?: string; city?: string; state?: string; zip?: string;
-}): Promise<GeocodeResult | null> {
-  const text = buildAddressText(address);
+async function geocodeText(text: string): Promise<GeocodeResult | null> {
   if (!text.trim()) return null;
 
   const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(text)}`;
@@ -56,4 +53,44 @@ export async function geocodeAddress(address: {
 
   const first = results[0];
   return { lat: parseFloat(first.lat), lng: parseFloat(first.lon), displayName: first.display_name };
+}
+
+export async function geocodeAddress(address: {
+  street?: string; number?: string; neighborhood?: string; city?: string; state?: string; zip?: string;
+}): Promise<GeocodeResult | null> {
+  return geocodeText(buildAddressText(address));
+}
+
+// Busca a partir de um endereço colado como texto livre (ex.: copiado do WhatsApp) — sem
+// tentar quebrar em rua/número/bairro/etc., só verifica se esse texto é encontrável e
+// devolve a posição, mesmo padrão de throttle/fila da busca por campos.
+export async function geocodeFreeText(text: string): Promise<GeocodeResult | null> {
+  return geocodeText(text);
+}
+
+// Extrai lat/lng diretamente de uma localização compartilhada (WhatsApp encaminha como
+// link do Google Maps — `?q=`, `/@lat,lng,`, `query=lat,lng` — ou às vezes só o texto
+// "lat, lng"; `geo:` é o URI padrão de apps de mapa em geral). Prioriza isso sobre
+// geocodificar por texto: é a posição EXATA que a pessoa compartilhou, sem depender do
+// Nominatim (nem gastar uma chamada da fila) — só cai pra busca por endereço quando não
+// acha coordenadas no texto colado.
+// Exige 3+ casas decimais (precisão típica de GPS) pra não confundir com números soltos
+// de endereço (ex.: "Rua Tal, 123" nunca bate — "123" não tem ponto decimal).
+export function parseLatLngFromText(text: string): { lat: number; lng: number } | null {
+  const geoUri = text.match(/geo:\s*(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/i);
+  if (geoUri) {
+    const lat = parseFloat(geoUri[1]);
+    const lng = parseFloat(geoUri[2]);
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng };
+  }
+
+  const coordPattern = /(-?\d{1,3}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})/;
+  const match = text.match(coordPattern);
+  if (match) {
+    const lat = parseFloat(match[1]);
+    const lng = parseFloat(match[2]);
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng };
+  }
+
+  return null;
 }

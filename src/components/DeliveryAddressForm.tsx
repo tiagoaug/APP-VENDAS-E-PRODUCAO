@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Search, Loader2, MapPin, AlertTriangle, Maximize2 } from 'lucide-react';
+import { Search, Loader2, MapPin, AlertTriangle, Maximize2, ClipboardPaste, CheckCircle2 } from 'lucide-react';
 import { Sale } from '../types';
-import { geocodeAddress } from '../utils/deliveryGeocoding';
+import { geocodeAddress, geocodeFreeText, parseLatLngFromText } from '../utils/deliveryGeocoding';
 import DeliveryMap from './DeliveryMap';
 import Modal from './Modal';
 
@@ -13,17 +13,47 @@ interface DeliveryAddressFormProps {
   priority: Sale['deliveryPriority'];
   onChange: (address: DeliveryAddress) => void;
   onPriorityChange: (priority: 'URGENT' | 'NORMAL') => void;
+  // Controla só a visibilidade dos campos de endereço (Rua...CEP) — busca, prioridade e
+  // mapa continuam sempre visíveis independente disso. Sem a prop, os campos ficam sempre
+  // visíveis (comportamento de antes, usado por quem ainda não tem o acordeão externo).
+  fieldsExpanded?: boolean;
 }
 
 const inputClass = (isDarkMode: boolean) =>
   `w-full h-11 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-teal-500 rounded-xl px-4 text-xs font-bold transition-all outline-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`;
 
+const textareaClass = (isDarkMode: boolean) =>
+  `w-full ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-teal-500 rounded-xl px-4 py-3 text-xs font-bold transition-all outline-none resize-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`;
+
 const labelClass = 'text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1';
 
-export default function DeliveryAddressForm({ isDarkMode, address, priority, onChange, onPriorityChange }: DeliveryAddressFormProps) {
+type AddressInputMode = 'manual' | 'paste_address' | 'paste_location';
+const MODE_LABELS: Record<AddressInputMode, string> = {
+  manual: 'Digitação Manual',
+  paste_address: 'Colar Endereço',
+  paste_location: 'Colar Localização',
+};
+
+export default function DeliveryAddressForm({ isDarkMode, address, priority, onChange, onPriorityChange, fieldsExpanded = true }: DeliveryAddressFormProps) {
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [showMapModal, setShowMapModal] = useState(false);
+  const [inputMode, setInputMode] = useState<AddressInputMode>('manual');
+
+  const [pastedAddressText, setPastedAddressText] = useState('');
+  const [isSearchingPastedAddress, setIsSearchingPastedAddress] = useState(false);
+  const [pastedAddressError, setPastedAddressError] = useState<string | null>(null);
+  const [pastedAddressFound, setPastedAddressFound] = useState<string | null>(null);
+
+  const [pastedLocationText, setPastedLocationText] = useState('');
+  const [pastedLocationError, setPastedLocationError] = useState<string | null>(null);
+  const [pastedLocationFound, setPastedLocationFound] = useState(false);
+
+  // Alvo de foco do mapa — computado do resultado da busca/colagem, NÃO do prop `address`
+  // (que só reflete a mudança depois do Firestore confirmar a gravação e o snapshot
+  // voltar; usar o prop fazia o mapa voar pro pin ANTIGO ou nem voar, ver DeliveryMap.tsx).
+  const [mapFlyTo, setMapFlyTo] = useState<{ lat: number; lng: number; signal: number } | null>(null);
+  const focusMapOn = (lat: number, lng: number) => setMapFlyTo(prev => ({ lat, lng, signal: (prev?.signal || 0) + 1 }));
 
   const a = address || {};
 
@@ -41,11 +71,51 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
         return;
       }
       onChange({ ...a, lat: result.lat, lng: result.lng, geocodedAt: Date.now(), geocodeSource: 'GEOCODED' });
+      focusMapOn(result.lat, result.lng);
     } catch {
       setSearchError('Não foi possível buscar o endereço agora — arraste o pin no mapa abaixo pra marcar manualmente.');
     } finally {
       setIsSearching(false);
     }
+  };
+
+  // "Colar Endereço": texto livre (ex.: endereço copiado de uma conversa) geocodificado
+  // igual à busca por campos — só que sem precisar quebrar em rua/número/bairro antes.
+  const handleSearchPastedAddress = async () => {
+    setPastedAddressError(null);
+    setPastedAddressFound(null);
+    if (!pastedAddressText.trim()) return;
+    setIsSearchingPastedAddress(true);
+    try {
+      const result = await geocodeFreeText(pastedAddressText);
+      if (!result) {
+        setPastedAddressError('Endereço não encontrado — confira o texto colado ou use a Digitação Manual.');
+        return;
+      }
+      onChange({ ...a, lat: result.lat, lng: result.lng, geocodedAt: Date.now(), geocodeSource: 'GEOCODED' });
+      setPastedAddressFound(result.displayName);
+      focusMapOn(result.lat, result.lng);
+    } catch {
+      setPastedAddressError('Não foi possível buscar agora — tente de novo em instantes.');
+    } finally {
+      setIsSearchingPastedAddress(false);
+    }
+  };
+
+  // "Colar Localização": link/texto de localização compartilhada (WhatsApp, Google Maps) —
+  // extrai lat/lng direto do texto, sem geocodificar (é a posição exata compartilhada).
+  const handleVerifyPastedLocation = () => {
+    setPastedLocationError(null);
+    setPastedLocationFound(false);
+    if (!pastedLocationText.trim()) return;
+    const coords = parseLatLngFromText(pastedLocationText);
+    if (!coords) {
+      setPastedLocationError('Não encontrei coordenadas nesse texto — confira se colou o link/localização completo.');
+      return;
+    }
+    onChange({ ...a, lat: coords.lat, lng: coords.lng, geocodedAt: Date.now(), geocodeSource: 'PASTED_LOCATION' });
+    setPastedLocationFound(true);
+    focusMapOn(coords.lat, coords.lng);
   };
 
   const handlePinChange = (lat: number, lng: number) => {
@@ -54,53 +124,147 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="grid grid-cols-3 gap-2">
-        <div className="col-span-2 space-y-1">
-          <label className={labelClass}>Rua</label>
-          <input type="text" className={inputClass(isDarkMode)} value={a.street || ''} onChange={set('street')} placeholder="Ex: Rua das Flores" />
-        </div>
-        <div className="space-y-1">
-          <label className={labelClass}>Número</label>
-          <input type="text" className={inputClass(isDarkMode)} value={a.number || ''} onChange={set('number')} placeholder="123" />
-        </div>
-      </div>
+      {fieldsExpanded && (
+        <>
+          <div className={`grid grid-cols-3 gap-1 p-1 rounded-xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-100'}`}>
+            {(Object.keys(MODE_LABELS) as AddressInputMode[]).map(mode => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setInputMode(mode)}
+                className={`py-2 rounded-lg text-[8px] font-black uppercase tracking-wide transition-all ${
+                  inputMode === mode
+                    ? 'bg-teal-600 text-white shadow-sm'
+                    : isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                }`}
+              >
+                {MODE_LABELS[mode]}
+              </button>
+            ))}
+          </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div className="space-y-1">
-          <label className={labelClass}>Bairro</label>
-          <input type="text" className={inputClass(isDarkMode)} value={a.neighborhood || ''} onChange={set('neighborhood')} />
-        </div>
-        <div className="space-y-1">
-          <label className={labelClass}>Complemento</label>
-          <input type="text" className={inputClass(isDarkMode)} value={a.complement || ''} onChange={set('complement')} />
-        </div>
-      </div>
+          {inputMode === 'manual' && (
+            <>
+              <div className="space-y-1">
+                <label className={labelClass}>Rua</label>
+                <input type="text" className={inputClass(isDarkMode)} value={a.street || ''} onChange={set('street')} placeholder="Ex: Rua das Flores" />
+              </div>
+              <div className="space-y-1">
+                <label className={labelClass}>Número</label>
+                <input type="text" className={inputClass(isDarkMode)} value={a.number || ''} onChange={set('number')} placeholder="123" />
+              </div>
+              <div className="space-y-1">
+                <label className={labelClass}>Bairro</label>
+                <input type="text" className={inputClass(isDarkMode)} value={a.neighborhood || ''} onChange={set('neighborhood')} />
+              </div>
+              <div className="space-y-1">
+                <label className={labelClass}>Complemento</label>
+                <input type="text" className={inputClass(isDarkMode)} value={a.complement || ''} onChange={set('complement')} />
+              </div>
+              <div className="space-y-1">
+                <label className={labelClass}>Cidade</label>
+                <input type="text" className={inputClass(isDarkMode)} value={a.city || ''} onChange={set('city')} />
+              </div>
+              <div className="space-y-1">
+                <label className={labelClass}>UF</label>
+                <input type="text" maxLength={2} className={`${inputClass(isDarkMode)} uppercase`} value={a.state || ''} onChange={set('state')} />
+              </div>
+              <div className="space-y-1">
+                <label className={labelClass}>CEP</label>
+                <input type="text" className={inputClass(isDarkMode)} value={a.zip || ''} onChange={set('zip')} />
+              </div>
+            </>
+          )}
 
-      <div className="grid grid-cols-3 gap-2">
-        <div className="col-span-1 space-y-1">
-          <label className={labelClass}>Cidade</label>
-          <input type="text" className={inputClass(isDarkMode)} value={a.city || ''} onChange={set('city')} />
-        </div>
-        <div className="space-y-1">
-          <label className={labelClass}>UF</label>
-          <input type="text" maxLength={2} className={`${inputClass(isDarkMode)} uppercase`} value={a.state || ''} onChange={set('state')} />
-        </div>
-        <div className="space-y-1">
-          <label className={labelClass}>CEP</label>
-          <input type="text" className={inputClass(isDarkMode)} value={a.zip || ''} onChange={set('zip')} />
-        </div>
-      </div>
+          {inputMode === 'paste_address' && (
+            <div className="space-y-2">
+              <div className="space-y-1">
+                <label className={labelClass}>Colar Endereço Completo</label>
+                <textarea
+                  rows={3}
+                  className={textareaClass(isDarkMode)}
+                  value={pastedAddressText}
+                  onChange={(e) => setPastedAddressText(e.target.value)}
+                  placeholder="Cole aqui o endereço completo (ex: copiado de uma conversa)"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleSearchPastedAddress}
+                disabled={isSearchingPastedAddress}
+                className="w-full h-10 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+              >
+                {isSearchingPastedAddress ? <Loader2 size={14} className="animate-spin" /> : <ClipboardPaste size={14} />}
+                Buscar Endereço Colado
+              </button>
+              {pastedAddressError && (
+                <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-[10px] font-bold">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                  {pastedAddressError}
+                </div>
+              )}
+              {pastedAddressFound && (
+                <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold">
+                  <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
+                  Encontrado: {pastedAddressFound}
+                </div>
+              )}
+            </div>
+          )}
+
+          {inputMode === 'paste_location' && (
+            <div className="space-y-2">
+              <div className="space-y-1">
+                <label className={labelClass}>Colar Localização (WhatsApp / Google Maps)</label>
+                <textarea
+                  rows={3}
+                  className={textareaClass(isDarkMode)}
+                  value={pastedLocationText}
+                  onChange={(e) => setPastedLocationText(e.target.value)}
+                  placeholder="Cole aqui o link ou texto da localização compartilhada"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleVerifyPastedLocation}
+                className="w-full h-10 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+              >
+                <MapPin size={14} />
+                Verificar Localização
+              </button>
+              {pastedLocationError && (
+                <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-[10px] font-bold">
+                  <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+                  {pastedLocationError}
+                </div>
+              )}
+              {pastedLocationFound && (
+                <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold">
+                  <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
+                  Localização exata encontrada no texto colado.
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
 
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={handleSearch}
-          disabled={isSearching}
-          className="flex-1 h-10 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
-        >
-          {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
-          Buscar Endereço
-        </button>
+        {/* Só faz sentido na aba Digitação Manual — busca pelos campos Rua/Número/etc.
+            Nas outras abas (Colar Endereço/Colar Localização) cada uma já tem seu próprio
+            botão de busca; mostrar este aqui também sobrescrevia o pin certo com um
+            resultado vazio/errado vindo dos campos manuais em branco. */}
+        {(!fieldsExpanded || inputMode === 'manual') && (
+          <button
+            type="button"
+            onClick={handleSearch}
+            disabled={isSearching}
+            className="flex-1 h-10 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+          >
+            {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+            Buscar Endereço
+          </button>
+        )}
         <div className="flex rounded-xl overflow-hidden border-2 border-transparent">
           <button
             type="button"
@@ -129,7 +293,11 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
       {a.lat !== undefined && a.lng !== undefined && (
         <div className="flex items-center gap-1.5 px-1 text-[10px] font-bold text-slate-400">
           <MapPin size={12} />
-          {a.geocodeSource === 'MANUAL_PIN' ? 'Localização definida manualmente no mapa' : 'Localização geocodificada — arraste o pin pra ajustar'}
+          {a.geocodeSource === 'MANUAL_PIN'
+            ? 'Localização definida manualmente no mapa'
+            : a.geocodeSource === 'PASTED_LOCATION'
+              ? 'Localização exata colada (WhatsApp/Maps) — arraste o pin pra ajustar'
+              : 'Localização geocodificada — arraste o pin pra ajustar'}
         </div>
       )}
 
@@ -138,6 +306,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
         height={220}
         marker={a.lat !== undefined && a.lng !== undefined ? { lat: a.lat, lng: a.lng } : null}
         onMarkerChange={handlePinChange}
+        flyTo={mapFlyTo}
       />
 
       <button
@@ -162,6 +331,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
           height={520}
           marker={a.lat !== undefined && a.lng !== undefined ? { lat: a.lat, lng: a.lng } : null}
           onMarkerChange={handlePinChange}
+          flyTo={mapFlyTo}
         />
       </Modal>
     </div>

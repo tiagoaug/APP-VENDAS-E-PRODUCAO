@@ -5870,15 +5870,31 @@ export default function App() {
             onMarkDelivered={async (stopId, saleId) => {
               const now = Date.now();
               const updatedStops = currentRoute.stops.map(s => s.id === stopId ? { ...s, status: 'DELIVERED' as const, deliveredAt: now } : s);
+              // Última parada entregue: conclui a rota sozinha e trava o relógio (tempo
+              // decorrido = completedAt - startedAt) — sem isso "Iniciar Entregas" ficaria
+              // contando pra sempre depois de a rota já ter acabado.
+              const allDelivered = updatedStops.every(s => s.status === 'DELIVERED');
+              const routeUpdate: any = { stops: updatedStops };
+              if (allDelivered && currentRoute.status !== 'COMPLETED') {
+                routeUpdate.status = 'COMPLETED';
+                routeUpdate.completedAt = now;
+              }
               await firebaseService.runBatchWrites([
-                { type: 'update', path: 'deliveryRoutes', id: currentRoute.id, data: { stops: updatedStops } },
+                { type: 'update', path: 'deliveryRoutes', id: currentRoute.id, data: routeUpdate },
                 { type: 'update', path: 'sales', id: saleId, data: { deliveryStatus: 'DELIVERED', deliveredAt: now } },
               ]);
             }}
             onUndoDelivered={async (stopId, saleId) => {
               const updatedStops = currentRoute.stops.map(s => s.id === stopId ? { ...s, status: 'PENDING' as const, deliveredAt: undefined } : s);
+              const routeUpdate: any = { stops: updatedStops };
+              // Reabre a rota se ela já tinha sido concluída sozinha (ver onMarkDelivered) —
+              // volta pra "em andamento" com o relógio contando de novo a partir do início.
+              if (currentRoute.status === 'COMPLETED') {
+                routeUpdate.status = 'IN_PROGRESS';
+                routeUpdate.completedAt = deleteField();
+              }
               await firebaseService.runBatchWrites([
-                { type: 'update', path: 'deliveryRoutes', id: currentRoute.id, data: { stops: updatedStops } },
+                { type: 'update', path: 'deliveryRoutes', id: currentRoute.id, data: routeUpdate },
                 { type: 'update', path: 'sales', id: saleId, data: { deliveryStatus: 'PENDING', deliveredAt: null } },
               ]);
             }}
@@ -5888,6 +5904,12 @@ export default function App() {
             onUpdateDriverLocation={async (lat, lng) => {
               await firebaseService.updateDocument('deliveryRoutes', currentRoute.id, {
                 driverLocation: { lat, lng, updatedAt: Date.now() },
+              });
+            }}
+            onStartRoute={async () => {
+              await firebaseService.updateDocument('deliveryRoutes', currentRoute.id, {
+                status: 'IN_PROGRESS',
+                startedAt: Date.now(),
               });
             }}
             onDeleteRoute={async () => {
