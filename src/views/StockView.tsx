@@ -35,8 +35,10 @@ import StockDuplicateDiagnosticModal from '../components/StockDuplicateDiagnosti
 import StockRepairBanner from '../components/StockRepairBanner';
 import { summarizeStockRepairIssues } from '../utils/stockRepair';
 import { buildSeparationReconcileGroups, SeparationReconcileGroup } from '../utils/separationReconcile';
+import { buildReservedBySale, getStockReadyQty as getStockReadyQtyUtil, isReadyToShip as isReadyToShipUtil } from '../utils/salesReadiness';
 import { buildStockDuplicateFixPlan, StockDuplicateFixPlan } from '../utils/stockDuplicateFix';
 import { buildOrphanedFinalizedKeyFixes } from '../utils/finalizedKeyRepair';
+import { buildUndercreditGroups, UndercreditGroup } from '../utils/stockUndercreditFix';
 
 // Capacidade (pares) de uma embalagem avulsa: usa `metadata.capacity` quando
 // configurado; senão recai para o número embutido no nome (ex.: "12 pares
@@ -53,6 +55,10 @@ interface StockViewProps {
   products: Product[];
   productionConfigs: ProductionConfigItem[];
   onUpdateProduct: (product: Product) => Promise<void>;
+  /** Balanço de estoque (edição direta dos números): em vez de só sobrescrever o
+   * contador do produto, decide quais StockLots criar (número subiu) ou reduzir/apagar
+   * (número desceu) pra manter as caixas reais em sincronia com o valor digitado. */
+  onReconcileStockBalance?: (productId: string, deltas: { variationId: string; key: string; oldValue: number; newValue: number }[]) => Promise<void>;
   isDarkMode: boolean;
   stockLots: StockLot[];
   onPreviewRevertStockLot?: (stockLot: StockLot) => StockLotRevertPreview;
@@ -65,10 +71,12 @@ interface StockViewProps {
   onReconcileSeparationGroup?: (group: SeparationReconcileGroup) => Promise<void>;
   onApplyStockDuplicateFix?: (plan: StockDuplicateFixPlan) => Promise<void>;
   onRepairOrphanedFinalizedKeys?: () => Promise<{ fixed: number; lotsTouched: number }>;
+  onApplyUndercreditFix?: (group: UndercreditGroup) => Promise<void>;
   /** Chega true quando a navegação pra cá veio de um aviso em Vendas — abre direto o
    * painel/modal correspondente em vez de precisar achar em Configurar Estoque. */
   initialShowReconcile?: boolean;
   initialShowDiagnostic?: boolean;
+  initialShowUndercredit?: boolean;
   /** Abre direto o menu "Configurar Estoque" — usado quando o destino não tem modal
    * próprio (ex.: aviso de "Reparar Finalizados" vindo de Vendas). */
   initialShowConfigMenu?: boolean;
@@ -82,6 +90,7 @@ export default function StockView({
   products,
   productionConfigs,
   onUpdateProduct,
+  onReconcileStockBalance,
   isDarkMode,
   stockLots,
   onPreviewRevertStockLot,
@@ -94,8 +103,10 @@ export default function StockView({
   onReconcileSeparationGroup,
   onApplyStockDuplicateFix,
   onRepairOrphanedFinalizedKeys,
+  onApplyUndercreditFix,
   initialShowReconcile,
   initialShowDiagnostic,
+  initialShowUndercredit,
   initialShowConfigMenu,
   modulesConfig,
 }: StockViewProps) {
@@ -114,8 +125,9 @@ export default function StockView({
   const [showStockDiagnosticModal, setShowStockDiagnosticModal] = useState(false);
   const [showConfigMenu, setShowConfigMenu] = useState(false);
   const [showReconcileModal, setShowReconcileModal] = useState(false);
+  const [showUndercreditModal, setShowUndercreditModal] = useState(false);
 
-  const { duplicateStockLotGroups, duplicateStockByRefColor, markResolved: markStockDuplicatesResolved } = useStockLotDuplicates(stockLots);
+  const { duplicateStockLotGroups, duplicateStockByRefColor, markResolved: markStockDuplicatesResolved } = useStockLotDuplicates(stockLots, lots);
 
   // Separações feitas antes da correção do desconto de estoque (StockLot reservado via
   // pool sem descontar o contador do produto) — ver src/utils/separationReconcile.ts.
@@ -126,6 +138,11 @@ export default function StockView({
   const orphanedFinalizedKeyFixes = useMemo(() => buildOrphanedFinalizedKeyFixes(lots), [lots]);
   const [fixingFinalizedKeys, setFixingFinalizedKeys] = useState(false);
 
+  // Produção que creditou o StockLot mas nunca somou no contador do produto (ver
+  // src/utils/stockUndercreditFix.ts) — alimenta o botão "Estoque Não Creditado" abaixo.
+  const undercreditGroups = useMemo(() => buildUndercreditGroups(products, stockLots), [products, stockLots]);
+  const [fixingUndercreditKey, setFixingUndercreditKey] = useState<string | null>(null);
+
   useEffect(() => {
     if (initialShowReconcile) { setShowConfigMenu(false); setShowReconcileModal(true); }
   }, [initialShowReconcile]);
@@ -133,6 +150,10 @@ export default function StockView({
   useEffect(() => {
     if (initialShowDiagnostic) { setShowConfigMenu(false); setShowStockDiagnosticModal(true); }
   }, [initialShowDiagnostic]);
+
+  useEffect(() => {
+    if (initialShowUndercredit) { setShowConfigMenu(false); setShowUndercreditModal(true); }
+  }, [initialShowUndercredit]);
 
   useEffect(() => {
     if (initialShowConfigMenu) setShowConfigMenu(true);
@@ -193,7 +214,39 @@ export default function StockView({
       for (const productId of Object.keys(editedStocks)) {
         const original = products.find(p => p.id === productId);
         const edited = editedStocks[productId];
-        if (JSON.stringify(original) !== JSON.stringify(edited)) {
+        if (!original || JSON.stringify(original) === JSON.stringify(edited)) continue;
+
+        // Deltas de estoque (por variação+tamanho/ATACADO) — o que realmente precisa
+        // virar StockLots criados/reduzidos, não só um número novo no contador.
+        const stockDeltas: { variationId: string; key: string; oldValue: number; newValue: number }[] = [];
+        edited.variations.forEach(editedVari => {
+          const originalVari = original.variations.find(v => v.id === editedVari.id);
+          if (!originalVari) return;
+          const keys = new Set([...Object.keys(originalVari.stock || {}), ...Object.keys(editedVari.stock || {})]);
+          keys.forEach(key => {
+            const oldValue = (originalVari.stock as any)?.[key] || 0;
+            const newValue = (editedVari.stock as any)?.[key] || 0;
+            if (oldValue !== newValue) stockDeltas.push({ variationId: editedVari.id, key, oldValue, newValue });
+          });
+        });
+
+        if (stockDeltas.length > 0 && onReconcileStockBalance) {
+          await onReconcileStockBalance(productId, stockDeltas);
+          // Outros campos além de estoque (nome etc.) que também tenham mudado na mesma
+          // edição continuam indo pelo caminho de sempre — `stock`/`stockPkgAllocations`
+          // ficam por conta de onReconcileStockBalance (que recalcula a alocação certa a
+          // partir de quais StockLots de verdade foram criados/reduzidos).
+          const editedOtherFields = {
+            ...edited,
+            variations: edited.variations.map(v => {
+              const ov = original.variations.find(x => x.id === v.id);
+              return ov ? { ...v, stock: ov.stock, stockPkgAllocations: ov.stockPkgAllocations } : v;
+            }),
+          };
+          if (JSON.stringify(original) !== JSON.stringify(editedOtherFields)) {
+            await onUpdateProduct(editedOtherFields);
+          }
+        } else {
           await onUpdateProduct(edited);
         }
       }
@@ -578,13 +631,13 @@ export default function StockView({
             type="button"
             onClick={() => { setShowConfigMenu(false); setShowEntryHistory(true); }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
-            title="Histórico de Entradas em Estoque"
-            aria-label="Abrir histórico de entradas em estoque"
+            title="Histórico de Movimentações de Estoque"
+            aria-label="Abrir histórico de movimentações de estoque"
           >
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-100 text-amber-600'}`}>
               <History size={16} strokeWidth={2.5} />
             </div>
-            <span className="text-[10px] font-black uppercase tracking-widest">Histórico de Entradas em Estoque</span>
+            <span className="text-[10px] font-black uppercase tracking-widest">Histórico de Movimentações de Estoque</span>
           </button>
 
           {onFixPkgAllocations && (
@@ -710,6 +763,30 @@ export default function StockView({
               )}
             </button>
           )}
+
+          {onApplyUndercreditFix && (
+            <button
+              type="button"
+              onClick={() => { setShowConfigMenu(false); setShowUndercreditModal(true); }}
+              className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
+              title="Estoque Não Creditado"
+              aria-label="Ver produção que nunca somou no contador de estoque"
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${undercreditGroups.length > 0 ? (isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-100 text-amber-600') : (isDarkMode ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-100 text-emerald-600')}`}>
+                  <TrendingUp size={16} strokeWidth={2.5} />
+                </div>
+                <span className="text-[10px] font-black uppercase tracking-widest">Estoque Não Creditado</span>
+              </div>
+              {undercreditGroups.length > 0 ? (
+                <span className="flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-amber-500 text-white text-[10px] font-black shrink-0 animate-pulse-amber-ring">
+                  {undercreditGroups.length}
+                </span>
+              ) : (
+                <CheckCircle2 size={16} strokeWidth={2.5} className="text-emerald-500 shrink-0" />
+              )}
+            </button>
+          )}
         </div>
       </Modal>
 
@@ -744,6 +821,54 @@ export default function StockView({
                   className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-rose-500/20 text-rose-300 hover:bg-rose-500/30' : 'bg-rose-600 text-white hover:bg-rose-700'}`}
                 >
                   <Wrench size={12} strokeWidth={3} /> Corrigir Agora
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={showUndercreditModal}
+        onClose={() => setShowUndercreditModal(false)}
+        title="Estoque Não Creditado"
+        icon={<TrendingUp size={20} />}
+        maxWidth="max-w-lg"
+      >
+        {undercreditGroups.length === 0 ? (
+          <p className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400 py-10">Nenhuma pendência encontrada — todo crédito de produção está refletido no estoque.</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-1">
+              Produção que entrou no histórico de estoque (Mapa/Pedido), mas nunca somou no contador do produto — o valor abaixo já existe fisicamente, só falta somar. "Corrigir Agora" só soma, nunca desconta.
+            </p>
+            {undercreditGroups.map(g => (
+              <div key={g.key} className={`rounded-2xl border p-4 flex flex-col gap-2 ${isDarkMode ? 'bg-amber-900/15 border-amber-800/40' : 'bg-amber-50 border-amber-100'}`}>
+                <p className={`text-[12px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  {g.productReference ? `${g.productReference} — ` : ''}{g.productName} · {g.variationName}
+                </p>
+                <div className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total a somar</span>
+                  <span className="text-[14px] font-black text-amber-500">
+                    {g.isWholesale
+                      ? `${g.missingBoxes} cx`
+                      : `${Object.values(g.missingSizes || {}).reduce((s, q) => s + q, 0)} pares`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  disabled={fixingUndercreditKey === g.key}
+                  onClick={async () => {
+                    setFixingUndercreditKey(g.key);
+                    try {
+                      await onApplyUndercreditFix?.(g);
+                    } finally {
+                      setFixingUndercreditKey(prev => prev === g.key ? null : prev);
+                    }
+                  }}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30' : 'bg-amber-600 text-white hover:bg-amber-700'}`}
+                >
+                  <Wrench size={12} strokeWidth={3} /> {fixingUndercreditKey === g.key ? 'Corrigindo...' : 'Corrigir Agora'}
                 </button>
               </div>
             ))}
@@ -808,32 +933,9 @@ const PedidosClientesPanel: React.FC<{
   const term = searchTerm.toLowerCase();
 
   // RESERVADO lots grouped by saleId
-  const reservedBySale = useMemo(() => {
-    const map = new Map<string, StockLot[]>();
-    stockLots.filter(l => l.status === 'RESERVADO' && l.saleId).forEach(l => {
-      const arr = map.get(l.saleId!) || [];
-      arr.push(l);
-      map.set(l.saleId!, arr);
-    });
-    return map;
-  }, [stockLots]);
+  const reservedBySale = useMemo(() => buildReservedBySale(stockLots), [stockLots]);
 
-  // Quantidade já disponível no estoque comum para os itens ainda não separados de
-  // uma venda SEM ordem de produção — vendas com produção só podem separar a partir do
-  // lote reservado (nunca caem no estoque agregado), por isso retornam sempre 0 aqui.
-  const getStockReadyQty = (sale: Sale) => {
-    if (sale.productionOrderId) return 0;
-    return sale.items.reduce((sum, item) => {
-      if (item.fulfilled === true) return sum;
-      const needed = item.quantity - (item.boxesSeparated || 0);
-      if (needed <= 0) return sum;
-      const product = products.find(p => p.id === item.productId);
-      const variation = product?.variations.find(v => v.id === item.variationId);
-      const key = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || '');
-      const available = variation?.stock[key] || 0;
-      return sum + Math.min(available, needed);
-    }, 0);
-  };
+  const getStockReadyQty = (sale: Sale) => getStockReadyQtyUtil(sale, products);
 
   // Customer orders: all non-cancelled SALE status orders, excluding explicit STOCK destination
   const customerSales = useMemo(() => {
@@ -850,12 +952,7 @@ const PedidosClientesPanel: React.FC<{
       .sort((a, b) => b.date - a.date);
   }, [sales, term]);
 
-  // Pronta para expedir: tem lote reservado da produção OU (sem ordem de produção)
-  // já tem estoque comum suficiente para separar pelo menos um item. Sem nenhum dos
-  // dois, é uma venda genuinamente aguardando — produção, no caso de pedidos com OP, ou
-  // reposição de estoque, no caso de vendas de estoque comum.
-  const isReadyToShip = (s: Sale) =>
-    (reservedBySale.get(s.id) || []).length > 0 || getStockReadyQty(s) > 0;
+  const isReadyToShip = (s: Sale) => isReadyToShipUtil(s, reservedBySale, products);
 
   const prontos = customerSales.filter(s => s.deliveryStatus !== 'DELIVERED' && isReadyToShip(s));
   const aguardando = customerSales.filter(s => s.deliveryStatus !== 'DELIVERED' && !isReadyToShip(s));
@@ -1109,7 +1206,7 @@ const StockEntryHistoryModal: React.FC<{
   }, [stockLots, term]);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Histórico de Entradas em Estoque" icon={<History size={20} />} maxWidth="max-w-2xl">
+    <Modal isOpen={isOpen} onClose={onClose} title="Histórico de Movimentações de Estoque" icon={<History size={20} />} maxWidth="max-w-2xl">
       <div className="flex flex-col gap-4">
         <div className="relative">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -1118,7 +1215,7 @@ const StockEntryHistoryModal: React.FC<{
             placeholder="Buscar por produto, mapa, pedido ou cliente..."
             value={term}
             onChange={(e) => setTerm(e.target.value)}
-            aria-label="Buscar no histórico de entradas em estoque"
+            aria-label="Buscar no histórico de movimentações de estoque"
             className={`w-full border rounded-xl py-3 pl-11 pr-4 text-[11px] font-bold uppercase tracking-widest outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-100 text-slate-800'}`}
           />
         </div>
@@ -1127,11 +1224,20 @@ const StockEntryHistoryModal: React.FC<{
           {filtered.length === 0 && (
             <div className={`p-8 text-center border-2 border-dashed rounded-3xl ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-400'}`}>
               <History size={32} className="mx-auto mb-2 opacity-20" />
-              <p className="text-xs font-bold uppercase tracking-widest">Nenhuma entrada encontrada</p>
+              <p className="text-xs font-bold uppercase tracking-widest">Nenhuma movimentação encontrada</p>
             </div>
           )}
           {filtered.map(lot => {
-            const isStockDestination = !lot.customerName || lot.customerName === 'Estoque';
+            // Cada StockLot passa por até 3 estados ao longo da vida: crédito de produção
+            // (EM_ESTOQUE = entrada disponível, ou RESERVADO quando já nasce comprometido
+            // com um cliente) e, mais tarde, ENTREGUE quando sai de fato (Liberar Pedido).
+            // Antes essa lista só distinguia "Estoque" vs. nome do cliente, sem indicar que
+            // um lote já tinha saído — misturando entrada e saída sob o mesmo rótulo.
+            const movementBadge = lot.status === 'ENTREGUE'
+              ? { label: 'Saída · Entregue', className: 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400' }
+              : lot.status === 'RESERVADO'
+              ? { label: `Reservado · ${lot.customerName || 'Cliente'}`, className: 'bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400' }
+              : { label: 'Entrada · Estoque', className: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' };
             const orderNumber = lot.productionOrderNumber || lot.saleOrderNumber;
             const sizeEntries = Object.entries(lot.sizeBreakdown || {})
               .sort(([a], [b]) => parseFloat(a) - parseFloat(b));
@@ -1181,8 +1287,8 @@ const StockEntryHistoryModal: React.FC<{
                       Pedido #{orderNumber}
                     </span>
                   )}
-                  <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide ${isStockDestination ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400'}`}>
-                    {isStockDestination ? 'Estoque' : lot.customerName}
+                  <span className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide ${movementBadge.className}`}>
+                    {movementBadge.label}
                   </span>
                   {lot.boxQty !== undefined && (
                     <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wide bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400">

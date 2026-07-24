@@ -39,6 +39,11 @@ export const SECTORS: { id: SectorId; label: string; icon: string; tasks: string
     views: [ViewType.STOCK, ViewType.STOCK_GLANCE],
   },
   {
+    id: 'entregas', label: 'Entregas', icon: 'Truck',
+    tasks: ['Montar Rotas de Entrega', 'Marcar Entregas Realizadas'],
+    views: [ViewType.DELIVERY_MENU, ViewType.DELIVERY_ROUTE_BUILDER, ViewType.DELIVERY_ROUTE_DETAIL, ViewType.DELIVERY_CONFIG],
+  },
+  {
     id: 'financeiro', label: 'Financeiro', icon: 'Wallet',
     tasks: ['Fluxo de Caixa', 'Contas Bancárias', 'Relatórios', 'Meios de Pagamento'],
     views: [ViewType.FINANCIAL, ViewType.ACCOUNTS, ViewType.REPORTS, ViewType.REPORT_DETAILED, ViewType.PAYMENT_METHODS],

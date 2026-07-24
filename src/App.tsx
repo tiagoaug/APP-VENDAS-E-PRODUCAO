@@ -35,13 +35,19 @@ import {
   Sparkles,
   ScanLine,
   Sun,
-  Store
+  Store,
+  Truck,
+  MapPin,
+  Route,
+  Navigation
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { auth, db, logout } from "./lib/firebase";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { doc, collection, query, where, getDocs, deleteField } from "firebase/firestore";
-import { firebaseService } from "./services/firebaseService";
+import { firebaseService, deepClean } from "./services/firebaseService";
 import { notificationService, ReminderNotification } from "./services/notificationService";
 import { resolveSoleConsumption } from "./utils/soleNeeds";
 import { getSourceItemKey, saleProductionHasProgressed } from "./utils/productionRoute";
@@ -49,6 +55,7 @@ import { pickWholesaleStockLots, pickRetailStockLots } from "./utils/stockLotPic
 import { buildSeparationReconcileFixPlan, SeparationReconcileGroup } from "./utils/separationReconcile";
 import { buildOrphanedFinalizedKeyFixes } from "./utils/finalizedKeyRepair";
 import { StockDuplicateFixPlan } from "./utils/stockDuplicateFix";
+import { buildUndercreditFixPlan, UndercreditGroup } from "./utils/stockUndercreditFix";
 import { financeService } from "./services/financeService";
 import {
   ViewType,
@@ -94,6 +101,7 @@ import {
   Collaborator,
   MonthlySnapshot,
   CleanupConfig,
+  DeliveryRoute,
 } from "./types";
 
 // Views — DashboardView e LoginView ficam estáticas (primeira tela vista por
@@ -145,6 +153,8 @@ const ProductionEngineeringView = lazy(() => import("./views/ProductionEngineeri
 const MarketplaceConnectionView = lazy(() => import("./views/MarketplaceConnectionView"));
 const MarketplaceOrdersView = lazy(() => import("./views/MarketplaceOrdersView"));
 const MarketplaceSkuMappingView = lazy(() => import("./views/MarketplaceSkuMappingView"));
+const DeliveryRouteBuilderView = lazy(() => import("./views/DeliveryRouteBuilderView"));
+const DeliveryRouteDetailView = lazy(() => import("./views/DeliveryRouteDetailView"));
 
 
 // Modals
@@ -220,6 +230,12 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
     ViewType.MARKETPLACE_CONNECTION,
     ViewType.MARKETPLACE_ORDERS,
     ViewType.MARKETPLACE_SKU_MAPPING,
+  ],
+  entregas: [
+    ViewType.DELIVERY_MENU,
+    ViewType.DELIVERY_ROUTE_BUILDER,
+    ViewType.DELIVERY_ROUTE_DETAIL,
+    ViewType.DELIVERY_CONFIG,
   ]
 };
 
@@ -532,6 +548,7 @@ export default function App() {
   const [palmilhaStockEntries, setPalmilhaStockEntries] = useState<PalmilhaStockEntry[]>([]);
   const [productionLots, setProductionLots] = useState<ProductionLot[]>([]);
   const [stockLots, setStockLots] = useState<StockLot[]>([]);
+  const [deliveryRoutes, setDeliveryRoutes] = useState<DeliveryRoute[]>([]);
   const [productionOrders, setProductionOrders] = useState<ProductionOrder[]>([]);
   const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequest[]>([]);
   const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
@@ -656,6 +673,7 @@ export default function App() {
     sales: true,
     production: true,
     marketplace: false,
+    entregas: false,
   };
 
   const [modulesConfig, setModulesConfig] = useState<AppModulesConfig>(() => {
@@ -849,6 +867,11 @@ export default function App() {
       setProductionOrders
     );
 
+    const unsubDeliveryRoutes = firebaseService.subscribeToCollection<DeliveryRoute>(
+      "deliveryRoutes",
+      (data) => setDeliveryRoutes([...data].sort((a, b) => b.createdAt - a.createdAt))
+    );
+
     const unsubPurchaseRequests = firebaseService.subscribeToCollection<PurchaseRequest>(
       "purchaseRequests",
       (data) => setPurchaseRequests([...data].sort((a, b) => b.requestedAt - a.requestedAt))
@@ -937,6 +960,7 @@ export default function App() {
       unsubProductionLots();
       unsubStockLots();
       unsubProductionOrders();
+      unsubDeliveryRoutes();
       unsubPurchaseRequests();
       unsubServiceOrders();
       unsubDashboardConfig();
@@ -967,6 +991,7 @@ export default function App() {
           body: s.reminderTitle ? (s.customerName || 'Venda') : 'Lembrete de venda',
           at: s.reminderAt!,
           alarmMode: s.reminderAlarmMode ?? true,
+          combineMode: s.reminderCombineMode ?? false,
           soundPattern: s.reminderSoundPattern || 'standard',
         }));
         serviceOrders.filter(os => os.reminderAt).forEach(os => reminders.push({
@@ -975,6 +1000,7 @@ export default function App() {
           body: os.providerName ? `Fornecedor: ${os.providerName}` : 'Lembrete de Ordem de Serviço',
           at: os.reminderAt!,
           alarmMode: os.reminderAlarmMode ?? true,
+          combineMode: os.reminderCombineMode ?? false,
           soundPattern: os.reminderSoundPattern || 'standard',
         }));
         productionOrders.forEach(order => (order.items || []).forEach((item: any) => {
@@ -985,6 +1011,7 @@ export default function App() {
             body: `${order.customerName || 'Estoque'} · Pedido ${order.orderNumber}`,
             at: item.reminderAt,
             alarmMode: item.reminderAlarmMode ?? true,
+            combineMode: item.reminderCombineMode ?? false,
             soundPattern: item.reminderSoundPattern || 'standard',
           });
         }));
@@ -994,6 +1021,7 @@ export default function App() {
           body: `Vencimento da compra ${p.batchNumber || ''}`,
           at: p.reminderAt!,
           alarmMode: p.reminderAlarmMode ?? true,
+          combineMode: p.reminderCombineMode ?? false,
           soundPattern: p.reminderSoundPattern || 'standard',
         }));
         notificationService.rescheduleAll(reminders);
@@ -1411,20 +1439,18 @@ export default function App() {
         return { ...item, fulfilled: isFullySeparated ? true : item.fulfilled };
       });
 
+      const writes: Array<{ type: 'set' | 'update' | 'delete'; path: string; id: string; data?: any }> = [];
       for (const lot of reservedLots) {
         if (!lotsToDeliver.has(lot.id)) continue;
-        await firebaseService.updateDocument('stockLots', lot.id, {
-          status: 'ENTREGUE',
-          deliveredAt: now,
-          updatedAt: now,
-        });
+        writes.push({ type: 'update', path: 'stockLots', id: lot.id, data: { status: 'ENTREGUE', deliveredAt: now, updatedAt: now } });
       }
 
       const allFulfilled = updatedItems.every(it => it.fulfilled === true);
-      await firebaseService.updateDocument('sales', saleId, {
-        items: updatedItems,
-        ...(allFulfilled ? { deliveryStatus: 'DELIVERED', deliveredAt: now } : {}),
+      writes.push({
+        type: 'update', path: 'sales', id: saleId,
+        data: { items: updatedItems, ...(allFulfilled ? { deliveryStatus: 'DELIVERED', deliveredAt: now } : {}) },
       });
+      await firebaseService.runBatchWrites(writes);
 
       toast.show(allFulfilled
         ? 'Pedido liberado para o cliente.'
@@ -1453,6 +1479,7 @@ export default function App() {
     stockLotWrites: Map<string, any>,
     stockLotCreates: any[],
     poolReservedIdsThisRun: Set<string>,
+    freshStockLots: StockLot[],
   ): SaleItem => {
     if (qty <= 0) return item;
     const isWholesale = item.saleType === SaleType.WHOLESALE;
@@ -1461,7 +1488,7 @@ export default function App() {
 
     // (1) Lotes nativos de produção já reservados pra esta venda.
     if (remaining > 0) {
-      const nativeReserved = stockLots.filter(l =>
+      const nativeReserved = freshStockLots.filter(l =>
         l.status === 'RESERVADO' && l.saleId === sale.id && !l.reservedViaSeparation &&
         l.productId === item.productId && l.variationId === item.variationId &&
         !poolReservedIdsThisRun.has(l.id) &&
@@ -1482,7 +1509,7 @@ export default function App() {
 
     // (2) Pool geral EM_ESTOQUE do mesmo produto/cor.
     if (remaining > 0) {
-      const poolCandidates = stockLots.filter(l =>
+      const poolCandidates = freshStockLots.filter(l =>
         l.status === 'EM_ESTOQUE' && l.productId === item.productId && l.variationId === item.variationId &&
         !poolReservedIdsThisRun.has(l.id) && (isWholesale || (l.sizeBreakdown?.[item.size || ''] || 0) > 0)
       );
@@ -1620,6 +1647,7 @@ export default function App() {
     getProd: (id: string) => any,
     stockLotWrites: Map<string, any>,
     stockLotCreates: any[],
+    freshStockLots: StockLot[],
   ): SaleItem => {
     if (qty <= 0) return item;
     const isWholesale = item.saleType === SaleType.WHOLESALE;
@@ -1629,7 +1657,7 @@ export default function App() {
 
     for (let i = existingIds.length - 1; i >= 0 && remaining > 0; i--) {
       const lotId = existingIds[i];
-      const lot = stockLots.find(l => l.id === lotId);
+      const lot = freshStockLots.find(l => l.id === lotId);
       if (!lot) {
         const ki = keptIds.lastIndexOf(lotId); if (ki >= 0) keptIds.splice(ki, 1);
         continue;
@@ -1672,13 +1700,26 @@ export default function App() {
         }
       };
 
-      if (plan.fullyConsumed.length > 0) {
+      // A quantia "consumida" (revertida) por um split pode acabar cobrindo o lote
+      // INTEIRO (ex.: remaining chegou fracionado/arredondado até aqui por outro
+      // motivo, mas na prática bate com tudo que o lote tem) — nesse caso o correto é
+      // tratar como fullyConsumed (libera o próprio doc em vez de criar um novo), senão
+      // o original fica travado em RESERVADO pra sempre (órfão, sem venda nenhuma o
+      // referenciando mais) enquanto uma caixa nova nasce do nada em EM_ESTOQUE: a
+      // mesma caixa física passa a existir duas vezes. Foi exatamente esse o bug
+      // reproduzido em 23/07/2026 (pedido T599, StockLot ae51551382574c8b).
+      const isEffectivelyWholeLot = plan.splitConsumed.length > 0 &&
+        (isWholesale
+          ? (plan.splitConsumed[0].consumed.boxQty || 0) >= (lot.boxQty || 0)
+          : (plan.splitConsumed[0].remainder.totalPairs || 0) <= 0);
+
+      if (plan.fullyConsumed.length > 0 || isEffectivelyWholeLot) {
         restoreCounter(lot.sizeBreakdown, lot.boxQty, lot.pkgId);
         stockLotWrites.set(lot.id, {
           status: 'EM_ESTOQUE', saleId: deleteField(), saleOrderNumber: deleteField(),
           customerName: deleteField(), reservedViaSeparation: deleteField(), updatedAt: Date.now(),
         });
-        remaining -= plan.totalPicked;
+        remaining -= (plan.fullyConsumed.length > 0 ? plan.totalPicked : (isWholesale ? (lot.boxQty || 0) : (lot.totalPairs || 0)));
         const ki = keptIds.lastIndexOf(lotId); if (ki >= 0) keptIds.splice(ki, 1);
       } else if (plan.splitConsumed.length > 0) {
         const { remainder, consumed } = plan.splitConsumed[0];
@@ -1741,38 +1782,21 @@ export default function App() {
     };
   };
 
-  // Monta (sem gravar nada ainda) a lista de escritas de produtos + StockLots acumuladas
-  // por resolveSeparationSupply/revertSeparationSupply, pra ser combinada com a escrita
-  // final da venda e commitada num único WriteBatch atômico — ver comentário em
-  // firebaseService.runBatchWrites sobre por que isso substituiu a sequência de awaits
-  // separados (uma falha no meio deixava estoque debitado sem a venda marcar a separação,
-  // e um novo clique repetia o débito).
-  const buildSeparationWrites = (
-    productUpdates: Map<string, any>,
-    stockLotWrites: Map<string, any>,
-    stockLotCreates: any[],
-  ): Array<{ type: 'set' | 'update'; path: string; id: string; data: any }> => {
-    const writes: Array<{ type: 'set' | 'update'; path: string; id: string; data: any }> = [];
-    for (const [, prod] of productUpdates) {
-      writes.push({ type: 'set', path: 'products', id: prod.id, data: prod });
-    }
-    for (const [id, data] of stockLotWrites.entries()) {
-      writes.push({ type: 'update', path: 'stockLots', id, data });
-    }
-    for (const docItem of stockLotCreates) {
-      writes.push({ type: 'set', path: 'stockLots', id: docItem.id, data: docItem });
-    }
-    return writes;
-  };
 
   // "Expedir" — dá baixa (via resolveSeparationSupply, mesma lógica de "Separar Caixas")
   // dos itens da venda que ainda não foram totalmente separados/abatidos e que têm oferta
   // suficiente (lotes reservados + estoque geral) pra cobrir o que falta. Marca esses itens
   // como fulfilled quando a separação atinge a quantidade total; se todos forem atendidos,
   // marca a venda como entregue.
+  // Mesmo padrão de transação de handleSepararCaixas — ver comentário lá. O filtro de
+  // "dá ou não dá pra cobrir tudo que falta" abaixo continua usando o state local como
+  // heurística de corte rápido (evita tentar itens obviamente sem estoque) — a decisão
+  // real de quais StockLots pegar acontece dentro da transação, com dados frescos.
   const handleExpediteSale = async (saleId: string) => {
     const sale = sales.find(s => s.id === saleId);
     if (!sale) return;
+    const uid = auth.currentUser?.uid;
+    if (!uid) { toast.show('Usuário não autenticado.'); return; }
     try {
       const allAlreadyFulfilled = sale.items.every(it => it.fulfilled === true);
       if (allAlreadyFulfilled) {
@@ -1784,29 +1808,14 @@ export default function App() {
         return;
       }
 
-      const productUpdates = new Map<string, any>();
-      const getProd = (id: string) => {
-        if (productUpdates.has(id)) return productUpdates.get(id);
-        const p = products.find(pr => pr.id === id);
-        if (!p) return null;
-        const cloned = JSON.parse(JSON.stringify(p));
-        productUpdates.set(id, cloned);
-        return cloned;
-      };
-      const stockLotWrites = new Map<string, any>();
-      const stockLotCreates: any[] = [];
-      const poolReservedIdsThisRun = new Set<string>();
-
-      let anyExpedited = false;
-      const newItems = sale.items.map(item => {
-        if (item.fulfilled === true) return item;
+      const eligibleIdx = new Set<number>();
+      const candidateProductIds = new Set<string>();
+      const candidateStockLotIds = new Set<string>();
+      sale.items.forEach((item, idx) => {
+        if (item.fulfilled === true) return;
         const remaining = Math.max(0, item.quantity - (item.boxesSeparated || 0));
-        if (remaining <= 0) return { ...item, fulfilled: true };
+        if (remaining <= 0) { eligibleIdx.add(idx); return; }
 
-        // Só expede o item se der pra cobrir TUDO que falta (lotes reservados nativos +
-        // estoque geral) — mesma exigência de "tudo ou nada por item" do comportamento
-        // anterior, só que agora escopada ao que realmente falta, não à quantidade total
-        // (evita descontar de novo o que já tinha sido separado via "Separar Caixas").
         const isWholesale = item.saleType === SaleType.WHOLESALE;
         const nativeReservedTotal = stockLots
           .filter(l => l.status === 'RESERVADO' && l.saleId === sale.id && !l.reservedViaSeparation &&
@@ -1817,24 +1826,97 @@ export default function App() {
         const variForCheck = prodForCheck?.variations.find(v => v.id === item.variationId);
         const stockKey = isWholesale ? 'WHOLESALE' : (item.size || 'WHOLESALE');
         const counterAvailable = (variForCheck?.stock as any)?.[stockKey] || 0;
-        if (nativeReservedTotal + counterAvailable < remaining) return item;
+        if (nativeReservedTotal + counterAvailable < remaining) return;
 
-        anyExpedited = true;
-        return resolveSeparationSupply(item, remaining, sale, getProd, stockLotWrites, stockLotCreates, poolReservedIdsThisRun);
+        eligibleIdx.add(idx);
+        candidateProductIds.add(item.productId);
+        stockLots.forEach(l => {
+          if (l.productId === item.productId && l.variationId === item.variationId &&
+            (l.status === 'EM_ESTOQUE' || (l.status === 'RESERVADO' && l.saleId === saleId))) {
+            candidateStockLotIds.add(l.id);
+          }
+        });
+      });
+
+      if (eligibleIdx.size === 0) {
+        toast.show('Nenhum item com estoque suficiente para expedir.');
+        return;
+      }
+
+      let anyExpedited = false;
+      let allFulfilled = false;
+      await firebaseService.runAtomic(async (transaction: any) => {
+        const saleRef = doc(db, `users/${uid}/sales`, saleId);
+        const saleSnap = await transaction.get(saleRef);
+        if (!saleSnap.exists()) throw new Error('Venda não encontrada.');
+        const freshSale = { id: saleSnap.id, ...saleSnap.data() } as Sale;
+
+        const productRefs = new Map<string, any>();
+        const productData = new Map<string, any>();
+        for (const pid of candidateProductIds) {
+          const ref = doc(db, `users/${uid}/products`, pid);
+          const snap = await transaction.get(ref);
+          if (snap.exists()) { productRefs.set(pid, ref); productData.set(pid, { id: pid, ...snap.data() }); }
+        }
+
+        const stockLotRefs = new Map<string, any>();
+        const freshStockLots: StockLot[] = [];
+        for (const id of candidateStockLotIds) {
+          const ref = doc(db, `users/${uid}/stockLots`, id);
+          const snap = await transaction.get(ref);
+          if (snap.exists()) {
+            stockLotRefs.set(id, ref);
+            freshStockLots.push({ id: snap.id, ...snap.data() } as StockLot);
+          }
+        }
+
+        const productUpdates = new Map<string, any>();
+        const getProd = (id: string) => {
+          if (productUpdates.has(id)) return productUpdates.get(id);
+          const p = productData.get(id);
+          if (!p) return null;
+          const cloned = JSON.parse(JSON.stringify(p));
+          productUpdates.set(id, cloned);
+          return cloned;
+        };
+        const stockLotWrites = new Map<string, any>();
+        const stockLotCreates: any[] = [];
+        const poolReservedIdsThisRun = new Set<string>();
+
+        anyExpedited = false;
+        const newItems = freshSale.items.map((item, idx) => {
+          if (item.fulfilled === true) return item;
+          if (!eligibleIdx.has(idx)) return item;
+          const remaining = Math.max(0, item.quantity - (item.boxesSeparated || 0));
+          if (remaining <= 0) { anyExpedited = true; return { ...item, fulfilled: true }; }
+          anyExpedited = true;
+          return resolveSeparationSupply(item, remaining, freshSale, getProd, stockLotWrites, stockLotCreates, poolReservedIdsThisRun, freshStockLots);
+        });
+
+        allFulfilled = newItems.every(it => it.fulfilled === true);
+
+        for (const [pid, prod] of productUpdates) {
+          const ref = productRefs.get(pid);
+          if (ref) transaction.set(ref, deepClean(prod), { merge: true });
+        }
+        for (const [id, data] of stockLotWrites.entries()) {
+          const ref = stockLotRefs.get(id);
+          if (ref) transaction.update(ref, deepClean(data));
+        }
+        for (const docItem of stockLotCreates) {
+          const ref = doc(db, `users/${uid}/stockLots`, docItem.id);
+          transaction.set(ref, deepClean(docItem));
+        }
+        transaction.update(saleRef, {
+          items: deepClean(newItems),
+          ...(allFulfilled ? { deliveryStatus: 'DELIVERED', deliveredAt: Date.now() } : {}),
+        });
       });
 
       if (!anyExpedited) {
         toast.show('Nenhum item com estoque suficiente para expedir.');
         return;
       }
-
-      const allFulfilled = newItems.every(it => it.fulfilled === true);
-      const writes = buildSeparationWrites(productUpdates, stockLotWrites, stockLotCreates);
-      writes.push({
-        type: 'update', path: 'sales', id: saleId,
-        data: { items: newItems, ...(allFulfilled ? { deliveryStatus: 'DELIVERED', deliveredAt: Date.now() } : {}) },
-      });
-      await firebaseService.runBatchWrites(writes);
 
       toast.show(allFulfilled
         ? 'Venda expedida — estoque baixado e pedido entregue.'
@@ -1849,52 +1931,99 @@ export default function App() {
   // itens já abatidos (fulfilled === true) e marca-os como aguardando estoque novamente.
   // Para itens WHOLESALE: também restaura stockPkgAllocations a partir do snapshot
   // separatedPkgAllocations salvo na separação, e zera boxesSeparated.
+  // Mesmo padrão de transação de handleSepararCaixas — ver comentário lá.
   const handleRevertExpedition = async (saleId: string) => {
     const sale = sales.find(s => s.id === saleId);
     if (!sale) return;
+    const uid = auth.currentUser?.uid;
+    if (!uid) { toast.show('Usuário não autenticado.'); return; }
     try {
-      const productUpdates = new Map<string, any>();
-      const getProd = (id: string) => {
-        if (productUpdates.has(id)) return productUpdates.get(id);
-        const p = products.find(pr => pr.id === id);
-        if (!p) return null;
-        const cloned = JSON.parse(JSON.stringify(p));
-        productUpdates.set(id, cloned);
-        return cloned;
-      };
-      const stockLotWrites = new Map<string, any>();
-      const stockLotCreates: any[] = [];
-
-      let anyReverted = false;
-      const newItems = sale.items.map(item => {
+      const wasDelivered = sale.deliveryStatus === 'DELIVERED';
+      const candidateProductIds = new Set<string>();
+      const candidateStockLotIds = new Set<string>();
+      let anyHasSeparation = false;
+      sale.items.forEach(item => {
         const hasSeparation = item.fulfilled === true || (item.boxesSeparated || 0) > 0;
-        if (!hasSeparation) return item;
-
-        // Calcula exatamente quanto foi separado (e portanto precisa voltar pro estoque) —
-        // itens legados marcados fulfilled=true sem boxesSeparated (de antes desta
-        // integração) caem no fallback de contador dentro de revertSeparationSupply, já
-        // que não têm separatedStockLotIds nenhum.
-        const qtyToRestore = (item.boxesSeparated || 0) > 0 ? item.boxesSeparated! : (item.fulfilled ? item.quantity : 0);
-        if (qtyToRestore <= 0) return { ...item, fulfilled: false };
-
-        anyReverted = true;
-        const reverted = revertSeparationSupply(item, qtyToRestore, getProd, stockLotWrites, stockLotCreates);
-        return { ...reverted, fulfilled: false, boxesSeparated: 0, separatedStockLotIds: undefined, separatedPkgAllocations: undefined };
+        if (!hasSeparation) return;
+        anyHasSeparation = true;
+        candidateProductIds.add(item.productId);
+        (item.separatedStockLotIds || []).forEach(id => candidateStockLotIds.add(id));
       });
 
-      // Se nenhum item tinha separação mas a venda está marcada como "Entregue" (ex.:
-      // pedido editado depois da expedição, ficando com itens novos nunca abatidos),
-      // ainda assim limpa a marcação — senão a venda fica travada sem nenhuma saída
-      // pra desfazer o status de entrega.
-      const wasDelivered = sale.deliveryStatus === 'DELIVERED';
-      if (!anyReverted && !wasDelivered) {
+      if (!anyHasSeparation && !wasDelivered) {
         toast.show('Não há itens expedidos para reverter.');
         return;
       }
 
-      const writes = buildSeparationWrites(productUpdates, stockLotWrites, stockLotCreates);
-      writes.push({ type: 'update', path: 'sales', id: saleId, data: { items: newItems, deliveryStatus: 'PENDING' } });
-      await firebaseService.runBatchWrites(writes);
+      let anyReverted = false;
+      await firebaseService.runAtomic(async (transaction: any) => {
+        const saleRef = doc(db, `users/${uid}/sales`, saleId);
+        const saleSnap = await transaction.get(saleRef);
+        if (!saleSnap.exists()) throw new Error('Venda não encontrada.');
+        const freshSale = { id: saleSnap.id, ...saleSnap.data() } as Sale;
+
+        const productRefs = new Map<string, any>();
+        const productData = new Map<string, any>();
+        for (const pid of candidateProductIds) {
+          const ref = doc(db, `users/${uid}/products`, pid);
+          const snap = await transaction.get(ref);
+          if (snap.exists()) { productRefs.set(pid, ref); productData.set(pid, { id: pid, ...snap.data() }); }
+        }
+
+        const stockLotRefs = new Map<string, any>();
+        const freshStockLots: StockLot[] = [];
+        for (const id of candidateStockLotIds) {
+          const ref = doc(db, `users/${uid}/stockLots`, id);
+          const snap = await transaction.get(ref);
+          if (snap.exists()) {
+            stockLotRefs.set(id, ref);
+            freshStockLots.push({ id: snap.id, ...snap.data() } as StockLot);
+          }
+        }
+
+        const productUpdates = new Map<string, any>();
+        const getProd = (id: string) => {
+          if (productUpdates.has(id)) return productUpdates.get(id);
+          const p = productData.get(id);
+          if (!p) return null;
+          const cloned = JSON.parse(JSON.stringify(p));
+          productUpdates.set(id, cloned);
+          return cloned;
+        };
+        const stockLotWrites = new Map<string, any>();
+        const stockLotCreates: any[] = [];
+
+        anyReverted = false;
+        const newItems = freshSale.items.map(item => {
+          const hasSeparation = item.fulfilled === true || (item.boxesSeparated || 0) > 0;
+          if (!hasSeparation) return item;
+
+          // Calcula exatamente quanto foi separado (e portanto precisa voltar pro estoque) —
+          // itens legados marcados fulfilled=true sem boxesSeparated (de antes desta
+          // integração) caem no fallback de contador dentro de revertSeparationSupply, já
+          // que não têm separatedStockLotIds nenhum.
+          const qtyToRestore = (item.boxesSeparated || 0) > 0 ? item.boxesSeparated! : (item.fulfilled ? item.quantity : 0);
+          if (qtyToRestore <= 0) return { ...item, fulfilled: false };
+
+          anyReverted = true;
+          const reverted = revertSeparationSupply(item, qtyToRestore, getProd, stockLotWrites, stockLotCreates, freshStockLots);
+          return { ...reverted, fulfilled: false, boxesSeparated: 0, separatedStockLotIds: undefined, separatedPkgAllocations: undefined };
+        });
+
+        for (const [pid, prod] of productUpdates) {
+          const ref = productRefs.get(pid);
+          if (ref) transaction.set(ref, deepClean(prod), { merge: true });
+        }
+        for (const [id, data] of stockLotWrites.entries()) {
+          const ref = stockLotRefs.get(id);
+          if (ref) transaction.update(ref, deepClean(data));
+        }
+        for (const docItem of stockLotCreates) {
+          const ref = doc(db, `users/${uid}/stockLots`, docItem.id);
+          transaction.set(ref, deepClean(docItem));
+        }
+        transaction.update(saleRef, { items: deepClean(newItems), deliveryStatus: 'PENDING' });
+      });
 
       toast.show(anyReverted
         ? 'Expedição revertida — estoque e embalagens restaurados.'
@@ -1916,37 +2045,86 @@ export default function App() {
     await firebaseService.saveDocument('products', { ...product, variations: updatedVariations });
   };
 
+  // Mesmo padrão de transação de handleSepararCaixas — ver comentário lá.
   const handlePartialRevertSeparacao = async (
     saleId: string,
     reverts: { itemIdx: number; quantity: number }[]
   ) => {
     const sale = sales.find(s => s.id === saleId);
     if (!sale) return;
+    const uid = auth.currentUser?.uid;
+    if (!uid) { toast.show('Usuário não autenticado.'); return; }
     try {
-      const productUpdates = new Map<string, any>();
-      const getProd = (id: string) => {
-        if (productUpdates.has(id)) return productUpdates.get(id);
-        const p = products.find(pr => pr.id === id);
-        if (!p) return null;
-        const cloned = JSON.parse(JSON.stringify(p));
-        productUpdates.set(id, cloned);
-        return cloned;
-      };
-      const stockLotWrites = new Map<string, any>();
-      const stockLotCreates: any[] = [];
-
-      const newItems = sale.items.map((item, idx) => {
+      const candidateProductIds = new Set<string>();
+      const candidateStockLotIds = new Set<string>();
+      sale.items.forEach((item, idx) => {
         const rev = reverts.find(r => r.itemIdx === idx);
-        if (!rev || rev.quantity <= 0) return item;
-        const currentSeparated = item.boxesSeparated || 0;
-        const qtyToRestore = Math.min(rev.quantity, currentSeparated);
-        if (qtyToRestore <= 0) return item;
-        return revertSeparationSupply(item, qtyToRestore, getProd, stockLotWrites, stockLotCreates);
+        if (!rev || rev.quantity <= 0) return;
+        candidateProductIds.add(item.productId);
+        (item.separatedStockLotIds || []).forEach(id => candidateStockLotIds.add(id));
       });
 
-      const writes = buildSeparationWrites(productUpdates, stockLotWrites, stockLotCreates);
-      writes.push({ type: 'update', path: 'sales', id: saleId, data: { items: newItems } });
-      await firebaseService.runBatchWrites(writes);
+      await firebaseService.runAtomic(async (transaction: any) => {
+        const saleRef = doc(db, `users/${uid}/sales`, saleId);
+        const saleSnap = await transaction.get(saleRef);
+        if (!saleSnap.exists()) throw new Error('Venda não encontrada.');
+        const freshSale = { id: saleSnap.id, ...saleSnap.data() } as Sale;
+
+        const productRefs = new Map<string, any>();
+        const productData = new Map<string, any>();
+        for (const pid of candidateProductIds) {
+          const ref = doc(db, `users/${uid}/products`, pid);
+          const snap = await transaction.get(ref);
+          if (snap.exists()) { productRefs.set(pid, ref); productData.set(pid, { id: pid, ...snap.data() }); }
+        }
+
+        const stockLotRefs = new Map<string, any>();
+        const freshStockLots: StockLot[] = [];
+        for (const id of candidateStockLotIds) {
+          const ref = doc(db, `users/${uid}/stockLots`, id);
+          const snap = await transaction.get(ref);
+          if (snap.exists()) {
+            stockLotRefs.set(id, ref);
+            freshStockLots.push({ id: snap.id, ...snap.data() } as StockLot);
+          }
+        }
+
+        const productUpdates = new Map<string, any>();
+        const getProd = (id: string) => {
+          if (productUpdates.has(id)) return productUpdates.get(id);
+          const p = productData.get(id);
+          if (!p) return null;
+          const cloned = JSON.parse(JSON.stringify(p));
+          productUpdates.set(id, cloned);
+          return cloned;
+        };
+        const stockLotWrites = new Map<string, any>();
+        const stockLotCreates: any[] = [];
+
+        const newItems = freshSale.items.map((item, idx) => {
+          const rev = reverts.find(r => r.itemIdx === idx);
+          if (!rev || rev.quantity <= 0) return item;
+          const currentSeparated = item.boxesSeparated || 0;
+          const qtyToRestore = Math.min(rev.quantity, currentSeparated);
+          if (qtyToRestore <= 0) return item;
+          return revertSeparationSupply(item, qtyToRestore, getProd, stockLotWrites, stockLotCreates, freshStockLots);
+        });
+
+        for (const [pid, prod] of productUpdates) {
+          const ref = productRefs.get(pid);
+          if (ref) transaction.set(ref, deepClean(prod), { merge: true });
+        }
+        for (const [id, data] of stockLotWrites.entries()) {
+          const ref = stockLotRefs.get(id);
+          if (ref) transaction.update(ref, deepClean(data));
+        }
+        for (const docItem of stockLotCreates) {
+          const ref = doc(db, `users/${uid}/stockLots`, docItem.id);
+          transaction.set(ref, deepClean(docItem));
+        }
+        transaction.update(saleRef, { items: deepClean(newItems) });
+      });
+
       toast.show('Reversão parcial registrada com sucesso.');
     } catch (e: any) {
       console.error(e);
@@ -1988,39 +2166,100 @@ export default function App() {
     return { fixed, total };
   };
 
+  // Roda dentro de uma transação real do Firestore (não um WriteBatch cego): relê a
+  // venda/produtos/StockLots no momento do commit e o próprio Firestore aborta e tenta
+  // de novo sozinho se algum desses documentos mudou entre a leitura e a escrita — fecha
+  // a corrida de concorrência que causava caixas fantasma quando duas separações/
+  // reversões tocavam o mesmo StockLot compartilhado quase ao mesmo tempo (reproduzido
+  // ao vivo em 23/07/2026, pedido T599). A descoberta de candidatos abaixo usa o state
+  // local só pra saber QUAIS documentos olhar — o conteúdo deles é sempre relido fresco.
   const handleSepararCaixas = async (
     saleId: string,
     separations: { itemIdx: number; quantity: number }[]
   ) => {
     const sale = sales.find(s => s.id === saleId);
     if (!sale) return;
+    const uid = auth.currentUser?.uid;
+    if (!uid) { toast.show('Usuário não autenticado.'); return; }
     try {
-      const productUpdates = new Map<string, any>();
-      const getProd = (id: string) => {
-        if (productUpdates.has(id)) return productUpdates.get(id);
-        const p = products.find(pr => pr.id === id);
-        if (!p) return null;
-        const cloned = JSON.parse(JSON.stringify(p));
-        productUpdates.set(id, cloned);
-        return cloned;
-      };
-      const stockLotWrites = new Map<string, any>();
-      const stockLotCreates: any[] = [];
-      const poolReservedIdsThisRun = new Set<string>();
-
-      const newItems = sale.items.map((item, idx) => {
+      const candidateProductIds = new Set<string>();
+      const candidateStockLotIds = new Set<string>();
+      sale.items.forEach((item, idx) => {
         const sep = separations.find(s => s.itemIdx === idx);
-        if (!sep || sep.quantity <= 0) return item;
-        return resolveSeparationSupply(item, sep.quantity, sale, getProd, stockLotWrites, stockLotCreates, poolReservedIdsThisRun);
+        if (!sep || sep.quantity <= 0) return;
+        candidateProductIds.add(item.productId);
+        stockLots.forEach(l => {
+          if (l.productId === item.productId && l.variationId === item.variationId &&
+            (l.status === 'EM_ESTOQUE' || (l.status === 'RESERVADO' && l.saleId === saleId))) {
+            candidateStockLotIds.add(l.id);
+          }
+        });
       });
 
-      // Separar caixas só deixa o pedido PRONTO (reservado/abatido do estoque) — a
-      // entrega em si é um passo manual e separado ("Liberar Pedido"), por isso não
-      // marca deliveryStatus aqui mesmo quando todos os itens já foram separados.
-      const allFulfilled = newItems.every(it => it.fulfilled === true);
-      const writes = buildSeparationWrites(productUpdates, stockLotWrites, stockLotCreates);
-      writes.push({ type: 'update', path: 'sales', id: saleId, data: { items: newItems } });
-      await firebaseService.runBatchWrites(writes);
+      let allFulfilled = false;
+      await firebaseService.runAtomic(async (transaction: any) => {
+        const saleRef = doc(db, `users/${uid}/sales`, saleId);
+        const saleSnap = await transaction.get(saleRef);
+        if (!saleSnap.exists()) throw new Error('Venda não encontrada.');
+        const freshSale = { id: saleSnap.id, ...saleSnap.data() } as Sale;
+
+        const productRefs = new Map<string, any>();
+        const productData = new Map<string, any>();
+        for (const pid of candidateProductIds) {
+          const ref = doc(db, `users/${uid}/products`, pid);
+          const snap = await transaction.get(ref);
+          if (snap.exists()) { productRefs.set(pid, ref); productData.set(pid, { id: pid, ...snap.data() }); }
+        }
+
+        const stockLotRefs = new Map<string, any>();
+        const freshStockLots: StockLot[] = [];
+        for (const id of candidateStockLotIds) {
+          const ref = doc(db, `users/${uid}/stockLots`, id);
+          const snap = await transaction.get(ref);
+          if (snap.exists()) {
+            stockLotRefs.set(id, ref);
+            freshStockLots.push({ id: snap.id, ...snap.data() } as StockLot);
+          }
+        }
+
+        const productUpdates = new Map<string, any>();
+        const getProd = (id: string) => {
+          if (productUpdates.has(id)) return productUpdates.get(id);
+          const p = productData.get(id);
+          if (!p) return null;
+          const cloned = JSON.parse(JSON.stringify(p));
+          productUpdates.set(id, cloned);
+          return cloned;
+        };
+        const stockLotWrites = new Map<string, any>();
+        const stockLotCreates: any[] = [];
+        const poolReservedIdsThisRun = new Set<string>();
+
+        const newItems = freshSale.items.map((item, idx) => {
+          const sep = separations.find(s => s.itemIdx === idx);
+          if (!sep || sep.quantity <= 0) return item;
+          return resolveSeparationSupply(item, sep.quantity, freshSale, getProd, stockLotWrites, stockLotCreates, poolReservedIdsThisRun, freshStockLots);
+        });
+
+        // Separar caixas só deixa o pedido PRONTO (reservado/abatido do estoque) — a
+        // entrega em si é um passo manual e separado ("Liberar Pedido"), por isso não
+        // marca deliveryStatus aqui mesmo quando todos os itens já foram separados.
+        allFulfilled = newItems.every(it => it.fulfilled === true);
+
+        for (const [pid, prod] of productUpdates) {
+          const ref = productRefs.get(pid);
+          if (ref) transaction.set(ref, deepClean(prod), { merge: true });
+        }
+        for (const [id, data] of stockLotWrites.entries()) {
+          const ref = stockLotRefs.get(id);
+          if (ref) transaction.update(ref, deepClean(data));
+        }
+        for (const docItem of stockLotCreates) {
+          const ref = doc(db, `users/${uid}/stockLots`, docItem.id);
+          transaction.set(ref, deepClean(docItem));
+        }
+        transaction.update(saleRef, { items: deepClean(newItems) });
+      });
 
       toast.show(allFulfilled
         ? 'Todos os itens separados — pedido pronto para liberação.'
@@ -2028,6 +2267,171 @@ export default function App() {
     } catch (e: any) {
       console.error(e);
       toast.show('Erro ao registrar separação: ' + (e.message || e));
+    }
+  };
+
+  // "Fazer Balanço" (StockView.tsx): o número digitado passa a ser o novo real, e o
+  // sistema decide sozinho quais StockLots criar (subiu) ou reduzir/apagar (desceu) —
+  // antes só sobrescrevia o contador agregado do produto, deixando as caixas/lotes de
+  // verdade (que alimentam separação/expedição/diagnóstico de duplicidade) intocadas e
+  // divergindo do contador ao longo de sucessivos balanços manuais.
+  // Aumento: nasce um StockLot novo (EM_ESTOQUE, origem "Balanço de Estoque", sem
+  // produção/venda vinculada). Redução: consome StockLots EM_ESTOQUE reais (FIFO, mesmo
+  // picker de separação/expedição — lotes cheios somem, parciais encolhem); o que não
+  // tiver StockLot pra cobrir (rastro de desalinhamento herdado) cai só no contador. O
+  // contador final é sempre exatamente o valor digitado, nunca derivado da soma dos lotes.
+  const handleReconcileStockBalance = async (
+    productId: string,
+    deltas: { variationId: string; key: string; oldValue: number; newValue: number }[],
+  ) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) { toast.show('Usuário não autenticado.'); return; }
+    const product = products.find(p => p.id === productId);
+    if (!product) return;
+
+    const candidateStockLotIds = new Set<string>();
+    deltas.forEach(d => {
+      if (d.newValue >= d.oldValue) return; // só reduções precisam de candidatos pra consumir
+      stockLots.forEach(l => {
+        if (l.status === 'EM_ESTOQUE' && l.productId === productId && l.variationId === d.variationId) {
+          candidateStockLotIds.add(l.id);
+        }
+      });
+    });
+
+    try {
+      await firebaseService.runAtomic(async (transaction: any) => {
+        const productRef = doc(db, `users/${uid}/products`, productId);
+        const productSnap = await transaction.get(productRef);
+        if (!productSnap.exists()) throw new Error('Produto não encontrado.');
+        const freshProduct: any = JSON.parse(JSON.stringify({ id: productSnap.id, ...productSnap.data() }));
+
+        const stockLotRefs = new Map<string, any>();
+        const freshStockLots: StockLot[] = [];
+        for (const id of candidateStockLotIds) {
+          const ref = doc(db, `users/${uid}/stockLots`, id);
+          const snap = await transaction.get(ref);
+          if (snap.exists()) {
+            stockLotRefs.set(id, ref);
+            freshStockLots.push({ id: snap.id, ...snap.data() } as StockLot);
+          }
+        }
+
+        const stockLotWrites = new Map<string, any>();
+        const stockLotDeletes = new Set<string>();
+        const stockLotCreates: any[] = [];
+        const consumedIdsThisRun = new Set<string>();
+
+        for (const delta of deltas) {
+          const variIdx = freshProduct.variations.findIndex((v: any) => v.id === delta.variationId);
+          if (variIdx < 0) continue;
+          const vari = freshProduct.variations[variIdx];
+          const isWholesale = delta.key === 'WHOLESALE';
+          const diff = delta.newValue - delta.oldValue;
+          if (diff === 0) continue;
+
+          if (diff > 0) {
+            // Sobe: nasce um StockLot novo com a diferença — sem produção/venda vinculada.
+            if (isWholesale) {
+              const gridId = freshProduct.productionGridId || freshProduct.defaultGridId;
+              const defaultPkg = productionConfigs.find(c => c.type === 'PACKAGING' && (c.metadata as any)?.productionGradeId === gridId);
+              const pkgSizeQtys = (defaultPkg?.metadata as any)?.sizeQuantities as Record<string, number> | undefined;
+              const sizeBreakdown: Record<string, number> = {};
+              if (pkgSizeQtys) {
+                Object.entries(pkgSizeQtys).forEach(([size, qtyPerBox]) => {
+                  if (qtyPerBox) sizeBreakdown[size] = qtyPerBox * diff;
+                });
+              }
+              const totalPairs = Object.values(sizeBreakdown).reduce((s, q) => s + q, 0);
+              const gradeLabel = Object.entries(sizeBreakdown).filter(([, q]) => q > 0).map(([sz, q]) => `${sz}x${q}`).join('-');
+              stockLotCreates.push({
+                id: generateId(),
+                productId, productName: freshProduct.name, productReference: freshProduct.reference,
+                variationId: delta.variationId, variationName: vari.colorName,
+                sizeBreakdown, totalPairs, gradeLabel,
+                status: 'EM_ESTOQUE',
+                lotId: '', saleOrderNumber: 'Balanço de Estoque', customerName: 'Balanço de Estoque',
+                boxQty: diff, pkgId: defaultPkg?.id, pkgName: defaultPkg?.name,
+                createdAt: Date.now(),
+              });
+              const allocations = [...(vari.stockPkgAllocations || [])];
+              if (defaultPkg) {
+                const aIdx = allocations.findIndex((a: any) => a.pkgId === defaultPkg.id);
+                if (aIdx >= 0) allocations[aIdx] = { ...allocations[aIdx], qty: allocations[aIdx].qty + diff };
+                else allocations.push({ pkgId: defaultPkg.id, qty: diff });
+              }
+              freshProduct.variations[variIdx] = { ...vari, stockPkgAllocations: allocations };
+            } else {
+              stockLotCreates.push({
+                id: generateId(),
+                productId, productName: freshProduct.name, productReference: freshProduct.reference,
+                variationId: delta.variationId, variationName: vari.colorName,
+                sizeBreakdown: { [delta.key]: diff }, totalPairs: diff, gradeLabel: `${delta.key}x${diff}`,
+                status: 'EM_ESTOQUE',
+                lotId: '', saleOrderNumber: 'Balanço de Estoque', customerName: 'Balanço de Estoque',
+                createdAt: Date.now(),
+              });
+            }
+          } else {
+            // Desce: consome StockLots EM_ESTOQUE reais (FIFO). O que sobrar sem cobertura
+            // (desalinhamento herdado) cai só no contador — não trava o balanço por isso.
+            const need = -diff;
+            const candidates = freshStockLots.filter(l =>
+              l.status === 'EM_ESTOQUE' && l.productId === productId && l.variationId === delta.variationId &&
+              !consumedIdsThisRun.has(l.id)
+            );
+            const plan = isWholesale
+              ? pickWholesaleStockLots(candidates, need)
+              : pickRetailStockLots(candidates, delta.key, need);
+
+            plan.fullyConsumed.forEach(lot => { consumedIdsThisRun.add(lot.id); stockLotDeletes.add(lot.id); });
+            plan.splitConsumed.forEach(({ original, remainder }) => {
+              consumedIdsThisRun.add(original.id);
+              stockLotWrites.set(original.id, { ...remainder, updatedAt: Date.now() });
+            });
+
+            if (isWholesale) {
+              let allocations = [...(vari.stockPkgAllocations || [])];
+              const decrementAlloc = (pkgId: string | undefined, boxQty: number) => {
+                if (!pkgId || boxQty <= 0) return;
+                const aIdx = allocations.findIndex((a: any) => a.pkgId === pkgId);
+                if (aIdx >= 0) allocations[aIdx] = { ...allocations[aIdx], qty: Math.max(0, allocations[aIdx].qty - boxQty) };
+              };
+              plan.fullyConsumed.forEach(lot => decrementAlloc(lot.pkgId, lot.boxQty || 0));
+              plan.splitConsumed.forEach(({ original, consumed }) => decrementAlloc(original.pkgId, consumed.boxQty || 0));
+              allocations = allocations.filter((a: any) => a.qty > 0);
+              freshProduct.variations[variIdx] = { ...vari, stockPkgAllocations: allocations };
+            }
+          }
+
+          // Contador final: sempre exatamente o valor digitado — nunca derivado da soma dos
+          // StockLots escolhidos, que é a contagem física real informada pelo usuário.
+          const finalVari = freshProduct.variations[variIdx];
+          freshProduct.variations[variIdx] = {
+            ...finalVari,
+            stock: { ...finalVari.stock, [delta.key]: delta.newValue },
+          };
+        }
+
+        for (const [id, data] of stockLotWrites.entries()) {
+          const ref = stockLotRefs.get(id);
+          if (ref) transaction.update(ref, deepClean(data));
+        }
+        for (const id of stockLotDeletes) {
+          const ref = stockLotRefs.get(id);
+          if (ref) transaction.delete(ref);
+        }
+        for (const docItem of stockLotCreates) {
+          const ref = doc(db, `users/${uid}/stockLots`, docItem.id);
+          transaction.set(ref, deepClean(docItem));
+        }
+        transaction.set(productRef, deepClean(freshProduct), { merge: true });
+      });
+
+      toast.show('Balanço de estoque aplicado — caixas/pares reais atualizados.');
+    } catch (e: any) {
+      console.error(e);
+      toast.show('Erro ao aplicar balanço de estoque: ' + (e.message || e));
     }
   };
 
@@ -2954,6 +3358,27 @@ export default function App() {
     }
   };
 
+  // Aplica a correção de um grupo de "Estoque Não Creditado" (ver src/utils/
+  // stockUndercreditFix.ts) — produção que credita o StockLot mas nunca somou no contador
+  // do produto, por causa do bug de gravação não-atômica já corrigido em
+  // applyExpedicaoStockUpdate. Só soma o que falta, nunca subtrai; não mexe nos StockLots.
+  const handleApplyUndercreditFix = async (group: UndercreditGroup) => {
+    try {
+      const plan = buildUndercreditFixPlan(group, products);
+      if (!plan.productWrite) {
+        toast.show('Produto ou cor não encontrado — pode ter sido excluído.');
+        return;
+      }
+      await firebaseService.saveDocument('products', plan.productWrite);
+      const amount = group.isWholesale
+        ? `${group.missingBoxes} caixa(s)`
+        : `${Object.values(group.missingSizes || {}).reduce((s, q) => s + q, 0)} par(es)`;
+      toast.show(`Estoque corrigido — ${amount} somado(s) a ${group.productName} · ${group.variationName}.`);
+    } catch (e) {
+      toast.show('Erro ao corrigir estoque: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
   const handleSaveProductionLot = async (
     lot: ProductionLot,
     // Gravações extras (tipicamente de applyExpedicaoStockUpdate, via applyLotAdvance ou
@@ -3282,6 +3707,7 @@ export default function App() {
     const isProductionView = MODULE_VIEWS.production.includes(view);
     const isPersonalView = MODULE_VIEWS.personal.includes(view);
     const isMarketplaceView = MODULE_VIEWS.marketplace.includes(view);
+    const isDeliveryView = MODULE_VIEWS.entregas.includes(view);
     // "Modelos / Ficha Técnica" é o catálogo de produtos — Vendas precisa dele sozinho
     // (tem que cadastrar o que vende) mesmo com o módulo Produção desativado. As outras
     // telas de Produção (rota, matriz, grade etc.) continuam exigindo os dois módulos juntos.
@@ -3292,6 +3718,7 @@ export default function App() {
     if (isProductionView && !isProductCatalogView && (!modulesConfig.sales || !modulesConfig.production)) return renderView(ViewType.DASHBOARD);
     if (isPersonalView && !modulesConfig.personal) return renderView(ViewType.DASHBOARD);
     if (isMarketplaceView && (!modulesConfig.sales || !modulesConfig.marketplace)) return renderView(ViewType.DASHBOARD);
+    if (isDeliveryView && (!modulesConfig.sales || !modulesConfig.entregas)) return renderView(ViewType.DASHBOARD);
     if (!isViewAllowed(activeCollaborator, view)) return renderView(ViewType.DASHBOARD);
 
     switch (view) {
@@ -4564,6 +4991,13 @@ export default function App() {
             onNavigateProducts={() => navigateTo(ViewType.PRODUCTS)}
             onAddProduct={() => navigateTo(ViewType.PRODUCT_FORM)}
             productionConfigs={productionConfigs}
+            onUpdateDeliveryInfo={async (saleId, data) => {
+              try {
+                await firebaseService.updateDocument('sales', saleId, data);
+              } catch (err: any) {
+                toast.show(err?.message || 'Erro ao salvar dados de entrega.');
+              }
+            }}
           />
         );
       case ViewType.FINANCIAL:
@@ -4754,6 +5188,7 @@ export default function App() {
             onUpdateProduct={async (product) => {
               await firebaseService.saveDocument("products", product);
             }}
+            onReconcileStockBalance={handleReconcileStockBalance}
             isDarkMode={isDarkMode}
             stockLots={stockLots}
             onPreviewRevertStockLot={buildStockLotRevertPreview}
@@ -4766,8 +5201,10 @@ export default function App() {
             onReconcileSeparationGroup={handleReconcileSeparationGroup}
             onApplyStockDuplicateFix={handleApplyStockDuplicateFix}
             onRepairOrphanedFinalizedKeys={handleRepairOrphanedFinalizedKeys}
+            onApplyUndercreditFix={handleApplyUndercreditFix}
             initialShowReconcile={currentParams?.initialShowReconcile}
             initialShowDiagnostic={currentParams?.initialShowDiagnostic}
+            initialShowUndercredit={currentParams?.initialShowUndercredit}
             initialShowConfigMenu={currentParams?.initialShowConfigMenu}
             modulesConfig={modulesConfig}
           />
@@ -5320,6 +5757,174 @@ export default function App() {
             grids={grids}
           />
         );
+      case ViewType.DELIVERY_MENU:
+        return (
+          <div className="flex flex-col gap-6 pb-32">
+            <div className="flex flex-col gap-3">
+              <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Entregas</h3>
+              <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                {[
+                  { id: ViewType.DELIVERY_ROUTE_BUILDER, label: 'Montar Rota', icon: <Route size={22} />, color: 'text-cyan-600' },
+                  { id: ViewType.DELIVERY_CONFIG, label: 'Configurações de Entrega', icon: <Settings size={22} />, color: 'text-slate-500' },
+                ].map((item, index, array) => (
+                  <button
+                    key={item.id}
+                    onClick={() => navigateTo(item.id)}
+                    className={`w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${index !== array.length - 1 ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`w-10 h-10 flex items-center justify-center shrink-0 ${item.color}`}>
+                        {item.icon}
+                      </div>
+                      <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.label}</p>
+                    </div>
+                    <ChevronRight size={20} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {deliveryRoutes.length > 0 && (
+              <div className="flex flex-col gap-3">
+                <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Rotas Recentes</h3>
+                <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                  {deliveryRoutes.slice(0, 5).map((r, index, array) => {
+                    const delivered = r.stops.filter(s => s.status === 'DELIVERED').length;
+                    return (
+                      <button
+                        key={r.id}
+                        onClick={() => navigateTo(ViewType.DELIVERY_ROUTE_DETAIL, { routeId: r.id })}
+                        className={`w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${index !== array.length - 1 ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
+                      >
+                        <div className="flex items-center gap-4 min-w-0">
+                          <div className="w-10 h-10 flex items-center justify-center shrink-0 text-teal-600">
+                            <Route size={22} />
+                          </div>
+                          <div className="min-w-0 text-left">
+                            <p className={`text-sm font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                              {format(r.createdAt, "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                            </p>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                              {delivered}/{r.stops.length} entregues
+                            </p>
+                          </div>
+                        </div>
+                        <ChevronRight size={20} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.8 }}
+              className="mt-4 p-8 rounded-[3rem] border-2 border-dashed border-slate-100 dark:border-slate-800 flex flex-col items-center text-center gap-4"
+            >
+              <div className={`w-16 h-16 rounded-[1.8rem] flex items-center justify-center ${isDarkMode ? 'bg-slate-900 text-cyan-500' : 'bg-cyan-50 text-cyan-600'}`}>
+                <Truck size={32} strokeWidth={1.5} />
+              </div>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Módulo Entregas</p>
+                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-1">
+                  Monte rotas otimizadas a partir dos pedidos prontos e navegue direto pelo Google Maps ou Apple Maps.
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        );
+      case ViewType.DELIVERY_ROUTE_BUILDER:
+        return (
+          <DeliveryRouteBuilderView
+            sales={sales}
+            products={products}
+            stockLots={stockLots}
+            isDarkMode={isDarkMode}
+            onBack={() => navigateTo(ViewType.DELIVERY_MENU)}
+            onSaveRoute={async (route) => {
+              const writes: { type: 'set' | 'update' | 'delete'; path: string; id: string; data?: any }[] = [
+                { type: 'set', path: 'deliveryRoutes', id: route.id, data: route },
+                ...route.stops.map(stop => ({
+                  type: 'update' as const,
+                  path: 'sales',
+                  id: stop.saleId,
+                  data: { deliveryRouteId: route.id },
+                })),
+              ];
+              await firebaseService.runBatchWrites(writes);
+              navigateTo(ViewType.DELIVERY_ROUTE_DETAIL, { routeId: route.id });
+            }}
+          />
+        );
+      case ViewType.DELIVERY_ROUTE_DETAIL: {
+        const currentRoute = deliveryRoutes.find(r => r.id === currentParams?.routeId);
+        if (!currentRoute) return renderView(ViewType.DELIVERY_MENU);
+        return (
+          <DeliveryRouteDetailView
+            route={currentRoute}
+            sales={sales}
+            isDarkMode={isDarkMode}
+            onBack={() => navigateTo(ViewType.DELIVERY_MENU)}
+            onMarkDelivered={async (stopId, saleId) => {
+              const now = Date.now();
+              const updatedStops = currentRoute.stops.map(s => s.id === stopId ? { ...s, status: 'DELIVERED' as const, deliveredAt: now } : s);
+              await firebaseService.runBatchWrites([
+                { type: 'update', path: 'deliveryRoutes', id: currentRoute.id, data: { stops: updatedStops } },
+                { type: 'update', path: 'sales', id: saleId, data: { deliveryStatus: 'DELIVERED', deliveredAt: now } },
+              ]);
+            }}
+            onUndoDelivered={async (stopId, saleId) => {
+              const updatedStops = currentRoute.stops.map(s => s.id === stopId ? { ...s, status: 'PENDING' as const, deliveredAt: undefined } : s);
+              await firebaseService.runBatchWrites([
+                { type: 'update', path: 'deliveryRoutes', id: currentRoute.id, data: { stops: updatedStops } },
+                { type: 'update', path: 'sales', id: saleId, data: { deliveryStatus: 'PENDING', deliveredAt: null } },
+              ]);
+            }}
+            onUpdateStops={async (stops) => {
+              await firebaseService.updateDocument('deliveryRoutes', currentRoute.id, { stops });
+            }}
+            onUpdateDriverLocation={async (lat, lng) => {
+              await firebaseService.updateDocument('deliveryRoutes', currentRoute.id, {
+                driverLocation: { lat, lng, updatedAt: Date.now() },
+              });
+            }}
+            onDeleteRoute={async () => {
+              const writes: { type: 'set' | 'update' | 'delete'; path: string; id: string; data?: any }[] = [
+                { type: 'delete', path: 'deliveryRoutes', id: currentRoute.id },
+                ...currentRoute.stops.map(stop => ({
+                  type: 'update' as const,
+                  path: 'sales',
+                  id: stop.saleId,
+                  data: { deliveryRouteId: null },
+                })),
+              ];
+              await firebaseService.runBatchWrites(writes);
+              navigateTo(ViewType.DELIVERY_MENU);
+            }}
+          />
+        );
+      }
+      case ViewType.DELIVERY_CONFIG:
+        return (
+          <div className="flex flex-col h-full pb-32">
+            <div className="flex justify-between items-center px-2 pt-2 pb-4">
+              <button onClick={() => navigateTo(ViewType.DELIVERY_MENU)} title="Voltar" aria-label="Voltar para o menu de Entregas"
+                className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500'} shadow-sm`}>
+                <ArrowLeft size={20} />
+              </button>
+              <h1 className={`text-lg font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                Configurações de Entrega
+              </h1>
+              <div className="w-9" />
+            </div>
+            <div className={`flex-1 flex flex-col items-center justify-center gap-3 p-8 rounded-3xl border-2 border-dashed text-center ${isDarkMode ? 'border-slate-800 text-slate-500' : 'border-slate-100 text-slate-400'}`}>
+              <MapPin size={32} strokeWidth={1.5} />
+              <p className="text-xs font-bold uppercase tracking-widest">Em construção — próxima etapa do módulo</p>
+            </div>
+          </div>
+        );
       case ViewType.PRODUCTION_STOCK:
         return (
           <ProductionConfigView 
@@ -5568,6 +6173,15 @@ export default function App() {
       return "marketplace";
     if (
       [
+        ViewType.DELIVERY_MENU,
+        ViewType.DELIVERY_ROUTE_BUILDER,
+        ViewType.DELIVERY_ROUTE_DETAIL,
+        ViewType.DELIVERY_CONFIG,
+      ].includes(currentView)
+    )
+      return "entregas";
+    if (
+      [
         ViewType.FINANCIAL,
         ViewType.ACCOUNTS
       ].includes(currentView)
@@ -5673,6 +6287,14 @@ export default function App() {
         return "Pedidos Marketplace";
       case ViewType.MARKETPLACE_SKU_MAPPING:
         return "Mapeamento de SKU";
+      case ViewType.DELIVERY_MENU:
+        return "Módulo Entregas";
+      case ViewType.DELIVERY_ROUTE_BUILDER:
+        return "Montar Rota";
+      case ViewType.DELIVERY_ROUTE_DETAIL:
+        return "Rota de Entrega";
+      case ViewType.DELIVERY_CONFIG:
+        return "Configurações de Entrega";
       case ViewType.PRODUCT_FORM:
         return "Cadastro de Produto";
       case ViewType.SALE_FORM:
@@ -5732,6 +6354,10 @@ export default function App() {
       case ViewType.MARKETPLACE_CONNECTION:
       case ViewType.MARKETPLACE_ORDERS:
       case ViewType.MARKETPLACE_SKU_MAPPING: return <Store size={24} className="text-orange-500 dark:text-orange-400" />;
+      case ViewType.DELIVERY_MENU:
+      case ViewType.DELIVERY_ROUTE_BUILDER:
+      case ViewType.DELIVERY_ROUTE_DETAIL:
+      case ViewType.DELIVERY_CONFIG: return <Truck size={24} className="text-cyan-600 dark:text-cyan-400" />;
 
       default: return <Shield size={24} className="text-blue-600 dark:text-blue-400" />;
     }
@@ -6037,6 +6663,18 @@ export default function App() {
               appTheme={appTheme}
               iconMode={navIconMode}
               tintColor={NAV_TAB_COLORS.marketplace}
+              monoColor={navMonoColor}
+            />
+          )}
+          {modulesConfig.sales && modulesConfig.entregas && isViewAllowed(activeCollaborator, ViewType.DELIVERY_MENU) && (
+            <TabItem
+              icon={<Truck size={20} />}
+              label="Entregas"
+              active={activeTab === "entregas"}
+              onClick={() => resetTo(ViewType.DELIVERY_MENU)}
+              appTheme={appTheme}
+              iconMode={navIconMode}
+              tintColor={NAV_TAB_COLORS.entregas}
               monoColor={navMonoColor}
             />
           )}

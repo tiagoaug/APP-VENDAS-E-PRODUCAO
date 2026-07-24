@@ -138,6 +138,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         setReminderAt(sale.reminderAt || undefined);
         setReminderTitle(sale.reminderTitle || '');
         setReminderAlarmMode(sale.reminderAlarmMode ?? true);
+        setReminderCombineMode(sale.reminderCombineMode ?? false);
         setReminderSoundPattern(sale.reminderSoundPattern || 'standard');
         if (sale.dueDate) {
           setDueDate(new Date(sale.dueDate).toISOString().split('T')[0]);
@@ -246,6 +247,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
   const [reminderAt, setReminderAt] = useState<number | undefined>(undefined);
   const [reminderTitle, setReminderTitle] = useState('');
   const [reminderAlarmMode, setReminderAlarmMode] = useState<boolean>(true);
+  const [reminderCombineMode, setReminderCombineMode] = useState<boolean>(false);
   const [reminderSoundPattern, setReminderSoundPattern] = useState<ReminderTonePattern>('standard');
   const [productSearchQuery, setProductSearchQuery] = useState("");
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
@@ -819,6 +821,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     saleToSave.reminderAt = reminderAt || null;
     saleToSave.reminderTitle = reminderTitle || null;
     saleToSave.reminderAlarmMode = reminderAlarmMode;
+    saleToSave.reminderCombineMode = reminderCombineMode;
     saleToSave.reminderSoundPattern = reminderSoundPattern;
     if (isProductionOrder) {
       saleToSave.isProductionOrder = true;
@@ -838,6 +841,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         body: saleToSave.reminderTitle ? (saleToSave.customerName || 'Venda') : 'Lembrete de venda',
         at: saleToSave.reminderAt,
         alarmMode: saleToSave.reminderAlarmMode ?? true,
+        combineMode: saleToSave.reminderCombineMode ?? false,
         soundPattern: saleToSave.reminderSoundPattern || 'standard',
       });
     } else {
@@ -1485,6 +1489,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               onAtChange={(ts) => setReminderAt(ts ?? undefined)}
               alarmMode={reminderAlarmMode}
               onAlarmModeChange={setReminderAlarmMode}
+              combineMode={reminderCombineMode}
+              onCombineModeChange={setReminderCombineMode}
               soundPattern={reminderSoundPattern}
               onSoundPatternChange={setReminderSoundPattern}
             />

@@ -11,10 +11,13 @@ export interface StockDuplicateFixPlan {
 /**
  * Monta o plano de correção de uma duplicidade de estoque (StockDuplicateDiagnosticModal):
  * para cada grupo de StockLots duplicados (mesma origem de produção creditada mais de uma
- * vez — ver useStockLotDuplicates), mantém o registro mais antigo (o legítimo) e desfaz o
- * efeito dos excedentes — descontando do contador de estoque do produto exatamente o que
- * cada um creditou, e marcando pra apagar o próprio registro duplicado. Não faz nenhum
- * write no Firestore — só monta o plano; quem chama aplica com firebaseService.
+ * vez — ver useStockLotDuplicates), desfaz o efeito dos excedentes (`g.excessEntries`, já
+ * calculado lá — normalmente "todos menos o mais antigo", mas quando dá pra saber quanto a
+ * linha de produção pediu de verdade, só o que ultrapassa esse total é excedente, mesmo que
+ * isso mantenha mais de 1 registro legítimo) — descontando do contador de estoque do
+ * produto exatamente o que cada um creditou, e marcando pra apagar o próprio registro
+ * duplicado. Não faz nenhum write no Firestore — só monta o plano; quem chama aplica com
+ * firebaseService.
  */
 export function buildStockDuplicateFixPlan(
   group: DuplicateStockByRefColor,
@@ -23,7 +26,7 @@ export function buildStockDuplicateFixPlan(
 ): StockDuplicateFixPlan {
   const keysSet = new Set(group.groupKeys.map(gk => gk.key));
   const matchedGroups = allGroups.filter(g => keysSet.has(g.key));
-  const excessEntries: StockLot[] = matchedGroups.flatMap(g => g.entries.slice(1));
+  const excessEntries: StockLot[] = matchedGroups.flatMap(g => g.excessEntries);
 
   const productUpdates = new Map<string, Product>();
   const getProd = (id: string): Product | null => {

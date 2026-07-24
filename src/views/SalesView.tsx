@@ -21,6 +21,7 @@ import { buildSeparationReconcileGroups } from '../utils/separationReconcile';
 import { useStockLotDuplicates } from '../hooks/useStockLotDuplicates';
 import { buildOrphanedFinalizedKeyFixes } from '../utils/finalizedKeyRepair';
 import StockRepairBanner from '../components/StockRepairBanner';
+import DeliveryAddressForm from '../components/DeliveryAddressForm';
 
 // Preferências de "Visualização" (Cards Compactos/Expandidos, Mostrar Produtos,
 // Mostrar Grade e Quantidades, Mostrar Padrão de Embalagem) persistem entre
@@ -103,6 +104,7 @@ interface SalesViewProps {
   onAddProduct?: () => void;
   productionConfigs: ProductionConfigItem[];
   appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite' | 'hcWhite' | 'hcBlack' | 'hcIndustrial';
+  onUpdateDeliveryInfo?: (saleId: string, data: { deliveryAddress?: Sale['deliveryAddress']; deliveryPriority?: Sale['deliveryPriority'] }) => Promise<void>;
 }
 
 export default function SalesView({
@@ -147,6 +149,7 @@ export default function SalesView({
   onAddProduct,
   productionConfigs,
   appTheme = 'light',
+  onUpdateDeliveryInfo,
 }: SalesViewProps) {
   const isIndustrial = appTheme === 'industrial';
   const hasProduction = modulesConfig.production;
@@ -420,7 +423,7 @@ export default function SalesView({
   // Mesmas varreduras de "Diagnóstico de Estoque" e "Reparar Finalizados" (Estoque >
   // Configurar) — replicadas aqui só pra alimentar os avisos, a correção em si acontece
   // sempre em Estoque.
-  const { duplicateStockLotGroups } = useStockLotDuplicates(stockLots);
+  const { duplicateStockLotGroups } = useStockLotDuplicates(stockLots, lots);
   const orphanedFinalizedKeyCount = useMemo(() => buildOrphanedFinalizedKeyFixes(lots).length, [lots]);
 
   // Lotes RESERVADO (caixas já produzidas, com a grade exata, aguardando "Liberar
@@ -1161,6 +1164,10 @@ export default function SalesView({
           const totalPaid = (sale.paymentHistory || []).reduce((acc, p) => acc + p.amount, 0);
           const remaining = Math.max(0, sale.total - totalPaid);
           const isExpanded = expandedCards || expandedIds.includes(sale.id);
+          // O mapa de entrega só monta quando o card foi expandido INDIVIDUALMENTE — não
+          // no "expandir todos" (expandedCards), pra nunca instanciar dezenas de mapas
+          // Leaflet ao mesmo tempo numa lista longa.
+          const isIndividuallyExpanded = expandedIds.includes(sale.id);
 
           return (
             <div id={`sale-card-${sale.id}`} key={sale.id} className={`p-6 rounded-[2.5rem] border shadow-xl dark:shadow-none flex flex-col gap-6 relative overflow-hidden group transition-all duration-300 hover:shadow-2xl ${
@@ -1335,6 +1342,24 @@ export default function SalesView({
                       </div>
                     );
                   })()}
+
+                  {modulesConfig.entregas && onUpdateDeliveryInfo && isIndividuallyExpanded && sale.status === SaleStatus.SALE && (
+                    <div className={`flex flex-col gap-2 px-4 py-3 rounded-2xl ${isDarkMode ? 'bg-teal-900/10 border border-teal-800/30' : 'bg-teal-50/60 border border-teal-100'}`} onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-2">
+                        <Truck size={14} className="text-teal-600 shrink-0" />
+                        <span className="text-[10px] font-black text-teal-700 dark:text-teal-400 uppercase tracking-widest">
+                          Localização de Entrega
+                        </span>
+                      </div>
+                      <DeliveryAddressForm
+                        isDarkMode={isDarkMode}
+                        address={sale.deliveryAddress}
+                        priority={sale.deliveryPriority}
+                        onChange={(address) => onUpdateDeliveryInfo(sale.id, { deliveryAddress: address })}
+                        onPriorityChange={(priority) => onUpdateDeliveryInfo(sale.id, { deliveryPriority: priority })}
+                      />
+                    </div>
+                  )}
 
                 <div className={`flex ${sale.status === SaleStatus.QUOTE ? 'flex-col' : 'justify-between items-start'} gap-4`}>
                   {/* Items List (Left/Top) */}

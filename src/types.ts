@@ -242,6 +242,7 @@ export interface ReminderProfile {
   id: string;
   name: string;
   alarmMode: boolean;
+  combineMode?: boolean; // true = também dispara uma notificação de texto junto do alarme
   soundPattern: ReminderTonePattern;
 }
 
@@ -254,6 +255,7 @@ export type Purchase = {
   reminderAt?: number | null; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
   reminderTitle?: string | null; // Título curto do lembrete
   reminderAlarmMode?: boolean | null; // true = alarme insistente (precisa dispensar), false = notificação normal
+  reminderCombineMode?: boolean | null; // true = também dispara uma notificação de texto junto do alarme
   reminderSoundPattern?: ReminderTonePattern | null;
   type: PurchaseType;
   items?: PurchaseItem[];
@@ -369,7 +371,57 @@ export type Sale = {
   reminderAt?: number | null; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
   reminderTitle?: string | null; // Título curto do lembrete
   reminderAlarmMode?: boolean | null;
+  reminderCombineMode?: boolean | null;
   reminderSoundPattern?: ReminderTonePattern | null;
+  deliveryAddress?: {
+    street?: string;
+    number?: string;
+    neighborhood?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    complement?: string;
+    lat?: number;
+    lng?: number;
+    geocodedAt?: number;
+    geocodeSource?: 'GEOCODED' | 'MANUAL_PIN';
+  };
+  // Prioridade de roteirização de entrega (módulo Entregas) — distinta de `prioridade`,
+  // que é SLA de produção/PCP e não tem relação com a ordem de uma rota de entrega.
+  deliveryPriority?: 'URGENT' | 'NORMAL';
+  deliveryRouteId?: string;
+};
+
+export type DeliveryStop = {
+  id: string;
+  saleId: string;
+  order: number;
+  lat: number;
+  lng: number;
+  priority: 'URGENT' | 'NORMAL';
+  status: 'PENDING' | 'DELIVERED' | 'SKIPPED';
+  deliveredAt?: number;
+  note?: string;
+};
+
+export type DeliveryRoute = {
+  id: string;
+  createdAt: number;
+  date: number;
+  driverId?: string;
+  driverName?: string;
+  originLat: number;
+  originLng: number;
+  // Array embutido no próprio documento — mesmo padrão de Sale.items /
+  // ProductionLot.metadata.sourceItems — não é subcoleção.
+  stops: DeliveryStop[];
+  status: 'DRAFT' | 'IN_PROGRESS' | 'COMPLETED';
+  optimizedAt?: number;
+  notes?: string;
+  // Posição do motorista em tempo real — só atualiza enquanto a tela de entrega
+  // (DeliveryRouteDetailView) está aberta no celular de quem está dirigindo; não
+  // rastreia em segundo plano/tela bloqueada.
+  driverLocation?: { lat: number; lng: number; updatedAt: number };
 };
 
 export type Person = {
@@ -385,6 +437,7 @@ export type Person = {
   isSeller?: boolean;
   isBuyer?: boolean;
   isServiceProvider?: boolean;
+  isDeliveryDriver?: boolean;
   associatedSellerIds?: string[];
   associatedContactIds?: string[]; // Para compradores internos e outros contatos
   observations?: string;
@@ -537,6 +590,10 @@ export enum ViewType {
   MARKETPLACE_CONNECTION = 'MARKETPLACE_CONNECTION',
   MARKETPLACE_ORDERS = 'MARKETPLACE_ORDERS',
   MARKETPLACE_SKU_MAPPING = 'MARKETPLACE_SKU_MAPPING',
+  DELIVERY_MENU = 'DELIVERY_MENU',
+  DELIVERY_ROUTE_BUILDER = 'DELIVERY_ROUTE_BUILDER',
+  DELIVERY_ROUTE_DETAIL = 'DELIVERY_ROUTE_DETAIL',
+  DELIVERY_CONFIG = 'DELIVERY_CONFIG',
 }
 
 export type DashboardCardConfig = {
@@ -621,6 +678,7 @@ export type AppModulesConfig = {
   sales: boolean;
   production: boolean;
   marketplace: boolean;
+  entregas: boolean;
 };
 
 // ─── Marketplace (integração com plataformas externas, ex.: Shopee) ────────
@@ -686,7 +744,7 @@ export type MarketplaceOrder = {
 export type SectorId =
   | 'vendas' | 'compras' | 'cadastro_produtos' | 'cadastro_insumos'
   | 'producao_pcp' | 'estoque' | 'financeiro' | 'clientes_fornecedores'
-  | 'pessoal' | 'sistema';
+  | 'pessoal' | 'sistema' | 'entregas';
 
 export type Collaborator = {
   id: string;
@@ -871,6 +929,7 @@ export type ProductionOrderItem = {
   reminderAt?: number | null; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
   reminderTitle?: string | null; // Título curto do lembrete
   reminderAlarmMode?: boolean | null;
+  reminderCombineMode?: boolean | null;
   reminderSoundPattern?: ReminderTonePattern | null;
   // Identidade estável da linha, herdada do PurchaseItem/SaleItem que a originou — ver
   // src/utils/lineIdentity.ts. Propaga automaticamente para ProductionLot.metadata.sourceItems
@@ -1082,6 +1141,7 @@ export interface ServiceOrder {
   reminderAt?: number | null; // Lembrete programado (data e hora) — exibido no card de Lembretes do Dashboard
   reminderTitle?: string | null; // Título curto do lembrete
   reminderAlarmMode?: boolean | null;
+  reminderCombineMode?: boolean | null;
   reminderSoundPattern?: ReminderTonePattern | null;
   // Navigation helpers (derived from linked lot, not persisted)
   currentSectorIndex?: number;

@@ -98,6 +98,12 @@ type LotAdvanceItem = {
   saleType?: SaleType;
   siIdx?: number;
   fractionLabel?: string;
+  // Sem isso, getSourceItemKey(it) cai pro formato antigo orderId::itemIdx ao gravar a
+  // marcação de finalizado — mas getOrderEffectiveSector (a proteção contra baixa
+  // duplicada) prioriza a chave line-{lineId} ao LER. A marcação nunca "gruda" na chave
+  // certa, o item nunca sai da lista de pendentes, e cada novo clique em "Finalizar"
+  // credita estoque/desconta solado de novo, indefinidamente.
+  lineId?: string;
 };
 
 // Formato compartilhado por firebaseService.runBatchWrites / buildSeparationWrites (App.tsx)
@@ -1486,7 +1492,7 @@ export default function PCPView({
 
   // Diagnóstico de StockLots duplicados (ver showStockDiagnosticModal) — compartilhado
   // com a tela de Estoques via useStockLotDuplicates.
-  const { duplicateStockLotGroups, duplicateStockByRefColor, markResolved: markStockDuplicatesResolved } = useStockLotDuplicates(stockLots);
+  const { duplicateStockLotGroups, duplicateStockByRefColor, markResolved: markStockDuplicatesResolved } = useStockLotDuplicates(stockLots, lots);
 
   // Corrige de verdade uma duplicidade de estoque: desconta do produto exatamente o que
   // cada StockLot excedente creditou e apaga os registros excedentes, mantendo só o mais
@@ -1892,7 +1898,7 @@ export default function PCPView({
     const buildItem = (
       key: string, orderId: string, productId: string, variationId: string | undefined,
       qty: number, fallbackProductName?: string, fallbackColorName?: string, itemIdx?: number,
-      siIdx?: number, fractionLabel?: string,
+      siIdx?: number, fractionLabel?: string, lineId?: string,
     ): LotAdvanceItem => {
       const product = products.find(p => p.id === productId);
       const variation = product?.variations.find(v => v.id === variationId);
@@ -1912,6 +1918,7 @@ export default function PCPView({
         chosenSectorId: '__PENDING_SELECTION__',
         siIdx,
         fractionLabel,
+        lineId,
       };
     };
 
@@ -1945,7 +1952,7 @@ export default function PCPView({
           : order?.items.find((i: any) => i.productId === si.productId && i.variationId === si.variationId);
         const resolvedProductId = si.productId || orderItem?.productId;
         const resolvedVariationId = si.variationId || orderItem?.variationId;
-        return buildItem(`${si.orderId}-${idx}`, si.orderId, resolvedProductId, resolvedVariationId, si.qty || 0, orderItem?.productName, orderItem?.variationName, si.itemIdx, idx, si.fractionLabel);
+        return buildItem(`${si.orderId}-${idx}`, si.orderId, resolvedProductId, resolvedVariationId, si.qty || 0, orderItem?.productName, orderItem?.variationName, si.itemIdx, idx, si.fractionLabel, si.lineId);
       });
     }
     return [buildItem(lot.id, lot.productionOrderId || lot.id, lot.productId, lot.variationId, lot.quantity || 0)];
@@ -3959,10 +3966,11 @@ export default function PCPView({
   };
 
   // Agenda/cancela a notificação local do lembrete de uma OS, refletindo o título/data mais recentes
-  const syncOSReminderNotification = (os: ServiceOrder, updates: { reminderAt?: number | null; reminderTitle?: string | null; reminderAlarmMode?: boolean | null; reminderSoundPattern?: ReminderTonePattern | null }) => {
+  const syncOSReminderNotification = (os: ServiceOrder, updates: { reminderAt?: number | null; reminderTitle?: string | null; reminderAlarmMode?: boolean | null; reminderCombineMode?: boolean | null; reminderSoundPattern?: ReminderTonePattern | null }) => {
     const reminderAt = updates.reminderAt !== undefined ? updates.reminderAt : os.reminderAt;
     const reminderTitle = updates.reminderTitle !== undefined ? updates.reminderTitle : os.reminderTitle;
     const reminderAlarmMode = updates.reminderAlarmMode !== undefined ? updates.reminderAlarmMode : os.reminderAlarmMode;
+    const reminderCombineMode = updates.reminderCombineMode !== undefined ? updates.reminderCombineMode : os.reminderCombineMode;
     const reminderSoundPattern = updates.reminderSoundPattern !== undefined ? updates.reminderSoundPattern : os.reminderSoundPattern;
     if (reminderAt) {
       notificationService.scheduleReminder({
@@ -3971,6 +3979,7 @@ export default function PCPView({
         body: os.providerName ? `Fornecedor: ${os.providerName}` : 'Lembrete de Ordem de Serviço',
         at: reminderAt,
         alarmMode: reminderAlarmMode ?? true,
+        combineMode: reminderCombineMode ?? false,
         soundPattern: reminderSoundPattern || 'standard',
       });
     } else {
@@ -5803,14 +5812,14 @@ export default function PCPView({
                                 const orderItemIdx = f.si.itemIdx !== undefined
                                   ? f.si.itemIdx
                                   : (f.order?.items.findIndex((i: any) => i.productId === f.si.productId && i.variationId === f.si.variationId) ?? -1);
-                                const updateOrderItemNote = (updates: { notes?: string | null; reminderAt?: number | null; reminderTitle?: string | null; reminderAlarmMode?: boolean | null; reminderSoundPattern?: ReminderTonePattern | null }) => {
+                                const updateOrderItemNote = (updates: { notes?: string | null; reminderAt?: number | null; reminderTitle?: string | null; reminderAlarmMode?: boolean | null; reminderCombineMode?: boolean | null; reminderSoundPattern?: ReminderTonePattern | null }) => {
                                   if (!f.order || orderItemIdx < 0) return;
                                   const newItems = [...f.order.items];
                                   const updatedItem = { ...newItems[orderItemIdx], ...updates };
                                   newItems[orderItemIdx] = updatedItem;
                                   firebaseService.updateDocument('productionOrders', f.order.id, { items: newItems });
 
-                                  if ('reminderAt' in updates || 'reminderTitle' in updates || 'reminderAlarmMode' in updates || 'reminderSoundPattern' in updates) {
+                                  if ('reminderAt' in updates || 'reminderTitle' in updates || 'reminderAlarmMode' in updates || 'reminderCombineMode' in updates || 'reminderSoundPattern' in updates) {
                                     const reminderId = `order-${f.order.id}-${updatedItem.productId}-${updatedItem.variationId}`;
                                     if (updatedItem.reminderAt) {
                                       notificationService.scheduleReminder({
@@ -5819,6 +5828,7 @@ export default function PCPView({
                                         body: `${f.order.customerName || 'Estoque'} · Pedido ${f.order.orderNumber}`,
                                         at: updatedItem.reminderAt,
                                         alarmMode: updatedItem.reminderAlarmMode ?? true,
+                                        combineMode: updatedItem.reminderCombineMode ?? false,
                                         soundPattern: updatedItem.reminderSoundPattern || 'standard',
                                       });
                                     } else {
@@ -6004,6 +6014,8 @@ export default function PCPView({
                                               onAtChange={(ts) => updateOrderItemNote({ reminderAt: ts })}
                                               alarmMode={orderItem?.reminderAlarmMode ?? true}
                                               onAlarmModeChange={(v) => updateOrderItemNote({ reminderAlarmMode: v })}
+                                              combineMode={orderItem?.reminderCombineMode ?? false}
+                                              onCombineModeChange={(v) => updateOrderItemNote({ reminderCombineMode: v })}
                                               soundPattern={orderItem?.reminderSoundPattern || 'standard'}
                                               onSoundPatternChange={(v) => updateOrderItemNote({ reminderSoundPattern: v })}
                                             />
@@ -6259,6 +6271,7 @@ export default function PCPView({
                                             saleType: f.orderItem?.saleType,
                                             siIdx: f.siIdx,
                                             fractionLabel: f.si.fractionLabel,
+                                            lineId: f.si.lineId,
                                           };
                                         });
 
@@ -10546,6 +10559,7 @@ export default function PCPView({
                                       saleType: orderItem?.saleType,
                                       siIdx: sourceItems.indexOf(si),
                                       fractionLabel: si.fractionLabel,
+                                      lineId: si.lineId,
                                     };
                                   });
                                   const toFinalize = resolved.filter(it => it.chosenSectorId === '');
@@ -12090,6 +12104,12 @@ export default function PCPView({
                 syncOSReminderNotification(osNotesPopup, { reminderAlarmMode: v });
                 setOsNotesPopup({ ...osNotesPopup, reminderAlarmMode: v });
               }}
+              combineMode={osNotesPopup.reminderCombineMode ?? false}
+              onCombineModeChange={(v) => {
+                firebaseService.updateDocument('serviceOrders', osNotesPopup.id, { reminderCombineMode: v });
+                syncOSReminderNotification(osNotesPopup, { reminderCombineMode: v });
+                setOsNotesPopup({ ...osNotesPopup, reminderCombineMode: v });
+              }}
               soundPattern={osNotesPopup.reminderSoundPattern || 'standard'}
               onSoundPatternChange={(v) => {
                 firebaseService.updateDocument('serviceOrders', osNotesPopup.id, { reminderSoundPattern: v });
@@ -12434,15 +12454,15 @@ export default function PCPView({
       {/* ── OS Completion Feedback Modal ── */}
       {osFeedback && createPortal(
         <div className="fixed inset-0 flex items-center justify-center p-6 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-200" style={{ zIndex: 60000 }}>
-          <div className={`w-full max-w-xs rounded-[2.5rem] p-8 shadow-2xl flex flex-col items-center text-center gap-5 animate-in zoom-in-95 duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
-            <div className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl animate-bounce ${osFeedback.nextSector === 'FINALIZADO'
+          <div className={`w-full max-w-xs max-h-[90vh] rounded-[2.5rem] p-8 shadow-2xl flex flex-col items-center text-center gap-5 animate-in zoom-in-95 duration-300 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+            <div className={`shrink-0 w-20 h-20 rounded-full flex items-center justify-center shadow-xl animate-bounce ${osFeedback.nextSector === 'FINALIZADO'
               ? 'bg-violet-500 shadow-violet-500/30'
               : 'bg-emerald-500 shadow-emerald-500/30'
               }`}>
               <CheckSquare size={38} className="text-white" strokeWidth={2.5} />
             </div>
 
-            <div>
+            <div className="shrink-0">
               <p className={`text-[10px] font-black uppercase tracking-widest mb-1 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                 {osFeedback.type === 'pedido' ? 'Pedido' : 'Ordem de Serviço'}
               </p>
@@ -12456,7 +12476,7 @@ export default function PCPView({
               </p>
             </div>
 
-            <div className={`w-full px-4 py-3 rounded-2xl flex flex-col gap-1 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+            <div className={`shrink-0 w-full px-4 py-3 rounded-2xl flex flex-col gap-1 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
               <p className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                 {osFeedback.nextSector === 'FINALIZADO' ? 'Status' : 'Próximo Setor'}
               </p>
@@ -12468,8 +12488,12 @@ export default function PCPView({
               )}
             </div>
 
+            {/* Lote grande (várias dezenas de pedidos de uma vez) fazia essa lista crescer
+                além da altura da tela, empurrando o botão "Continuar" pra fora — sem
+                scroll aqui, ele ficava inacessível. Agora só essa lista rola; ícone,
+                título e botão continuam sempre visíveis. */}
             {osFeedback.details && osFeedback.details.length > 0 && (
-              <div className={`w-full px-4 py-3 rounded-2xl flex flex-col gap-1.5 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+              <div className={`w-full flex-1 min-h-0 overflow-y-auto px-4 py-3 rounded-2xl flex flex-col gap-1.5 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
                 <p className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                   {osFeedback.details.length === 1 ? 'Pedido' : 'Pedidos'}
                 </p>
@@ -12482,7 +12506,7 @@ export default function PCPView({
             <button
               type="button"
               onClick={() => setOsFeedback(null)}
-              className="w-full py-4 rounded-2xl bg-slate-900 dark:bg-indigo-600 text-white font-black uppercase tracking-[0.2em] text-[10px] shadow-lg active:scale-95 transition-all"
+              className="shrink-0 w-full py-4 rounded-2xl bg-slate-900 dark:bg-indigo-600 text-white font-black uppercase tracking-[0.2em] text-[10px] shadow-lg active:scale-95 transition-all"
             >
               Continuar
             </button>

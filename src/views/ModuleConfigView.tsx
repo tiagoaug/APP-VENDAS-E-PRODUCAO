@@ -14,7 +14,8 @@ import {
   Boxes,
   Lock,
   AlertTriangle,
-  Store
+  Store,
+  Truck
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
@@ -46,6 +47,13 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
         setIsConfirmOpen(true);
         return;
       }
+      if (module === 'entregas' && !config.sales) {
+        setConfirmTitle("Requisito Necessário");
+        setConfirmMessage("O Módulo de Entregas requer que o Módulo de Vendas esteja ativo para funcionar corretamente.");
+        setPendingModule(null);
+        setIsConfirmOpen(true);
+        return;
+      }
       if (module === 'marketplace') {
         setConfirmTitle("Atualização Futura");
         setConfirmMessage("O Módulo Marketplace está em atualização e será liberado em uma versão futura.");
@@ -61,12 +69,12 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     } else {
       // Deactivation requires warning
       setPendingModule(module);
-      if (module === 'sales' && (config.production || config.marketplace)) {
-        const dependents = [config.production && 'Produção', config.marketplace && 'Marketplace'].filter(Boolean).join(' e ');
+      if (module === 'sales' && (config.production || config.marketplace || config.entregas)) {
+        const dependents = [config.production && 'Produção', config.marketplace && 'Marketplace', config.entregas && 'Entregas'].filter(Boolean).join(' e ');
         setConfirmTitle("Desativar Vendas");
         setConfirmMessage(`Ao desativar o Módulo de Vendas, o Módulo de ${dependents} também será desativado automaticamente. Deseja continuar?`);
       } else {
-        const moduleName = module === 'personal' ? 'Pessoal' : module === 'sales' ? 'Vendas' : module === 'production' ? 'Produção' : 'Marketplace';
+        const moduleName = module === 'personal' ? 'Pessoal' : module === 'sales' ? 'Vendas' : module === 'production' ? 'Produção' : module === 'entregas' ? 'Entregas' : 'Marketplace';
         setConfirmTitle(`Desativar ${moduleName}`);
         setConfirmMessage(`Tem certeza que deseja ocultar o Módulo ${moduleName}? Os dados não serão apagados, mas as funções ficarão inacessíveis.`);
       }
@@ -85,6 +93,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       newConfig.sales = false;
       newConfig.production = false;
       newConfig.marketplace = false;
+      newConfig.entregas = false;
     } else {
       newConfig[pendingModule] = false;
     }
@@ -133,6 +142,16 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       locked: true,
       color: 'bg-orange-500',
       features: ['Pedidos Shopee', 'Sincronização de Estoque', 'Devoluções']
+    },
+    {
+      id: 'entregas',
+      name: 'Módulo Entregas',
+      description: 'Roteirização de entregas com mapa, prioridade e navegação.',
+      icon: <Truck size={28} />,
+      active: config.entregas,
+      disabled: !config.sales,
+      color: 'bg-teal-600',
+      features: ['Mapa e Geocodificação', 'Rotas Otimizadas', 'Navegação Google/Apple Maps']
     }
   ];
 
@@ -143,6 +162,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     { label: 'Relatórios', icon: <BarChart3 size={20} />, view: ViewType.REPORTS, module: 'sales' },
     { label: 'Config. Produção', icon: <Settings size={20} />, view: ViewType.PRODUCTION_CONFIG, module: 'production' },
     { label: 'Config. Marketplace', icon: <Store size={20} />, view: ViewType.MARKETPLACE_CONNECTION, module: 'marketplace' },
+    { label: 'Config. Entregas', icon: <Truck size={20} />, view: ViewType.DELIVERY_CONFIG, module: 'entregas' },
     { label: 'Estoque Central', icon: <Boxes size={20} />, view: ViewType.STOCK, module: 'sales' },
     { label: 'Finanças Pessoais', icon: <Users size={20} />, view: ViewType.PERSONAL_FINANCIAL, module: 'personal' },
   ];

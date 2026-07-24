@@ -64,7 +64,7 @@ const isPlainObject = (obj: any) => {
   return obj !== null && typeof obj === 'object' && (obj.constructor === Object || !obj.constructor);
 };
 
-const deepClean = (obj: any): any => {
+export const deepClean = (obj: any): any => {
   if (Array.isArray(obj)) {
     return obj.map(deepClean);
   } else if (isPlainObject(obj)) {

@@ -263,6 +263,7 @@ export default function PurchaseFormView({
   const [reminderTitle, setReminderTitle] = useState(existing?.reminderTitle || "");
   const [reminderAt, setReminderAt] = useState<number | null>(existing?.reminderAt ?? null);
   const [reminderAlarmMode, setReminderAlarmMode] = useState<boolean>(existing?.reminderAlarmMode ?? true);
+  const [reminderCombineMode, setReminderCombineMode] = useState<boolean>(existing?.reminderCombineMode ?? false);
   const [reminderSoundPattern, setReminderSoundPattern] = useState<ReminderTonePattern>(
     existing?.reminderSoundPattern || 'standard',
   );
@@ -786,6 +787,7 @@ export default function PurchaseFormView({
       reminderAt: paymentTerm === PaymentTerm.INSTALLMENTS ? (reminderAt ?? null) : null,
       reminderTitle: paymentTerm === PaymentTerm.INSTALLMENTS ? (reminderTitle || null) : null,
       reminderAlarmMode: paymentTerm === PaymentTerm.INSTALLMENTS ? reminderAlarmMode : null,
+      reminderCombineMode: paymentTerm === PaymentTerm.INSTALLMENTS ? reminderCombineMode : null,
       reminderSoundPattern: paymentTerm === PaymentTerm.INSTALLMENTS ? reminderSoundPattern : null,
     };
 
@@ -796,6 +798,7 @@ export default function PurchaseFormView({
         body: `Vencimento da compra ${batchNumber} — ${supplierName || ''}`,
         at: purchaseToSave.reminderAt,
         alarmMode: purchaseToSave.reminderAlarmMode ?? true,
+        combineMode: purchaseToSave.reminderCombineMode ?? false,
         soundPattern: purchaseToSave.reminderSoundPattern || 'standard',
       });
     } else {
@@ -1340,6 +1343,8 @@ export default function PurchaseFormView({
                 onAtChange={setReminderAt}
                 alarmMode={reminderAlarmMode}
                 onAlarmModeChange={setReminderAlarmMode}
+                combineMode={reminderCombineMode}
+                onCombineModeChange={setReminderCombineMode}
                 soundPattern={reminderSoundPattern}
                 onSoundPatternChange={setReminderSoundPattern}
               />

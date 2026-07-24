@@ -23,6 +23,9 @@ export interface ReminderNotification {
   // se comportando exatamente como antes (alarme insistente, canal único).
   alarmMode?: boolean;
   soundPattern?: ReminderTonePattern;
+  // "Alarme + Notificação": além do alarme insistente, dispara uma segunda notificação
+  // (canal do padrão de toque escolhido) — só tem efeito quando alarmMode é true.
+  combineMode?: boolean;
 }
 
 const isSupported = () => Capacitor.isNativePlatform();
@@ -147,9 +150,10 @@ export const notificationService = {
     }
   },
 
-  async scheduleReminder({ id, title, body, at, alarmMode, soundPattern }: ReminderNotification): Promise<void> {
+  async scheduleReminder({ id, title, body, at, alarmMode, soundPattern, combineMode }: ReminderNotification): Promise<void> {
     if (!isSupported()) return;
     const numericId = hashId(id);
+    const combineNumericId = hashId(id + '::notify');
     if (!at || at <= Date.now()) {
       await this.cancelReminder(id);
       return;
@@ -169,6 +173,24 @@ export const notificationService = {
           },
         ],
       });
+      // "Alarme + Notificação": além do alarme insistente (acima), agenda uma segunda
+      // notificação comum, no canal do padrão de toque — fica na bandeja mesmo depois
+      // do alarme ser dispensado, já que "Parar Alarme" só cancela a notificação dele.
+      if (useAlarm && combineMode) {
+        await LocalNotifications.schedule({
+          notifications: [
+            {
+              id: combineNumericId,
+              title,
+              body,
+              channelId: toneChannelId(soundPattern || DEFAULT_TONE),
+              schedule: { at: new Date(at), allowWhileIdle: true },
+            },
+          ],
+        });
+      } else {
+        await LocalNotifications.cancel({ notifications: [{ id: combineNumericId }] }).catch(() => {});
+      }
     } catch (e) {
       console.error('[notificationService] scheduleReminder failed', e);
     }
@@ -177,7 +199,7 @@ export const notificationService = {
   async cancelReminder(id: string): Promise<void> {
     if (!isSupported()) return;
     try {
-      await LocalNotifications.cancel({ notifications: [{ id: hashId(id) }] });
+      await LocalNotifications.cancel({ notifications: [{ id: hashId(id) }, { id: hashId(id + '::notify') }] });
     } catch (e) {
       console.error('[notificationService] cancelReminder failed', e);
     }

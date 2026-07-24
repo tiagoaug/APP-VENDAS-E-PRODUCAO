@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Bell, X, AlarmClock, BellOff, Play, Star, Trash2, Plus, Check } from "lucide-react";
+import { Bell, X, AlarmClock, BellOff, Play, Star, Trash2, Plus, Check, BellRing } from "lucide-react";
 import DateTimePicker from "./DateTimePicker";
 import { ReminderTonePattern, ReminderProfile } from "../types";
 import { REMINDER_TONE_META } from "../services/notificationService";
@@ -68,6 +68,8 @@ interface ReminderPickerModalProps {
   onAtChange: (v: number | null) => void;
   alarmMode: boolean;
   onAlarmModeChange: (v: boolean) => void;
+  combineMode?: boolean;
+  onCombineModeChange?: (v: boolean) => void;
   soundPattern: ReminderTonePattern;
   onSoundPatternChange: (v: ReminderTonePattern) => void;
 }
@@ -81,6 +83,8 @@ export default function ReminderPickerModal({
   onAtChange,
   alarmMode,
   onAlarmModeChange,
+  combineMode = false,
+  onCombineModeChange,
   soundPattern,
   onSoundPatternChange,
 }: ReminderPickerModalProps) {
@@ -98,12 +102,13 @@ export default function ReminderPickerModal({
 
   const applyProfile = (p: ReminderProfile) => {
     onAlarmModeChange(p.alarmMode);
+    onCombineModeChange?.(!!p.combineMode);
     onSoundPatternChange(p.soundPattern);
   };
 
   const handleSaveProfile = async () => {
     if (!newProfileName.trim()) return;
-    await saveReminderProfile({ name: newProfileName.trim(), alarmMode, soundPattern });
+    await saveReminderProfile({ name: newProfileName.trim(), alarmMode, combineMode, soundPattern });
     setNewProfileName("");
     setShowSaveProfile(false);
   };
@@ -183,16 +188,27 @@ export default function ReminderPickerModal({
                   <div className={`flex p-1 rounded-2xl gap-1 ${isDarkMode ? "bg-slate-800" : "bg-slate-100"}`}>
                     <button
                       type="button"
-                      onClick={() => onAlarmModeChange(true)}
+                      onClick={() => { onAlarmModeChange(true); onCombineModeChange?.(false); }}
                       className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                        alarmMode ? "bg-rose-500 text-white shadow-sm" : "text-slate-400"
+                        alarmMode && !combineMode ? "bg-rose-500 text-white shadow-sm" : "text-slate-400"
                       }`}
                     >
-                      <AlarmClock size={13} /> Com alarme
+                      <AlarmClock size={13} /> Alarme
                     </button>
+                    {onCombineModeChange && (
+                      <button
+                        type="button"
+                        onClick={() => { onAlarmModeChange(true); onCombineModeChange(true); }}
+                        className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                          alarmMode && combineMode ? "bg-amber-500 text-white shadow-sm" : "text-slate-400"
+                        }`}
+                      >
+                        <BellRing size={13} /> Alarme + Notif.
+                      </button>
+                    )}
                     <button
                       type="button"
-                      onClick={() => onAlarmModeChange(false)}
+                      onClick={() => { onAlarmModeChange(false); onCombineModeChange?.(false); }}
                       className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
                         !alarmMode ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400"
                       }`}
@@ -201,13 +217,15 @@ export default function ReminderPickerModal({
                     </button>
                   </div>
                   <p className="text-[9px] font-bold text-slate-400 px-1 leading-relaxed">
-                    {alarmMode
+                    {alarmMode && combineMode
+                      ? "Toca o alarme insistente E deixa uma notificação de texto separada na bandeja, mesmo depois de dispensar o alarme."
+                      : alarmMode
                       ? "Toca insistente e precisa ser dispensado no próprio aviso — pra não deixar passar."
                       : "Aviso único, no padrão de toque escolhido abaixo."}
                   </p>
                 </div>
 
-                {!alarmMode && (
+                {(!alarmMode || combineMode) && (
                   <div className="flex flex-col gap-2">
                     <label className="text-[9px] uppercase font-black text-slate-400 px-1 tracking-widest">Padrão de toque e vibração</label>
                     <div className="grid grid-cols-1 gap-1.5">
@@ -280,7 +298,7 @@ export default function ReminderPickerModal({
                       <p className="text-[9px] font-bold text-slate-400 px-1 italic">Nenhum perfil salvo ainda.</p>
                     )}
                     {profiles.map((p) => {
-                      const active = p.alarmMode === alarmMode && p.soundPattern === soundPattern;
+                      const active = p.alarmMode === alarmMode && !!p.combineMode === !!combineMode && p.soundPattern === soundPattern;
                       const toneLabel = REMINDER_TONE_META.find((m) => m.id === p.soundPattern)?.label || p.soundPattern;
                       return (
                         <div
@@ -297,7 +315,7 @@ export default function ReminderPickerModal({
                             <Star size={13} className={active ? "text-indigo-500" : "text-slate-300"} />
                             <div className="flex flex-col">
                               <span className={`text-[11px] font-black ${isDarkMode ? "text-white" : "text-slate-700"}`}>{p.name}</span>
-                              <span className="text-[9px] font-bold text-slate-400">{p.alarmMode ? "Com alarme" : `Notificação — ${toneLabel}`}</span>
+                              <span className="text-[9px] font-bold text-slate-400">{p.alarmMode ? (p.combineMode ? `Alarme + Notificação — ${toneLabel}` : "Alarme") : `Notificação — ${toneLabel}`}</span>
                             </div>
                           </button>
                           <button
