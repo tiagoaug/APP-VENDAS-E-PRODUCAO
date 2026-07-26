@@ -1,18 +1,20 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Search, Loader2, MapPin, AlertTriangle, Maximize2, ClipboardPaste, CheckCircle2 } from 'lucide-react';
-import { Sale } from '../types';
+import { DeliveryAddress, Sale } from '../types';
 import { geocodeAddress, geocodeFreeText, parseLatLngFromText } from '../utils/deliveryGeocoding';
+import { resolveMapsShortLink } from '../utils/deliveryMapsShortLink';
 import DeliveryMap from './DeliveryMap';
 import Modal from './Modal';
-
-type DeliveryAddress = NonNullable<Sale['deliveryAddress']>;
 
 interface DeliveryAddressFormProps {
   isDarkMode: boolean;
   address: DeliveryAddress | undefined;
-  priority: Sale['deliveryPriority'];
   onChange: (address: DeliveryAddress) => void;
-  onPriorityChange: (priority: 'URGENT' | 'NORMAL') => void;
+  // Toggle Normal/Urgente — só faz sentido pra endereço de uma venda em rota, não pro
+  // endereço padrão cadastrado no cliente (PersonModal). Omitindo as duas props, o botão
+  // de prioridade some e só fica busca + campos + mapa.
+  priority?: Sale['deliveryPriority'];
+  onPriorityChange?: (priority: 'URGENT' | 'NORMAL') => void;
   // Controla só a visibilidade dos campos de endereço (Rua...CEP) — busca, prioridade e
   // mapa continuam sempre visíveis independente disso. Sem a prop, os campos ficam sempre
   // visíveis (comportamento de antes, usado por quem ainda não tem o acordeão externo).
@@ -20,12 +22,12 @@ interface DeliveryAddressFormProps {
 }
 
 const inputClass = (isDarkMode: boolean) =>
-  `w-full h-11 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-teal-500 rounded-xl px-4 text-xs font-bold transition-all outline-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`;
+  `w-full h-11 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-teal-500 rounded-xl px-4 text-sm font-bold transition-all outline-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`;
 
 const textareaClass = (isDarkMode: boolean) =>
-  `w-full ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-teal-500 rounded-xl px-4 py-3 text-xs font-bold transition-all outline-none resize-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`;
+  `w-full ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-teal-500 rounded-xl px-4 py-3 text-sm font-bold transition-all outline-none resize-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`;
 
-const labelClass = 'text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1';
+const labelClass = 'text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1';
 
 type AddressInputMode = 'manual' | 'paste_address' | 'paste_location';
 const MODE_LABELS: Record<AddressInputMode, string> = {
@@ -38,7 +40,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [showMapModal, setShowMapModal] = useState(false);
-  const [inputMode, setInputMode] = useState<AddressInputMode>('manual');
+  const [inputMode, setInputMode] = useState<AddressInputMode>('paste_location');
 
   const [pastedAddressText, setPastedAddressText] = useState('');
   const [isSearchingPastedAddress, setIsSearchingPastedAddress] = useState(false);
@@ -46,6 +48,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
   const [pastedAddressFound, setPastedAddressFound] = useState<string | null>(null);
 
   const [pastedLocationText, setPastedLocationText] = useState('');
+  const [isVerifyingLocation, setIsVerifyingLocation] = useState(false);
   const [pastedLocationError, setPastedLocationError] = useState<string | null>(null);
   const [pastedLocationFound, setPastedLocationFound] = useState(false);
 
@@ -104,18 +107,45 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
 
   // "Colar Localização": link/texto de localização compartilhada (WhatsApp, Google Maps) —
   // extrai lat/lng direto do texto, sem geocodificar (é a posição exata compartilhada).
-  const handleVerifyPastedLocation = () => {
+  // Link curto (maps.app.goo.gl, comum quando compartilhado pelo app do Maps) não tem
+  // coordenada nenhuma no texto — só resolvendo o redirecionamento (servidor, ver
+  // resolveMapsShortLink) é que a URL de verdade com lat/lng aparece.
+  const handleVerifyPastedLocation = async () => {
     setPastedLocationError(null);
     setPastedLocationFound(false);
-    if (!pastedLocationText.trim()) return;
-    const coords = parseLatLngFromText(pastedLocationText);
-    if (!coords) {
+    const text = pastedLocationText.trim();
+    if (!text) return;
+
+    const direct = parseLatLngFromText(text);
+    if (direct) {
+      onChange({ ...a, lat: direct.lat, lng: direct.lng, geocodedAt: Date.now(), geocodeSource: 'PASTED_LOCATION' });
+      setPastedLocationFound(true);
+      focusMapOn(direct.lat, direct.lng);
+      return;
+    }
+
+    const looksLikeUrl = /https?:\/\//i.test(text);
+    if (!looksLikeUrl) {
       setPastedLocationError('Não encontrei coordenadas nesse texto — confira se colou o link/localização completo.');
       return;
     }
-    onChange({ ...a, lat: coords.lat, lng: coords.lng, geocodedAt: Date.now(), geocodeSource: 'PASTED_LOCATION' });
-    setPastedLocationFound(true);
-    focusMapOn(coords.lat, coords.lng);
+
+    setIsVerifyingLocation(true);
+    try {
+      const resolvedUrl = await resolveMapsShortLink(text);
+      const coords = resolvedUrl ? parseLatLngFromText(resolvedUrl) : null;
+      if (!coords) {
+        setPastedLocationError('Não encontrei coordenadas nesse link — confira se é um link de localização do Google Maps.');
+        return;
+      }
+      onChange({ ...a, lat: coords.lat, lng: coords.lng, geocodedAt: Date.now(), geocodeSource: 'PASTED_LOCATION' });
+      setPastedLocationFound(true);
+      focusMapOn(coords.lat, coords.lng);
+    } catch {
+      setPastedLocationError('Não foi possível resolver esse link agora — tente de novo em instantes.');
+    } finally {
+      setIsVerifyingLocation(false);
+    }
   };
 
   const handlePinChange = (lat: number, lng: number) => {
@@ -132,7 +162,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
                 key={mode}
                 type="button"
                 onClick={() => setInputMode(mode)}
-                className={`py-2 rounded-lg text-[8px] font-black uppercase tracking-wide transition-all ${
+                className={`py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${
                   inputMode === mode
                     ? 'bg-teal-600 text-white shadow-sm'
                     : isDarkMode ? 'text-slate-400' : 'text-slate-500'
@@ -192,19 +222,19 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
                 type="button"
                 onClick={handleSearchPastedAddress}
                 disabled={isSearchingPastedAddress}
-                className="w-full h-10 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+                className="w-full h-10 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
               >
                 {isSearchingPastedAddress ? <Loader2 size={14} className="animate-spin" /> : <ClipboardPaste size={14} />}
                 Buscar Endereço Colado
               </button>
               {pastedAddressError && (
-                <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-[10px] font-bold">
+                <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-[11px] font-bold">
                   <AlertTriangle size={14} className="shrink-0 mt-0.5" />
                   {pastedAddressError}
                 </div>
               )}
               {pastedAddressFound && (
-                <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold">
+                <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-[11px] font-bold">
                   <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
                   Encontrado: {pastedAddressFound}
                 </div>
@@ -227,19 +257,20 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
               <button
                 type="button"
                 onClick={handleVerifyPastedLocation}
-                className="w-full h-10 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+                disabled={isVerifyingLocation}
+                className="w-full h-10 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
               >
-                <MapPin size={14} />
+                {isVerifyingLocation ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
                 Verificar Localização
               </button>
               {pastedLocationError && (
-                <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-[10px] font-bold">
+                <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-[11px] font-bold">
                   <AlertTriangle size={14} className="shrink-0 mt-0.5" />
                   {pastedLocationError}
                 </div>
               )}
               {pastedLocationFound && (
-                <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold">
+                <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 text-[11px] font-bold">
                   <CheckCircle2 size={14} className="shrink-0 mt-0.5" />
                   Localização exata encontrada no texto colado.
                 </div>
@@ -259,39 +290,41 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
             type="button"
             onClick={handleSearch}
             disabled={isSearching}
-            className="flex-1 h-10 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+            className="flex-1 h-10 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
           >
             {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
             Buscar Endereço
           </button>
         )}
-        <div className="flex rounded-xl overflow-hidden border-2 border-transparent">
-          <button
-            type="button"
-            onClick={() => onPriorityChange('NORMAL')}
-            className={`h-10 px-3 text-[10px] font-black uppercase tracking-widest transition-all ${(priority || 'NORMAL') === 'NORMAL' ? 'bg-slate-600 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500')}`}
-          >
-            Normal
-          </button>
-          <button
-            type="button"
-            onClick={() => onPriorityChange('URGENT')}
-            className={`h-10 px-3 text-[10px] font-black uppercase tracking-widest transition-all ${priority === 'URGENT' ? 'bg-rose-600 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500')}`}
-          >
-            Urgente
-          </button>
-        </div>
+        {onPriorityChange && (
+          <div className="flex rounded-xl overflow-hidden border-2 border-transparent">
+            <button
+              type="button"
+              onClick={() => onPriorityChange('NORMAL')}
+              className={`h-10 px-3 text-[11px] font-black uppercase tracking-widest transition-all ${(priority || 'NORMAL') === 'NORMAL' ? 'bg-slate-600 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500')}`}
+            >
+              Normal
+            </button>
+            <button
+              type="button"
+              onClick={() => onPriorityChange('URGENT')}
+              className={`h-10 px-3 text-[11px] font-black uppercase tracking-widest transition-all ${priority === 'URGENT' ? 'bg-rose-600 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500')}`}
+            >
+              Urgente
+            </button>
+          </div>
+        )}
       </div>
 
       {searchError && (
-        <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-[10px] font-bold">
+        <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-[11px] font-bold">
           <AlertTriangle size={14} className="shrink-0 mt-0.5" />
           {searchError}
         </div>
       )}
 
       {a.lat !== undefined && a.lng !== undefined && (
-        <div className="flex items-center gap-1.5 px-1 text-[10px] font-bold text-slate-400">
+        <div className="flex items-center gap-1.5 px-1 text-[11px] font-bold text-slate-400">
           <MapPin size={12} />
           {a.geocodeSource === 'MANUAL_PIN'
             ? 'Localização definida manualmente no mapa'
@@ -312,7 +345,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
       <button
         type="button"
         onClick={() => setShowMapModal(true)}
-        className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+        className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
       >
         <Maximize2 size={12} />
         Ver Mapa Ampliado

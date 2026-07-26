@@ -338,6 +338,23 @@ export type SalePayment = {
   transactionId?: string;
 };
 
+// Compartilhado entre Sale.deliveryAddress (endereço da entrega em si) e
+// Person.defaultDeliveryAddress (endereço padrão cadastrado no cliente, usado pra
+// preencher o de uma venda sem digitar tudo de novo — ver DeliveryAddressForm).
+export type DeliveryAddress = {
+  street?: string;
+  number?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  complement?: string;
+  lat?: number;
+  lng?: number;
+  geocodedAt?: number;
+  geocodeSource?: 'GEOCODED' | 'MANUAL_PIN' | 'PASTED_LOCATION';
+};
+
 export type Sale = {
   id: string;
   orderNumber: string;
@@ -373,28 +390,40 @@ export type Sale = {
   reminderAlarmMode?: boolean | null;
   reminderCombineMode?: boolean | null;
   reminderSoundPattern?: ReminderTonePattern | null;
-  deliveryAddress?: {
-    street?: string;
-    number?: string;
-    neighborhood?: string;
-    city?: string;
-    state?: string;
-    zip?: string;
-    complement?: string;
-    lat?: number;
-    lng?: number;
-    geocodedAt?: number;
-    geocodeSource?: 'GEOCODED' | 'MANUAL_PIN' | 'PASTED_LOCATION';
-  };
+  deliveryAddress?: DeliveryAddress;
   // Prioridade de roteirização de entrega (módulo Entregas) — distinta de `prioridade`,
   // que é SLA de produção/PCP e não tem relação com a ordem de uma rota de entrega.
   deliveryPriority?: 'URGENT' | 'NORMAL';
   deliveryRouteId?: string;
+  // Entrega via transportadora cadastrada (Configurações de Entrega > Transportadoras) —
+  // alternativa a entregar pela própria rota do app (DeliveryRoute); as duas coisas não
+  // têm relação uma com a outra, o pedido usa uma OU outra.
+  carrierId?: string;
+};
+
+// Transportadora cadastrada (Configurações de Entrega) — usada em Sale.carrierId pra
+// indicar que aquele pedido é entregue por ela, não pela rota própria do app.
+export type Carrier = {
+  id: string;
+  name: string;
+  phone?: string;
+  address?: DeliveryAddress;
 };
 
 export type DeliveryStop = {
   id: string;
-  saleId: string;
+  // Ausente = parada manual (hospital, posto, oficina, ponto marcado no mapa) — não tem
+  // pedido nenhum atrelado, só serve pra passar por um lugar fora da entrega em si.
+  // Numa parada de transportadora com 2+ pedidos, é o primeiro deles (compatibilidade
+  // com código que só olha pra um pedido só) — `saleIds` abaixo tem a lista completa.
+  saleId?: string;
+  // TODOS os pedidos entregues nessa parada — normalmente 1 (mesmo valor de `saleId`),
+  // mas pode ter vários quando dois ou mais pedidos vão pra mesma transportadora (mesmo
+  // endereço físico): em vez de uma parada duplicada por pedido, vira uma parada só.
+  saleIds?: string[];
+  // Nome de exibição da parada manual (ex.: "Posto Ipiranga", "Hospital Municipal").
+  // Paradas de venda usam o nome do cliente, não isto.
+  label?: string;
   order: number;
   lat: number;
   lng: number;
@@ -448,6 +477,9 @@ export type Person = {
   observations?: string;
   internalContacts?: { name: string; role: 'Vendedor' | 'Comprador' }[];
   credit?: number;
+  // Endereço de entrega padrão do cliente — pré-preenche o de uma venda nova sem digitar
+  // tudo de novo (ver "Usar Endereço Cadastrado" em SalesView/DeliveryAddressForm).
+  defaultDeliveryAddress?: DeliveryAddress;
 };
 
 export enum TransactionType {
@@ -599,6 +631,7 @@ export enum ViewType {
   DELIVERY_ROUTE_BUILDER = 'DELIVERY_ROUTE_BUILDER',
   DELIVERY_ROUTE_DETAIL = 'DELIVERY_ROUTE_DETAIL',
   DELIVERY_CONFIG = 'DELIVERY_CONFIG',
+  DELIVERY_CARRIERS = 'DELIVERY_CARRIERS',
 }
 
 export type DashboardCardConfig = {

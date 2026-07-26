@@ -36,6 +36,10 @@ export default defineConfig(({mode}) => {
             // — reproduzido no Android em 24/07/2026). Chunk próprio garante que só carrega
             // quando a tela de Entregas (lazy) realmente precisar dele.
             if (id.includes('/leaflet/') || id.includes('react-leaflet')) return 'vendor-leaflet';
+            // Mesmo motivo do leaflet acima: maplibre-gl só é usado pelo modo 3D do mapa de
+            // Entregas (import lazy) — misturado no chunk 'vendor' genérico, vira ~1MB extra
+            // carregado eager por QUALQUER tela, mesmo quem nunca abre o modo 3D.
+            if (id.includes('maplibre-gl')) return 'vendor-maplibre';
             if (id.includes('/firebase/') || id.includes('@firebase/')) return 'vendor-firebase';
             if (id.includes('/motion/') || id.includes('framer-motion')) return 'vendor-motion';
             if (id.includes('lucide-react')) return 'vendor-icons';

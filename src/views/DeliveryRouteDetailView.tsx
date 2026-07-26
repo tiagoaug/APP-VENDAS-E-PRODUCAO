@@ -1,17 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Reorder, useDragControls } from 'motion/react';
 import { Geolocation } from '@capacitor/geolocation';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Share } from '@capacitor/share';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
-import { ArrowLeft, Navigation, Circle, MapPin, Radio, RotateCcw, Waypoints, Loader2, Camera as CameraIcon, Trash2, Share2, X, Plus, PlayCircle, Timer, Milestone } from 'lucide-react';
-import { DeliveryRoute, DeliveryStop, Sale } from '../types';
+import { ArrowLeft, Navigation, Circle, MapPin, Radio, RotateCcw, Waypoints, Loader2, Camera as CameraIcon, Trash2, Share2, X, Plus, PlayCircle, Timer, Milestone, Pencil, GripVertical, CheckCircle2 } from 'lucide-react';
+import { Carrier, DeliveryRoute, DeliveryStop, Product, Sale, StockLot } from '../types';
 import DeliveryMap from '../components/DeliveryMap';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { openNavigation } from '../utils/deliveryNavLink';
 import { optimizeRoute } from '../utils/deliveryRouteOptimizer';
 import { getRoadRoute, RoadRouteResult } from '../utils/deliveryRoadRoute';
+import { bucketSalesByReadiness } from '../utils/salesReadiness';
+import { generateId } from '../utils/id';
 import { photoToCompressedImage, CompressedImage } from '../utils/aiImageUtils';
 import { toast } from '../utils/toast';
 
@@ -28,14 +31,127 @@ function formatDuration(s: number): string {
 interface DeliveryRouteDetailViewProps {
   route: DeliveryRoute;
   sales: Sale[];
+  products: Product[];
+  stockLots: StockLot[];
+  carriers: Carrier[];
   isDarkMode: boolean;
   onBack: () => void;
-  onMarkDelivered: (stopId: string, saleId: string) => Promise<void>;
-  onUndoDelivered: (stopId: string, saleId: string) => Promise<void>;
+  // Um array — normalmente 1 pedido, mas pode ter vários quando a parada é de uma
+  // transportadora com mais de um pedido agrupado (ver DeliveryStop.saleIds).
+  onMarkDelivered: (stopId: string, saleIds: string[]) => Promise<void>;
+  onUndoDelivered: (stopId: string, saleIds: string[]) => Promise<void>;
   onUpdateStops: (stops: DeliveryStop[]) => Promise<void>;
+  // Igual a onUpdateStops, mas também sincroniza Sale.deliveryRouteId dos pedidos
+  // acrescentados/retirados na edição — onUpdateStops sozinho só grava a rota em si, então
+  // usar ele pra adicionar/remover deixaria a venda "presa" (ou "solta") sem refletir a
+  // mudança, quebrando o filtro de "já está em outra rota" do próximo Editar Rota.
+  onEditRouteStops: (stops: DeliveryStop[], addedSaleIds: string[], removedSaleIds: string[]) => Promise<void>;
   onUpdateDriverLocation?: (lat: number, lng: number) => Promise<void>;
   onDeleteRoute: () => Promise<void>;
   onStartRoute: () => Promise<void>;
+}
+
+// Uma linha arrastável do editor de rota — separado em componente próprio (igual ao
+// StopCard do Montar Rota) pra useDragControls funcionar por item, não pro grupo inteiro.
+function EditStopRow({ stop, sale, carrierName, extraCount, isDarkMode, index, onRemove }: {
+  stop: DeliveryStop; sale?: Sale; carrierName?: string; extraCount?: number; isDarkMode: boolean; index: number; onRemove: () => void;
+}) {
+  const controls = useDragControls();
+  const isDelivered = stop.status === 'DELIVERED';
+  return (
+    <Reorder.Item
+      value={stop}
+      dragListener={false}
+      dragControls={controls}
+      className={`flex items-center gap-3 p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
+    >
+      <div
+        onPointerDown={(e) => { if (isDelivered) return; e.preventDefault(); controls.start(e); }}
+        className={`p-2 rounded-xl shrink-0 select-none touch-none ${isDelivered ? 'opacity-30' : `cursor-grab active:cursor-grabbing ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-100 hover:bg-slate-200'}`} text-slate-400`}
+      >
+        <GripVertical size={16} />
+      </div>
+      <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-[10px] font-black text-white ${isDelivered ? 'bg-emerald-600' : stop.priority === 'URGENT' ? 'bg-rose-600' : 'bg-teal-600'}`}>
+        {index + 1}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+          {carrierName ? `${carrierName} (transportadora)` : (stop.label || sale?.customerName || 'Cliente')}
+        </p>
+        <p className="text-[10px] font-bold text-slate-400 truncate">
+          {stop.saleId
+            ? `Pedido #${sale?.orderNumber}${extraCount ? ` + ${extraCount} pedido${extraCount > 1 ? 's' : ''}` : ''}`
+            : 'Parada manual'} {isDelivered && '· ENTREGUE'}
+        </p>
+      </div>
+      {!isDelivered && (
+        <button type="button" onClick={onRemove} title="Remover parada" className="p-2 rounded-xl shrink-0 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-all">
+          <X size={16} />
+        </button>
+      )}
+    </Reorder.Item>
+  );
+}
+
+// Linha arrastável da lista principal "Fazer entrega no app" — deixa reordenar a rota
+// direto por aqui (arrastando pelo grip), sem precisar abrir o modal "Editar Rota" só
+// pra mudar a ordem. Paradas já entregues ficam com o grip inerte (mesmo padrão do
+// EditStopRow) — não faz sentido arrastar algo que já foi visitado.
+function LiveStopRow({ stop, index, sale, stopSales, carrierName, isDarkMode, isMarking, onDragEnd, onOpenPhoto, onToggleDelivered }: {
+  stop: DeliveryStop; index: number; sale?: Sale; stopSales: Sale[]; carrierName?: string;
+  isDarkMode: boolean; isMarking: boolean; onDragEnd: () => void; onOpenPhoto: () => void; onToggleDelivered: () => void;
+}) {
+  const controls = useDragControls();
+  const isDelivered = stop.status === 'DELIVERED';
+  const customerNames = stopSales.length > 1 ? stopSales.map(s => s.customerName || 'cliente').join(', ') : undefined;
+  return (
+    <Reorder.Item
+      value={stop}
+      dragListener={false}
+      dragControls={controls}
+      onDragEnd={onDragEnd}
+      className={`flex items-center gap-3 p-4 rounded-2xl border ${isDelivered ? (isDarkMode ? 'bg-emerald-900/10 border-emerald-800/40' : 'bg-emerald-50 border-emerald-100') : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100')}`}
+    >
+      <div
+        onPointerDown={(e) => { if (isDelivered) return; e.preventDefault(); controls.start(e); }}
+        className={`p-2 rounded-xl shrink-0 select-none touch-none ${isDelivered ? 'opacity-30' : `cursor-grab active:cursor-grabbing ${isDarkMode ? 'bg-slate-800 hover:bg-slate-700' : 'bg-slate-100 hover:bg-slate-200'}`} text-slate-400`}
+      >
+        <GripVertical size={16} />
+      </div>
+      <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[11px] font-black text-white ${isDelivered ? 'bg-emerald-600' : stop.priority === 'URGENT' ? 'bg-rose-600' : 'bg-teal-600'}`}>
+        {index + 1}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+          {carrierName ? `${carrierName} (transportadora)` : (stop.label || sale?.customerName || 'Cliente')}
+        </p>
+        <p className="text-[10px] font-bold text-slate-400 truncate">
+          {stop.saleId
+            ? (customerNames
+                ? `${stopSales.length} pedidos · p/ ${customerNames}`
+                : <>Pedido #{sale?.orderNumber} {carrierName && `· p/ ${sale?.customerName || 'cliente'}`}</>)
+            : 'Parada manual'} {stop.priority === 'URGENT' && '· URGENTE'}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onOpenPhoto}
+        className={`p-2.5 rounded-xl shrink-0 transition-all ${isDarkMode ? 'text-slate-500 hover:text-teal-400 hover:bg-slate-800' : 'text-slate-400 hover:text-teal-600 hover:bg-slate-50'}`}
+        title="Fotos da entrega"
+      >
+        <CameraIcon size={20} />
+      </button>
+      <button
+        type="button"
+        disabled={isMarking}
+        onClick={onToggleDelivered}
+        className={`p-2.5 rounded-xl shrink-0 transition-all disabled:opacity-50 ${isDelivered ? 'text-emerald-600 hover:text-amber-600' : (isDarkMode ? 'text-slate-500 hover:text-teal-400 hover:bg-slate-800' : 'text-slate-400 hover:text-teal-600 hover:bg-slate-50')}`}
+        title={isDelivered ? 'Marcar como não entregue' : 'Marcar como entregue'}
+      >
+        {isDelivered ? <RotateCcw size={20} /> : <Circle size={22} />}
+      </button>
+    </Reorder.Item>
+  );
 }
 
 function formatElapsed(ms: number): string {
@@ -59,8 +175,11 @@ function timeAgoLabel(ts: number): string {
   return `há ${Math.floor(minutes / 60)}h`;
 }
 
-export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBack, onMarkDelivered, onUndoDelivered, onUpdateStops, onUpdateDriverLocation, onDeleteRoute, onStartRoute }: DeliveryRouteDetailViewProps) {
+export default function DeliveryRouteDetailView({ route, sales, products, stockLots, carriers, isDarkMode, onBack, onMarkDelivered, onUndoDelivered, onUpdateStops, onEditRouteStops, onUpdateDriverLocation, onDeleteRoute, onStartRoute }: DeliveryRouteDetailViewProps) {
   const [markingId, setMarkingId] = useState<string | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editStops, setEditStops] = useState<DeliveryStop[]>([]);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [showLiveModal, setShowLiveModal] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [isRecalculating, setIsRecalculating] = useState(false);
@@ -76,6 +195,14 @@ export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBa
   const [now, setNow] = useState(Date.now());
   const lastWriteAtRef = useRef(0);
 
+  // Ordem sendo arrastada na lista principal (fora do modal "Editar Rota") — null fora de
+  // um arrasto, quando a ordem exibida vem direto de `route.stops` (fonte da verdade).
+  // Assim que o arrasto termina, grava a nova ordem e volta a `null` — o próprio
+  // snapshot do Firestore já reflete a ordem nova, e o efeito de recálculo de trajeto
+  // (mais abaixo, dependente de `orderedStops`) dispara sozinho quando ela muda.
+  const [dragOrder, setDragOrder] = useState<DeliveryStop[] | null>(null);
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
+
   // Relógio ao vivo do tempo decorrido — só roda enquanto a rota está em andamento
   // (congela sozinho quando conclui, ver completedAt/onMarkDelivered em App.tsx).
   useEffect(() => {
@@ -85,19 +212,30 @@ export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBa
   }, [route.status]);
 
   const orderedStops = [...route.stops].sort((a, b) => a.order - b.order);
+  // Enquanto um arrasto está em andamento (ou acabou de terminar e ainda não veio o
+  // snapshot novo do Firestore), mostra a ordem local — sem isso a lista "pularia" de
+  // volta pra ordem antiga por um instante a cada arrasto.
+  const displayStops = dragOrder ?? orderedStops;
   const deliveredCount = orderedStops.filter(s => s.status === 'DELIVERED').length;
   const nextStop = orderedStops.find(s => s.status !== 'DELIVERED');
   const nextStopSale = nextStop ? sales.find(s => s.id === nextStop.saleId) : undefined;
 
   const stopMarkers = [
-    ...orderedStops.map((s, i) => ({
-      id: s.id,
-      lat: s.lat,
-      lng: s.lng,
-      color: s.status === 'DELIVERED' ? '#16a34a' : s.priority === 'URGENT' ? '#e11d48' : '#0d9488',
-      number: i + 1,
-      label: sales.find(sale => sale.id === s.saleId)?.customerName || `Parada ${i + 1}`,
-    })),
+    ...orderedStops.map((s, i) => {
+      const stopSale = sales.find(sale => sale.id === s.saleId);
+      const carrierName = stopSale?.carrierId ? carriers.find(c => c.id === stopSale.carrierId)?.name : undefined;
+      const label = carrierName
+        ? `${carrierName}${(s.saleIds?.length || 0) > 1 ? ` (${s.saleIds!.length} pedidos)` : ''}`
+        : (stopSale?.customerName || s.label || `Parada ${i + 1}`);
+      return {
+        id: s.id,
+        lat: s.lat,
+        lng: s.lng,
+        color: s.status === 'DELIVERED' ? '#16a34a' : s.priority === 'URGENT' ? '#e11d48' : '#0d9488',
+        number: i + 1,
+        label,
+      };
+    }),
     ...(route.driverLocation ? [{ id: 'driver', lat: route.driverLocation.lat, lng: route.driverLocation.lng, color: '#2563eb' }] : []),
   ];
 
@@ -159,19 +297,19 @@ export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.id, route.status]);
 
-  const handleMark = async (stopId: string, saleId: string) => {
+  const handleMark = async (stopId: string, saleIds: string[]) => {
     setMarkingId(stopId);
     try {
-      await onMarkDelivered(stopId, saleId);
+      await onMarkDelivered(stopId, saleIds);
     } finally {
       setMarkingId(null);
     }
   };
 
-  const handleUndo = async (stopId: string, saleId: string) => {
+  const handleUndo = async (stopId: string, saleIds: string[]) => {
     setMarkingId(stopId);
     try {
-      await onUndoDelivered(stopId, saleId);
+      await onUndoDelivered(stopId, saleIds);
     } finally {
       setMarkingId(null);
     }
@@ -195,6 +333,21 @@ export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBa
       await onUpdateStops(newStops);
     } finally {
       setIsRecalculating(false);
+    }
+  };
+
+  // Grava a nova ordem assim que o usuário solta uma parada arrastada na lista principal
+  // — recalcula os números da posição e persiste direto, sem precisar de um botão
+  // "Salvar" separado (diferente do modal "Editar Rota", que também deixa adicionar/
+  // remover pedidos e por isso tem confirmação própria).
+  const persistDragOrder = async (stops: DeliveryStop[]) => {
+    const withOrder = stops.map((s, i) => ({ ...s, order: i }));
+    setIsSavingOrder(true);
+    try {
+      await onUpdateStops(withOrder);
+    } finally {
+      setIsSavingOrder(false);
+      setDragOrder(null);
     }
   };
 
@@ -270,6 +423,63 @@ export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBa
     }
   };
 
+  // Editor de rota: acrescentar/retirar paradas ou reordenar sem precisar apagar e
+  // remontar a rota inteira. Trabalha numa cópia local (editStops) até "Salvar Alterações".
+  const openEditModal = () => {
+    setEditStops(orderedStops.map(s => ({ ...s })));
+    setShowEditModal(true);
+  };
+
+  // Pedidos prontos pra entrega, com localização marcada, que ainda não estão nesta
+  // edição — e que não estão reservados em OUTRA rota (deliveryRouteId de outro id).
+  const eligibleToAdd = useMemo(() => {
+    const { prontos } = bucketSalesByReadiness(sales, stockLots, products);
+    const editStopSaleIds = new Set(editStops.map(s => s.saleId));
+    return prontos.filter(s =>
+      s.deliveryAddress?.lat !== undefined && s.deliveryAddress?.lng !== undefined &&
+      !editStopSaleIds.has(s.id) &&
+      (!s.deliveryRouteId || s.deliveryRouteId === route.id)
+    );
+  }, [sales, stockLots, products, editStops, route.id]);
+
+  const handleAddStopToEdit = (sale: Sale) => {
+    if (sale.deliveryAddress?.lat === undefined || sale.deliveryAddress?.lng === undefined) return;
+    setEditStops(prev => [...prev, {
+      id: generateId(),
+      saleId: sale.id,
+      order: prev.length,
+      lat: sale.deliveryAddress!.lat!,
+      lng: sale.deliveryAddress!.lng!,
+      priority: sale.deliveryPriority === 'URGENT' ? 'URGENT' : 'NORMAL',
+      status: 'PENDING',
+    }]);
+  };
+
+  const handleRemoveStopFromEdit = (stopId: string) => {
+    setEditStops(prev => prev.filter(s => s.id !== stopId));
+  };
+
+  const handleSaveEdit = async () => {
+    setIsSavingEdit(true);
+    try {
+      const finalStops = editStops.map((s, i) => ({ ...s, order: i }));
+      // Achata pra TODOS os pedidos de cada parada — uma parada de transportadora
+      // agrupada tem vários (ver DeliveryStop.saleIds), não só o `saleId` "principal".
+      const flattenSaleIds = (stops: DeliveryStop[]) => stops.flatMap(s => s.saleIds && s.saleIds.length > 0 ? s.saleIds : (s.saleId ? [s.saleId] : []));
+      const originalSaleIds = new Set(flattenSaleIds(orderedStops));
+      const finalSaleIds = new Set(flattenSaleIds(finalStops));
+      const addedSaleIds = flattenSaleIds(finalStops).filter(id => !originalSaleIds.has(id));
+      const removedSaleIds = flattenSaleIds(orderedStops).filter(id => !finalSaleIds.has(id));
+      await onEditRouteStops(finalStops, addedSaleIds, removedSaleIds);
+      setShowEditModal(false);
+      toast.show('Rota atualizada.');
+    } catch (error: any) {
+      toast.show(error?.message || 'Erro ao salvar alterações da rota.');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full pb-32">
       <div className="flex justify-between items-center px-2 pt-2 pb-4">
@@ -278,10 +488,16 @@ export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBa
           <ArrowLeft size={20} />
         </button>
         <h1 className={`text-lg font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Rota de Entrega</h1>
-        <button onClick={() => setShowDeleteConfirm(true)} title="Excluir Rota" aria-label="Excluir Rota"
-          className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-900 text-rose-500' : 'bg-white text-rose-500'} shadow-sm`}>
-          <Trash2 size={18} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={openEditModal} title="Editar Rota" aria-label="Editar Rota"
+            className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-900 text-teal-400' : 'bg-white text-teal-600'} shadow-sm`}>
+            <Pencil size={18} />
+          </button>
+          <button onClick={() => setShowDeleteConfirm(true)} title="Excluir Rota" aria-label="Excluir Rota"
+            className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-900 text-rose-500' : 'bg-white text-rose-500'} shadow-sm`}>
+            <Trash2 size={18} />
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-4 px-1">
@@ -379,47 +595,41 @@ export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBa
         </div>
 
         <div className="flex flex-col gap-2 mt-2">
-          <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Fazer entrega no app</p>
-          {orderedStops.map((stop, i) => {
-            const sale = sales.find(s => s.id === stop.saleId);
-            const isDelivered = stop.status === 'DELIVERED';
-            return (
-              <div
-                key={stop.id}
-                className={`flex items-center gap-3 p-4 rounded-2xl border ${isDelivered ? (isDarkMode ? 'bg-emerald-900/10 border-emerald-800/40' : 'bg-emerald-50 border-emerald-100') : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100')}`}
-              >
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-[11px] font-black text-white ${isDelivered ? 'bg-emerald-600' : stop.priority === 'URGENT' ? 'bg-rose-600' : 'bg-teal-600'}`}>
-                  {i + 1}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                    {sale?.customerName || 'Cliente'}
-                  </p>
-                  <p className="text-[10px] font-bold text-slate-400 truncate">
-                    Pedido #{sale?.orderNumber} {stop.priority === 'URGENT' && '· URGENTE'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => { setPhotoStop({ id: stop.id, sale }); setPhotoQueue([]); }}
-                  className={`p-2.5 rounded-xl shrink-0 transition-all ${isDarkMode ? 'text-slate-500 hover:text-teal-400 hover:bg-slate-800' : 'text-slate-400 hover:text-teal-600 hover:bg-slate-50'}`}
-                  title="Fotos da entrega"
-                >
-                  <CameraIcon size={20} />
-                </button>
-                <button
-                  type="button"
-                  disabled={markingId === stop.id}
-                  onClick={() => isDelivered ? handleUndo(stop.id, stop.saleId) : handleMark(stop.id, stop.saleId)}
-                  className={`p-2.5 rounded-xl shrink-0 transition-all disabled:opacity-50 ${isDelivered ? 'text-emerald-600 hover:text-amber-600' : (isDarkMode ? 'text-slate-500 hover:text-teal-400 hover:bg-slate-800' : 'text-slate-400 hover:text-teal-600 hover:bg-slate-50')}`}
-                  title={isDelivered ? 'Marcar como não entregue' : 'Marcar como entregue'}
-                >
-                  {isDelivered ? <RotateCcw size={20} /> : <Circle size={22} />}
-                </button>
-              </div>
-            );
-          })}
-          {orderedStops.length === 0 && (
+          <div className="flex items-center justify-between gap-2 px-1">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Fazer entrega no app</p>
+            {isSavingOrder && (
+              <span className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-teal-600">
+                <Loader2 size={11} className="animate-spin" /> Salvando ordem...
+              </span>
+            )}
+          </div>
+          {displayStops.length > 1 && (
+            <p className="text-[9px] font-bold text-slate-400 px-1 -mt-1">Arraste pelo ícone pra reordenar a entrega.</p>
+          )}
+          <Reorder.Group axis="y" values={displayStops} onReorder={(next) => setDragOrder(next)} className="flex flex-col gap-2">
+            {displayStops.map((stop, i) => {
+              const stopSaleIds = stop.saleIds && stop.saleIds.length > 0 ? stop.saleIds : (stop.saleId ? [stop.saleId] : []);
+              const stopSales = stopSaleIds.map(id => sales.find(s => s.id === id)).filter((s): s is Sale => !!s);
+              const sale = stopSales[0];
+              const carrierName = sale?.carrierId ? carriers.find(c => c.id === sale.carrierId)?.name : undefined;
+              return (
+                <LiveStopRow
+                  key={stop.id}
+                  stop={stop}
+                  index={i}
+                  sale={sale}
+                  stopSales={stopSales}
+                  carrierName={carrierName}
+                  isDarkMode={isDarkMode}
+                  isMarking={markingId === stop.id}
+                  onDragEnd={() => persistDragOrder(dragOrder ?? displayStops)}
+                  onOpenPhoto={() => { setPhotoStop({ id: stop.id, sale }); setPhotoQueue([]); }}
+                  onToggleDelivered={() => stop.status === 'DELIVERED' ? handleUndo(stop.id, stopSaleIds) : handleMark(stop.id, stopSaleIds)}
+                />
+              );
+            })}
+          </Reorder.Group>
+          {displayStops.length === 0 && (
             <div className={`flex flex-col items-center gap-2 p-8 rounded-3xl border-2 border-dashed text-center ${isDarkMode ? 'border-slate-800 text-slate-500' : 'border-slate-100 text-slate-400'}`}>
               <MapPin size={28} strokeWidth={1.5} />
               <p className="text-xs font-bold uppercase tracking-widest">Rota sem paradas</p>
@@ -440,7 +650,7 @@ export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBa
           <div className="flex flex-col gap-3">
             <div className={`px-4 py-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
               <p className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                {deliveredCount >= orderedStops.length ? 'Todas as entregas concluídas' : `Indo para: ${nextStopSale?.customerName || 'próxima parada'}`}
+                {deliveredCount >= orderedStops.length ? 'Todas as entregas concluídas' : `Indo para: ${nextStop?.label || nextStopSale?.customerName || 'próxima parada'}`}
               </p>
               <p className="text-[10px] font-bold text-slate-400 mt-1">
                 Posição atualizada {timeAgoLabel(route.driverLocation.updatedAt)}
@@ -517,6 +727,85 @@ export default function DeliveryRouteDetailView({ route, sales, isDarkMode, onBa
               Compartilhar {photoQueue.length} Foto{photoQueue.length > 1 ? 's' : ''}
             </button>
           )}
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        title="Editar Rota"
+        icon={<Pencil size={20} />}
+        maxWidth="max-w-lg"
+        closeLabel="Cancelar"
+      >
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
+              {editStops.length} parada{editStops.length !== 1 ? 's' : ''} — arraste pra reordenar
+            </p>
+            <Reorder.Group axis="y" values={editStops} onReorder={setEditStops} className="flex flex-col gap-2">
+              {editStops.map((stop, i) => {
+                const sale = sales.find(s => s.id === stop.saleId);
+                const carrierName = sale?.carrierId ? carriers.find(c => c.id === sale.carrierId)?.name : undefined;
+                const extraCount = (stop.saleIds?.length || 0) > 1 ? stop.saleIds!.length - 1 : 0;
+                return (
+                  <EditStopRow
+                    key={stop.id}
+                    stop={stop}
+                    sale={sale}
+                    carrierName={carrierName}
+                    extraCount={extraCount}
+                    isDarkMode={isDarkMode}
+                    index={i}
+                    onRemove={() => handleRemoveStopFromEdit(stop.id)}
+                  />
+                );
+              })}
+            </Reorder.Group>
+            {editStops.length === 0 && (
+              <p className="text-[10px] font-bold text-slate-400 text-center py-4">Nenhuma parada — adicione pedidos abaixo.</p>
+            )}
+          </div>
+
+          <div className="flex flex-col gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">
+              Adicionar Pedidos ({eligibleToAdd.length} disponíve{eligibleToAdd.length !== 1 ? 'is' : 'l'})
+            </p>
+            {eligibleToAdd.length === 0 ? (
+              <p className="text-[10px] font-bold text-slate-400 px-1">Nenhum pedido pronto disponível pra adicionar agora.</p>
+            ) : (
+              <div className="flex flex-col gap-2 max-h-56 overflow-y-auto force-scrollbar">
+                {eligibleToAdd.map(sale => (
+                  <button
+                    key={sale.id}
+                    type="button"
+                    onClick={() => handleAddStopToEdit(sale)}
+                    className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-teal-700' : 'bg-white border-slate-100 hover:border-teal-200'}`}
+                  >
+                    <div className={`p-1.5 rounded-lg shrink-0 ${isDarkMode ? 'bg-teal-900/30 text-teal-400' : 'bg-teal-50 text-teal-600'}`}>
+                      <Plus size={14} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{sale.customerName || 'Cliente'}</p>
+                      <p className="text-[10px] font-bold text-slate-400 truncate">
+                        Pedido #{sale.orderNumber} {sale.deliveryPriority === 'URGENT' && '· URGENTE'}
+                      </p>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            disabled={isSavingEdit}
+            onClick={handleSaveEdit}
+            className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-60 active:scale-[0.98] transition-all"
+          >
+            {isSavingEdit ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+            Salvar Alterações
+          </button>
         </div>
       </Modal>
     </div>

@@ -56,6 +56,7 @@ import { buildSeparationReconcileFixPlan, SeparationReconcileGroup } from "./uti
 import { buildOrphanedFinalizedKeyFixes } from "./utils/finalizedKeyRepair";
 import { StockDuplicateFixPlan } from "./utils/stockDuplicateFix";
 import { buildUndercreditFixPlan, UndercreditGroup } from "./utils/stockUndercreditFix";
+import { buildReleaseOrphanedLotPlan, OrphanedReservedLot } from "./utils/stockOrphanedReservations";
 import { financeService } from "./services/financeService";
 import {
   ViewType,
@@ -102,6 +103,7 @@ import {
   MonthlySnapshot,
   CleanupConfig,
   DeliveryRoute,
+  Carrier,
 } from "./types";
 
 // Views — DashboardView e LoginView ficam estáticas (primeira tela vista por
@@ -155,6 +157,7 @@ const MarketplaceOrdersView = lazy(() => import("./views/MarketplaceOrdersView")
 const MarketplaceSkuMappingView = lazy(() => import("./views/MarketplaceSkuMappingView"));
 const DeliveryRouteBuilderView = lazy(() => import("./views/DeliveryRouteBuilderView"));
 const DeliveryRouteDetailView = lazy(() => import("./views/DeliveryRouteDetailView"));
+const DeliveryCarriersView = lazy(() => import("./views/DeliveryCarriersView"));
 
 
 // Modals
@@ -236,6 +239,7 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
     ViewType.DELIVERY_ROUTE_BUILDER,
     ViewType.DELIVERY_ROUTE_DETAIL,
     ViewType.DELIVERY_CONFIG,
+    ViewType.DELIVERY_CARRIERS,
   ]
 };
 
@@ -549,6 +553,7 @@ export default function App() {
   const [productionLots, setProductionLots] = useState<ProductionLot[]>([]);
   const [stockLots, setStockLots] = useState<StockLot[]>([]);
   const [deliveryRoutes, setDeliveryRoutes] = useState<DeliveryRoute[]>([]);
+  const [carriers, setCarriers] = useState<Carrier[]>([]);
   const [productionOrders, setProductionOrders] = useState<ProductionOrder[]>([]);
   const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequest[]>([]);
   const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
@@ -872,6 +877,11 @@ export default function App() {
       (data) => setDeliveryRoutes([...data].sort((a, b) => b.createdAt - a.createdAt))
     );
 
+    const unsubCarriers = firebaseService.subscribeToCollection<Carrier>(
+      "carriers",
+      setCarriers,
+    );
+
     const unsubPurchaseRequests = firebaseService.subscribeToCollection<PurchaseRequest>(
       "purchaseRequests",
       (data) => setPurchaseRequests([...data].sort((a, b) => b.requestedAt - a.requestedAt))
@@ -961,6 +971,7 @@ export default function App() {
       unsubStockLots();
       unsubProductionOrders();
       unsubDeliveryRoutes();
+      unsubCarriers();
       unsubPurchaseRequests();
       unsubServiceOrders();
       unsubDashboardConfig();
@@ -3379,6 +3390,53 @@ export default function App() {
     }
   };
 
+  // Libera um StockLot RESERVADO "órfão" (ver src/utils/stockOrphanedReservations.ts) —
+  // caixa presa numa venda que não a referencia mais (ou que já foi excluída), sobra do
+  // bug de concorrência da separação já corrigido (transação real em handleSepararCaixas/
+  // handlePartialRevertSeparacao). Roda numa transação de verdade: relê o lote e a venda no
+  // momento de gravar e SÓ libera se ainda estiver órfão — evita reverter algo que virou
+  // válido entre o usuário abrir a tela e clicar em "Corrigir Agora".
+  const handleReleaseOrphanedLot = async (entry: OrphanedReservedLot) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) { toast.show('Usuário não autenticado.'); return; }
+    try {
+      await firebaseService.runAtomic(async (transaction: any) => {
+        const lotRef = doc(db, `users/${uid}/stockLots`, entry.lot.id);
+        const lotSnap = await transaction.get(lotRef);
+        if (!lotSnap.exists()) return;
+        const freshLot = { id: lotSnap.id, ...lotSnap.data() } as StockLot;
+        if (freshLot.status !== 'RESERVADO') return;
+
+        if (freshLot.saleId) {
+          const saleRef = doc(db, `users/${uid}/sales`, freshLot.saleId);
+          const saleSnap = await transaction.get(saleRef);
+          if (saleSnap.exists()) {
+            const sale = saleSnap.data() as Sale;
+            const referenced = (sale.items || []).some(it => (it.separatedStockLotIds || []).includes(freshLot.id));
+            if (referenced) return; // deixou de ser órfão, não mexe
+          }
+        }
+
+        const productRef = doc(db, `users/${uid}/products`, freshLot.productId);
+        const productSnap = await transaction.get(productRef);
+        if (!productSnap.exists()) return;
+        const freshProduct = { id: productSnap.id, ...productSnap.data() } as Product;
+
+        const plan = buildReleaseOrphanedLotPlan({ ...entry, lot: freshLot }, [freshProduct]);
+        if (!plan.productWrite) return;
+
+        transaction.set(productRef, deepClean(plan.productWrite), { merge: true });
+        transaction.update(lotRef, deepClean({
+          status: 'EM_ESTOQUE', saleId: deleteField(), saleOrderNumber: deleteField(),
+          customerName: deleteField(), reservedViaSeparation: deleteField(), updatedAt: Date.now(),
+        }));
+      });
+      toast.show('Reserva liberada — caixa voltou pro estoque disponível.');
+    } catch (e) {
+      toast.show('Erro ao liberar reserva: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
   const handleSaveProductionLot = async (
     lot: ProductionLot,
     // Gravações extras (tipicamente de applyExpedicaoStockUpdate, via applyLotAdvance ou
@@ -4987,10 +5045,13 @@ export default function App() {
             onNavigatePCP={() => navigateTo(ViewType.PRODUCTION_PCP, { initialTab: 'monitor' })}
             onNavigateStockReconcile={() => navigateTo(ViewType.STOCK, { initialShowReconcile: true })}
             onNavigateStockDiagnostic={() => navigateTo(ViewType.STOCK, { initialShowDiagnostic: true })}
+            onNavigateStockOrphaned={() => navigateTo(ViewType.STOCK, { initialShowOrphaned: true })}
             onNavigateStockFinalizedRepair={() => navigateTo(ViewType.STOCK, { initialShowConfigMenu: true })}
             onNavigateProducts={() => navigateTo(ViewType.PRODUCTS)}
             onAddProduct={() => navigateTo(ViewType.PRODUCT_FORM)}
             productionConfigs={productionConfigs}
+            carriers={carriers}
+            onSendToRouteBuilder={(saleId) => navigateTo(ViewType.DELIVERY_ROUTE_BUILDER, { preselectSaleId: saleId })}
             onUpdateDeliveryInfo={async (saleId, data) => {
               try {
                 await firebaseService.updateDocument('sales', saleId, data);
@@ -5202,9 +5263,11 @@ export default function App() {
             onApplyStockDuplicateFix={handleApplyStockDuplicateFix}
             onRepairOrphanedFinalizedKeys={handleRepairOrphanedFinalizedKeys}
             onApplyUndercreditFix={handleApplyUndercreditFix}
+            onReleaseOrphanedLot={handleReleaseOrphanedLot}
             initialShowReconcile={currentParams?.initialShowReconcile}
             initialShowDiagnostic={currentParams?.initialShowDiagnostic}
             initialShowUndercredit={currentParams?.initialShowUndercredit}
+            initialShowOrphaned={currentParams?.initialShowOrphaned}
             initialShowConfigMenu={currentParams?.initialShowConfigMenu}
             modulesConfig={modulesConfig}
           />
@@ -5841,17 +5904,24 @@ export default function App() {
             sales={sales}
             products={products}
             stockLots={stockLots}
+            carriers={carriers}
             isDarkMode={isDarkMode}
+            initialSelectedSaleId={currentParams?.preselectSaleId}
             onBack={() => navigateTo(ViewType.DELIVERY_MENU)}
             onSaveRoute={async (route) => {
               const writes: { type: 'set' | 'update' | 'delete'; path: string; id: string; data?: any }[] = [
                 { type: 'set', path: 'deliveryRoutes', id: route.id, data: route },
-                ...route.stops.map(stop => ({
-                  type: 'update' as const,
-                  path: 'sales',
-                  id: stop.saleId,
-                  data: { deliveryRouteId: route.id },
-                })),
+                // Parada manual (hospital, posto, oficina) não tem venda atrelada — nada
+                // pra marcar com deliveryRouteId nesse caso. Parada de transportadora com
+                // vários pedidos agrupados marca TODOS eles com o id da rota.
+                ...route.stops
+                  .flatMap(stop => stop.saleIds && stop.saleIds.length > 0 ? stop.saleIds : (stop.saleId ? [stop.saleId] : []))
+                  .map(saleId => ({
+                    type: 'update' as const,
+                    path: 'sales',
+                    id: saleId,
+                    data: { deliveryRouteId: route.id },
+                  })),
               ];
               await firebaseService.runBatchWrites(writes);
               navigateTo(ViewType.DELIVERY_ROUTE_DETAIL, { routeId: route.id });
@@ -5865,9 +5935,12 @@ export default function App() {
           <DeliveryRouteDetailView
             route={currentRoute}
             sales={sales}
+            products={products}
+            stockLots={stockLots}
+            carriers={carriers}
             isDarkMode={isDarkMode}
             onBack={() => navigateTo(ViewType.DELIVERY_MENU)}
-            onMarkDelivered={async (stopId, saleId) => {
+            onMarkDelivered={async (stopId, saleIds) => {
               const now = Date.now();
               const updatedStops = currentRoute.stops.map(s => s.id === stopId ? { ...s, status: 'DELIVERED' as const, deliveredAt: now } : s);
               // Última parada entregue: conclui a rota sozinha e trava o relógio (tempo
@@ -5881,10 +5954,13 @@ export default function App() {
               }
               await firebaseService.runBatchWrites([
                 { type: 'update', path: 'deliveryRoutes', id: currentRoute.id, data: routeUpdate },
-                { type: 'update', path: 'sales', id: saleId, data: { deliveryStatus: 'DELIVERED', deliveredAt: now } },
+                // Parada manual (hospital, posto, oficina) não tem venda atrelada — não há
+                // o que atualizar em `sales` nesse caso. Parada de transportadora com vários
+                // pedidos agrupados marca TODOS eles como entregues de uma vez.
+                ...saleIds.map(saleId => ({ type: 'update' as const, path: 'sales', id: saleId, data: { deliveryStatus: 'DELIVERED', deliveredAt: now } })),
               ]);
             }}
-            onUndoDelivered={async (stopId, saleId) => {
+            onUndoDelivered={async (stopId, saleIds) => {
               const updatedStops = currentRoute.stops.map(s => s.id === stopId ? { ...s, status: 'PENDING' as const, deliveredAt: undefined } : s);
               const routeUpdate: any = { stops: updatedStops };
               // Reabre a rota se ela já tinha sido concluída sozinha (ver onMarkDelivered) —
@@ -5895,11 +5971,27 @@ export default function App() {
               }
               await firebaseService.runBatchWrites([
                 { type: 'update', path: 'deliveryRoutes', id: currentRoute.id, data: routeUpdate },
-                { type: 'update', path: 'sales', id: saleId, data: { deliveryStatus: 'PENDING', deliveredAt: null } },
+                ...saleIds.map(saleId => ({ type: 'update' as const, path: 'sales', id: saleId, data: { deliveryStatus: 'PENDING', deliveredAt: null } })),
               ]);
             }}
             onUpdateStops={async (stops) => {
               await firebaseService.updateDocument('deliveryRoutes', currentRoute.id, { stops });
+            }}
+            onEditRouteStops={async (stops, addedSaleIds, removedSaleIds) => {
+              const writes: { type: 'set' | 'update' | 'delete'; path: string; id: string; data?: any }[] = [
+                { type: 'update', path: 'deliveryRoutes', id: currentRoute.id, data: { stops } },
+                ...addedSaleIds.map(saleId => ({
+                  type: 'update' as const, path: 'sales', id: saleId, data: { deliveryRouteId: currentRoute.id },
+                })),
+                // Só solta a venda de volta se ela ainda existir — mesmo cuidado de
+                // onDeleteRoute (venda pode ter sido excluída por fora nesse meio-tempo).
+                ...removedSaleIds
+                  .filter(saleId => sales.some(s => s.id === saleId))
+                  .map(saleId => ({
+                    type: 'update' as const, path: 'sales', id: saleId, data: { deliveryRouteId: null },
+                  })),
+              ];
+              await firebaseService.runBatchWrites(writes);
             }}
             onUpdateDriverLocation={async (lat, lng) => {
               await firebaseService.updateDocument('deliveryRoutes', currentRoute.id, {
@@ -5913,14 +6005,22 @@ export default function App() {
               });
             }}
             onDeleteRoute={async () => {
+              // Só limpa deliveryRouteId de vendas que ainda existem — uma venda apagada
+              // por fora (Excluir Venda) enquanto ainda referenciada numa parada da rota
+              // deixava aqui um `update` num doc inexistente, e por ser tudo num batch só,
+              // isso derrubava a operação inteira (nem a própria rota conseguia ser
+              // apagada, batch é tudo-ou-nada) — "No document to update".
               const writes: { type: 'set' | 'update' | 'delete'; path: string; id: string; data?: any }[] = [
                 { type: 'delete', path: 'deliveryRoutes', id: currentRoute.id },
-                ...currentRoute.stops.map(stop => ({
-                  type: 'update' as const,
-                  path: 'sales',
-                  id: stop.saleId,
-                  data: { deliveryRouteId: null },
-                })),
+                ...currentRoute.stops
+                  .flatMap(stop => stop.saleIds && stop.saleIds.length > 0 ? stop.saleIds : (stop.saleId ? [stop.saleId] : []))
+                  .filter(saleId => sales.some(s => s.id === saleId))
+                  .map(saleId => ({
+                    type: 'update' as const,
+                    path: 'sales',
+                    id: saleId,
+                    data: { deliveryRouteId: null },
+                  })),
               ];
               await firebaseService.runBatchWrites(writes);
               navigateTo(ViewType.DELIVERY_MENU);
@@ -5941,11 +6041,39 @@ export default function App() {
               </h1>
               <div className="w-9" />
             </div>
-            <div className={`flex-1 flex flex-col items-center justify-center gap-3 p-8 rounded-3xl border-2 border-dashed text-center ${isDarkMode ? 'border-slate-800 text-slate-500' : 'border-slate-100 text-slate-400'}`}>
-              <MapPin size={32} strokeWidth={1.5} />
-              <p className="text-xs font-bold uppercase tracking-widest">Em construção — próxima etapa do módulo</p>
+            <div className="flex flex-col gap-3 px-1">
+              <button
+                type="button"
+                onClick={() => navigateTo(ViewType.DELIVERY_CARRIERS)}
+                className={`flex items-center gap-3 p-4 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-teal-700' : 'bg-white border-slate-100 hover:border-teal-200 shadow-sm'}`}
+              >
+                <div className={`p-2.5 rounded-xl shrink-0 ${isDarkMode ? 'bg-teal-900/30 text-teal-400' : 'bg-teal-50 text-teal-600'}`}>
+                  <Truck size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Transportadoras</p>
+                  <p className="text-[10px] font-bold text-slate-400">
+                    {carriers.length} cadastrada{carriers.length !== 1 ? 's' : ''} — nome, endereço e telefone
+                  </p>
+                </div>
+                <ChevronRight size={18} className="text-slate-300 shrink-0" />
+              </button>
             </div>
           </div>
+        );
+      case ViewType.DELIVERY_CARRIERS:
+        return (
+          <DeliveryCarriersView
+            carriers={carriers}
+            isDarkMode={isDarkMode}
+            onBack={() => navigateTo(ViewType.DELIVERY_CONFIG)}
+            onSaveCarrier={async (carrier) => {
+              await firebaseService.saveDocument('carriers', carrier);
+            }}
+            onDeleteCarrier={async (id) => {
+              await firebaseService.deleteDocument('carriers', id);
+            }}
+          />
         );
       case ViewType.PRODUCTION_STOCK:
         return (
@@ -6317,6 +6445,8 @@ export default function App() {
         return "Rota de Entrega";
       case ViewType.DELIVERY_CONFIG:
         return "Configurações de Entrega";
+      case ViewType.DELIVERY_CARRIERS:
+        return "Transportadoras";
       case ViewType.PRODUCT_FORM:
         return "Cadastro de Produto";
       case ViewType.SALE_FORM:
@@ -6380,6 +6510,7 @@ export default function App() {
       case ViewType.DELIVERY_ROUTE_BUILDER:
       case ViewType.DELIVERY_ROUTE_DETAIL:
       case ViewType.DELIVERY_CONFIG: return <Truck size={24} className="text-cyan-600 dark:text-cyan-400" />;
+      case ViewType.DELIVERY_CARRIERS: return <Truck size={24} className="text-cyan-600 dark:text-cyan-400" />;
 
       default: return <Shield size={24} className="text-blue-600 dark:text-blue-400" />;
     }

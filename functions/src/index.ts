@@ -169,6 +169,43 @@ export const aiChat = onCall(
   }
 );
 
+// ─── Entregas: resolver link curto de localização ────────────────────────
+// Localização compartilhada do Google Maps (app mobile) costuma virar um link curto
+// (maps.app.goo.gl/xxxx) SEM coordenada nenhuma no texto — só o redirecionamento
+// revela a URL de verdade com lat/lng. Seguir esse redirecionamento direto do
+// navegador esbarra em CORS (a resposta do redirect não expõe o header Location pra
+// leitura cross-origin); rodando no servidor não tem essa restrição. O cliente ainda
+// faz o parse de lat/lng em cima da URL resolvida (ver parseLatLngFromText).
+const MAPS_SHORT_LINK_ALLOWED_HOSTS = ["maps.app.goo.gl", "goo.gl", "maps.google.com", "google.com", "www.google.com"];
+
+export const resolveMapsShortLink = onCall({ region: "us-central1", timeoutSeconds: 15 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  const rawUrl = request.data?.url;
+  if (typeof rawUrl !== "string" || !rawUrl.trim()) {
+    throw new HttpsError("invalid-argument", "URL não informada.");
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl.trim());
+  } catch {
+    throw new HttpsError("invalid-argument", "URL inválida.");
+  }
+  const isAllowedHost = MAPS_SHORT_LINK_ALLOWED_HOSTS.some(
+    (h) => parsed.hostname === h || parsed.hostname.endsWith(`.${h}`)
+  );
+  if (!isAllowedHost) {
+    throw new HttpsError("invalid-argument", "Domínio não suportado — só links de mapa (Google Maps).");
+  }
+
+  try {
+    const res = await fetch(parsed.toString(), { method: "GET", redirect: "follow" });
+    return { resolvedUrl: res.url };
+  } catch {
+    throw new HttpsError("unavailable", "Não foi possível resolver o link agora — tente de novo em instantes.");
+  }
+});
+
 // ─── Marketplace: Shopee ──────────────────────────────────────────────────
 // Ver src/marketplace/*.ts — a lógica de negócio fica lá; aqui só a casca de
 // autenticação/roteamento (onCall exige request.auth, onRequest é público e por isso

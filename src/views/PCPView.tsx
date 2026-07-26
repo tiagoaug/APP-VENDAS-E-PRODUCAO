@@ -398,7 +398,7 @@ export default function PCPView({
     | {
         kind: 'create_stocklot'; selected: boolean;
         lotId: string; lotOrderNumber: string;
-        orderId: string; itemIdx?: number; fractionLabel?: string;
+        orderId: string; itemIdx?: number; fractionLabel?: string; lineId?: string;
         productId?: string; variationId?: string;
         productName: string; variationName: string; qty: number;
       }
@@ -2613,35 +2613,34 @@ export default function PCPView({
     if (!sectorChangeConfirm) return;
     const { lot, nextStatusId, notes, currentSectorId, items, os } = sectorChangeConfirm;
 
-    // Proteção de estoque: se o lote está saindo da Expedição sem ter passado por OS,
-    // aciona a mesma baixa de estoque/entrega que aconteceria via handleCompleteOS.
-    const currentSectorObj = sectors.find(s => s.id === currentSectorId);
-    const isCycleEndSector = !!currentSectorObj?.isProductionCycleEnd ||
-      !!currentSectorObj?.name?.toUpperCase().includes('EXPEDIÇÃO') ||
-      !!currentSectorObj?.name?.toUpperCase().includes('EXPEDICAO') ||
-      (lot.route && lot.route[lot.route.length - 1] === currentSectorId);
+    // Credita estoque pra TODO item que o usuário escolheu finalizar (chosenSectorId ===
+    // ''), independente do setor em que o MAPA está agora. O guarda antigo (isCycleEndSector,
+    // baseado no setor atual do lote inteiro) fazia itens finalizados adiantadamente — ex.:
+    // via "Avançar Lote Inteiro" estando em Acabamento ou Pesponto, setores que não são
+    // Expedição nem o fim de TODA rota do lote — nunca creditarem estoque nem criarem
+    // StockLot: o Mapa mostrava "Finalizado" mas sem nenhum registro de entrada, só
+    // detectado depois pelo diagnóstico "Estoque Não Creditado". Mesmo bug já corrigido em
+    // executeOsBaixaPanel (ver comentário lá) e handleFinalizeSelectedSourceItems (nunca
+    // teve o guarda) — alinhado aqui.
+    const toFinalizeNow = items.filter(it => it.chosenSectorId === '');
     let stockWrites: BatchWrite[] = [];
-    if (isCycleEndSector) {
-      const lotMeta = (lot as any).metadata;
+    if (toFinalizeNow.length > 0) {
       // IMPORTANTE: itera os sourceItems de verdade (com itemIdx/fractionLabel/lineId), não
       // só o orderId deduplicado — passar `{orderId}` sozinho fazia `matchesItem` (dentro de
       // applyExpedicaoStockUpdate) bater com TODOS os sourceItems daquele pedido de uma vez,
       // inclusive frações que ainda não deveriam ser baixadas juntas (cada fração tem seu
       // próprio fractionLabel e pode estar em setores diferentes nesse momento).
-      const sourceItemsForExpedicao: { orderId: string; itemIdx?: number; fractionLabel?: string; lineId?: string }[] =
-        (lotMeta?.sourceItems && lotMeta.sourceItems.length > 0)
-          ? lotMeta.sourceItems.map((si: any) => ({ orderId: si.orderId, itemIdx: si.itemIdx, fractionLabel: si.fractionLabel, lineId: si.lineId }))
-          : (lot.productionOrderId ? [{ orderId: lot.productionOrderId }] : []);
-      if (sourceItemsForExpedicao.length > 0) {
-        const { customerItems, stockItems } = classifyExpedicaoOrders(sourceItemsForExpedicao);
-        if (stockItems.length > 0 || customerItems.length > 0) {
-          const lines: string[] = ['Mapa saindo da Expedição'];
-          if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} item(ns) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
-          if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} item(ns) → ENTRADA EM ESTOQUE`);
-          lines.push('\nConfirmar baixa de expedição?');
-          if (!confirm(lines.join('\n'))) { setSectorChangeConfirm(null); return; }
-          stockWrites = await applyExpedicaoStockUpdate(lot, stockItems, customerItems);
-        }
+      const sourceItemsForExpedicao = toFinalizeNow.map(it => ({
+        orderId: it.orderId, itemIdx: it.itemIdx, fractionLabel: it.fractionLabel, lineId: it.lineId,
+      }));
+      const { customerItems, stockItems } = classifyExpedicaoOrders(sourceItemsForExpedicao);
+      if (stockItems.length > 0 || customerItems.length > 0) {
+        const lines: string[] = [`${toFinalizeNow.length} item(ns) sendo finalizado(s)`];
+        if (customerItems.length > 0) lines.push(`📦 ${customerItems.length} item(ns) → RESERVA PARA O CLIENTE (aguardando baixa manual na Venda)`);
+        if (stockItems.length > 0) lines.push(`🏭 ${stockItems.length} item(ns) → ENTRADA EM ESTOQUE`);
+        lines.push('\nConfirmar baixa?');
+        if (!confirm(lines.join('\n'))) { setSectorChangeConfirm(null); return; }
+        stockWrites = await applyExpedicaoStockUpdate(lot, stockItems, customerItems);
       }
     }
 
@@ -3512,7 +3511,7 @@ export default function PCPView({
         result.push({
           kind: 'create_stocklot', selected: true,
           lotId: lot.id, lotOrderNumber: lot.orderNumber || '',
-          orderId: si.orderId, itemIdx: si.itemIdx, fractionLabel: si.fractionLabel,
+          orderId: si.orderId, itemIdx: si.itemIdx, fractionLabel: si.fractionLabel, lineId: si.lineId,
           productId: prod.id, variationId: vari.id,
           productName: `${prod.reference ? prod.reference + ' ' : ''}${prod.name}`, variationName: vari.colorName,
           qty: si.qty || 0,
@@ -3693,7 +3692,7 @@ export default function PCPView({
       } else {
         const lot = lots.find(l => l.id === item.lotId);
         if (!lot) return;
-        const key = getSourceItemKey({ orderId: item.orderId, itemIdx: item.itemIdx, productId: item.productId, variationId: item.variationId, fractionLabel: item.fractionLabel });
+        const key = getSourceItemKey({ orderId: item.orderId, itemIdx: item.itemIdx, productId: item.productId, variationId: item.variationId, fractionLabel: item.fractionLabel, lineId: (item as any).lineId });
         const repairAcknowledged = { ...((lot as any).metadata?.repairAcknowledged || {}), [key]: true };
         await firebaseService.updateDocument('productionLots', lot.id, { metadata: { ...(lot as any).metadata, repairAcknowledged } });
       }
@@ -11897,6 +11896,9 @@ export default function PCPView({
 
             {/* Body */}
             <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
+              <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
+                Detecta produção finalizada que nunca virou StockLot direito — contador sem caixa correspondente, caixa sem ID de rastreio (lineId), ou item marcado como finalizado sem crédito nenhum de estoque. Use quando um Mapa aparece concluído mas o estoque ou o rastreio das caixas dele não bate.
+              </p>
               {stockRepairModal.phase === 'done' ? (
                 <div className="flex flex-col items-center justify-center py-8 gap-3">
                   <div className="w-14 h-14 rounded-full bg-emerald-500/10 text-emerald-500 flex items-center justify-center">

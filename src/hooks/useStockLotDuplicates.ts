@@ -45,7 +45,7 @@ const RESOLVED_KEY = 'pcp_resolved_stock_duplicates_v1';
 // vazia (`::undefined`) e seriam sinalizadas como duplicatas umas das outras.
 const dupGroupKey = (sl: StockLot) => sl.sourceItemKey || (sl.lotId ? `${sl.lotId}::${sl.productionOrderId || ''}::${sl.itemIdx ?? ''}` : sl.id);
 
-function loadResolved(): Record<string, number> {
+function loadResolved(): Record<string, boolean> {
   try {
     const raw = localStorage.getItem(RESOLVED_KEY);
     return raw ? JSON.parse(raw) : {};
@@ -54,7 +54,7 @@ function loadResolved(): Record<string, number> {
   }
 }
 
-function saveResolved(map: Record<string, number>) {
+function saveResolved(map: Record<string, boolean>) {
   try { localStorage.setItem(RESOLVED_KEY, JSON.stringify(map)); } catch { /* ignore */ }
 }
 
@@ -74,7 +74,7 @@ function saveResolved(map: Record<string, number>) {
 // o grupo cai no comportamento antigo (mantém só o mais antigo) — sem essa informação não
 // tem como saber quanto era o esperado, então não dá pra fazer melhor do que isso.
 export function useStockLotDuplicates(stockLots: StockLot[], lots: ProductionLot[] = []) {
-  const [resolved, setResolved] = useState<Record<string, number>>(loadResolved);
+  const [resolved, setResolved] = useState<Record<string, boolean>>(loadResolved);
 
   const expectedQtyByKey = useMemo(() => {
     const map = new Map<string, number>();
@@ -152,8 +152,11 @@ export function useStockLotDuplicates(stockLots: StockLot[], lots: ProductionLot
       .sort((a, b) => b.excessCount - a.excessCount);
   }, [stockLots, expectedQtyByKey]);
 
+  // Dispensa é permanente por chave — uma vez marcado como resolvido, não volta a
+  // aparecer nem que a contagem de excesso mude depois (evita o mesmo aviso "reaparecendo"
+  // com um número diferente, que confundia mais do que ajudava).
   const duplicateStockLotGroups = useMemo(
-    () => allGroups.filter(g => resolved[g.key] !== g.count),
+    () => allGroups.filter(g => !resolved[g.key]),
     [allGroups, resolved]
   );
 
@@ -185,7 +188,7 @@ export function useStockLotDuplicates(stockLots: StockLot[], lots: ProductionLot
   const markResolved = useCallback((groupKeys: { key: string; count: number }[]) => {
     setResolved(prev => {
       const next = { ...prev };
-      groupKeys.forEach(({ key, count }) => { next[key] = count; });
+      groupKeys.forEach(({ key }) => { next[key] = true; });
       saveResolved(next);
       return next;
     });

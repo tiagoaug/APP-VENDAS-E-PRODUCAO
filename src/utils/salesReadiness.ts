@@ -31,11 +31,16 @@ export function getStockReadyQty(sale: Sale, products: Product[]): number {
   }, 0);
 }
 
-// Pronta para expedir: tem lote reservado da produção OU (sem ordem de produção) já
-// tem estoque comum suficiente para separar pelo menos um item. Sem nenhum dos dois, é
-// uma venda genuinamente aguardando — produção, no caso de pedidos com OP, ou reposição
-// de estoque, no caso de vendas de estoque comum.
+// Pronta para expedir: já está totalmente separada (mesmo critério do "Status de
+// Separação" no card de Vendas — inclui separações feitas via fallback de contador, sem
+// StockLot físico por trás, ver resolveSeparationSupply em App.tsx) OU tem lote reservado
+// da produção OU (sem ordem de produção) já tem estoque comum suficiente para separar
+// pelo menos um item. Sem nenhum dos três, é uma venda genuinamente aguardando —
+// produção, no caso de pedidos com OP, ou reposição de estoque, no caso de vendas de
+// estoque comum.
 export function isReadyToShip(sale: Sale, reservedBySale: Map<string, StockLot[]>, products: Product[]): boolean {
+  const allSeparated = sale.items.length > 0 && sale.items.every(it => (it.boxesSeparated || 0) >= it.quantity);
+  if (allSeparated) return true;
   return (reservedBySale.get(sale.id) || []).length > 0 || getStockReadyQty(sale, products) > 0;
 }
 

@@ -39,6 +39,7 @@ import { buildReservedBySale, getStockReadyQty as getStockReadyQtyUtil, isReadyT
 import { buildStockDuplicateFixPlan, StockDuplicateFixPlan } from '../utils/stockDuplicateFix';
 import { buildOrphanedFinalizedKeyFixes } from '../utils/finalizedKeyRepair';
 import { buildUndercreditGroups, UndercreditGroup } from '../utils/stockUndercreditFix';
+import { buildOrphanedReservedLots, OrphanedReservedLot } from '../utils/stockOrphanedReservations';
 
 // Capacidade (pares) de uma embalagem avulsa: usa `metadata.capacity` quando
 // configurado; senão recai para o número embutido no nome (ex.: "12 pares
@@ -72,11 +73,13 @@ interface StockViewProps {
   onApplyStockDuplicateFix?: (plan: StockDuplicateFixPlan) => Promise<void>;
   onRepairOrphanedFinalizedKeys?: () => Promise<{ fixed: number; lotsTouched: number }>;
   onApplyUndercreditFix?: (group: UndercreditGroup) => Promise<void>;
+  onReleaseOrphanedLot?: (entry: OrphanedReservedLot) => Promise<void>;
   /** Chega true quando a navegação pra cá veio de um aviso em Vendas — abre direto o
    * painel/modal correspondente em vez de precisar achar em Configurar Estoque. */
   initialShowReconcile?: boolean;
   initialShowDiagnostic?: boolean;
   initialShowUndercredit?: boolean;
+  initialShowOrphaned?: boolean;
   /** Abre direto o menu "Configurar Estoque" — usado quando o destino não tem modal
    * próprio (ex.: aviso de "Reparar Finalizados" vindo de Vendas). */
   initialShowConfigMenu?: boolean;
@@ -104,9 +107,11 @@ export default function StockView({
   onApplyStockDuplicateFix,
   onRepairOrphanedFinalizedKeys,
   onApplyUndercreditFix,
+  onReleaseOrphanedLot,
   initialShowReconcile,
   initialShowDiagnostic,
   initialShowUndercredit,
+  initialShowOrphaned,
   initialShowConfigMenu,
   modulesConfig,
 }: StockViewProps) {
@@ -126,6 +131,7 @@ export default function StockView({
   const [showConfigMenu, setShowConfigMenu] = useState(false);
   const [showReconcileModal, setShowReconcileModal] = useState(false);
   const [showUndercreditModal, setShowUndercreditModal] = useState(false);
+  const [showOrphanedModal, setShowOrphanedModal] = useState(false);
 
   const { duplicateStockLotGroups, duplicateStockByRefColor, markResolved: markStockDuplicatesResolved } = useStockLotDuplicates(stockLots, lots);
 
@@ -140,8 +146,64 @@ export default function StockView({
 
   // Produção que creditou o StockLot mas nunca somou no contador do produto (ver
   // src/utils/stockUndercreditFix.ts) — alimenta o botão "Estoque Não Creditado" abaixo.
-  const undercreditGroups = useMemo(() => buildUndercreditGroups(products, stockLots), [products, stockLots]);
+  const allUndercreditGroups = useMemo(() => buildUndercreditGroups(products, stockLots), [products, stockLots]);
   const [fixingUndercreditKey, setFixingUndercreditKey] = useState<string | null>(null);
+
+  // "Marcar como Resolvido" — pra quando o usuário já reconciliou aquela caixa por fora
+  // (ex.: Balanço de Estoque) e não quer que "Corrigir Agora" some de novo, o que
+  // desalinharia o contador do valor físico real que ele acabou de confirmar. Dispensa é
+  // permanente por chave — não volta a aparecer nem que o valor da pendência mude depois
+  // (evita o mesmo aviso "reaparecendo" com um número diferente, que só confundia).
+  const UNDERCREDIT_RESOLVED_KEY = 'pcp_resolved_undercredit_v1';
+  const [undercreditResolved, setUndercreditResolved] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem(UNDERCREDIT_RESOLVED_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+  const undercreditGroupAmount = (g: UndercreditGroup) =>
+    g.isWholesale ? (g.missingBoxes || 0) : Object.values(g.missingSizes || {}).reduce((s, q) => s + q, 0);
+  const dismissUndercreditGroup = (g: UndercreditGroup) => {
+    setUndercreditResolved(prev => {
+      const next = { ...prev, [g.key]: true };
+      try { localStorage.setItem(UNDERCREDIT_RESOLVED_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+  const undercreditGroups = useMemo(
+    () => allUndercreditGroups.filter(g => !undercreditResolved[g.key]),
+    [allUndercreditGroups, undercreditResolved]
+  );
+
+  // Caixas RESERVADO presas em vendas que não as referenciam mais — ver
+  // src/utils/stockOrphanedReservations.ts. "Já Resolvi Manualmente" existe pro mesmo caso
+  // do undercredit: usuário já corrigiu por fora (recontagem física + Balanço) e não quer
+  // que a caixa suma do estoque de novo (o que aconteceria se "Corrigir Agora" fosse
+  // clicado depois de a quantidade já estar certa).
+  const allOrphanedLots = useMemo(() => buildOrphanedReservedLots(stockLots, sales, products), [stockLots, sales, products]);
+  const [fixingOrphanedKey, setFixingOrphanedKey] = useState<string | null>(null);
+  const ORPHANED_RESOLVED_KEY = 'pcp_resolved_orphaned_lots_v1';
+  const [orphanedResolved, setOrphanedResolved] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem(ORPHANED_RESOLVED_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+  const dismissOrphanedLot = (entry: OrphanedReservedLot) => {
+    setOrphanedResolved(prev => {
+      const next = { ...prev, [entry.key]: true };
+      try { localStorage.setItem(ORPHANED_RESOLVED_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+  const orphanedLots = useMemo(
+    () => allOrphanedLots.filter(e => !orphanedResolved[e.key]),
+    [allOrphanedLots, orphanedResolved]
+  );
 
   useEffect(() => {
     if (initialShowReconcile) { setShowConfigMenu(false); setShowReconcileModal(true); }
@@ -154,6 +216,10 @@ export default function StockView({
   useEffect(() => {
     if (initialShowUndercredit) { setShowConfigMenu(false); setShowUndercreditModal(true); }
   }, [initialShowUndercredit]);
+
+  useEffect(() => {
+    if (initialShowOrphaned) { setShowConfigMenu(false); setShowOrphanedModal(true); }
+  }, [initialShowOrphaned]);
 
   useEffect(() => {
     if (initialShowConfigMenu) setShowConfigMenu(true);
@@ -660,7 +726,7 @@ export default function StockView({
               aria-label="Corrigir inconsistências nas alocações de embalagem"
             >
               <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${pkgAllocIssuesCount > 0 ? (isDarkMode ? 'bg-orange-500/15 text-orange-400' : 'bg-orange-100 text-orange-600') : (isDarkMode ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-100 text-emerald-600')}`}>
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-orange-500/15 text-orange-400' : 'bg-orange-100 text-orange-600'}`}>
                   <Wrench size={16} strokeWidth={2.5} />
                 </div>
                 <span className="text-[10px] font-black uppercase tracking-widest">
@@ -688,10 +754,13 @@ export default function StockView({
               aria-label="Corrigir estoque de separações pendentes de reconciliação"
             >
               <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${separationReconcileGroups.length > 0 ? (isDarkMode ? 'bg-rose-500/15 text-rose-400' : 'bg-rose-100 text-rose-600') : (isDarkMode ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-100 text-emerald-600')}`}>
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-rose-500/15 text-rose-400' : 'bg-rose-100 text-rose-600'}`}>
                   <Wrench size={16} strokeWidth={2.5} />
                 </div>
-                <span className="text-[10px] font-black uppercase tracking-widest">Reconciliar Separações</span>
+                <div className="flex flex-col items-start text-left">
+                  <span className="text-[10px] font-black uppercase tracking-widest">Reconciliar Separações</span>
+                  <span className="text-[8px] font-bold normal-case tracking-normal text-slate-400">Separação antiga que reservou a caixa sem descontar do contador</span>
+                </div>
               </div>
               {separationReconcileGroups.length > 0 ? (
                 <span className="flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-black shrink-0 animate-pulse-rose-ring">
@@ -711,10 +780,13 @@ export default function StockView({
             aria-label="Ver diagnóstico de estoque duplicado"
           >
             <div className="flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${duplicateStockLotGroups.length > 0 ? (isDarkMode ? 'bg-rose-500/15 text-rose-400' : 'bg-rose-100 text-rose-600') : (isDarkMode ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-100 text-emerald-600')}`}>
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-fuchsia-500/15 text-fuchsia-400' : 'bg-fuchsia-100 text-fuchsia-600'}`}>
                 <AlertTriangle size={16} strokeWidth={2.5} />
               </div>
-              <span className="text-[10px] font-black uppercase tracking-widest">Diagnóstico de Estoque</span>
+              <div className="flex flex-col items-start text-left">
+                <span className="text-[10px] font-black uppercase tracking-widest">Diagnóstico de Estoque</span>
+                <span className="text-[8px] font-bold normal-case tracking-normal text-slate-400">Mesma caixa de produção contada mais de uma vez no estoque</span>
+              </div>
             </div>
             {duplicateStockLotGroups.length > 0 ? (
               <span className="flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-black shrink-0 animate-pulse-rose-ring">
@@ -745,12 +817,15 @@ export default function StockView({
               aria-label="Corrigir marcações de finalizado órfãs"
             >
               <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${orphanedFinalizedKeyFixes.length > 0 ? (isDarkMode ? 'bg-orange-500/15 text-orange-400' : 'bg-orange-100 text-orange-600') : (isDarkMode ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-100 text-emerald-600')}`}>
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-teal-500/15 text-teal-400' : 'bg-teal-100 text-teal-600'}`}>
                   <Wrench size={16} strokeWidth={2.5} />
                 </div>
-                <span className="text-[10px] font-black uppercase tracking-widest">
-                  {fixingFinalizedKeys ? 'Corrigindo...' : 'Reparar Finalizados'}
-                </span>
+                <div className="flex flex-col items-start text-left">
+                  <span className="text-[10px] font-black uppercase tracking-widest">
+                    {fixingFinalizedKeys ? 'Corrigindo...' : 'Reparar Finalizados'}
+                  </span>
+                  <span className="text-[8px] font-bold normal-case tracking-normal text-slate-400">Mapa marcado como finalizado sem crédito de estoque correspondente</span>
+                </div>
               </div>
               {!fixingFinalizedKeys && (
                 orphanedFinalizedKeyFixes.length > 0 ? (
@@ -773,14 +848,44 @@ export default function StockView({
               aria-label="Ver produção que nunca somou no contador de estoque"
             >
               <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${undercreditGroups.length > 0 ? (isDarkMode ? 'bg-amber-500/15 text-amber-400' : 'bg-amber-100 text-amber-600') : (isDarkMode ? 'bg-emerald-500/15 text-emerald-400' : 'bg-emerald-100 text-emerald-600')}`}>
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-sky-500/15 text-sky-400' : 'bg-sky-100 text-sky-600'}`}>
                   <TrendingUp size={16} strokeWidth={2.5} />
                 </div>
-                <span className="text-[10px] font-black uppercase tracking-widest">Estoque Não Creditado</span>
+                <div className="flex flex-col items-start text-left">
+                  <span className="text-[10px] font-black uppercase tracking-widest">Estoque Não Creditado</span>
+                  <span className="text-[8px] font-bold normal-case tracking-normal text-slate-400">Caixa produzida (StockLot) que nunca somou no contador do produto</span>
+                </div>
               </div>
               {undercreditGroups.length > 0 ? (
                 <span className="flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-amber-500 text-white text-[10px] font-black shrink-0 animate-pulse-amber-ring">
                   {undercreditGroups.length}
+                </span>
+              ) : (
+                <CheckCircle2 size={16} strokeWidth={2.5} className="text-emerald-500 shrink-0" />
+              )}
+            </button>
+          )}
+
+          {onReleaseOrphanedLot && (
+            <button
+              type="button"
+              onClick={() => { setShowConfigMenu(false); setShowOrphanedModal(true); }}
+              className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[1.2rem] transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-800 border border-slate-700 text-slate-300' : 'bg-slate-50 border border-slate-100 text-slate-500'}`}
+              title="Reservas Órfãs"
+              aria-label="Ver caixas reservadas presas em vendas que não as referenciam mais"
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-violet-500/15 text-violet-400' : 'bg-violet-100 text-violet-600'}`}>
+                  <Boxes size={16} strokeWidth={2.5} />
+                </div>
+                <div className="flex flex-col items-start text-left">
+                  <span className="text-[10px] font-black uppercase tracking-widest">Reservas Órfãs</span>
+                  <span className="text-[8px] font-bold normal-case tracking-normal text-slate-400">Caixa reservada presa numa venda que não a referencia (ou que foi excluída)</span>
+                </div>
+              </div>
+              {orphanedLots.length > 0 ? (
+                <span className="flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-violet-500 text-white text-[10px] font-black shrink-0 animate-pulse-violet-ring">
+                  {orphanedLots.length}
                 </span>
               ) : (
                 <CheckCircle2 size={16} strokeWidth={2.5} className="text-emerald-500 shrink-0" />
@@ -869,6 +974,77 @@ export default function StockView({
                   className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-amber-500/20 text-amber-300 hover:bg-amber-500/30' : 'bg-amber-600 text-white hover:bg-amber-700'}`}
                 >
                   <Wrench size={12} strokeWidth={3} /> {fixingUndercreditKey === g.key ? 'Corrigindo...' : 'Corrigir Agora'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => dismissUndercreditGroup(g)}
+                  title="Já incluí essa caixa no estoque por fora (Balanço/edição direta) — não mexe em estoque, só some daqui"
+                  className={`self-center text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-700/60 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white' : 'bg-slate-200 border-slate-300 text-slate-600 hover:bg-slate-300 hover:text-slate-800'}`}
+                >
+                  Já Resolvi Manualmente
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={showOrphanedModal}
+        onClose={() => setShowOrphanedModal(false)}
+        title="Reservas Órfãs"
+        icon={<Boxes size={20} />}
+        maxWidth="max-w-lg"
+      >
+        {orphanedLots.length === 0 ? (
+          <p className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400 py-10">Nenhuma pendência encontrada — todas as reservas estão vinculadas a um pedido de verdade.</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <p className="text-[10px] font-bold text-slate-400 leading-relaxed px-1">
+              Caixa/par marcado como reservado (separado) pra um pedido, mas que o próprio pedido não referencia mais — ou porque o pedido foi excluído, ou porque a separação foi refeita sem liberar a reserva anterior. Sobra do bug de concorrência da separação de caixas (já corrigido). "Corrigir Agora" devolve a caixa pro estoque disponível e soma de volta no contador.
+            </p>
+            {orphanedLots.map(entry => (
+              <div key={entry.key} className={`rounded-2xl border p-4 flex flex-col gap-2 ${isDarkMode ? 'bg-violet-900/15 border-violet-800/40' : 'bg-violet-50 border-violet-100'}`}>
+                <p className={`text-[12px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  {entry.productReference ? `${entry.productReference} — ` : ''}{entry.productName} · {entry.variationName}
+                </p>
+                <p className="text-[9px] font-bold text-slate-400">
+                  {entry.reason === 'sale_missing'
+                    ? `Pedido ${entry.saleOrderNumber || entry.lot.saleOrderNumber || ''} não existe mais`
+                    : `Pedido #${entry.saleOrderNumber} (${entry.customerName}) não referencia mais essa caixa`}
+                </p>
+                <div className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Presa desde</span>
+                  <span className="text-[12px] font-black text-violet-500">
+                    {entry.lot.createdAt ? new Date(entry.lot.createdAt).toLocaleDateString('pt-BR') : '—'}
+                    {' · '}
+                    {entry.lot.boxQty !== undefined && entry.lot.boxQty !== null
+                      ? `${entry.lot.boxQty} cx`
+                      : `${entry.lot.totalPairs || 0} pares`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  disabled={fixingOrphanedKey === entry.key}
+                  onClick={async () => {
+                    setFixingOrphanedKey(entry.key);
+                    try {
+                      await onReleaseOrphanedLot?.(entry);
+                    } finally {
+                      setFixingOrphanedKey(prev => prev === entry.key ? null : prev);
+                    }
+                  }}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-60 ${isDarkMode ? 'bg-violet-500/20 text-violet-300 hover:bg-violet-500/30' : 'bg-violet-600 text-white hover:bg-violet-700'}`}
+                >
+                  <Wrench size={12} strokeWidth={3} /> {fixingOrphanedKey === entry.key ? 'Corrigindo...' : 'Corrigir Agora'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => dismissOrphanedLot(entry)}
+                  title="Já corrigi isso por fora (recontagem física + Balanço) — não mexe em estoque, só some daqui"
+                  className={`self-center text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border transition-all active:scale-95 ${isDarkMode ? 'bg-slate-700/60 border-slate-600 text-slate-300 hover:bg-slate-700 hover:text-white' : 'bg-slate-200 border-slate-300 text-slate-600 hover:bg-slate-300 hover:text-slate-800'}`}
+                >
+                  Já Resolvi Manualmente
                 </button>
               </div>
             ))}

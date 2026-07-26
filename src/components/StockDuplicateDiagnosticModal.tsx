@@ -41,6 +41,9 @@ export default function StockDuplicateDiagnosticModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-3 custom-scrollbar">
+          <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
+            Detecta a mesma caixa de produção contada mais de uma vez no estoque (status EM_ESTOQUE) — geralmente porque a produção foi creditada duas vezes pro mesmo item. "Corrigir Agora" desconta o excesso, mantendo só a quantidade real.
+          </p>
           {groups.length === 0 && (
             <p className="text-center text-[11px] font-bold uppercase tracking-widest text-slate-400 py-10">Nenhuma duplicidade encontrada.</p>
           )}

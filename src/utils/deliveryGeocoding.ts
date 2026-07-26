@@ -84,6 +84,16 @@ export function parseLatLngFromText(text: string): { lat: number; lng: number } 
     if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng };
   }
 
+  // Link do Google Maps pra um ENDEREÇO/local com nome (não um pino solto) resolve pra
+  // esse formato — `!3d{lat}!4d{lng}` — em vez do `@lat,lng` ou `q=lat,lng` de sempre.
+  // Confirmado ao vivo em 24/07/2026 com um link maps.app.goo.gl real.
+  const placeFormat = text.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  if (placeFormat) {
+    const lat = parseFloat(placeFormat[1]);
+    const lng = parseFloat(placeFormat[2]);
+    if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng };
+  }
+
   const coordPattern = /(-?\d{1,3}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})/;
   const match = text.match(coordPattern);
   if (match) {

@@ -92,6 +92,7 @@ export default function PeopleView({ people, sales, purchases, transactions, onA
         sellers={people.filter(p => p.isSeller)}
         allPeople={people}
         initialData={aiInitialData ?? undefined}
+        isDarkMode={isDarkMode}
       />
       {isHistoryModalOpen && historyPerson && (
         <FinancialHistoryModal

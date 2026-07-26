@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, ProductionConfigItem } from '../types';
-import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight } from 'lucide-react';
+import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, ProductionConfigItem, Carrier } from '../types';
+import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin } from 'lucide-react';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import ProductionOrderModal from '../components/ProductionOrderModal';
 import SeparacaoCaixasModal from '../components/SeparacaoCaixasModal';
@@ -20,8 +20,10 @@ import { buildSeparationRows } from '../utils/separationRows';
 import { buildSeparationReconcileGroups } from '../utils/separationReconcile';
 import { useStockLotDuplicates } from '../hooks/useStockLotDuplicates';
 import { buildOrphanedFinalizedKeyFixes } from '../utils/finalizedKeyRepair';
+import { buildOrphanedReservedLots } from '../utils/stockOrphanedReservations';
 import StockRepairBanner from '../components/StockRepairBanner';
 import DeliveryAddressForm from '../components/DeliveryAddressForm';
+import Modal from '../components/Modal';
 
 // Preferências de "Visualização" (Cards Compactos/Expandidos, Mostrar Produtos,
 // Mostrar Grade e Quantidades, Mostrar Padrão de Embalagem) persistem entre
@@ -100,11 +102,14 @@ interface SalesViewProps {
   onNavigateStockReconcile: () => void;
   onNavigateStockDiagnostic: () => void;
   onNavigateStockFinalizedRepair: () => void;
+  onNavigateStockOrphaned?: () => void;
   onNavigateProducts?: () => void;
   onAddProduct?: () => void;
   productionConfigs: ProductionConfigItem[];
   appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite' | 'hcWhite' | 'hcBlack' | 'hcIndustrial';
-  onUpdateDeliveryInfo?: (saleId: string, data: { deliveryAddress?: Sale['deliveryAddress']; deliveryPriority?: Sale['deliveryPriority'] }) => Promise<void>;
+  onUpdateDeliveryInfo?: (saleId: string, data: { deliveryAddress?: Sale['deliveryAddress']; deliveryPriority?: Sale['deliveryPriority']; carrierId?: string | null }) => Promise<void>;
+  carriers?: Carrier[];
+  onSendToRouteBuilder?: (saleId: string) => void;
 }
 
 export default function SalesView({
@@ -145,11 +150,14 @@ export default function SalesView({
   onNavigateStockReconcile,
   onNavigateStockDiagnostic,
   onNavigateStockFinalizedRepair,
+  onNavigateStockOrphaned,
   onNavigateProducts,
   onAddProduct,
   productionConfigs,
   appTheme = 'light',
   onUpdateDeliveryInfo,
+  carriers = [],
+  onSendToRouteBuilder,
 }: SalesViewProps) {
   const isIndustrial = appTheme === 'industrial';
   const hasProduction = modulesConfig.production;
@@ -319,6 +327,8 @@ export default function SalesView({
   const [revertSale, setRevertSale] = useState<Sale | null>(null);
   const [processingExpedite, setProcessingExpedite] = useState(false);
   const [separacaoSale, setSeparacaoSale] = useState<Sale | null>(null);
+  const [carrierPickerSaleId, setCarrierPickerSaleId] = useState<string | null>(null);
+  const [carrierSearch, setCarrierSearch] = useState('');
   const [simplePreviewSale, setSimplePreviewSale] = useState<Sale | null>(null);
   const [transferSale, setTransferSale] = useState<Sale | null>(null);
   const [processingTransfer, setProcessingTransfer] = useState(false);
@@ -428,6 +438,11 @@ export default function SalesView({
   // sempre em Estoque.
   const { duplicateStockLotGroups } = useStockLotDuplicates(stockLots, lots);
   const orphanedFinalizedKeyCount = useMemo(() => buildOrphanedFinalizedKeyFixes(lots).length, [lots]);
+
+  // Caixas reservadas presas em pedidos que não as referenciam mais — sobra do bug de
+  // concorrência da separação de caixas (já corrigido, ver src/utils/
+  // stockOrphanedReservations.ts). Correção fica em Estoque > Configurar > Reservas Órfãs.
+  const orphanedReservedLotsCount = useMemo(() => buildOrphanedReservedLots(stockLots, sales, products).length, [stockLots, sales, products]);
 
   // Lotes RESERVADO (caixas já produzidas, com a grade exata, aguardando "Liberar
   // Pedido" para o cliente), agrupados por venda.
@@ -693,6 +708,26 @@ export default function SalesView({
             </p>
           </div>
           <ChevronRight size={16} className="text-rose-500 shrink-0" />
+        </button>
+      )}
+      {orphanedReservedLotsCount > 0 && onNavigateStockOrphaned && (
+        <button
+          type="button"
+          onClick={onNavigateStockOrphaned}
+          className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all active:scale-[0.99] text-left ${isDarkMode ? 'bg-violet-500/10 border-violet-500/30 hover:bg-violet-500/15' : 'bg-violet-50 border-violet-200 hover:bg-violet-100'}`}
+        >
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-violet-500/20 text-violet-400' : 'bg-violet-100 text-violet-600'}`}>
+            <Boxes size={18} strokeWidth={2.5} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-violet-300' : 'text-violet-700'}`}>
+              {orphanedReservedLotsCount} caixa{orphanedReservedLotsCount === 1 ? '' : 's'} reservada{orphanedReservedLotsCount === 1 ? '' : 's'} presa{orphanedReservedLotsCount === 1 ? '' : 's'} em pedido antigo
+            </p>
+            <p className="text-[9px] font-bold text-violet-500/80 uppercase tracking-widest mt-0.5">
+              Pedido não referencia mais essa caixa — toque para liberar em Estoque
+            </p>
+          </div>
+          <ChevronRight size={16} className="text-violet-500 shrink-0" />
         </button>
       )}
       {duplicateStockLotGroups.length > 0 && (
@@ -1265,12 +1300,23 @@ export default function SalesView({
                   {/* Badges de estoque + expand */}
                   <div className="flex flex-row flex-wrap items-center justify-end gap-1.5 shrink-0">
 
-                  {/* Badge Caixas prontas — produção concluída, aguardando "Liberar Pedido" */}
-                  {sale.status === SaleStatus.SALE && sale.deliveryStatus !== 'DELIVERED' && (reservedLotsBySale.get(sale.id) || []).length > 0 && (
-                    <span className="text-[8px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400 flex items-center gap-1">
-                      <PackageCheck size={9} /> {(reservedLotsBySale.get(sale.id) || []).length} pronta(s)
-                    </span>
-                  )}
+                  {/* Badge Caixas prontas — quantidade já separada pro pedido. Antes contava o
+                      número de documentos StockLot reservados (`reservedLotsBySale`), que não
+                      bate com a quantidade real: um lote nativo de produção não muda de status
+                      quando é consumido pela separação manual (fica RESERVADO pra sempre), então
+                      esse número ficava contando caixas já separadas + sobras órfãs de outros
+                      lotes — daí números tipo "8 pronta(s)" num pedido com só 6 caixas ao todo.
+                      Agora usa a mesma soma de `boxesSeparated` que já alimenta "Status de
+                      Separação" logo abaixo, garantindo que os dois nunca divirjam. */}
+                  {sale.status === SaleStatus.SALE && sale.deliveryStatus !== 'DELIVERED' && (() => {
+                    const readyQty = sale.items.reduce((s, it) => s + (it.boxesSeparated || 0), 0);
+                    if (readyQty === 0) return null;
+                    return (
+                      <span className="text-[8px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400 flex items-center gap-1">
+                        <PackageCheck size={9} /> {readyQty} pronta(s)
+                      </span>
+                    );
+                  })()}
 
                   <button
                     onClick={() => toggleExpand(sale.id)}
@@ -1301,53 +1347,12 @@ export default function SalesView({
                 );
               })()}
 
-              {/* Content Row: Items Preview & Large Price */}
+              {/* Content Row: Localização de Entrega */}
               {isExpanded && (
                 <div className="flex flex-col gap-3 z-10">
-                  {/* Banner: separação de caixas */}
-                  {sale.status === SaleStatus.SALE && sale.deliveryStatus !== 'DELIVERED' && (() => {
-                    const totalOrdered = sale.items.reduce((s, it) => s + it.quantity, 0);
-                    const totalSeparated = sale.items.reduce((s, it) => s + (it.boxesSeparated || 0), 0);
-                    const allSeparated = totalSeparated >= totalOrdered;
-
-                    // Se já estiver tudo separado, não mostra o banner interno (pois já mostramos no aviso geral externo)
-                    if (allSeparated) return null;
-
-                    const stockStatus = getUnfulfilledStockStatus(sale);
-                    const hasReservedLots = (reservedLotsBySale.get(sale.id) || []).length > 0;
-                    const canSeparate = hasReservedLots || (stockStatus && stockStatus.ready > 0);
-                    if (!canSeparate) return null;
-
-                    const unit = sale.items.some(it => it.saleType === SaleType.WHOLESALE) ? 'cx' : 'pares';
-
-                    return (
-                      <div className={`flex flex-col gap-2 px-4 py-2.5 rounded-2xl ${isDarkMode ? 'bg-indigo-900/20 border border-indigo-800/40' : 'bg-indigo-50 border border-indigo-100'}`}>
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <Boxes size={14} className="text-indigo-500 shrink-0" />
-                            <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest truncate">
-                              Separação de caixas pendente
-                            </span>
-                          </div>
-                          {totalSeparated > 0 && (
-                            <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest shrink-0 bg-indigo-500 text-white`}>
-                              {totalSeparated}/{totalOrdered} {unit}
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); setSeparacaoSale(sale); }}
-                          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest active:scale-95 transition-all shadow-sm shadow-indigo-600/20"
-                        >
-                          <Boxes size={14} strokeWidth={2.5} /> Separar Caixas
-                        </button>
-                      </div>
-                    );
-                  })()}
-
                   {modulesConfig.entregas && onUpdateDeliveryInfo && isIndividuallyExpanded && sale.status === SaleStatus.SALE && (() => {
                     const isDeliveryOpen = expandedDeliveryIds.includes(sale.id);
+                    const selectedCarrier = carriers.find(c => c.id === sale.carrierId);
                     return (
                       <div className={`flex flex-col gap-2 px-4 py-3 rounded-2xl ${isDarkMode ? 'bg-teal-900/10 border border-teal-800/30' : 'bg-teal-50/60 border border-teal-100'}`} onClick={(e) => e.stopPropagation()}>
                         <button
@@ -1361,86 +1366,70 @@ export default function SalesView({
                               Localização de Entrega
                             </span>
                           </span>
-                          {isDeliveryOpen ? <ChevronUp size={16} className="text-teal-600 shrink-0" /> : <ChevronDown size={16} className="text-teal-600 shrink-0" />}
+                          <span className="relative flex items-center justify-center w-7 h-7 shrink-0">
+                            <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-50 animate-ping" />
+                            <span className={`relative flex items-center justify-center w-7 h-7 rounded-full ${isDarkMode ? 'bg-emerald-900/40' : 'bg-emerald-100'}`}>
+                              {isDeliveryOpen ? <ChevronUp size={16} className="text-teal-600" /> : <ChevronDown size={16} className="text-teal-600" />}
+                            </span>
+                          </span>
                         </button>
+                        {onSendToRouteBuilder && sale.deliveryStatus !== 'DELIVERED' && (
+                          selectedCarrier
+                            ? (selectedCarrier.address?.lat !== undefined && selectedCarrier.address?.lng !== undefined)
+                            : (sale.deliveryAddress?.lat !== undefined && sale.deliveryAddress?.lng !== undefined)
+                        ) && (
+                          <button
+                            type="button"
+                            onClick={() => onSendToRouteBuilder(sale.id)}
+                            className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 bg-orange-500 text-white hover:bg-orange-600"
+                          >
+                            <Truck size={13} />
+                            Enviar para Entrega
+                          </button>
+                        )}
+                        {isDeliveryOpen && carriers.length > 0 && (
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Transportadora</label>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setCarrierSearch(''); setCarrierPickerSaleId(sale.id); }}
+                              className={`w-full h-11 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent hover:border-teal-500 rounded-xl px-4 text-sm font-bold transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                            >
+                              <span className="truncate">{selectedCarrier ? selectedCarrier.name : 'Nenhuma — entregar pela rota do app'}</span>
+                              <ChevronDown size={16} className="text-slate-400 shrink-0" />
+                            </button>
+                          </div>
+                        )}
+                        {isDeliveryOpen && !selectedCarrier && (() => {
+                          const customer = people.find(p => p.id === sale.customerId);
+                          if (!customer?.defaultDeliveryAddress) return null;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => onUpdateDeliveryInfo(sale.id, { deliveryAddress: customer.defaultDeliveryAddress })}
+                              className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all bg-orange-500 text-white hover:bg-orange-600"
+                            >
+                              <MapPin size={12} />
+                              Usar Endereço Cadastrado do Cliente
+                            </button>
+                          );
+                        })()}
+                        {selectedCarrier && isDeliveryOpen && (
+                          <p className="text-[9px] font-bold text-teal-600 dark:text-teal-400 px-1">
+                            Mostrando o endereço cadastrado da transportadora — edite o cadastro dela em Configurações de Entrega pra corrigir.
+                          </p>
+                        )}
                         <DeliveryAddressForm
                           isDarkMode={isDarkMode}
-                          address={sale.deliveryAddress}
+                          address={selectedCarrier ? selectedCarrier.address : sale.deliveryAddress}
                           priority={sale.deliveryPriority}
                           fieldsExpanded={isDeliveryOpen}
-                          onChange={(address) => onUpdateDeliveryInfo(sale.id, { deliveryAddress: address })}
+                          onChange={(address) => selectedCarrier ? undefined : onUpdateDeliveryInfo(sale.id, { deliveryAddress: address })}
                           onPriorityChange={(priority) => onUpdateDeliveryInfo(sale.id, { deliveryPriority: priority })}
                         />
                       </div>
                     );
                   })()}
-
-                <div className={`flex ${sale.status === SaleStatus.QUOTE ? 'flex-col' : 'justify-between items-start'} gap-4`}>
-                  {/* Items List (Left/Top) */}
-                  {showProducts ? (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setItemsPopupSale(sale); }}
-                      title="Abrir separação de itens"
-                      aria-label="Abrir separação de itens da venda"
-                      className="flex-1 flex flex-col gap-3 cursor-pointer min-w-0 text-left"
-                    >
-                      {(() => {
-                        // Pedido marcado como entregue: todos os itens são considerados separados
-                        const isDelivered = sale.deliveryStatus === 'DELIVERED';
-                        const separatedItems = isDelivered
-                          ? sale.items
-                          : sale.items.filter(it => (it.boxesSeparated || 0) > 0 || it.fulfilled === true);
-                        if (separatedItems.length === 0) {
-                          return (
-                            <div className="flex items-center gap-3">
-                              <div className={`p-2 rounded-xl shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-                                <Boxes size={12} className="text-slate-400" strokeWidth={3} />
-                              </div>
-                              <p className={`text-[11px] font-bold tracking-wide ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                                Aguardando separação
-                              </p>
-                            </div>
-                          );
-                        }
-                        return (
-                          <>
-                            {separatedItems.slice(0, 3).map((item, idx) => {
-                              const product = getProductInfo(item.productId);
-                              const variation = getVariationInfo(item.productId, item.variationId);
-                              // Para entregues ou items expedidos pelo fluxo antigo sem boxesSeparated, considera tudo separado
-                              const separated = (item.boxesSeparated || 0) > 0 ? item.boxesSeparated! : item.quantity;
-                              const unit = item.saleType === SaleType.WHOLESALE ? 'cx' : 'pares';
-                              const done = separated >= item.quantity;
-                              return (
-                                <div key={idx} className="flex items-center gap-3">
-                                  <div className={`p-2 rounded-xl shrink-0 ${done ? (isDarkMode ? 'bg-emerald-900/30' : 'bg-emerald-50') : (isDarkMode ? 'bg-indigo-900/30' : 'bg-indigo-50')}`}>
-                                    {done
-                                      ? <CheckCircle2 size={12} className="text-emerald-500" strokeWidth={3} />
-                                      : <Boxes size={12} className="text-indigo-500" strokeWidth={3} />}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className={`text-[11px] font-black leading-none tracking-tight truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
-                                      {product?.reference || '---'} {product?.name}
-                                    </p>
-                                    <p className="text-[11px] text-slate-400 dark:text-slate-500 font-bold mt-1.5 tracking-widest">
-                                      {variation?.colorName} • <span className={done ? 'text-emerald-500' : 'text-indigo-500 dark:text-indigo-400'}>{separated}/{item.quantity} {unit}</span>
-                                    </p>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                            {separatedItems.length > 3 && (
-                              <span className="text-[11px] text-slate-400 dark:text-slate-600 font-black tracking-[0.2em] italic ml-11">+{separatedItems.length - 3} outros</span>
-                            )}
-                          </>
-                        );
-                      })()}
-                    </button>
-                  ) : (
-                    <div className="flex-1 min-w-0" />
-                  )}
-
-                </div>
                 </div>
               )}
 
@@ -1489,7 +1478,13 @@ export default function SalesView({
                   return (
                     <div className="mb-4 flex flex-col gap-2 z-10">
                       <div className="p-3 rounded-2xl bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 flex items-start gap-2.5">
-                        <Clock size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                        <span className="relative shrink-0 mt-0.5">
+                          <Clock size={16} className="text-amber-500" />
+                          <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-600" />
+                          </span>
+                        </span>
                         <p className="text-[10px] font-bold text-amber-700 dark:text-amber-400 leading-snug">
                           <span className="font-black uppercase tracking-widest text-[8px] block mb-1">Aviso de Estoque</span>
                           Aguardando estoque para este pedido. ({stockStatus.ready}/{stockStatus.total})
@@ -1509,7 +1504,13 @@ export default function SalesView({
 
                 return (
                   <div className="mb-4 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800 flex items-start gap-2.5 z-10">
-                    <Clock size={16} className="text-slate-400 shrink-0 mt-0.5" />
+                    <span className="relative shrink-0 mt-0.5">
+                      <Clock size={16} className="text-slate-400" />
+                      <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-600" />
+                      </span>
+                    </span>
                     <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 leading-snug">
                       <span className="font-black uppercase tracking-widest text-[8px] block mb-1">Aviso de Estoque</span>
                       Aguardando estoque para este pedido. ({stockStatus.ready}/{stockStatus.total})
@@ -2637,6 +2638,54 @@ export default function SalesView({
       })()}
 
       {/* Modal — Separação de Caixas */}
+      <Modal
+        isOpen={!!carrierPickerSaleId}
+        onClose={() => setCarrierPickerSaleId(null)}
+        title="Escolher Transportadora"
+        icon={<Truck size={20} />}
+        maxWidth="max-w-md"
+        closeLabel="Fechar"
+      >
+        <div className="flex flex-col gap-3">
+          <input
+            type="text"
+            autoFocus
+            placeholder="Buscar transportadora..."
+            value={carrierSearch}
+            onChange={(e) => setCarrierSearch(e.target.value)}
+            className={`w-full h-12 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-teal-500 rounded-2xl px-4 text-sm font-bold transition-all outline-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+          />
+          <div className="flex flex-col gap-2 max-h-80 overflow-y-auto force-scrollbar">
+            <button
+              type="button"
+              onClick={() => { if (carrierPickerSaleId) onUpdateDeliveryInfo?.(carrierPickerSaleId, { carrierId: null }); setCarrierPickerSaleId(null); }}
+              className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-teal-700' : 'bg-white border-slate-100 hover:border-teal-200'}`}
+            >
+              <p className={`text-xs font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>Nenhuma — entregar pela rota do app</p>
+            </button>
+            {carriers.filter(c => c.name.toLowerCase().includes(carrierSearch.toLowerCase())).map(c => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => { if (carrierPickerSaleId) onUpdateDeliveryInfo?.(carrierPickerSaleId, { carrierId: c.id }); setCarrierPickerSaleId(null); }}
+                className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-teal-700' : 'bg-white border-slate-100 hover:border-teal-200'}`}
+              >
+                <div className={`p-2 rounded-lg shrink-0 ${isDarkMode ? 'bg-teal-900/30 text-teal-400' : 'bg-teal-50 text-teal-600'}`}>
+                  <Truck size={14} />
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-sm font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{c.name}</p>
+                  {c.phone && <p className="text-[10px] font-bold text-slate-400">{c.phone}</p>}
+                </div>
+              </button>
+            ))}
+            {carriers.filter(c => c.name.toLowerCase().includes(carrierSearch.toLowerCase())).length === 0 && (
+              <p className="text-[10px] font-bold text-slate-400 text-center py-4">Nenhuma transportadora encontrada.</p>
+            )}
+          </div>
+        </div>
+      </Modal>
+
       {separacaoSale && (
         <SeparacaoCaixasModal
           sale={separacaoSale}
