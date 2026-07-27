@@ -297,8 +297,16 @@ export default function DeliveryMapGL({
     stopMarkersRef.current.forEach(m => m.remove());
     stopMarkersRef.current = (markers || []).map(m => {
       const el = pinElement(m.color || '#0d9488', m.number);
+      // NÃO setar position aqui: `el` é o elemento que o próprio MapLibre gerencia (via a
+      // classe .maplibregl-marker, que já traz position:absolute) e recalcula a cada
+      // movimento do mapa através de um `transform: translate(...)`. Um `style.position`
+      // inline (mesmo 'relative') tem prioridade sobre a classe e sobrescreve esse
+      // position:absolute — o pin passa a se posicionar relativo ao próprio fluxo do
+      // documento em vez de fixo na coordenada geográfica, fazendo-o "seguir" o arrasto do
+      // mapa (só no 3D — o 2D usa Leaflet, que posiciona os marcadores de outro jeito). A
+      // classe já deixa `el` com position:absolute a tempo de o rótulo (position:absolute
+      // também) se ancorar nele corretamente, sem precisar de nenhum ajuste extra aqui.
       if (m.label) el.appendChild(labelElement(m.label, isDarkMode));
-      el.style.position = 'relative';
       return new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([m.lng, m.lat]).addTo(map);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps

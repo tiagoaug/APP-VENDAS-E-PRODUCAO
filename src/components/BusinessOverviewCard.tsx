@@ -585,7 +585,7 @@ export default function BusinessOverviewCard({
                       <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
                         <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><ShoppingBag size={10} /> Lucro em Vendas</p>
                         <p className={`text-sm font-black mt-0.5 ${businessOverview.salesProfitInPeriod >= 0 ? 'text-teal-500' : 'text-rose-500'}`}>R$ {businessOverview.salesProfitInPeriod.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Vendas fechadas no período selecionado acima, menos o custo dos produtos vendidos — a margem já ganha ao vender, receba ou não ainda o dinheiro. Só informativo: não entra na soma de "Lucro Real".</p>
+                        <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Vendas fechadas no período selecionado acima, menos o custo dos produtos vendidos — a margem já ganha ao vender, recebida ou não ainda o dinheiro. Só informativo: não entra na soma de "Lucro Real".</p>
                       </div>
                     </div>
                   </motion.div>
