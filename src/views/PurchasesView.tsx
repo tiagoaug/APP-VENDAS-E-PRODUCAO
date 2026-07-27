@@ -5,7 +5,7 @@ import {
   Plus,
   Package,
   Calendar,
-  History, A
+  History,
   Trash2,
   Edit2,
   X,

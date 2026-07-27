@@ -1118,15 +1118,20 @@ export default function SalesView({
         <div className="fixed inset-0 z-50 flex items-center justify-center px-4" onClick={() => setShowFilters(false)}>
           <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
           <div
-            className={`relative w-full max-w-sm rounded-[2.5rem] p-6 shadow-2xl flex flex-col gap-5 animate-in fade-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}
+            className={`relative w-full max-w-sm max-h-[85vh] rounded-[2.5rem] shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200 ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100'}`}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-1">
+            {/* Cabeçalho fixo — nunca rola junto com os filtros abaixo, senão o X de fechar
+                fica inalcançável quando a lista de filtros cresce além da altura da tela
+                (ver Período abaixo, o motivo do popup ter passado a precisar rolar). */}
+            <div className="flex items-center justify-between px-6 pt-6 pb-1 shrink-0">
               <h3 className={`text-[13px] font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>Filtros e Configurações</h3>
               <button onClick={() => setShowFilters(false)} className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white">
                 <X size={18} strokeWidth={2.5} />
               </button>
             </div>
+
+            <div className="flex flex-col gap-5 px-6 pb-6 pt-4 overflow-y-auto force-scrollbar">
 
             {/* Tipo de Venda */}
             <div className="flex flex-col gap-2">
@@ -1314,6 +1319,7 @@ export default function SalesView({
             >
               Limpar Filtros
             </button>
+            </div>
           </div>
         </div>
       )}
