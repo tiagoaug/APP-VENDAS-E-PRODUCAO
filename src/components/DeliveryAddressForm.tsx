@@ -19,6 +19,11 @@ interface DeliveryAddressFormProps {
   // mapa continuam sempre visíveis independente disso. Sem a prop, os campos ficam sempre
   // visíveis (comportamento de antes, usado por quem ainda não tem o acordeão externo).
   fieldsExpanded?: boolean;
+  // true quando o endereço vem de uma transportadora (cadastro dela, não editável aqui) —
+  // esconde as abas de entrada (Digitação Manual/Colar Endereço/Colar Localização) e o botão
+  // de busca por completo, já que editar não teria efeito nenhum (o endereço mostrado é
+  // sempre o cadastrado da transportadora). Mapa e prioridade continuam visíveis.
+  locked?: boolean;
 }
 
 const inputClass = (isDarkMode: boolean) =>
@@ -36,7 +41,7 @@ const MODE_LABELS: Record<AddressInputMode, string> = {
   paste_location: 'Colar Localização',
 };
 
-export default function DeliveryAddressForm({ isDarkMode, address, priority, onChange, onPriorityChange, fieldsExpanded = true }: DeliveryAddressFormProps) {
+export default function DeliveryAddressForm({ isDarkMode, address, priority, onChange, onPriorityChange, fieldsExpanded = true, locked = false }: DeliveryAddressFormProps) {
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [showMapModal, setShowMapModal] = useState(false);
@@ -154,7 +159,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
 
   return (
     <div className="flex flex-col gap-3">
-      {fieldsExpanded && (
+      {fieldsExpanded && !locked && (
         <>
           <div className={`grid grid-cols-3 gap-1 p-1 rounded-xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-100'}`}>
             {(Object.keys(MODE_LABELS) as AddressInputMode[]).map(mode => (
@@ -285,7 +290,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
             Nas outras abas (Colar Endereço/Colar Localização) cada uma já tem seu próprio
             botão de busca; mostrar este aqui também sobrescrevia o pin certo com um
             resultado vazio/errado vindo dos campos manuais em branco. */}
-        {(!fieldsExpanded || inputMode === 'manual') && (
+        {!locked && (!fieldsExpanded || inputMode === 'manual') && (
           <button
             type="button"
             onClick={handleSearch}

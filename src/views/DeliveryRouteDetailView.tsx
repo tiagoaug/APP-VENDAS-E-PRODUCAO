@@ -5,8 +5,8 @@ import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Share } from '@capacitor/share';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
-import { ArrowLeft, Navigation, Circle, MapPin, Radio, RotateCcw, Waypoints, Loader2, Camera as CameraIcon, Trash2, Share2, X, Plus, PlayCircle, Timer, Milestone, Pencil, GripVertical, CheckCircle2 } from 'lucide-react';
-import { Carrier, DeliveryRoute, DeliveryStop, Product, Sale, StockLot } from '../types';
+import { ArrowLeft, Navigation, Circle, MapPin, Radio, RotateCcw, Waypoints, Loader2, Camera as CameraIcon, Trash2, Share2, X, Plus, PlayCircle, Timer, Milestone, Pencil, GripVertical, CheckCircle2, StickyNote, ListChecks } from 'lucide-react';
+import { Carrier, DeliveryRoute, DeliveryStop, Product, Sale, SaleType, StockLot } from '../types';
 import DeliveryMap from '../components/DeliveryMap';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -14,6 +14,7 @@ import { openNavigation } from '../utils/deliveryNavLink';
 import { optimizeRoute } from '../utils/deliveryRouteOptimizer';
 import { getRoadRoute, RoadRouteResult } from '../utils/deliveryRoadRoute';
 import { bucketSalesByReadiness } from '../utils/salesReadiness';
+import { getSaleStopLocations } from '../utils/deliverySaleStops';
 import { generateId } from '../utils/id';
 import { photoToCompressedImage, CompressedImage } from '../utils/aiImageUtils';
 import { toast } from '../utils/toast';
@@ -77,6 +78,7 @@ function EditStopRow({ stop, sale, carrierName, extraCount, isDarkMode, index, o
       <div className="flex-1 min-w-0">
         <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
           {carrierName ? `${carrierName} (transportadora)` : (stop.label || sale?.customerName || 'Cliente')}
+          {stop.addressLabel && ` · ${stop.addressLabel}`}
         </p>
         <p className="text-[10px] font-bold text-slate-400 truncate">
           {stop.saleId
@@ -97,9 +99,9 @@ function EditStopRow({ stop, sale, carrierName, extraCount, isDarkMode, index, o
 // direto por aqui (arrastando pelo grip), sem precisar abrir o modal "Editar Rota" só
 // pra mudar a ordem. Paradas já entregues ficam com o grip inerte (mesmo padrão do
 // EditStopRow) — não faz sentido arrastar algo que já foi visitado.
-function LiveStopRow({ stop, index, sale, stopSales, carrierName, isDarkMode, isMarking, onDragEnd, onOpenPhoto, onToggleDelivered }: {
+function LiveStopRow({ stop, index, sale, stopSales, carrierName, isDarkMode, isMarking, onDragEnd, onOpenPhoto, onToggleDelivered, onOpenNote, onOpenItems }: {
   stop: DeliveryStop; index: number; sale?: Sale; stopSales: Sale[]; carrierName?: string;
-  isDarkMode: boolean; isMarking: boolean; onDragEnd: () => void; onOpenPhoto: () => void; onToggleDelivered: () => void;
+  isDarkMode: boolean; isMarking: boolean; onDragEnd: () => void; onOpenPhoto: () => void; onToggleDelivered: () => void; onOpenNote: () => void; onOpenItems?: () => void;
 }) {
   const controls = useDragControls();
   const isDelivered = stop.status === 'DELIVERED';
@@ -124,6 +126,7 @@ function LiveStopRow({ stop, index, sale, stopSales, carrierName, isDarkMode, is
       <div className="flex-1 min-w-0">
         <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
           {carrierName ? `${carrierName} (transportadora)` : (stop.label || sale?.customerName || 'Cliente')}
+          {stop.addressLabel && ` · ${stop.addressLabel}`}
         </p>
         <p className="text-[10px] font-bold text-slate-400 truncate">
           {stop.saleId
@@ -132,24 +135,53 @@ function LiveStopRow({ stop, index, sale, stopSales, carrierName, isDarkMode, is
                 : <>Pedido #{sale?.orderNumber} {carrierName && `· p/ ${sale?.customerName || 'cliente'}`}</>)
             : 'Parada manual'} {stop.priority === 'URGENT' && '· URGENTE'}
         </p>
+        {stop.note && (
+          <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 truncate mt-0.5">{stop.note}</p>
+        )}
       </div>
-      <button
-        type="button"
-        onClick={onOpenPhoto}
-        className={`p-2.5 rounded-xl shrink-0 transition-all ${isDarkMode ? 'text-slate-500 hover:text-teal-400 hover:bg-slate-800' : 'text-slate-400 hover:text-teal-600 hover:bg-slate-50'}`}
-        title="Fotos da entrega"
-      >
-        <CameraIcon size={20} />
-      </button>
-      <button
-        type="button"
-        disabled={isMarking}
-        onClick={onToggleDelivered}
-        className={`p-2.5 rounded-xl shrink-0 transition-all disabled:opacity-50 ${isDelivered ? 'text-emerald-600 hover:text-amber-600' : (isDarkMode ? 'text-slate-500 hover:text-teal-400 hover:bg-slate-800' : 'text-slate-400 hover:text-teal-600 hover:bg-slate-50')}`}
-        title={isDelivered ? 'Marcar como não entregue' : 'Marcar como entregue'}
-      >
-        {isDelivered ? <RotateCcw size={20} /> : <Circle size={22} />}
-      </button>
+      <div className="flex items-center gap-1 p-1 rounded-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-sm shrink-0">
+        {onOpenItems && ((stop.deliveryItems && stop.deliveryItems.length > 0) || stop.deliveryItemsNote) && (
+          <button
+            type="button"
+            onClick={onOpenItems}
+            className="w-8 h-8 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 rounded-full active:scale-90 transition-all"
+            title="Itens na entrega"
+          >
+            <ListChecks size={15} />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onOpenNote}
+          className="relative w-8 h-8 flex items-center justify-center bg-amber-50 dark:bg-amber-500/10 text-amber-500 rounded-full active:scale-90 transition-all"
+          title="Observações da parada"
+        >
+          <StickyNote size={15} />
+          {(stop.note || stop.deliveryItemsNote) && (
+            <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center w-3 h-3">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75 animate-ping" />
+              <span className="relative inline-flex w-2 h-2 rounded-full bg-rose-500" />
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={onOpenPhoto}
+          className="w-8 h-8 flex items-center justify-center bg-sky-50 dark:bg-sky-500/10 text-sky-500 rounded-full active:scale-90 transition-all"
+          title="Fotos da entrega"
+        >
+          <CameraIcon size={15} />
+        </button>
+        <button
+          type="button"
+          disabled={isMarking}
+          onClick={onToggleDelivered}
+          className={`w-8 h-8 flex items-center justify-center rounded-full active:scale-90 transition-all disabled:opacity-50 ${isDelivered ? 'bg-amber-50 dark:bg-amber-500/10 text-amber-600' : 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-500'}`}
+          title={isDelivered ? 'Marcar como não entregue' : 'Marcar como entregue'}
+        >
+          {isDelivered ? <RotateCcw size={15} /> : <Circle size={17} />}
+        </button>
+      </div>
     </Reorder.Item>
   );
 }
@@ -195,6 +227,19 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
   const [now, setNow] = useState(Date.now());
   const lastWriteAtRef = useRef(0);
 
+  // Observações da parada (ex.: "deixar na portaria", "ligar antes de chegar") — editadas
+  // numa cópia local até "Salvar", só então grava em route.stops via onUpdateStops.
+  const [noteStop, setNoteStop] = useState<DeliveryStop | null>(null);
+  const [noteText, setNoteText] = useState('');
+  const [isSavingNote, setIsSavingNote] = useState(false);
+
+  // Checklist de itens da parada (cadastrado no card da venda, ver Sale.deliveryItems) —
+  // só visualização aqui, não dá pra editar na tela de entrega. As marcações abaixo são só
+  // locais (não persistem) — servem de apoio visual pra conferência física na hora, não pra
+  // rastrear separação/estoque de verdade.
+  const [itemsStop, setItemsStop] = useState<DeliveryStop | null>(null);
+  const [checkedItemIndexes, setCheckedItemIndexes] = useState<Set<number>>(new Set());
+
   // Ordem sendo arrastada na lista principal (fora do modal "Editar Rota") — null fora de
   // um arrasto, quando a ordem exibida vem direto de `route.stops` (fonte da verdade).
   // Assim que o arrasto termina, grava a nova ordem e volta a `null` — o próprio
@@ -223,10 +268,11 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
   const stopMarkers = [
     ...orderedStops.map((s, i) => {
       const stopSale = sales.find(sale => sale.id === s.saleId);
-      const carrierName = stopSale?.carrierId ? carriers.find(c => c.id === stopSale.carrierId)?.name : undefined;
+      const effectiveCarrierId = s.carrierId || stopSale?.carrierId;
+      const carrierName = effectiveCarrierId ? carriers.find(c => c.id === effectiveCarrierId)?.name : undefined;
       const label = carrierName
-        ? `${carrierName}${(s.saleIds?.length || 0) > 1 ? ` (${s.saleIds!.length} pedidos)` : ''}`
-        : (stopSale?.customerName || s.label || `Parada ${i + 1}`);
+        ? `${carrierName}${(s.saleIds?.length || 0) > 1 ? ` (${s.saleIds!.length} pedidos)` : ''}${s.addressLabel ? ` · ${s.addressLabel}` : ''}`
+        : `${stopSale?.customerName || s.label || `Parada ${i + 1}`}${s.addressLabel ? ` · ${s.addressLabel}` : ''}`;
       return {
         id: s.id,
         lat: s.lat,
@@ -312,6 +358,26 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
       await onUndoDelivered(stopId, saleIds);
     } finally {
       setMarkingId(null);
+    }
+  };
+
+  const openNoteModal = (stop: DeliveryStop) => {
+    setNoteStop(stop);
+    setNoteText(stop.note || '');
+  };
+
+  const handleSaveNote = async () => {
+    if (!noteStop) return;
+    setIsSavingNote(true);
+    try {
+      const trimmed = noteText.trim();
+      const newStops = orderedStops.map(s => s.id === noteStop.id ? { ...s, note: trimmed || undefined } : s);
+      await onUpdateStops(newStops);
+      setNoteStop(null);
+    } catch (error: any) {
+      toast.show(error?.message || 'Erro ao salvar a observação.');
+    } finally {
+      setIsSavingNote(false);
     }
   };
 
@@ -436,23 +502,34 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
     const { prontos } = bucketSalesByReadiness(sales, stockLots, products);
     const editStopSaleIds = new Set(editStops.map(s => s.saleId));
     return prontos.filter(s =>
-      s.deliveryAddress?.lat !== undefined && s.deliveryAddress?.lng !== undefined &&
+      getSaleStopLocations(s, carriers).length > 0 &&
       !editStopSaleIds.has(s.id) &&
       (!s.deliveryRouteId || s.deliveryRouteId === route.id)
     );
-  }, [sales, stockLots, products, editStops, route.id]);
+  }, [sales, stockLots, products, editStops, route.id, carriers]);
 
+  // Acrescenta UMA parada por endereço do pedido (principal + adicionais) — mesmo padrão
+  // do Montar Rota (ver getSaleStopLocations).
   const handleAddStopToEdit = (sale: Sale) => {
-    if (sale.deliveryAddress?.lat === undefined || sale.deliveryAddress?.lng === undefined) return;
-    setEditStops(prev => [...prev, {
-      id: generateId(),
-      saleId: sale.id,
-      order: prev.length,
-      lat: sale.deliveryAddress!.lat!,
-      lng: sale.deliveryAddress!.lng!,
-      priority: sale.deliveryPriority === 'URGENT' ? 'URGENT' : 'NORMAL',
-      status: 'PENDING',
-    }]);
+    const locs = getSaleStopLocations(sale, carriers);
+    if (locs.length === 0) return;
+    setEditStops(prev => [
+      ...prev,
+      ...locs.map((loc, i): DeliveryStop => ({
+        id: generateId(),
+        saleId: sale.id,
+        saleIds: [sale.id],
+        order: prev.length + i,
+        lat: loc.lat,
+        lng: loc.lng,
+        priority: sale.deliveryPriority === 'URGENT' ? 'URGENT' : 'NORMAL',
+        status: 'PENDING',
+        ...(loc.addressLabel ? { addressLabel: loc.addressLabel } : {}),
+        ...(loc.carrierId ? { carrierId: loc.carrierId } : {}),
+        ...(loc.deliveryItems ? { deliveryItems: loc.deliveryItems } : {}),
+        ...(loc.deliveryItemsNote ? { deliveryItemsNote: loc.deliveryItemsNote } : {}),
+      })),
+    ]);
   };
 
   const handleRemoveStopFromEdit = (stopId: string) => {
@@ -611,7 +688,8 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
               const stopSaleIds = stop.saleIds && stop.saleIds.length > 0 ? stop.saleIds : (stop.saleId ? [stop.saleId] : []);
               const stopSales = stopSaleIds.map(id => sales.find(s => s.id === id)).filter((s): s is Sale => !!s);
               const sale = stopSales[0];
-              const carrierName = sale?.carrierId ? carriers.find(c => c.id === sale.carrierId)?.name : undefined;
+              const effectiveCarrierId = stop.carrierId || sale?.carrierId;
+              const carrierName = effectiveCarrierId ? carriers.find(c => c.id === effectiveCarrierId)?.name : undefined;
               return (
                 <LiveStopRow
                   key={stop.id}
@@ -624,6 +702,8 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
                   isMarking={markingId === stop.id}
                   onDragEnd={() => persistDragOrder(dragOrder ?? displayStops)}
                   onOpenPhoto={() => { setPhotoStop({ id: stop.id, sale }); setPhotoQueue([]); }}
+                  onOpenNote={() => openNoteModal(stop)}
+                  onOpenItems={() => { setItemsStop(stop); setCheckedItemIndexes(new Set()); }}
                   onToggleDelivered={() => stop.status === 'DELIVERED' ? handleUndo(stop.id, stopSaleIds) : handleMark(stop.id, stopSaleIds)}
                 />
               );
@@ -731,6 +811,95 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
       </Modal>
 
       <Modal
+        isOpen={!!noteStop}
+        onClose={() => setNoteStop(null)}
+        title="Observações da Parada"
+        icon={<StickyNote size={20} />}
+        maxWidth="max-w-lg"
+        closeLabel="Cancelar"
+      >
+        <div className="flex flex-col gap-4">
+          {noteStop?.deliveryItemsNote && (
+            <div className={`flex flex-col gap-1 p-3 rounded-2xl border ${isDarkMode ? 'bg-orange-900/10 border-orange-800/40' : 'bg-orange-50 border-orange-200'}`}>
+              <span className="text-[10px] font-black uppercase tracking-widest text-orange-600 dark:text-orange-400">
+                Observação cadastrada na venda
+              </span>
+              <p className="text-xs font-bold text-orange-700 dark:text-orange-300">{noteStop.deliveryItemsNote}</p>
+            </div>
+          )}
+          <textarea
+            rows={4}
+            autoFocus
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder="Ex: deixar na portaria, ligar antes de chegar, portão dos fundos..."
+            className={`w-full ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-teal-500 rounded-2xl px-4 py-3 text-sm font-bold transition-all outline-none resize-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+          />
+          <button
+            type="button"
+            disabled={isSavingNote}
+            onClick={handleSaveNote}
+            className="flex items-center justify-center gap-2 py-3.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 disabled:opacity-60 active:scale-[0.98] transition-all"
+          >
+            {isSavingNote ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+            Salvar Observação
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={!!itemsStop}
+        onClose={() => setItemsStop(null)}
+        title="Itens na Entrega"
+        icon={<ListChecks size={20} />}
+        maxWidth="max-w-lg"
+        closeLabel="Fechar"
+      >
+        <div className="flex flex-col gap-2">
+          <p className="text-[10px] font-bold text-slate-400 px-1 mb-1">
+            Cadastrado no card da venda — marque aqui só como apoio visual pra conferir na hora, não altera estoque nem o pedido.
+          </p>
+          {(itemsStop?.deliveryItems || []).map((item, idx) => {
+            const product = products.find(p => p.id === item.productId);
+            const variation = product?.variations.find(v => v.id === item.variationId);
+            const unit = item.saleType === SaleType.WHOLESALE ? 'cx' : 'pares';
+            const isChecked = checkedItemIndexes.has(idx);
+            return (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setCheckedItemIndexes(prev => {
+                  const next = new Set(prev);
+                  next.has(idx) ? next.delete(idx) : next.add(idx);
+                  return next;
+                })}
+                className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${isChecked ? (isDarkMode ? 'bg-emerald-900/20 border-emerald-800' : 'bg-emerald-50 border-emerald-200') : (isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100')}`}
+              >
+                <div className={`w-6 h-6 rounded-lg border-2 shrink-0 flex items-center justify-center ${isChecked ? 'bg-emerald-600 border-emerald-600' : (isDarkMode ? 'border-slate-700' : 'border-slate-200')}`}>
+                  {isChecked && <CheckCircle2 size={14} className="text-white" />}
+                </div>
+                <div className={`min-w-0 flex-1 ${isChecked ? 'line-through opacity-60' : ''}`}>
+                  <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    {item.quantity} {unit} · {product?.reference && `${product.reference} · `}{product?.name}
+                    {variation?.colorName && ` · ${variation.colorName}`}
+                  </p>
+                  {item.size && <p className="text-[10px] font-bold text-slate-400">Nº {item.size}</p>}
+                </div>
+              </button>
+            );
+          })}
+          {itemsStop?.deliveryItemsNote && (
+            <div className={`flex flex-col gap-1 p-3 mt-1 rounded-2xl border ${isDarkMode ? 'bg-orange-900/10 border-orange-800/40' : 'bg-orange-50 border-orange-200'}`}>
+              <span className="text-[10px] font-black uppercase tracking-widest text-orange-600 dark:text-orange-400">
+                Observação desta entrega
+              </span>
+              <p className="text-xs font-bold text-orange-700 dark:text-orange-300">{itemsStop.deliveryItemsNote}</p>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      <Modal
         isOpen={showEditModal}
         onClose={() => setShowEditModal(false)}
         title="Editar Rota"
@@ -746,7 +915,8 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
             <Reorder.Group axis="y" values={editStops} onReorder={setEditStops} className="flex flex-col gap-2">
               {editStops.map((stop, i) => {
                 const sale = sales.find(s => s.id === stop.saleId);
-                const carrierName = sale?.carrierId ? carriers.find(c => c.id === sale.carrierId)?.name : undefined;
+                const effectiveCarrierId = stop.carrierId || sale?.carrierId;
+                const carrierName = effectiveCarrierId ? carriers.find(c => c.id === effectiveCarrierId)?.name : undefined;
                 const extraCount = (stop.saleIds?.length || 0) > 1 ? stop.saleIds!.length - 1 : 0;
                 return (
                   <EditStopRow

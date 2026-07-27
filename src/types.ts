@@ -355,6 +355,34 @@ export type DeliveryAddress = {
   geocodeSource?: 'GEOCODED' | 'MANUAL_PIN' | 'PASTED_LOCATION';
 };
 
+// Um item do pedido marcado pra conferência numa parada específica (ver
+// Sale.deliveryItems / AdditionalDeliveryAddress.deliveryItems) — puramente informativo:
+// não divide estoque nem financeiro, só ajuda a conferir o que sai em cada endereço.
+// `quantity` é independente da quantidade vendida no item original (SaleItem.quantity) —
+// não precisa somar ao total do pedido entre as paradas.
+export type DeliveryItemRef = {
+  productId: string;
+  variationId: string;
+  size?: string; // varejo
+  saleType: SaleType;
+  quantity: number;
+};
+
+// Um endereço de entrega adicional do pedido (ver Sale.additionalDeliveryAddresses) —
+// carrega sua própria transportadora opcional, independente da transportadora do endereço
+// principal (Sale.carrierId).
+export type AdditionalDeliveryAddress = {
+  address: DeliveryAddress;
+  carrierId?: string;
+  // Checklist opcional de itens do pedido a conferir NESTE endereço (ver DeliveryItemRef).
+  deliveryItems?: DeliveryItemRef[];
+  // Observação cadastrada junto do checklist de itens (ex.: "item X com avaria", "cliente
+  // pediu pra não empilhar") — distinta de DeliveryStop.note, que é a observação que o
+  // motorista digita na própria tela de entrega. Mostrada como observação EXTRA lá (ver
+  // DeliveryRouteDetailView) e também no rodapé da lista de itens, em laranja.
+  deliveryItemsNote?: string;
+};
+
 export type Sale = {
   id: string;
   orderNumber: string;
@@ -391,6 +419,19 @@ export type Sale = {
   reminderCombineMode?: boolean | null;
   reminderSoundPattern?: ReminderTonePattern | null;
   deliveryAddress?: DeliveryAddress;
+  // Checklist opcional de itens do pedido a conferir no endereço PRINCIPAL (ver
+  // DeliveryItemRef) — pra endereços adicionais, ver AdditionalDeliveryAddress.deliveryItems.
+  deliveryItems?: DeliveryItemRef[];
+  // Observação do checklist de itens do endereço PRINCIPAL — ver
+  // AdditionalDeliveryAddress.deliveryItemsNote.
+  deliveryItemsNote?: string;
+  // Endereços de entrega adicionais — mesmo pedido, produtos a entregar em mais de um
+  // lugar (ex.: parte pro cliente, parte pra outra obra/loja dele). Cada um vira sua
+  // própria parada ao montar a rota (ver getSaleStopLocations), sem dividir os itens do
+  // pedido entre eles — o pedido inteiro aparece listado em cada endereço. Cada endereço
+  // adicional pode ir por uma transportadora própria (independente de `carrierId`, que só
+  // vale pro endereço principal) ou direto pela rota do app, se `carrierId` estiver vazio.
+  additionalDeliveryAddresses?: AdditionalDeliveryAddress[];
   // Prioridade de roteirização de entrega (módulo Entregas) — distinta de `prioridade`,
   // que é SLA de produção/PCP e não tem relação com a ordem de uma rota de entrega.
   deliveryPriority?: 'URGENT' | 'NORMAL';
@@ -424,6 +465,15 @@ export type DeliveryStop = {
   // Nome de exibição da parada manual (ex.: "Posto Ipiranga", "Hospital Municipal").
   // Paradas de venda usam o nome do cliente, não isto.
   label?: string;
+  // Presente quando o pedido tem mais de um endereço de entrega (Sale.additionalDeliveryAddresses)
+  // e esta parada corresponde a um dos endereços extras — ex.: "Endereço 2". Ausente = endereço
+  // principal (Sale.deliveryAddress) ou parada sem relação com múltiplos endereços.
+  addressLabel?: string;
+  // Transportadora que atende ESTA parada especificamente — só usado quando ela vem de um
+  // endereço adicional com transportadora própria (AdditionalDeliveryAddress.carrierId). A
+  // parada do endereço principal continua identificando a transportadora via Sale.carrierId
+  // do(s) pedido(s) da parada, não por este campo.
+  carrierId?: string;
   order: number;
   lat: number;
   lng: number;
@@ -431,6 +481,15 @@ export type DeliveryStop = {
   status: 'PENDING' | 'DELIVERED' | 'SKIPPED';
   deliveredAt?: number;
   note?: string;
+  // Checklist de itens a conferir nesta parada — cópia do checklist cadastrado no card da
+  // venda (Sale.deliveryItems ou AdditionalDeliveryAddress.deliveryItems, ver
+  // getSaleStopLocations) no momento em que a parada foi criada. Ausente/vazio = nenhum
+  // item específico anotado (não é obrigatório).
+  deliveryItems?: DeliveryItemRef[];
+  // Observação cadastrada junto do checklist de itens (Sale.deliveryItemsNote ou
+  // AdditionalDeliveryAddress.deliveryItemsNote) — distinta de `note` acima, que o motorista
+  // escreve na própria tela de entrega. Mostrada como observação EXTRA (somente leitura) lá.
+  deliveryItemsNote?: string;
 };
 
 export type DeliveryRoute = {

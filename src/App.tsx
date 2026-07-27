@@ -5952,12 +5952,19 @@ export default function App() {
                 routeUpdate.status = 'COMPLETED';
                 routeUpdate.completedAt = now;
               }
+              // Um pedido com mais de um endereço de entrega vira várias paradas nesta
+              // mesma rota (ver Sale.additionalDeliveryAddresses) — só marca a venda como
+              // entregue quando TODAS as paradas dela (não só esta) já estiverem entregues.
+              const isSaleFullyDelivered = (saleId: string) =>
+                updatedStops
+                  .filter(s => (s.saleIds && s.saleIds.includes(saleId)) || s.saleId === saleId)
+                  .every(s => s.status === 'DELIVERED');
               await firebaseService.runBatchWrites([
                 { type: 'update', path: 'deliveryRoutes', id: currentRoute.id, data: routeUpdate },
                 // Parada manual (hospital, posto, oficina) não tem venda atrelada — não há
                 // o que atualizar em `sales` nesse caso. Parada de transportadora com vários
                 // pedidos agrupados marca TODOS eles como entregues de uma vez.
-                ...saleIds.map(saleId => ({ type: 'update' as const, path: 'sales', id: saleId, data: { deliveryStatus: 'DELIVERED', deliveredAt: now } })),
+                ...saleIds.filter(isSaleFullyDelivered).map(saleId => ({ type: 'update' as const, path: 'sales', id: saleId, data: { deliveryStatus: 'DELIVERED', deliveredAt: now } })),
               ]);
             }}
             onUndoDelivered={async (stopId, saleIds) => {

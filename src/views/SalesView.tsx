@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, ProductionConfigItem, Carrier } from '../types';
-import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin } from 'lucide-react';
+import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin, ListChecks, Pencil } from 'lucide-react';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import ProductionOrderModal from '../components/ProductionOrderModal';
 import SeparacaoCaixasModal from '../components/SeparacaoCaixasModal';
@@ -23,6 +23,8 @@ import { buildOrphanedFinalizedKeyFixes } from '../utils/finalizedKeyRepair';
 import { buildOrphanedReservedLots } from '../utils/stockOrphanedReservations';
 import StockRepairBanner from '../components/StockRepairBanner';
 import DeliveryAddressForm from '../components/DeliveryAddressForm';
+import DeliveryItemsPicker, { deliveryItemKey } from '../components/DeliveryItemsPicker';
+import { formatDeliveryItemsList } from '../utils/deliveryItemsFormat';
 import Modal from '../components/Modal';
 
 // Preferências de "Visualização" (Cards Compactos/Expandidos, Mostrar Produtos,
@@ -107,7 +109,7 @@ interface SalesViewProps {
   onAddProduct?: () => void;
   productionConfigs: ProductionConfigItem[];
   appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite' | 'hcWhite' | 'hcBlack' | 'hcIndustrial';
-  onUpdateDeliveryInfo?: (saleId: string, data: { deliveryAddress?: Sale['deliveryAddress']; deliveryPriority?: Sale['deliveryPriority']; carrierId?: string | null }) => Promise<void>;
+  onUpdateDeliveryInfo?: (saleId: string, data: { deliveryAddress?: Sale['deliveryAddress']; additionalDeliveryAddresses?: Sale['additionalDeliveryAddresses']; deliveryPriority?: Sale['deliveryPriority']; carrierId?: string | null; deliveryItems?: Sale['deliveryItems']; deliveryItemsNote?: Sale['deliveryItemsNote'] }) => Promise<void>;
   carriers?: Carrier[];
   onSendToRouteBuilder?: (saleId: string) => void;
 }
@@ -164,6 +166,11 @@ export default function SalesView({
   const [filter, setFilter] = usePersistedState<'ALL' | 'RETAIL' | 'WHOLESALE'>('salesView_filter', 'ALL');
   const [paymentFilter, setPaymentFilter] = usePersistedState<'ALL' | 'PENDING' | 'PAID'>('salesView_paymentFilter', 'ALL');
   const [deliveryFilter, setDeliveryFilter] = usePersistedState<'ALL' | 'PENDING' | 'DELIVERED'>('salesView_deliveryFilter', 'ALL');
+  // Período — atalhos comuns + intervalo customizado (Data Inicial/Final, formato yyyy-mm-dd
+  // do <input type="date">). CUSTOM usa periodStart/periodEnd; os outros ignoram os dois.
+  const [periodPreset, setPeriodPreset] = usePersistedState<'ALL' | 'TODAY' | '7D' | '30D' | 'MONTH' | 'YEAR' | 'CUSTOM'>('salesView_periodPreset', 'ALL');
+  const [periodStart, setPeriodStart] = usePersistedState<string>('salesView_periodStart', '');
+  const [periodEnd, setPeriodEnd] = usePersistedState<string>('salesView_periodEnd', '');
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
   // Vendas antigas e já pagas não ficam carregadas por padrão (ver App.tsx); busca de
   // uma só vez para a sessão atual quando a pesquisa não encontra nada no que já está em memória.
@@ -327,8 +334,13 @@ export default function SalesView({
   const [revertSale, setRevertSale] = useState<Sale | null>(null);
   const [processingExpedite, setProcessingExpedite] = useState(false);
   const [separacaoSale, setSeparacaoSale] = useState<Sale | null>(null);
-  const [carrierPickerSaleId, setCarrierPickerSaleId] = useState<string | null>(null);
+  // addressIndex ausente = transportadora do endereço principal (Sale.carrierId); presente =
+  // transportadora de um endereço adicional específico (AdditionalDeliveryAddress.carrierId).
+  const [carrierPickerTarget, setCarrierPickerTarget] = useState<{ saleId: string; addressIndex?: number } | null>(null);
   const [carrierSearch, setCarrierSearch] = useState('');
+  // Mesmo padrão do carrierPickerTarget acima — addressIndex ausente = checklist do
+  // endereço principal (Sale.deliveryItems), presente = de um endereço adicional.
+  const [itemsPickerTarget, setItemsPickerTarget] = useState<{ saleId: string; addressIndex?: number } | null>(null);
   const [simplePreviewSale, setSimplePreviewSale] = useState<Sale | null>(null);
   const [transferSale, setTransferSale] = useState<Sale | null>(null);
   const [processingTransfer, setProcessingTransfer] = useState(false);
@@ -473,6 +485,51 @@ export default function SalesView({
     return map;
   }, [products]);
 
+  // Fonte única de "quanto ainda falta pagar" — a mesma conta usada no Resumo Financeiro
+  // do card (RESTANTE/PAGO) e na barra de métricas (A Receber). O campo `paymentStatus`
+  // gravado no pedido pode ficar desatualizado (ex.: total editado depois de marcado como
+  // pago, registros antigos sem o campo) — filtrar por ele em vez de recalcular deixava
+  // pedidos com saldo em aberto de fora do filtro "Pagamentos Pendentes" mesmo aparecendo
+  // na soma do "A Receber" (que já usa este cálculo).
+  const getSaleRemaining = (s: Sale) => {
+    const totalPaid = (s.paymentHistory || []).reduce((acc, p) => acc + (p.amount || 0), 0);
+    return s.total - totalPaid;
+  };
+
+  // Período selecionável — atalhos comuns (Hoje/7 dias/30 dias/Este Mês/Este Ano) +
+  // intervalo customizado. `null` = sem recorte (ALL).
+  const periodRange = useMemo((): { start: number | null; end: number | null } | null => {
+    if (periodPreset === 'ALL') return null;
+    const now = new Date();
+    const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const endOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999).getTime();
+    switch (periodPreset) {
+      case 'TODAY':
+        return { start: startOfDay(now), end: endOfDay(now) };
+      case '7D': {
+        const start = new Date(now);
+        start.setDate(start.getDate() - 6);
+        return { start: startOfDay(start), end: endOfDay(now) };
+      }
+      case '30D': {
+        const start = new Date(now);
+        start.setDate(start.getDate() - 29);
+        return { start: startOfDay(start), end: endOfDay(now) };
+      }
+      case 'MONTH':
+        return { start: startOfDay(new Date(now.getFullYear(), now.getMonth(), 1)), end: endOfDay(now) };
+      case 'YEAR':
+        return { start: startOfDay(new Date(now.getFullYear(), 0, 1)), end: endOfDay(now) };
+      case 'CUSTOM':
+        return {
+          start: periodStart ? new Date(`${periodStart}T00:00:00`).getTime() : null,
+          end: periodEnd ? new Date(`${periodEnd}T23:59:59`).getTime() : null,
+        };
+      default:
+        return null;
+    }
+  }, [periodPreset, periodStart, periodEnd]);
+
   const filteredSales = useMemo(() => {
     return effectiveSales.filter(s => {
       // Filter by Type (Retail/Wholesale)
@@ -481,10 +538,14 @@ export default function SalesView({
         if (!hasType) return false;
       }
 
-      // Filter by Payment Status
+      // Filter by Payment Status — via saldo calculado (ver getSaleRemaining acima), não
+      // pelo campo `paymentStatus` gravado (pode estar desatualizado). Orçamento não conta
+      // como "pendente" aqui (ainda não é uma venda confirmada) — mesmo critério do total
+      // "A Receber" da barra de métricas acima.
       if (paymentFilter !== 'ALL') {
-        if (paymentFilter === 'PAID' && s.paymentStatus !== PaymentStatus.PAID) return false;
-        if (paymentFilter === 'PENDING' && s.paymentStatus !== PaymentStatus.PENDING) return false;
+        const remaining = getSaleRemaining(s);
+        if (paymentFilter === 'PENDING' && (s.status === SaleStatus.QUOTE || remaining <= 0)) return false;
+        if (paymentFilter === 'PAID' && s.status !== SaleStatus.QUOTE && remaining > 0) return false;
       }
 
       // Filter by Delivery Status
@@ -499,21 +560,27 @@ export default function SalesView({
         return false;
       }
 
+      // Filter by Period
+      if (periodRange) {
+        if (periodRange.start !== null && s.date < periodRange.start) return false;
+        if (periodRange.end !== null && s.date > periodRange.end) return false;
+      }
+
       // Filter by Search Query (Name or ID)
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
         const cleanQuery = query.replace(/[()\-\s]/g, '');
         const cleanOrderNumber = s.orderNumber?.toLowerCase().replace(/[()\-\s]/g, '');
-        
+
         const matchesName = getCustomerName(s)?.toLowerCase().includes(query);
         const matchesId = cleanOrderNumber && cleanQuery ? cleanOrderNumber.includes(cleanQuery) : false;
-        
+
         if (!matchesName && !matchesId) return false;
       }
 
       return true;
     }).sort((a, b) => b.date - a.date); // Mais recentes primeiro
-  }, [effectiveSales, filter, paymentFilter, deliveryFilter, selectedStatuses, searchQuery]);
+  }, [effectiveSales, filter, paymentFilter, deliveryFilter, selectedStatuses, periodRange, searchQuery]);
 
   const getProductInfo = (productId: string) => productMap.get(productId);
 
@@ -800,7 +867,7 @@ export default function SalesView({
                   </span>
                 )}
               </div>
-              <span className="text-[10px] font-black tracking-[0.15em]">Configurar</span>
+              <span className="text-[10px] font-black tracking-[0.15em]">Filtros</span>
             </button>
 
             {/* Linha de baixo: Estoque + Disponível */}
@@ -810,7 +877,7 @@ export default function SalesView({
               title="Estoque de Produtos"
             >
               <Boxes size={18} strokeWidth={2.5} className={isIndustrial ? 'text-amber-600' : 'text-amber-500'} />
-              <span className="text-[10px] font-black tracking-[0.15em]">Configurações Est.</span>
+              <span className="text-[10px] font-black tracking-[0.15em]">Conf. Estoque</span>
             </button>
             <button
               onClick={onNavigateStockGlance}
@@ -965,8 +1032,10 @@ export default function SalesView({
           )}
         </div>
 
-        {/* Vendas antigas e já pagas não ficam carregadas por padrão — busca de uma vez sob demanda */}
-        {searchQuery.trim() && filteredSales.length === 0 && !olderSales && (
+        {/* Vendas antigas e já pagas não ficam carregadas por padrão — busca de uma vez sob demanda.
+            Mesmo gatilho quando um período customizado pode cair fora do que já está em
+            memória (a busca por texto já cobria isso; o período precisa da mesma saída). */}
+        {(searchQuery.trim() || periodPreset !== 'ALL') && filteredSales.length === 0 && !olderSales && (
           <button
             type="button"
             onClick={handleLoadFullHistory}
@@ -1151,6 +1220,58 @@ export default function SalesView({
                   );
                 })}
               </div>
+            </div>
+
+            {/* Período */}
+            <div className="flex flex-col gap-2 mt-2">
+              <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-500 dark:text-slate-400 ml-1">Período</p>
+              <div className="grid grid-cols-3 gap-1.5">
+                {([
+                  { v: 'ALL', label: 'Todos' },
+                  { v: 'TODAY', label: 'Hoje' },
+                  { v: '7D', label: '7 dias' },
+                  { v: '30D', label: '30 dias' },
+                  { v: 'MONTH', label: 'Este Mês' },
+                  { v: 'YEAR', label: 'Este Ano' },
+                  { v: 'CUSTOM', label: 'Personalizado' },
+                ] as const).map(({ v, label }) => {
+                  const active = periodPreset === v;
+                  return (
+                    <button key={v} type="button" onClick={() => setPeriodPreset(v)}
+                      className={`py-2.5 rounded-xl text-[10px] font-black tracking-wider transition-all border ${
+                        active
+                          ? 'bg-gradient-to-b from-teal-500 to-teal-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(20,184,166,0.5)] ring-1 ring-inset ring-white/20'
+                          : isDarkMode
+                            ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80'
+                            : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'
+                      }`}>
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              {periodPreset === 'CUSTOM' && (
+                <div className="flex items-center gap-2 mt-1">
+                  <div className="flex-1 space-y-1">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">De</label>
+                    <input
+                      type="date"
+                      value={periodStart}
+                      onChange={(e) => setPeriodStart(e.target.value)}
+                      className={`w-full h-10 rounded-xl px-3 text-xs font-bold border-2 border-transparent outline-none focus:border-teal-500 ${isDarkMode ? 'bg-slate-800/50 text-white' : 'bg-slate-50 text-slate-900'}`}
+                    />
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Até</label>
+                    <input
+                      type="date"
+                      value={periodEnd}
+                      onChange={(e) => setPeriodEnd(e.target.value)}
+                      className={`w-full h-10 rounded-xl px-3 text-xs font-bold border-2 border-transparent outline-none focus:border-teal-500 ${isDarkMode ? 'bg-slate-800/50 text-white' : 'bg-slate-50 text-slate-900'}`}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Visualização */}
@@ -1354,6 +1475,7 @@ export default function SalesView({
                     const isDeliveryOpen = expandedDeliveryIds.includes(sale.id);
                     const selectedCarrier = carriers.find(c => c.id === sale.carrierId);
                     return (
+                      <>
                       <div className={`flex flex-col gap-2 px-4 py-3 rounded-2xl ${isDarkMode ? 'bg-teal-900/10 border border-teal-800/30' : 'bg-teal-50/60 border border-teal-100'}`} onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
@@ -1392,7 +1514,7 @@ export default function SalesView({
                             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Transportadora</label>
                             <button
                               type="button"
-                              onClick={(e) => { e.stopPropagation(); setCarrierSearch(''); setCarrierPickerSaleId(sale.id); }}
+                              onClick={(e) => { e.stopPropagation(); setCarrierSearch(''); setCarrierPickerTarget({ saleId: sale.id }); }}
                               className={`w-full h-11 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent hover:border-teal-500 rounded-xl px-4 text-sm font-bold transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
                             >
                               <span className="truncate">{selectedCarrier ? selectedCarrier.name : 'Nenhuma — entregar pela rota do app'}</span>
@@ -1424,10 +1546,123 @@ export default function SalesView({
                           address={selectedCarrier ? selectedCarrier.address : sale.deliveryAddress}
                           priority={sale.deliveryPriority}
                           fieldsExpanded={isDeliveryOpen}
+                          locked={!!selectedCarrier}
                           onChange={(address) => selectedCarrier ? undefined : onUpdateDeliveryInfo(sale.id, { deliveryAddress: address })}
                           onPriorityChange={(priority) => onUpdateDeliveryInfo(sale.id, { deliveryPriority: priority })}
                         />
+                        {(() => {
+                          const items = sale.deliveryItems || [];
+                          const preview = items.length > 0 ? formatDeliveryItemsList(items, products) : '';
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setItemsPickerTarget({ saleId: sale.id })}
+                              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all active:scale-[0.98] ${items.length > 0 ? `text-left ${isDarkMode ? 'bg-teal-900/20 border border-teal-700' : 'bg-teal-50 border border-teal-200'}` : `justify-center border-2 border-dashed ${isDarkMode ? 'border-teal-800 text-teal-400 hover:bg-teal-900/20' : 'border-teal-200 text-teal-700 hover:bg-teal-50'}`}`}
+                            >
+                              {items.length > 0 ? <Pencil size={13} className="shrink-0 text-teal-600" /> : <ListChecks size={13} className="shrink-0" />}
+                              <span className={items.length > 0 ? 'min-w-0 flex-1' : ''}>
+                                {items.length > 0 ? (
+                                  <>
+                                    <span className="block text-[9px] font-black uppercase tracking-widest text-teal-600 dark:text-teal-400">Itens na Entrega ({items.length})</span>
+                                    <span className={`block text-[10px] font-bold truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{preview}</span>
+                                  </>
+                                ) : (
+                                  <span className="text-[10px] font-black uppercase tracking-widest">Itens na Entrega (opcional)</span>
+                                )}
+                              </span>
+                            </button>
+                          );
+                        })()}
+                        {/* Endereços de entrega adicionais — mesmo pedido, produtos a entregar em
+                            mais de um lugar (Sale.additionalDeliveryAddresses). Cada um pode ir
+                            direto ou por uma transportadora própria, independente do principal
+                            (inclusive quando o PRÓPRIO principal também vai por transportadora). */}
+                        {(sale.additionalDeliveryAddresses || []).map((entry, idx) => {
+                          const entryCarrier = entry.carrierId ? carriers.find(c => c.id === entry.carrierId) : undefined;
+                          return (
+                            <div key={idx} className={`flex flex-col gap-2 pt-3 mt-1 border-t ${isDarkMode ? 'border-teal-800/30' : 'border-teal-100'}`}>
+                              <div className="flex items-center justify-between gap-2 px-1">
+                                <span className="text-[10px] font-black text-teal-700 dark:text-teal-400 uppercase tracking-widest">
+                                  Endereço {idx + 2}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = (sale.additionalDeliveryAddresses || []).filter((_, i) => i !== idx);
+                                    onUpdateDeliveryInfo(sale.id, { additionalDeliveryAddresses: next });
+                                  }}
+                                  title="Remover este endereço"
+                                  className={`p-1.5 rounded-lg transition-all ${isDarkMode ? 'text-slate-500 hover:text-rose-400 hover:bg-rose-900/20' : 'text-slate-400 hover:text-rose-500 hover:bg-rose-50'}`}
+                                >
+                                  <X size={14} />
+                                </button>
+                              </div>
+                              {isDeliveryOpen && carriers.length > 0 && (
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Transportadora deste endereço</label>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setCarrierSearch(''); setCarrierPickerTarget({ saleId: sale.id, addressIndex: idx }); }}
+                                    className={`w-full h-11 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent hover:border-teal-500 rounded-xl px-4 text-sm font-bold transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                                  >
+                                    <span className="truncate">{entryCarrier ? entryCarrier.name : 'Nenhuma — entregar pela rota do app'}</span>
+                                    <ChevronDown size={16} className="text-slate-400 shrink-0" />
+                                  </button>
+                                </div>
+                              )}
+                              {entryCarrier && isDeliveryOpen && (
+                                <p className="text-[9px] font-bold text-teal-600 dark:text-teal-400 px-1">
+                                  Mostrando o endereço cadastrado da transportadora — edite o cadastro dela em Configurações de Entrega pra corrigir.
+                                </p>
+                              )}
+                              <DeliveryAddressForm
+                                isDarkMode={isDarkMode}
+                                address={entryCarrier ? entryCarrier.address : entry.address}
+                                fieldsExpanded={isDeliveryOpen}
+                                locked={!!entryCarrier}
+                                onChange={(address) => {
+                                  if (entryCarrier) return;
+                                  const next = [...(sale.additionalDeliveryAddresses || [])];
+                                  next[idx] = { ...entry, address };
+                                  onUpdateDeliveryInfo(sale.id, { additionalDeliveryAddresses: next });
+                                }}
+                              />
+                              {(() => {
+                                const items = entry.deliveryItems || [];
+                                const preview = items.length > 0 ? formatDeliveryItemsList(items, products) : '';
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => setItemsPickerTarget({ saleId: sale.id, addressIndex: idx })}
+                                    className={`flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all active:scale-[0.98] ${items.length > 0 ? `text-left ${isDarkMode ? 'bg-teal-900/20 border border-teal-700' : 'bg-teal-50 border border-teal-200'}` : `justify-center border-2 border-dashed ${isDarkMode ? 'border-teal-800 text-teal-400 hover:bg-teal-900/20' : 'border-teal-200 text-teal-700 hover:bg-teal-50'}`}`}
+                                  >
+                                    {items.length > 0 ? <Pencil size={13} className="shrink-0 text-teal-600" /> : <ListChecks size={13} className="shrink-0" />}
+                                    <span className={items.length > 0 ? 'min-w-0 flex-1' : ''}>
+                                      {items.length > 0 ? (
+                                        <>
+                                          <span className="block text-[9px] font-black uppercase tracking-widest text-teal-600 dark:text-teal-400">Itens na Entrega ({items.length})</span>
+                                          <span className={`block text-[10px] font-bold truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{preview}</span>
+                                        </>
+                                      ) : (
+                                        <span className="text-[10px] font-black uppercase tracking-widest">Itens na Entrega (opcional)</span>
+                                      )}
+                                    </span>
+                                  </button>
+                                );
+                              })()}
+                            </div>
+                          );
+                        })}
                       </div>
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onUpdateDeliveryInfo(sale.id, { additionalDeliveryAddresses: [...(sale.additionalDeliveryAddresses || []), { address: {} }] }); }}
+                        className="flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all active:scale-[0.98]"
+                      >
+                        <Plus size={13} />
+                        Adicionar Outro Ponto de Entrega no Pedido
+                      </button>
+                      </>
                     );
                   })()}
                 </div>
@@ -2639,9 +2874,9 @@ export default function SalesView({
 
       {/* Modal — Separação de Caixas */}
       <Modal
-        isOpen={!!carrierPickerSaleId}
-        onClose={() => setCarrierPickerSaleId(null)}
-        title="Escolher Transportadora"
+        isOpen={!!carrierPickerTarget}
+        onClose={() => setCarrierPickerTarget(null)}
+        title={carrierPickerTarget?.addressIndex !== undefined ? `Transportadora — Endereço ${carrierPickerTarget.addressIndex + 2}` : 'Escolher Transportadora'}
         icon={<Truck size={20} />}
         maxWidth="max-w-md"
         closeLabel="Fechar"
@@ -2656,35 +2891,109 @@ export default function SalesView({
             className={`w-full h-12 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-teal-500 rounded-2xl px-4 text-sm font-bold transition-all outline-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
           />
           <div className="flex flex-col gap-2 max-h-80 overflow-y-auto force-scrollbar">
-            <button
-              type="button"
-              onClick={() => { if (carrierPickerSaleId) onUpdateDeliveryInfo?.(carrierPickerSaleId, { carrierId: null }); setCarrierPickerSaleId(null); }}
-              className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-teal-700' : 'bg-white border-slate-100 hover:border-teal-200'}`}
-            >
-              <p className={`text-xs font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>Nenhuma — entregar pela rota do app</p>
-            </button>
-            {carriers.filter(c => c.name.toLowerCase().includes(carrierSearch.toLowerCase())).map(c => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => { if (carrierPickerSaleId) onUpdateDeliveryInfo?.(carrierPickerSaleId, { carrierId: c.id }); setCarrierPickerSaleId(null); }}
-                className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-teal-700' : 'bg-white border-slate-100 hover:border-teal-200'}`}
-              >
-                <div className={`p-2 rounded-lg shrink-0 ${isDarkMode ? 'bg-teal-900/30 text-teal-400' : 'bg-teal-50 text-teal-600'}`}>
-                  <Truck size={14} />
-                </div>
-                <div className="min-w-0">
-                  <p className={`text-sm font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{c.name}</p>
-                  {c.phone && <p className="text-[10px] font-bold text-slate-400">{c.phone}</p>}
-                </div>
-              </button>
-            ))}
+            {(() => {
+              const applyCarrier = (carrierId: string | null) => {
+                if (!carrierPickerTarget) return;
+                const { saleId, addressIndex } = carrierPickerTarget;
+                if (addressIndex === undefined) {
+                  onUpdateDeliveryInfo?.(saleId, { carrierId });
+                } else {
+                  const sale = sales.find(s => s.id === saleId);
+                  const next = [...(sale?.additionalDeliveryAddresses || [])];
+                  if (next[addressIndex]) {
+                    next[addressIndex] = { ...next[addressIndex], carrierId: carrierId || undefined };
+                  }
+                  onUpdateDeliveryInfo?.(saleId, { additionalDeliveryAddresses: next });
+                }
+                setCarrierPickerTarget(null);
+              };
+              return (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => applyCarrier(null)}
+                    className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-teal-700' : 'bg-white border-slate-100 hover:border-teal-200'}`}
+                  >
+                    <p className={`text-xs font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>Nenhuma — entregar pela rota do app</p>
+                  </button>
+                  {carriers.filter(c => c.name.toLowerCase().includes(carrierSearch.toLowerCase())).map(c => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => applyCarrier(c.id)}
+                      className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-teal-700' : 'bg-white border-slate-100 hover:border-teal-200'}`}
+                    >
+                      <div className={`p-2 rounded-lg shrink-0 ${isDarkMode ? 'bg-teal-900/30 text-teal-400' : 'bg-teal-50 text-teal-600'}`}>
+                        <Truck size={14} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-sm font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{c.name}</p>
+                        {c.phone && <p className="text-[10px] font-bold text-slate-400">{c.phone}</p>}
+                      </div>
+                    </button>
+                  ))}
+                </>
+              );
+            })()}
             {carriers.filter(c => c.name.toLowerCase().includes(carrierSearch.toLowerCase())).length === 0 && (
               <p className="text-[10px] font-bold text-slate-400 text-center py-4">Nenhuma transportadora encontrada.</p>
             )}
           </div>
         </div>
       </Modal>
+
+      {itemsPickerTarget && (() => {
+        const sale = sales.find(s => s.id === itemsPickerTarget.saleId);
+        if (!sale) return null;
+        const { addressIndex } = itemsPickerTarget;
+        const value = addressIndex === undefined
+          ? sale.deliveryItems
+          : sale.additionalDeliveryAddresses?.[addressIndex]?.deliveryItems;
+        const noteValue = addressIndex === undefined
+          ? sale.deliveryItemsNote
+          : sale.additionalDeliveryAddresses?.[addressIndex]?.deliveryItemsNote;
+
+        // Quanto de cada item já foi marcado em OUTROS endereços deste pedido (principal +
+        // demais adicionais, exceto o que está sendo editado agora) — abate do disponível
+        // aqui, pra não deixar escolher de novo o que já foi separado pra outra parada.
+        const allocatedElsewhere: Record<string, number> = {};
+        const addAllocations = (items: Sale['deliveryItems']) => {
+          (items || []).forEach(it => {
+            const k = deliveryItemKey(it);
+            allocatedElsewhere[k] = (allocatedElsewhere[k] || 0) + it.quantity;
+          });
+        };
+        if (addressIndex !== undefined) addAllocations(sale.deliveryItems);
+        (sale.additionalDeliveryAddresses || []).forEach((entry, idx) => {
+          if (idx === addressIndex) return;
+          addAllocations(entry.deliveryItems);
+        });
+
+        return (
+          <DeliveryItemsPicker
+            isDarkMode={isDarkMode}
+            isOpen
+            onClose={() => setItemsPickerTarget(null)}
+            title={addressIndex === undefined ? 'Itens na Entrega — Endereço Principal' : `Itens na Entrega — Endereço ${addressIndex + 2}`}
+            saleItems={sale.items}
+            products={products}
+            value={value}
+            noteValue={noteValue}
+            allocatedElsewhere={allocatedElsewhere}
+            onSave={(items, note) => {
+              if (addressIndex === undefined) {
+                onUpdateDeliveryInfo?.(sale.id, { deliveryItems: items, deliveryItemsNote: note || undefined });
+              } else {
+                const next = [...(sale.additionalDeliveryAddresses || [])];
+                if (next[addressIndex]) {
+                  next[addressIndex] = { ...next[addressIndex], deliveryItems: items, deliveryItemsNote: note || undefined };
+                  onUpdateDeliveryInfo?.(sale.id, { additionalDeliveryAddresses: next });
+                }
+              }
+            }}
+          />
+        );
+      })()}
 
       {separacaoSale && (
         <SeparacaoCaixasModal

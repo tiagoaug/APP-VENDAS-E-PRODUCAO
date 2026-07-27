@@ -4,6 +4,7 @@ import { Geolocation } from '@capacitor/geolocation';
 import { ArrowLeft, GripVertical, Route as RouteIcon, MapPin, CheckCircle2, Navigation, Map as MapIcon, Loader2, ChevronDown, ChevronUp, Milestone, AlertTriangle, LocateFixed, X, Plus, Hospital, Fuel, Wrench, MapPinned } from 'lucide-react';
 import { Carrier, DeliveryRoute, DeliveryStop, Product, Sale, StockLot } from '../types';
 import { bucketSalesByReadiness } from '../utils/salesReadiness';
+import { getMainStopLocation, getAdditionalStopLocations, getSaleStopLocations } from '../utils/deliverySaleStops';
 import { optimizeRoute } from '../utils/deliveryRouteOptimizer';
 import { getRoadRoute, RoadRouteResult } from '../utils/deliveryRoadRoute';
 import { searchNearbyPOI, POICategory, POIResult, POI_CATEGORY_LABELS } from '../utils/deliveryPoiSearch';
@@ -58,6 +59,7 @@ function StopCard({ stop, sale, stopSales, carrierName, isDarkMode, index }: { s
       <div className="flex-1 min-w-0">
         <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
           {carrierName ? `${carrierName} (transportadora)` : (stop.label || sale?.customerName || sale?.orderNumber || 'Pedido')}
+          {stop.addressLabel && ` · ${stop.addressLabel}`}
         </p>
         <p className="text-[10px] font-bold text-slate-400 truncate">
           {stop.saleId
@@ -192,10 +194,11 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
   const previewMarkers = useMemo(() => {
     const stopMarkers = (orderedStops || []).map((s, i) => {
       const stopSale = sales.find(sale => sale.id === s.saleId);
-      const carrierName = stopSale?.carrierId ? carriers.find(c => c.id === stopSale.carrierId)?.name : undefined;
+      const effectiveCarrierId = s.carrierId || stopSale?.carrierId;
+      const carrierName = effectiveCarrierId ? carriers.find(c => c.id === effectiveCarrierId)?.name : undefined;
       const stopLabel = carrierName
-        ? `${carrierName}${(s.saleIds?.length || 0) > 1 ? ` (${s.saleIds!.length} pedidos)` : ''}`
-        : (stopSale?.customerName || s.label || `Parada ${i + 1}`);
+        ? `${carrierName}${(s.saleIds?.length || 0) > 1 ? ` (${s.saleIds!.length} pedidos)` : ''}${s.addressLabel ? ` · ${s.addressLabel}` : ''}`
+        : `${stopSale?.customerName || s.label || `Parada ${i + 1}`}${s.addressLabel ? ` · ${s.addressLabel}` : ''}`;
       return {
         id: s.id,
         lat: s.lat,
@@ -265,21 +268,12 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
 
   const { prontos } = useMemo(() => bucketSalesByReadiness(sales, stockLots, products), [sales, stockLots, products]);
 
-  // Pedido com transportadora escolhida continua indo pela rota — o motorista leva ATÉ a
-  // transportadora, que faz a última milha depois. Nesse caso a parada usa o endereço
-  // CADASTRADO da transportadora como destino, não o endereço do cliente final.
+  // Só o primeiro ponto de entrega do pedido — usado onde só faz sentido um lugar só
+  // (elegibilidade, centro de busca de POI). Pra todas as paradas que o pedido gera de
+  // fato (endereço principal + adicionais), ver getSaleStopLocations.
   const getStopLocation = (sale: Sale): { lat: number; lng: number } | null => {
-    if (sale.carrierId) {
-      const carrier = carriers.find(c => c.id === sale.carrierId);
-      if (carrier?.address?.lat !== undefined && carrier?.address?.lng !== undefined) {
-        return { lat: carrier.address.lat, lng: carrier.address.lng };
-      }
-      return null;
-    }
-    if (sale.deliveryAddress?.lat !== undefined && sale.deliveryAddress?.lng !== undefined) {
-      return { lat: sale.deliveryAddress.lat, lng: sale.deliveryAddress.lng };
-    }
-    return null;
+    const [first] = getSaleStopLocations(sale, carriers);
+    return first ? { lat: first.lat, lng: first.lng } : null;
   };
 
   const eligibleSales = useMemo(
@@ -366,9 +360,11 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
     });
 
     const stops: WorkingStop[] = [
-      ...directSales.map((s): WorkingStop => {
-        const loc = getStopLocation(s)!;
-        return {
+      // Endereço PRINCIPAL de quem não usa transportadora — parada direta, uma por pedido.
+      ...directSales.flatMap((s): WorkingStop[] => {
+        const loc = getMainStopLocation(s, carriers);
+        if (!loc) return [];
+        return [{
           id: generateId(),
           saleId: s.id,
           saleIds: [s.id],
@@ -377,10 +373,16 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
           lng: loc.lng,
           priority: s.deliveryPriority === 'URGENT' ? 'URGENT' : 'NORMAL',
           status: 'PENDING',
-        };
+          ...(loc.deliveryItems ? { deliveryItems: loc.deliveryItems } : {}),
+          ...(loc.deliveryItemsNote ? { deliveryItemsNote: loc.deliveryItemsNote } : {}),
+        }];
       }),
+      // Dois ou mais pedidos com o MESMO endereço principal via transportadora agrupados
+      // numa parada só (ver comentário acima). Checklist de itens só é levado quando é UM
+      // pedido só nessa parada — com vários pedidos agrupados não dá pra saber de qual
+      // pedido é cada item sem misturar as listas.
       ...Array.from(carrierGroups.values()).map((group): WorkingStop => {
-        const loc = getStopLocation(group[0])!;
+        const loc = getMainStopLocation(group[0], carriers)!;
         return {
           id: generateId(),
           saleId: group[0].id,
@@ -390,8 +392,29 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
           lng: loc.lng,
           priority: group.some(s => s.deliveryPriority === 'URGENT') ? 'URGENT' : 'NORMAL',
           status: 'PENDING',
+          ...(group.length === 1 && loc.deliveryItems ? { deliveryItems: loc.deliveryItems } : {}),
+          ...(group.length === 1 && loc.deliveryItemsNote ? { deliveryItemsNote: loc.deliveryItemsNote } : {}),
         };
       }),
+      // Endereços ADICIONAIS (Sale.additionalDeliveryAddresses) — sempre uma parada
+      // individual por endereço, de QUALQUER pedido escolhido (direto ou via transportadora
+      // no endereço principal não importa aqui; cada adicional decide por si só).
+      ...chosen.flatMap((s): WorkingStop[] =>
+        getAdditionalStopLocations(s, carriers).map((loc): WorkingStop => ({
+          id: generateId(),
+          saleId: s.id,
+          saleIds: [s.id],
+          order: 0,
+          lat: loc.lat,
+          lng: loc.lng,
+          priority: s.deliveryPriority === 'URGENT' ? 'URGENT' : 'NORMAL',
+          status: 'PENDING',
+          ...(loc.addressLabel ? { addressLabel: loc.addressLabel } : {}),
+          ...(loc.carrierId ? { carrierId: loc.carrierId } : {}),
+          ...(loc.deliveryItems ? { deliveryItems: loc.deliveryItems } : {}),
+          ...(loc.deliveryItemsNote ? { deliveryItemsNote: loc.deliveryItemsNote } : {}),
+        }))
+      ),
       ...manualStops.map((m): WorkingStop => ({
         id: m.id,
         label: m.label,
@@ -647,7 +670,8 @@ export default function DeliveryRouteBuilderView({ sales, products, stockLots, c
                 .map(id => sales.find(s => s.id === id))
                 .filter((s): s is Sale => !!s);
               const stopSale = stopSales[0];
-              const carrierName = stopSale?.carrierId ? carriers.find(c => c.id === stopSale.carrierId)?.name : undefined;
+              const effectiveCarrierId = stop.carrierId || stopSale?.carrierId;
+              const carrierName = effectiveCarrierId ? carriers.find(c => c.id === effectiveCarrierId)?.name : undefined;
               return (
                 <StopCard key={stop.id} stop={stop} sale={stopSale} stopSales={stopSales} carrierName={carrierName} isDarkMode={isDarkMode} index={i} />
               );

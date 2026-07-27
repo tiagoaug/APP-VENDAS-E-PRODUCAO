@@ -5,7 +5,7 @@ import {
   Plus,
   Package,
   Calendar,
-  History,
+  History, A
   Trash2,
   Edit2,
   X,
@@ -141,7 +141,7 @@ export default function PurchasesView({
     return effectivePurchases.filter(purchase => {
       // Filter by type
       if (typeFilter !== 'ALL' && purchase.type !== typeFilter) return false;
-      
+
       // Filter by period
       if (periodFilter && purchase.date) {
         const pDate = new Date(purchase.date);
@@ -152,18 +152,18 @@ export default function PurchasesView({
           return false;
         }
       }
-      
+
       // Filter by supplier / search
       if (searchQuery.trim()) {
         const supplier = suppliers.find((s) => s.id === purchase.supplierId);
         const lowerSearch = searchQuery.toLowerCase();
-        
+
         const supplierMatch = supplier?.name.toLowerCase().includes(lowerSearch);
         const noteMatch = purchase.notes?.toLowerCase().includes(lowerSearch);
-        
+
         if (!supplierMatch && !noteMatch) return false;
       }
-      
+
       return true;
     }).sort((a, b) => b.date - a.date);
   }, [effectivePurchases, suppliers, typeFilter, periodFilter, searchQuery]);
@@ -357,8 +357,8 @@ export default function PurchasesView({
                   const count = selectedPurchaseForItems.type === PurchaseType.GENERAL
                     ? (selectedPurchaseForItems.generalItems?.length || 0)
                     : selectedPurchaseForItems.type === PurchaseType.SOLE
-                    ? (selectedPurchaseForItems.soleItems?.length || 0)
-                    : (selectedPurchaseForItems.items?.length || 0);
+                      ? (selectedPurchaseForItems.soleItems?.length || 0)
+                      : (selectedPurchaseForItems.items?.length || 0);
                   return (
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
                       {count} {count === 1 ? 'item' : 'itens'}
@@ -380,8 +380,8 @@ export default function PurchasesView({
               {selectedPurchaseForItems.type === PurchaseType.GENERAL
                 ? selectedPurchaseForItems.generalItems?.map((item, idx) => renderGeneralItemRow(item, idx))
                 : selectedPurchaseForItems.type === PurchaseType.SOLE
-                ? selectedPurchaseForItems.soleItems?.map((item: any, idx) => renderPurchaseItemRow(item, idx))
-                : selectedPurchaseForItems.items?.map((item: any, idx) => renderPurchaseItemRow(item, idx))}
+                  ? selectedPurchaseForItems.soleItems?.map((item: any, idx) => renderPurchaseItemRow(item, idx))
+                  : selectedPurchaseForItems.items?.map((item: any, idx) => renderPurchaseItemRow(item, idx))}
             </div>
             <div className="flex items-center justify-between gap-2 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total</span>
@@ -504,13 +504,13 @@ export default function PurchasesView({
               >
                 <option value="">Todos os Meses</option>
                 {availableMonths.map(month => {
-                   const [y, m] = month.split('-');
-                   const date = new Date(parseInt(y), parseInt(m)-1);
-                   return (
-                     <option key={month} value={month}>
-                       {format(date, 'MMM yy', { locale: ptBR })}
-                     </option>
-                   )
+                  const [y, m] = month.split('-');
+                  const date = new Date(parseInt(y), parseInt(m) - 1);
+                  return (
+                    <option key={month} value={month}>
+                      {format(date, 'MMM yy', { locale: ptBR })}
+                    </option>
+                  )
                 })}
               </select>
             </div>
@@ -547,9 +547,9 @@ export default function PurchasesView({
           const itemCount = purchase.type === PurchaseType.GENERAL
             ? (purchase.generalItems?.length || 0)
             : purchase.type === PurchaseType.SOLE
-            ? (purchase.soleItems?.length || 0)
-            : (purchase.items?.length || 0);
-          
+              ? (purchase.soleItems?.length || 0)
+              : (purchase.items?.length || 0);
+
           const isLate = purchase.dueDate && new Date(purchase.dueDate) < new Date() && purchase.paymentStatus !== PaymentStatus.PAID;
           const isExpanded = expandedCards || expandedIds.includes(purchase.id);
 
@@ -653,52 +653,51 @@ export default function PurchasesView({
 
               {/* Conteúdo: cheques + itens */}
               {isExpanded && (
-              <div className="flex flex-col z-10 gap-2 pt-3 border-t border-slate-100 dark:border-slate-800/50">
-                {purchase.checks && purchase.checks.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedPurchaseForChecks(purchase);
-                      setIsChecksModalOpen(true);
-                    }}
-                    title="Ver Histórico de Cheques"
-                    aria-label="Ver Histórico de Cheques"
-                    className={`py-2 px-3 rounded-xl border flex items-center gap-2 text-xs font-black tracking-widest transition-all active:scale-[0.98] w-fit ${
-                      isDarkMode
-                        ? 'bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/20'
-                        : 'bg-blue-50 border-blue-100 text-blue-600 hover:bg-blue-100 shadow-sm'
-                    }`}
-                  >
-                    <Clipboard size={14} strokeWidth={3} />
-                    Histórico de Cheques
-                  </button>
-                )}
+                <div className="flex flex-col z-10 gap-2 pt-3 border-t border-slate-100 dark:border-slate-800/50">
+                  {purchase.checks && purchase.checks.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedPurchaseForChecks(purchase);
+                        setIsChecksModalOpen(true);
+                      }}
+                      title="Ver Histórico de Cheques"
+                      aria-label="Ver Histórico de Cheques"
+                      className={`py-2 px-3 rounded-xl border flex items-center gap-2 text-xs font-black tracking-widest transition-all active:scale-[0.98] w-fit ${isDarkMode
+                          ? 'bg-blue-500/10 border-blue-500/20 text-blue-400 hover:bg-blue-500/20'
+                          : 'bg-blue-50 border-blue-100 text-blue-600 hover:bg-blue-100 shadow-sm'
+                        }`}
+                    >
+                      <Clipboard size={14} strokeWidth={3} />
+                      Histórico de Cheques
+                    </button>
+                  )}
 
-                {showItems && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedPurchaseForItems(purchase);
-                    }}
-                    title="Ver carrinho de compras completo"
-                    aria-label="Ver carrinho de compras completo"
-                    className={`flex flex-col gap-1.5 text-left rounded-2xl p-2 transition-colors active:scale-[0.99] ${isDarkMode ? 'bg-slate-950/40 hover:bg-slate-800/60' : 'bg-slate-50/80 hover:bg-slate-100'}`}
-                  >
-                    {purchase.type === PurchaseType.GENERAL
-                      ? purchase.generalItems?.slice(0, 5).map((item, idx) => renderGeneralItemRow(item, idx))
-                      : purchase.type === PurchaseType.SOLE
-                      ? purchase.soleItems?.slice(0, 5).map((item: any, idx) => renderPurchaseItemRow(item, idx))
-                      : purchase.items?.slice(0, 5).map((item: any, idx) => renderPurchaseItemRow(item, idx))}
-                    {itemCount > 5 && (
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 italic">
-                        + {itemCount - 5} outros itens
-                      </span>
-                    )}
-                  </button>
-                )}
-              </div>
+                  {showItems && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedPurchaseForItems(purchase);
+                      }}
+                      title="Ver carrinho de compras completo"
+                      aria-label="Ver carrinho de compras completo"
+                      className={`flex flex-col gap-1.5 text-left rounded-2xl p-2 transition-colors active:scale-[0.99] ${isDarkMode ? 'bg-slate-950/40 hover:bg-slate-800/60' : 'bg-slate-50/80 hover:bg-slate-100'}`}
+                    >
+                      {purchase.type === PurchaseType.GENERAL
+                        ? purchase.generalItems?.slice(0, 5).map((item, idx) => renderGeneralItemRow(item, idx))
+                        : purchase.type === PurchaseType.SOLE
+                          ? purchase.soleItems?.slice(0, 5).map((item: any, idx) => renderPurchaseItemRow(item, idx))
+                          : purchase.items?.slice(0, 5).map((item: any, idx) => renderPurchaseItemRow(item, idx))}
+                      {itemCount > 5 && (
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest ml-1 italic">
+                          + {itemCount - 5} outros itens
+                        </span>
+                      )}
+                    </button>
+                  )}
+                </div>
               )}
 
               {/* Action Bar (Footer) */}
@@ -784,7 +783,7 @@ export default function PurchasesView({
         const p = selectedPurchaseForChecks;
         if (!p) return null;
         return (
-          <ChecksModal 
+          <ChecksModal
             isOpen={isChecksModalOpen}
             onClose={() => {
               setIsChecksModalOpen(false);
@@ -795,16 +794,16 @@ export default function PurchasesView({
             isDarkMode={isDarkMode}
             onUpdateCheque={(chequeId, newStatus) => {
               if (!p.checks) return;
-              
-              const updatedChecks = p.checks.map(c => 
+
+              const updatedChecks = p.checks.map(c =>
                 c.id === chequeId ? { ...c, status: newStatus } : c
               );
-              
+
               const updatedPurchase = {
                 ...p,
                 checks: updatedChecks
               };
-              
+
               onUpdate(updatedPurchase);
               setSelectedPurchaseForChecks(updatedPurchase);
             }}

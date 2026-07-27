@@ -14,16 +14,57 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 // arquivo que não existe, o worker nunca carrega, e o mapa fica preso pra sempre
 // "carregando" (sem nenhum erro visível — busca de tile pelo processo principal funciona
 // normal, só a DECODIFICAÇÃO no worker é que nunca acontece). O `?url` abaixo faz o Vite
-// emitir o arquivo do worker como um asset físico de verdade e devolver a URL real dele,
-// que passamos pro MapLibre usar em vez de tentar adivinhar sozinho.
+// emitir o arquivo do worker (e do chunk que ele importa) como asset físico de verdade e
+// devolver a URL real de cada um — usadas em buildSelfContainedWorkerUrl abaixo.
 // eslint-disable-next-line import/no-unresolved
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url';
+// eslint-disable-next-line import/no-unresolved
+import maplibreSharedUrl from 'maplibre-gl/dist/maplibre-gl-shared.mjs?url';
 import { Geolocation } from '@capacitor/geolocation';
 import { LocateFixed, Loader2 } from 'lucide-react';
 import { toast } from '../utils/toast';
 import type { DeliveryMapMarker } from './DeliveryMap';
 
-maplibregl.setWorkerUrl(maplibreWorkerUrl);
+// O arquivo do worker importa 1 chunk irmão (`./maplibre-gl-shared.mjs`) — apontar o worker
+// direto pra URL física de ambos ainda deixa a THREAD DO WORKER responsável por buscar esse
+// import na hora de rodar. Numa WebView Android específica (app servido sob o esquema
+// virtual do Capacitor, https://localhost, interceptado internamente pra devolver os
+// arquivos locais), requisições de rede feitas DE DENTRO da thread do worker não batem nesse
+// mesmo mecanismo de interceptação — o worker nunca termina de carregar e NENHUM erro
+// aparece (a thread principal, que busca o estilo/JSON do mapa, não tem esse problema: por
+// isso o fundo do estilo aparece normal, mas nenhuma rua/rótulo — só o worker que decodifica
+// os tiles vetoriais nunca roda). Buscando o texto de ambos os arquivos pela THREAD
+// PRINCIPAL (mesmo mecanismo que já busca o estilo, comprovadamente funcional) e reescrevendo
+// o import relativo do worker pra apontar pro chunk irmão já como um blob local, o worker
+// final não precisa fazer NENHUMA requisição de rede por conta própria pra começar a rodar.
+let selfContainedWorkerUrlPromise: Promise<string> | null = null;
+async function buildSelfContainedWorkerUrl(): Promise<string> {
+  const [sharedRes, workerRes] = await Promise.all([fetch(maplibreSharedUrl), fetch(maplibreWorkerUrl)]);
+  if (!sharedRes.ok) throw new Error(`Falha ao buscar maplibre-gl-shared.mjs (${sharedRes.status})`);
+  if (!workerRes.ok) throw new Error(`Falha ao buscar maplibre-gl-worker.mjs (${workerRes.status})`);
+  const [sharedCode, workerCode] = await Promise.all([sharedRes.text(), workerRes.text()]);
+  const sharedBlobUrl = URL.createObjectURL(new Blob([sharedCode], { type: 'text/javascript' }));
+  const importPattern = 'from"./maplibre-gl-shared.mjs"';
+  if (!workerCode.includes(importPattern)) {
+    throw new Error('Padrão de import do worker não encontrado — versão do maplibre-gl mudou?');
+  }
+  const patchedWorkerCode = workerCode.replace(importPattern, `from${JSON.stringify(sharedBlobUrl)}`);
+  return URL.createObjectURL(new Blob([patchedWorkerCode], { type: 'text/javascript' }));
+}
+
+// Cacheado no módulo — só monta o blob uma vez mesmo que várias instâncias do mapa 3D sejam
+// criadas na mesma sessão. Se o empacotamento falhar por qualquer motivo (fetch, formato
+// inesperado), cai de volta pra URL direta (comportamento de antes, funciona nos ambientes
+// onde a thread do worker consegue buscar esse import sozinha).
+function ensureWorkerUrlConfigured(): Promise<void> {
+  if (!selfContainedWorkerUrlPromise) {
+    selfContainedWorkerUrlPromise = buildSelfContainedWorkerUrl().catch((err) => {
+      console.warn('[DeliveryMapGL] Não foi possível empacotar o worker autocontido, usando URL direta', err);
+      return maplibreWorkerUrl;
+    });
+  }
+  return selfContainedWorkerUrlPromise.then((url) => { maplibregl.setWorkerUrl(url); });
+}
 
 const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty';
 
@@ -72,6 +113,24 @@ function labelElement(text: string, isDarkMode: boolean): HTMLDivElement {
 const POLYLINE_SOURCE_ID = 'delivery-route-line';
 const POLYLINE_LAYER_ID = 'delivery-route-line-layer';
 
+// MapLibre precisa de um contexto WebGL — a checagem em si já força a criação do contexto,
+// então cacheia o resultado (chamar de novo criaria um 2º contexto à toa). Sem isso, um
+// aparelho/WebView sem suporte (comum em WebView do sistema desatualizada no Android) faz o
+// construtor do maplibregl.Map JOGAR uma exceção SÍNCRONA antes de `map.on('error', ...)`
+// sequer existir — o try/catch no buildMap pega a exceção, mas sem essa checagem prévia a
+// mensagem de erro tende a ser um texto técnico do WebGL em vez de algo que explique a causa.
+let webglSupportCache: boolean | null = null;
+function supportsWebGL(): boolean {
+  if (webglSupportCache !== null) return webglSupportCache;
+  try {
+    const canvas = document.createElement('canvas');
+    webglSupportCache = !!(canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl'));
+  } catch {
+    webglSupportCache = false;
+  }
+  return webglSupportCache;
+}
+
 export default function DeliveryMapGL({
   isDarkMode,
   height,
@@ -92,6 +151,16 @@ export default function DeliveryMapGL({
   // Falha de carregamento (tile/estilo/fonte) hoje ficava silenciosa — o mapa só parecia
   // "vazio" sem explicar por quê. Mostra o motivo real na tela pra dar pra diagnosticar.
   const [mapError, setMapError] = useState<string | null>(null);
+  // A criação do mapa agora espera o worker autocontido ficar pronto (ensureWorkerUrlConfigured,
+  // assíncrono) antes de existir de verdade — os efeitos abaixo (marker/flyTo/markers/polyline)
+  // podem rodar sua primeira vez ENQUANTO isso ainda está pendente e `mapRef.current` continua
+  // null, saindo no primeiro `if (!map) return` sem nunca serem re-executados depois (typescript
+  // não avisa: props como `polyline` só mudam de referência quando o dado de origem muda de
+  // verdade, então sem esse re-disparo a rota simplesmente nunca aparecia, mesmo com o mapa já
+  // pronto — só pins que são recriados a cada render "por acaso" acabavam aparecendo mesmo
+  // assim). Este flag garante que todo efeito dependente do mapa rode de novo assim que ele
+  // ficar pronto, não só quando os PRÓPRIOS dados mudarem.
+  const [isMapReady, setIsMapReady] = useState(false);
 
   const initialCenter = marker || (markers && markers.length > 0 ? markers[0] : fallbackCenter);
   // Mais fechado que o modo 2D (15) — em zoom 15 a rua ficava fina/quase invisível contra o
@@ -115,18 +184,39 @@ export default function DeliveryMapGL({
     let cleanupMap: (() => void) | null = null;
     let cancelled = false;
 
-    const buildMap = () => {
+    const buildMap = async () => {
       if (cancelled || map || !containerRef.current) return;
-      map = new maplibregl.Map({
-        container: containerRef.current,
-        style: STYLE_URL,
-        center: [initialCenter.lng, initialCenter.lat],
-        zoom: initialZoom,
-        pitch: initialPitch,
-        attributionControl: { compact: true },
-      });
+
+      if (!supportsWebGL()) {
+        setMapError('Este aparelho não suporta o mapa 3D (sem WebGL) — use o mapa 2D.');
+        return;
+      }
+
+      await ensureWorkerUrlConfigured();
+      if (cancelled || map || !containerRef.current) return;
+
+      // O construtor do MapLibre pode jogar uma exceção SÍNCRONA (não um evento 'error') se
+      // falhar ao criar o contexto WebGL ou o worker de decodificação — sem este try/catch,
+      // isso quebrava silenciosamente (nada na tela, nenhuma mensagem) em vez de mostrar o
+      // motivo real. É o caso mais comum de "não renderiza" numa WebView Android específica.
+      try {
+        map = new maplibregl.Map({
+          container: containerRef.current,
+          style: STYLE_URL,
+          center: [initialCenter.lng, initialCenter.lat],
+          zoom: initialZoom,
+          pitch: initialPitch,
+          attributionControl: { compact: true },
+        });
+      } catch (err: any) {
+        console.error('[DeliveryMapGL] Falha ao criar o mapa 3D', err);
+        setMapError(err?.message || 'Não foi possível iniciar o mapa 3D neste aparelho.');
+        return;
+      }
+
       map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-left');
       mapRef.current = map;
+      setIsMapReady(true);
 
       map.on('error', (e) => {
         console.error('[DeliveryMapGL]', e.error);
@@ -189,7 +279,7 @@ export default function DeliveryMapGL({
       markerRef.current.setLngLat([marker.lng, marker.lat]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [marker?.lat, marker?.lng]);
+  }, [marker?.lat, marker?.lng, isMapReady]);
 
   // Voa até o alvo de uma busca/colagem bem-sucedida — mesmo padrão do modo 2D.
   useEffect(() => {
@@ -197,7 +287,7 @@ export default function DeliveryMapGL({
     if (!map || !flyTo || flyTo.signal === 0) return;
     map.flyTo({ center: [flyTo.lng, flyTo.lat], zoom: Math.max(map.getZoom(), 15), duration: 800 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flyTo?.signal]);
+  }, [flyTo?.signal, isMapReady]);
 
   // Marcadores fixos (paradas de rota) — recriados do zero a cada mudança da lista, mais
   // simples que reconciliar item a item pra uma lista que muda pouco (seleção de paradas).
@@ -212,7 +302,7 @@ export default function DeliveryMapGL({
       return new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([m.lng, m.lat]).addTo(map);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [markers, isDarkMode]);
+  }, [markers, isDarkMode, isMapReady]);
 
   // Linha da rota — GeoJSON source/layer adicionados uma vez, atualizados via setData.
   useEffect(() => {
@@ -241,7 +331,7 @@ export default function DeliveryMapGL({
 
     if (map.isStyleLoaded()) applyLine();
     else map.once('load', applyLine);
-  }, [polyline]);
+  }, [polyline, isMapReady]);
 
   const locate = async () => {
     const map = mapRef.current;
