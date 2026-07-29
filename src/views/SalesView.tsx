@@ -213,6 +213,7 @@ export default function SalesView({
   // Colapsa "Localização de Entrega" por padrão — os campos em lista (um por linha, telas
   // estreitas) ocupam bastante altura, e nem toda venda mexe com Entregas.
   const [expandedDeliveryIds, setExpandedDeliveryIds] = useState<string[]>([]);
+  const [sentToDeliveryIds, setSentToDeliveryIds] = useState<string[]>([]);
   const [showCrossCheckCard, setShowCrossCheckCard] = usePersistedToggle('salesView_showCrossCheckCard', false);
 
   const crossCheckData = useMemo(() => {
@@ -1508,11 +1509,21 @@ export default function SalesView({
                         ) && (
                           <button
                             type="button"
-                            onClick={() => onSendToRouteBuilder(sale.id)}
-                            className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 bg-orange-500 text-white hover:bg-orange-600"
+                            onClick={() => {
+                              setSentToDeliveryIds(prev => prev.includes(sale.id) ? prev : [...prev, sale.id]);
+                              toast.warning('Enviado para a entrega');
+                              setTimeout(() => {
+                                setSentToDeliveryIds(prev => prev.filter(id => id !== sale.id));
+                              }, 2500);
+                            }}
+                            className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${
+                              sentToDeliveryIds.includes(sale.id)
+                                ? 'bg-amber-500 text-white'
+                                : 'bg-orange-500 text-white hover:bg-orange-600'
+                            }`}
                           >
-                            <Truck size={13} />
-                            Enviar para Entrega
+                            {sentToDeliveryIds.includes(sale.id) ? <Check size={13} /> : <Truck size={13} />}
+                            {sentToDeliveryIds.includes(sale.id) ? 'Enviado' : 'Enviar para Entrega'}
                           </button>
                         )}
                         {isDeliveryOpen && carriers.length > 0 && (

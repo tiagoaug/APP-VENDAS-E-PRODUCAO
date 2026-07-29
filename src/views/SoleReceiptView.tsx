@@ -482,11 +482,11 @@ export default function SoleReceiptView({
           </div>
         </section>
 
-        {/* HISTÓRICO POPUP */}
+        {/* HISTÓRICO POPUP — lista vertical com cards grandes */}
         {showReceived && (
-          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowReceived(false)} />
-            <div className={`relative w-full max-w-lg max-h-[80vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+            <div className={`relative w-full max-w-2xl h-[85vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
               <div className="flex items-center justify-between px-6 py-5 border-b border-slate-100 dark:border-slate-800 shrink-0">
                 <div>
                   <h3 className="text-sm font-black uppercase tracking-wider text-slate-800 dark:text-white">Histórico de Recebimentos</h3>
@@ -496,69 +496,77 @@ export default function SoleReceiptView({
                   <X size={18} />
                 </button>
               </div>
-              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-                {historyList.map(p => {
-                  const sup = suppliers.find(s => s.id === p.supplierId);
-                  const soleItems = getSoleItems(p);
-                  const formattedDate = p.date ? format(new Date(p.date), 'dd/MM/yyyy', { locale: ptBR }) : '---';
-                  return (
-                    <div key={p.id} className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                      <div className="px-4 pt-3 pb-2 flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-black uppercase tracking-wide text-slate-800 dark:text-white truncate">{sup?.name || 'Fornecedor'}</p>
-                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{formattedDate} · {p.batchNumber} · R$ {p.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+
+              {historyList.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <p className="text-center text-xs text-slate-400">Nenhum recebimento registrado ainda.</p>
+                </div>
+              ) : (
+                <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-5">
+                  {historyList.map(p => {
+                    const sup = suppliers.find(s => s.id === p.supplierId);
+                    const soleItems = getSoleItems(p);
+                    const formattedDate = p.date ? format(new Date(p.date), 'dd/MM/yyyy', { locale: ptBR }) : '---';
+                    return (
+                      <div key={p.id}
+                        className={`shrink-0 flex flex-col rounded-3xl border overflow-hidden ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}
+                      >
+                        <div className="px-5 pt-5 pb-3 shrink-0">
+                          <p className="text-lg font-black uppercase tracking-wide text-slate-800 dark:text-white truncate">{sup?.name || 'Fornecedor'}</p>
+                          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{formattedDate} · {p.batchNumber}</span>
                             {p.registerAsReceived
                               ? <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-md uppercase tracking-widest">Total</span>
                               : <span className="text-[10px] font-black text-amber-600 bg-amber-50 dark:bg-amber-900/30 px-2 py-0.5 rounded-md uppercase tracking-widest">Parcial</span>
                             }
                           </div>
+                          <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-2">
+                            R$ {p.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                          </p>
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
+
+                        {soleItems.length > 0 && (
+                          <div className={`mx-4 mb-4 p-4 rounded-2xl ${isDarkMode ? 'bg-slate-900/50' : 'bg-white border border-slate-100'}`}>
+                            {soleItems.map((item: any, idx: number) => {
+                              const receivedQtys: Record<string, number> = item.totalReceivedQtys || item.quantities || {};
+                              const totalRec = Object.values(receivedQtys).reduce((a: number, b: any) => a + Number(b), 0);
+                              return (
+                                <div key={idx} className={idx > 0 ? 'mt-3 pt-3 border-t border-slate-100 dark:border-slate-800' : ''}>
+                                  <div className="flex items-center justify-between mb-3">
+                                    <p className="text-sm font-black text-slate-700 dark:text-slate-200">{item.moldName}</p>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-bold text-violet-500 uppercase">{item.colorName}</span>
+                                      <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full">{totalRec} PAR</span>
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-col gap-2">
+                                    {Object.entries(receivedQtys).filter(([, qty]) => Number(qty) > 0).map(([size, qty]: [string, any]) => (
+                                      <div key={size} className="flex items-center justify-between">
+                                        <span className="text-sm font-black text-slate-600 dark:text-slate-300">{size}</span>
+                                        <span className="text-sm font-black text-slate-800 dark:text-white">{qty} pares</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        <div className="px-4 pb-5 shrink-0">
                           <button type="button" onClick={() => openRevertModal(p)}
-                            className="px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 text-rose-500 border border-rose-100 dark:border-rose-800/40 hover:bg-rose-100 active:scale-95 transition-all flex items-center gap-2"
+                            className="w-full py-3 rounded-2xl text-sm font-black uppercase tracking-widest bg-rose-50 dark:bg-rose-900/20 text-rose-500 border border-rose-100 dark:border-rose-800/40 hover:bg-rose-100 active:scale-95 transition-all flex items-center justify-center gap-2"
                             title="Reverter recebimento" aria-label="Reverter recebimento"
                           >
-                            <RefreshCw size={13} />
+                            <RefreshCw size={16} />
                             Reverter
                           </button>
                         </div>
                       </div>
-
-                      {soleItems.length > 0 && (
-                        <div className={`mx-3 mb-3 p-3 rounded-xl ${isDarkMode ? 'bg-slate-900/50' : 'bg-white border border-slate-100'}`}>
-                          {soleItems.map((item: any, idx: number) => {
-                            const receivedQtys: Record<string, number> = item.totalReceivedQtys || item.quantities || {};
-                            const totalRec = Object.values(receivedQtys).reduce((a: number, b: any) => a + Number(b), 0);
-                            return (
-                              <div key={idx} className={idx > 0 ? 'mt-3 pt-3 border-t border-slate-100 dark:border-slate-800' : ''}>
-                                <div className="flex items-center justify-between mb-3">
-                                  <p className="text-sm font-black text-slate-700 dark:text-slate-200">{item.moldName}</p>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs font-bold text-violet-500 uppercase">{item.colorName}</span>
-                                    <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full">{totalRec} PAR</span>
-                                  </div>
-                                </div>
-                                <div className="flex flex-col gap-2">
-                                  {Object.entries(receivedQtys).filter(([, qty]) => Number(qty) > 0).map(([size, qty]: [string, any]) => (
-                                    <div key={size} className="flex items-center justify-between">
-                                      <span className="text-sm font-black text-slate-600 dark:text-slate-300">{size}</span>
-                                      <span className="text-sm font-black text-slate-800 dark:text-white">{qty} pares</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {historyList.length === 0 && (
-                  <p className="text-center text-xs text-slate-400 py-10">Nenhum recebimento registrado ainda.</p>
-                )}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}
