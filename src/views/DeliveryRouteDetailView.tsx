@@ -10,8 +10,9 @@ import { Carrier, DeliveryRoute, DeliveryStop, Product, Sale, SaleType, StockLot
 import DeliveryMap from '../components/DeliveryMap';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { openNavigation } from '../utils/deliveryNavLink';
-import { optimizeRoute } from '../utils/deliveryRouteOptimizer';
+import NavigationProviderModal from '../components/NavigationProviderModal';
+import { openNavigation, buildGoogleMapsUrl, type NavigationProvider } from '../utils/deliveryNavLink';
+import { optimizeRoute, haversineKm } from '../utils/deliveryRouteOptimizer';
 import { getRoadRoute, RoadRouteResult } from '../utils/deliveryRoadRoute';
 import { bucketSalesByReadiness } from '../utils/salesReadiness';
 import { getSaleStopLocations } from '../utils/deliverySaleStops';
@@ -50,6 +51,17 @@ interface DeliveryRouteDetailViewProps {
   onUpdateDriverLocation?: (lat: number, lng: number) => Promise<void>;
   onDeleteRoute: () => Promise<void>;
   onStartRoute: () => Promise<void>;
+  // Provedor de navegação preferido do colaborador ativo (Collaborator.deliveryNavProviderPref)
+  // — só pré-destaca uma opção no popup de escolha (NavigationProviderModal), nunca dispara
+  // navegação sozinho.
+  deliveryNavProviderPref?: string;
+  // Configuração de "Navegação Integrada" (Configurações de Entrega → Preferências de
+  // Navegação → Aproximação da Parada) — usados abaixo pra acelerar o foco do mapa perto da
+  // parada e pra decidir quando recalcular a rota OSRM automaticamente (ver efeito de
+  // watchPosition mais abaixo). Sem SDK nativo nenhum — tudo web, sem custo de API.
+  approachDistanceMeters?: number;
+  approachFastUpdateMs?: number;
+  approachFarUpdateMs?: number;
 }
 
 // Uma linha arrastável do editor de rota — separado em componente próprio (igual ao
@@ -199,6 +211,34 @@ function formatElapsed(ms: number): string {
 // escrita no banco a cada segundo enquanto o GPS reporta.
 const LOCATION_WRITE_INTERVAL_MS = 15000;
 
+// "Navegação Integrada" — ver efeito de watchPosition mais abaixo.
+const APPROACH_DEFAULT_DISTANCE_METERS = 150;
+const APPROACH_DEFAULT_FAST_UPDATE_MS = 1000;
+// Cadência de checagem enquanto NENHUMA parada está dentro da distância de aproximação —
+// mais espaçada, sem sentido recalcular/focar o mapa toda hora longe de qualquer parada.
+const APPROACH_FAR_CHECK_MS = 5000;
+// Quão longe do traçado sugerido (OSRM) o motorista precisa estar pra considerarmos que
+// "saiu da rota" e disparar um recálculo automático — abaixo disso é só imprecisão normal
+// de GPS, não desvio de verdade.
+const REROUTE_DEVIATION_METERS = 70;
+// Espaçamento mínimo entre recálculos automáticos — o OSRM público é gratuito mas
+// compartilhado; sem esse limite, cada atualização de GPS fora da rota dispararia uma
+// chamada nova.
+const REROUTE_MIN_INTERVAL_MS = 20000;
+
+// Distância aproximada (metros) de um ponto até o traçado da rota — usa o vértice mais
+// próximo entre os pontos do polyline (o OSRM devolve pontos densos o bastante ao longo das
+// curvas pra isso ser uma boa aproximação, sem precisar projetar em cada segmento).
+function distanceToPolylineMeters(point: { lat: number; lng: number }, polyline: { lat: number; lng: number }[]): number {
+  if (polyline.length === 0) return Infinity;
+  let min = Infinity;
+  for (const p of polyline) {
+    const d = haversineKm(point, p) * 1000;
+    if (d < min) min = d;
+  }
+  return min;
+}
+
 function timeAgoLabel(ts: number): string {
   const seconds = Math.max(0, Math.floor((Date.now() - ts) / 1000));
   if (seconds < 60) return `há ${seconds}s`;
@@ -207,8 +247,22 @@ function timeAgoLabel(ts: number): string {
   return `há ${Math.floor(minutes / 60)}h`;
 }
 
-export default function DeliveryRouteDetailView({ route, sales, products, stockLots, carriers, isDarkMode, onBack, onMarkDelivered, onUndoDelivered, onUpdateStops, onEditRouteStops, onUpdateDriverLocation, onDeleteRoute, onStartRoute }: DeliveryRouteDetailViewProps) {
+export default function DeliveryRouteDetailView({ route, sales, products, stockLots, carriers, isDarkMode, onBack, onMarkDelivered, onUndoDelivered, onUpdateStops, onEditRouteStops, onUpdateDriverLocation, onDeleteRoute, onStartRoute, deliveryNavProviderPref, approachDistanceMeters, approachFastUpdateMs, approachFarUpdateMs }: DeliveryRouteDetailViewProps) {
   const [markingId, setMarkingId] = useState<string | null>(null);
+  const [showProviderPicker, setShowProviderPicker] = useState(false);
+  // "Navegação Integrada" — foco do mapa perto da parada + recálculo automático de rota ao
+  // sair do trajeto sugerido (ver efeito de watchPosition abaixo). `focusSignal` incrementa
+  // a cada vez que queremos forçar o mapa a voar pra `focusStop` (mesmo padrão de
+  // DeliveryMap's `flyTo`/FlyToOnSignal).
+  const [focusStop, setFocusStop] = useState<{ lat: number; lng: number } | null>(null);
+  const [focusSignal, setFocusSignal] = useState(0);
+  const lastApproachCheckAtRef = useRef(0);
+  const lastRerouteAtRef = useRef(0);
+  // Waze e Apple Maps só navegam pra 1 destino por vez (ao contrário do Google Maps, que já
+  // mostra a rota inteira) — guarda qual foi o último provedor escolhido pra, ao marcar uma
+  // entrega como concluída, oferecer ir direto pra próxima parada nesse mesmo app.
+  const [lastProvider, setLastProvider] = useState<NavigationProvider | null>(null);
+  const [nextStopSuggestion, setNextStopSuggestion] = useState<{ stop: DeliveryStop; label: string } | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editStops, setEditStops] = useState<DeliveryStop[]>([]);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
@@ -223,6 +277,8 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
   const [isDeleting, setIsDeleting] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [roadRoute, setRoadRoute] = useState<RoadRouteResult | null>(null);
+  const roadRouteRef = useRef(roadRoute);
+  useEffect(() => { roadRouteRef.current = roadRoute; });
   const [isLoadingRoadRoute, setIsLoadingRoadRoute] = useState(false);
   const [now, setNow] = useState(Date.now());
   const lastWriteAtRef = useRef(0);
@@ -257,6 +313,10 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
   }, [route.status]);
 
   const orderedStops = [...route.stops].sort((a, b) => a.order - b.order);
+  // Espelha em refs pro callback do watchPosition (efeito com deps fixas, ver mais abaixo)
+  // sempre ler o valor mais recente sem precisar reiniciar o watch a cada mudança.
+  const orderedStopsRef = useRef(orderedStops);
+  useEffect(() => { orderedStopsRef.current = orderedStops; });
   // Enquanto um arrasto está em andamento (ou acabou de terminar e ainda não veio o
   // snapshot novo do Firestore), mostra a ordem local — sem isso a lista "pularia" de
   // volta pra ordem antiga por um instante a cada arrasto.
@@ -265,14 +325,28 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
   const nextStop = orderedStops.find(s => s.status !== 'DELIVERED');
   const nextStopSale = nextStop ? sales.find(s => s.id === nextStop.saleId) : undefined;
 
+  // Rótulo de exibição de uma parada (nome da transportadora + clientes agrupados nela, ou
+  // nome do cliente + endereço extra) — reaproveitado pelo marker no mapa, pela sugestão de
+  // "próxima parada" e pela exportação da rota, pra não duplicar essa lógica em 3 lugares.
+  // Uma parada de transportadora com 2+ pedidos agrupados mostra os nomes dos clientes
+  // (mesmo padrão de LiveStopRow's `customerNames`), não só a contagem — importante saber
+  // quem está naquela entrega antes de sair navegando ou compartilhar a rota.
+  const getStopLabel = (s: DeliveryStop, indexHint = 0): string => {
+    const stopSaleIds = s.saleIds && s.saleIds.length > 0 ? s.saleIds : (s.saleId ? [s.saleId] : []);
+    const stopSales = stopSaleIds.map(id => sales.find(sale => sale.id === id)).filter((sale): sale is Sale => !!sale);
+    const stopSale = stopSales[0];
+    const effectiveCarrierId = s.carrierId || stopSale?.carrierId;
+    const carrierName = effectiveCarrierId ? carriers.find(c => c.id === effectiveCarrierId)?.name : undefined;
+    if (carrierName) {
+      const customerNames = stopSales.length > 1 ? stopSales.map(sale => sale.customerName || 'cliente').join(', ') : undefined;
+      return `${carrierName}${customerNames ? ` (${stopSales.length} pedidos · p/ ${customerNames})` : ''}${s.addressLabel ? ` · ${s.addressLabel}` : ''}`;
+    }
+    return `${stopSale?.customerName || s.label || `Parada ${indexHint + 1}`}${s.addressLabel ? ` · ${s.addressLabel}` : ''}`;
+  };
+
   const stopMarkers = [
     ...orderedStops.map((s, i) => {
-      const stopSale = sales.find(sale => sale.id === s.saleId);
-      const effectiveCarrierId = s.carrierId || stopSale?.carrierId;
-      const carrierName = effectiveCarrierId ? carriers.find(c => c.id === effectiveCarrierId)?.name : undefined;
-      const label = carrierName
-        ? `${carrierName}${(s.saleIds?.length || 0) > 1 ? ` (${s.saleIds!.length} pedidos)` : ''}${s.addressLabel ? ` · ${s.addressLabel}` : ''}`
-        : `${stopSale?.customerName || s.label || `Parada ${i + 1}`}${s.addressLabel ? ` · ${s.addressLabel}` : ''}`;
+      const label = getStopLabel(s, i);
       return {
         id: s.id,
         lat: s.lat,
@@ -327,9 +401,45 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
           }
           setLocationError(null);
           const now = Date.now();
+          const currentPos = { lat: position.coords.latitude, lng: position.coords.longitude };
+
+          // "Navegação Integrada" (Configurações de Entrega → Preferências de Navegação):
+          // foco do mapa perto da parada + recálculo automático de rota ao sair do trajeto
+          // sugerido, mantendo os MESMOS destinos. Roda com frequência própria, independente
+          // do throttle de gravação no Firestore logo abaixo.
+          const pendingStops = orderedStopsRef.current.filter(s => s.status !== 'DELIVERED');
+          if (pendingStops.length > 0) {
+            const nearestStop = pendingStops[0];
+            const distanceToStopM = haversineKm(currentPos, { lat: nearestStop.lat, lng: nearestStop.lng }) * 1000;
+            const isNear = distanceToStopM <= (approachDistanceMeters ?? APPROACH_DEFAULT_DISTANCE_METERS);
+            const checkIntervalMs = isNear ? (approachFastUpdateMs ?? APPROACH_DEFAULT_FAST_UPDATE_MS) : (approachFarUpdateMs ?? APPROACH_FAR_CHECK_MS);
+            if (now - lastApproachCheckAtRef.current >= checkIntervalMs) {
+              lastApproachCheckAtRef.current = now;
+              if (isNear) {
+                setFocusStop({ lat: nearestStop.lat, lng: nearestStop.lng });
+                setFocusSignal(s => s + 1);
+              }
+            }
+
+            const currentRoadRoute = roadRouteRef.current;
+            if (currentRoadRoute && now - lastRerouteAtRef.current >= REROUTE_MIN_INTERVAL_MS) {
+              const deviationM = distanceToPolylineMeters(currentPos, currentRoadRoute.coordinates);
+              if (deviationM > REROUTE_DEVIATION_METERS) {
+                lastRerouteAtRef.current = now;
+                getRoadRoute(currentPos, pendingStops.map(s => ({ lat: s.lat, lng: s.lng })))
+                  .then(result => {
+                    if (cancelled || !result) return;
+                    setRoadRoute(result);
+                    toast.show('Rota recalculada');
+                  })
+                  .catch(() => undefined);
+              }
+            }
+          }
+
           if (now - lastWriteAtRef.current < LOCATION_WRITE_INTERVAL_MS) return;
           lastWriteAtRef.current = now;
-          onUpdateDriverLocation(position.coords.latitude, position.coords.longitude).catch(() => undefined);
+          onUpdateDriverLocation(currentPos.lat, currentPos.lng).catch(() => undefined);
         });
       } catch {
         if (!cancelled) setLocationError('Não foi possível acessar a localização do dispositivo.');
@@ -347,9 +457,61 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
     setMarkingId(stopId);
     try {
       await onMarkDelivered(stopId, saleIds);
+      // Waze/Apple Maps só levam a 1 destino por vez — oferece ir direto pra próxima parada
+      // pendente no mesmo app, já que ele não mostra a rota inteira sozinho.
+      if (lastProvider === 'waze' || lastProvider === 'apple_maps') {
+        const remaining = orderedStops.filter(s => s.id !== stopId && s.status !== 'DELIVERED');
+        if (remaining.length > 0) {
+          const next = remaining[0];
+          setNextStopSuggestion({ stop: next, label: getStopLabel(next) });
+        }
+      }
     } finally {
       setMarkingId(null);
     }
+  };
+
+  // Compartilha a rota inteira (todas as paradas pendentes, em ordem) pelo menu nativo de
+  // compartilhamento — cobre apps fora da lista fixa do popup (Waze/Google Maps/Apple Maps)
+  // e serve pra mandar a lista de endereços pra alguém. Inclui o link do Google Maps com
+  // TODAS as paradas (esse já suporta múltiplos waypoints numa URL só).
+  const handleExportRoute = async () => {
+    const pending = orderedStops.filter(s => s.status !== 'DELIVERED');
+    if (pending.length === 0) {
+      toast.show('Nenhuma parada pendente pra exportar.');
+      return;
+    }
+    const lines = pending.map((s, i) => {
+      const label = getStopLabel(s, i);
+      return `${i + 1}. ${label} — https://maps.google.com/?q=${s.lat},${s.lng}`;
+    });
+    const mapsUrl = buildGoogleMapsUrl(pending.map(s => ({ lat: s.lat, lng: s.lng })));
+    const text = `Rota de Entrega (${pending.length} parada${pending.length > 1 ? 's' : ''})\n\n${lines.join('\n')}`;
+    try {
+      await Share.share({ title: 'Rota de Entrega', text, url: mapsUrl || undefined, dialogTitle: 'Compartilhar rota' });
+    } catch {
+      // Cancelamento do share pelo usuário também cai aqui — não é erro, não avisa nada.
+    }
+  };
+
+  // Abre o seletor nativo "abrir com..." do Android pra PRÓXIMA parada pendente, via
+  // esquema geo: — é o intent padrão que TODO app de navegação instalado (Waze, Google
+  // Maps, ou qualquer outro) se registra pra atender, ao contrário do menu de
+  // compartilhamento de texto (Share.share acima), que só alcança apps de mensagem/e-mail.
+  // Só cobre 1 parada por vez — mesma limitação do geo: em si.
+  const handleOpenAnyApp = () => {
+    if (Capacitor.getPlatform() !== 'android') {
+      toast.show('"Outro app" disponível apenas no Android — use Exportar Rota nesta plataforma.');
+      return;
+    }
+    const pending = orderedStops.filter(s => s.status !== 'DELIVERED');
+    if (pending.length === 0) {
+      toast.show('Nenhuma parada pendente.');
+      return;
+    }
+    const next = pending[0];
+    const label = encodeURIComponent(getStopLabel(next));
+    window.open(`geo:${next.lat},${next.lng}?q=${next.lat},${next.lng}(${label})`, '_system');
   };
 
   const handleUndo = async (stopId: string, saleIds: string[]) => {
@@ -650,26 +812,52 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
               ? roadRoute.coordinates
               : [{ lat: route.originLat, lng: route.originLng }, ...orderedStops.map(s => ({ lat: s.lat, lng: s.lng }))]
           }
+          flyTo={focusStop ? { lat: focusStop.lat, lng: focusStop.lng, signal: focusSignal } : undefined}
         />
 
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => openNavigation('google', orderedStops)}
-            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 active:scale-[0.98] transition-all"
-          >
-            <Navigation size={14} />
-            Google Maps
-          </button>
-          <button
-            type="button"
-            onClick={() => openNavigation('apple', orderedStops)}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 transition-all active:scale-[0.98] ${isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
-          >
-            <Navigation size={14} />
-            Apple Maps
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowProviderPicker(true)}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white shadow-lg shadow-teal-600/20 hover:bg-teal-700 active:scale-[0.98] transition-all"
+        >
+          <Navigation size={14} />
+          Escolher Provedor
+        </button>
+
+        {showProviderPicker && (
+          <NavigationProviderModal
+            isDarkMode={isDarkMode}
+            stops={orderedStops}
+            preferredProvider={deliveryNavProviderPref}
+            onSelect={(provider) => setLastProvider(provider)}
+            onExportRoute={handleExportRoute}
+            onOpenAnyApp={handleOpenAnyApp}
+            onClose={() => setShowProviderPicker(false)}
+          />
+        )}
+
+        {nextStopSuggestion && (
+          <div className={`flex items-center justify-between gap-2 p-3 rounded-2xl border ${isDarkMode ? 'bg-teal-900/10 border-teal-800/40' : 'bg-teal-50 border-teal-100'}`}>
+            <div className="flex-1 min-w-0">
+              <p className="text-[9px] font-black text-teal-600 dark:text-teal-400 uppercase tracking-widest">Próxima parada</p>
+              <p className={`text-xs font-bold truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{nextStopSuggestion.label}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                openNavigation(lastProvider as 'waze' | 'apple_maps', [{ lat: nextStopSuggestion.stop.lat, lng: nextStopSuggestion.stop.lng }]);
+                setNextStopSuggestion(null);
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest bg-teal-600 text-white hover:bg-teal-700 active:scale-95 transition-all shrink-0"
+            >
+              <Navigation size={13} /> Navegar
+            </button>
+            <button type="button" onClick={() => setNextStopSuggestion(null)} aria-label="Dispensar" title="Dispensar"
+              className="p-2 rounded-xl shrink-0 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-all">
+              <X size={14} />
+            </button>
+          </div>
+        )}
 
         <div className="flex flex-col gap-2 mt-2">
           <div className="flex items-center justify-between gap-2 px-1">
@@ -745,6 +933,7 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
                   ? roadRoute.coordinates
                   : [{ lat: route.originLat, lng: route.originLng }, ...orderedStops.map(s => ({ lat: s.lat, lng: s.lng }))]
               }
+              flyTo={focusStop ? { lat: focusStop.lat, lng: focusStop.lng, signal: focusSignal } : undefined}
             />
           </div>
         )}

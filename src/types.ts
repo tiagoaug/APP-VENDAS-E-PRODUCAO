@@ -199,6 +199,14 @@ export type PurchaseItem = {
   // Um ID por caixa física (só ATACADO) — length === quantity. Fatiado proporcionalmente no
   // fracionamento (PCPView.tsx, buildFractionSourceItem) para manter rastreabilidade por caixa.
   boxIds?: string[];
+  // Id do "bloco" (modelo) do formulário de Compra que originou este item — igual ao
+  // `PurchaseBlock.id` no momento do save. Preservado entre reedições (PurchaseFormView
+  // reconstrói o bloco com esse mesmo id), diferente de `lineId` (que é intencionalmente
+  // compartilhado por todos os itens do mesmo produto+cor+modalidade). Permite manter dois
+  // blocos "duplicados como itens separados" distintos na Cesta de Compras e no Pedido de
+  // Produção gerado, em vez de sempre somá-los numa única linha — ver `blockTag` em
+  // ProductionOrderItem e src/utils/productionOrderMerge.ts.
+  blockTag?: string;
 };
 
 export type GeneralPurchaseItem = {
@@ -691,6 +699,7 @@ export enum ViewType {
   DELIVERY_ROUTE_DETAIL = 'DELIVERY_ROUTE_DETAIL',
   DELIVERY_CONFIG = 'DELIVERY_CONFIG',
   DELIVERY_CARRIERS = 'DELIVERY_CARRIERS',
+  DELIVERY_NAV_PREFS = 'DELIVERY_NAV_PREFS',
 }
 
 export type DashboardCardConfig = {
@@ -856,9 +865,34 @@ export type Collaborator = {
   fontFamilyPref?: string;
   navIconModePref?: string;
   navMonoColorPref?: string;
+  // Provedor de navegação preferido nas entregas ('waze' | 'google_maps' | 'apple_maps' |
+  // 'embedded_sdk') — só pré-destaca a opção no popup de escolha (NavigationProviderModal),
+  // nunca dispara navegação sozinho. Não confundir com navIconModePref/navMonoColorPref
+  // acima, que são sobre a cor dos ÍCONES DA BARRA INFERIOR do app, assunto totalmente
+  // diferente.
+  deliveryNavProviderPref?: string;
   failedAttempts?: number;
   locked?: boolean;
   dashboardConfig?: DashboardCardConfig[];
+};
+
+// Config central única (doc id sempre 'main_config', mesmo padrão de DashboardConfig) —
+// hoje só guarda as preferências da "Navegação Integrada" (ver DeliveryRouteDetailView.tsx):
+// modo 100% web (Geolocation + OSRM), sem SDK nativo nem custo de API nenhum.
+export type NavConfig = {
+  id: string;
+  // Distância (metros) da parada a partir da qual a Navegação Integrada passa a atualizar a
+  // localização com mais frequência e centraliza o mapa na parada — ajuda o entregador a
+  // achar o endereço exato na reta final. Ausente = usa o padrão definido em
+  // DeliveryRouteDetailView.tsx (ver APPROACH_DEFAULT_DISTANCE_METERS).
+  approachDistanceMeters?: number;
+  // Intervalo (ms) de atualização/foco do mapa quando dentro da distância de aproximação
+  // acima — ex.: 1000 = a cada 1 segundo. Ausente = usa o padrão.
+  approachFastUpdateMs?: number;
+  // Intervalo (ms) de checagem (foco do mapa + recálculo de rota) enquanto NENHUMA parada
+  // está dentro da distância de aproximação — mais espaçado que approachFastUpdateMs.
+  // Ausente = usa o padrão.
+  approachFarUpdateMs?: number;
 };
 
 export type ProductionConfigItem = {
@@ -1033,6 +1067,10 @@ export type ProductionOrderItem = {
   // e StockLot ao longo de todo o fluxo de produção.
   lineId?: string;
   boxIds?: string[];
+  // Herdado de PurchaseItem.blockTag — ver comentário lá. Usado por
+  // src/utils/productionOrderMerge.ts pra não somar itens do mesmo produto+cor+modalidade
+  // quando eles vêm de blocos que o usuário duplicou como "itens separados" no formulário.
+  blockTag?: string;
 };
 
 export type ProductionOrder = {

@@ -41,7 +41,7 @@ export const SECTORS: { id: SectorId; label: string; icon: string; tasks: string
   {
     id: 'entregas', label: 'Entregas', icon: 'Truck',
     tasks: ['Montar Rotas de Entrega', 'Marcar Entregas Realizadas'],
-    views: [ViewType.DELIVERY_MENU, ViewType.DELIVERY_ROUTE_BUILDER, ViewType.DELIVERY_ROUTE_DETAIL, ViewType.DELIVERY_CONFIG],
+    views: [ViewType.DELIVERY_MENU, ViewType.DELIVERY_ROUTE_BUILDER, ViewType.DELIVERY_ROUTE_DETAIL, ViewType.DELIVERY_CONFIG, ViewType.DELIVERY_NAV_PREFS],
   },
   {
     id: 'financeiro', label: 'Financeiro', icon: 'Wallet',

@@ -1,8 +1,15 @@
-// Monta o link de navegação real (Google Maps / Apple Maps) com as paradas na ordem
+// Monta o link de navegação real (Google Maps / Apple Maps / Waze) com as paradas na ordem
 // definida pela rota — a navegação turn-by-turn de verdade fica sempre a cargo do app
 // nativo do celular, nunca calculada aqui (evita qualquer custo de API de rota).
+//
+// A 4ª opção, 'embedded_sdk', NÃO passa por aqui — não abre nenhum app externo, é só o
+// usuário optando por ficar na tela de rota usando o mapa e o acompanhamento já embutidos
+// no próprio app (foco automático perto da parada + recálculo de rota, ver
+// DeliveryRouteDetailView.tsx). 100% web, sem SDK nativo nem custo de API.
 
 export type NavPoint = { lat: number; lng: number };
+
+export type NavigationProvider = 'waze' | 'google_maps' | 'apple_maps' | 'embedded_sdk';
 
 // Apple Maps não suporta uma rota com vários waypoints intermediários do mesmo jeito
 // que o Google Maps (`/dir/?waypoints=`) — só aceita origem+destino diretos. Como
@@ -36,8 +43,25 @@ export function buildAppleMapsUrl(stops: NavPoint[]): string | null {
   return `https://maps.apple.com/?${params.toString()}`;
 }
 
-export function openNavigation(app: 'google' | 'apple', stops: NavPoint[]): void {
-  const url = app === 'apple' ? buildAppleMapsUrl(stops) : buildGoogleMapsUrl(stops);
+// Link universal do Waze — redireciona pro app nativo se instalado, senão pra loja/web.
+// Assim como o Google/Apple Maps acima, não tem suporte real a waypoints intermediários:
+// só destino único, então usamos a ÚLTIMA parada.
+export function buildWazeUrl(stops: NavPoint[]): string | null {
+  if (stops.length === 0) return null;
+  const destination = stops[stops.length - 1];
+  const params = new URLSearchParams({
+    ll: `${destination.lat},${destination.lng}`,
+    navigate: 'yes',
+  });
+  return `https://waze.com/ul?${params.toString()}`;
+}
+
+// Cobre só os provedores resolvidos por link web ('embedded_sdk' passa por
+// src/lib/embeddedNavigation.ts, nunca por aqui).
+export function openNavigation(app: Exclude<NavigationProvider, 'embedded_sdk'>, stops: NavPoint[]): void {
+  const url = app === 'apple_maps' ? buildAppleMapsUrl(stops)
+    : app === 'waze' ? buildWazeUrl(stops)
+    : buildGoogleMapsUrl(stops);
   if (!url) return;
   window.open(url, '_system');
 }

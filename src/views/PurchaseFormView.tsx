@@ -210,11 +210,15 @@ export default function PurchaseFormView({
     if (!existing?.items || existing.items.length === 0) return [];
     const b: Record<string, PurchaseBlock> = {};
     existing.items.forEach((item) => {
-      const key = `${item.productId}-${item.isBox}-${item.cost}`;
+      // Agrupa pelo `blockTag` persistido quando existir — preserva blocos duplicados como
+      // "itens separados" através de reedições. Itens antigos (salvos antes desse campo
+      // existir) continuam agrupados pela chave legada produto+isBox+custo, exatamente como
+      // sempre funcionou.
+      const key = item.blockTag || `${item.productId}-${item.isBox}-${item.cost}`;
       if (!b[key]) {
         const prod = products.find(p => p.id === item.productId);
         b[key] = {
-          id: generateId(),
+          id: item.blockTag || generateId(),
           productId: item.productId,
           isBox: item.isBox,
           cost: item.cost,
@@ -314,24 +318,67 @@ export default function PurchaseFormView({
 
     linkedOrder.items.forEach(poItem => {
       if (poItem.saleType === SaleType.RETAIL) return;
-      const block = blocks.find(b => b.productId === poItem.productId && b.saleType === poItem.saleType);
-      if (!block) return;
-      const varData = block.variations[poItem.variationId];
-      if (!varData || varData.quantity <= 0) return;
+
+      // Esquema novo: o item da OP sabe exatamente qual bloco do formulário o gerou
+      // (`blockTag` == `block.id`, estável entre reedições — ver reconstrução de `blocks`
+      // acima). Restaura direto nele, sem precisar repartir nada entre blocos.
+      if (poItem.blockTag) {
+        const block = blocks.find(b => b.id === poItem.blockTag);
+        if (!block) return;
+        const varData = block.variations[poItem.variationId];
+        if (!varData || varData.quantity <= 0) return;
+        const breakdown: Record<string, number> = {};
+        const fromStock: Record<string, number> = {};
+        Object.entries(poItem.sizes).forEach(([size, sizeInfo]) => {
+          breakdown[size] = sizeInfo.total / varData.quantity;
+          fromStock[size] = sizeInfo.fromStock;
+        });
+        const varKey = `${block.id}-${poItem.variationId}`;
+        if (poItem.pkgId) {
+          restoredPackaging[varKey] = { pkgId: poItem.pkgId, breakdown, fromStock };
+        } else {
+          restoredGrades[varKey] = breakdown;
+        }
+        return;
+      }
+
+      // Legado (item salvo antes de `blockTag` existir): pode ter vindo de mais de um bloco
+      // do mesmo produto+modalidade somados numa única linha (ex.: item duplicado como
+      // "separado" — ver duplicateBlock). Usar apenas o primeiro bloco encontrado ignorava os
+      // demais — que ficavam sem embalagem restaurada, "perdendo" a configuração ao reabrir —
+      // e dividia a grade pela quantidade de UM bloco só, inflando a proporção. Distribui
+      // proporcionalmente entre todos os blocos candidatos em vez disso.
+      const matchingBlocks = blocks.filter(b =>
+        b.productId === poItem.productId &&
+        b.saleType === poItem.saleType &&
+        (b.variations[poItem.variationId]?.quantity || 0) > 0
+      );
+      if (matchingBlocks.length === 0) return;
+      const totalQty = matchingBlocks.reduce((sum, b) => sum + (b.variations[poItem.variationId]?.quantity || 0), 0);
+      if (totalQty <= 0) return;
 
       const breakdown: Record<string, number> = {};
-      const fromStock: Record<string, number> = {};
       Object.entries(poItem.sizes).forEach(([size, sizeInfo]) => {
-        breakdown[size] = sizeInfo.total / varData.quantity;
-        fromStock[size] = sizeInfo.fromStock;
+        breakdown[size] = sizeInfo.total / totalQty;
       });
 
-      const varKey = `${block.id}-${poItem.variationId}`;
-      if (poItem.pkgId) {
-        restoredPackaging[varKey] = { pkgId: poItem.pkgId, breakdown, fromStock };
-      } else {
-        restoredGrades[varKey] = breakdown;
-      }
+      matchingBlocks.forEach(block => {
+        const blockQty = block.variations[poItem.variationId]?.quantity || 0;
+        const share = blockQty / totalQty;
+        const varKey = `${block.id}-${poItem.variationId}`;
+        if (poItem.pkgId) {
+          // `fromStock` é um total absoluto de pares (não uma proporção por grade) — rateia
+          // pela participação de cada bloco na quantidade total pra não duplicar a baixa de
+          // estoque quando o pedido for salvo de novo.
+          const fromStock: Record<string, number> = {};
+          Object.entries(poItem.sizes).forEach(([size, sizeInfo]) => {
+            fromStock[size] = Math.round(sizeInfo.fromStock * share);
+          });
+          restoredPackaging[varKey] = { pkgId: poItem.pkgId, breakdown, fromStock };
+        } else {
+          restoredGrades[varKey] = breakdown;
+        }
+      });
     });
 
     if (Object.keys(restoredPackaging).length > 0) setPackagingPerVar(prev => ({ ...prev, ...restoredPackaging }));
@@ -342,6 +389,11 @@ export default function PurchaseFormView({
   // Duplicação de modelo (item): escolhe quantas cópias serão criadas a partir de um bloco.
   const [duplicateTarget, setDuplicateTarget] = useState<{ index: number } | null>(null);
   const [duplicateCount, setDuplicateCount] = useState<number>(1);
+  // 'separate': cria blocos novos e independentes (comportamento tradicional).
+  // 'group': soma a quantidade das cópias direto nas variações do bloco original — evita que
+  // a mesma referência apareça repetida na Cesta de Compras e depois volte agrupada sozinha
+  // ao reabrir o pedido (reconstrução de blocos agrupa itens por productId+isBox+cost).
+  const [duplicateMode, setDuplicateMode] = useState<'separate' | 'group'>('separate');
   const [deliveryDate, setDeliveryDate] = useState<string>(
     existing?.deliveryDate ? new Date(existing.deliveryDate).toISOString().split('T')[0] : ''
   );
@@ -564,9 +616,24 @@ export default function PurchaseFormView({
   // Duplica o bloco `index` criando `count` cópias logo após ele. Copia também as
   // grades/embalagens por variação (chaveadas por `${blockId}-${variationId}`), para
   // que cada cópia fique idêntica ao original (quantidades, custo, grade e embalagem).
-  const duplicateBlock = (index: number, count: number) => {
+  // `mode: 'group'` não cria blocos novos — em vez disso soma a quantidade das `count`
+  // cópias direto nas variações do bloco original, evitando que a mesma referência apareça
+  // repetida na Cesta de Compras.
+  const duplicateBlock = (index: number, count: number, mode: 'separate' | 'group' = 'separate') => {
     const source = blocks[index];
     if (!source || count < 1) return;
+
+    if (mode === 'group') {
+      setBlocks(prev => prev.map((b, i) => {
+        if (i !== index) return b;
+        const nextVariations: typeof b.variations = {};
+        Object.entries(b.variations).forEach(([varId, data]) => {
+          nextVariations[varId] = { ...data, quantity: data.quantity * (count + 1) };
+        });
+        return { ...b, variations: nextVariations };
+      }));
+      return;
+    }
 
     const newBlocks: PurchaseBlock[] = [];
     const newIds: string[] = [];
@@ -690,6 +757,8 @@ export default function PurchaseFormView({
     // Produção, pra que PurchaseItem e ProductionOrderItem da mesma linha compartilhem
     // exatamente o mesmo lineId/boxIds.
     let lineIdMap: Map<string, { lineId: string; boxIds?: string[] }> | null = null;
+    // Chave `${blockTag}::${variationId}` -> PurchaseItem já com boxIds fatiado por bloco.
+    const finalItemsByBlockVar = new Map<string, PurchaseItem>();
     if (type === PurchaseType.REPLENISHMENT) {
       blocks.forEach((b) => {
         Object.entries(b.variations).forEach(([varKey, data]) => {
@@ -710,6 +779,7 @@ export default function PurchaseFormView({
               cost: b.cost,
               unitCost: b.unitCost,
               saleType: b.saleType,
+              blockTag: b.id,
             });
           }
         });
@@ -745,6 +815,14 @@ export default function PurchaseFormView({
           it.boxIds = resolved.boxIds.slice(start, start + it.quantity);
           boxIdCursor.set(key, start + it.quantity);
         }
+      });
+      // `lineIdMap` guarda o array de boxIds INTEIRO da linha (todos os blocos somados) —
+      // acima já foi fatiado corretamente por bloco em `finalItems`. Reaproveita essa fatia
+      // (em vez do array cheio) ao montar `orderItems` logo abaixo, senão dois blocos
+      // duplicados como "itens separados" acabariam referenciando as MESMAS caixas.
+      finalItemsByBlockVar.clear();
+      finalItems.forEach(it => {
+        if (it.blockTag) finalItemsByBlockVar.set(`${it.blockTag}::${it.variationId}`, it);
       });
     } else if (type === PurchaseType.SOLE) {
       if (soleItems.length === 0) {
@@ -877,6 +955,7 @@ export default function PurchaseFormView({
               totalQuantity: totalPairs,
               fromStockQty: 0,
               toProductionQty: totalPairs,
+              blockTag: block.id,
               ...(combinedNote ? { notes: combinedNote } : {}),
               ...(lineIdentity ? { lineId: lineIdentity.lineId } : {}),
             });
@@ -915,6 +994,10 @@ export default function PurchaseFormView({
           const combinedNote = [productionGlobalNote?.trim(), typedVarData.note?.trim()].filter(Boolean).join('\n') || undefined;
           const lineKey = `${block.productId}::${variationId}::${SaleType.WHOLESALE}`;
           const lineIdentity = lineIdMap?.get(lineKey);
+          // `lineIdentity.boxIds` é o array cheio da linha (todos os blocos somados) — usa a
+          // fatia já calculada para ESTE bloco em `finalItems` pra não repetir caixa entre
+          // duas linhas de OP separadas.
+          const blockBoxIds = finalItemsByBlockVar.get(`${block.id}::${variationId}`)?.boxIds;
           orderItems.push({
             productId: block.productId,
             productName: product?.name || '',
@@ -925,8 +1008,9 @@ export default function PurchaseFormView({
             totalQuantity: totalPairs,
             fromStockQty: fromStockTotal,
             toProductionQty: totalPairs - fromStockTotal,
+            blockTag: block.id,
             ...(combinedNote ? { notes: combinedNote } : {}),
-            ...(lineIdentity ? { lineId: lineIdentity.lineId, boxIds: lineIdentity.boxIds } : {}),
+            ...(lineIdentity ? { lineId: lineIdentity.lineId, boxIds: blockBoxIds ?? lineIdentity.boxIds } : {}),
           });
         });
       });
@@ -2072,7 +2156,7 @@ export default function PurchaseFormView({
                       </button>
                       <button
                         type="button"
-                        onClick={() => { setDuplicateTarget({ index }); setDuplicateCount(1); }}
+                        onClick={() => { setDuplicateTarget({ index }); setDuplicateCount(1); setDuplicateMode('separate'); }}
                         className="w-9 h-9 rounded-xl flex items-center justify-center bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 active:scale-90 transition-all"
                         aria-label="Duplicar item"
                         title="Duplicar"
@@ -2708,7 +2792,32 @@ export default function PurchaseFormView({
                   </button>
                 </div>
 
-                <div className="flex gap-2 w-full mt-4">
+                <div className="w-full mt-2">
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2 text-left">Como deseja duplicar?</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDuplicateMode('separate')}
+                      className={`rounded-xl px-3 py-2.5 text-[10px] font-black uppercase tracking-wide border-2 transition-all ${duplicateMode === 'separate' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600' : 'border-transparent bg-slate-50 dark:bg-slate-800 text-slate-500'}`}
+                    >
+                      Itens Separados
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDuplicateMode('group')}
+                      className={`rounded-xl px-3 py-2.5 text-[10px] font-black uppercase tracking-wide border-2 transition-all ${duplicateMode === 'group' ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600' : 'border-transparent bg-slate-50 dark:bg-slate-800 text-slate-500'}`}
+                    >
+                      Agrupar Quantidade
+                    </button>
+                  </div>
+                  <p className="text-[9px] font-semibold text-slate-400 mt-2 leading-relaxed text-left">
+                    {duplicateMode === 'separate'
+                      ? 'Cria cópias como itens independentes na Cesta de Compras.'
+                      : 'Soma a quantidade das cópias direto neste mesmo item, sem duplicar a linha na Cesta de Compras.'}
+                  </p>
+                </div>
+
+                <div className="flex gap-2 w-full mt-2">
                   <button
                     type="button"
                     onClick={() => setDuplicateTarget(null)}
@@ -2719,12 +2828,12 @@ export default function PurchaseFormView({
                   <button
                     type="button"
                     onClick={() => {
-                      duplicateBlock(duplicateTarget.index, duplicateCount);
+                      duplicateBlock(duplicateTarget.index, duplicateCount, duplicateMode);
                       setDuplicateTarget(null);
                     }}
                     className="flex-1 py-4 px-4 bg-indigo-600 text-white rounded-2xl font-black text-[11px] uppercase tracking-widest active:scale-95 transition-all shadow-lg shadow-indigo-200 dark:shadow-none"
                   >
-                    Duplicar {duplicateCount > 1 ? `(${duplicateCount}x)` : ''}
+                    {duplicateMode === 'group' ? 'Agrupar' : 'Duplicar'} {duplicateCount > 1 ? `(${duplicateCount}x)` : ''}
                   </button>
                 </div>
               </div>

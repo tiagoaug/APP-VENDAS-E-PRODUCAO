@@ -39,7 +39,8 @@ import {
   Truck,
   MapPin,
   Route,
-  Navigation
+  Navigation,
+  Compass
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
@@ -82,6 +83,7 @@ import {
   FamilyMember,
   Budget,
   DashboardConfig,
+  NavConfig,
   FlowTag,
   Sector,
   ProductionConfigItem,
@@ -158,6 +160,7 @@ const MarketplaceSkuMappingView = lazy(() => import("./views/MarketplaceSkuMappi
 const DeliveryRouteBuilderView = lazy(() => import("./views/DeliveryRouteBuilderView"));
 const DeliveryRouteDetailView = lazy(() => import("./views/DeliveryRouteDetailView"));
 const DeliveryCarriersView = lazy(() => import("./views/DeliveryCarriersView"));
+const DeliveryNavPreferencesView = lazy(() => import("./views/DeliveryNavPreferencesView"));
 
 
 // Modals
@@ -240,6 +243,7 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
     ViewType.DELIVERY_ROUTE_DETAIL,
     ViewType.DELIVERY_CONFIG,
     ViewType.DELIVERY_CARRIERS,
+    ViewType.DELIVERY_NAV_PREFS,
   ]
 };
 
@@ -336,6 +340,13 @@ export default function App() {
     setNavMonoColor(color);
     localStorage.setItem('nav_mono_color_pref', color);
   };
+  // Provedor de navegação preferido nas entregas (Waze/Google Maps/Apple Maps/SDK embutido)
+  // — só pré-destaca a opção no popup de escolha da tela de rota, nunca dispara sozinho. Fica
+  // no localStorage como valor inicial (antes do perfil do colaborador carregar) e depois
+  // sincroniza com Collaborator.deliveryNavProviderPref, igual themePref/navIconModePref.
+  const [deliveryNavProviderPref, setDeliveryNavProviderPref] = useState<string>(() => {
+    return localStorage.getItem('delivery_nav_provider_pref') || 'google_maps';
+  });
   const [isA11yOpen, setIsA11yOpen] = useState(false);
 
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
@@ -410,6 +421,7 @@ export default function App() {
     if (activeCollaborator.fontFamilyPref) setFontFamily(activeCollaborator.fontFamilyPref);
     if (activeCollaborator.navIconModePref) setNavIconMode(activeCollaborator.navIconModePref as NavIconMode);
     if (activeCollaborator.navMonoColorPref) setNavMonoColor(activeCollaborator.navMonoColorPref);
+    if (activeCollaborator.deliveryNavProviderPref) setDeliveryNavProviderPref(activeCollaborator.deliveryNavProviderPref);
   }, [activeCollaboratorId, collaborators]);
 
   // Salva as mesmas preferências no perfil do colaborador ativo, pra acompanhá-lo
@@ -427,7 +439,8 @@ export default function App() {
       activeCollaborator.fontScalePref === fontScale &&
       activeCollaborator.fontFamilyPref === fontFamily &&
       activeCollaborator.navIconModePref === navIconMode &&
-      activeCollaborator.navMonoColorPref === navMonoColor;
+      activeCollaborator.navMonoColorPref === navMonoColor &&
+      activeCollaborator.deliveryNavProviderPref === deliveryNavProviderPref;
     if (unchanged) return;
     saveCollaborator({
       ...activeCollaborator,
@@ -436,8 +449,15 @@ export default function App() {
       fontFamilyPref: fontFamily,
       navIconModePref: navIconMode,
       navMonoColorPref: navMonoColor,
+      deliveryNavProviderPref,
     });
-  }, [appTheme, fontScale, fontFamily, navIconMode, navMonoColor, activeCollaboratorId]);
+  }, [appTheme, fontScale, fontFamily, navIconMode, navMonoColor, deliveryNavProviderPref, activeCollaboratorId]);
+
+  // Preferência de provedor de navegação de entrega — mesmo padrão de font_size_pref/
+  // font_family_pref acima: guarda no aparelho como fallback antes do perfil carregar.
+  useEffect(() => {
+    localStorage.setItem('delivery_nav_provider_pref', deliveryNavProviderPref);
+  }, [deliveryNavProviderPref]);
 
   // Tamanho de fonte: zoom afeta literalmente toda a UI (inclusive os textos com
   // tamanho fixo em px usados em todo o app), diferente de só mudar o font-size da
@@ -590,6 +610,10 @@ export default function App() {
       { id: 'qr_scanner', label: 'Scanner Rápido', visible: true, order: 23, module: 'any' },
     ]
   };
+
+  // Preferências da Navegação Integrada (Aproximação da Parada) — ver comentário na
+  // subscription "nav_config" mais abaixo.
+  const [navConfig, setNavConfig] = useState<NavConfig>({ id: 'main_config' });
 
   const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig | null>(() => {
     const saved = localStorage.getItem('dashboard_config');
@@ -935,6 +959,16 @@ export default function App() {
       }
     );
 
+    // Config singleton das preferências de Navegação Integrada (Aproximação da Parada) —
+    // mesmo padrão de dashboard_config acima (1 doc fixo 'main_config').
+    const unsubNavConfig = firebaseService.subscribeToCollection<NavConfig>(
+      "nav_config",
+      (data) => {
+        const mainConfig = data.find(c => c.id === 'main_config');
+        setNavConfig(mainConfig || { id: 'main_config' });
+      }
+    );
+
     // Coleções pequenas (1 doc por mês / 1 doc de config) do arquivamento periódico —
     // sempre carregadas por completo, sem necessidade de otimização de janela.
     const unsubMonthlySnapshots = firebaseService.subscribeToCollection<MonthlySnapshot>(
@@ -975,6 +1009,7 @@ export default function App() {
       unsubPurchaseRequests();
       unsubServiceOrders();
       unsubDashboardConfig();
+      unsubNavConfig();
       unsubMonthlySnapshots();
       unsubCleanupConfig();
 
@@ -5939,6 +5974,10 @@ export default function App() {
             stockLots={stockLots}
             carriers={carriers}
             isDarkMode={isDarkMode}
+            deliveryNavProviderPref={deliveryNavProviderPref}
+            approachDistanceMeters={navConfig.approachDistanceMeters}
+            approachFastUpdateMs={navConfig.approachFastUpdateMs}
+            approachFarUpdateMs={navConfig.approachFarUpdateMs}
             onBack={() => navigateTo(ViewType.DELIVERY_MENU)}
             onMarkDelivered={async (stopId, saleIds) => {
               const now = Date.now();
@@ -6065,8 +6104,39 @@ export default function App() {
                 </div>
                 <ChevronRight size={18} className="text-slate-300 shrink-0" />
               </button>
+              <button
+                type="button"
+                onClick={() => navigateTo(ViewType.DELIVERY_NAV_PREFS)}
+                className={`flex items-center gap-3 p-4 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-teal-700' : 'bg-white border-slate-100 hover:border-teal-200 shadow-sm'}`}
+              >
+                <div className={`p-2.5 rounded-xl shrink-0 ${isDarkMode ? 'bg-teal-900/30 text-teal-400' : 'bg-teal-50 text-teal-600'}`}>
+                  <Compass size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Preferências de Navegação</p>
+                  <p className="text-[10px] font-bold text-slate-400">
+                    Waze, Google Maps, Apple Maps ou Navegação Integrada
+                  </p>
+                </div>
+                <ChevronRight size={18} className="text-slate-300 shrink-0" />
+              </button>
             </div>
           </div>
+        );
+      case ViewType.DELIVERY_NAV_PREFS:
+        return (
+          <DeliveryNavPreferencesView
+            isDarkMode={isDarkMode}
+            onBack={() => navigateTo(ViewType.DELIVERY_CONFIG)}
+            deliveryNavProviderPref={deliveryNavProviderPref}
+            onChangePref={(provider) => setDeliveryNavProviderPref(provider)}
+            navConfig={navConfig}
+            onUpdateNavConfig={(patch) => {
+              const next = { ...navConfig, ...patch };
+              setNavConfig(next);
+              firebaseService.saveDocument('nav_config', next);
+            }}
+          />
         );
       case ViewType.DELIVERY_CARRIERS:
         return (
@@ -6454,6 +6524,8 @@ export default function App() {
         return "Configurações de Entrega";
       case ViewType.DELIVERY_CARRIERS:
         return "Transportadoras";
+      case ViewType.DELIVERY_NAV_PREFS:
+        return "Preferências de Navegação";
       case ViewType.PRODUCT_FORM:
         return "Cadastro de Produto";
       case ViewType.SALE_FORM:
@@ -6518,6 +6590,7 @@ export default function App() {
       case ViewType.DELIVERY_ROUTE_DETAIL:
       case ViewType.DELIVERY_CONFIG: return <Truck size={24} className="text-cyan-600 dark:text-cyan-400" />;
       case ViewType.DELIVERY_CARRIERS: return <Truck size={24} className="text-cyan-600 dark:text-cyan-400" />;
+      case ViewType.DELIVERY_NAV_PREFS: return <Truck size={24} className="text-cyan-600 dark:text-cyan-400" />;
 
       default: return <Shield size={24} className="text-blue-600 dark:text-blue-400" />;
     }

@@ -9,8 +9,14 @@ export interface MergeProductionOrderItemsResult {
   keptLinkedRemovals: { productName: string; variationName: string }[];
 }
 
-const itemIdentityKey = (it: Pick<ProductionOrderItem, 'productId' | 'variationId' | 'saleType'>) =>
-  `${it.productId}::${it.variationId}::${it.saleType}`;
+// Inclui `blockTag` na chave — sem isso, dois blocos duplicados como "itens separados" no
+// formulário (mesmo produto+cor+modalidade, ex.: 4 caixas BEGE + 4 caixas BEGE) sempre
+// colapsavam numa única linha de 8 caixas ao chegar na Produção, mesmo quando o usuário
+// explicitamente pediu pra mantê-los separados na Cesta de Compras. Itens antigos (sem
+// blockTag, salvos antes desse campo existir) continuam se agrupando entre si como sempre
+// funcionou — `blockTag || ''` faz todos eles colidirem na mesma chave legada.
+const itemIdentityKey = (it: Pick<ProductionOrderItem, 'productId' | 'variationId' | 'saleType'> & { blockTag?: string }) =>
+  `${it.productId}::${it.variationId}::${it.saleType}::${it.blockTag || ''}`;
 
 // Soma dois ProductionOrderItem que colidiram na mesma chave produto+cor+modalidade — hoje
 // isso acontece quando o formulário tem dois blocos para o mesmo produto/cor (ex.: bloco

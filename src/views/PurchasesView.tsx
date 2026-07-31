@@ -191,15 +191,17 @@ export default function PurchasesView({
     return Array.from(months).sort().reverse(); // newest first
   }, [purchases]);
 
-  // Soma do saldo pendente das compras a prazo (não quitadas), exibida no topo da página
+  // Soma do saldo pendente das compras a prazo (não quitadas), exibida no topo da página —
+  // usa filteredPurchases (não purchases) pra refletir só o que está sendo exibido no
+  // momento (busca por fornecedor/nota, período, tipo), em vez do total geral fixo.
   const totalPendingTermPurchases = useMemo(() => {
-    return purchases.reduce((acc, p) => {
+    return filteredPurchases.reduce((acc, p) => {
       if (p.paymentStatus !== PaymentStatus.PENDING) return acc;
       if (p.paymentTerm === PaymentTerm.CASH) return acc;
       const totalPaid = (p.paymentHistory || []).reduce((a, h) => a + h.amount, 0);
       return acc + Math.max(0, p.total - totalPaid);
     }, 0);
-  }, [purchases]);
+  }, [filteredPurchases]);
 
   // Renderiza uma linha de item do carrinho (compartilhada entre o preview do card e o popup completo)
   const renderPurchaseItemRow = (item: any, idx: number) => {

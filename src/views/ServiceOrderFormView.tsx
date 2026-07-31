@@ -526,9 +526,12 @@ export default function ServiceOrderFormView({
 
     // Compile items for sharing
     const shareItems: PCPShareItem[] = basket.map(item => {
-      // Get exact sizes breakdown from order item
-      const sizes = Object.entries(item.orderItem?.sizes || {})
-        .map(([sz, sData]: [string, any]) => ({ size: sz, qty: Number(sData.toProduction) || 0 }))
+      // Get exact sizes breakdown — itens FRACIONADOS priorizam item.si.sizes (a fatia
+      // da fração), já que item.orderItem?.sizes é a grade do pedido INTEIRO, compartilhada
+      // por todas as frações do mesmo pedido (ver mesmo padrão em PCPView.buildPCPShareItem).
+      const sizesSource = item.si?.fractionLabel ? (item.si?.sizes || item.orderItem?.sizes) : (item.orderItem?.sizes || item.si?.sizes);
+      const sizes = Object.entries(sizesSource || {})
+        .map(([sz, sData]: [string, any]) => ({ size: sz, qty: Number(sData?.toProduction) || Number(sData?.total) || (typeof sData === 'number' ? sData : 0) }))
         .filter(s => s.qty > 0)
         .sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
 

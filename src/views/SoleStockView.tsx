@@ -1121,7 +1121,9 @@ export default function SoleStockView({
                     className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}`}
                   >
                     <span>Detalhamento por numeração (mapas)</span>
-                    {isExpanded ? <ChevronUp size={14} strokeWidth={3} /> : <ChevronDown size={14} strokeWidth={3} />}
+                    <span className="flex items-center justify-center w-6 h-6 rounded-full border-2 border-red-500 text-red-500">
+                      {isExpanded ? <ChevronUp size={14} strokeWidth={3} /> : <ChevronDown size={14} strokeWidth={3} />}
+                    </span>
                   </button>
 
                   {isExpanded && (
