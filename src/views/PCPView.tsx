@@ -733,7 +733,15 @@ export default function PCPView({
           // lineId sobrevive a reordenação/edição do pedido, ao contrário de itemIdx —
           // marca também por essa chave pra não "ressuscitar" um item já vinculado a um
           // Mapa só porque a posição dele no array mudou (ver comentário acima).
-          if (si.lineId) keys.add(`line::${si.lineId}`);
+          if (si.lineId) {
+            keys.add(`line::${si.lineId}`);
+            // sourceItems com lineId duplicado (ver comentário em handleBatchCreateLots)
+            // guardam o lineId sufixado (`::dup-...`) só nesta cópia — marca também pelo
+            // lineId ORIGINAL (sem sufixo), que é o que `item.lineId` (do pedido) de fato
+            // tem, senão o item duplicado "ressuscita" em Pedidos Pendentes.
+            const dupIdx = si.lineId.indexOf('::dup-');
+            if (dupIdx !== -1) keys.add(`line::${si.lineId.slice(0, dupIdx)}`);
+          }
         });
       } else if (lot.productionOrderId) {
         const order = productionOrders.find(o => o.id === lot.productionOrderId);
@@ -4105,7 +4113,29 @@ export default function PCPView({
         // a grade some no "Visualizar Pedidos da OS" se o Pedido de Produção original
         // for editado/excluído depois (o total em "qty" fica congelado, mas a grade era
         // buscada ao vivo no pedido).
-        sourceItems: selectedData.map(i => ({ orderId: i.orderId, itemIdx: i.itemIdx, qty: i.toProductionQty, productId: i.productId, variationId: i.variationId, sizes: i.sizes, lineId: i.lineId, boxIds: i.boxIds })),
+        //
+        // lineId duplicado entre itens DISTINTOS (ex.: mesmo produto/cor lançado em dois
+        // blocos na Compra, ou pedido duplicado via "Duplicar Pedido") — reconcileLineIds
+        // (compras/vendas) reaproveita de propósito o mesmo lineId entre blocos do mesmo
+        // produto/cor, só pra fatiar boxIds corretamente entre eles. Mas getSourceItemKey
+        // (productionRoute.ts) usa lineId como chave ÚNICA por item pra rastrear o setor —
+        // dois sourceItems com o mesmo lineId caem na MESMA chave em metadata.orderSectors,
+        // então mover um pro setor X "move" os dois juntos, e os contadores de pares por
+        // setor somam os dois enquanto a lista de fichas mostra só um (mesma chave "esconde"
+        // o duplicado). Aqui, a partir da 2ª ocorrência de um lineId repetido, sufixa esse
+        // lineId (só nesta cópia guardada no Mapa — não no item do pedido original) pra cada
+        // sourceItem ganhar sua própria chave de rastreio de setor.
+        sourceItems: (() => {
+          const seenLineIds = new Set<string>();
+          return selectedData.map(i => {
+            let lineId = i.lineId;
+            if (lineId) {
+              if (seenLineIds.has(lineId)) lineId = `${lineId}::dup-${i.orderId}-${i.itemIdx}`;
+              else seenLineIds.add(lineId);
+            }
+            return { orderId: i.orderId, itemIdx: i.itemIdx, qty: i.toProductionQty, productId: i.productId, variationId: i.variationId, sizes: i.sizes, lineId, boxIds: i.boxIds };
+          });
+        })(),
         groups: groupEntries.map(g => ({
           productId: g.productId,
           variationId: g.variationId,
