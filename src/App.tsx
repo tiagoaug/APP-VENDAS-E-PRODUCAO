@@ -84,6 +84,7 @@ import {
   Budget,
   DashboardConfig,
   NavConfig,
+  DeliveryPrintPrefs,
   FlowTag,
   Sector,
   ProductionConfigItem,
@@ -161,6 +162,7 @@ const DeliveryRouteBuilderView = lazy(() => import("./views/DeliveryRouteBuilder
 const DeliveryRouteDetailView = lazy(() => import("./views/DeliveryRouteDetailView"));
 const DeliveryCarriersView = lazy(() => import("./views/DeliveryCarriersView"));
 const DeliveryNavPreferencesView = lazy(() => import("./views/DeliveryNavPreferencesView"));
+const DeliveryPrintConfigView = lazy(() => import("./views/DeliveryPrintConfigView"));
 
 
 // Modals
@@ -244,6 +246,7 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
     ViewType.DELIVERY_CONFIG,
     ViewType.DELIVERY_CARRIERS,
     ViewType.DELIVERY_NAV_PREFS,
+    ViewType.DELIVERY_PRINT_CONFIG,
   ]
 };
 
@@ -615,6 +618,12 @@ export default function App() {
   // subscription "nav_config" mais abaixo.
   const [navConfig, setNavConfig] = useState<NavConfig>({ id: 'main_config' });
 
+  // Preferências PADRÃO da Central de Impressão de Entregas — ver comentário na
+  // subscription "delivery_print_prefs" mais abaixo.
+  const [deliveryPrintPrefs, setDeliveryPrintPrefs] = useState<DeliveryPrintPrefs>({
+    id: 'main_config', showOrders: true, showCustomers: true, boxesMode: 'full', showSignatureField: false, showCheckbox: false, stopsPerPage: 0, pageSize: 'a4', format: 'jpg',
+  });
+
   const [dashboardConfig, setDashboardConfig] = useState<DashboardConfig | null>(() => {
     const saved = localStorage.getItem('dashboard_config');
     let config = saved ? JSON.parse(saved) : defaultDashboardConfig;
@@ -969,6 +978,16 @@ export default function App() {
       }
     );
 
+    // Config singleton das preferências padrão da Central de Impressão de Entregas —
+    // mesmo padrão de nav_config acima (1 doc fixo 'main_config').
+    const unsubDeliveryPrintPrefs = firebaseService.subscribeToCollection<DeliveryPrintPrefs>(
+      "delivery_print_prefs",
+      (data) => {
+        const mainConfig = data.find(c => c.id === 'main_config');
+        setDeliveryPrintPrefs(mainConfig || { id: 'main_config', showOrders: true, showCustomers: true, boxesMode: 'full', showSignatureField: false, showCheckbox: false, stopsPerPage: 0, pageSize: 'a4', format: 'jpg' });
+      }
+    );
+
     // Coleções pequenas (1 doc por mês / 1 doc de config) do arquivamento periódico —
     // sempre carregadas por completo, sem necessidade de otimização de janela.
     const unsubMonthlySnapshots = firebaseService.subscribeToCollection<MonthlySnapshot>(
@@ -1010,6 +1029,7 @@ export default function App() {
       unsubServiceOrders();
       unsubDashboardConfig();
       unsubNavConfig();
+      unsubDeliveryPrintPrefs();
       unsubMonthlySnapshots();
       unsubCleanupConfig();
 
@@ -5978,6 +5998,7 @@ export default function App() {
             approachDistanceMeters={navConfig.approachDistanceMeters}
             approachFastUpdateMs={navConfig.approachFastUpdateMs}
             approachFarUpdateMs={navConfig.approachFarUpdateMs}
+            deliveryPrintPrefs={deliveryPrintPrefs}
             onBack={() => navigateTo(ViewType.DELIVERY_MENU)}
             onMarkDelivered={async (stopId, saleIds) => {
               const now = Date.now();
@@ -6120,6 +6141,22 @@ export default function App() {
                 </div>
                 <ChevronRight size={18} className="text-slate-300 shrink-0" />
               </button>
+              <button
+                type="button"
+                onClick={() => navigateTo(ViewType.DELIVERY_PRINT_CONFIG)}
+                className={`flex items-center gap-3 p-4 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-teal-700' : 'bg-white border-slate-100 hover:border-teal-200 shadow-sm'}`}
+              >
+                <div className={`p-2.5 rounded-xl shrink-0 ${isDarkMode ? 'bg-teal-900/30 text-teal-400' : 'bg-teal-50 text-teal-600'}`}>
+                  <Printer size={20} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Central de Impressão</p>
+                  <p className="text-[10px] font-bold text-slate-400">
+                    Pedidos, clientes e caixas — papel, formato e conteúdo padrão
+                  </p>
+                </div>
+                <ChevronRight size={18} className="text-slate-300 shrink-0" />
+              </button>
             </div>
           </div>
         );
@@ -6135,6 +6172,19 @@ export default function App() {
               const next = { ...navConfig, ...patch };
               setNavConfig(next);
               firebaseService.saveDocument('nav_config', next);
+            }}
+          />
+        );
+      case ViewType.DELIVERY_PRINT_CONFIG:
+        return (
+          <DeliveryPrintConfigView
+            isDarkMode={isDarkMode}
+            onBack={() => navigateTo(ViewType.DELIVERY_CONFIG)}
+            prefs={deliveryPrintPrefs}
+            onUpdatePrefs={(patch) => {
+              const next = { ...deliveryPrintPrefs, ...patch };
+              setDeliveryPrintPrefs(next);
+              firebaseService.saveDocument('delivery_print_prefs', next);
             }}
           />
         );
@@ -6526,6 +6576,8 @@ export default function App() {
         return "Transportadoras";
       case ViewType.DELIVERY_NAV_PREFS:
         return "Preferências de Navegação";
+      case ViewType.DELIVERY_PRINT_CONFIG:
+        return "Central de Impressão";
       case ViewType.PRODUCT_FORM:
         return "Cadastro de Produto";
       case ViewType.SALE_FORM:
@@ -6591,6 +6643,7 @@ export default function App() {
       case ViewType.DELIVERY_CONFIG: return <Truck size={24} className="text-cyan-600 dark:text-cyan-400" />;
       case ViewType.DELIVERY_CARRIERS: return <Truck size={24} className="text-cyan-600 dark:text-cyan-400" />;
       case ViewType.DELIVERY_NAV_PREFS: return <Truck size={24} className="text-cyan-600 dark:text-cyan-400" />;
+      case ViewType.DELIVERY_PRINT_CONFIG: return <Truck size={24} className="text-cyan-600 dark:text-cyan-400" />;
 
       default: return <Shield size={24} className="text-blue-600 dark:text-blue-400" />;
     }

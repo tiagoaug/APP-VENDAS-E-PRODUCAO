@@ -47,7 +47,7 @@ const loadLastState = (): Omit<ExportProfile, 'id' | 'name'> => {
 interface ExportNoteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace') => void;
+  onConfirm: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace', itemsPerPage?: number) => void;
   isDarkMode: boolean;
   title?: string;
   initialFormat?: 'pdf' | 'jpg';
@@ -74,11 +74,11 @@ interface ExportNoteModalProps {
    * "Dividir em Páginas"), pra pré-visualização poder navegar página a página
    * exatamente como o arquivo final vai ficar — em vez de mostrar tudo cortado
    * numa imagem só. */
-  onPreview?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace') => Promise<string[] | boolean>;
+  onPreview?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace', itemsPerPage?: number) => Promise<string[] | boolean>;
   /** Quando true, exibe a opção "Abrir no Print Studio" ao lado de "Visualizar Arquivo" —
    * só faz sentido pra quem gera fichas PCP (módulo nativo Android). */
   showOpenInPrintStudioToggle?: boolean;
-  onOpenInPrintStudio?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace') => Promise<void>;
+  onOpenInPrintStudio?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace', itemsPerPage?: number) => Promise<void>;
   sectors?: { id: string; name: string; color?: string }[];
 }
 
@@ -147,6 +147,10 @@ export default function ExportNoteModal({
   const [showSectorNotes, setShowSectorNotes] = useState(true);
   const [showOrderList, setShowOrderList] = useState(true);
   const [splitPages, setSplitPages] = useState(false);
+  // Quantas fichas forçar por folha/página — 0 = automático (encaixa o máximo que couber
+  // sem nunca cortar uma ficha entre duas folhas). Aplica no PDF sempre; no JPG só quando
+  // "Dividir em Páginas" está ligado.
+  const [itemsPerPage, setItemsPerPage] = useState(0);
   const [showProvider, setShowProvider] = useState(true);
   const [showOSData, setShowOSData] = useState(true);
   const [showSoleGrid, setShowSoleGrid] = useState(false);
@@ -183,6 +187,7 @@ export default function ExportNoteModal({
       setIsObservationOpen(false);
       setActivePopup(null);
       setSplitPages(false);
+      setItemsPerPage(0);
       setShowProvider(true);
       setShowOSData(true);
       setOpenSections(new Set());
@@ -273,7 +278,7 @@ export default function ExportNoteModal({
     if (!onPreview) return;
     setIsPreviewLoading(true);
     try {
-      const pages = await onPreview(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize);
+      const pages = await onPreview(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage);
       if (Array.isArray(pages) && pages.length > 0) {
         setPreviewPages(pages);
         setPreviewPageIdx(0);
@@ -289,7 +294,7 @@ export default function ExportNoteModal({
     if (!onOpenInPrintStudio) return;
     setIsOpeningPrintStudio(true);
     try {
-      await onOpenInPrintStudio(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize);
+      await onOpenInPrintStudio(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage);
     } catch (e) {
       console.error("Open in Print Studio failed", e);
     } finally {
@@ -757,7 +762,7 @@ export default function ExportNoteModal({
               {/* Generate */}
               <button
                 type="button"
-                onClick={() => onConfirm(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize)}
+                onClick={() => onConfirm(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage)}
                 className={`w-full py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
                   selectedFormat === 'pdf' ? 'bg-rose-500' : 'bg-indigo-600'
                 }`}
@@ -999,6 +1004,48 @@ export default function ExportNoteModal({
                         </div>
                       </div>
                     </button>
+                  )}
+
+                  {/* Fichas por Folha — aplica sempre no PDF (nunca corta uma ficha entre
+                      duas folhas) e no JPG só quando "Dividir em Páginas" está ligado. */}
+                  {showSplitPagesToggle && (selectedFormat === 'pdf' || splitPages) && (
+                    <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                      <div className="text-xs font-black uppercase tracking-wider text-slate-750 dark:text-slate-200 mb-0.5">Fichas por Folha</div>
+                      <div className="text-[9px] font-bold text-slate-500 dark:text-slate-400 mb-2.5 leading-snug">
+                        Automático encaixa o máximo sem nunca cortar uma ficha entre duas folhas
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {[0, 3, 5, 8, 10, 15].map(n => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => setItemsPerPage(n)}
+                            className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${
+                              itemsPerPage === n
+                                ? 'bg-cyan-500 text-white'
+                                : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500 border border-slate-200'
+                            }`}
+                          >
+                            {n === 0 ? 'Automático' : n}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1.5">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Outra:</span>
+                        <input
+                          type="number"
+                          min={1}
+                          placeholder="Ex: 7"
+                          value={itemsPerPage > 0 && ![3, 5, 8, 10, 15].includes(itemsPerPage) ? itemsPerPage : ''}
+                          onChange={(e) => {
+                            const n = Math.max(1, parseInt(e.target.value, 10) || 0);
+                            if (n > 0) setItemsPerPage(n);
+                          }}
+                          className={`w-16 py-1.5 px-2 rounded-lg text-xs font-black text-center ${isDarkMode ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}
+                          aria-label="Quantidade personalizada de fichas por folha"
+                        />
+                      </div>
+                    </div>
                   )}
 
                   {showOrderListToggle && (

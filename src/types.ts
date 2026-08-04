@@ -700,6 +700,7 @@ export enum ViewType {
   DELIVERY_CONFIG = 'DELIVERY_CONFIG',
   DELIVERY_CARRIERS = 'DELIVERY_CARRIERS',
   DELIVERY_NAV_PREFS = 'DELIVERY_NAV_PREFS',
+  DELIVERY_PRINT_CONFIG = 'DELIVERY_PRINT_CONFIG',
 }
 
 export type DashboardCardConfig = {
@@ -893,6 +894,35 @@ export type NavConfig = {
   // está dentro da distância de aproximação — mais espaçado que approachFastUpdateMs.
   // Ausente = usa o padrão.
   approachFarUpdateMs?: number;
+};
+
+// Config central única (doc id sempre 'main_config', mesmo padrão de NavConfig acima) —
+// preferências PADRÃO da Central de Impressão de Entregas (Configurações de Entrega).
+// Só define o que vem pré-marcado ao abrir o modal de impressão de dentro de uma rota
+// (DeliveryExportModal) — o usuário ainda pode ajustar cada campo naquele momento sem
+// alterar este padrão salvo.
+// 'none' = não mostra produtos/caixas; 'summary' = uma linha por produto/cor, só com a
+// contagem de caixas (ex.: "300 Preto — 2 CX"); 'full' = tabela detalhada por caixa
+// (produto, cor, pares, caixas), como já era antes de virar duas opções separadas.
+export type DeliveryPrintBoxesMode = 'none' | 'summary' | 'full';
+
+export type DeliveryPrintPrefs = {
+  id: string;
+  showOrders: boolean;
+  showCustomers: boolean;
+  boxesMode: DeliveryPrintBoxesMode;
+  // Exibe uma linha de assinatura ("Assinatura do Recebedor" + data) ao final de cada
+  // parada, pra colher confirmação física de recebimento na entrega.
+  showSignatureField: boolean;
+  // Exibe uma caixinha de checagem (quadrado vazio) ao lado do número de cada parada, pra
+  // marcar manualmente à caneta conforme vai entregando.
+  showCheckbox: boolean;
+  // Quantas entregas (paradas) forçar por folha impressa — 0 = automático (encaixa o
+  // máximo que couber sem NUNCA cortar os dados de uma entrega entre duas folhas); N>0 =
+  // sempre N paradas por folha (mesmo sobrando espaço em branco).
+  stopsPerPage: number;
+  pageSize: 'a4' | '100x150';
+  format: 'pdf' | 'jpg';
 };
 
 export type ProductionConfigItem = {

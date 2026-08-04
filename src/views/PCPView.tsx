@@ -13227,7 +13227,7 @@ export default function PCPView({
       <ExportNoteModal
         isOpen={shareModal.isOpen}
         onClose={() => setShareModal(prev => ({ ...prev, isOpen: false }))}
-        onConfirm={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize) => {
+        onConfirm={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage) => {
           let { finalItems, lotNumbers } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
 
           if (showSectorNotes && selectedSectorIds && selectedSectorIds.length > 0) {
@@ -13255,14 +13255,15 @@ export default function PCPView({
             showProvider,
             showOSData,
             showSoleGrid,
-            pageSize
+            pageSize,
+            itemsPerPage
           }, format);
 
           if (success) {
             setShareModal(prev => ({ ...prev, isOpen: false }));
           }
         }}
-        onPreview={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize) => {
+        onPreview={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage) => {
           let { finalItems, lotNumbers } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
 
           if (showSectorNotes && selectedSectorIds && selectedSectorIds.length > 0) {
@@ -13290,7 +13291,8 @@ export default function PCPView({
             showProvider,
             showOSData,
             showSoleGrid,
-            pageSize
+            pageSize,
+            itemsPerPage
           }, format, true);
         }}
         onOpenInPrintStudio={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize) => {

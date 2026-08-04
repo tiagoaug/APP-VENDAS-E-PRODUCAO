@@ -7,7 +7,7 @@ import {
 import Modal from './Modal';
 import { Product, Variation, SaleType, LabelLayout, Grid, ProductionLot, ServiceOrder, Sector, SectorNote } from '../types';
 import { labelService } from '../services/labelService';
-import { shareImage } from '../utils/pdfExport';
+import { shareImage, shareImages } from '../utils/pdfExport';
 import { toast } from '../utils/toast';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -718,11 +718,13 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         return;
       }
 
-      // Lote: gerar um arquivo JPG separado por pedido selecionado
+      // Lote: gerar um arquivo JPG separado por pedido selecionado — todos compartilhados
+      // de uma vez só, num único share sheet nativo, em vez de abrir o compartilhamento
+      // etiqueta por etiqueta.
       if (fileNames && jpgBatchMode === 'separate') {
-        for (let i = 0; i < frames.length; i++) {
-          await shareImage(frames[i].toDataURL('image/jpeg', 0.92), `${fileNames[i]}_${i + 1}.jpg`);
-        }
+        const dataUris = frames.map(f => f.toDataURL('image/jpeg', 0.92));
+        const names = frames.map((_, i) => `${fileNames[i]}_${i + 1}.jpg`);
+        await shareImages(dataUris, 'Etiquetas', names);
         return;
       }
 

@@ -392,3 +392,49 @@ export const shareImage = async (base64: string, filename: string) => {
   }
 };
 
+/**
+ * Compartilha VÁRIAS imagens numa única ação de compartilhamento nativo (um só share
+ * sheet, com todas as folhas/etiquetas já anexadas) — em vez de chamar shareImage em loop,
+ * que abre o share sheet uma vez por item e obriga o usuário a escolher o app e enviar de
+ * novo a cada um. Usa `files` do plugin @capacitor/share (Android: ACTION_SEND_MULTIPLE),
+ * suportado desde a v4.1.0 do plugin.
+ *
+ * `filenames`, se informado, dá o nome de arquivo exato de cada imagem (ex.: um por pedido
+ * na exportação de etiquetas em lote) — sem isso, gera `${filenamePrefix}_paginaNdeM.jpg`
+ * pra cada uma (caso comum de fichas/rotas paginadas).
+ */
+export const shareImages = async (bases64: string[], filenamePrefix: string, filenames?: string[]) => {
+  if (bases64.length === 0) return;
+  if (bases64.length === 1) {
+    await shareImage(bases64[0], filenames?.[0] || filenamePrefix);
+    return;
+  }
+
+  const nameFor = (i: number) => {
+    const name = filenames?.[i] || `${filenamePrefix}_pagina${i + 1}de${bases64.length}`;
+    return name.toLowerCase().endsWith('.jpg') || name.toLowerCase().endsWith('.jpeg') ? name : `${name}.jpg`;
+  };
+
+  if (Capacitor.getPlatform() === 'web') {
+    // Sem compartilhamento nativo múltiplo no navegador — o melhor possível é baixar
+    // cada arquivo individualmente (o navegador não abre um "share sheet" de qualquer jeito).
+    for (let i = 0; i < bases64.length; i++) {
+      await shareImage(bases64[i], nameFor(i));
+    }
+    return;
+  }
+
+  try {
+    const uris: string[] = [];
+    for (let i = 0; i < bases64.length; i++) {
+      const base64Data = bases64[i].includes('base64,') ? bases64[i].split('base64,')[1] : bases64[i];
+      const result = await Filesystem.writeFile({ path: nameFor(i), data: base64Data, directory: Directory.Cache });
+      uris.push(result.uri);
+    }
+    await Share.share({ title: filenamePrefix, files: uris });
+  } catch (error) {
+    console.error('Error sharing images:', error);
+    toast.show('Erro ao compartilhar imagens. Tente novamente.');
+  }
+};
+

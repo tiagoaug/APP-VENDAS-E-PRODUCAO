@@ -1,8 +1,7 @@
 import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { Filesystem, Directory } from '@capacitor/filesystem';
-import { sharePDF, shareImage } from './pdfExport';
+import { sharePDF, shareImage, shareImages } from './pdfExport';
 import { toast } from './toast';
 import { openPrintStudio } from '../lib/printStudio';
 
@@ -55,18 +54,60 @@ export interface PCPShareData {
   showHeader?: boolean;
   /** Tamanho do papel de exportação. Se marketplace, o tamanho final é 100mm x 150mm */
   pageSize?: 'a4' | 'marketplace';
+  /** Quantas fichas forçar por folha/página — 0 ou ausente = automático (encaixa o máximo
+   * que couber sem NUNCA cortar os dados de uma ficha entre duas folhas). No PDF sempre se
+   * aplica; no JPG só tem efeito quando `splitPages` está ligado. */
+  itemsPerPage?: number;
+}
+
+// Agrupa `items` em "folhas" sem NUNCA cortar uma ficha no meio entre duas folhas: no modo
+// automático (itemsPerPage 0/ausente), encaixa o máximo que couber no orçamento de altura
+// de cada folha (medido por `measureHeight`) — se uma ficha sozinha já estourar o
+// orçamento, ela ainda assim ocupa uma folha inteira pra si, nunca é partida. No modo fixo
+// (itemsPerPage > 0), agrupa em blocos de exatamente N fichas por folha.
+function paginateItems<T>(
+  items: T[],
+  measureHeight: (it: T) => number,
+  getPageBudget: (pageIndex: number) => number,
+  itemsPerPage: number,
+): T[][] {
+  if (items.length === 0) return [[]];
+  if (itemsPerPage > 0) {
+    const pages: T[][] = [];
+    for (let i = 0; i < items.length; i += itemsPerPage) pages.push(items.slice(i, i + itemsPerPage));
+    return pages;
+  }
+  const pages: T[][] = [];
+  let current: T[] = [];
+  let currentH = 0;
+  let pageIdx = 0;
+  let budget = getPageBudget(0);
+  items.forEach(it => {
+    const hgt = measureHeight(it);
+    if (current.length > 0 && currentH + hgt > budget) {
+      pages.push(current);
+      current = [];
+      currentH = 0;
+      pageIdx += 1;
+      budget = getPageBudget(pageIdx);
+    }
+    current.push(it);
+    currentH += hgt;
+  });
+  if (current.length > 0) pages.push(current);
+  return pages;
 }
 
 export async function generatePCPShareExport(data: PCPShareData, formatType: 'pdf' | 'jpg', previewOnly: boolean = false): Promise<boolean | string[]> {
   try {
     const filename = `Ficha_PCP_${data.lotNumber.replace(/[^a-zA-Z0-9]/g, '')}_${format(new Date(), 'yyyyMMdd_HHmm')}`;
-    
+
     if (formatType === 'pdf') {
       if (data.pageSize === 'marketplace') {
         // Gera como imagens fatiadas no tamanho Marketplace, e junta no PDF
         const images = await generateJPG({ ...data, splitPages: true }, filename, true);
         if (!Array.isArray(images)) return false;
-        
+
         const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [100, 150] });
         for (let i = 0; i < images.length; i++) {
           if (i > 0) doc.addPage([100, 150], 'portrait');
@@ -90,8 +131,12 @@ export async function generatePCPShareExport(data: PCPShareData, formatType: 'pd
 }
 
 async function generatePDF(data: PCPShareData, filename: string, previewOnly: boolean = false): Promise<boolean | string[]> {
-  const { lotNumber, items, additionalNote, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, showProvider, showOSData, showSoleGrid } = data;
+  const { lotNumber, items, additionalNote, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showProvider, showOSData, showSoleGrid } = data;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const marginX = 14;
+  const pageW = 210;
+  const tableW = 182; // 210 - 14*2
+  const pageBottom = 272; // deixa ~18mm pro rodapé (linha "Página X de Y")
 
   // Fonts
   doc.setFont('helvetica', 'bold');
@@ -111,9 +156,6 @@ async function generatePDF(data: PCPShareData, filename: string, previewOnly: bo
   doc.setTextColor(0);
   doc.text('FICHA TÉCNICA - MATERIAIS E GRADE', 163, 17.5, { align: 'center' });
 
-  // LOTE/EMISSÃO numa linha própria, em largura total — antes ficava à direita, na
-  // mesma faixa vertical de "SISTEMA DE PRODUÇÃO & PCP", e sobrepunha esse texto quando
-  // o lote reunia vários números (ex.: vários pedidos do mesmo lote agrupados).
   doc.setFontSize(9);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(60);
@@ -124,13 +166,93 @@ async function generatePDF(data: PCPShareData, filename: string, previewOnly: bo
   doc.setLineWidth(0.8);
   doc.line(14, dividerY, 196, dividerY);
 
-  let currentY = dividerY + 8;
+  const contentStartY = dividerY + 8;
 
-  for (const item of items) {
-    if (currentY > 250) {
-      doc.addPage();
-      currentY = 20;
+  // Tabelas de materiais/grade/solado desenhadas manualmente (não via jspdf-autotable) —
+  // dá altura EXATA e previsível (sempre 1 linha de cabeçalho + 1 linha de dados), essencial
+  // pra decidir a quebra de página com antecedência sem risco de cortar uma ficha no meio
+  // (com autoTable a altura real só se sabe depois de já ter desenhado).
+  const TH = 7; // altura da linha de cabeçalho
+  const TB = 8; // altura da linha de dados
+
+  const drawSimpleTable = (
+    startY: number, colWidths: number[], headCells: string[], bodyCells: string[],
+    headFill: [number, number, number], lastColFill?: [number, number, number],
+  ): number => {
+    const totalW = colWidths.reduce((a, b) => a + b, 0);
+    doc.setDrawColor(180);
+    doc.setLineWidth(0.2);
+    doc.setFillColor(...headFill);
+    doc.rect(marginX, startY, totalW, TH, 'F');
+    doc.rect(marginX, startY, totalW, TH);
+    doc.rect(marginX, startY + TH, totalW, TB);
+    if (lastColFill) {
+      const lastColX = marginX + colWidths.slice(0, -1).reduce((a, b) => a + b, 0);
+      doc.setFillColor(...lastColFill);
+      doc.rect(lastColX, startY + TH, colWidths[colWidths.length - 1], TB, 'F');
+      doc.rect(lastColX, startY + TH, colWidths[colWidths.length - 1], TB);
     }
+    let x = marginX;
+    for (let i = 1; i < colWidths.length; i++) {
+      x += colWidths[i - 1];
+      doc.line(x, startY, x, startY + TH + TB);
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(0);
+    x = marginX;
+    headCells.forEach((c, i) => { doc.text(c, x + colWidths[i] / 2, startY + TH / 2 + 1.3, { align: 'center' }); x += colWidths[i]; });
+    doc.setFontSize(9);
+    x = marginX;
+    bodyCells.forEach((c, i) => { doc.text(c, x + colWidths[i] / 2, startY + TH + TB / 2 + 1.3, { align: 'center' }); x += colWidths[i]; });
+    return startY + TH + TB;
+  };
+
+  const materialsBlockHeight = 4 + TH + TB + 12;
+  const gridBlockHeight = (item: PCPShareItem) => (item.sizeGrid && item.sizeGrid.length > 0 ? TH + TB + 12 : 0);
+  const soleBlockHeight = (item: PCPShareItem) => {
+    if (!showSoleGrid || !item.soleInfo) return 0;
+    return item.soleInfo.filter(s => s.sizeGrid.length > 0).length * (4 + TH + TB + 12);
+  };
+
+  const measureSectorHeight = (sector: { notes: string[] }): number => {
+    let linesCount = 0;
+    for (const note of sector.notes) linesCount += doc.splitTextToSize(`• ${note}`, 174).length;
+    return 14 + linesCount * 5; // 5(gap)+5(nome do setor)+linhas*5+4(gap final)
+  };
+
+  const sectorNotesBlockHeight = (item: PCPShareItem): number => {
+    if (showSectorNotes === false || !item.sectorNotes || item.sectorNotes.length === 0) return 0;
+    let hgt = 4;
+    for (const sector of item.sectorNotes) hgt += measureSectorHeight(sector);
+    hgt += 4;
+    return hgt;
+  };
+
+  // Estima a altura TOTAL de uma ficha, em mm — espelha exatamente os incrementos de
+  // `drawItem` abaixo, com +10% de folga: melhor sobrar espaço em branco no fim da folha
+  // do que arriscar cortar uma ficha.
+  const measureItemHeightMm = (item: PCPShareItem): number => {
+    let hgt = 6 + 8; // bloco de identificação (referência/cor/total)
+    if (showProvider && item.providerName) hgt += 4.5 + 5;
+    if (showOSData && item.osNumber) hgt += 5;
+    hgt += 4; // gap antes de materiais/grade
+    if (showMaterials !== false) hgt += materialsBlockHeight;
+    hgt += gridBlockHeight(item);
+    hgt += soleBlockHeight(item);
+    hgt += sectorNotesBlockHeight(item);
+    return hgt * 1.1;
+  };
+
+  const pages = paginateItems(
+    items,
+    measureItemHeightMm,
+    (pageIdx) => (pageIdx === 0 ? pageBottom - contentStartY : pageBottom - 20),
+    data.itemsPerPage ?? 0,
+  );
+
+  const drawItem = (item: PCPShareItem, yStart: number): number => {
+    let currentY = yStart;
 
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(8);
@@ -177,81 +299,69 @@ async function generatePDF(data: PCPShareData, filename: string, previewOnly: bo
     currentY += 4;
 
     if (showMaterials !== false) {
-      // Materials Box (Empty)
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
+      doc.setTextColor(0);
       doc.text('REQUISIÇÃO CONSOLIDADA DE MATERIAIS', 14, currentY);
-      
       currentY += 4;
-      autoTable(doc, {
-        startY: currentY,
-        head: [['CÓDIGO / NOME DO MATERIAL', 'REFERÊNCIA', 'CONSUMO TOTAL ESTIMADO']],
-        body: [[{ content: 'Sem materiais cadastrados', colSpan: 3, styles: { halign: 'center', fontStyle: 'italic', textColor: 150 } }]],
-        theme: 'grid',
-        headStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold', halign: 'left', fontSize: 8 },
-        bodyStyles: { halign: 'center', fontSize: 9 },
-        margin: { left: 14, right: 14 },
-      });
-      currentY = (doc as any).lastAutoTable.finalY + 12;
+
+      const colWidths = [tableW * 0.5, tableW * 0.25, tableW * 0.25];
+      doc.setDrawColor(180);
+      doc.setLineWidth(0.2);
+      doc.setFillColor(240, 240, 240);
+      doc.rect(marginX, currentY, tableW, TH, 'F');
+      doc.rect(marginX, currentY, tableW, TH);
+      doc.rect(marginX, currentY + TH, tableW, TB);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(0);
+      let x = marginX;
+      ['CÓDIGO / NOME DO MATERIAL', 'REFERÊNCIA', 'CONSUMO TOTAL ESTIMADO'].forEach((c, i) => { doc.text(c, x + colWidths[i] / 2, currentY + TH / 2 + 1.3, { align: 'center' }); x += colWidths[i]; });
+      doc.setFont('helvetica', 'italic');
+      doc.setFontSize(9);
+      doc.setTextColor(150);
+      doc.text('Sem materiais cadastrados', marginX + tableW / 2, currentY + TH + TB / 2 + 1.3, { align: 'center' });
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(0);
+      currentY += TH + TB + 12;
     }
 
     // Grade
     if (showItemGrid !== false && item.sizeGrid && item.sizeGrid.length > 0) {
-      if (currentY > 250) { doc.addPage(); currentY = 20; }
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
+      doc.setTextColor(0);
       doc.text('GRADE DETALHADA DO PEDIDO', 14, currentY);
-      
-      const head = [['TAMANHO', ...item.sizeGrid.map(g => g.size), 'TOTAL']];
-      const body = [['Pares', ...item.sizeGrid.map(g => g.qty.toString()), item.totalPairs.toString()]];
 
-      autoTable(doc, {
-        startY: currentY + 4,
-        head: head,
-        body: body,
-        theme: 'grid',
-        headStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold', halign: 'left', fontSize: 8 },
-        bodyStyles: { halign: 'center', fontSize: 9, fontStyle: 'bold' },
-        columnStyles: { 0: { halign: 'left' }, [head[0].length - 1]: { fillColor: [240, 240, 240] } },
-        margin: { left: 14, right: 14 },
-      });
-      currentY = (doc as any).lastAutoTable.finalY + 12;
+      const cols = item.sizeGrid.length + 2;
+      const colWidths = new Array(cols).fill(tableW / cols);
+      const headCells = ['TAMANHO', ...item.sizeGrid.map(g => g.size), 'TOTAL'];
+      const bodyCells = ['Pares', ...item.sizeGrid.map(g => g.qty.toString()), item.totalPairs.toString()];
+      drawSimpleTable(currentY + 4, colWidths, headCells, bodyCells, [240, 240, 240], [240, 240, 240]);
+      currentY += 4 + TH + TB + 12;
     }
 
     // Grade de Solado (Detalhes de Setor > Separação de Solas por Ficha — Montagem)
-    // — um bloco por molde/cor de solado distinto (pode haver mais de um quando o
-    // item reúne pedidos agrupados que usam solados diferentes).
     if (showSoleGrid && item.soleInfo && item.soleInfo.length > 0) {
       for (const sole of item.soleInfo) {
         if (sole.sizeGrid.length === 0) continue;
-        if (currentY > 250) { doc.addPage(); currentY = 20; }
         doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
         doc.setTextColor(0);
         const soleTitle = `SOLADO NECESSÁRIO — ${sole.moldName}${sole.colorName ? ` (${sole.colorName})` : ''}`.toUpperCase();
         doc.text(soleTitle, 14, currentY);
 
-        const headSole = [['NUMERAÇÃO', ...sole.sizeGrid.map(g => g.size), 'TOTAL']];
-        const bodySole = [['Pares', ...sole.sizeGrid.map(g => g.qty.toString()), sole.totalPairs.toString()]];
-
-        autoTable(doc, {
-          startY: currentY + 4,
-          head: headSole,
-          body: bodySole,
-          theme: 'grid',
-          headStyles: { fillColor: [255, 237, 213], textColor: 0, fontStyle: 'bold', halign: 'left', fontSize: 8 },
-          bodyStyles: { halign: 'center', fontSize: 9, fontStyle: 'bold' },
-          columnStyles: { 0: { halign: 'left' }, [headSole[0].length - 1]: { fillColor: [255, 237, 213] } },
-          margin: { left: 14, right: 14 },
-        });
-        currentY = (doc as any).lastAutoTable.finalY + 12;
+        const cols = sole.sizeGrid.length + 2;
+        const colWidths = new Array(cols).fill(tableW / cols);
+        const headCells = ['NUMERAÇÃO', ...sole.sizeGrid.map(g => g.size), 'TOTAL'];
+        const bodyCells = ['Pares', ...sole.sizeGrid.map(g => g.qty.toString()), sole.totalPairs.toString()];
+        drawSimpleTable(currentY + 4, colWidths, headCells, bodyCells, [255, 237, 213], [255, 237, 213]);
+        currentY += 4 + TH + TB + 12;
       }
     }
 
-        // Sector Notes
+    // Sector Notes
     if (showSectorNotes !== false && item.sectorNotes && item.sectorNotes.length > 0) {
-      if (currentY > 240) { doc.addPage(); currentY = 20; }
-      
       doc.setFontSize(10);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(0);
@@ -259,19 +369,15 @@ async function generatePDF(data: PCPShareData, filename: string, previewOnly: bo
       currentY += 4;
 
       for (const sector of item.sectorNotes) {
-        // Measure height first to draw the capsule (card)
         let secHeight = 6;
         doc.setFontSize(9);
-        const linesToDraw = [];
+        const linesToDraw: string[] = [];
         for (const note of sector.notes) {
           const lines = doc.splitTextToSize(`• ${note}`, 174);
           linesToDraw.push(...lines);
         }
         secHeight += linesToDraw.length * 5 + 3;
 
-        if (currentY + secHeight > 280) { doc.addPage(); currentY = 20; }
-
-        // Draw card background
         doc.setFillColor(248, 250, 252);
         doc.setDrawColor(226, 232, 240);
         doc.setLineWidth(0.3);
@@ -289,60 +395,67 @@ async function generatePDF(data: PCPShareData, filename: string, previewOnly: bo
           doc.text(line, 17, currentY);
           currentY += 5;
         }
-        currentY += 4; // Space between sector cards
+        currentY += 4;
       }
       currentY += 4;
     }
 
-    // doc.setDrawColor(200);
-    // doc.line(14, currentY, 196, currentY);
-    // currentY += 8;
-  }
+    return currentY;
+  };
 
-  // TOTAL GRID (All grouped) — só faz sentido com mais de um item; com um só, o
-  // total seria idêntico à grade do próprio item e apareceria como duplicado.
+  // currentY acompanha só a ÚLTIMA página desenhada — é onde TOTAL GRID/OBSERVAÇÕES
+  // (abaixo) começam a ser posicionados.
+  let currentY = contentStartY;
+  pages.forEach((pageItems, pageIdx) => {
+    if (pageIdx > 0) {
+      doc.addPage();
+      currentY = 20;
+    }
+    pageItems.forEach(item => { currentY = drawItem(item, currentY); });
+  });
+
+  // TOTAL GRID + OBSERVAÇÕES, com sua própria checagem reativa de espaço (blocos pequenos
+  // e de conteúdo variável — não fazem parte da garantia "nunca corta uma ficha", só
+  // precisam de uma folha nova se não couberem no que sobrou da última).
+  const ensurePageRoom = (needed: number) => {
+    if (currentY + needed > pageBottom) {
+      doc.addPage();
+      currentY = 20;
+    }
+  };
+
+  // TOTAL GRID (All grouped) — só faz sentido com mais de um item.
   if (showTotalGrid && items.length > 1) {
-      if (currentY > 250) { doc.addPage(); currentY = 20; }
-      
-      // Compute total grid
-      const totalSizeMap = new Map<string, number>();
-      let overallPairs = 0;
-      for (const item of items) {
-          overallPairs += item.totalPairs;
-          for (const g of item.sizeGrid) {
-              totalSizeMap.set(g.size, (totalSizeMap.get(g.size) || 0) + g.qty);
-          }
+    const totalSizeMap = new Map<string, number>();
+    let overallPairs = 0;
+    for (const item of items) {
+      overallPairs += item.totalPairs;
+      for (const g of item.sizeGrid) {
+        totalSizeMap.set(g.size, (totalSizeMap.get(g.size) || 0) + g.qty);
       }
-      
-      const totalSizes = Array.from(totalSizeMap.entries())
-        .map(([size, qty]) => ({ size, qty }))
-        .sort((a,b) => parseFloat(a.size) - parseFloat(b.size));
+    }
+    const totalSizes = Array.from(totalSizeMap.entries())
+      .map(([size, qty]) => ({ size, qty }))
+      .sort((a, b) => parseFloat(a.size) - parseFloat(b.size));
 
-      if (totalSizes.length > 0) {
-          doc.setFontSize(11);
-          doc.setFont('helvetica', 'bold');
-          doc.setTextColor(0);
-          doc.text('GRADE TOTAL DOS PEDIDOS AGRUPADOS', 14, currentY);
-          
-          const head = [['TAMANHO', ...totalSizes.map(g => g.size), 'TOTAL']];
-          const body = [['Pares', ...totalSizes.map(g => g.qty.toString()), overallPairs.toString()]];
+    if (totalSizes.length > 0) {
+      ensurePageRoom(TH + TB + 16);
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(0);
+      doc.text('GRADE TOTAL DOS PEDIDOS AGRUPADOS', 14, currentY);
 
-          autoTable(doc, {
-            startY: currentY + 4,
-            head: head,
-            body: body,
-            theme: 'grid',
-            headStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold', halign: 'left', fontSize: 9 },
-            bodyStyles: { halign: 'center', fontSize: 10, fontStyle: 'bold', fillColor: [248, 250, 252] },
-            columnStyles: { 0: { halign: 'left' }, [head[0].length - 1]: { fillColor: [220, 230, 255] } },
-            margin: { left: 14, right: 14 },
-          });
-          currentY = (doc as any).lastAutoTable.finalY + 12;
-      }
+      const cols = totalSizes.length + 2;
+      const colWidths = new Array(cols).fill(tableW / cols);
+      const headCells = ['TAMANHO', ...totalSizes.map(g => g.size), 'TOTAL'];
+      const bodyCells = ['Pares', ...totalSizes.map(g => g.qty.toString()), overallPairs.toString()];
+      drawSimpleTable(currentY + 4, colWidths, headCells, bodyCells, [240, 240, 240], [220, 230, 255]);
+      currentY += 4 + TH + TB + 12;
+    }
   }
 
   if (additionalNote && additionalNote.trim()) {
-    if (currentY > 250) { doc.addPage(); currentY = 20; }
+    ensurePageRoom(20);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(9);
     doc.setTextColor(100);
@@ -445,7 +558,7 @@ function generatePCPHeaderImage(lotNumber: string): string {
 }
 
 async function generateJPG(data: PCPShareData, filename: string, previewOnly: boolean = false): Promise<boolean | string[]> {
-  const { lotNumber, items, additionalNote, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid } = data;
+  const { lotNumber, items, additionalNote, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, splitPages, showProvider, showOSData, showSoleGrid } = data;
   const showHeader = data.showHeader !== false;
   const W = 900;
   const pad = 40;
@@ -515,31 +628,27 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
   // Agrupa itens em páginas — só quebra ENTRE itens, nunca no meio de um.
   // Sem "Dividir em Páginas" (ou se tudo já cabe numa altura de A4/Marketplace), uma página só.
   const PAGE_H = data.pageSize === 'marketplace' ? Math.round(W * 1.5) : Math.round(W * Math.SQRT2);
-  const pages: PCPShareItem[][] = [];
+  let pages: PCPShareItem[][];
   if (splitPages) {
-    const budget = PAGE_H - HEADER_OVERHEAD - FOOTER_H;
-    let current: PCPShareItem[] = [];
-    let currentH = 0;
-    items.forEach((item, idx) => {
-      const ih = itemHeights[idx];
-      if (current.length > 0 && currentH + ih > budget) {
-        pages.push(current);
-        current = [];
-        currentH = 0;
-      }
-      current.push(item);
-      currentH += ih;
-    });
-    if (current.length > 0 || pages.length === 0) pages.push(current);
+    // itemsPerPage > 0: força exatamente N fichas por página, independente do quanto sobra
+    // de espaço em branco. 0/ausente: encaixa o máximo que couber no orçamento de altura
+    // (comportamento automático de sempre).
+    pages = paginateItems(
+      items,
+      (item) => itemHeights[items.indexOf(item)],
+      () => PAGE_H - HEADER_OVERHEAD - FOOTER_H,
+      data.itemsPerPage ?? 0,
+    );
 
     // Totais/observações só entram na última página; se não couberem no que resta
     // dela, ganham uma página própria em branco (sem cortar o conteúdo da grade total).
+    const budget = PAGE_H - HEADER_OVERHEAD - FOOTER_H;
     const lastPageH = pages[pages.length - 1].reduce((acc, it) => acc + itemHeights[items.indexOf(it)], 0);
     if (lastPageH + totalGridH + notesH > budget && pages[pages.length - 1].length > 0) {
       pages.push([]);
     }
   } else {
-    pages.push(items);
+    pages = [items];
   }
 
   const drawPage = (pageItems: PCPShareItem[], isLastPage: boolean): HTMLCanvasElement => {
@@ -921,14 +1030,11 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
     return true;
   }
 
-  // Várias páginas: compartilha cada uma com um pequeno intervalo entre si — sem a
-  // pausa, navegadores bloqueiam downloads automáticos disparados em sequência
-  // rápida, fazendo só a primeira página sair e o restante ser descartado.
-  for (let p = 0; p < pages.length; p++) {
-    const isLast = p === pages.length - 1;
-    await shareImage(drawPage(pages[p], isLast).toDataURL('image/jpeg', 0.9), `${filename}_pagina${p + 1}de${pages.length}`);
-    if (p < pages.length - 1) await new Promise(resolve => setTimeout(resolve, 600));
-  }
+  // Várias páginas: todas compartilhadas de uma vez só, num único share sheet nativo —
+  // em vez de abrir o compartilhamento página por página, obrigando escolher o app e
+  // enviar de novo a cada folha.
+  const dataUris = pages.map((pageItems, idx) => drawPage(pageItems, idx === pages.length - 1).toDataURL('image/jpeg', 0.9));
+  await shareImages(dataUris, filename);
   return true;
 }
 

@@ -5,12 +5,13 @@ import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Share } from '@capacitor/share';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
-import { ArrowLeft, Navigation, Circle, MapPin, Radio, RotateCcw, Waypoints, Loader2, Camera as CameraIcon, Trash2, Share2, X, Plus, PlayCircle, Timer, Milestone, Pencil, GripVertical, CheckCircle2, StickyNote, ListChecks } from 'lucide-react';
-import { Carrier, DeliveryRoute, DeliveryStop, Product, Sale, SaleType, StockLot } from '../types';
+import { ArrowLeft, Navigation, Circle, MapPin, Radio, RotateCcw, Waypoints, Loader2, Camera as CameraIcon, Trash2, Share2, X, Plus, PlayCircle, Timer, Milestone, Pencil, GripVertical, CheckCircle2, StickyNote, ListChecks, Printer } from 'lucide-react';
+import { Carrier, DeliveryPrintPrefs, DeliveryRoute, DeliveryStop, Product, Sale, SaleType, StockLot } from '../types';
 import DeliveryMap from '../components/DeliveryMap';
 import Modal from '../components/Modal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import NavigationProviderModal from '../components/NavigationProviderModal';
+import DeliveryExportModal from '../components/DeliveryExportModal';
 import { openNavigation, buildGoogleMapsUrl, type NavigationProvider } from '../utils/deliveryNavLink';
 import { optimizeRoute, haversineKm } from '../utils/deliveryRouteOptimizer';
 import { getRoadRoute, RoadRouteResult } from '../utils/deliveryRoadRoute';
@@ -19,9 +20,19 @@ import { getSaleStopLocations } from '../utils/deliverySaleStops';
 import { generateId } from '../utils/id';
 import { photoToCompressedImage, CompressedImage } from '../utils/aiImageUtils';
 import { toast } from '../utils/toast';
+import { generateDeliveryPrintExport, DeliveryPrintData, DeliveryPrintStopItem } from '../utils/deliveryShareExport';
+import { format as formatDate } from 'date-fns';
 
 function formatDistance(m: number): string {
   return m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
+}
+
+// Formata um DeliveryAddress numa linha só, pra Central de Impressão — omite partes
+// ausentes sem deixar vírgulas/traços soltos.
+function formatAddressLine(addr: { street?: string; number?: string; neighborhood?: string; city?: string; state?: string; complement?: string }): string {
+  const streetPart = [addr.street, addr.number].filter(Boolean).join(', ');
+  const cityPart = [addr.city, addr.state].filter(Boolean).join('/');
+  return [streetPart, addr.neighborhood, addr.complement, cityPart].filter(Boolean).join(' - ');
 }
 
 function formatDuration(s: number): string {
@@ -62,6 +73,9 @@ interface DeliveryRouteDetailViewProps {
   approachDistanceMeters?: number;
   approachFastUpdateMs?: number;
   approachFarUpdateMs?: number;
+  // Preferências PADRÃO da Central de Impressão de Entregas (Configurações de Entrega) —
+  // só pré-preenche o modal de impressão desta rota; ajustável ali sem alterar o padrão.
+  deliveryPrintPrefs: DeliveryPrintPrefs;
 }
 
 // Uma linha arrastável do editor de rota — separado em componente próprio (igual ao
@@ -247,7 +261,8 @@ function timeAgoLabel(ts: number): string {
   return `há ${Math.floor(minutes / 60)}h`;
 }
 
-export default function DeliveryRouteDetailView({ route, sales, products, stockLots, carriers, isDarkMode, onBack, onMarkDelivered, onUndoDelivered, onUpdateStops, onEditRouteStops, onUpdateDriverLocation, onDeleteRoute, onStartRoute, deliveryNavProviderPref, approachDistanceMeters, approachFastUpdateMs, approachFarUpdateMs }: DeliveryRouteDetailViewProps) {
+export default function DeliveryRouteDetailView({ route, sales, products, stockLots, carriers, isDarkMode, onBack, onMarkDelivered, onUndoDelivered, onUpdateStops, onEditRouteStops, onUpdateDriverLocation, onDeleteRoute, onStartRoute, deliveryNavProviderPref, approachDistanceMeters, approachFastUpdateMs, approachFarUpdateMs, deliveryPrintPrefs }: DeliveryRouteDetailViewProps) {
+  const [showExportModal, setShowExportModal] = useState(false);
   const [markingId, setMarkingId] = useState<string | null>(null);
   const [showProviderPicker, setShowProviderPicker] = useState(false);
   // "Navegação Integrada" — foco do mapa perto da parada + recálculo automático de rota ao
@@ -494,6 +509,95 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
     }
   };
 
+  // Endereço textual de uma parada — endereço principal (Sale.deliveryAddress), um dos
+  // adicionais (Sale.additionalDeliveryAddresses, casado por addressLabel "Endereço N", ver
+  // getAdditionalStopLocations) ou o da transportadora que atende a parada. Paradas manuais
+  // (sem pedido) não têm endereço estruturado — só o pin no mapa.
+  const resolveStopAddressLine = (stop: DeliveryStop, sale: Sale | undefined, carrierName: string | undefined): string => {
+    const effectiveCarrierId = stop.carrierId || sale?.carrierId;
+    if (effectiveCarrierId) {
+      const carrier = carriers.find(c => c.id === effectiveCarrierId);
+      if (carrier?.address) return formatAddressLine(carrier.address) || carrier.name;
+      if (carrierName) return carrierName;
+    }
+    if (sale) {
+      const addr = stop.addressLabel
+        ? sale.additionalDeliveryAddresses?.find((_, i) => `Endereço ${i + 2}` === stop.addressLabel)?.address
+        : sale.deliveryAddress;
+      const line = addr && formatAddressLine(addr);
+      if (line) return line;
+    }
+    return `Lat ${stop.lat.toFixed(5)}, Lng ${stop.lng.toFixed(5)}`;
+  };
+
+  // Monta os dados pra Central de Impressão a partir das paradas pendentes da rota — mesma
+  // resolução de pedido(s)/transportadora usada em LiveStopRow/getStopLabel, mais o resumo de
+  // caixas (StockLot vinculado ao(s) pedido(s) da parada, sem expor boxIds internos).
+  const buildDeliveryPrintData = (choice: Omit<DeliveryPrintPrefs, 'id'>): DeliveryPrintData => {
+    const pending = orderedStops.filter(s => s.status !== 'DELIVERED');
+    const stopItems: DeliveryPrintStopItem[] = pending.map((stop, i) => {
+      const stopSaleIds = stop.saleIds && stop.saleIds.length > 0 ? stop.saleIds : (stop.saleId ? [stop.saleId] : []);
+      const stopSales = stopSaleIds.map(id => sales.find(s => s.id === id)).filter((s): s is Sale => !!s);
+      const sale = stopSales[0];
+      const effectiveCarrierId = stop.carrierId || sale?.carrierId;
+      const carrierName = effectiveCarrierId ? carriers.find(c => c.id === effectiveCarrierId)?.name : undefined;
+      const customerName = stopSales.length > 1
+        ? stopSales.map(s => s.customerName || 'Cliente').join(', ')
+        : (sale?.customerName || stop.label || `Parada ${i + 1}`);
+
+      const boxes = choice.boxesMode !== 'none'
+        ? stockLots
+          .filter(sl => sl.saleId && stopSaleIds.includes(sl.saleId))
+          .map(sl => {
+            const prod = products.find(p => p.id === sl.productId);
+            return {
+              productLabel: `${prod?.reference ? `${prod.reference} ` : ''}${sl.productName}`,
+              colorName: sl.variationName,
+              gradeLabel: sl.gradeLabel,
+              totalPairs: sl.totalPairs,
+              boxQty: sl.boxQty,
+              pkgName: sl.pkgName,
+            };
+          })
+        : [];
+
+      return {
+        stopNumber: i + 1,
+        customerName,
+        addressLine: resolveStopAddressLine(stop, sale, carrierName),
+        priority: stop.priority,
+        status: stop.status,
+        orderNumbers: stopSales.map(s => s.orderNumber),
+        carrierName,
+        note: stop.note,
+        orderNotes: stopSales.map(s => s.notes).filter((n): n is string => !!n && n.trim().length > 0),
+        boxes,
+      };
+    });
+
+    return {
+      routeLabel: `Rota ${formatDate(new Date(route.date), 'dd/MM/yyyy')}`,
+      driverName: route.driverName,
+      statusLabel: route.status === 'DRAFT' ? 'Rascunho' : route.status === 'IN_PROGRESS' ? 'Em andamento' : 'Concluída',
+      stops: stopItems,
+      showOrders: choice.showOrders,
+      showCustomers: choice.showCustomers,
+      boxesMode: choice.boxesMode,
+      showSignatureField: choice.showSignatureField,
+      showCheckbox: choice.showCheckbox,
+      stopsPerPage: choice.stopsPerPage,
+      pageSize: choice.pageSize,
+    };
+  };
+
+  const handlePreviewExport = async (choice: Omit<DeliveryPrintPrefs, 'id'>) => {
+    return generateDeliveryPrintExport(buildDeliveryPrintData(choice), choice.format, true);
+  };
+
+  const handleConfirmExport = async (choice: Omit<DeliveryPrintPrefs, 'id'>) => {
+    await generateDeliveryPrintExport(buildDeliveryPrintData(choice), choice.format, false);
+  };
+
   // Abre o seletor nativo "abrir com..." do Android pra PRÓXIMA parada pendente, via
   // esquema geo: — é o intent padrão que TODO app de navegação instalado (Waze, Google
   // Maps, ou qualquer outro) se registra pra atender, ao contrário do menu de
@@ -728,6 +832,10 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
         </button>
         <h1 className={`text-lg font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Rota de Entrega</h1>
         <div className="flex items-center gap-2">
+          <button onClick={() => setShowExportModal(true)} title="Central de Impressão" aria-label="Central de Impressão"
+            className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-900 text-teal-400' : 'bg-white text-teal-600'} shadow-sm`}>
+            <Printer size={18} />
+          </button>
           <button onClick={openEditModal} title="Editar Rota" aria-label="Editar Rota"
             className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-900 text-teal-400' : 'bg-white text-teal-600'} shadow-sm`}>
             <Pencil size={18} />
@@ -822,6 +930,15 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
         >
           <Navigation size={14} />
           Escolher Provedor
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setShowExportModal(true)}
+          className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border-2 transition-all active:scale-[0.98] ${isDarkMode ? 'border-teal-800 text-teal-400 hover:bg-teal-900/20' : 'border-teal-200 text-teal-700 hover:bg-teal-50'}`}
+        >
+          <Printer size={14} />
+          Central de Impressão
         </button>
 
         {showProviderPicker && (
@@ -938,6 +1055,15 @@ export default function DeliveryRouteDetailView({ route, sales, products, stockL
           </div>
         )}
       </Modal>
+
+      <DeliveryExportModal
+        isOpen={showExportModal}
+        onClose={() => setShowExportModal(false)}
+        isDarkMode={isDarkMode}
+        initialPrefs={deliveryPrintPrefs}
+        onPreview={handlePreviewExport}
+        onConfirm={handleConfirmExport}
+      />
 
       <ConfirmDialog
         isOpen={showDeleteConfirm}
