@@ -53,6 +53,10 @@ function usePersistedState<T>(key: string, defaultValue: T): [T, (v: T | ((prev:
 interface PurchasesViewProps {
   purchases: Purchase[];
   suppliers: Person[];
+  // Lista COMPLETA de pessoas (não só `suppliers`, que é filtrada a isSupplier) — itens
+  // "Fornecedor/Terceirizado" da Compra Geral podem apontar pra uma pessoa marcada só como
+  // prestador de serviço (isServiceProvider), que `suppliers` não inclui.
+  people: Person[];
   products: Product[];
   onAdd: () => void;
   onEdit: (id: string) => void;
@@ -65,6 +69,7 @@ interface PurchasesViewProps {
 export default function PurchasesView({
   purchases,
   suppliers,
+  people,
   products,
   onAdd,
   onEdit,
@@ -283,12 +288,16 @@ export default function PurchasesView({
 
   const renderGeneralItemRow = (item: any, idx: number) => {
     const lineTotal = (item.value || 0) * (item.quantity || 1);
+    // Item "Fornecedor/Terceirizado": mostra o nome da pessoa cadastrada (via personId),
+    // não a palavra genérica "Fornecedor" — `description` é um campo de texto livre
+    // separado (motivo/serviço), não o nome do fornecedor.
+    const personName = item.kind === 'person' ? people.find(p => p.id === item.personId)?.name : undefined;
     return (
       <div key={item.id || idx} className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
         <div className="flex items-center gap-2 min-w-0">
           <Tag size={12} className="text-slate-400 shrink-0" />
           <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 truncate">
-            <span className="text-slate-400">{generalItemKindLabel(item.kind)} · </span>
+            <span className="text-slate-400">{personName || generalItemKindLabel(item.kind)} · </span>
             {item.description}
             {item.quantity ? <span className="text-slate-400"> · {item.quantity}{item.unit ? ` ${item.unit}` : ''}</span> : null}
           </span>

@@ -75,10 +75,6 @@ interface ExportNoteModalProps {
    * exatamente como o arquivo final vai ficar — em vez de mostrar tudo cortado
    * numa imagem só. */
   onPreview?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace', itemsPerPage?: number) => Promise<string[] | boolean>;
-  /** Quando true, exibe a opção "Abrir no Print Studio" ao lado de "Visualizar Arquivo" —
-   * só faz sentido pra quem gera fichas PCP (módulo nativo Android). */
-  showOpenInPrintStudioToggle?: boolean;
-  onOpenInPrintStudio?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace', itemsPerPage?: number) => Promise<void>;
   sectors?: { id: string; name: string; color?: string }[];
 }
 
@@ -120,8 +116,6 @@ export default function ExportNoteModal({
   showOSDataToggle = false,
   showSoleGridToggle = false,
   onPreview,
-  showOpenInPrintStudioToggle = false,
-  onOpenInPrintStudio,
   sectors = []
 }: ExportNoteModalProps) {
   const [note, setNote] = useState('');
@@ -160,7 +154,6 @@ export default function ExportNoteModal({
   const [previewPages, setPreviewPages] = useState<string[]>([]);
   const [previewPageIdx, setPreviewPageIdx] = useState(0);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
-  const [isOpeningPrintStudio, setIsOpeningPrintStudio] = useState(false);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -290,18 +283,6 @@ export default function ExportNoteModal({
     }
   };
 
-  const handleOpenInPrintStudio = async () => {
-    if (!onOpenInPrintStudio) return;
-    setIsOpeningPrintStudio(true);
-    try {
-      await onOpenInPrintStudio(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage);
-    } catch (e) {
-      console.error("Open in Print Studio failed", e);
-    } finally {
-      setIsOpeningPrintStudio(false);
-    }
-  };
-
   const removeChip = (idx: number) => {
     const removed = predefinedNotes[idx];
     persistNotes(predefinedNotes.filter((_, i) => i !== idx));
@@ -357,7 +338,6 @@ export default function ExportNoteModal({
     showPCPTotalGridToggle && pcpTotalGrid,
     showMaterialsToggle && showMaterials,
     showItemGridToggle && showItemGrid,
-    showSplitPagesToggle && splitPages && selectedFormat === 'jpg',
     showOrderListToggle && showOrderList,
     showSectorNotesToggle && showSectorNotes
   ].filter(Boolean).length;
@@ -372,7 +352,6 @@ export default function ExportNoteModal({
     showPCPTotalGridToggle && pcpTotalGrid && 'Grade Total',
     showMaterialsToggle && showMaterials && 'Materiais',
     showItemGridToggle && showItemGrid && 'Grade Pedido',
-    showSplitPagesToggle && splitPages && selectedFormat === 'jpg' && 'Dividir Páginas',
     showOrderListToggle && showOrderList && 'Lista Pedidos',
     showSectorNotesLabel
   ].filter(Boolean) as string[];
@@ -553,7 +532,7 @@ export default function ExportNoteModal({
             )}
 
             {/* 2. Resumo da Grade Card */}
-            {(showPCPTotalGridToggle || showMaterialsToggle || showItemGridToggle || showSplitPagesToggle || showOrderListToggle || showSectorNotesToggle) && (
+            {(showPCPTotalGridToggle || showMaterialsToggle || showItemGridToggle || showOrderListToggle || showSectorNotesToggle) && (
               <button
                 type="button"
                 onClick={() => setActivePopup('grid')}
@@ -733,8 +712,9 @@ export default function ExportNoteModal({
                 <Send size={13} className="text-cyan-500" />
               </span>
             } label="Opções de Compartilhamento">
-              {/* Visualizar / Abrir no Print Studio */}
-              {(onPreview || (showOpenInPrintStudioToggle && onOpenInPrintStudio)) && (
+              {/* Visualizar / Dividir em Páginas — fica perto de "Gerar", que é onde faz
+                  mais sentido decidir se o JPG sai como imagem única ou em folhas. */}
+              {(onPreview || (showSplitPagesToggle && selectedFormat === 'jpg')) && (
                 <div className="flex gap-1.5">
                   {onPreview && (
                     <button
@@ -746,16 +726,60 @@ export default function ExportNoteModal({
                       {isPreviewLoading ? 'Carregando...' : 'Visualizar Arquivo'}
                     </button>
                   )}
-                  {showOpenInPrintStudioToggle && onOpenInPrintStudio && (
+                  {showSplitPagesToggle && selectedFormat === 'jpg' && (
                     <button
                       type="button"
-                      onClick={handleOpenInPrintStudio}
-                      disabled={isOpeningPrintStudio}
-                      className={`flex-1 py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 bg-cyan-600 shadow-cyan-600/20`}
+                      onClick={() => setSplitPages(prev => !prev)}
+                      className={`flex-1 py-3 rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 ${
+                        splitPages ? 'bg-cyan-600 text-white shadow-cyan-600/20' : isDarkMode ? 'bg-slate-800 text-slate-300 border border-slate-700' : 'bg-slate-100 text-slate-600'
+                      }`}
                     >
-                      {isOpeningPrintStudio ? 'Abrindo...' : 'Print Studio'}
+                      <Layers size={14} /> Dividir em Páginas
                     </button>
                   )}
+                </div>
+              )}
+
+              {/* Fichas por Folha — só relevante junto da geração: sempre vale no PDF
+                  (nunca corta uma ficha entre duas folhas) e no JPG só com "Dividir em
+                  Páginas" ligado. */}
+              {showSplitPagesToggle && (selectedFormat === 'pdf' || splitPages) && (
+                <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+                  <div className="text-xs font-black uppercase tracking-wider text-slate-750 dark:text-slate-200 mb-0.5">Fichas por Folha</div>
+                  <div className="text-[9px] font-bold text-slate-500 dark:text-slate-400 mb-2.5 leading-snug">
+                    Automático encaixa o máximo sem nunca cortar uma ficha entre duas folhas
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {[0, 3, 5, 8, 10, 15].map(n => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setItemsPerPage(n)}
+                        className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${
+                          itemsPerPage === n
+                            ? 'bg-cyan-500 text-white'
+                            : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500 border border-slate-200'
+                        }`}
+                      >
+                        {n === 0 ? 'Automático' : n}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Outra:</span>
+                    <input
+                      type="number"
+                      min={1}
+                      placeholder="Ex: 7"
+                      value={itemsPerPage > 0 && ![3, 5, 8, 10, 15].includes(itemsPerPage) ? itemsPerPage : ''}
+                      onChange={(e) => {
+                        const n = Math.max(1, parseInt(e.target.value, 10) || 0);
+                        if (n > 0) setItemsPerPage(n);
+                      }}
+                      className={`w-16 py-1.5 px-2 rounded-lg text-xs font-black text-center ${isDarkMode ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}
+                      aria-label="Quantidade personalizada de fichas por folha"
+                    />
+                  </div>
                 </div>
               )}
 
@@ -982,70 +1006,6 @@ export default function ExportNoteModal({
                         </div>
                       </div>
                     </button>
-                  )}
-
-                  {showSplitPagesToggle && selectedFormat === 'jpg' && (
-                    <button
-                      type="button"
-                      onClick={() => setSplitPages(prev => !prev)}
-                      className={`w-full flex items-center justify-between gap-3 p-3 rounded-2xl border transition-all ${
-                        isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5 text-left flex-1 min-w-0">
-                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${splitPages ? 'bg-cyan-500 text-white' : isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
-                          {splitPages ? <Check size={16} strokeWidth={3} /> : <div className="w-2.5 h-2.5 rounded-full bg-slate-400" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-black uppercase tracking-wider text-slate-755 dark:text-slate-200">Dividir em Páginas</div>
-                          <div className="text-[9px] font-bold text-slate-500 dark:text-slate-400 mt-0.5 leading-snug">
-                            Corta a imagem em formato A4 em vez de única comprida
-                          </div>
-                        </div>
-                      </div>
-                    </button>
-                  )}
-
-                  {/* Fichas por Folha — aplica sempre no PDF (nunca corta uma ficha entre
-                      duas folhas) e no JPG só quando "Dividir em Páginas" está ligado. */}
-                  {showSplitPagesToggle && (selectedFormat === 'pdf' || splitPages) && (
-                    <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                      <div className="text-xs font-black uppercase tracking-wider text-slate-750 dark:text-slate-200 mb-0.5">Fichas por Folha</div>
-                      <div className="text-[9px] font-bold text-slate-500 dark:text-slate-400 mb-2.5 leading-snug">
-                        Automático encaixa o máximo sem nunca cortar uma ficha entre duas folhas
-                      </div>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {[0, 3, 5, 8, 10, 15].map(n => (
-                          <button
-                            key={n}
-                            type="button"
-                            onClick={() => setItemsPerPage(n)}
-                            className={`py-2 rounded-xl text-[10px] font-black uppercase tracking-wide transition-all ${
-                              itemsPerPage === n
-                                ? 'bg-cyan-500 text-white'
-                                : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500 border border-slate-200'
-                            }`}
-                          >
-                            {n === 0 ? 'Automático' : n}
-                          </button>
-                        ))}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1.5">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Outra:</span>
-                        <input
-                          type="number"
-                          min={1}
-                          placeholder="Ex: 7"
-                          value={itemsPerPage > 0 && ![3, 5, 8, 10, 15].includes(itemsPerPage) ? itemsPerPage : ''}
-                          onChange={(e) => {
-                            const n = Math.max(1, parseInt(e.target.value, 10) || 0);
-                            if (n > 0) setItemsPerPage(n);
-                          }}
-                          className={`w-16 py-1.5 px-2 rounded-lg text-xs font-black text-center ${isDarkMode ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-200 text-slate-700'}`}
-                          aria-label="Quantidade personalizada de fichas por folha"
-                        />
-                      </div>
-                    </div>
                   )}
 
                   {showOrderListToggle && (

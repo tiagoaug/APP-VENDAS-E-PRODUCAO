@@ -13295,28 +13295,6 @@ export default function PCPView({
             itemsPerPage
           }, format, true);
         }}
-        onOpenInPrintStudio={async (note, format, showVals, groupMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize) => {
-          // Print Studio trabalha com blocos de imagem (bitmap), nunca PDF — por isso
-          // ignora o formato escolhido no popup (sempre gera como JPG), mas respeita as
-          // mesmas opções de conteúdo (grade, materiais, instruções etc.) já configuradas.
-          let { finalItems } = buildGroupedShareItems(shareModal.selectedItems, groupMode);
-
-          if (showSectorNotes && selectedSectorIds && selectedSectorIds.length > 0) {
-            finalItems = finalItems.map(item => {
-              const filteredNotes = item.sectorNotes.filter(n => {
-                const sec = sectors.find(s => s.name === n.sectorName);
-                if (!sec) return false;
-                return selectedSectorIds.includes(sec.id);
-              });
-              return { ...item, sectorNotes: filteredNotes };
-            });
-          }
-
-          await sendPCPItemsToPrintStudio(finalItems, {
-            isDarkMode, showTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, showProvider, showOSData, showSoleGrid, pageSize,
-          });
-          setShareModal(prev => ({ ...prev, isOpen: false }));
-        }}
         isDarkMode={isDarkMode}
         initialFormat={shareModal.format}
         title="Central de Compartilhamento - PCP"
@@ -13331,7 +13309,6 @@ export default function PCPView({
         showProviderToggle={true}
         showOSDataToggle={true}
         showSoleGridToggle={true}
-        showOpenInPrintStudioToggle={true}
       />
 
       <Modal

@@ -4330,6 +4330,7 @@ export default function App() {
           <PurchasesView
             purchases={purchases}
             suppliers={suppliers}
+            people={people}
             products={products}
             onAdd={() => navigateTo(ViewType.PURCHASE_FORM)}
             onEdit={(id) => navigateTo(ViewType.PURCHASE_FORM, id)}
