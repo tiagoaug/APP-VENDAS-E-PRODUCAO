@@ -837,8 +837,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     if (saleToSave.reminderAt) {
       notificationService.scheduleReminder({
         id: `sale-${saleToSave.id}`,
-        title: saleToSave.reminderTitle || saleToSave.customerName || 'Venda',
-        body: saleToSave.reminderTitle ? (saleToSave.customerName || 'Venda') : 'Lembrete de venda',
+        title: saleToSave.reminderTitle || `Vencimento — ${saleToSave.customerName || 'Cliente'}`,
+        body: `${saleToSave.customerName || 'Cliente não informado'} · ${saleToSave.paymentTerm === PaymentTerm.INSTALLMENTS ? 'Venda a Prazo' : 'Venda'}`,
         at: saleToSave.reminderAt,
         alarmMode: saleToSave.reminderAlarmMode ?? true,
         combineMode: saleToSave.reminderCombineMode ?? false,
@@ -1394,7 +1394,17 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                     value={paymentTerm}
                     aria-label="Condição de pagamento"
                     title="Condição de Pagamento"
-                    onChange={(e) => setPaymentTerm(e.target.value as PaymentTerm)}
+                    onChange={(e) => {
+                      const term = e.target.value as PaymentTerm;
+                      setPaymentTerm(term);
+                      if (term === PaymentTerm.INSTALLMENTS && !reminderAt) {
+                        const due = new Date(dueDate);
+                        due.setHours(9, 0, 0, 0);
+                        const customerName = people.find(p => p.id === customerId)?.name;
+                        setReminderAt(due.getTime());
+                        setReminderTitle(`Vencimento — ${customerName || 'Cliente'}`);
+                      }
+                    }}
                   >
                     <option value={PaymentTerm.CASH}>À Vista</option>
                     <option value={PaymentTerm.INSTALLMENTS}>A Prazo</option>

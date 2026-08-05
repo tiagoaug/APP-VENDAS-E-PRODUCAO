@@ -67,6 +67,7 @@ import { generateId } from '../utils/id';
 import { firebaseService } from '../services/firebaseService';
 import { seedProductionOrderSequence } from '../utils/sequenceSeeds';
 import { isHybridProduct } from '../utils/stockPools';
+import { TYPE_LABELS as PURCHASE_TYPE_LABELS } from '../utils/purchaseExport';
 
 // Cor de texto legível sobre um fundo hexadecimal (preto ou branco, pelo contraste YIQ).
 const getContrastingColor = (hexcolor: string) => {
@@ -872,8 +873,8 @@ export default function PurchaseFormView({
     if (purchaseToSave.reminderAt) {
       notificationService.scheduleReminder({
         id: `purchase-${purchaseToSave.id}`,
-        title: purchaseToSave.reminderTitle || `Vencimento — ${supplierName || 'compra'}`,
-        body: `Vencimento da compra ${batchNumber} — ${supplierName || ''}`,
+        title: purchaseToSave.reminderTitle || `Vencimento — ${supplierName || 'Fornecedor'}`,
+        body: `${supplierName || 'Fornecedor não informado'} · ${PURCHASE_TYPE_LABELS[type] || 'Compra'}`,
         at: purchaseToSave.reminderAt,
         alarmMode: purchaseToSave.reminderAlarmMode ?? true,
         combineMode: purchaseToSave.reminderCombineMode ?? false,

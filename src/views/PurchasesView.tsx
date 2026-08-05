@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Purchase, Person, Product, PurchaseType, PaymentStatus, PaymentTerm, SaleType } from "../types";
+import { Purchase, Person, Product, PurchaseType, PaymentStatus, PaymentTerm, SaleType, GeneralPurchaseItem, ProductionConfigItem } from "../types";
 import {
   ShoppingCart,
   Plus,
@@ -17,12 +17,14 @@ import {
   Filter,
   ChevronDown,
   ChevronUp,
+  Share2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ChecksModal from "../components/ChecksModal";
 import ExportNoteModal from "../components/ExportNoteModal";
+import AddPurchaseEntriesModal from "../components/AddPurchaseEntriesModal";
 import { exportPurchase } from "../utils/purchaseExport";
 import { toast } from '../utils/toast';
 import { firebaseService } from '../services/firebaseService';
@@ -58,6 +60,7 @@ interface PurchasesViewProps {
   // prestador de serviço (isServiceProvider), que `suppliers` não inclui.
   people: Person[];
   products: Product[];
+  productionConfigs: ProductionConfigItem[];
   onAdd: () => void;
   onEdit: (id: string) => void;
   onDelete: (id: string) => void;
@@ -71,6 +74,7 @@ export default function PurchasesView({
   suppliers,
   people,
   products,
+  productionConfigs,
   onAdd,
   onEdit,
   onDelete,
@@ -115,6 +119,19 @@ export default function PurchasesView({
   const [isChecksModalOpen, setIsChecksModalOpen] = useState(false);
   const [selectedPurchaseForItems, setSelectedPurchaseForItems] = useState<Purchase | null>(null);
   const [exportModal, setExportModal] = useState<{ isOpen: boolean; purchase?: Purchase; format: 'pdf' | 'jpg' }>({ isOpen: false, format: 'pdf' });
+  const [addEntryPurchase, setAddEntryPurchase] = useState<Purchase | null>(null);
+
+  const handleConfirmAddEntries = (newItems: GeneralPurchaseItem[]) => {
+    if (!addEntryPurchase) return;
+    const addedTotal = newItems.reduce((acc, item) => acc + (item.value || 0) * (item.quantity || 1), 0);
+    onUpdate({
+      ...addEntryPurchase,
+      generalItems: [...(addEntryPurchase.generalItems || []), ...newItems],
+      total: addEntryPurchase.total + addedTotal,
+    });
+    toast.show('Lançamento adicionado à compra!');
+    setAddEntryPurchase(null);
+  };
 
   const handleOpenExport = (e: React.MouseEvent, purchase: Purchase, format: 'pdf' | 'jpg') => {
     e.stopPropagation();
@@ -727,24 +744,30 @@ export default function PurchasesView({
 
                 {/* Actions Group (Floating Island) */}
                 <div className="flex items-center gap-1.5 p-1.5 rounded-full bg-slate-50/80 dark:bg-slate-800/80 border border-slate-100 dark:border-slate-700 shadow-sm backdrop-blur-md relative">
-                  {/* PDF Export Button */}
-                  <button
-                    type="button"
-                    onClick={(e) => handleOpenExport(e, purchase, 'pdf')}
-                    className="w-10 h-10 flex items-center justify-center bg-rose-50 dark:bg-rose-500/10 text-rose-500 rounded-full font-black text-[10px] tracking-tighter active:scale-90 transition-all"
-                    title="Exportar PDF"
-                  >
-                    PDF
-                  </button>
+                  {/* Add Entry Button — só compras Gerais têm essa opção; Produção e
+                      Solados exigem escolher produto/molde e grade, fora do escopo deste
+                      atalho rápido. */}
+                  {purchase.type === PurchaseType.GENERAL && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setAddEntryPurchase(purchase); }}
+                      className="w-10 h-10 flex items-center justify-center bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
+                      title="Adicionar Lançamento"
+                      aria-label="Adicionar novo lançamento a esta compra"
+                    >
+                      <Plus size={18} strokeWidth={3} />
+                    </button>
+                  )}
 
-                  {/* JPG Export Button */}
+                  {/* Share Button */}
                   <button
                     type="button"
                     onClick={(e) => handleOpenExport(e, purchase, 'jpg')}
-                    className="w-10 h-10 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 rounded-full font-black text-[10px] tracking-tighter active:scale-90 transition-all"
-                    title="Exportar JPG"
+                    className="w-10 h-10 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 rounded-full shadow-sm hover:shadow-md transition-all active:scale-90"
+                    title="Compartilhar"
+                    aria-label="Compartilhar compra"
                   >
-                    JPG
+                    <Share2 size={18} />
                   </button>
 
                   {/* Edit Button */}
@@ -834,6 +857,15 @@ export default function PurchasesView({
         showItemGridToggle
         itemGridLabel="Mostrar Grade da Compra"
         itemGridDescription="Itens aparecem em grade por cor (tamanhos no varejo, caixas no atacado), somando quantidades repetidas"
+      />
+
+      <AddPurchaseEntriesModal
+        isOpen={!!addEntryPurchase}
+        onClose={() => setAddEntryPurchase(null)}
+        onConfirm={handleConfirmAddEntries}
+        isDarkMode={isDarkMode}
+        people={people}
+        productionConfigs={productionConfigs}
       />
     </div>
   );

@@ -14,9 +14,12 @@ interface ComboBoxProps {
    * usado quando o campo fica dentro de um card/modal pequeno onde o dropdown inline
    * empurrava/sobrepunha o resto do conteúdo abaixo dele. */
   usePopupModal?: boolean;
+  /** z-index do popup centralizado (usePopupModal). Precisa ficar acima do modal que
+   * contém o ComboBox — sobe o padrão quando esse modal já usa um z-index alto. */
+  popupZIndex?: number;
 }
 
-export default function ComboBox({ options, value, onChange, placeholder = "SELECIONE...", isDarkMode = false, icon, compact = false, usePopupModal = false }: ComboBoxProps) {
+export default function ComboBox({ options, value, onChange, placeholder = "SELECIONE...", isDarkMode = false, icon, compact = false, usePopupModal = false, popupZIndex = 65000 }: ComboBoxProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -94,7 +97,7 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
       )}
 
       {isOpen && usePopupModal && createPortal(
-        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 65000 }}>
+        <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: popupZIndex }}>
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={closePopup} />
           <div className={`relative w-full max-w-sm max-h-[80vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             <div className={`flex items-center justify-between px-5 py-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>

@@ -27,7 +27,7 @@ type ItemRow = {
   soleQuantities?: Record<string, number>;
 };
 
-const TYPE_LABELS: Record<string, string> = {
+export const TYPE_LABELS: Record<string, string> = {
   [PurchaseType.REPLENISHMENT]: 'Abastecimento de Estoque',
   [PurchaseType.GENERAL]: 'Compra Geral',
   [PurchaseType.SOLE]: 'Compra de Solados',

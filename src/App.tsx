@@ -177,6 +177,7 @@ import ScannerModal from "./components/ScannerModal";
 import { scannerService } from "./services/scannerService";
 import { ToastContainer } from "./components/ToastContainer";
 import { toast } from "./utils/toast";
+import { TYPE_LABELS as PURCHASE_TYPE_LABELS } from "./utils/purchaseExport";
 import { parseLocaleNumber } from './utils/numbers';
 import { generateId } from './utils/id';
 import { seedProductionOrderSequence } from './utils/sequenceSeeds';
@@ -1053,8 +1054,8 @@ export default function App() {
         const reminders: ReminderNotification[] = [];
         sales.filter(s => s.reminderAt).forEach(s => reminders.push({
           id: `sale-${s.id}`,
-          title: s.reminderTitle || s.customerName || 'Venda',
-          body: s.reminderTitle ? (s.customerName || 'Venda') : 'Lembrete de venda',
+          title: s.reminderTitle || `Vencimento — ${s.customerName || 'Cliente'}`,
+          body: `${s.customerName || 'Cliente não informado'} · ${s.paymentTerm === PaymentTerm.INSTALLMENTS ? 'Venda a Prazo' : 'Venda'}`,
           at: s.reminderAt!,
           alarmMode: s.reminderAlarmMode ?? true,
           combineMode: s.reminderCombineMode ?? false,
@@ -1081,15 +1082,18 @@ export default function App() {
             soundPattern: item.reminderSoundPattern || 'standard',
           });
         }));
-        purchases.filter(p => p.reminderAt).forEach(p => reminders.push({
-          id: `purchase-${p.id}`,
-          title: p.reminderTitle || `Vencimento — compra ${p.batchNumber || ''}`,
-          body: `Vencimento da compra ${p.batchNumber || ''}`,
-          at: p.reminderAt!,
-          alarmMode: p.reminderAlarmMode ?? true,
-          combineMode: p.reminderCombineMode ?? false,
-          soundPattern: p.reminderSoundPattern || 'standard',
-        }));
+        purchases.filter(p => p.reminderAt).forEach(p => {
+          const supplierName = suppliers.find(s => s.id === p.supplierId)?.name;
+          reminders.push({
+            id: `purchase-${p.id}`,
+            title: p.reminderTitle || `Vencimento — ${supplierName || 'Fornecedor'}`,
+            body: `${supplierName || 'Fornecedor não informado'} · ${PURCHASE_TYPE_LABELS[p.type] || 'Compra'}`,
+            at: p.reminderAt!,
+            alarmMode: p.reminderAlarmMode ?? true,
+            combineMode: p.reminderCombineMode ?? false,
+            soundPattern: p.reminderSoundPattern || 'standard',
+          });
+        });
         notificationService.rescheduleAll(reminders);
       })();
     }, 4000);
@@ -4332,6 +4336,7 @@ export default function App() {
             suppliers={suppliers}
             people={people}
             products={products}
+            productionConfigs={productionConfigs}
             onAdd={() => navigateTo(ViewType.PURCHASE_FORM)}
             onEdit={(id) => navigateTo(ViewType.PURCHASE_FORM, id)}
             onDelete={async (id) => {
