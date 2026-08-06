@@ -1387,6 +1387,16 @@ function GenericConfigList({
   // converte pro estoque em KG (unidade base rastreada na Necessidade de Compras) usando o
   // Peso da Embalagem cadastrado. Campo só de entrada, não é persistido.
   const [stockPackagesInput, setStockPackagesInput] = useState('');
+  // Categorias de Insumo (Catálogo de Insumos) vêm minimizadas por padrão — Set vazio = tudo
+  // fechado; guarda só as que o usuário abriu manualmente.
+  const [openMaterialCategories, setOpenMaterialCategories] = useState<Set<string>>(new Set());
+  const toggleMaterialCategory = (cat: string) => {
+    setOpenMaterialCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat); else next.add(cat);
+      return next;
+    });
+  };
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [search, setSearch] = useState('');
   const [newSize, setNewSize] = useState('');
@@ -1884,10 +1894,17 @@ function GenericConfigList({
               const minStock = i.metadata?.minStock ?? 0;
               return stock < minStock;
             }).length;
+            const isCatOpen = openMaterialCategories.has(category);
             return (
             <div key={category} className="flex flex-col gap-3">
               <div
-                className="flex items-center gap-4 px-4 py-3 rounded-2xl border"
+                role="button"
+                tabIndex={0}
+                onClick={() => toggleMaterialCategory(category)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleMaterialCategory(category); }}
+                title={isCatOpen ? `Recolher ${category}` : `Expandir ${category}`}
+                aria-label={isCatOpen ? `Recolher ${category}` : `Expandir ${category}`}
+                className="flex items-center gap-4 px-4 py-3 rounded-2xl border cursor-pointer select-none"
                 style={{ backgroundColor: isDarkMode ? `${pal.bg}18` : pal.light, borderColor: isDarkMode ? `${pal.bg}40` : pal.border }}
               >
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: pal.bg }}>
@@ -1902,23 +1919,31 @@ function GenericConfigList({
                     {alertCount} ALERTA{alertCount > 1 ? 'S' : ''}
                   </span>
                 )}
+                <div
+                  className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-white transition-transform"
+                  style={{ backgroundColor: pal.bg, transform: isCatOpen ? 'rotate(180deg)' : 'none' }}
+                >
+                  <ChevronDown size={14} strokeWidth={3} />
+                </div>
               </div>
-              <div className="flex flex-col gap-3 pl-2 border-l-2" style={{ borderColor: `${pal.bg}40` }}>
-                {catItems.map(item => (
-                  <MaterialCard
-                    key={item.id}
-                    item={item}
-                    isDarkMode={isDarkMode}
-                    onEdit={() => { setEditingItem({ ...item }); setIsModalOpen(true); }}
-                    onDelete={() => { if (confirm(`Deseja excluir ${item.name}?`)) onDelete(item.id); }}
-                    flowTags={flowTags}
-                    people={people}
-                    need={purchaseNeeds[item.id] || 0}
-                    colors={colors}
-                    productionConfigs={productionConfigs}
-                  />
-                ))}
-              </div>
+              {isCatOpen && (
+                <div className="flex flex-col gap-3 pl-2 border-l-2" style={{ borderColor: `${pal.bg}40` }}>
+                  {catItems.map(item => (
+                    <MaterialCard
+                      key={item.id}
+                      item={item}
+                      isDarkMode={isDarkMode}
+                      onEdit={() => { setEditingItem({ ...item }); setIsModalOpen(true); }}
+                      onDelete={() => { if (confirm(`Deseja excluir ${item.name}?`)) onDelete(item.id); }}
+                      flowTags={flowTags}
+                      people={people}
+                      need={purchaseNeeds[item.id] || 0}
+                      colors={colors}
+                      productionConfigs={productionConfigs}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
             );
           })

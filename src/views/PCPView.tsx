@@ -922,6 +922,9 @@ export default function PCPView({
       // 1. Regular Materials from ComponentConsumption
       variation.consumptions?.forEach(cons => {
         if (!cons.materialId) return;
+        // Item marcado manualmente pra não entrar na Necessidade de Compra (ex: material com
+        // controle de compra feito fora do sistema) — mesmo tendo materialId, fica de fora.
+        if (cons.excludeFromPurchaseNeed) return;
         // Filtra por canal de venda quando o consumo está restrito a Atacado ou Varejo (ex:
         // caixa coletiva x caixa unitária num produto híbrido) — evita somar a embalagem
         // errada pro canal desta unidade. Sem saleType conhecido na unidade (Mapa legado sem

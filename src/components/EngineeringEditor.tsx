@@ -1570,6 +1570,29 @@ export default function EngineeringEditor({
             />
           </div>
 
+          {material && (
+            <div className={`flex items-center justify-between gap-3 px-4 py-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+              <div className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">Rastrear na Necessidade de Compra</span>
+                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                  {editing.excludeFromPurchaseNeed ? 'Este item NÃO entra no cálculo de compra do PCP' : 'Padrão: entra normalmente no cálculo de compra do PCP'}
+                </span>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer group shrink-0">
+                <div className="relative">
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={!editing.excludeFromPurchaseNeed}
+                    onChange={(e) => setEditing({ ...editing, excludeFromPurchaseNeed: !e.target.checked })}
+                  />
+                  <div className={`w-8 h-4 rounded-full transition-colors ${!editing.excludeFromPurchaseNeed ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'}`} />
+                  <div className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${!editing.excludeFromPurchaseNeed ? 'translate-x-4' : ''}`} />
+                </div>
+              </label>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-4">
              {!material?.metadata?.noColor && (
              <div className={`flex flex-col gap-3 transition-all ${editing.ignoreColor ? 'opacity-50 pointer-events-none' : ''}`}>

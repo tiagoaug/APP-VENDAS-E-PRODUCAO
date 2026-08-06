@@ -123,6 +123,11 @@ export type ComponentConsumption = {
   // produtos híbridos, que vendem nos dois canais e não devem somar as duas embalagens pro
   // mesmo par. Ausente/'BOTH' = sempre soma (comportamento anterior, sem filtro).
   salesChannel?: 'WHOLESALE' | 'RETAIL' | 'BOTH';
+  // Por padrão, qualquer consumo com materialId entra na Necessidade de Compra do PCP. Marque
+  // true pra excluir esse item específico (ex: um material já em excesso no estoque, ou um
+  // insumo cujo controle de compra é feito fora do sistema) sem precisar remover o vínculo com
+  // o material (que ainda é usado no custo do produto).
+  excludeFromPurchaseNeed?: boolean;
 
   // Outsourced services
   services?: {

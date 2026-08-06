@@ -5645,9 +5645,31 @@ export default function App() {
                   </button>
                 </div>
               </div>
+
+              {/* Novo Grupo de Configurações */}
+              <div className="flex flex-col gap-3">
+                <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Configurações</h3>
+                <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                  <button
+                    onClick={() => navigateTo(ViewType.PRODUCTION_CONFIG)}
+                    className="w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 flex items-center justify-center shrink-0 text-slate-500">
+                        <Hammer size={22} />
+                      </div>
+                      <div className="text-left">
+                        <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Configurações de Produção</p>
+                        <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Setores, Materiais, Grades e Matrizes</p>
+                      </div>
+                    </div>
+                    <ChevronRight size={20} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.8 }}
