@@ -1,16 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  X, Scissors, Box, Calculator, Sparkles, Plus, 
+import {
+  X, Scissors, Box, Calculator, Sparkles, Plus,
   ArrowUpDown, Trash2, Info, ChevronLeft, Save,
-  CheckCircle2, ChevronRight, Footprints, ChevronDown, Grid3X3, Database
+  CheckCircle2, ChevronRight, Footprints, ChevronDown, Grid3X3, Database,
+  Percent, DollarSign
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  ProductionConfigItem, ComponentConsumption, Sector, 
-  ColorValue, Grid 
+import {
+  ProductionConfigItem, ComponentConsumption, Sector,
+  ColorValue, Grid, SectorNote
 } from '../types';
 import Modal from './Modal';
 import CalculatorModal from './CalculatorModal';
+import EngineeringPickerModal from './EngineeringPickerModal';
+
+// Categorias que usam o cadastro financeiro simples (Nome + % ou R$ fixo, com base de
+// cálculo quando %) em vez do formulário de Peça/Material ou Genérico — Impostos, Fretes e
+// Comissões/Assessoria. Impostos assume % por padrão; Fretes/Comissões assumem R$ fixo.
+const SIMPLE_FORM_CATEGORIES = ['TAXES', 'SHIPPING', 'COMMISSIONS'];
 
 // Normaliza nomes de cor para comparação (maiúsculas, sem acentos, espaços colapsados)
 const normalizeColorName = (name: string) =>
@@ -37,6 +44,21 @@ interface EngineeringEditorProps {
   productReference?: string;
   productName?: string;
   onSaveConfigItem?: (item: ProductionConfigItem) => Promise<void>;
+  /** Instruções por Setor da cor sendo editada — usado para pré-preencher a observação ao
+   * escolher um setor que já tem nota cadastrada em Fluxo de Setores/Serviços. */
+  sectorNotes?: Record<string, SectorNote[]>;
+  /** IDs dos setores habilitados no Roteiro de Produção do modelo — usado para restringir o
+   * seletor de Fluxo de Setores/Serviços só aos setores que este modelo realmente usa. */
+  productionRoute?: string[];
+  /** Natureza do custo da categoria sendo editada (FIXED/VARIABLE) — quando FIXED, exibe o
+   * campo de Produção Estimada (pares/dia) para diluir o valor mensal em custo por par. */
+  categoryCostType?: 'FIXED' | 'VARIABLE';
+  /** Custo Total do Produto já fechado, excluindo o próprio item sendo editado (e outros
+   * Impostos recalculados sobre essa mesma base) — usado no mini card de prévia em tempo
+   * real, e como base de "% sobre o Custo" quando a categoria é Impostos. */
+  costBeforeThisItem?: number;
+  productPairsDay?: number;
+  productWorkDays?: number;
 }
 
 export default function EngineeringEditor({
@@ -54,15 +76,28 @@ export default function EngineeringEditor({
   activeVariationColor,
   productReference,
   productName,
-  onSaveConfigItem
+  onSaveConfigItem,
+  sectorNotes,
+  productionRoute,
+  categoryCostType,
+  costBeforeThisItem = 0,
+  productPairsDay = 0,
+  productWorkDays = 26
 }: EngineeringEditorProps) {
   const [editing, setEditing] = useState<ComponentConsumption>({ ...consumption });
   const [newServiceId, setNewServiceId] = useState('');
   const [newServiceCost, setNewServiceCost] = useState<number | string>(0);
+  const [newServiceNoteName, setNewServiceNoteName] = useState('');
+  const [newServiceNote, setNewServiceNote] = useState('');
+  const [showServiceCostCalc, setShowServiceCostCalc] = useState(false);
   const [showToolMapping, setShowToolMapping] = useState(false);
+  const [showConsumptionBreakdown, setShowConsumptionBreakdown] = useState(false);
   const [calcExpression, setCalcExpression] = useState(consumption.quantity ? consumption.quantity.toString().replace('.', ',') : '');
   const material = productionConfigs.find(m => m.id === editing.materialId);
   const materialUnitName = productionConfigs.find(c => c.id === material?.metadata?.unitId)?.name || 'PEÇAS';
+  // Cor só é obrigatória se o material selecionado tiver cores cadastradas no cadastro do
+  // insumo — materiais sem cor (ex: um adesivo genérico) não devem travar a confirmação.
+  const materialRequiresColor = (material?.metadata?.colorIds?.length || 0) > 0;
   const [calcQty, setCalcQty] = useState(consumption.quantity ? consumption.quantity.toString().replace('.', ',') : '1');
   const [calcUnitVal, setCalcUnitVal] = useState(
     (consumption.unitValue && consumption.unitValue > 0) 
@@ -74,11 +109,8 @@ export default function EngineeringEditor({
   const [qtyMode, setQtyMode] = useState<'simple' | 'yield'>('simple');
   const [qtyEmbalagem, setQtyEmbalagem] = useState('1');
   const [qtyRendimento, setQtyRendimento] = useState('1');
-  const [showPieceSuggestions, setShowPieceSuggestions] = useState(false);
   const [pieceSearch, setPieceSearch] = useState(consumption.name || '');
-  const [showMaterialSuggestions, setShowMaterialSuggestions] = useState(false);
   const [materialSearch, setMaterialSearch] = useState(material?.name || '');
-  const [showToolSuggestions, setShowToolSuggestions] = useState(false);
   const [toolSearch, setToolSearch] = useState(productionConfigs.find(t => t.id === editing.toolId)?.name || '');
   const [showQuickAddMaterial, setShowQuickAddMaterial] = useState(false);
   const [quickAddMaterialName, setQuickAddMaterialName] = useState('');
@@ -88,21 +120,21 @@ export default function EngineeringEditor({
   const [quickAddObservacao, setQuickAddObservacao] = useState('');
   const [isSavingQuickMaterial, setIsSavingQuickMaterial] = useState(false);
   const [showQuickCostCalc, setShowQuickCostCalc] = useState(false);
+  const [showPiecePicker, setShowPiecePicker] = useState(false);
+  const [showToolPicker, setShowToolPicker] = useState(false);
+  const [showMaterialPicker, setShowMaterialPicker] = useState(false);
+  const [showUnitPicker, setShowUnitPicker] = useState(false);
+  const [showServiceFlow, setShowServiceFlow] = useState(false);
 
   const pieces = productionConfigs.filter(c => c.type === 'PIECE');
-  const filteredPieces = pieces.filter(p => 
-    p.name.toLowerCase().includes(pieceSearch.toLowerCase())
-  );
-
   const materials = productionConfigs.filter(c => c.type === 'MATERIAL');
-  const filteredMaterials = materials.filter(m => 
-    m.name.toLowerCase().includes(materialSearch.toLowerCase())
-  );
-
   const tools = productionConfigs.filter(c => c.type === 'TOOL');
-  const filteredTools = tools.filter(t => 
-    t.name.toLowerCase().includes(toolSearch.toLowerCase())
-  );
+  const units = productionConfigs.filter(c => c.type === 'UNIT');
+  // Só setores habilitados no Roteiro de Produção do modelo — evita listar todo o quadro de
+  // setores da fábrica quando só alguns fazem parte da sequência deste modelo.
+  const modelSectors = sectors
+    .filter(s => (productionRoute || []).includes(s.id))
+    .sort((a, b) => a.order - b.order);
 
   const masterCategory = material?.metadata?.masterCategory?.toUpperCase() || '';
   const isCuttingPiece = editing.category === 'CUTTING_PIECE';
@@ -282,9 +314,9 @@ export default function EngineeringEditor({
     }
   };
 
-  const openQuickAddMaterial = () => {
-    setShowMaterialSuggestions(false);
-    setQuickAddMaterialName(materialSearch.trim());
+  const openQuickAddMaterial = (nameOverride?: string) => {
+    setShowMaterialPicker(false);
+    setQuickAddMaterialName((nameOverride ?? materialSearch).trim());
     setQuickAddCategory('');
     setQuickAddUnitId('');
     setQuickAddBaseCost('');
@@ -325,21 +357,22 @@ export default function EngineeringEditor({
     }
   };
 
-  const handleQuickAddPiece = async () => {
-    if (!pieceSearch.trim() || !onSaveConfigItem) return;
-    
+  const handleQuickAddPiece = async (nameOverride?: string) => {
+    const name = (nameOverride ?? pieceSearch).trim();
+    if (!name || !onSaveConfigItem) return;
+
     // Check if it already exists
-    const exists = productionConfigs.find(p => p.type === 'PIECE' && p.name.toLowerCase() === pieceSearch.trim().toLowerCase());
+    const exists = productionConfigs.find(p => p.type === 'PIECE' && p.name.toLowerCase() === name.toLowerCase());
     if (exists) {
       setEditing({ ...editing, name: exists.name });
       setPieceSearch(exists.name);
-      setShowPieceSuggestions(false);
+      setShowPiecePicker(false);
       return;
     }
 
     const newItem: ProductionConfigItem = {
       id: `p-${Date.now()}`,
-      name: pieceSearch.trim(),
+      name,
       description: 'PECA',
       type: 'PIECE',
       createdAt: Date.now(),
@@ -350,14 +383,40 @@ export default function EngineeringEditor({
       await onSaveConfigItem(newItem);
       setEditing({ ...editing, name: newItem.name });
       setPieceSearch(newItem.name);
-      setShowPieceSuggestions(false);
+      setShowPiecePicker(false);
     } catch (err) {
       console.error("Erro ao adicionar peça rápida:", err);
     }
   };
 
+  // Prévia em tempo real do impacto deste item no Custo Total do Produto — mesma fórmula
+  // usada ao confirmar (Impostos: % sobre custo/venda ou R$ fixo; demais: Qtd × Valor Unit.,
+  // diluído se a categoria for Fixo Variável), mas recalculada a cada tecla digitada.
+  const isFixedCategory = categoryCostType === 'FIXED';
+  // Impostos assume % quando valueType ainda não foi definido; Fretes/Comissões assumem R$
+  // fixo — mesmo default aplicado na criação do item (ProductFormView), repetido aqui só
+  // como salvaguarda pra itens antigos sem o campo preenchido.
+  const isPercentMode = editing.valueType ? editing.valueType === 'percentage' : editing.category === 'TAXES';
+  const thisItemLiveCost = SIMPLE_FORM_CATEGORIES.includes(editing.category)
+    ? (!isPercentMode
+        ? evaluate(calcUnitVal)
+        : (evaluate(calcUnitVal) / 100) * costBeforeThisItem)
+    : (() => {
+        const liveQty = (needsTool && !editing.ignoreQuantity) ? editing.quantity : evaluate(calcQty);
+        const raw = liveQty * evaluate(calcUnitVal);
+        if (!isFixedCategory) return raw;
+        if (productPairsDay <= 0) return 0;
+        return (raw / productWorkDays) / productPairsDay;
+      })();
+  const newTotalPreview = costBeforeThisItem + thisItemLiveCost;
+  const simpleFormLabel = editing.category === 'SHIPPING' ? 'Nome do Frete' : editing.category === 'COMMISSIONS' ? 'Nome da Comissão/Assessoria' : 'Nome do Imposto';
+  const simpleFormPlaceholder = editing.category === 'SHIPPING' ? 'Ex: Frete Rodoviário, Sedex...' : editing.category === 'COMMISSIONS' ? 'Ex: Comissão Vendedor, Assessoria Contábil...' : 'Ex: Simples Nacional, ICMS...';
+  const simpleFormValueLabel = isPercentMode
+    ? (editing.category === 'SHIPPING' ? 'Alíquota de Frete (%)' : editing.category === 'COMMISSIONS' ? 'Alíquota de Comissão (%)' : 'Alíquota (%)')
+    : (editing.category === 'SHIPPING' ? 'Valor de Fretes' : editing.category === 'COMMISSIONS' ? 'Valor de Comissão e Assessoria' : 'Valor (R$)');
+
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, x: 20 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: -20 }}
@@ -406,79 +465,276 @@ export default function EngineeringEditor({
       </div>
 
       <div className="px-1 py-4 sm:p-6 space-y-5 sm:space-y-8 max-w-3xl mx-auto">
-        
-        {/* NOME DA PEÇA */}
-        <div className={`p-4 sm:p-8 rounded-[2.5rem] border-2 shadow-sm ${isDarkMode ? 'bg-indigo-950/20 border-indigo-900/50' : 'bg-indigo-50/50 border-indigo-100'}`}>
-          <div className="flex flex-col gap-3 relative">
-            <label className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 px-1">Nome do Componente / Peça</label>
-            <div className="relative">
-              <input 
-                type="text" 
-                placeholder="Ex: Lateral, Gáspea, Biqueira..."
-                className={`w-full border-2 rounded-2xl pl-6 pr-14 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-white focus:border-indigo-400 shadow-sm'}`}
+
+        {/* Mini card de prévia — mostra em tempo real o impacto deste item e o novo Custo
+            Total do Produto, conforme os campos são preenchidos, sem precisar salvar. */}
+        <div className={`p-4 rounded-[2rem] border-2 flex items-center gap-4 ${isDarkMode ? 'bg-emerald-950/20 border-emerald-900/40' : 'bg-emerald-50 border-emerald-100'}`}>
+          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-600'}`}>
+            <Calculator size={20} />
+          </div>
+          <div className="flex-1 flex items-center justify-between gap-3 min-w-0">
+            <div className="flex flex-col min-w-0">
+              <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Este Item</span>
+              <span className={`text-base font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                R$ {thisItemLiveCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="flex flex-col items-end min-w-0">
+              <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 text-right">Novo Custo Total</span>
+              <span className={`text-base font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                R$ {newTotalPreview.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Tipo de Lançamento: Peça/Material (formulário completo) x Genérico (mão de obra,
+            serviço avulso — sem material/faca cadastrados). Não faz sentido pra Peças de
+            Corte, que sempre exigem Faca + Material. */}
+        {editing.category !== 'CUTTING_PIECE' && !SIMPLE_FORM_CATEGORIES.includes(editing.category) && (
+          <div className={`flex p-1.5 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+            <button
+              type="button"
+              onClick={() => setEditing(prev => ({ ...prev, entryType: 'PIECE' }))}
+              className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editing.entryType !== 'GENERIC' ? (isDarkMode ? 'bg-slate-600 text-white shadow-sm' : 'bg-white text-slate-800 shadow-sm') : 'text-slate-400'}`}
+            >
+              Peça / Material
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(prev => ({ ...prev, entryType: 'GENERIC' }))}
+              className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editing.entryType === 'GENERIC' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400'}`}
+            >
+              Genérico (Mão de Obra/Serviço)
+            </button>
+          </div>
+        )}
+
+        {editing.category !== 'CUTTING_PIECE' && !SIMPLE_FORM_CATEGORIES.includes(editing.category) && (
+          <div className={`flex items-start gap-2.5 px-3 py-2.5 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+            <Info size={14} className="text-slate-400 shrink-0 mt-0.5" />
+            <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-relaxed">
+              Em "Peça / Material" o insumo é do Cadastro de Materiais e é rastreado na Necessidade de Compra do modelo. Em "Genérico" não há vínculo com material — o item entra só na formação do custo do produto, sem precisar cadastrar um material pra isso.
+            </p>
+          </div>
+        )}
+
+        {SIMPLE_FORM_CATEGORIES.includes(editing.category) ? (
+          <div className={`p-4 sm:p-8 rounded-[2.5rem] border-2 shadow-sm space-y-6 ${isDarkMode ? 'bg-rose-950/20 border-rose-900/50' : 'bg-rose-50/50 border-rose-100'}`}>
+            <div className="flex flex-col gap-3">
+              <label className="text-[11px] font-black uppercase tracking-[0.2em] text-rose-600 dark:text-rose-400 px-1">{simpleFormLabel}</label>
+              <input
+                type="text"
+                placeholder={simpleFormPlaceholder}
+                className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-rose-500' : 'bg-white border-white focus:border-rose-400 shadow-sm'}`}
                 value={editing.name || ''}
-                onChange={(e) => {
-                  setEditing({ ...editing, name: e.target.value });
-                  setPieceSearch(e.target.value);
-                  if (pieces.length > 0 || e.target.value.length > 0) setShowPieceSuggestions(true);
-                }}
-                onFocus={() => (pieces.length > 0 || pieceSearch.length > 0) && setShowPieceSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowPieceSuggestions(false), 200)}
+                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
               />
-              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                {pieceSearch.trim().length > 0 && !pieces.some(p => p.name.toLowerCase() === pieceSearch.trim().toLowerCase()) && (
-                  <button
-                    type="button"
-                    onClick={handleQuickAddPiece}
-                    title="Adicionar como nova peça"
-                    className="p-1.5 rounded-lg text-indigo-500 hover:bg-indigo-500/10 transition-colors"
-                  >
-                    <Database size={18} />
-                  </button>
-                )}
+            </div>
+
+            {isPercentMode && (
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">Base de Cálculo</label>
+                <div className={`py-2.5 px-4 rounded-xl text-[10px] font-black uppercase tracking-widest text-center ${isDarkMode ? 'bg-slate-600 text-white shadow-sm' : 'bg-slate-100 text-slate-800 shadow-sm'}`}>
+                  Sobre o Custo
+                </div>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1 leading-relaxed">
+                  {`Custo Total antes dos impostos: R$ ${costBeforeThisItem.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  {' · '}Valor que incide: <span className="text-rose-500 dark:text-rose-400">R$ {thisItemLiveCost.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </p>
+              </div>
+            )}
+
+            <div className="relative">
+              <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 px-1">{simpleFormValueLabel}</label>
+              <div className="relative mt-2">
+                <input
+                  type="text"
+                  value={calcUnitVal}
+                  onChange={(e) => { setCalcUnitVal(e.target.value); setUnitValManualEdited(true); }}
+                  className={`w-full pl-6 pr-24 py-5 rounded-2xl font-black text-sm outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-rose-500' : 'bg-white border-slate-200 text-slate-900 focus:border-rose-500 shadow-sm'}`}
+                />
                 <button
                   type="button"
-                  onClick={() => setShowPieceSuggestions(!showPieceSuggestions)}
-                  title={showPieceSuggestions ? "Fechar sugestões" : "Ver sugestões de peças"}
-                  className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  onClick={() => setActiveCalcField('unit')}
+                  title="Abrir Calculadora"
+                  aria-label="Abrir calculadora para definir o valor"
+                  className="absolute right-12 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
                 >
-                  <ChevronDown size={18} className={`transition-transform ${showPieceSuggestions ? 'rotate-180' : ''}`} />
+                  <Calculator size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(prev => ({ ...prev, valueType: (!prev.valueType || prev.valueType === 'percentage') ? 'fixed' : 'percentage' }))}
+                  title="Alternar entre alíquota em porcentagem (%) ou valor fixo (R$)"
+                  aria-label="Alternar tipo de valor"
+                  className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 ${
+                    isPercentMode
+                      ? (isDarkMode ? 'bg-rose-500/20 text-rose-400' : 'bg-rose-50 text-rose-600')
+                      : (isDarkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600')
+                  }`}
+                >
+                  {isPercentMode ? <Percent size={15} strokeWidth={2.5} /> : <DollarSign size={15} strokeWidth={2.5} />}
+                </button>
+              </div>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1 mt-1.5">
+                Clique no ícone para alternar entre porcentagem (%) ou valor fixo (R$)
+              </p>
+            </div>
+
+            <CalculatorModal
+              isOpen={activeCalcField !== null}
+              onClose={() => setActiveCalcField(null)}
+              isDarkMode={isDarkMode}
+              initialValue={evaluate(calcUnitVal)}
+              onResult={(val) => {
+                setCalcUnitVal(val.toString().replace('.', ','));
+                setUnitValManualEdited(true);
+                setActiveCalcField(null);
+              }}
+            />
+          </div>
+        ) : editing.entryType === 'GENERIC' ? (
+          <div className={`p-4 sm:p-8 rounded-[2.5rem] border-2 shadow-sm space-y-6 ${isDarkMode ? 'bg-indigo-950/20 border-indigo-900/50' : 'bg-indigo-50/50 border-indigo-100'}`}>
+            <div className="flex flex-col gap-3">
+              <label className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 px-1">Nome do Serviço / Item</label>
+              <input
+                type="text"
+                placeholder="Ex: Corte, Costura, Mão de Obra..."
+                className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-white focus:border-indigo-400 shadow-sm'}`}
+                value={editing.name || ''}
+                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-4 items-end">
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-center">Unidade</label>
+                <button
+                  type="button"
+                  onClick={() => setShowUnitPicker(true)}
+                  className={`w-full px-3 py-5 rounded-2xl font-black text-sm outline-none border-2 transition-all text-center uppercase ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white hover:border-indigo-500/50' : 'bg-white border-slate-200 text-slate-900 hover:border-indigo-300 shadow-sm'}`}
+                >
+                  {units.find(u => u.id === editing.unitId)?.name || <span className="text-slate-400 dark:text-slate-500">UN...</span>}
+                </button>
+              </div>
+              <div className="relative">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-center block mb-2">Quantidade</label>
+                <input
+                  type="text"
+                  value={calcQty}
+                  onChange={(e) => { setCalcQty(e.target.value); updateQuantity(e.target.value, calcUnitVal); }}
+                  className={`w-full px-3 py-5 rounded-2xl font-black text-sm outline-none border-2 transition-all text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600 shadow-sm'}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setActiveCalcField('qty')}
+                  title="Abrir Calculadora de Quantidade"
+                  aria-label="Abrir calculadora para definir a quantidade"
+                  className="absolute right-2 top-[38px] p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                >
+                  <Calculator size={16} />
+                </button>
+              </div>
+              <div className="relative">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-center block mb-2">Valor Unit.</label>
+                <input
+                  type="text"
+                  value={calcUnitVal}
+                  onChange={(e) => { setCalcUnitVal(e.target.value); setUnitValManualEdited(true); updateQuantity(calcQty, e.target.value); }}
+                  className={`w-full px-3 py-5 rounded-2xl font-black text-sm outline-none border-2 transition-all text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600 shadow-sm'}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setActiveCalcField('unit')}
+                  title="Abrir Calculadora de Valor Unitário"
+                  aria-label="Abrir calculadora para definir o valor unitário"
+                  className="absolute right-2 top-[38px] p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                >
+                  <Calculator size={16} />
                 </button>
               </div>
             </div>
-            {showPieceSuggestions && (filteredPieces.length > 0 || (pieceSearch.trim().length > 0 && !pieces.some(p => p.name.toLowerCase() === pieceSearch.trim().toLowerCase()))) && (
-              <div className={`absolute z-50 mt-1 w-full rounded-2xl border-2 shadow-xl overflow-hidden max-h-60 overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`} style={{ top: '100%' }}>
-                {filteredPieces.slice(0, 10).map(p => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className={`w-full px-4 py-3 text-left text-sm font-bold transition-colors ${isDarkMode ? 'text-white hover:bg-slate-800' : 'text-slate-900 hover:bg-slate-100'}`}
-                    onMouseDown={() => {
-                      setEditing({ ...editing, name: p.name });
-                      setPieceSearch(p.name);
-                      setShowPieceSuggestions(false);
-                    }}
-                  >
-                    {p.name}
-                  </button>
-                ))}
-                
-                {pieceSearch.trim().length > 0 && !pieces.some(p => p.name.toLowerCase() === pieceSearch.trim().toLowerCase()) && (
-                  <button
-                    type="button"
-                    className={`w-full px-4 py-3 text-left text-sm font-black flex items-center gap-3 transition-colors ${isDarkMode ? 'text-indigo-400 hover:bg-slate-800' : 'text-indigo-600 hover:bg-indigo-50'}`}
-                    onMouseDown={handleQuickAddPiece}
-                  >
-                    <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
-                      <Database size={16} />
-                    </div>
-                    <span>Criar nova peça: "{pieceSearch.trim()}"</span>
-                  </button>
-                )}
+
+            <EngineeringPickerModal
+              isOpen={showUnitPicker}
+              onClose={() => setShowUnitPicker(false)}
+              title="Unidade"
+              options={units.map(u => ({ id: u.id, name: u.name }))}
+              selectedId={editing.unitId}
+              onSelect={(id) => setEditing({ ...editing, unitId: id })}
+              isDarkMode={isDarkMode}
+              searchPlaceholder="Pesquisar unidade..."
+              emptyHint="Nenhuma unidade cadastrada ainda"
+            />
+
+            <div className={`p-6 rounded-[2rem] border-2 border-dashed flex items-center justify-between ${isDarkMode ? 'bg-emerald-500/5 border-emerald-500/20' : 'bg-emerald-50 border-emerald-100'}`}>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Subtotal</span>
+              <div className="flex items-baseline gap-1">
+                <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">R$</span>
+                <span className="text-2xl font-black text-indigo-600 dark:text-indigo-400">
+                  {(evaluate(calcQty) * evaluate(calcUnitVal)).toFixed(2).replace('.', ',')}
+                </span>
               </div>
-            )}
+            </div>
+
+            <CalculatorModal
+              isOpen={activeCalcField !== null}
+              onClose={() => setActiveCalcField(null)}
+              isDarkMode={isDarkMode}
+              initialValue={evaluate(activeCalcField === 'qty' ? calcQty : calcUnitVal)}
+              onResult={(val) => {
+                const valStr = val.toString().replace('.', ',');
+                if (activeCalcField === 'qty') {
+                  setCalcQty(valStr);
+                  updateQuantity(valStr, calcUnitVal);
+                } else {
+                  setCalcUnitVal(valStr);
+                  setUnitValManualEdited(true);
+                  updateQuantity(calcQty, valStr);
+                }
+                setActiveCalcField(null);
+              }}
+            />
+          </div>
+        ) : (
+        <>
+        {/* NOME DA PEÇA */}
+        <div className={`p-4 sm:p-8 rounded-[2.5rem] border-2 shadow-sm ${isDarkMode ? 'bg-indigo-950/20 border-indigo-900/50' : 'bg-indigo-50/50 border-indigo-100'}`}>
+          <div className="flex flex-col gap-3">
+            <label className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400 px-1">Nome do Componente / Peça</label>
+            <button
+              type="button"
+              onClick={() => setShowPiecePicker(true)}
+              className={`w-full flex items-center justify-between border-2 rounded-2xl pl-6 pr-4 py-4 text-sm font-black text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white hover:border-indigo-500/50' : 'bg-white border-white hover:border-indigo-200 shadow-sm'}`}
+            >
+              <span className={editing.name ? '' : 'text-slate-400 dark:text-slate-500 font-bold'}>
+                {editing.name || 'Ex: Lateral, Gáspea, Biqueira...'}
+              </span>
+              <ChevronDown size={18} className="text-slate-400 shrink-0" />
+            </button>
           </div>
         </div>
+
+        <EngineeringPickerModal
+          isOpen={showPiecePicker}
+          onClose={() => setShowPiecePicker(false)}
+          title="Nome do Componente / Peça"
+          icon={<Database size={18} />}
+          options={pieces.map(p => ({ id: p.id, name: p.name }))}
+          selectedId={pieces.find(p => p.name === editing.name)?.id}
+          onSelect={(id) => {
+            const p = pieces.find(x => x.id === id);
+            if (!p) return;
+            setEditing({ ...editing, name: p.name });
+            setPieceSearch(p.name);
+          }}
+          isDarkMode={isDarkMode}
+          searchPlaceholder="Pesquisar ou digitar novo nome..."
+          emptyHint="Nenhuma peça cadastrada ainda"
+          onCreateNew={onSaveConfigItem ? (term) => handleQuickAddPiece(term) : undefined}
+          createLabel={(term) => `Criar nova peça: "${term}"`}
+        />
 
         {needsTool && (
           <div className={`p-4 sm:p-8 rounded-[2.5rem] border-2 shadow-xl space-y-6 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
@@ -486,50 +742,37 @@ export default function EngineeringEditor({
               <div className={`w-14 h-14 shrink-0 rounded-2xl flex items-center justify-center ${isDarkMode ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
                 <Scissors size={28} />
               </div>
-              <div className="flex flex-col gap-3">
-                <label htmlFor="tool-select" className="text-xs font-black uppercase tracking-widest text-slate-400">Faca / Molde Técnica</label>
-                <div className="relative">
-                  <input 
-                    type="text" 
-                    placeholder="Selecionar Faca..."
-                    className={`w-full bg-transparent border-none text-sm font-black outline-none transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
-                    value={toolSearch}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setToolSearch(val);
-                      if (val === '') handleToolChange('');
-                      if (tools.length > 0) setShowToolSuggestions(true);
-                    }}
-                    onFocus={() => tools.length > 0 && setShowToolSuggestions(true)}
-                    onBlur={() => {
-                      setTimeout(() => {
-                        setShowToolSuggestions(false);
-                        const currentTool = productionConfigs.find(t => t.id === editing.toolId);
-                        setToolSearch(currentTool?.name || '');
-                      }, 200);
-                    }}
-                  />
-                  {showToolSuggestions && filteredTools.length > 0 && (
-                    <div className={`absolute z-50 mt-2 w-full min-w-[240px] rounded-2xl border-2 shadow-xl overflow-hidden max-h-60 overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`} style={{ top: '100%', left: 0 }}>
-                      {filteredTools.slice(0, 10).map(t => (
-                        <button
-                          key={t.id}
-                          type="button"
-                          className={`w-full px-4 py-3 text-left text-sm font-bold transition-colors ${isDarkMode ? 'text-white hover:bg-slate-800' : 'text-slate-900 hover:bg-slate-100'}`}
-                          onMouseDown={() => {
-                            handleToolChange(t.id);
-                            setToolSearch(t.name);
-                            setShowToolSuggestions(false);
-                          }}
-                        >
-                          {t.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+              <div className="flex flex-col gap-3 flex-1 min-w-0">
+                <label className="text-xs font-black uppercase tracking-widest text-slate-400">Faca / Molde Técnica</label>
+                <button
+                  type="button"
+                  onClick={() => setShowToolPicker(true)}
+                  className={`w-full flex items-center justify-between gap-2 text-sm font-black text-left transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                >
+                  <span className={toolSearch ? '' : 'text-slate-400 dark:text-slate-500 font-bold'}>
+                    {toolSearch || 'Selecionar Faca...'}
+                  </span>
+                  <ChevronDown size={18} className="text-slate-400 shrink-0" />
+                </button>
               </div>
             </div>
+
+            <EngineeringPickerModal
+              isOpen={showToolPicker}
+              onClose={() => setShowToolPicker(false)}
+              title="Faca / Molde Técnica"
+              icon={<Scissors size={18} />}
+              options={tools.map(t => ({ id: t.id, name: t.name }))}
+              selectedId={editing.toolId}
+              onSelect={(id) => {
+                handleToolChange(id);
+                const t = tools.find(x => x.id === id);
+                setToolSearch(t?.name || '');
+              }}
+              isDarkMode={isDarkMode}
+              searchPlaceholder="Pesquisar faca..."
+              emptyHint="Nenhuma faca cadastrada ainda — cadastre em Configurações de Produção"
+            />
 
             {/* RESUMO TÉCNICO E FINANCEIRO (CORTADOS) */}
             {editing.materialId && editing.toolId && (
@@ -575,6 +818,13 @@ export default function EngineeringEditor({
                   <ChevronRight size={18} />
                 </button>
 
+                <div className={`flex items-start gap-2.5 px-3 py-2.5 rounded-2xl border ${isDarkMode ? 'bg-indigo-950/30 border-indigo-900/50' : 'bg-indigo-50 border-indigo-100'}`}>
+                  <Info size={14} className="text-indigo-500 shrink-0 mt-0.5" />
+                  <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 uppercase tracking-widest leading-relaxed">
+                    Aqui você determina, para cada tamanho do cabedal, qual tamanho da faca aponta na conjugação — ou seja, qual faca corta aquele tamanho quando a faca conjuga (corta) mais de um tamanho por vez. Esse mapeamento reflete direto no material escolhido, de acordo com o consumo (área) de cada faca.
+                  </p>
+                </div>
+
                 <Modal
                   isOpen={showToolMapping}
                   onClose={() => setShowToolMapping(false)}
@@ -582,6 +832,10 @@ export default function EngineeringEditor({
                   closeLabel="Fechar Mapeamento de Facas"
                 >
                   <div className="flex flex-col gap-6">
+                    <div className="flex items-center justify-between px-4">
+                      <span className="text-[9px] font-black text-white uppercase tracking-widest bg-rose-500 px-3 py-1 rounded-full">Nº do Cabedal</span>
+                      <span className="text-[9px] font-black text-white uppercase tracking-widest bg-rose-500 px-3 py-1 rounded-full">Nº da Faca que Corta</span>
+                    </div>
                     <div className="grid grid-cols-1 gap-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-2">
                       {(() => {
                         const productGrid = grids.find(g => g.id === (productionGridId || defaultGridId));
@@ -597,7 +851,7 @@ export default function EngineeringEditor({
                             <div key={size} className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-100 shadow-sm'}`}>
                               <div className="flex flex-col items-center">
                                 <span className="text-xs font-black text-slate-400 uppercase tracking-widest mb-1">G {size}</span>
-                                <span className="text-5xl font-black text-indigo-600 dark:text-indigo-400 drop-shadow-sm">{size}</span>
+                                <span className="text-3xl font-black text-indigo-600 dark:text-indigo-400 drop-shadow-sm">{size}</span>
                               </div>
                               <div className="flex items-center gap-3">
                                 <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Faca:</span>
@@ -719,7 +973,43 @@ export default function EngineeringEditor({
                     </button>
                   </div>
                 )}
+                {/* Modalidade: restringe em qual canal (atacado/varejo) este consumo entra na
+                    Necessidade de Compra — só visível para PACKAGING. */}
+                {editing.category === 'PACKAGING' && (
+                  <div className={`inline-flex gap-0.5 p-0.5 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+                    <button
+                      type="button"
+                      onClick={() => setEditing(prev => ({ ...prev, salesChannel: 'WHOLESALE' }))}
+                      className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${editing.salesChannel === 'WHOLESALE' ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-400'}`}
+                    >
+                      Atacado
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditing(prev => ({ ...prev, salesChannel: 'RETAIL' }))}
+                      className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${editing.salesChannel === 'RETAIL' ? 'bg-sky-600 text-white shadow-sm' : 'text-slate-400'}`}
+                    >
+                      Varejo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditing(prev => ({ ...prev, salesChannel: 'BOTH' }))}
+                      className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${(!editing.salesChannel || editing.salesChannel === 'BOTH') ? (isDarkMode ? 'bg-slate-600 text-white shadow-sm' : 'bg-white text-slate-800 shadow-sm') : 'text-slate-400'}`}
+                    >
+                      Ambos
+                    </button>
+                  </div>
+                )}
               </div>
+
+              {editing.category === 'PACKAGING' && (
+                <div className={`flex items-start gap-2.5 px-3 py-2.5 rounded-2xl border ${isDarkMode ? 'bg-indigo-950/30 border-indigo-900/50' : 'bg-indigo-50 border-indigo-100'}`}>
+                  <Info size={14} className="text-indigo-500 shrink-0 mt-0.5" />
+                  <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 uppercase tracking-widest leading-relaxed">
+                    Modalidade decide em qual canal essa embalagem entra na Necessidade de Compra — use quando o mesmo modelo vende em atacado e varejo com embalagens diferentes (ex: "Caixa Coletiva" /grade em Atacado, "Caixa Unitária" /par em Varejo), pra não somar as duas pro mesmo par. "Ambos" mantém o comportamento padrão (sempre soma, independente do canal do pedido).
+                  </p>
+                </div>
+              )}
 
               {/* Inputs principais — sempre alinhados lado a lado */}
               <div className="grid grid-cols-3 gap-4 items-end">
@@ -783,6 +1073,19 @@ export default function EngineeringEditor({
                 </div>
               </div>
             </div>
+
+              {/* Categoria Fixo Variável (ex: Folha de Pagamento, Impostos) — valor fixo mensal
+                  (Qtd × Valor Unit.) cujo custo por par VARIA conforme a produção, diluído
+                  usando a Produção Estimada (Pares/Dia) e os Dias Trabalhados/Mês configurados
+                  uma única vez no card "Custo Total do Produto" (não por item). */}
+              {categoryCostType === 'FIXED' && (
+                <div className={`flex items-start gap-2.5 px-3 py-2.5 rounded-2xl border ${isDarkMode ? 'bg-orange-950/20 border-orange-900/40' : 'bg-orange-50 border-orange-100'}`}>
+                  <Info size={14} className="text-orange-500 shrink-0 mt-0.5" />
+                  <p className="text-[10px] font-bold text-orange-600 dark:text-orange-300 uppercase tracking-widest leading-relaxed">
+                    Categoria Fixo Variável — Qtd × Valor Unit. é tratado como valor fixo MENSAL, cujo custo por par varia conforme a produção. Diluído usando a "Produção Estimada" e os "Dias Trabalhados/Mês" do produto (configure no card "Custo Total do Produto", no topo da Ficha Técnica). Sem esses dados preenchidos lá, este item não entra no custo total.
+                  </p>
+                </div>
+              )}
 
               {/* Campos de Rendimento — aparecem abaixo do par principal */}
               {qtyMode === 'yield' && (
@@ -940,57 +1243,72 @@ export default function EngineeringEditor({
               animate={{ opacity: 1, y: 0 }}
               className={`rounded-[2.5rem] border-2 border-indigo-500 overflow-hidden shadow-2xl shadow-indigo-500/10 ${isDarkMode ? 'bg-indigo-950/20' : 'bg-white'}`}
             >
-              {/* Header do card */}
-              <div className={`px-5 py-4 flex items-center justify-between ${isDarkMode ? 'bg-indigo-900/30' : 'bg-indigo-600'}`}>
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-white/20 text-white flex items-center justify-center">
+              {/* Header do card — acordeão: fechado por padrão, mostra só a média */}
+              <button
+                type="button"
+                onClick={() => setShowConsumptionBreakdown(prev => !prev)}
+                title={showConsumptionBreakdown ? "Recolher detalhamento por tamanho" : "Ver detalhamento por tamanho"}
+                aria-label={showConsumptionBreakdown ? "Recolher detalhamento do consumo" : "Expandir detalhamento do consumo"}
+                className={`w-full px-5 py-4 flex items-center justify-between gap-3 transition-colors ${isDarkMode ? 'bg-indigo-900/30 hover:bg-indigo-900/40' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-white/20 text-white flex items-center justify-center shrink-0">
                     <Calculator size={18} />
                   </div>
-                  <div>
+                  <div className="text-left min-w-0">
                     <h4 className="text-sm font-black uppercase tracking-widest text-white">Consumo Real</h4>
-                    <p className="text-xs font-bold text-indigo-200 uppercase tracking-widest">Por Peças / Par — {unitName || (isLinear ? 'MTL' : 'M²')}</p>
+                    <p className="text-xs font-bold text-indigo-200 uppercase tracking-widest truncate">Por Peças / Par — {unitName || (isLinear ? 'MTL' : 'M²')}</p>
                   </div>
                 </div>
-                <div className="flex flex-col items-end">
-                  <span className="text-xs font-black text-indigo-200 uppercase tracking-widest">Média</span>
-                  <span className="text-xl font-black text-white leading-none">{average.toFixed(4).replace('.', ',')}</span>
-                  <span className="text-xs font-black text-indigo-200 uppercase">{unitName || (isLinear ? 'MTL' : 'M²')}</span>
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex flex-col items-end">
+                    <span className="text-xs font-black text-indigo-200 uppercase tracking-widest">Média</span>
+                    <span className="text-xl font-black text-white leading-none">{average.toFixed(4).replace('.', ',')}</span>
+                    <span className="text-xs font-black text-indigo-200 uppercase">{unitName || (isLinear ? 'MTL' : 'M²')}</span>
+                  </div>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-amber-400 text-indigo-900 shadow-lg shadow-amber-400/30 transition-transform ${showConsumptionBreakdown ? 'rotate-180' : ''}`}>
+                    <ChevronDown size={18} strokeWidth={3} />
+                  </div>
                 </div>
-              </div>
+              </button>
 
-              {/* Lista de consumos por grade */}
-              <div className="flex flex-col divide-y divide-indigo-100 dark:divide-indigo-900/50">
-                {sizeConsumptions.map(({ size, cons, hasArea }) => (
-                  <div key={size} className={`flex items-center justify-between px-5 py-3.5 ${isDarkMode ? 'hover:bg-indigo-950/30' : 'hover:bg-indigo-50/50'} transition-colors`}>
-                    {/* Label da grade */}
-                    <div className="flex items-center gap-3">
-                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-black text-base ${isDarkMode ? 'bg-indigo-900/50 text-indigo-300' : 'bg-indigo-50 text-indigo-600'}`}>
-                        {size}
+              {showConsumptionBreakdown && (
+                <>
+                  {/* Lista de consumos por grade */}
+                  <div className="flex flex-col divide-y divide-indigo-100 dark:divide-indigo-900/50">
+                    {sizeConsumptions.map(({ size, cons, hasArea }) => (
+                      <div key={size} className={`flex items-center justify-between px-5 py-3.5 ${isDarkMode ? 'hover:bg-indigo-950/30' : 'hover:bg-indigo-50/50'} transition-colors`}>
+                        {/* Label da grade */}
+                        <div className="flex items-center gap-3">
+                          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-black text-base ${isDarkMode ? 'bg-indigo-900/50 text-indigo-300' : 'bg-indigo-50 text-indigo-600'}`}>
+                            {size}
+                          </div>
+                          <span className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Tamanho</span>
+                        </div>
+
+                        {/* Valor do consumo */}
+                        <div className="flex items-baseline gap-2">
+                          <span className={`text-xl font-black leading-none ${hasArea ? (isDarkMode ? 'text-white' : 'text-slate-900') : 'text-slate-300'}`}>
+                            {hasArea ? cons.toFixed(4).replace('.', ',') : '---'}
+                          </span>
+                          <span className={`text-xs font-black uppercase ${hasArea ? 'text-indigo-500' : 'text-slate-300'}`}>
+                            {unitName || (isLinear ? 'MT' : 'M²')}
+                          </span>
+                        </div>
                       </div>
-                      <span className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>Tamanho</span>
-                    </div>
+                    ))}
+                  </div>
 
-                    {/* Valor do consumo */}
+                  {/* Rodapé com a média destacada */}
+                  <div className={`px-5 py-4 flex items-center justify-between border-t-2 border-indigo-200 dark:border-indigo-800 ${isDarkMode ? 'bg-indigo-900/20' : 'bg-indigo-50'}`}>
+                    <span className="text-xs font-black uppercase tracking-widest text-indigo-500">Média do Consumo</span>
                     <div className="flex items-baseline gap-2">
-                      <span className={`text-xl font-black leading-none ${hasArea ? (isDarkMode ? 'text-white' : 'text-slate-900') : 'text-slate-300'}`}>
-                        {hasArea ? cons.toFixed(4).replace('.', ',') : '---'}
-                      </span>
-                      <span className={`text-xs font-black uppercase ${hasArea ? 'text-indigo-500' : 'text-slate-300'}`}>
-                        {unitName || (isLinear ? 'MT' : 'M²')}
-                      </span>
+                      <span className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-indigo-700'}`}>{average.toFixed(4).replace('.', ',')}</span>
+                      <span className="text-sm font-black text-indigo-400 uppercase">{unitName || (isLinear ? 'MT' : 'M²')}</span>
                     </div>
                   </div>
-                ))}
-              </div>
-
-              {/* Rodapé com a média destacada */}
-              <div className={`px-5 py-4 flex items-center justify-between border-t-2 border-indigo-200 dark:border-indigo-800 ${isDarkMode ? 'bg-indigo-900/20' : 'bg-indigo-50'}`}>
-                <span className="text-xs font-black uppercase tracking-widest text-indigo-500">Média do Consumo</span>
-                <div className="flex items-baseline gap-2">
-                  <span className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-indigo-700'}`}>{average.toFixed(4).replace('.', ',')}</span>
-                  <span className="text-sm font-black text-indigo-400 uppercase">{unitName || (isLinear ? 'MT' : 'M²')}</span>
-                </div>
-              </div>
+                </>
+              )}
             </motion.div>
           );
         })()}
@@ -1037,72 +1355,36 @@ export default function EngineeringEditor({
                 </label>
               </div>
             </div>
-            <div className="relative">
-              <input 
-                id="material-select"
-                type="text" 
-                placeholder="Escolher Material..."
-                className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
-                value={materialSearch}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setMaterialSearch(val);
-                  if (val === '') handleMaterialChange('');
-                  if (materials.length > 0) setShowMaterialSuggestions(true);
-                }}
-                onFocus={() => materials.length > 0 && setShowMaterialSuggestions(true)}
-                onBlur={() => {
-                  setTimeout(() => {
-                    setShowMaterialSuggestions(false);
-                    const currentMat = productionConfigs.find(m => m.id === editing.materialId);
-                    setMaterialSearch(currentMat?.name || '');
-                  }, 200);
-                }}
-              />
-              <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                {materialSearch.trim().length > 0 && onSaveConfigItem && !materials.some(m => m.name.toLowerCase() === materialSearch.trim().toLowerCase()) && (
-                  <button
-                    type="button"
-                    onClick={openQuickAddMaterial}
-                    title="Cadastrar como novo insumo"
-                    className="p-1.5 rounded-lg text-emerald-500 hover:bg-emerald-500/10 transition-colors pointer-events-auto"
-                  >
-                    <Database size={18} />
-                  </button>
-                )}
-                <ChevronDown size={18} className="text-slate-400 pointer-events-none" />
-              </div>
-              {showMaterialSuggestions && (filteredMaterials.length > 0 || materialSearch.trim().length > 0) && (
-                <div className={`absolute z-50 mt-1 w-full rounded-2xl border-2 shadow-xl overflow-hidden max-h-60 overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`} style={{ top: '100%', left: 0 }}>
-                  {filteredMaterials.slice(0, 10).map(m => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      className={`w-full px-4 py-3 text-left text-sm font-bold transition-colors ${isDarkMode ? 'text-white hover:bg-slate-800' : 'text-slate-900 hover:bg-slate-100'}`}
-                      onMouseDown={() => {
-                        handleMaterialChange(m.id);
-                        setMaterialSearch(m.name);
-                        setShowMaterialSuggestions(false);
-                      }}
-                    >
-                      {m.name}
-                    </button>
-                  ))}
-                  {materialSearch.trim().length > 0 && onSaveConfigItem && !materials.some(m => m.name.toLowerCase() === materialSearch.trim().toLowerCase()) && (
-                    <button
-                      type="button"
-                      className={`w-full px-4 py-3 text-left text-sm font-black flex items-center gap-3 transition-colors border-t ${isDarkMode ? 'text-emerald-400 hover:bg-slate-800 border-slate-700' : 'text-emerald-600 hover:bg-emerald-50 border-slate-100'}`}
-                      onMouseDown={openQuickAddMaterial}
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
-                        <Database size={16} />
-                      </div>
-                      <span>Cadastrar como novo insumo: "{materialSearch.trim()}"</span>
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+            <button
+              id="material-select"
+              type="button"
+              onClick={() => setShowMaterialPicker(true)}
+              className={`w-full flex items-center justify-between border-2 rounded-2xl px-6 py-4 text-sm font-black text-left transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white hover:border-indigo-500/50' : 'bg-slate-50 border-slate-100 text-slate-900 hover:border-indigo-300'}`}
+            >
+              <span className={materialSearch ? '' : 'text-slate-400 dark:text-slate-500 font-bold'}>
+                {materialSearch || 'Escolher Material...'}
+              </span>
+              <ChevronDown size={18} className="text-slate-400 shrink-0" />
+            </button>
+
+            <EngineeringPickerModal
+              isOpen={showMaterialPicker}
+              onClose={() => setShowMaterialPicker(false)}
+              title="Material de Insumo"
+              icon={<Box size={18} />}
+              options={materials.map(m => ({ id: m.id, name: m.name }))}
+              selectedId={editing.materialId}
+              onSelect={(id) => {
+                handleMaterialChange(id);
+                const m = materials.find(x => x.id === id);
+                setMaterialSearch(m?.name || '');
+              }}
+              isDarkMode={isDarkMode}
+              searchPlaceholder="Pesquisar material..."
+              emptyHint="Nenhum insumo cadastrado ainda"
+              onCreateNew={onSaveConfigItem ? (term) => openQuickAddMaterial(term) : undefined}
+              createLabel={(term) => `Cadastrar como novo insumo: "${term}"`}
+            />
           </div>
 
           <div className="grid grid-cols-1 gap-4">
@@ -1110,15 +1392,15 @@ export default function EngineeringEditor({
                 <label htmlFor="color-select" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">
                   Cor {editing.ignoreColor && <span className="text-[9px] text-indigo-500">(IGNORADO)</span>}
                 </label>
-                 <select 
+                 <select
                   id="color-select"
                   disabled={editing.ignoreColor}
-                  className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${!editing.colorId && !editing.ignoreColor ? 'border-rose-500/50 bg-rose-50/10' : ''} ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+                  className={`w-full border-2 rounded-2xl px-6 py-4 text-sm font-black outline-none transition-all ${!editing.colorId && !editing.ignoreColor && materialRequiresColor ? 'border-rose-500/50 bg-rose-50/10' : ''} ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
                   value={editing.ignoreColor ? '' : (editing.colorId || '')}
                   onChange={(e) => setEditing({ ...editing, colorId: e.target.value })}
                   title="Selecionar Cor"
                 >
-                  <option value="">{editing.ignoreColor ? 'N/A' : 'Cor Obrigatória...'}</option>
+                  <option value="">{editing.ignoreColor ? 'N/A' : materialRequiresColor ? 'Cor Obrigatória...' : 'Selecionar Cor (opcional)...'}</option>
                   {(() => {
                     const selMat = productionConfigs.find(m => m.id === editing.materialId);
                     const matColorIds = selMat?.metadata?.colorIds;
@@ -1128,7 +1410,7 @@ export default function EngineeringEditor({
                     return filtered.map(c => <option key={c.id} value={c.id}>{c.name}</option>);
                   })()}
                 </select>
-                {!editing.colorId && !editing.ignoreColor && (
+                {!editing.colorId && !editing.ignoreColor && materialRequiresColor && (
                   <span className="text-[9px] font-black text-rose-500 uppercase tracking-widest mt-1 ml-2">Campo Obrigatório</span>
                 )}
                 {(() => {
@@ -1176,84 +1458,192 @@ export default function EngineeringEditor({
              )}
           </div>
         </div>
+        </>
+        )}
 
-        {/* Serviços Terceirizados */}
-        <div className={`p-4 sm:p-8 rounded-[2.5rem] border-2 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-amber-50/30 border-amber-100'} space-y-6 overflow-hidden`}>
-           <div className="flex items-center gap-3">
-              <Sparkles size={20} className="text-amber-500" />
-              <h4 className="text-xs font-black uppercase tracking-widest text-amber-600">Fluxo de Setores / Serviços</h4>
+        {/* Serviços Terceirizados — acordeão minimizado por padrão em todas as categorias */}
+        <div className={`rounded-[2.5rem] border-2 shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-amber-50/30 border-amber-100'}`}>
+           <button
+             type="button"
+             onClick={() => setShowServiceFlow(prev => !prev)}
+             title={showServiceFlow ? "Recolher Fluxo de Setores/Serviços" : "Expandir Fluxo de Setores/Serviços"}
+             aria-label={showServiceFlow ? "Recolher Fluxo de Setores/Serviços" : "Expandir Fluxo de Setores/Serviços"}
+             className="w-full flex items-center justify-between gap-3 p-4 sm:p-8"
+           >
+              <div className="flex items-center gap-3 min-w-0">
+                <Sparkles size={20} className="text-amber-500 shrink-0" />
+                <div className="text-left min-w-0">
+                  <h4 className="text-xs font-black uppercase tracking-widest text-amber-600">Fluxo de Setores / Serviços</h4>
+                  <p className="text-[9px] font-bold text-amber-600/70 uppercase tracking-widest mt-0.5">{(editing.services || []).length} {(editing.services || []).length === 1 ? 'setor' : 'setores'}</p>
+                </div>
+              </div>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-amber-400 text-indigo-900 shadow-lg shadow-amber-400/30 transition-transform ${showServiceFlow ? 'rotate-180' : ''}`}>
+                <ChevronDown size={16} strokeWidth={3} />
+              </div>
+           </button>
+
+           {showServiceFlow && (
+           <div className="px-4 pb-4 sm:px-8 sm:pb-8 space-y-6">
+           <div className={`flex items-start gap-2.5 px-3 py-2.5 rounded-2xl border ${isDarkMode ? 'bg-amber-950/30 border-amber-900/50' : 'bg-amber-100/60 border-amber-200'}`}>
+             <Info size={14} className="text-amber-600 shrink-0 mt-0.5" />
+             <p className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase tracking-widest leading-relaxed">
+               Use aqui quando esta peça passa por um setor/serviço terceirizado além do corte (ex: bordado, gravação, preparação) — escolha o setor e informe o custo cobrado por par. Esse valor se soma ao custo do material ("Serv. R$" no card da peça) e entra no total de "Engenharia do Modelo" mostrado no resumo de custos do produto. Se você preencher Nome e Descrição, eles já aparecem prontos em "Instruções por Setor" desta cor.
+             </p>
            </div>
-           
+
+           {modelSectors.length === 0 && (
+             <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest">
+               Nenhum setor habilitado no "Roteiro de Produção" deste modelo — habilite um lá primeiro para poder escolhê-lo aqui.
+             </p>
+           )}
+
            <div className="grid grid-cols-12 gap-2">
               <div className="col-span-12 sm:col-span-7">
-                <select 
+                <select
                   id="sector-select"
-                  className={`w-full border-2 rounded-2xl px-4 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
+                  disabled={modelSectors.length === 0}
+                  className={`w-full border-2 rounded-2xl px-4 py-4 text-sm font-black outline-none transition-all disabled:opacity-50 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
                   value={newServiceId}
                   title="Selecionar Setor"
-                  onChange={(e) => setNewServiceId(e.target.value)}
+                  onChange={(e) => {
+                    const sectorId = e.target.value;
+                    setNewServiceId(sectorId);
+                    const existingNote = (sectorNotes?.[sectorId] || [])[0];
+                    setNewServiceNoteName(existingNote?.name || '');
+                    setNewServiceNote(existingNote?.text || '');
+                  }}
                 >
                   <option value="">Setor...</option>
-                  {sectors.sort((a,b) => a.order - b.order).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {modelSectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                 </select>
               </div>
-              <div className="col-span-8 sm:col-span-3">
-                <input 
+              <div className="col-span-8 sm:col-span-3 relative">
+                <input
                   id="service-cost-input"
-                  type="number" 
-                  placeholder="R$ 0.00" 
-                  className={`w-full border-2 rounded-2xl px-4 py-4 text-sm font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}
+                  type="number"
+                  placeholder="R$ 0.00"
+                  className={`w-full border-2 rounded-2xl pl-4 pr-11 py-4 text-sm font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}
                   value={newServiceCost}
                   title="Custo do Serviço"
                   onChange={(e) => setNewServiceCost(e.target.value)}
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowServiceCostCalc(true)}
+                  title="Abrir Calculadora do Custo do Serviço"
+                  aria-label="Abrir calculadora para definir o custo do serviço"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                >
+                  <Calculator size={16} />
+                </button>
               </div>
-              <div className="col-span-4 sm:col-span-2">
-                <button 
+              <div className="col-span-4 sm:col-span-2 flex items-center justify-center">
+                <button
                   onClick={() => {
                     if (!newServiceId) return;
                     const services = [...(editing.services || [])];
-                    services.push({ serviceId: newServiceId, cost: Number(newServiceCost) || 0 });
+                    services.push({ serviceId: newServiceId, cost: Number(newServiceCost) || 0, noteName: newServiceNoteName.trim() || undefined, note: newServiceNote.trim() || undefined });
                     setEditing({ ...editing, services });
                     setNewServiceId('');
                     setNewServiceCost(0);
+                    setNewServiceNoteName('');
+                    setNewServiceNote('');
                   }}
                   title="Adicionar Setor ao Fluxo"
-                  className="w-full h-full min-h-[56px] rounded-2xl bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
+                  className="w-full h-11 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
                 >
-                  <Plus size={24} strokeWidth={3} />
+                  <Plus size={18} strokeWidth={3} />
                 </button>
+              </div>
+              <div className="col-span-12 sm:col-span-4">
+                <input
+                  id="service-note-name-input"
+                  type="text"
+                  placeholder="Nome (opcional) — ex: BORDADO"
+                  className={`w-full border-2 rounded-2xl px-4 py-3 text-xs font-bold outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white placeholder:text-slate-600' : 'bg-white border-slate-100 text-slate-900 placeholder:text-slate-400'}`}
+                  value={newServiceNoteName}
+                  title="Nome do Serviço"
+                  onChange={(e) => setNewServiceNoteName(e.target.value)}
+                />
+              </div>
+              <div className="col-span-12 sm:col-span-8">
+                <input
+                  id="service-note-input"
+                  type="text"
+                  placeholder="Descrição (opcional) — ex: BORDADO NO PEITO, LOGO CENTRALIZADA"
+                  className={`w-full border-2 rounded-2xl px-4 py-3 text-xs font-bold outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white placeholder:text-slate-600' : 'bg-white border-slate-100 text-slate-900 placeholder:text-slate-400'}`}
+                  value={newServiceNote}
+                  title="Descrição do Serviço"
+                  onChange={(e) => setNewServiceNote(e.target.value)}
+                />
               </div>
            </div>
 
+           <CalculatorModal
+             isOpen={showServiceCostCalc}
+             onClose={() => setShowServiceCostCalc(false)}
+             isDarkMode={isDarkMode}
+             initialValue={Number(newServiceCost) || 0}
+             onResult={(val) => {
+               setNewServiceCost(val);
+               setShowServiceCostCalc(false);
+             }}
+           />
+
            <div className="space-y-2">
               {(editing.services || []).map((s, idx) => (
-                <div key={idx} className="flex items-center justify-between p-4 rounded-2xl bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center gap-3">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: sectors.find(sec => sec.id === s.serviceId)?.color }} />
-                    <span className="text-xs font-black uppercase">{sectors.find(sec => sec.id === s.serviceId)?.name || 'Setor'}</span>
+                <div key={idx} className="flex flex-col gap-2 p-4 rounded-2xl bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: sectors.find(sec => sec.id === s.serviceId)?.color }} />
+                      <span className="text-xs font-black uppercase">{sectors.find(sec => sec.id === s.serviceId)?.name || 'Setor'}</span>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-xs font-black text-amber-600">R$ {s.cost.toFixed(2)}</span>
+                      <button
+                        onClick={() => setEditing({ ...editing, services: editing.services?.filter((_, i) => i !== idx) })}
+                        title="Remover Setor"
+                        className="text-slate-300 hover:text-rose-500 transition-colors"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <span className="text-xs font-black text-amber-600">R$ {s.cost.toFixed(2)}</span>
-                    <button
-                      onClick={() => setEditing({ ...editing, services: editing.services?.filter((_, i) => i !== idx) })}
-                      title="Remover Setor"
-                      className="text-slate-300 hover:text-rose-500 transition-colors"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
+                  {(s.noteName || s.note) && (
+                    <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 pl-6 leading-relaxed">
+                      {s.noteName && <span className="font-black text-slate-700 dark:text-slate-300">{s.noteName}: </span>}
+                      "{s.note}" <span className="text-amber-600 dark:text-amber-400">— vai para Instruções por Setor</span>
+                    </p>
+                  )}
                 </div>
               ))}
            </div>
+           </div>
+           )}
         </div>
 
         {/* Confirmar - ao final do formulário */}
         <button
           type="button"
-          onClick={() => onSave({ ...editing, quantity: evaluate(calcQty), unitValue: evaluate(calcUnitVal) })}
-          disabled={!editing.materialId || (!editing.colorId && !editing.ignoreColor)}
-          title={(!editing.colorId && !editing.ignoreColor) ? "Selecione uma cor para confirmar" : "Confirmar engenharia e salvar"}
+          onClick={() => {
+            // Peças com faca (needsTool) calculam a quantidade automaticamente via
+            // calculateConsumption e mostram o resultado em "Consumo Médio" lendo direto de
+            // editing.quantity — o campo/calculadora de Qtd (calcQty) nem aparece nesse modo,
+            // então salvar com evaluate(calcQty) gravava um valor obsoleto (ex: "1" default)
+            // em vez do consumo real calculado pela faca.
+            const finalQuantity = (needsTool && !editing.ignoreQuantity) ? editing.quantity : evaluate(calcQty);
+            onSave({ ...editing, quantity: finalQuantity, unitValue: evaluate(calcUnitVal) });
+          }}
+          disabled={
+            SIMPLE_FORM_CATEGORIES.includes(editing.category) || editing.entryType === 'GENERIC'
+              ? !editing.name?.trim()
+              : (!editing.materialId || (materialRequiresColor && !editing.colorId && !editing.ignoreColor))
+          }
+          title={
+            SIMPLE_FORM_CATEGORIES.includes(editing.category) ? `Informe o ${simpleFormLabel.replace(/^Nome (do|da) /i, '').toLowerCase()}`
+              : editing.entryType === 'GENERIC' ? "Informe o nome do serviço/item"
+              : (materialRequiresColor && !editing.colorId && !editing.ignoreColor) ? "Selecione uma cor para confirmar" : "Confirmar engenharia e salvar"
+          }
           aria-label="Confirmar engenharia e salvar alterações"
           className={`w-full px-6 py-4 rounded-2xl flex items-center justify-center gap-2 text-sm font-black uppercase tracking-widest shadow-xl transition-all active:scale-95 disabled:opacity-50 disabled:grayscale ${isDarkMode ? 'bg-indigo-600 shadow-indigo-900/40' : 'bg-slate-900 shadow-slate-900/20 text-white'}`}
         >

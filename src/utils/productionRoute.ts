@@ -1,4 +1,4 @@
-import { Product, ProductionLot, ProductionOrder, Sale, Sector, ServiceOrder } from '../types';
+import { Product, ProductionLot, ProductionOrder, Sale, SaleType, Sector, ServiceOrder } from '../types';
 
 export type SectorAdvanceResult = {
   /** Index in `route` the lot should move to. */
@@ -222,6 +222,11 @@ export type ActiveProductionUnit = {
    * com consumptionBasis 'grade'; itens com granularidade por sourceItem não têm equivalente
    * (o consumidor recai pro cálculo via grid/unitQty nesse caso). */
   gradesQty?: number;
+  /** Canal de venda desta unidade — vem do sourceItem (gravado do ProductionOrderItem de
+   * origem) quando o Mapa tem granularidade; em Mapas legados sem sourceItems, não há como
+   * saber com certeza, então é inferido: gradesQty presente = WHOLESALE (só existe conceito
+   * de "grade/caixa" no atacado), ausente = RETAIL. */
+  saleType?: SaleType;
 };
 
 /**
@@ -251,7 +256,7 @@ export function getActiveProductionUnits(lots: ProductionLot[]): ActiveProductio
         const vKey = `${si.productId}::${si.variationId}`;
         let entry = byVariation.get(vKey);
         if (!entry) {
-          entry = { productId: si.productId, variationId: si.variationId, pairs: {}, quantity: 0, lotOrderNumber: lot.orderNumber };
+          entry = { productId: si.productId, variationId: si.variationId, pairs: {}, quantity: 0, lotOrderNumber: lot.orderNumber, saleType: si.saleType };
           byVariation.set(vKey, entry);
         }
         entry.quantity += si.qty || 0;
@@ -262,7 +267,15 @@ export function getActiveProductionUnits(lots: ProductionLot[]): ActiveProductio
       });
       byVariation.forEach(entry => units.push(entry));
     } else {
-      units.push({ productId: lot.productId, variationId: lot.variationId, pairs: lot.pairs || {}, quantity: lot.quantity, lotOrderNumber: lot.orderNumber, gradesQty: lot.gradesQty });
+      units.push({
+        productId: lot.productId,
+        variationId: lot.variationId,
+        pairs: lot.pairs || {},
+        quantity: lot.quantity,
+        lotOrderNumber: lot.orderNumber,
+        gradesQty: lot.gradesQty,
+        saleType: lot.gradesQty ? SaleType.WHOLESALE : SaleType.RETAIL,
+      });
     }
   });
   return units;

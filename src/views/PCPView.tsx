@@ -864,6 +864,7 @@ export default function PCPView({
       pairs: Record<string, number>;
       quantity: number;
       gradesQty?: number;
+      saleType?: SaleType;
       sourceType: 'LOT' | 'ORDER';
       sourceLabel: string;
     };
@@ -878,7 +879,7 @@ export default function PCPView({
       // pra não somar de novo a necessidade de pedidos já enviados pra Expedição dentro de um Mapa
       // com finalização parcial.
       getActiveProductionUnits(activeLots).forEach(u => {
-        units.push({ productId: u.productId, variationId: u.variationId, pairs: u.pairs, quantity: u.quantity, gradesQty: u.gradesQty, sourceType: 'LOT', sourceLabel: u.lotOrderNumber });
+        units.push({ productId: u.productId, variationId: u.variationId, pairs: u.pairs, quantity: u.quantity, gradesQty: u.gradesQty, saleType: u.saleType, sourceType: 'LOT', sourceLabel: u.lotOrderNumber });
       });
     }
 
@@ -897,13 +898,14 @@ export default function PCPView({
           pairs,
           quantity: item.toProductionQty,
           gradesQty: undefined,
+          saleType: item.saleType,
           sourceType: 'ORDER',
           sourceLabel: `#${item.saleOrderNumber || item.orderNumber}`
         });
       });
     }
 
-    units.forEach(({ productId, variationId, pairs: groupPairs, quantity: unitQty, gradesQty: unitGradesQty, sourceType, sourceLabel: unitSourceLabel }) => {
+    units.forEach(({ productId, variationId, pairs: groupPairs, quantity: unitQty, gradesQty: unitGradesQty, saleType: unitSaleType, sourceType, sourceLabel: unitSourceLabel }) => {
       const groupProduct = products.find(p => p.id === productId);
       const variation = groupProduct?.variations.find(v => v.id === variationId);
 
@@ -920,6 +922,13 @@ export default function PCPView({
       // 1. Regular Materials from ComponentConsumption
       variation.consumptions?.forEach(cons => {
         if (!cons.materialId) return;
+        // Filtra por canal de venda quando o consumo está restrito a Atacado ou Varejo (ex:
+        // caixa coletiva x caixa unitária num produto híbrido) — evita somar a embalagem
+        // errada pro canal desta unidade. Sem saleType conhecido na unidade (Mapa legado sem
+        // sinal confiável), não filtra — mantém o comportamento anterior (sempre soma).
+        if (cons.salesChannel && cons.salesChannel !== 'BOTH' && unitSaleType && cons.salesChannel !== unitSaleType) {
+          return;
+        }
         if (cons.ignoreColor && cons.colorId) {
           // ignoreColor means the piece is color-agnostic — keep single entry per material
         }
@@ -4133,7 +4142,7 @@ export default function PCPView({
               if (seenLineIds.has(lineId)) lineId = `${lineId}::dup-${i.orderId}-${i.itemIdx}`;
               else seenLineIds.add(lineId);
             }
-            return { orderId: i.orderId, itemIdx: i.itemIdx, qty: i.toProductionQty, productId: i.productId, variationId: i.variationId, sizes: i.sizes, lineId, boxIds: i.boxIds };
+            return { orderId: i.orderId, itemIdx: i.itemIdx, qty: i.toProductionQty, productId: i.productId, variationId: i.variationId, sizes: i.sizes, lineId, boxIds: i.boxIds, saleType: i.saleType };
           });
         })(),
         groups: groupEntries.map(g => ({

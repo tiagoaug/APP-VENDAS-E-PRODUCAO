@@ -93,13 +93,23 @@ export type ComponentCategory = 'CUTTING_PIECE' | 'PACKAGING' | 'CHEMICAL' | 'TR
 export type ComponentConsumption = {
   id: string;
   category: ComponentCategory;
-  name: string; // Piece name, e.g., "Gáspea", "Lateral"
+  name: string; // Piece name, e.g., "Gáspea", "Lateral" — ou nome livre do item quando entryType === 'GENERIC'
   materialId: string;
   colorId?: string; // Optional specific color for the component
   quantity: number; // Consumo per unit/pair
   unitId?: string;
   unitValue?: number; // Valor unitário manual inserido pelo usuário
-  
+  // 'GENERIC' = item sem material/peça/faca cadastrados (mão de obra, serviço avulso — ex:
+  // "Corte", "Costura") — formulário simplificado: Nome + Unidade (cadastrada, via unitId) +
+  // Qtd + Valor Unit. Ausente/'PIECE' = formulário completo atual (Material, Faca, Cor).
+  // Ignorado quando category === 'CUTTING_PIECE' (sempre exige Faca/Material).
+  entryType?: 'PIECE' | 'GENERIC';
+  // Só para itens de categoria Impostos (TAXES) — cadastro dedicado, sem material nem Faca:
+  // define se `unitValue` é uma alíquota (%) ou um valor fixo (R$). Quando 'percentage',
+  // `percentageBase` decide sobre qual base ela incide no Custo Total do Produto.
+  valueType?: 'percentage' | 'fixed';
+  percentageBase?: 'COST' | 'SALE'; // 'COST' = sobre o custo do produto antes de impostos; 'SALE' = sobre o Preço de Venda cadastrado
+
   // Cutting Piece specific
   toolId?: string; // Link to Faca (ProductionConfigItem type TOOL)
   piecesPerPair?: number; // Usually 2
@@ -108,11 +118,19 @@ export type ComponentConsumption = {
   ignoreColor?: boolean;
   ignoreQuantity?: boolean;
   consumptionBasis?: 'pair' | 'grade'; // 'grade' = 1 unidade por grade (caixa coletiva), não por par
+  // Restringe em qual canal de venda este consumo entra na Necessidade de Compra — usado
+  // sobretudo em embalagem (ex: caixa coletiva de atacado vs caixa unitária de varejo) em
+  // produtos híbridos, que vendem nos dois canais e não devem somar as duas embalagens pro
+  // mesmo par. Ausente/'BOTH' = sempre soma (comportamento anterior, sem filtro).
+  salesChannel?: 'WHOLESALE' | 'RETAIL' | 'BOTH';
 
   // Outsourced services
   services?: {
     serviceId: string; // Link to FlowTag subcategory
     cost: number;
+    name?: string; // Nome do serviço em si (ex: "Revisão Geral") — mostrado na lista deste card; NÃO sincroniza com Instruções por Setor/etiqueta térmica
+    noteName?: string; // Identificador curto da instrução por setor (ex: "BORDADO PEITO") — vira SectorNote.name ao sincronizar, usado na etiqueta térmica
+    note?: string; // Descrição da instrução por setor — vira SectorNote.text ao sincronizar para "Instruções por Setor" (Variation.sectorNotes) da cor sendo editada
   }[];
   toolMapping?: { [size: string]: string };
 };
@@ -136,6 +154,15 @@ export type Variation = {
   stockPkgAllocations?: StockPkgAllocation[]; // Múltiplos padrões de embalagem por variação
   photoUrl?: string;   // Optional photo URL for this variation (used in labels)
   sectorNotes?: Record<string, SectorNote[]>; // sectorId → list of named notes for that sector
+  // Serviços terceirizados que se aplicam ao cabedal inteiro (o conjunto), não a uma peça
+  // de corte específica — ex: revisão geral, montagem completa.
+  assemblyServices?: {
+    serviceId: string;
+    cost: number;
+    name?: string; // Nome do serviço em si (ex: "Revisão Geral") — rótulo deste item na lista, NÃO sincroniza com Instruções por Setor
+    noteName?: string; // Identificador curto da instrução por setor (ex: "BORDADO PEITO") — vira SectorNote.name ao sincronizar, usado na etiqueta térmica
+    note?: string; // Descrição da instrução por setor — vira SectorNote.text ao sincronizar para "Instruções por Setor"
+  }[];
   stockNote?: string; // Observação livre sobre o estoque desta cor (ver "Disponível em Estoque")
 };
 
@@ -180,6 +207,11 @@ export type Product = {
   sectorPrices?: Record<string, number>; // Price per pair per sector (sectorId → R$/par)
   photoUrl?: string; // Foto miniatura do produto (base64) usada em etiquetas, PCP e estoque
   createdAt: number;
+  // Usados para diluir itens de categoria Custo Fixo (Ficha Técnica) em custo por par: valor
+  // mensal do item ÷ diasTrabalhadosMes ÷ paresDia. Preenchidos uma vez por produto, em vez de
+  // por item — cada modelo tem seu próprio ritmo de produção.
+  estimatedPairsPerDay?: number;
+  workDaysPerMonth?: number;
 };
 
 export type PurchaseItem = {
@@ -936,7 +968,13 @@ export type ProductionConfigItem = {
     conjugation?: number;
     sizes?: string[];
     sizeAreas?: Record<string, number>;
-    
+
+    // Categoria de consumo (CONSUMPTION_CATEGORY, inclusive as fixas embutidas — Embalagens,
+    // Químicos, Aviamentos, Impostos, Fretes, Folha de Pagamento, Serviços, Outros) — natureza
+    // do custo pra diluição no Custo Total do Produto. Ausente = 'VARIABLE' (soma direto, sem
+    // diluir por produção estimada).
+    costType?: 'FIXED' | 'VARIABLE';
+
     // Material specific
     masterCategory?: string;
     reference?: string;

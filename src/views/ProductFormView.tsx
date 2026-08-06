@@ -1,15 +1,16 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, ComponentConsumption, ComponentCategory, FlowTag, Sector, AppModulesConfig } from '../types';
+import { Product, Grid, GridType, Person, Variation, Category, CategoryType, SaleType, ProductStatus, ColorValue, ProductionConfigItem, ComponentConsumption, ComponentCategory, FlowTag, Sector, AppModulesConfig, SectorNote } from '../types';
 import {
   Save, Plus, Trash2, Camera, ChevronRight, ChevronLeft, Package, User,
   ToggleLeft as Toggle, Calendar, DollarSign, Tag, Calculator, Info,
   Layers, ArrowUpDown,
   Footprints, Scissors, Box, Droplets, Sparkles, Settings, CheckCircle2,
-  ChevronDown, X, Copy, Factory, Check
+  ChevronDown, X, Copy, Factory, Check, Percent, Truck, Users, Handshake
 } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import EngineeringEditor from '../components/EngineeringEditor';
+import ProductCostSummaryModal from '../components/ProductCostSummaryModal';
 import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
 import { toast } from '../utils/toast';
@@ -35,6 +36,70 @@ interface ProductFormViewProps {
   modulesConfig: AppModulesConfig;
   restrictedProductMode?: boolean;
   module?: 'SALES' | 'PRODUCTION';
+}
+
+// Sincroniza as observações do "Fluxo de Setores/Serviços" de uma peça de corte (Engenharia)
+// com "Instruções por Setor" da cor — cada nota gerada aqui carrega um id estável
+// (`eng-{consumptionId}-{serviceId}`), então re-salvar a peça atualiza a nota em vez de
+// duplicá-la, e remove sozinha se a observação for apagada ou o serviço removido da peça.
+function syncEngineeringSectorNotes(
+  sectorNotes: Record<string, SectorNote[]> | undefined,
+  consumption: ComponentConsumption
+): Record<string, SectorNote[]> {
+  const prefix = `eng-${consumption.id}-`;
+  const cleaned: Record<string, SectorNote[]> = {};
+  Object.entries(sectorNotes || {}).forEach(([sectorId, notes]) => {
+    const kept = notes.filter(n => !n.id.startsWith(prefix));
+    if (kept.length > 0) cleaned[sectorId] = kept;
+  });
+
+  (consumption.services || []).forEach(s => {
+    const text = s.note?.trim();
+    if (!text) return;
+    const note: SectorNote = { id: `${prefix}${s.serviceId}`, name: s.noteName?.trim() || consumption.name || '', text: text.toUpperCase() };
+    cleaned[s.serviceId] = [...(cleaned[s.serviceId] || []), note];
+  });
+
+  return cleaned;
+}
+
+// Remove as notas de "Instruções por Setor" geradas por uma peça de Engenharia que foi
+// excluída — mesmo esquema de id (`eng-{consumptionId}-{serviceId}`) usado ao sincronizar.
+function stripEngineeringSectorNotes(
+  sectorNotes: Record<string, SectorNote[]> | undefined,
+  consumptionId: string
+): Record<string, SectorNote[]> {
+  const prefix = `eng-${consumptionId}-`;
+  const cleaned: Record<string, SectorNote[]> = {};
+  Object.entries(sectorNotes || {}).forEach(([sectorId, notes]) => {
+    const kept = notes.filter(n => !n.id.startsWith(prefix));
+    if (kept.length > 0) cleaned[sectorId] = kept;
+  });
+  return cleaned;
+}
+
+// Mesma sincronização de syncEngineeringSectorNotes, mas para os "Serviços do Conjunto"
+// (Variation.assemblyServices) — serviços que não pertencem a uma peça de corte específica,
+// então o id usa um prefixo fixo (`asm-`) em vez do id da peça.
+function syncAssemblySectorNotes(
+  sectorNotes: Record<string, SectorNote[]> | undefined,
+  assemblyServices: { serviceId: string; cost: number; name?: string; noteName?: string; note?: string }[]
+): Record<string, SectorNote[]> {
+  const prefix = 'asm-';
+  const cleaned: Record<string, SectorNote[]> = {};
+  Object.entries(sectorNotes || {}).forEach(([sectorId, notes]) => {
+    const kept = notes.filter(n => !n.id.startsWith(prefix));
+    if (kept.length > 0) cleaned[sectorId] = kept;
+  });
+
+  assemblyServices.forEach(s => {
+    const text = s.note?.trim();
+    if (!text) return;
+    const note: SectorNote = { id: `${prefix}${s.serviceId}`, name: s.noteName?.trim() || s.name?.trim() || 'CONJUNTO', text: text.toUpperCase() };
+    cleaned[s.serviceId] = [...(cleaned[s.serviceId] || []), note];
+  });
+
+  return cleaned;
 }
 
 export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, productionConfigs, flowTags, onSave, onSaveOnly, onCancel, onSaveConfigItem, onDeleteConfigItem, isDarkMode, sectors, modulesConfig, restrictedProductMode = false, module = 'SALES' }: ProductFormViewProps) {
@@ -100,10 +165,48 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [isSavingCategory, setIsSavingCategory] = useState(false);
+  // Categorias fixas embutidas (Embalagens, Químicos... Outros) não têm ProductionConfigItem
+  // próprio por padrão — só ganham um quando o usuário marca Fixo/Variável pela primeira vez
+  // (upsertCategoryCostType). Excluídas aqui pra não duplicar como se fossem customizadas.
+  const BUILTIN_CATEGORY_IDS = ['PACKAGING', 'CHEMICAL', 'TRIMMING', 'TAXES', 'SHIPPING', 'COMMISSIONS', 'PAYROLL', 'SERVICES', 'OTHER'];
   const customCategories = useMemo(
-    () => productionConfigs.filter(c => c.type === 'CONSUMPTION_CATEGORY'),
+    () => productionConfigs.filter(c => c.type === 'CONSUMPTION_CATEGORY' && !BUILTIN_CATEGORY_IDS.includes(c.id)),
     [productionConfigs]
   );
+  const getCategoryCostType = (cat: string): 'FIXED' | 'VARIABLE' =>
+    productionConfigs.find(c => c.id === cat && c.type === 'CONSUMPTION_CATEGORY')?.metadata?.costType || 'VARIABLE';
+  // Cria (na 1ª vez) ou atualiza o ProductionConfigItem que guarda a natureza do custo da
+  // categoria — mesmo registro pras embutidas (id fixo, ex: "TAXES") e pras customizadas.
+  const upsertCategoryCostType = async (cat: string, label: string, costType: 'FIXED' | 'VARIABLE') => {
+    if (!onSaveConfigItem) return;
+    const existing = productionConfigs.find(c => c.id === cat && c.type === 'CONSUMPTION_CATEGORY');
+    await onSaveConfigItem({
+      id: cat,
+      name: existing?.name || label,
+      description: existing?.description || '',
+      type: 'CONSUMPTION_CATEGORY',
+      createdAt: (existing as any)?.createdAt || Date.now(),
+      metadata: { ...existing?.metadata, costType },
+    } as ProductionConfigItem);
+  };
+  const categoryGroups = useMemo(() => [
+    { cat: 'PACKAGING' as ComponentCategory, label: 'Embalagens', icon: <Box size={22} />, color: 'bg-emerald-600', textColor: 'text-emerald-600' },
+    { cat: 'CHEMICAL' as ComponentCategory, label: 'Químicos', icon: <Droplets size={22} />, color: 'bg-blue-600', textColor: 'text-blue-600' },
+    { cat: 'TRIMMING' as ComponentCategory, label: 'Aviamentos', icon: <Sparkles size={22} />, color: 'bg-amber-600', textColor: 'text-amber-600' },
+    { cat: 'TAXES' as ComponentCategory, label: 'Impostos', icon: <Percent size={22} />, color: 'bg-rose-600', textColor: 'text-rose-600' },
+    { cat: 'SHIPPING' as ComponentCategory, label: 'Fretes', icon: <Truck size={22} />, color: 'bg-cyan-600', textColor: 'text-cyan-600' },
+    { cat: 'COMMISSIONS' as ComponentCategory, label: 'Comissões e Assessoria', icon: <Handshake size={22} />, color: 'bg-teal-600', textColor: 'text-teal-600' },
+    { cat: 'PAYROLL' as ComponentCategory, label: 'Folha de Pagamento', icon: <Users size={22} />, color: 'bg-fuchsia-600', textColor: 'text-fuchsia-600' },
+    { cat: 'SERVICES' as ComponentCategory, label: 'Serviços', icon: <Sparkles size={22} />, color: 'bg-amber-600', textColor: 'text-amber-600' },
+    { cat: 'OTHER' as ComponentCategory, label: 'Outros', icon: <Package size={22} />, color: 'bg-slate-600', textColor: 'text-slate-600' },
+    ...customCategories.map(c => ({
+      cat: c.id as ComponentCategory,
+      label: c.name,
+      icon: <Tag size={22} />,
+      color: 'bg-violet-600',
+      textColor: 'text-violet-600'
+    })),
+  ].map(g => ({ ...g, costType: getCategoryCostType(g.cat) })), [customCategories, productionConfigs]);
 
   const handleAddCategory = async () => {
     const trimmed = newCategoryName.trim().toUpperCase();
@@ -131,6 +234,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   };
   const [saleTypes, setSaleTypes] = useState<SaleType[]>(existingProduct?.saleTypes || (existingProduct?.type ? [existingProduct.type] : [SaleType.WHOLESALE]));
   const [productionRoute, setProductionRoute] = useState<string[]>(existingProduct?.productionRoute || []);
+  // Usados pra diluir itens de categoria Fixo Variável da Ficha Técnica em custo por par —
+  // uma vez por produto, não por item (ver "Custo Total do Produto").
+  const [estimatedPairsPerDay, setEstimatedPairsPerDay] = useState<number | string>(existingProduct?.estimatedPairsPerDay || '');
+  const [workDaysPerMonth, setWorkDaysPerMonth] = useState<number | string>(existingProduct?.workDaysPerMonth || 26);
   const [sectorPrices, setSectorPrices] = useState<Record<string, number>>(existingProduct?.sectorPrices || {});
   const [photoUrl, setPhotoUrl] = useState<string>(existingProduct?.photoUrl || '');
 
@@ -222,6 +329,22 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   }, [productionGridId, moldId, grids, molds]);
 
   const [calcModal, setCalcModal] = useState<{ isOpen: boolean; field: string; value: number } | null>(null);
+  const [newAssemblyServiceId, setNewAssemblyServiceId] = useState('');
+  const [newAssemblyServiceCost, setNewAssemblyServiceCost] = useState<number | string>(0);
+  const [newAssemblyServiceName, setNewAssemblyServiceName] = useState('');
+  const [newAssemblyServiceNoteName, setNewAssemblyServiceNoteName] = useState('');
+  const [newAssemblyServiceNote, setNewAssemblyServiceNote] = useState('');
+  const [showProductionRoute, setShowProductionRoute] = useState(false);
+  const [showCuttingPieces, setShowCuttingPieces] = useState(false);
+  const [showCostSummary, setShowCostSummary] = useState(false);
+  const [openCategoryIds, setOpenCategoryIds] = useState<Set<string>>(new Set());
+  const toggleCategoryOpen = (cat: string) => {
+    setOpenCategoryIds(prev => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat); else next.add(cat);
+      return next;
+    });
+  };
 
   const addVariation = () => {
     let selectedColor = colors.find(c => !variations.some(v => v.colorName === c.name));
@@ -304,6 +427,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       variations,
       productionRoute: modulesConfig.production ? productionRoute : undefined,
       sectorPrices: modulesConfig.production ? sectorPrices : undefined,
+      estimatedPairsPerDay: modulesConfig.production ? (parseFloat(estimatedPairsPerDay as string) || undefined) : undefined,
+      workDaysPerMonth: modulesConfig.production ? (parseFloat(workDaysPerMonth as string) || 26) : undefined,
       photoUrl: photoUrl || undefined,
       createdAt: existingProduct?.createdAt || Date.now()
     };
@@ -416,6 +541,68 @@ export default function ProductFormView({ productId, products, grids, suppliers,
     const v = variations[activeVariationIndex];
     const selectedGrid = grids.find(g => g.id === (productionGridId || defaultGridId));
     const availableSizes = selectedGrid?.sizes || [];
+    // Só setores que já têm nota em "Instruções por Setor" desta cor — mesmo critério usado
+    // no Fluxo de Setores/Serviços de cada peça de corte (EngineeringEditor).
+    const modelSectors = sectors
+      .filter(s => productionRoute.includes(s.id))
+      .sort((a, b) => a.order - b.order);
+
+    // Custo total do produto: engenharia (peças de corte + serviços do conjunto) + solado
+    // (Matriz de Solado selecionada em Configurações de Produção, usando o custo por par já
+    // confirmado no cadastro do molde — metadata.unitCost).
+    //
+    // Itens de categoria FIXA (ex: Folha de Pagamento, Impostos) representam um valor MENSAL
+    // (quantity × unitValue), não um custo direto por par — precisam ser diluídos: valor
+    // mensal ÷ dias trabalhados/mês ÷ produção estimada (pares/dia), ambos configurados uma
+    // vez no card "Custo Total do Produto". Sem esses dois preenchidos, o item não entra no
+    // total (evita somar um valor mensal cheio por engano).
+    const productPairsDay = parseFloat(estimatedPairsPerDay as string) || 0;
+    const productWorkDays = parseFloat(workDaysPerMonth as string) || 26;
+    const itemDilutedCost = (item: ComponentConsumption, isFixed: boolean) => {
+      const mat = productionConfigs.find(c => c.id === item.materialId);
+      const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((mat)?.metadata?.baseCost || 0);
+      const rawValue = item.quantity * unitVal;
+      if (!isFixed) return rawValue;
+      if (productPairsDay <= 0) return 0;
+      return (rawValue / productWorkDays) / productPairsDay;
+    };
+
+    // Impostos, Fretes e Comissões/Assessoria usam o mesmo cadastro simples (% ou R$ fixo) e
+    // ficam de fora da soma "normal" — cada um pode ser % (sobre o custo antes deles ou sobre
+    // o Preço de Venda) ou R$ fixo, calculado depois que o resto do custo já está fechado,
+    // pra evitar um item percentual incidindo sobre outro (cascata).
+    const PERCENT_CAPABLE_CATEGORIES = ['TAXES', 'SHIPPING', 'COMMISSIONS'];
+    const isPercentCapableItem = (item: ComponentConsumption) => PERCENT_CAPABLE_CATEGORIES.includes(item.category);
+    const computeNonTaxCost = (excludeId?: string) => (v.consumptions || []).reduce((acc, item) => {
+      if (item.id === excludeId || isPercentCapableItem(item)) return acc;
+      const isFixed = item.category !== 'CUTTING_PIECE' && getCategoryCostType(item.category) === 'FIXED';
+      const matCost = itemDilutedCost(item, isFixed);
+      const serviceCost = (item.services || []).reduce((sAcc, s) => sAcc + s.cost, 0);
+      return acc + matCost + serviceCost;
+    }, 0) + (v.assemblyServices || []).reduce((acc, s) => acc + s.cost, 0);
+
+    const selectedMold = moldId ? productionConfigs.find(m => m.id === moldId) : undefined;
+    const soleCost = selectedMold?.metadata?.unitCost || 0;
+    const taxItemCost = (item: ComponentConsumption, base: number) => {
+      const rate = item.unitValue || 0;
+      if (item.valueType === 'fixed') return rate;
+      return base * (rate / 100);
+    };
+
+    const nonTaxCost = computeNonTaxCost();
+    const costBeforeTaxes = nonTaxCost + soleCost;
+    const taxesCost = (v.consumptions || []).filter(isPercentCapableItem).reduce((acc, item) => acc + taxItemCost(item, costBeforeTaxes), 0);
+
+    const engineeringCost = nonTaxCost;
+    const totalProductCost = costBeforeTaxes + taxesCost;
+
+    // Base "ao vivo" pro mini card de prévia dentro do editor de item — exclui o próprio item
+    // sendo editado (senão o rascunho somaria em cima do valor antigo já salvo dele).
+    const costBeforeThisItemBase = computeNonTaxCost(editingConsumption?.id) + soleCost;
+    const taxesCostExcludingEditing = (v.consumptions || [])
+      .filter(it => isPercentCapableItem(it) && it.id !== editingConsumption?.id)
+      .reduce((acc, item) => acc + taxItemCost(item, costBeforeThisItemBase), 0);
+    const costBeforeThisItem = costBeforeThisItemBase + taxesCostExcludingEditing;
 
     return (
       <div className={`w-full ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
@@ -762,6 +949,116 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 </>
               ) : (
                 <div className="flex flex-col gap-6">
+                  {/* Custo Total do Produto — engenharia (peças + serviços do conjunto) + solado */}
+                  <div className="p-6 bg-slate-900 dark:bg-indigo-600 rounded-[2.5rem] shadow-xl flex flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center text-white shrink-0">
+                          <Calculator size={28} />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-black text-indigo-200 uppercase tracking-[0.2em]">Custo Total do Produto</p>
+                          <p className="text-2xl font-black text-white leading-none mt-1">
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(totalProductCost)}
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowCostSummary(true)}
+                        title="Ver resumo completo do custo"
+                        aria-label="Ver resumo completo do custo"
+                        className="w-11 h-11 rounded-2xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center shrink-0 transition-all active:scale-90"
+                      >
+                        <Info size={20} />
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-3 pt-3 border-t border-white/10">
+                      <div className="flex-1 flex flex-col gap-0.5">
+                        <span className="text-[9px] font-black text-indigo-200 uppercase tracking-widest">Engenharia</span>
+                        <span className="text-xs font-black text-white">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(engineeringCost)}</span>
+                      </div>
+                      <div className="w-px h-6 bg-white/10 shrink-0" />
+                      <div className="flex-1 flex flex-col gap-0.5">
+                        <span className="text-[9px] font-black text-indigo-200 uppercase tracking-widest">Solado</span>
+                        <span className="text-xs font-black text-white">
+                          {selectedMold ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(soleCost) : '---'}
+                        </span>
+                      </div>
+                      <div className="w-px h-6 bg-white/10 shrink-0" />
+                      <div className="flex-1 flex flex-col gap-0.5">
+                        <span className="text-[9px] font-black text-indigo-200 uppercase tracking-widest">Impostos</span>
+                        <span className="text-xs font-black text-white">
+                          {taxesCost > 0 ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(taxesCost) : '---'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Diluição de Custos Fixo Variável — preenchido uma vez por produto, usado
+                        por todos os itens de categorias marcadas como Fixo Variável na Ficha
+                        Técnica (valor fixo mensal cujo custo por par varia com a produção). */}
+                    <div className="pt-3 border-t border-white/10 flex flex-col gap-2">
+                      <p className="text-[9px] font-black text-indigo-200 uppercase tracking-widest">Diluição de Custos Fixo Variável</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="flex flex-col gap-1">
+                          <label htmlFor="estimated-pairs-day" className="text-[8px] font-black text-indigo-200 uppercase tracking-widest">Produção Estimada (Pares/Dia)</label>
+                          <input
+                            id="estimated-pairs-day"
+                            type="number"
+                            min={0}
+                            placeholder="Ex: 50"
+                            value={estimatedPairsPerDay}
+                            onChange={(e) => setEstimatedPairsPerDay(e.target.value)}
+                            className="w-full px-3 py-2.5 rounded-xl bg-white/10 text-white text-xs font-black outline-none placeholder:text-indigo-300 focus:bg-white/20 transition-all"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label htmlFor="work-days-month" className="text-[8px] font-black text-indigo-200 uppercase tracking-widest">Dias Trabalhados/Mês</label>
+                          <input
+                            id="work-days-month"
+                            type="number"
+                            min={1}
+                            max={31}
+                            placeholder="26"
+                            value={workDaysPerMonth}
+                            onChange={(e) => setWorkDaysPerMonth(e.target.value)}
+                            className="w-full px-3 py-2.5 rounded-xl bg-white/10 text-white text-xs font-black outline-none placeholder:text-indigo-300 focus:bg-white/20 transition-all"
+                          />
+                        </div>
+                      </div>
+                      {!productPairsDay && (
+                        <p className="text-[8px] font-bold text-orange-300 uppercase tracking-widest leading-relaxed">
+                          Sem produção estimada, itens de categorias marcadas como Fixo Variável não entram neste total.
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowCostSummary(true)}
+                      className="w-full py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
+                    >
+                      Ver Resumo Completo
+                    </button>
+                  </div>
+
+                  <ProductCostSummaryModal
+                    isOpen={showCostSummary}
+                    onClose={() => setShowCostSummary(false)}
+                    isDarkMode={isDarkMode}
+                    productLabel={`${reference ? `${reference} — ` : ''}${name || 'Produto'} · ${v.colorName || ''}`}
+                    consumptions={v.consumptions || []}
+                    assemblyServices={v.assemblyServices || []}
+                    productionConfigs={productionConfigs}
+                    sectors={sectors}
+                    categoryGroups={categoryGroups}
+                    soleName={selectedMold?.name}
+                    soleCost={soleCost}
+                    totalCost={totalProductCost}
+                    estimatedPairsPerDay={productPairsDay}
+                    workDaysPerMonth={productWorkDays}
+                    costBeforeTaxes={costBeforeTaxes}
+                  />
+
                   {/* Seção de Consumos */}
                   <div className="grid grid-cols-1 gap-6">
                     {/* Componentes do Cabedal (Peças de Corte) */}
@@ -795,6 +1092,29 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         </button>
                       </div>
 
+                      <div className={`flex items-start gap-2.5 px-3 py-2.5 rounded-2xl border mb-6 ${isDarkMode ? 'bg-indigo-950/30 border-indigo-900/50' : 'bg-indigo-50 border-indigo-100'}`}>
+                        <Info size={14} className="text-indigo-500 shrink-0 mt-0.5" />
+                        <p className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 uppercase tracking-widest leading-relaxed">
+                          Aqui você cadastra as peças cortadas por facas de corte já cadastradas para este modelo — cada peça consome uma faca/molde técnica e um material de insumo específicos.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowCuttingPieces(prev => !prev)}
+                        title={showCuttingPieces ? "Recolher peças cadastradas" : "Ver peças cadastradas"}
+                        aria-label={showCuttingPieces ? "Recolher peças cadastradas" : "Expandir peças cadastradas"}
+                        className={`w-full flex items-center justify-between gap-3 px-4 py-3 mb-4 rounded-2xl border transition-colors ${isDarkMode ? 'bg-slate-950 border-slate-800 hover:bg-slate-800/60' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}
+                      >
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                          Peças Cadastradas ({(v.consumptions || []).filter(c => c.category === 'CUTTING_PIECE').length})
+                        </span>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-amber-400 text-indigo-900 shadow-lg shadow-amber-400/30 transition-transform ${showCuttingPieces ? 'rotate-180' : ''}`}>
+                          <ChevronDown size={18} strokeWidth={3} />
+                        </div>
+                      </button>
+
+                      {showCuttingPieces && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {(v.consumptions || []).filter(c => c.category === 'CUTTING_PIECE').map((item, idx) => {
                           const material = productionConfigs.find(m => m.id === item.materialId);
@@ -841,7 +1161,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                   <button
                                      onClick={() => {
                                        const newC = (v.consumptions || []).filter(c => c.id !== item.id);
-                                       updateVariation(activeVariationIndex, { consumptions: newC });
+                                       const newSectorNotes = stripEngineeringSectorNotes(v.sectorNotes, item.id);
+                                       updateVariation(activeVariationIndex, { consumptions: newC, sectorNotes: newSectorNotes });
                                      }}
                                      title="Excluir"
                                      className="p-2 bg-rose-50 dark:bg-rose-900/30 text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900/50 rounded-xl transition-colors"
@@ -920,120 +1241,372 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                           </div>
                         )}
                       </div>
+                      )}
                     </div>
 
-                    {/* Outros Consumos (Embalagem, Químicos, Aviamentos + Categorias customizadas) */}
+                    {/* Outros Consumos (Embalagem, Químicos, Aviamentos, Impostos, Fretes, Folha de
+                        Pagamento, Serviços do Conjunto + Categorias customizadas) */}
                     <div className="flex items-center justify-between px-2">
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Outras Categorias</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                      {categoryGroups.map(group => {
+                        const isServices = group.cat === 'SERVICES';
+                        const groupItems = (v.consumptions || []).filter(c => c.category === group.cat);
+                        const isFixedCost = group.costType === 'FIXED';
+                        const groupTotal = isServices
+                          ? (v.assemblyServices || []).reduce((acc, s) => acc + s.cost, 0)
+                          : groupItems.reduce((acc, item) => acc + itemDilutedCost(item, isFixedCost), 0);
+                        const groupCount = isServices ? (v.assemblyServices || []).length : groupItems.length;
+                        const isOpen = openCategoryIds.has(group.cat);
+
+                        return (
+                          <div key={group.cat} className={`rounded-[2rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => toggleCategoryOpen(group.cat)}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleCategoryOpen(group.cat); }}
+                              title={isOpen ? `Recolher ${group.label}` : `Expandir ${group.label}`}
+                              aria-label={isOpen ? `Recolher ${group.label}` : `Expandir ${group.label}`}
+                              className="w-full flex items-center justify-between gap-3 p-6 cursor-pointer"
+                            >
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className={`w-10 h-10 rounded-xl ${group.color} text-white flex items-center justify-center shadow-lg opacity-80 shrink-0`}>
+                                  {group.icon}
+                                </div>
+                                <div className="text-left min-w-0">
+                                  <h3 className={`text-[10px] font-black uppercase tracking-widest ${group.textColor} dark:opacity-80`}>{group.label}</h3>
+                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{groupCount} {groupCount === 1 ? 'item' : 'itens'}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3 shrink-0">
+                                <div className="flex flex-col items-end gap-1">
+                                  <span className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(groupTotal)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); upsertCategoryCostType(group.cat, group.label, isFixedCost ? 'VARIABLE' : 'FIXED'); }}
+                                    title="Alternar entre Fixo Variável (valor fixo mensal, diluído por produção estimada — varia por par conforme o volume) e Fixo (valor imutável por par, sempre o mesmo independente da produção)"
+                                    className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest transition-all ${isFixedCost ? 'bg-orange-500 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                                  >
+                                    {isFixedCost ? 'Fixo Variável' : 'Fixo'}
+                                  </button>
+                                  <span className="text-[7px] font-bold uppercase tracking-widest text-slate-400">Clique para mudar</span>
+                                </div>
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-amber-400 text-indigo-900 shadow-lg shadow-amber-400/30 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+                                  <ChevronDown size={16} strokeWidth={3} />
+                                </div>
+                              </div>
+                            </div>
+
+                            {isOpen && isServices && (
+                              <div className="px-6 pb-6 space-y-6">
+                                <div className={`flex items-start gap-2.5 px-3 py-2.5 rounded-2xl border ${isDarkMode ? 'bg-amber-950/30 border-amber-900/50' : 'bg-amber-100/60 border-amber-200'}`}>
+                                  <Info size={14} className="text-amber-600 shrink-0 mt-0.5" />
+                                  <p className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase tracking-widest leading-relaxed">
+                                    Use aqui quando o serviço é prestado no cabedal inteiro (ex: revisão geral, montagem completa), não em uma peça de corte específica. Esse custo entra no total de "Engenharia do Modelo". O "Nome do Serviço" é só o rótulo deste item na lista; se você também preencher a Instrução por Setor (Nome + Descrição), ela já aparece pronta em "Instruções por Setor" desta cor.
+                                  </p>
+                                </div>
+
+                                {modelSectors.length === 0 && (
+                                  <p className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-widest">
+                                    Nenhum setor habilitado no "Roteiro de Produção" deste modelo — habilite um lá primeiro para poder escolhê-lo aqui.
+                                  </p>
+                                )}
+
+                                <div className="grid grid-cols-12 gap-2">
+                                  <div className="col-span-12">
+                                    <select
+                                      disabled={modelSectors.length === 0}
+                                      className={`w-full border-2 rounded-2xl px-4 py-4 text-sm font-black outline-none transition-all disabled:opacity-50 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}
+                                      value={newAssemblyServiceId}
+                                      title="Selecionar Setor"
+                                      onChange={(e) => {
+                                        const sectorId = e.target.value;
+                                        setNewAssemblyServiceId(sectorId);
+                                        const existingNote = (v.sectorNotes?.[sectorId] || [])[0];
+                                        setNewAssemblyServiceNoteName(existingNote?.name || '');
+                                        setNewAssemblyServiceNote(existingNote?.text || '');
+                                      }}
+                                    >
+                                      <option value="">Setor...</option>
+                                      {modelSectors.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                    </select>
+                                  </div>
+                                  <div className="col-span-12">
+                                    <input
+                                      type="text"
+                                      placeholder="Nome do Serviço — ex: REVISÃO, BORDADO PERSONALIZADO"
+                                      className={`w-full border-2 rounded-2xl px-4 py-4 text-sm font-black outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white placeholder:text-slate-600' : 'bg-white border-slate-100 text-slate-900 placeholder:text-slate-400'}`}
+                                      value={newAssemblyServiceName}
+                                      title="Nome do Serviço"
+                                      onChange={(e) => setNewAssemblyServiceName(e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="col-span-8 relative">
+                                    <input
+                                      type="number"
+                                      placeholder="R$ 0.00"
+                                      className={`w-full border-2 rounded-2xl pl-4 pr-11 py-4 text-sm font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}
+                                      value={newAssemblyServiceCost}
+                                      title="Custo do Serviço"
+                                      onChange={(e) => setNewAssemblyServiceCost(e.target.value)}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => setCalcModal({ isOpen: true, field: 'assemblyServiceCost', value: Number(newAssemblyServiceCost) || 0 })}
+                                      title="Abrir Calculadora do Custo do Serviço"
+                                      aria-label="Abrir calculadora para definir o custo do serviço"
+                                      className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
+                                    >
+                                      <Calculator size={16} />
+                                    </button>
+                                  </div>
+                                  <div className="col-span-4 flex items-center justify-center">
+                                    <button
+                                      onClick={() => {
+                                        if (!newAssemblyServiceId) return;
+                                        const list = [...(v.assemblyServices || [])];
+                                        list.push({
+                                          serviceId: newAssemblyServiceId,
+                                          cost: Number(newAssemblyServiceCost) || 0,
+                                          name: newAssemblyServiceName.trim() || undefined,
+                                          noteName: newAssemblyServiceNoteName.trim() || undefined,
+                                          note: newAssemblyServiceNote.trim() || undefined,
+                                        });
+                                        const newSectorNotes = syncAssemblySectorNotes(v.sectorNotes, list);
+                                        updateVariation(activeVariationIndex, { assemblyServices: list, sectorNotes: newSectorNotes });
+                                        setNewAssemblyServiceId('');
+                                        setNewAssemblyServiceCost(0);
+                                        setNewAssemblyServiceName('');
+                                        setNewAssemblyServiceNoteName('');
+                                        setNewAssemblyServiceNote('');
+                                      }}
+                                      title="Adicionar Serviço do Conjunto"
+                                      className="w-full h-11 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-lg shadow-amber-500/20 active:scale-95 transition-all"
+                                    >
+                                      <Plus size={18} strokeWidth={3} />
+                                    </button>
+                                  </div>
+                                  <div className="col-span-12 pt-2 mt-1 border-t border-dashed border-slate-200 dark:border-slate-700">
+                                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Instrução por Setor (opcional) — aparece em "Instruções por Setor" e na etiqueta</span>
+                                  </div>
+                                  <div className="col-span-12 sm:col-span-4">
+                                    <input
+                                      type="text"
+                                      placeholder="Nome — ex: REVISÃO"
+                                      className={`w-full border-2 rounded-2xl px-4 py-3 text-xs font-bold outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white placeholder:text-slate-600' : 'bg-white border-slate-100 text-slate-900 placeholder:text-slate-400'}`}
+                                      value={newAssemblyServiceNoteName}
+                                      title="Nome da Instrução por Setor"
+                                      onChange={(e) => setNewAssemblyServiceNoteName(e.target.value)}
+                                    />
+                                  </div>
+                                  <div className="col-span-12 sm:col-span-8">
+                                    <input
+                                      type="text"
+                                      placeholder="Descrição — ex: REVISÃO GERAL ANTES DA EXPEDIÇÃO"
+                                      className={`w-full border-2 rounded-2xl px-4 py-3 text-xs font-bold outline-none transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white placeholder:text-slate-600' : 'bg-white border-slate-100 text-slate-900 placeholder:text-slate-400'}`}
+                                      value={newAssemblyServiceNote}
+                                      title="Descrição da Instrução por Setor"
+                                      onChange={(e) => setNewAssemblyServiceNote(e.target.value)}
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                  {(v.assemblyServices || []).map((s, idx) => (
+                                    <div key={idx} className="flex flex-col gap-2 p-4 rounded-2xl bg-white dark:bg-slate-950 border border-slate-100 dark:border-slate-800">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: sectors.find(sec => sec.id === s.serviceId)?.color }} />
+                                          <div className="flex flex-col min-w-0">
+                                            <span className="text-xs font-black uppercase truncate">{s.name || sectors.find(sec => sec.id === s.serviceId)?.name || 'Serviço'}</span>
+                                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">{sectors.find(sec => sec.id === s.serviceId)?.name || 'Setor'}</span>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-4 shrink-0">
+                                          <span className="text-xs font-black text-amber-600">R$ {s.cost.toFixed(2)}</span>
+                                          <button
+                                            onClick={() => {
+                                              const list = (v.assemblyServices || []).filter((_, i) => i !== idx);
+                                              const newSectorNotes = syncAssemblySectorNotes(v.sectorNotes, list);
+                                              updateVariation(activeVariationIndex, { assemblyServices: list, sectorNotes: newSectorNotes });
+                                            }}
+                                            title="Remover Serviço"
+                                            className="text-slate-300 hover:text-rose-500 transition-colors"
+                                          >
+                                            <Trash2 size={16} />
+                                          </button>
+                                        </div>
+                                      </div>
+                                      {s.note && (
+                                        <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 pl-6 leading-relaxed">
+                                          {s.noteName && <span className="font-black text-slate-700 dark:text-slate-300">{s.noteName}: </span>}
+                                          "{s.note}" <span className="text-amber-600 dark:text-amber-400">— vai para Instruções por Setor</span>
+                                        </p>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {isOpen && !isServices && (
+                              <div className="px-6 pb-6">
+                                <button
+                                  onClick={() => {
+                                    setConsumptionCategory(group.cat);
+                                    setEditingConsumption({
+                                      id: generateId(),
+                                      category: group.cat,
+                                      name: '',
+                                      materialId: '',
+                                      quantity: PERCENT_CAPABLE_CATEGORIES.includes(group.cat) ? 1 : 0,
+                                      ...(PERCENT_CAPABLE_CATEGORIES.includes(group.cat)
+                                        ? { valueType: group.cat === 'TAXES' ? 'percentage' : 'fixed' }
+                                        : {}),
+                                    });
+                                    setIsConsumptionModalOpen(true);
+                                  }}
+                                  title={`Adicionar ${group.label}`}
+                                  className="w-full mb-4 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-black uppercase tracking-widest hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                                >
+                                  <Plus size={14} /> Adicionar {group.label}
+                                </button>
+
+                                <div className="flex flex-col gap-3">
+                                  {groupItems.map(item => {
+                                    const mat = productionConfigs.find(m => m.id === item.materialId);
+                                    return (
+                                      <div key={item.id} className={`p-4 rounded-2xl border flex flex-col gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex flex-col">
+                                            <p className="text-[10px] font-black uppercase tracking-tight text-slate-900 dark:text-white truncate max-w-[120px]">{item.name || mat?.name}</p>
+                                            {item.entryType === 'GENERIC' ? (
+                                              <span className="text-[9px] font-bold text-indigo-500 uppercase tracking-widest mt-0.5">Genérico</span>
+                                            ) : (
+                                              <div className="flex items-center gap-1.5 mt-0.5">
+                                                {item.colorId ? (
+                                                  <div className="flex items-center gap-1 px-1 py-0.5 rounded-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
+                                                    <div
+                                                      className="w-1.5 h-1.5 rounded-full border border-black/10"
+                                                      style={{ backgroundColor: colors.find(c => c.id === item.colorId)?.hex || '#ccc' }}
+                                                    />
+                                                    <span className="text-[9px] font-black uppercase tracking-tighter text-slate-500 dark:text-slate-400">
+                                                      {colors.find(c => c.id === item.colorId)?.name || 'Cor'}
+                                                    </span>
+                                                  </div>
+                                                ) : !item.ignoreColor ? (
+                                                  <span className="px-1 py-0.5 rounded-full bg-rose-50 dark:bg-rose-900/20 text-rose-500 text-[9px] font-black uppercase border border-rose-100 dark:border-rose-800">Falta Cor</span>
+                                                ) : (
+                                                  <span className="px-1 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 text-[9px] font-black uppercase border border-indigo-100 dark:border-indigo-800">Sem Cor</span>
+                                                )}
+                                              </div>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-1">
+                                             <button onClick={() => { setEditingConsumption(item); setConsumptionCategory(group.cat); setIsConsumptionModalOpen(true); }} title="Configurações do Item" className="p-1.5 text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"><Settings size={14} /></button>
+                                             <button onClick={() => { const newC = (v.consumptions || []).filter(c => c.id !== item.id); const newSectorNotes = stripEngineeringSectorNotes(v.sectorNotes, item.id); updateVariation(activeVariationIndex, { consumptions: newC, sectorNotes: newSectorNotes }); }} title="Excluir Item" className="p-1.5 text-rose-500 bg-rose-50 dark:bg-rose-900/30 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors"><Trash2 size={14} /></button>
+                                           </div>
+                                        </div>
+                                        <div className="flex flex-col pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
+                                          {PERCENT_CAPABLE_CATEGORIES.includes(group.cat) ? (
+                                            <>
+                                              <div className="flex items-center justify-between mb-0.5">
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">
+                                                  {(!item.valueType || item.valueType === 'percentage') ? 'Alíquota:' : 'Valor Fixo:'}
+                                                </span>
+                                                <span className="text-[10px] font-black text-slate-900 dark:text-slate-200 uppercase">
+                                                  {(!item.valueType || item.valueType === 'percentage')
+                                                    ? `${item.unitValue || 0}% sobre ${item.percentageBase === 'SALE' ? 'a Venda' : 'o Custo'}`
+                                                    : `R$ ${(item.unitValue || 0).toFixed(2).replace('.', ',')}`}
+                                                </span>
+                                              </div>
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Custo:</span>
+                                                <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">
+                                                  R$ {taxItemCost(item, costBeforeTaxes).toFixed(2).replace('.', ',')}
+                                                </span>
+                                              </div>
+                                            </>
+                                          ) : (
+                                          <>
+                                          <div className="flex items-center justify-between mb-0.5">
+                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Consumo:</span>
+                                            <span className="text-[10px] font-black text-slate-900 dark:text-slate-200 uppercase">
+                                              {item.consumptionBasis === 'grade'
+                                                ? `${Math.round(item.quantity < 1 ? 1 : item.quantity)} /grade`
+                                                : `${item.quantity.toFixed(4).replace('.', ',')} /par`
+                                              } {productionConfigs.find(u => u.id === (mat?.metadata?.unitId || item.unitId))?.name || 'UN'}
+                                            </span>
+                                          </div>
+                                          {isFixedCost ? (
+                                            <>
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Valor Mensal:</span>
+                                                <span className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase">
+                                                  R$ {(() => {
+                                                    const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((mat)?.metadata?.baseCost || 0);
+                                                    return (item.quantity * unitVal).toFixed(2).replace('.', ',');
+                                                  })()}
+                                                </span>
+                                              </div>
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Custo/Par (diluído):</span>
+                                                {productPairsDay > 0 ? (
+                                                  <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">
+                                                    R$ {itemDilutedCost(item, true).toFixed(4).replace('.', ',')}
+                                                  </span>
+                                                ) : (
+                                                  <span className="px-1 py-0.5 rounded-full bg-rose-50 dark:bg-rose-900/20 text-rose-500 text-[9px] font-black uppercase border border-rose-100 dark:border-rose-800">Falta Produção Estimada</span>
+                                                )}
+                                              </div>
+                                            </>
+                                          ) : (
+                                            <div className="flex items-center justify-between">
+                                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Custo:</span>
+                                              <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">
+                                                R$ {(() => {
+                                                  const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((mat)?.metadata?.baseCost || 0);
+                                                  return (item.quantity * unitVal).toFixed(2).replace('.', ',');
+                                                })()}
+                                              </span>
+                                            </div>
+                                          )}
+                                          </>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                  {groupItems.length === 0 && (
+                                    <p className="text-[10px] text-slate-300 font-bold uppercase text-center py-4 italic">Nenhum item</p>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex flex-col gap-2 px-2">
                       <button
                         type="button"
                         onClick={() => setShowCategoryManager(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[9px] font-black uppercase tracking-widest hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                        title="Criar categorias personalizadas além de Embalagens, Químicos, Aviamentos e Outros"
+                        className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-full bg-rose-500 text-white text-[9px] font-black uppercase tracking-widest hover:bg-rose-600 transition-colors shadow-sm w-full sm:w-auto sm:self-start"
                       >
                         <Tag size={12} /> Gerenciar Categorias
                       </button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                      {[
-                        { cat: 'PACKAGING' as ComponentCategory, label: 'Embalagens', icon: <Box size={22} />, color: 'bg-emerald-600', textColor: 'text-emerald-600' },
-                        { cat: 'CHEMICAL' as ComponentCategory, label: 'Químicos', icon: <Droplets size={22} />, color: 'bg-blue-600', textColor: 'text-blue-600' },
-                        { cat: 'TRIMMING' as ComponentCategory, label: 'Aviamentos', icon: <Sparkles size={22} />, color: 'bg-amber-600', textColor: 'text-amber-600' },
-                        ...customCategories.map(c => ({
-                          cat: c.id as ComponentCategory,
-                          label: c.name,
-                          icon: <Tag size={22} />,
-                          color: 'bg-violet-600',
-                          textColor: 'text-violet-600'
-                        })),
-                      ].map(group => (
-                        <div key={group.cat} className={`p-6 rounded-[2rem] border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                          <div className="flex items-center justify-between mb-6">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-10 h-10 rounded-xl ${group.color} text-white flex items-center justify-center shadow-lg opacity-80`}>
-                                {group.icon}
-                              </div>
-                              <h3 className={`text-[10px] font-black uppercase tracking-widest ${group.textColor} dark:opacity-80`}>{group.label}</h3>
-                            </div>
-                            <button
-                              onClick={() => {
-                                setConsumptionCategory(group.cat);
-                                setEditingConsumption({
-                                  id: generateId(),
-                                  category: group.cat,
-                                  name: '',
-                                  materialId: '',
-                                  quantity: 0
-                                });
-                                setIsConsumptionModalOpen(true);
-                              }}
-                              title={`Adicionar ${group.label}`}
-                              className="p-2 bg-slate-50 dark:bg-slate-800 rounded-xl text-slate-400 hover:text-indigo-600"
-                            >
-                              <Plus size={16} />
-                            </button>
-                          </div>
-
-                          <div className="flex flex-col gap-3">
-                            {(v.consumptions || []).filter(c => c.category === group.cat).map(item => {
-                              const mat = productionConfigs.find(m => m.id === item.materialId);
-                              return (
-                                <div key={item.id} className={`p-4 rounded-2xl border flex flex-col gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex flex-col">
-                                      <p className="text-[10px] font-black uppercase tracking-tight text-slate-900 dark:text-white truncate max-w-[120px]">{item.name || mat?.name}</p>
-                                      <div className="flex items-center gap-1.5 mt-0.5">
-                                        {item.colorId ? (
-                                          <div className="flex items-center gap-1 px-1 py-0.5 rounded-full bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
-                                            <div 
-                                              className="w-1.5 h-1.5 rounded-full border border-black/10" 
-                                              style={{ backgroundColor: colors.find(c => c.id === item.colorId)?.hex || '#ccc' }}
-                                            />
-                                            <span className="text-[9px] font-black uppercase tracking-tighter text-slate-500 dark:text-slate-400">
-                                              {colors.find(c => c.id === item.colorId)?.name || 'Cor'}
-                                            </span>
-                                          </div>
-                                        ) : !item.ignoreColor ? (
-                                          <span className="px-1 py-0.5 rounded-full bg-rose-50 dark:bg-rose-900/20 text-rose-500 text-[9px] font-black uppercase border border-rose-100 dark:border-rose-800">Falta Cor</span>
-                                        ) : (
-                                          <span className="px-1 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 text-[9px] font-black uppercase border border-indigo-100 dark:border-indigo-800">Sem Cor</span>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                       <button onClick={() => { setEditingConsumption(item); setConsumptionCategory(group.cat); setIsConsumptionModalOpen(true); }} title="Configurações do Item" className="p-1.5 text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors"><Settings size={14} /></button>
-                                       <button onClick={() => { const newC = (v.consumptions || []).filter(c => c.id !== item.id); updateVariation(activeVariationIndex, { consumptions: newC }); }} title="Excluir Item" className="p-1.5 text-rose-500 bg-rose-50 dark:bg-rose-900/30 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors"><Trash2 size={14} /></button>
-                                     </div>
-                                  </div>
-                                  <div className="flex flex-col pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
-                                    <div className="flex items-center justify-between mb-0.5">
-                                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Consumo:</span>
-                                      <span className="text-[10px] font-black text-slate-900 dark:text-slate-200 uppercase">
-                                        {item.consumptionBasis === 'grade'
-                                          ? `${Math.round(item.quantity < 1 ? 1 : item.quantity)} /grade`
-                                          : `${item.quantity.toFixed(4).replace('.', ',')} /par`
-                                        } {productionConfigs.find(u => u.id === mat?.metadata?.unitId)?.name || 'UN'}
-                                      </span>
-                                    </div>
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Custo:</span>
-                                      <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">
-                                        R$ {(() => {
-                                          const matBaseCost = mat?.metadata?.baseCost;
-                                          const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((mat)?.metadata?.baseCost || 0);
-                                          return (item.quantity * unitVal).toFixed(2).replace('.', ',');
-                                        })()}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                            {(v.consumptions || []).filter(c => c.category === group.cat).length === 0 && (
-                              <p className="text-[10px] text-slate-300 font-bold uppercase text-center py-4 italic">Nenhum item</p>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                      <div className={`flex items-start gap-2.5 px-3 py-2.5 rounded-2xl border ${isDarkMode ? 'bg-rose-950/20 border-rose-900/40' : 'bg-rose-50 border-rose-100'}`}>
+                        <Info size={14} className="text-rose-500 shrink-0 mt-0.5" />
+                        <p className="text-[10px] font-bold text-rose-600 dark:text-rose-300 uppercase tracking-widest leading-relaxed">
+                          "Gerenciar Categorias" cria grupos personalizados de itens além de Embalagens, Químicos, Aviamentos e Outros (ex: "Sola", "Viés") — essas categorias são globais e ficam disponíveis na Ficha Técnica de todos os produtos, não só deste.
+                        </p>
+                      </div>
                     </div>
                   </div>
 
@@ -1105,29 +1678,6 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     </div>
                   </Modal>
 
-                  {/* Resumo de Custos da Engenharia */}
-                  <div className="mt-4 p-6 bg-slate-900 dark:bg-indigo-600 rounded-[2.5rem] shadow-xl flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className="w-14 h-14 rounded-2xl bg-white/10 flex items-center justify-center text-white">
-                        <Calculator size={28} />
-                      </div>
-                      <div>
-                        <p className="text-[10px] font-black text-indigo-200 uppercase tracking-[0.2em]">Engenharia do Modelo</p>
-                        <p className="text-2xl font-black text-white leading-none mt-1">
-                          {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-                            (v.consumptions || []).reduce((acc, item) => {
-                              const mat = productionConfigs.find(c => c.id === item.materialId);
-                              const unitVal = (item.unitValue && item.unitValue > 0) ? item.unitValue : ((mat)?.metadata?.baseCost || 0);
-                              const matCost = (item.quantity * unitVal);
-                              const serviceCost = (item.services || []).reduce((sAcc, s) => sAcc + s.cost, 0);
-                              return acc + matCost + serviceCost;
-                            }, 0)
-                          )}
-                        </p>
-                      </div>
-                    </div>
-                    <CheckCircle2 className="text-white/20" size={40} />
-                  </div>
                 </div>
               )}
 
@@ -1186,6 +1736,12 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               productReference={reference}
               productName={name}
               onSaveConfigItem={onSaveConfigItem}
+              sectorNotes={activeVariationIndex !== null ? variations[activeVariationIndex].sectorNotes : undefined}
+              productionRoute={productionRoute}
+              categoryCostType={getCategoryCostType(consumptionCategory)}
+              costBeforeThisItem={costBeforeThisItem}
+              productPairsDay={productPairsDay}
+              productWorkDays={productWorkDays}
               onSave={(updated) => {
                 if (activeVariationIndex !== null) {
                   const currentConsumptions = variations[activeVariationIndex].consumptions || [];
@@ -1217,7 +1773,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   } else {
                     newC.push(updated);
                   }
-                  updateVariation(activeVariationIndex, { consumptions: newC });
+                  const newSectorNotes = syncEngineeringSectorNotes(variations[activeVariationIndex].sectorNotes, updated);
+                  updateVariation(activeVariationIndex, { consumptions: newC, sectorNotes: newSectorNotes });
                   setIsConsumptionModalOpen(false);
                 }
               }}
@@ -1773,16 +2330,29 @@ export default function ProductFormView({ productId, products, grids, suppliers,
         {/* Roteiro de Produção — exclusivo para Engenharia */}
         {module === 'PRODUCTION' && (
           <div className={`mt-8 p-5 rounded-[2.5rem] border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-            <div className="flex items-center gap-3 mb-6">
+            <button
+              type="button"
+              onClick={() => setShowProductionRoute(prev => !prev)}
+              title={showProductionRoute ? "Recolher Roteiro de Produção" : "Expandir Roteiro de Produção"}
+              aria-label={showProductionRoute ? "Recolher Roteiro de Produção" : "Expandir Roteiro de Produção"}
+              className={`w-full flex items-center gap-3 ${showProductionRoute ? 'mb-6' : ''}`}
+            >
               <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
                 <Factory size={20} />
               </div>
-              <div>
+              <div className="flex-1 text-left min-w-0">
                 <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-400">Roteiro de Produção</h3>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">Sequência de setores para este modelo</p>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5 truncate">
+                  {productionRoute.length > 0 ? `${productionRoute.length} setor${productionRoute.length > 1 ? 'es' : ''} na sequência` : 'Sequência de setores para este modelo'}
+                </p>
               </div>
-            </div>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-amber-400 text-indigo-900 shadow-lg shadow-amber-400/30 transition-transform ${showProductionRoute ? 'rotate-180' : ''}`}>
+                <ChevronDown size={18} strokeWidth={3} />
+              </div>
+            </button>
 
+            {showProductionRoute && (
+              <>
             {/* Lista selecionável de setores */}
             <div className="flex flex-col gap-1 mb-6">
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 mb-2">Setores Disponíveis</label>
@@ -1823,7 +2393,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             {/* Sequência ordenada */}
             {productionRoute.length > 0 && (
               <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 mb-1">Sequência de Produção e Valor do Serviço por Par</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1 mb-1">Sequência de Produção</label>
                 {productionRoute.map((sectorId, index) => {
                   const sector = sectors.find(s => s.id === sectorId);
                   const sectorColor = sector?.color || '#6366f1';
@@ -1854,7 +2424,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         </button>
                       </div>
 
-                      {/* Linha 2: reordenar + valor */}
+                      {/* Linha 2: reordenar */}
                       <div className={`flex items-center gap-2 pt-1 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
                         <button
                           type="button"
@@ -1874,30 +2444,13 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         >
                           <ChevronDown size={13} /> Descer
                         </button>
-                        <div className={`w-px h-6 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-200'}`} />
-                        <div className="relative">
-                          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400 pointer-events-none">R$</span>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            placeholder={sector?.defaultServiceValue ? sector.defaultServiceValue.toFixed(2) : '0.00'}
-                            value={sectorPrices[sectorId] ?? ''}
-                            onChange={e => {
-                              const val = e.target.value;
-                              setSectorPrices(prev => {
-                                if (val === '') { const n = { ...prev }; delete n[sectorId]; return n; }
-                                return { ...prev, [sectorId]: parseFloat(val) || 0 };
-                              });
-                            }}
-                            className={`w-24 pl-7 pr-2 py-1.5 rounded-xl text-[11px] font-bold border text-center outline-none ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-500'}`}
-                          />
-                        </div>
                       </div>
                     </div>
                   );
                 })}
               </div>
+            )}
+              </>
             )}
           </div>
         )}
@@ -2090,6 +2643,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             if (calcModal.field === 'unitSalePrice') setUnitSalePrice(res.toString());
             if (calcModal.field === 'costPriceAdjustmentAmount') setCostPriceAdjustmentAmount(res.toString());
             if (calcModal.field === 'salePriceAdjustmentAmount') setSalePriceAdjustmentAmount(res.toString());
+            if (calcModal.field === 'assemblyServiceCost') setNewAssemblyServiceCost(res);
             if (calcModal.field === 'quantity' && editingConsumption) {
               setEditingConsumption({ ...editingConsumption, quantity: res });
             }

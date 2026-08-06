@@ -1554,6 +1554,19 @@ function GenericConfigList({
     e.preventDefault();
     if (!editingItem || isLoading) return;
 
+    // Validação dos campos obrigatórios de Material — antes eram <select required>
+    // (bloqueio nativo do navegador), migrados para ComboBox (sem suporte a required).
+    if (type === 'MATERIAL') {
+      if (!editingItem.metadata?.masterCategory) {
+        toast.show('Selecione a Categoria Mestre.');
+        return;
+      }
+      if (!editingItem.metadata?.unitId) {
+        toast.show('Selecione a Unidade.');
+        return;
+      }
+    }
+
     // Validation for duplicate codes
     const currentCode = (editingItem.metadata?.reference || '').toUpperCase().trim();
     if (currentCode) {
@@ -2670,7 +2683,15 @@ function GenericConfigList({
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   {renderLabelWithShortcut('mat-master-category', 'Categoria Mestre', ViewType.CATEGORIES, true)}
-                  <select id="mat-master-category" value={editingItem?.metadata?.masterCategory || ''} title="Categoria Mestre" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, masterCategory: e.target.value as any } } : null)} required className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">SELECIONAR...</option>{supplyCategoryNames.map(cat => <option key={cat} value={cat}>{cat}</option>)}</select>
+                  <ComboBox
+                    options={supplyCategoryNames.map(cat => ({ id: cat, name: cat }))}
+                    value={editingItem?.metadata?.masterCategory || ''}
+                    onChange={(val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, masterCategory: val as any } } : null)}
+                    placeholder="Selecionar..."
+                    isDarkMode={isDarkMode}
+                    usePopupModal
+                    popupZIndex={80000}
+                  />
                 </div>
                 <div className="flex flex-col gap-2">
                   <label htmlFor="mat-reference" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Referência / Código</label>
@@ -2687,24 +2708,67 @@ function GenericConfigList({
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   {renderLabelWithShortcut('mat-flowtag', 'Flow Tag (Estágio)', 'FLOW_TAGS')}
-                  <select id="mat-flowtag" value={editingItem?.metadata?.flowTagId || ''} title="Flow Tag" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: e.target.value } } : null)} className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">NENHUMA...</option>{flowTags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select>
+                  <ComboBox
+                    options={[{ id: '', name: 'Nenhuma' }, ...flowTags.map(tag => ({ id: tag.id, name: tag.name }))]}
+                    value={editingItem?.metadata?.flowTagId || ''}
+                    onChange={(val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: val } } : null)}
+                    placeholder="Nenhuma..."
+                    isDarkMode={isDarkMode}
+                    usePopupModal
+                    popupZIndex={80000}
+                  />
                 </div>
                 <div className="flex flex-col gap-2">
                   {renderLabelWithShortcut('mat-supplier', 'Fornecedor Principal', ViewType.PEOPLE)}
-                  <select id="mat-supplier" value={editingItem?.metadata?.supplierId || ''} title="Fornecedor" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, supplierId: e.target.value } } : null)} className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">NENHUM...</option>{suppliers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+                  <ComboBox
+                    options={[{ id: '', name: 'Nenhum' }, ...suppliers.map(p => ({ id: p.id, name: p.name }))]}
+                    value={editingItem?.metadata?.supplierId || ''}
+                    onChange={(val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, supplierId: val } } : null)}
+                    placeholder="Nenhum..."
+                    isDarkMode={isDarkMode}
+                    usePopupModal
+                    popupZIndex={80000}
+                  />
                 </div>
               </div>
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
                   {renderLabelWithShortcut('mat-unit', 'Unidade', 'UNIDADES', true)}
-                  <select id="mat-unit" value={editingItem?.metadata?.unitId || ''} title="Unidade" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitId: e.target.value } } : null)} required className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">SELECIONAR...</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select>
+                  <ComboBox
+                    options={units.map(u => ({ id: u.id, name: u.name }))}
+                    value={editingItem?.metadata?.unitId || ''}
+                    onChange={(val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, unitId: val } } : null)}
+                    placeholder="Selecionar..."
+                    isDarkMode={isDarkMode}
+                    usePopupModal
+                    popupZIndex={80000}
+                  />
                 </div>
                 <div className="flex flex-col gap-2"><label htmlFor="mat-cost" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Custo Base</label><div className="relative group"><input id="mat-cost" type="number" step="0.01" value={editingItem?.metadata?.baseCost || ''} title="Custo Base" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir custo base" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.baseCost || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
                 <div className="flex flex-col gap-2"><label htmlFor="mat-width" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Largura (m)</label><div className="relative group"><input id="mat-width" type="number" step="0.01" value={editingItem?.metadata?.width || ''} title="Largura" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir largura" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.width || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
               </div>
               <div className="flex flex-col gap-2">
-                {renderLabelWithShortcut('mat-colors', 'Cores Disponíveis', ViewType.COLORS)}
-                <div className={`p-4 rounded-2xl border-2 flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>{colors.map(color => { const isSelected = (editingItem?.metadata?.colorIds || []).includes(color.id); return (<button key={color.id} type="button" onClick={() => { const currentIds = editingItem?.metadata?.colorIds || []; const wasSelected = isSelected; const newIds = wasSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id]; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, colorIds: newIds } } : null); if (!wasSelected) openStockColorModal(newIds); }} className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${isSelected ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'}`}>{color.name}</button>); })}</div>
+                <div className="flex items-center justify-between gap-2">
+                  {renderLabelWithShortcut('mat-colors', 'Cores Disponíveis', ViewType.COLORS)}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !(editingItem?.metadata?.noColor);
+                      setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, noColor: next, colorIds: next ? [] : prev.metadata?.colorIds } } : null);
+                    }}
+                    title="Este material não usa cor — oculta a seleção de cores no produto"
+                    className={`shrink-0 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest transition-all ${editingItem?.metadata?.noColor ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
+                  >
+                    Sem Cor
+                  </button>
+                </div>
+                {editingItem?.metadata?.noColor ? (
+                  <p className={`text-[10px] font-bold uppercase tracking-widest px-2 py-3 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                    Este material não usa cor — a seleção de cor fica oculta e não é obrigatória ao usar este material em um produto.
+                  </p>
+                ) : (
+                  <div className={`p-4 rounded-2xl border-2 flex flex-wrap gap-2 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>{colors.map(color => { const isSelected = (editingItem?.metadata?.colorIds || []).includes(color.id); return (<button key={color.id} type="button" onClick={() => { const currentIds = editingItem?.metadata?.colorIds || []; const wasSelected = isSelected; const newIds = wasSelected ? currentIds.filter(id => id !== color.id) : [...currentIds, color.id]; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, colorIds: newIds } } : null); if (!wasSelected) openStockColorModal(newIds); }} className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${isSelected ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-500' : 'bg-white text-slate-400 border border-slate-100'}`}>{color.name}</button>); })}</div>
+                )}
               </div>
               <div className="flex flex-col gap-4">
                 <div className="flex flex-col gap-2">
