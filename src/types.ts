@@ -983,6 +983,10 @@ export type ProductionConfigItem = {
     unitId?: string;
     baseCost?: number;
     width?: number;
+    // Material vendido em KG: peso e preço da embalagem/pacote comprado — baseCost (R$/kg) é
+    // calculado a partir desses dois (packagePrice ÷ packageWeight) em vez de digitado direto.
+    packageWeight?: number;
+    packagePrice?: number;
     colorIds?: string[];
 
     // Mold (Sole Matrix) specific

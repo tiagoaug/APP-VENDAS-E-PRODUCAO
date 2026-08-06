@@ -3,7 +3,7 @@ import {
   X, Scissors, Box, Calculator, Sparkles, Plus,
   ArrowUpDown, Trash2, Info, ChevronLeft, Save,
   CheckCircle2, ChevronRight, Footprints, ChevronDown, Grid3X3, Database,
-  Percent, DollarSign
+  Percent, DollarSign, Package
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -106,9 +106,18 @@ export default function EngineeringEditor({
   );
   const [unitValManualEdited, setUnitValManualEdited] = useState(!!(consumption.unitValue && consumption.unitValue > 0));
   const [activeCalcField, setActiveCalcField] = useState<'qty' | 'unit' | null>(null);
-  const [qtyMode, setQtyMode] = useState<'simple' | 'yield'>('simple');
-  const [qtyEmbalagem, setQtyEmbalagem] = useState('1');
+  const [qtyMode, setQtyMode] = useState<'simple' | 'yield' | 'weighing'>('simple');
+  const [qtyEmbalagem, setQtyEmbalagem] = useState((material?.metadata?.packageWeight || 1).toString().replace('.', ','));
+  const [embalagemManualEdited, setEmbalagemManualEdited] = useState(false);
   const [qtyRendimento, setQtyRendimento] = useState('1');
+  const [pesoInicial, setPesoInicial] = useState('');
+  const [pesoFinal, setPesoFinal] = useState('');
+  const [qtdParesPesagem, setQtdParesPesagem] = useState('');
+  // Edição do Valor Unit. (R$/kg) via embalagem — parte do cadastro do material, mas editável
+  // aqui pra ajustar um lote específico sem precisar mudar o cadastro global do insumo.
+  const [showPackageEditor, setShowPackageEditor] = useState(false);
+  const [pkgWeightOverride, setPkgWeightOverride] = useState((material?.metadata?.packageWeight || 0).toString().replace('.', ','));
+  const [pkgPriceOverride, setPkgPriceOverride] = useState((material?.metadata?.packagePrice || 0).toString().replace('.', ','));
   const [pieceSearch, setPieceSearch] = useState(consumption.name || '');
   const [materialSearch, setMaterialSearch] = useState(material?.name || '');
   const [toolSearch, setToolSearch] = useState(productionConfigs.find(t => t.id === editing.toolId)?.name || '');
@@ -155,10 +164,36 @@ export default function EngineeringEditor({
     setEditing(prev => ({ ...prev, quantity: q }));
   };
 
+  // Recalcula o Valor Unit. (R$/kg) a partir de peso/preço da embalagem — mesma fórmula do
+  // cadastro do material (packagePrice ÷ packageWeight), só que editável por item, pra ajustar
+  // uma compra/lote específico sem alterar o cadastro global do insumo.
+  const computePackageUnitVal = (weight: string, price: string) => {
+    const w = parseFloat(weight.replace(',', '.')) || 0;
+    const p = parseFloat(price.replace(',', '.')) || 0;
+    const result = w > 0 ? p / w : 0;
+    const str = result.toFixed(4).replace('.', ',');
+    setCalcUnitVal(str);
+    setUnitValManualEdited(true);
+    updateQuantity(calcQty, str);
+  };
+
   const computeYieldQty = (emb: string, rend: string) => {
     const e = parseFloat(emb.replace(',', '.')) || 0;
     const r = parseFloat(rend.replace(',', '.')) || 1;
     const result = r > 0 ? e / r : 0;
+    const str = result.toFixed(4).replace('.', ',');
+    setCalcQty(str);
+    updateQuantity(str, calcUnitVal);
+  };
+
+  // Rendimento por pesagem: pesa a embalagem/pote antes e depois de produzir um lote, e divide
+  // a diferença pela quantidade de pares feitos — dá o consumo real por par, sem depender do
+  // peso nominal cadastrado na embalagem (que pode variar por umidade, sobra, etc.).
+  const computeWeighingQty = (pi: string, pf: string, qtdPares: string) => {
+    const p1 = parseFloat(pi.replace(',', '.')) || 0;
+    const p2 = parseFloat(pf.replace(',', '.')) || 0;
+    const qtd = parseFloat(qtdPares.replace(',', '.')) || 0;
+    const result = qtd > 0 ? (p1 - p2) / qtd : 0;
     const str = result.toFixed(4).replace('.', ',');
     setCalcQty(str);
     updateQuantity(str, calcUnitVal);
@@ -268,6 +303,18 @@ export default function EngineeringEditor({
         const cost = mat.metadata?.baseCost || 0;
         setCalcUnitVal(cost.toString().replace('.', ','));
       }
+      // Peso da embalagem cadastrado no insumo (ex: "Lata 14kg") pré-preenche o campo
+      // "Embalagem" do modo Rendimento — evita redigitar o mesmo peso a cada peça que usa
+      // esse material.
+      if (!embalagemManualEdited && mat.metadata?.packageWeight) {
+        const emb = mat.metadata.packageWeight.toString().replace('.', ',');
+        setQtyEmbalagem(emb);
+        if (qtyMode === 'yield') computeYieldQty(emb, qtyRendimento);
+      }
+      // Peso/preço da embalagem do editor de "Valor Unit. por Embalagem" volta a refletir o
+      // cadastro do novo material selecionado.
+      setPkgWeightOverride((mat.metadata?.packageWeight || 0).toString().replace('.', ','));
+      setPkgPriceOverride((mat.metadata?.packagePrice || 0).toString().replace('.', ','));
     }
 
     const tool = productionConfigs.find(t => t.id === editing.toolId);
@@ -918,15 +965,22 @@ export default function EngineeringEditor({
         )}
         {material && (!needsTool || editing.ignoreQuantity) && (
           <div className={`p-4 sm:p-8 rounded-[2.5rem] border shadow-2xl space-y-8 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-            {/* MATERIAL + UNID. em linha única */}
+            {/* MATERIAL + UNID. em linha única — clicável, abre o mesmo seletor de insumo */}
             <div className="flex flex-col gap-2">
               <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-2">Material</label>
-              <div className={`w-full px-5 py-4 rounded-2xl border-2 flex items-center justify-between gap-3 ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+              <button
+                type="button"
+                onClick={() => setShowMaterialPicker(true)}
+                className={`w-full px-5 py-4 rounded-2xl border-2 flex items-center justify-between gap-3 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 hover:border-indigo-500/50' : 'bg-slate-50 border-slate-100 hover:border-indigo-300'}`}
+              >
                 <span className={`font-black text-sm truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{material.name}</span>
-                <span className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-indigo-300 border border-slate-700' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}>
-                  {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
-                </span>
-              </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-indigo-300 border border-slate-700' : 'bg-indigo-50 text-indigo-600 border border-indigo-100'}`}>
+                    {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
+                  </span>
+                  <ChevronDown size={16} className="text-slate-400" />
+                </div>
+              </button>
             </div>
 
             {/* QTY & UNIT VAL FIELDS */}
@@ -949,6 +1003,13 @@ export default function EngineeringEditor({
                     className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${qtyMode === 'yield' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
                   >
                     Rendimento
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setQtyMode('weighing'); computeWeighingQty(pesoInicial, pesoFinal, qtdParesPesagem); }}
+                    className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${qtyMode === 'weighing' ? 'bg-teal-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                  >
+                    Pesagem
                   </button>
                 </div>
                 {/* Basis: por par ou por grade — só visível para categoria PACKAGING */}
@@ -1019,13 +1080,15 @@ export default function EngineeringEditor({
                     id="quantity-input"
                     type="text"
                     value={calcQty}
-                    readOnly={qtyMode === 'yield'}
-                    title={qtyMode === 'yield' ? 'Quantidade calculada pelo rendimento' : 'Quantidade'}
+                    readOnly={qtyMode !== 'simple'}
+                    title={qtyMode === 'yield' ? 'Quantidade calculada pelo rendimento' : qtyMode === 'weighing' ? 'Quantidade calculada pela pesagem' : 'Quantidade'}
                     placeholder="0"
                     onChange={qtyMode === 'simple' ? (e) => { setCalcQty(e.target.value); updateQuantity(e.target.value, calcUnitVal); } : undefined}
                     className={`w-full px-6 py-5 rounded-2xl font-black text-sm outline-none border-2 transition-all ${
                       qtyMode === 'yield'
                         ? (isDarkMode ? 'bg-indigo-950/40 border-indigo-900/40 text-indigo-300 cursor-default' : 'bg-indigo-50 border-indigo-100 text-indigo-700 cursor-default')
+                        : qtyMode === 'weighing'
+                        ? (isDarkMode ? 'bg-teal-950/40 border-teal-900/40 text-teal-300 cursor-default' : 'bg-teal-50 border-teal-100 text-teal-700 cursor-default')
                         : (isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600 shadow-sm')
                     }`}
                   />
@@ -1049,11 +1112,28 @@ export default function EngineeringEditor({
                       {qtyEmbalagem || '1'} ÷ {qtyRendimento || '1'}
                     </span>
                   )}
+                  {qtyMode === 'weighing' && (
+                    <span className="absolute left-1/2 -translate-x-1/2 bottom-1.5 text-[8px] font-black uppercase tracking-widest text-teal-400">
+                      ({pesoInicial || '0'} - {pesoFinal || '0'}) ÷ {qtdParesPesagem || '0'}
+                    </span>
+                  )}
                 </div>
 
                 {/* Valor Unitário — col-span-1, fixo */}
                 <div className="flex flex-col gap-2">
-                  <label htmlFor="unit-val-input" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-center">Valor Unit.</label>
+                  <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                    <label htmlFor="unit-val-input" className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-center">Valor Unit.</label>
+                    {materialUnitName.toUpperCase() === 'KG' && (
+                      <button
+                        type="button"
+                        onClick={() => setShowPackageEditor(v => !v)}
+                        title="Alterar valor da embalagem para recalcular o Valor Unit. (R$/kg)"
+                        className={`flex items-center justify-center gap-1 px-2 py-0.5 rounded-full text-[7px] font-black uppercase tracking-widest text-center leading-tight transition-all active:scale-95 ${showPackageEditor ? 'bg-orange-600 text-white' : 'bg-orange-500 text-white hover:bg-orange-600'}`}
+                      >
+                        <Package size={9} className="shrink-0" /> Clique para mudar preço da embalagem
+                      </button>
+                    )}
+                  </div>
                   <div className="relative">
                     <input
                       id="unit-val-input"
@@ -1074,6 +1154,43 @@ export default function EngineeringEditor({
               </div>
             </div>
 
+              {/* Editor de Valor Unit. por Embalagem — só para materiais em KG. Recalcula o
+                  R$/kg a partir de peso/preço da embalagem desse lote, sem mudar o cadastro
+                  global do insumo. */}
+              {showPackageEditor && materialUnitName.toUpperCase() === 'KG' && (
+                <div className={`p-4 rounded-2xl border-2 flex flex-col gap-3 ${isDarkMode ? 'bg-slate-800/40 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 text-center">Peso da Embalagem (kg)</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={pkgWeightOverride}
+                        onChange={(e) => { setPkgWeightOverride(e.target.value); computePackageUnitVal(e.target.value, pkgPriceOverride); }}
+                        placeholder="0"
+                        title="Peso da embalagem — pré-preenchido do cadastro do insumo"
+                        className={`w-full px-4 py-3 rounded-xl font-black text-sm outline-none border-2 transition-all text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-500 shadow-sm'}`}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 text-center">Preço da Embalagem (R$)</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={pkgPriceOverride}
+                        onChange={(e) => { setPkgPriceOverride(e.target.value); computePackageUnitVal(pkgWeightOverride, e.target.value); }}
+                        placeholder="0"
+                        title="Preço da embalagem — pré-preenchido do cadastro do insumo, editável para este lote"
+                        className={`w-full px-4 py-3 rounded-xl font-black text-sm outline-none border-2 transition-all text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-500 shadow-sm'}`}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1 leading-relaxed">
+                    Valor Unit. (R$/kg) = Preço da Embalagem ÷ Peso da Embalagem. Ajuste aqui para refletir o preço de uma compra específica, sem alterar o cadastro do insumo.
+                  </p>
+                </div>
+              )}
+
               {/* Categoria Fixo Variável (ex: Folha de Pagamento, Impostos) — valor fixo mensal
                   (Qtd × Valor Unit.) cujo custo por par VARIA conforme a produção, diluído
                   usando a Produção Estimada (Pares/Dia) e os Dias Trabalhados/Mês configurados
@@ -1092,13 +1209,15 @@ export default function EngineeringEditor({
                 <div className={`p-4 rounded-2xl border-2 flex flex-col gap-3 ${isDarkMode ? 'bg-indigo-950/30 border-indigo-900/40' : 'bg-indigo-50/60 border-indigo-100'}`}>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-[9px] font-black uppercase tracking-widest text-indigo-400 text-center">Embalagem</label>
+                      <label className="text-[9px] font-black uppercase tracking-widest text-indigo-400 text-center">
+                        Embalagem{!embalagemManualEdited && material?.metadata?.packageWeight ? ' (cadastro)' : ''}
+                      </label>
                       <input
                         type="text"
                         value={qtyEmbalagem}
-                        onChange={(e) => { setQtyEmbalagem(e.target.value); computeYieldQty(e.target.value, qtyRendimento); }}
+                        onChange={(e) => { setQtyEmbalagem(e.target.value); setEmbalagemManualEdited(true); computeYieldQty(e.target.value, qtyRendimento); }}
                         placeholder="1"
-                        title="Quantidade da embalagem do produto"
+                        title="Quantidade/peso da embalagem do produto — pré-preenchido do cadastro do insumo quando disponível, editável"
                         className={`w-full px-4 py-3 rounded-xl font-black text-sm outline-none border-2 transition-all text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-indigo-200 text-slate-900 focus:border-indigo-500 shadow-sm'}`}
                       />
                     </div>
@@ -1119,6 +1238,62 @@ export default function EngineeringEditor({
                       {qtyEmbalagem || '1'} ÷ {qtyRendimento || '1'} = qtd/par
                     </span>
                     <span className={`text-sm font-black ${isDarkMode ? 'text-indigo-300' : 'text-indigo-700'}`}>
+                      {calcQty}
+                      <span className="text-[9px] font-bold ml-1">
+                        {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Campos de Pesagem — descobre o rendimento real pesando a embalagem antes/depois
+                  de produzir um lote, em vez de usar o peso nominal cadastrado. */}
+              {qtyMode === 'weighing' && (
+                <div className={`p-4 rounded-2xl border-2 flex flex-col gap-3 ${isDarkMode ? 'bg-teal-950/30 border-teal-900/40' : 'bg-teal-50/60 border-teal-100'}`}>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-teal-500 text-center">Pesagem Inicial</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={pesoInicial}
+                        onChange={(e) => { setPesoInicial(e.target.value); computeWeighingQty(e.target.value, pesoFinal, qtdParesPesagem); }}
+                        placeholder="0"
+                        title="Peso da embalagem antes de produzir o lote"
+                        className={`w-full px-4 py-3 rounded-xl font-black text-sm outline-none border-2 transition-all text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-teal-500' : 'bg-white border-teal-200 text-slate-900 focus:border-teal-500 shadow-sm'}`}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-teal-500 text-center">Pesagem Final</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={pesoFinal}
+                        onChange={(e) => { setPesoFinal(e.target.value); computeWeighingQty(pesoInicial, e.target.value, qtdParesPesagem); }}
+                        placeholder="0"
+                        title="Peso da embalagem depois de produzir o lote"
+                        className={`w-full px-4 py-3 rounded-xl font-black text-sm outline-none border-2 transition-all text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-teal-500' : 'bg-white border-teal-200 text-slate-900 focus:border-teal-500 shadow-sm'}`}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-teal-500 text-center">Pares Feitos</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={qtdParesPesagem}
+                        onChange={(e) => { setQtdParesPesagem(e.target.value); computeWeighingQty(pesoInicial, pesoFinal, e.target.value); }}
+                        placeholder="0"
+                        title="Quantidade de pares produzidos nesse lote"
+                        className={`w-full px-4 py-3 rounded-xl font-black text-sm outline-none border-2 transition-all text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-teal-500' : 'bg-white border-teal-200 text-slate-900 focus:border-teal-500 shadow-sm'}`}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-teal-500">
+                      ({pesoInicial || '0'} - {pesoFinal || '0'}) ÷ {qtdParesPesagem || '0'} = qtd/par
+                    </span>
+                    <span className={`text-sm font-black ${isDarkMode ? 'text-teal-300' : 'text-teal-700'}`}>
                       {calcQty}
                       <span className="text-[9px] font-bold ml-1">
                         {productionConfigs.find(u => u.id === material?.metadata?.unitId)?.name || 'UN'}
@@ -1318,14 +1493,17 @@ export default function EngineeringEditor({
         <div className={`p-4 sm:p-8 rounded-[2.5rem] border-2 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} space-y-8`}>
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between px-1">
-              <label htmlFor="material-select" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Material de Insumo</label>
+              {(needsTool || !material) ? (
+                <label htmlFor="material-select" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">Material de Insumo</label>
+              ) : <span />}
               <div className="flex items-center gap-4">
+                {!material?.metadata?.noColor && (
                 <label className="flex items-center gap-2 cursor-pointer group">
                   <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-indigo-500 transition-colors">Ignorar Cor</span>
                   <div className="relative">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only" 
+                    <input
+                      type="checkbox"
+                      className="sr-only"
                       checked={editing.ignoreColor || false}
                       onChange={(e) => setEditing({ ...editing, ignoreColor: e.target.checked })}
                     />
@@ -1333,39 +1511,44 @@ export default function EngineeringEditor({
                     <div className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${editing.ignoreColor ? 'translate-x-4' : ''}`} />
                   </div>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-indigo-500 transition-colors">Ignorar Qtd/Par</span>
-                  <div className="relative">
-                    <input 
-                      type="checkbox" 
-                      className="sr-only" 
-                      checked={editing.ignoreQuantity || false}
-                      onChange={(e) => {
-                        const val = e.target.checked;
-                        const tool = productionConfigs.find(t => t.id === editing.toolId);
-                        const material = productionConfigs.find(m => m.id === editing.materialId);
-                        const newQ = tool && material ? calculateConsumption(tool, material, editing.piecesPerPair || 2, editing.toolMapping, val) : editing.quantity;
-                        setEditing({ ...editing, ignoreQuantity: val, quantity: newQ });
-                        if (val) setCalcQty(newQ.toString());
-                      }}
-                    />
-                    <div className={`w-8 h-4 rounded-full transition-colors ${editing.ignoreQuantity ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-700'}`} />
-                    <div className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${editing.ignoreQuantity ? 'translate-x-4' : ''}`} />
-                  </div>
-                </label>
+                )}
+                {needsTool && (
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-indigo-500 transition-colors">Ignorar Qtd/Par</span>
+                    <div className="relative">
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={editing.ignoreQuantity || false}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          const tool = productionConfigs.find(t => t.id === editing.toolId);
+                          const material = productionConfigs.find(m => m.id === editing.materialId);
+                          const newQ = tool && material ? calculateConsumption(tool, material, editing.piecesPerPair || 2, editing.toolMapping, val) : editing.quantity;
+                          setEditing({ ...editing, ignoreQuantity: val, quantity: newQ });
+                          if (val) setCalcQty(newQ.toString());
+                        }}
+                      />
+                      <div className={`w-8 h-4 rounded-full transition-colors ${editing.ignoreQuantity ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-700'}`} />
+                      <div className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${editing.ignoreQuantity ? 'translate-x-4' : ''}`} />
+                    </div>
+                  </label>
+                )}
               </div>
             </div>
-            <button
-              id="material-select"
-              type="button"
-              onClick={() => setShowMaterialPicker(true)}
-              className={`w-full flex items-center justify-between border-2 rounded-2xl px-6 py-4 text-sm font-black text-left transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white hover:border-indigo-500/50' : 'bg-slate-50 border-slate-100 text-slate-900 hover:border-indigo-300'}`}
-            >
-              <span className={materialSearch ? '' : 'text-slate-400 dark:text-slate-500 font-bold'}>
-                {materialSearch || 'Escolher Material...'}
-              </span>
-              <ChevronDown size={18} className="text-slate-400 shrink-0" />
-            </button>
+            {(needsTool || !material) && (
+              <button
+                id="material-select"
+                type="button"
+                onClick={() => setShowMaterialPicker(true)}
+                className={`w-full flex items-center justify-between border-2 rounded-2xl px-6 py-4 text-sm font-black text-left transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white hover:border-indigo-500/50' : 'bg-slate-50 border-slate-100 text-slate-900 hover:border-indigo-300'}`}
+              >
+                <span className={materialSearch ? '' : 'text-slate-400 dark:text-slate-500 font-bold'}>
+                  {materialSearch || 'Escolher Material...'}
+                </span>
+                <ChevronDown size={18} className="text-slate-400 shrink-0" />
+              </button>
+            )}
 
             <EngineeringPickerModal
               isOpen={showMaterialPicker}
@@ -1388,6 +1571,7 @@ export default function EngineeringEditor({
           </div>
 
           <div className="grid grid-cols-1 gap-4">
+             {!material?.metadata?.noColor && (
              <div className={`flex flex-col gap-3 transition-all ${editing.ignoreColor ? 'opacity-50 pointer-events-none' : ''}`}>
                 <label htmlFor="color-select" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">
                   Cor {editing.ignoreColor && <span className="text-[9px] text-indigo-500">(IGNORADO)</span>}
@@ -1431,6 +1615,13 @@ export default function EngineeringEditor({
                   );
                 })()}
              </div>
+             )}
+             {material?.metadata?.noColor && (
+               <div className={`flex items-center gap-2.5 px-4 py-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-100'}`}>
+                 <Info size={14} className="text-slate-400 shrink-0" />
+                 <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Este material não usa cor</span>
+               </div>
+             )}
              {needsTool && (
                <div className={`flex flex-col gap-3 transition-all ${editing.ignoreQuantity ? 'opacity-50 pointer-events-none' : ''}`}>
                   <label htmlFor="pieces-per-pair-input" className="text-xs font-black uppercase tracking-[0.2em] text-slate-400 px-1">
@@ -1487,7 +1678,7 @@ export default function EngineeringEditor({
            <div className={`flex items-start gap-2.5 px-3 py-2.5 rounded-2xl border ${isDarkMode ? 'bg-amber-950/30 border-amber-900/50' : 'bg-amber-100/60 border-amber-200'}`}>
              <Info size={14} className="text-amber-600 shrink-0 mt-0.5" />
              <p className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase tracking-widest leading-relaxed">
-               Use aqui quando esta peça passa por um setor/serviço terceirizado além do corte (ex: bordado, gravação, preparação) — escolha o setor e informe o custo cobrado por par. Esse valor se soma ao custo do material ("Serv. R$" no card da peça) e entra no total de "Engenharia do Modelo" mostrado no resumo de custos do produto. Se você preencher Nome e Descrição, eles já aparecem prontos em "Instruções por Setor" desta cor.
+               Use aqui quando este item passa por um setor/serviço terceirizado além do corte (ex: bordado, gravação, preparação) — escolha o setor e informe o custo cobrado por par. Esse valor se soma ao custo do material ("Serv. R$" no card do item) e entra no total de "Engenharia do Modelo" mostrado no resumo de custos do produto. Se você preencher Nome e Descrição, eles já aparecem prontos em "Instruções por Setor" desta cor.
              </p>
            </div>
 

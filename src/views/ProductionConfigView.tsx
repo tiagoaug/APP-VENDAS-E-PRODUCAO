@@ -1383,6 +1383,10 @@ function GenericConfigList({
 }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ProductionConfigItem | null>(null);
+  // Ajuda a lançar Estoque Atual em nº de embalagens (ex: "3 latas") em vez do peso total —
+  // converte pro estoque em KG (unidade base rastreada na Necessidade de Compras) usando o
+  // Peso da Embalagem cadastrado. Campo só de entrada, não é persistido.
+  const [stockPackagesInput, setStockPackagesInput] = useState('');
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [search, setSearch] = useState('');
   const [newSize, setNewSize] = useState('');
@@ -1513,6 +1517,7 @@ function GenericConfigList({
   const units = useMemo(() => productionConfigs.filter(c => c.type === 'UNIT'), [productionConfigs]);
   const suppliers = useMemo(() => people.filter(p => p.isSupplier), [people]);
   const selectedUnitName = units.find(u => u.id === editingItem?.metadata?.unitId)?.name || '';
+  const isKgMaterialUnit = selectedUnitName.trim().toUpperCase() === 'KG';
 
   const filteredItems = useMemo(() => {
     return items
@@ -2744,8 +2749,91 @@ function GenericConfigList({
                     popupZIndex={80000}
                   />
                 </div>
-                <div className="flex flex-col gap-2"><label htmlFor="mat-cost" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Custo Base</label><div className="relative group"><input id="mat-cost" type="number" step="0.01" value={editingItem?.metadata?.baseCost || ''} title="Custo Base" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir custo base" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.baseCost || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
-                <div className="flex flex-col gap-2"><label htmlFor="mat-width" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Largura (m)</label><div className="relative group"><input id="mat-width" type="number" step="0.01" value={editingItem?.metadata?.width || ''} title="Largura" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir largura" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.width || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+                {isKgMaterialUnit ? (
+                  <>
+                    <div className="flex flex-col gap-2">
+                      <label htmlFor="mat-pkg-weight" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Peso da Embalagem (kg)</label>
+                      <div className="relative group">
+                        <input
+                          id="mat-pkg-weight"
+                          type="text"
+                          inputMode="decimal"
+                          value={editingItem?.metadata?.packageWeight || ''}
+                          title="Peso da Embalagem"
+                          onChange={(e) => setEditingItem(prev => {
+                            if (!prev) return null;
+                            const packageWeight = Number(e.target.value) || 0;
+                            const packagePrice = prev.metadata?.packagePrice || 0;
+                            const baseCost = packageWeight > 0 ? parseFloat((packagePrice / packageWeight).toFixed(4)) : 0;
+                            return { ...prev, metadata: { ...prev.metadata, packageWeight, baseCost } };
+                          })}
+                          placeholder="0,00"
+                          className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                        />
+                        <button
+                          type="button"
+                          title="Abrir Calculadora"
+                          aria-label="Abrir calculadora para definir peso da embalagem"
+                          onClick={() => setActiveCalc({
+                            initialValue: editingItem?.metadata?.packageWeight || 0,
+                            onResult: (val) => setEditingItem(prev => {
+                              if (!prev) return null;
+                              const packagePrice = prev.metadata?.packagePrice || 0;
+                              const baseCost = val > 0 ? parseFloat((packagePrice / val).toFixed(4)) : 0;
+                              return { ...prev, metadata: { ...prev.metadata, packageWeight: val, baseCost } };
+                            })
+                          })}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"
+                        ><Calculator size={16} /></button>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label htmlFor="mat-pkg-price" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Preço da Embalagem (R$)</label>
+                      <div className="relative group">
+                        <input
+                          id="mat-pkg-price"
+                          type="text"
+                          inputMode="decimal"
+                          value={editingItem?.metadata?.packagePrice || ''}
+                          title="Preço da Embalagem"
+                          onChange={(e) => setEditingItem(prev => {
+                            if (!prev) return null;
+                            const packagePrice = Number(e.target.value) || 0;
+                            const packageWeight = prev.metadata?.packageWeight || 0;
+                            const baseCost = packageWeight > 0 ? parseFloat((packagePrice / packageWeight).toFixed(4)) : 0;
+                            return { ...prev, metadata: { ...prev.metadata, packagePrice, baseCost } };
+                          })}
+                          placeholder="0,00"
+                          className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                        />
+                        <button
+                          type="button"
+                          title="Abrir Calculadora"
+                          aria-label="Abrir calculadora para definir preço da embalagem"
+                          onClick={() => setActiveCalc({
+                            initialValue: editingItem?.metadata?.packagePrice || 0,
+                            onResult: (val) => setEditingItem(prev => {
+                              if (!prev) return null;
+                              const packageWeight = prev.metadata?.packageWeight || 0;
+                              const baseCost = packageWeight > 0 ? parseFloat((val / packageWeight).toFixed(4)) : 0;
+                              return { ...prev, metadata: { ...prev.metadata, packagePrice: val, baseCost } };
+                            })
+                          })}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"
+                        ><Calculator size={16} /></button>
+                      </div>
+                    </div>
+                    <div className={`flex items-center justify-between px-5 py-3 rounded-2xl ${isDarkMode ? 'bg-emerald-500/10' : 'bg-emerald-50'}`}>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400">Valor por Kg (calculado)</span>
+                      <span className="text-sm font-black text-emerald-600 dark:text-emerald-400">R$ {(editingItem?.metadata?.baseCost || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-2"><label htmlFor="mat-cost" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Custo Base</label><div className="relative group"><input id="mat-cost" type="number" step="0.01" value={editingItem?.metadata?.baseCost || ''} title="Custo Base" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir custo base" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.baseCost || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseCost: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+                    <div className="flex flex-col gap-2"><label htmlFor="mat-width" className="text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 ml-2">Largura (m)</label><div className="relative group"><input id="mat-width" type="number" step="0.01" value={editingItem?.metadata?.width || ''} title="Largura" onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: Number(e.target.value) } } : null)} placeholder="0,00" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir largura" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.width || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, width: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+                  </>
+                )}
               </div>
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-2">
@@ -2820,6 +2908,28 @@ function GenericConfigList({
                         className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
                       />
                       <button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir estoque" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.stock || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, stock: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button>
+                    </div>
+                  )}
+                  {!((editingItem?.metadata?.colorIds?.length || 0) > 0) && isKgMaterialUnit && !!editingItem?.metadata?.packageWeight && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={stockPackagesInput}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setStockPackagesInput(val);
+                          const qty = parseFloat(val.replace(',', '.')) || 0;
+                          const weight = editingItem?.metadata?.packageWeight || 0;
+                          setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, stock: parseFloat((qty * weight).toFixed(4)) } } : null);
+                        }}
+                        placeholder="0"
+                        title="Nº de embalagens em estoque — converte para o estoque em kg usando o Peso da Embalagem"
+                        className={`w-24 px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                      />
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-tight">
+                        Embalagens em estoque (× {editingItem?.metadata?.packageWeight || 0}kg = converte pro Estoque Atual)
+                      </span>
                     </div>
                   )}
                 </div>

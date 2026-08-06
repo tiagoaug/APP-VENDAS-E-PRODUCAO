@@ -328,12 +328,16 @@ export default function ProductFormView({ productId, products, grids, suppliers,
     }
   }, [productionGridId, moldId, grids, molds]);
 
-  const [calcModal, setCalcModal] = useState<{ isOpen: boolean; field: string; value: number } | null>(null);
+  const [showCostPriceCalc, setShowCostPriceCalc] = useState(false);
+  const [showUnitCostPriceCalc, setShowUnitCostPriceCalc] = useState(false);
+  const [showSalePriceCalc, setShowSalePriceCalc] = useState(false);
+  const [showUnitSalePriceCalc, setShowUnitSalePriceCalc] = useState(false);
   const [newAssemblyServiceId, setNewAssemblyServiceId] = useState('');
   const [newAssemblyServiceCost, setNewAssemblyServiceCost] = useState<number | string>(0);
   const [newAssemblyServiceName, setNewAssemblyServiceName] = useState('');
   const [newAssemblyServiceNoteName, setNewAssemblyServiceNoteName] = useState('');
   const [newAssemblyServiceNote, setNewAssemblyServiceNote] = useState('');
+  const [showAssemblyServiceCalc, setShowAssemblyServiceCalc] = useState(false);
   const [showProductionRoute, setShowProductionRoute] = useState(false);
   const [showCuttingPieces, setShowCuttingPieces] = useState(false);
   const [showCostSummary, setShowCostSummary] = useState(false);
@@ -803,6 +807,12 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                               </div>
                               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Instruções por Setor</span>
                             </div>
+                            <div className={`flex items-start gap-2.5 px-4 py-3 border-b ${isDarkMode ? 'border-slate-800 bg-slate-800/20' : 'border-slate-100 bg-slate-50/60'}`}>
+                              <Info size={14} className="text-slate-400 shrink-0 mt-0.5" />
+                              <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-relaxed">
+                                Essas instruções são impressas nas etiquetas térmicas e fichas de produção de cada setor — use pra avisar o que precisa ser feito em Corte, Bordado, Costura, etc.
+                              </p>
+                            </div>
                             {/* Lista de setores */}
                             <div className="flex flex-col divide-y divide-slate-100 dark:divide-slate-800">
                               {sectors.map(sector => {
@@ -975,7 +985,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     </div>
                     <div className="flex items-center gap-3 pt-3 border-t border-white/10">
                       <div className="flex-1 flex flex-col gap-0.5">
-                        <span className="text-[9px] font-black text-indigo-200 uppercase tracking-widest">Engenharia</span>
+                        <span className="text-[9px] font-black text-indigo-200 uppercase tracking-widest">Cabedal</span>
                         <span className="text-xs font-black text-white">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(engineeringCost)}</span>
                       </div>
                       <div className="w-px h-6 bg-white/10 shrink-0" />
@@ -1347,7 +1357,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                   </div>
                                   <div className="col-span-8 relative">
                                     <input
-                                      type="number"
+                                      type="text"
+                                      inputMode="decimal"
                                       placeholder="R$ 0.00"
                                       className={`w-full border-2 rounded-2xl pl-4 pr-11 py-4 text-sm font-black outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-100'}`}
                                       value={newAssemblyServiceCost}
@@ -1356,13 +1367,23 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                                     />
                                     <button
                                       type="button"
-                                      onClick={() => setCalcModal({ isOpen: true, field: 'assemblyServiceCost', value: Number(newAssemblyServiceCost) || 0 })}
+                                      onClick={() => setShowAssemblyServiceCalc(true)}
                                       title="Abrir Calculadora do Custo do Serviço"
                                       aria-label="Abrir calculadora para definir o custo do serviço"
                                       className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
                                     >
                                       <Calculator size={16} />
                                     </button>
+                                    <CalculatorModal
+                                      isOpen={showAssemblyServiceCalc}
+                                      onClose={() => setShowAssemblyServiceCalc(false)}
+                                      isDarkMode={isDarkMode}
+                                      initialValue={Number(newAssemblyServiceCost) || 0}
+                                      onResult={(res) => {
+                                        setNewAssemblyServiceCost(res);
+                                        setShowAssemblyServiceCalc(false);
+                                      }}
+                                    />
                                   </div>
                                   <div className="col-span-4 flex items-center justify-center">
                                     <button
@@ -2042,8 +2063,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     </label>
                     <div className="relative">
                       <input
-                        type="number"
-                        step="0.01"
+                        type="text"
+                        inputMode="decimal"
                         className={`w-full border-2 rounded-2xl px-6 py-4.5 pl-12 text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-500'}`}
                         value={costPrice}
                         aria-label="Preço de custo"
@@ -2053,13 +2074,20 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       <DollarSign size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
                       <button
                         type="button"
-                        onClick={() => setCalcModal({ isOpen: true, field: 'costPrice', value: parseFloat(costPrice as string) || 0 })}
+                        onClick={() => setShowCostPriceCalc(true)}
                         className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-xl transition-all"
                         aria-label="Abrir calculadora para o preço de custo"
                         title="Calculadora"
                       >
                         <Calculator size={16} />
                       </button>
+                      <CalculatorModal
+                        isOpen={showCostPriceCalc}
+                        onClose={() => setShowCostPriceCalc(false)}
+                        isDarkMode={isDarkMode}
+                        initialValue={parseFloat(costPrice as string) || 0}
+                        onResult={(res) => { setCostPrice(res.toString()); setShowCostPriceCalc(false); }}
+                      />
                     </div>
                   </div>
 
@@ -2070,8 +2098,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       </label>
                       <div className="relative">
                         <input
-                          type="number"
-                          step="0.01"
+                          type="text"
+                          inputMode="decimal"
                           className={`w-full border-2 rounded-2xl px-6 py-4 pl-12 text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 'bg-amber-900/10 border-amber-800 text-amber-300 focus:border-amber-500' : 'bg-amber-50 border-amber-200 text-amber-700 focus:border-amber-500'}`}
                           value={unitCostPrice}
                           aria-label="Custo unitário por par"
@@ -2082,13 +2110,20 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         <DollarSign size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-amber-400" />
                         <button
                           type="button"
-                          onClick={() => setCalcModal({ isOpen: true, field: 'unitCostPrice', value: parseFloat(unitCostPrice as string) || 0 })}
+                          onClick={() => setShowUnitCostPriceCalc(true)}
                           className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-amber-600 p-2 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-xl transition-all"
                           aria-label="Abrir calculadora para custo unitário por par"
                           title="Calculadora"
                         >
                           <Calculator size={16} />
                         </button>
+                        <CalculatorModal
+                          isOpen={showUnitCostPriceCalc}
+                          onClose={() => setShowUnitCostPriceCalc(false)}
+                          isDarkMode={isDarkMode}
+                          initialValue={parseFloat(unitCostPrice as string) || 0}
+                          onResult={(res) => { setUnitCostPrice(res.toString()); setShowUnitCostPriceCalc(false); }}
+                        />
                       </div>
                     </div>
                   )}
@@ -2099,8 +2134,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     </label>
                     <div className="relative">
                       <input
-                        type="number"
-                        step="0.01"
+                        type="text"
+                        inputMode="decimal"
                         className={`w-full border-2 rounded-2xl px-6 py-4.5 pl-12 text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-indigo-400 focus:border-indigo-500 text-lg' : 'bg-white border-slate-100 text-indigo-600 focus:border-indigo-500 text-lg'}`}
                         value={salePrice}
                         aria-label="Preço de venda"
@@ -2110,13 +2145,20 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       <DollarSign size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-indigo-400" />
                       <button
                         type="button"
-                        onClick={() => setCalcModal({ isOpen: true, field: 'salePrice', value: parseFloat(salePrice as string) || 0 })}
+                        onClick={() => setShowSalePriceCalc(true)}
                         className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-indigo-600 p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-xl transition-all"
                         aria-label="Abrir calculadora para o preço de venda"
                         title="Calculadora"
                       >
                         <Calculator size={16} />
                       </button>
+                      <CalculatorModal
+                        isOpen={showSalePriceCalc}
+                        onClose={() => setShowSalePriceCalc(false)}
+                        isDarkMode={isDarkMode}
+                        initialValue={parseFloat(salePrice as string) || 0}
+                        onResult={(res) => { setSalePrice(res.toString()); setShowSalePriceCalc(false); }}
+                      />
                     </div>
                   </div>
 
@@ -2127,8 +2169,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       </label>
                       <div className="relative">
                         <input
-                          type="number"
-                          step="0.01"
+                          type="text"
+                          inputMode="decimal"
                           className={`w-full border-2 rounded-2xl px-6 py-4 pl-12 text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 'bg-sky-900/10 border-sky-800 text-sky-300 focus:border-sky-500' : 'bg-sky-50 border-sky-200 text-sky-700 focus:border-sky-500'}`}
                           value={unitSalePrice}
                           aria-label="Preço unitário por par"
@@ -2139,13 +2181,20 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                         <DollarSign size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-sky-400" />
                         <button
                           type="button"
-                          onClick={() => setCalcModal({ isOpen: true, field: 'unitSalePrice', value: parseFloat(unitSalePrice as string) || 0 })}
+                          onClick={() => setShowUnitSalePriceCalc(true)}
                           className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-sky-600 p-2 hover:bg-sky-50 dark:hover:bg-sky-900/30 rounded-xl transition-all"
                           aria-label="Abrir calculadora para o preço unitário por par"
                           title="Calculadora"
                         >
                           <Calculator size={16} />
                         </button>
+                        <CalculatorModal
+                          isOpen={showUnitSalePriceCalc}
+                          onClose={() => setShowUnitSalePriceCalc(false)}
+                          isDarkMode={isDarkMode}
+                          initialValue={parseFloat(unitSalePrice as string) || 0}
+                          onResult={(res) => { setUnitSalePrice(res.toString()); setShowUnitSalePriceCalc(false); }}
+                        />
                       </div>
                       <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1 mt-1.5">
                         Usado no cálculo de embalagens menores no Pedido de Produção
@@ -2630,25 +2679,6 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             <Save size={16} /> Salvar e Voltar
           </button>
         </div>
-        <CalculatorModal
-          isOpen={!!calcModal}
-          onClose={() => setCalcModal(null)}
-          isDarkMode={isDarkMode}
-          initialValue={calcModal?.value || 0}
-          onResult={(res) => {
-            if (!calcModal) return;
-            if (calcModal.field === 'costPrice') setCostPrice(res.toString());
-            if (calcModal.field === 'unitCostPrice') setUnitCostPrice(res.toString());
-            if (calcModal.field === 'salePrice') setSalePrice(res.toString());
-            if (calcModal.field === 'unitSalePrice') setUnitSalePrice(res.toString());
-            if (calcModal.field === 'costPriceAdjustmentAmount') setCostPriceAdjustmentAmount(res.toString());
-            if (calcModal.field === 'salePriceAdjustmentAmount') setSalePriceAdjustmentAmount(res.toString());
-            if (calcModal.field === 'assemblyServiceCost') setNewAssemblyServiceCost(res);
-            if (calcModal.field === 'quantity' && editingConsumption) {
-              setEditingConsumption({ ...editingConsumption, quantity: res });
-            }
-          }}
-        />
         <Modal
           isOpen={showSoleMapping}
           onClose={() => setShowSoleMapping(false)}
