@@ -80,6 +80,22 @@ const getContrastingColor = (hexcolor: string) => {
   return (yiq >= 128) ? '#000000' : '#ffffff';
 };
 
+// Link "Adicionar ao Google Agenda" — evento de dia inteiro na data do vencimento, sem precisar
+// de integração/OAuth com a API do Google: só monta a URL do template e abre numa nova aba.
+const buildGoogleCalendarUrl = (title: string, details: string, dateMs: number) => {
+  const start = format(new Date(dateMs), 'yyyyMMdd');
+  const endDate = new Date(dateMs);
+  endDate.setDate(endDate.getDate() + 1);
+  const end = format(endDate, 'yyyyMMdd');
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: title,
+    dates: `${start}/${end}`,
+    details,
+  });
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+};
+
 interface PurchaseFormViewProps {
   purchaseId: string | null;
   purchases: Purchase[];
@@ -883,6 +899,31 @@ export default function PurchaseFormView({
     } else {
       notificationService.cancelReminder(`purchase-${purchaseToSave.id}`);
     }
+
+    // Lembretes individuais por cheque — mesmo mecanismo do lembrete de compra, um por cheque
+    // (id `purchase-<id>-check-<checkId>`). Cancela os de cheques removidos nesta edição.
+    checks.forEach((check) => {
+      const reminderId = `purchase-${purchaseToSave.id}-check-${check.id}`;
+      if (check.reminderAt) {
+        notificationService.scheduleReminder({
+          id: reminderId,
+          title: check.reminderTitle || `Vencimento cheque ${check.number || ''} — ${supplierName || 'Fornecedor'}`,
+          body: `Cheque ${check.number || 'sem número'} · R$ ${check.value.toFixed(2)} · ${supplierName || 'Fornecedor não informado'}`,
+          at: check.reminderAt,
+          alarmMode: check.reminderAlarmMode ?? true,
+          combineMode: check.reminderCombineMode ?? false,
+          soundPattern: check.reminderSoundPattern || 'standard',
+        });
+      } else {
+        notificationService.cancelReminder(reminderId);
+      }
+    });
+    const currentCheckIds = new Set(checks.map((c) => c.id));
+    (existing?.checks || []).forEach((oldCheck) => {
+      if (!currentCheckIds.has(oldCheck.id)) {
+        notificationService.cancelReminder(`purchase-${purchaseToSave.id}-check-${oldCheck.id}`);
+      }
+    });
 
     // Cria (ou atualiza) o Pedido de Produção (OP) na fila de espera do PCP — mapas são criados manualmente lá
     if (type === PurchaseType.REPLENISHMENT && isProductionOrder) {
@@ -2562,6 +2603,37 @@ export default function PurchaseFormView({
                         }
                       />
                     </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    <ReminderPickerModal
+                      isDarkMode={isDarkMode}
+                      label="Lembrete deste cheque"
+                      title={check.reminderTitle || ""}
+                      onTitleChange={(v) => updateCheck(index, { reminderTitle: v })}
+                      at={check.reminderAt ?? null}
+                      onAtChange={(v) => updateCheck(index, { reminderAt: v })}
+                      alarmMode={check.reminderAlarmMode ?? true}
+                      onAlarmModeChange={(v) => updateCheck(index, { reminderAlarmMode: v })}
+                      combineMode={check.reminderCombineMode ?? false}
+                      onCombineModeChange={(v) => updateCheck(index, { reminderCombineMode: v })}
+                      soundPattern={check.reminderSoundPattern || "standard"}
+                      onSoundPatternChange={(v) => updateCheck(index, { reminderSoundPattern: v })}
+                    />
+                    <a
+                      href={buildGoogleCalendarUrl(
+                        check.reminderTitle || `Vencimento cheque ${check.number || "s/ número"} — ${supplierName || "Fornecedor"}`,
+                        `Cheque ${check.number || "sem número"} · R$ ${check.value.toFixed(2)} · Fornecedor: ${supplierName || "---"}`,
+                        check.reminderAt || check.dueDate
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? "bg-slate-800 text-slate-300 hover:bg-slate-700" : "bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-100"}`}
+                      title="Adicionar este vencimento ao Google Agenda"
+                      aria-label={`Adicionar vencimento do cheque ${check.number || ""} ao Google Agenda`}
+                    >
+                      <CalendarIcon size={14} /> Salvar no Google Agenda
+                    </a>
                   </div>
                 </div>
               ))}

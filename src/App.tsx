@@ -107,7 +107,12 @@ import {
   CleanupConfig,
   DeliveryRoute,
   Carrier,
+  LabelPaperSize,
+  LabelFile,
 } from "./types";
+import { isBluetoothEnabled as isPrinterBluetoothEnabled, requestEnableBluetooth as requestPrinterBluetoothEnable } from "./lib/ablemarkPrinter";
+import { pickLabelImportImage } from "./utils/labelFileImport";
+import type { OpenEditorParams } from "./views/LabelPrintStudioView";
 
 // Views — DashboardView e LoginView ficam estáticas (primeira tela vista por
 // todo mundo, sem flash de loading); o resto é code-split via lazy() pra não
@@ -133,6 +138,8 @@ const ReportsView = lazy(() => import("./views/ReportsView"));
 const ReportDetailedView = lazy(() => import("./views/ReportDetailedView"));
 const DataCleanupView = lazy(() => import("./views/DataCleanupView"));
 const PrintCenterView = lazy(() => import("./views/PrintCenterView"));
+const LabelPrintStudioView = lazy(() => import("./views/LabelPrintStudioView"));
+const LabelEditorView = lazy(() => import("./views/LabelEditorView"));
 const BackupView = lazy(() => import("./views/BackupView"));
 const AccountsView = lazy(() => import("./views/AccountsView"));
 const StockView = lazy(() => import("./views/StockView"));
@@ -322,6 +329,12 @@ export default function App() {
     return (localStorage.getItem('app_theme_pref') as ThemeId) || 'light';
   });
   const isDarkMode = THEME_VISUALS[appTheme]?.cssClass.includes('dark') ?? false;
+  const [showEngineeringThumbnails, setShowEngineeringThumbnails] = useState<boolean>(() => {
+    return localStorage.getItem('show_engineering_thumbnails') !== 'false';
+  });
+  useEffect(() => {
+    localStorage.setItem('show_engineering_thumbnails', String(showEngineeringThumbnails));
+  }, [showEngineeringThumbnails]);
   const [fontScale, setFontScale] = useState<number>(() => {
     const saved = localStorage.getItem('font_size_pref');
     const parsed = saved ? parseInt(saved, 10) : NaN;
@@ -561,6 +574,8 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [grids, setGrids] = useState<Grid[]>([]);
+  const [labelPaperSizes, setLabelPaperSizes] = useState<LabelPaperSize[]>([]);
+  const [labelFiles, setLabelFiles] = useState<LabelFile[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [colors, setColors] = useState<ColorValue[]>([]);
@@ -814,6 +829,14 @@ export default function App() {
       "grids",
       setGrids,
     );
+    const unsubLabelPaperSizes = firebaseService.subscribeToCollection<LabelPaperSize>(
+      "labelPaperSizes",
+      setLabelPaperSizes,
+    );
+    const unsubLabelFiles = firebaseService.subscribeToCollection<LabelFile>(
+      "labelFiles",
+      setLabelFiles,
+    );
     const unsubPeople = firebaseService.subscribeToCollection<Person>(
       "people",
       setPeople,
@@ -1007,6 +1030,8 @@ export default function App() {
       unsubTransactions();
       unsubAccounts();
       unsubGrids();
+      unsubLabelPaperSizes();
+      unsubLabelFiles();
       unsubPeople();
       unsubCollaborators();
       unsubCategories();
@@ -3925,6 +3950,8 @@ export default function App() {
             activeCollaborator={activeCollaborator}
             onSwitchCollaborator={switchCollaborator}
             onLogout={handleLogout}
+            showEngineeringThumbnails={showEngineeringThumbnails}
+            setShowEngineeringThumbnails={setShowEngineeringThumbnails}
           />
         );
       case ViewType.PRODUCTS:
@@ -3943,6 +3970,7 @@ export default function App() {
             onDuplicate={handleDuplicateProduct}
             isDarkMode={isDarkMode}
             modulesConfig={modulesConfig}
+            showThumbnails={showEngineeringThumbnails}
           />
         );
       case ViewType.PEOPLE:
@@ -4256,6 +4284,72 @@ export default function App() {
             }}
           />
         );
+      case ViewType.LABEL_PRINT_STUDIO:
+        return (
+          <LabelPrintStudioView
+            isDarkMode={isDarkMode}
+            labelPaperSizes={labelPaperSizes}
+            labelFiles={labelFiles}
+            onAddPaperSize={async (size) => {
+              try {
+                await firebaseService.saveDocument("labelPaperSizes", { ...size, isCustom: true });
+                toast.show('Tamanho cadastrado!');
+              } catch (err: any) {
+                toast.show('Erro ao cadastrar tamanho: ' + (err.message || err));
+              }
+            }}
+            onDeletePaperSize={async (id) => {
+              try {
+                await firebaseService.deleteDocument("labelPaperSizes", id);
+              } catch (err: any) {
+                toast.show('Erro ao excluir tamanho: ' + (err.message || err));
+              }
+            }}
+            onDeleteFile={async (id) => {
+              try {
+                await firebaseService.deleteDocument("labelFiles", id);
+                toast.show('Arquivo excluído!');
+              } catch (err: any) {
+                toast.show('Erro ao excluir arquivo: ' + (err.message || err));
+              }
+            }}
+            onOpenEditor={(params) => navigateTo(ViewType.LABEL_EDITOR, params)}
+            onImportFile={async (selectedSize) => {
+              try {
+                const imageDataUrl = await pickLabelImportImage();
+                if (!imageDataUrl) return;
+                navigateTo(ViewType.LABEL_EDITOR, { ...selectedSize, importedImageDataUrl: imageDataUrl } as OpenEditorParams);
+              } catch (err: any) {
+                toast.show('Erro ao importar arquivo: ' + (err.message || err));
+              }
+            }}
+          />
+        );
+      case ViewType.LABEL_EDITOR: {
+        const session = currentParams as OpenEditorParams | null;
+        if (!session) return null;
+        return (
+          <LabelEditorView
+            isDarkMode={isDarkMode}
+            session={{
+              widthMm: session.widthMm,
+              heightMm: session.heightMm,
+              paperSizeId: session.paperSizeId,
+              fileId: session.existingFile?.id,
+              name: session.existingFile?.name,
+              elements: session.existingFile?.elements,
+              importedImageDataUrl: session.importedImageDataUrl,
+            }}
+            onSave={async (data, fileId) => {
+              if (fileId) {
+                await firebaseService.updateDocument("labelFiles", fileId, { ...data, updatedAt: Date.now() });
+              } else {
+                await firebaseService.saveDocument("labelFiles", { ...data, updatedAt: Date.now() });
+              }
+            }}
+          />
+        );
+      }
       case ViewType.BACKUP:
         return (
           <BackupView
@@ -5331,6 +5425,7 @@ export default function App() {
             initialShowOrphaned={currentParams?.initialShowOrphaned}
             initialShowConfigMenu={currentParams?.initialShowConfigMenu}
             modulesConfig={modulesConfig}
+            showThumbnails={showEngineeringThumbnails}
           />
         );
       case ViewType.STOCK_GLANCE:
@@ -5732,6 +5827,7 @@ export default function App() {
           <ProductionEngineeringView
             products={products}
             categories={categories}
+            showThumbnails={showEngineeringThumbnails}
             onAdd={() => navigateTo(ViewType.PRODUCT_FORM)}
             onEdit={(id) => navigateTo(ViewType.PRODUCT_FORM, id)}
             onDelete={async (id) => {
@@ -6538,6 +6634,10 @@ export default function App() {
         return "Relatórios";
       case ViewType.PRINT_CENTER:
         return "Central de Impressões";
+      case ViewType.LABEL_PRINT_STUDIO:
+        return "Impressão de Etiquetas";
+      case ViewType.LABEL_EDITOR:
+        return "Editor de Etiqueta";
       case ViewType.BACKUP:
         return "Ajustes Técnicos";
       case ViewType.PURCHASES:
@@ -6644,6 +6744,8 @@ export default function App() {
       case ViewType.PAYMENT_METHODS: return <CreditCard size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.REPORTS: return <BarChart3 size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.PRINT_CENTER: return <Printer size={24} className="text-indigo-500" />;
+      case ViewType.LABEL_PRINT_STUDIO: return <Printer size={24} className="text-indigo-500" />;
+      case ViewType.LABEL_EDITOR: return <Printer size={24} className="text-indigo-500" />;
       case ViewType.BACKUP: return <Database size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.DASHBOARD_CONFIG: return <LayoutDashboard size={24} className="text-indigo-600 dark:text-indigo-400" />;
       case ViewType.PRODUCTION_MENU: return <Factory size={24} className="text-indigo-600 dark:text-indigo-400" />;
@@ -6763,6 +6865,26 @@ export default function App() {
             className="p-2 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-500 dark:text-emerald-400 transition-colors hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
           >
             <ScanLine size={20} />
+          </motion.button>
+          )}
+          {modulesConfig.production && (
+          <motion.button
+            type="button"
+            onClick={async () => {
+              const enabled = await isPrinterBluetoothEnabled();
+              if (!enabled) {
+                const grantedNow = await requestPrinterBluetoothEnable();
+                if (!grantedNow) return;
+              }
+              navigateTo(ViewType.LABEL_PRINT_STUDIO);
+            }}
+            title="Impressão de Etiquetas"
+            aria-label="Impressão de Etiquetas"
+            whileHover={{ scale: 1.15, rotate: 8 }}
+            whileTap={{ scale: 0.9 }}
+            className="p-2 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 dark:text-indigo-400 transition-colors hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
+          >
+            <Printer size={20} />
           </motion.button>
           )}
           {aiEnabled && collaboratorCanUseAI(activeCollaborator) && (

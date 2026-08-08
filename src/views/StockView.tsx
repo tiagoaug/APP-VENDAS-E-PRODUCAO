@@ -87,6 +87,7 @@ interface StockViewProps {
    * alocações) só existem por causa de StockLots criados na finalização de produção — sem o
    * módulo Produção ativo essa coleção fica sempre vazia, então as duas abas somem. */
   modulesConfig?: AppModulesConfig;
+  showThumbnails?: boolean;
 }
 
 export default function StockView({
@@ -114,6 +115,7 @@ export default function StockView({
   initialShowOrphaned,
   initialShowConfigMenu,
   modulesConfig,
+  showThumbnails = true,
 }: StockViewProps) {
   const showProductionTabs = !modulesConfig || modulesConfig.production;
   const [searchTerm, setSearchTerm] = useState("");
@@ -609,6 +611,7 @@ export default function StockView({
               onUpdatePkgAllocations={(variationId, allocations) => handleUpdatePkgAllocations(isEditing ? (editedStocks[product.id] || product) : product, variationId, allocations)}
               onPrint={() => setProductForLabels(product)}
               poolFilter={stockTypeFilter}
+              showThumbnail={showThumbnails}
             />
           ))}
 
@@ -1710,7 +1713,8 @@ const StockCard: React.FC<{
   onUpdatePkgAllocations: (variationId: string, allocations: StockPkgAllocation[]) => void;
   onPrint: () => void;
   poolFilter?: 'ALL' | SaleType.WHOLESALE | SaleType.RETAIL;
-}> = ({ product, packagingItems, isDarkMode, isEditing, onUpdateStock, onUpdatePkgAllocations, onPrint, poolFilter = 'ALL' }) => {
+  showThumbnail?: boolean;
+}> = ({ product, packagingItems, isDarkMode, isEditing, onUpdateStock, onUpdatePkgAllocations, onPrint, poolFilter = 'ALL', showThumbnail = true }) => {
   // Padrão "avulso a escolha do cliente" (sem tamanhos fixos) — referência de
   // capacidade para alocações avulsas que não correspondem a nenhuma embalagem cadastrada.
   const avulsoPkg = packagingItems.find(p => p.metadata?.mode === 'FREE');
@@ -1781,7 +1785,7 @@ const StockCard: React.FC<{
       >
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700 overflow-hidden shrink-0">
-            {product.photoUrl
+            {showThumbnail && product.photoUrl
               ? <img src={product.photoUrl} alt={product.name} className="w-full h-full object-cover" />
               : <Package size={26} className="text-indigo-500" />}
           </div>

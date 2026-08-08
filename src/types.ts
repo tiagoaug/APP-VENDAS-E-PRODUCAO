@@ -81,6 +81,57 @@ export type Grid = {
   configuration: { [size: string]: number }; // e.g., { "37": 2, "38": 4, "39": 4, "40": 2 }
 };
 
+// Tamanho de papel/etiqueta pra impressão térmica (Print Studio Ablemark). Não reaproveita
+// `Grid` — aqueles campos (sizes/configuration) são pra grade de numeração, não fazem sentido
+// pra dimensão de papel. Presets fixos (THERMAL_SIZES) não viram documento — só os cadastrados
+// pelo usuário (isCustom) são persistidos.
+export type LabelPaperSize = {
+  id: string;
+  name: string;
+  widthMm: number;
+  heightMm: number;
+  isCustom: true;
+};
+
+// Elemento de um arquivo de etiqueta no editor de propósito geral (Print Studio Ablemark).
+export type LabelElementType = 'text' | 'image' | 'qr' | 'line' | 'shape';
+
+export type LabelElement = {
+  id: string;
+  type: LabelElementType;
+  x: number; // mm, a partir do canto superior esquerdo da etiqueta
+  y: number;
+  w: number;
+  h: number;
+  rotation: number; // graus
+  // type 'text'
+  text?: string;
+  fontSize?: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  align?: 'left' | 'center' | 'right';
+  letterSpacing?: number; // px, na mesma escala usada pelo canvas de impressão
+  lineHeight?: number; // multiplicador (1 = normal)
+  // type 'image'
+  imageDataUrl?: string;
+  grayscale?: boolean; // converte a imagem original pra tons de cinza (só na exibição/impressão, não altera o arquivo original)
+  // type 'qr'
+  qrValue?: string;
+  // type 'line' | 'shape': usa x/y/w/h/rotation acima; 'shape' desenha um retângulo
+};
+
+// Arquivo de etiqueta salvo (Print Studio Ablemark) — design reutilizável, reabrível/reeditável.
+export type LabelFile = {
+  id: string;
+  name: string;
+  paperSizeId: string;
+  widthMm: number;
+  heightMm: number;
+  elements: LabelElement[];
+  updatedAt: number;
+};
+
 export type TechSheetItem = {
   id: string;
   configItemId: string; // Reference to ProductionConfigItem of type 'MATERIAL'
@@ -265,6 +316,13 @@ export type CompanyCheck = {
   value: number;
   dueDate: number;
   status: 'PENDING' | 'CLEARED' | 'OVERDUE';
+  // Lembrete individual do vencimento deste cheque — mesmo mecanismo do lembrete de compra
+  // (notificationService), agendado por cheque em vez de um único lembrete pra compra toda.
+  reminderAt?: number | null;
+  reminderTitle?: string | null;
+  reminderAlarmMode?: boolean | null;
+  reminderCombineMode?: boolean | null;
+  reminderSoundPattern?: ReminderTonePattern | null;
 };
 
 export type PaymentHistory = {
@@ -727,6 +785,10 @@ export enum ViewType {
   // Sem view React própria — só um id estável pro item de menu que abre o módulo nativo
   // Android (ver src/lib/printStudio.ts); onClick nunca chama onNavigate com este valor.
   PRINT_STUDIO = 'PRINT_STUDIO',
+  // Hub da impressora térmica Ablemark BR-L100 (conexão, tamanhos, arquivos) — não confundir
+  // com PRINT_STUDIO acima (módulo nativo antigo HP/Epson, sem relação).
+  LABEL_PRINT_STUDIO = 'LABEL_PRINT_STUDIO',
+  LABEL_EDITOR = 'LABEL_EDITOR',
   MARKETPLACE_MENU = 'MARKETPLACE_MENU',
   MARKETPLACE_CONNECTION = 'MARKETPLACE_CONNECTION',
   MARKETPLACE_ORDERS = 'MARKETPLACE_ORDERS',

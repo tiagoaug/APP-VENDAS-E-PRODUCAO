@@ -25,6 +25,7 @@ interface ProductionEngineeringViewProps {
   isDarkMode: boolean;
   categories: Category[];
   onBack: () => void;
+  showThumbnails?: boolean;
 }
 
 export default function ProductionEngineeringView({
@@ -37,6 +38,7 @@ export default function ProductionEngineeringView({
   isDarkMode,
   categories,
   onBack,
+  showThumbnails = true,
 }: ProductionEngineeringViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
@@ -131,6 +133,7 @@ export default function ProductionEngineeringView({
               onToggleStatus={() => onToggleStatus(product.id, product.status === ProductStatus.ACTIVE ? ProductStatus.INACTIVE : ProductStatus.ACTIVE)}
               isDarkMode={isDarkMode}
               categories={categories}
+              showThumbnail={showThumbnails}
             />
           ))}
         </div>
@@ -147,6 +150,7 @@ interface EngineeringCardProps {
   onToggleStatus: () => void;
   isDarkMode: boolean;
   categories: Category[];
+  showThumbnail?: boolean;
 }
 
 function EngineeringCard({
@@ -157,6 +161,7 @@ function EngineeringCard({
   onToggleStatus,
   isDarkMode,
   categories,
+  showThumbnail = true,
 }: EngineeringCardProps) {
   const variationsCount = (product.variations || []).length;
   
@@ -174,6 +179,11 @@ function EngineeringCard({
             {product.name}
           </h3>
         </div>
+        {showThumbnail && product.photoUrl && (
+          <div className={`w-20 h-20 rounded-xl overflow-hidden shrink-0 ml-3 border ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+            <img src={product.photoUrl} alt={product.name} className="w-full h-full object-cover" />
+          </div>
+        )}
         <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ml-3 ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
           <Hammer size={16} />
         </div>

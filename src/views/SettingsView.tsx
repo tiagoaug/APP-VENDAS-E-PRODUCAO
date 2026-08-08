@@ -40,6 +40,7 @@ import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, 
 import { isViewAllowed, isSectorAllowed } from '../utils/collaborators';
 import { openPrintStudio } from '../lib/printStudio';
 import AIAssistantSettings from '../components/AIAssistantSettings';
+import AblemarkPrinterTestModal from '../components/AblemarkPrinterTestModal';
 
 interface SettingsViewProps {
   onNavigate: (view: ViewType) => void;
@@ -61,6 +62,8 @@ interface SettingsViewProps {
   activeCollaborator: Collaborator | null;
   onSwitchCollaborator: (id: string, pin: string) => boolean;
   onLogout: () => void;
+  showEngineeringThumbnails?: boolean;
+  setShowEngineeringThumbnails?: (v: boolean) => void;
 }
 
 export default function SettingsView({
@@ -83,8 +86,11 @@ export default function SettingsView({
   activeCollaborator,
   onSwitchCollaborator,
   onLogout,
+  showEngineeringThumbnails = true,
+  setShowEngineeringThumbnails,
 }: SettingsViewProps) {
   const [showA11y, setShowA11y] = useState(false);
+  const [showAblemarkTest, setShowAblemarkTest] = useState(false);
   const [showAISettings, setShowAISettings] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showCollabSwitcher, setShowCollabSwitcher] = useState(false);
@@ -396,6 +402,39 @@ export default function SettingsView({
                 </button>
               </div>
 
+              {/* Miniaturas dos modelos na Engenharia de Produto */}
+              {setShowEngineeringThumbnails && (
+                <div className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
+                      {showEngineeringThumbnails ? <Eye size={18} /> : <EyeOff size={18} />}
+                    </div>
+                    <div>
+                      <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Miniaturas dos Modelos</p>
+                      <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Foto nas listas de produtos cadastrados</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setShowEngineeringThumbnails(!showEngineeringThumbnails)}
+                    title="Mostrar/ocultar miniaturas dos modelos"
+                    aria-label="Mostrar ou ocultar miniaturas dos modelos na Engenharia de Produto"
+                    className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${showEngineeringThumbnails ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${showEngineeringThumbnails ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
+              )}
+
+              {/* Teste da impressora Ablemark BR-L100 — ferramenta temporária de validação do
+                  protocolo (transporte SPP + JBIG), não é uma tela final de impressão. */}
+              <button
+                type="button"
+                onClick={() => setShowAblemarkTest(true)}
+                className={`flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              >
+                Teste — Impressora Ablemark
+              </button>
+
               {/* Tema */}
               <div className="flex flex-col gap-2.5">
                 <div className="flex items-center gap-2 px-1">
@@ -534,6 +573,7 @@ export default function SettingsView({
       )}
 
       <AIAssistantSettings isOpen={showAISettings} onClose={() => setShowAISettings(false)} isDarkMode={isDarkMode} />
+      <AblemarkPrinterTestModal isOpen={showAblemarkTest} onClose={() => setShowAblemarkTest(false)} isDarkMode={isDarkMode} />
 
       {/* ── QUEM ESTÁ USANDO — TROCA DE COLABORADOR ── */}
       {showCollabSwitcher && (

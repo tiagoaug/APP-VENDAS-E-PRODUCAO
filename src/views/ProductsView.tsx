@@ -22,6 +22,7 @@ interface ProductsViewProps {
   onDuplicate: (product: Product) => void;
   isDarkMode: boolean;
   modulesConfig: AppModulesConfig;
+  showThumbnails?: boolean;
 }
 
 export default function ProductsView({
@@ -33,6 +34,7 @@ export default function ProductsView({
   onDuplicate,
   isDarkMode,
   modulesConfig,
+  showThumbnails = true,
 }: ProductsViewProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
@@ -141,6 +143,7 @@ export default function ProductsView({
               onToggleStatus={() => onToggleStatus(product.id, product.status === ProductStatus.ACTIVE ? ProductStatus.INACTIVE : ProductStatus.ACTIVE)}
               onDuplicate={() => onDuplicate(product)}
               isDarkMode={isDarkMode}
+              showThumbnail={showThumbnails}
             />
           ))}
         </div>
@@ -166,6 +169,7 @@ interface ProductCardProps {
   onDuplicate: () => void;
   isDarkMode: boolean;
   key?: string;
+  showThumbnail?: boolean;
 }
 
 function ProductCard({
@@ -175,6 +179,7 @@ function ProductCard({
   onToggleStatus,
   onDuplicate,
   isDarkMode,
+  showThumbnail = true,
 }: ProductCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   return (
@@ -187,8 +192,12 @@ function ProductCard({
         onClick={() => setIsExpanded(v => !v)}
         className="px-4 pt-4 pb-3 flex items-center gap-3 w-full text-left"
       >
-        <div className="w-11 h-11 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700 flex-shrink-0">
-          <Package size={22} className="text-indigo-500" />
+        <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700 flex-shrink-0 overflow-hidden">
+          {showThumbnail && product.photoUrl ? (
+            <img src={product.photoUrl} alt={product.name} className="w-full h-full object-cover" />
+          ) : (
+            <Package size={22} className="text-indigo-500" />
+          )}
         </div>
         <div className="flex flex-col min-w-0 flex-1">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">
