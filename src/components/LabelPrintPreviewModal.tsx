@@ -105,7 +105,13 @@ export default function LabelPrintPreviewModal({
                 ) : el.type === 'shape' ? (
                   <div className="w-full h-full border-2 border-black" />
                 ) : el.imageDataUrl ? (
-                  <img src={el.imageDataUrl} alt="" className="w-full h-full object-contain" draggable={false} />
+                  <img
+                    src={el.imageDataUrl}
+                    alt=""
+                    className="w-full h-full object-contain"
+                    style={{ filter: el.grayscale ? 'grayscale(1)' : 'none' }}
+                    draggable={false}
+                  />
                 ) : null}
               </div>
             ))}
