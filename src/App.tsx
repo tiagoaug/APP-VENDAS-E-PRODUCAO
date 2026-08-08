@@ -111,7 +111,6 @@ import {
   LabelFile,
 } from "./types";
 import { isBluetoothEnabled as isPrinterBluetoothEnabled, requestEnableBluetooth as requestPrinterBluetoothEnable } from "./lib/ablemarkPrinter";
-import { pickLabelImportImage } from "./utils/labelFileImport";
 import type { OpenEditorParams } from "./views/LabelPrintStudioView";
 
 // Views — DashboardView e LoginView ficam estáticas (primeira tela vista por
@@ -4298,6 +4297,13 @@ export default function App() {
                 toast.show('Erro ao cadastrar tamanho: ' + (err.message || err));
               }
             }}
+            onEditPaperSize={async (id, size) => {
+              try {
+                await firebaseService.updateDocument("labelPaperSizes", id, size);
+              } catch (err: any) {
+                toast.show('Erro ao atualizar tamanho: ' + (err.message || err));
+              }
+            }}
             onDeletePaperSize={async (id) => {
               try {
                 await firebaseService.deleteDocument("labelPaperSizes", id);
@@ -4314,15 +4320,6 @@ export default function App() {
               }
             }}
             onOpenEditor={(params) => navigateTo(ViewType.LABEL_EDITOR, params)}
-            onImportFile={async (selectedSize) => {
-              try {
-                const imageDataUrl = await pickLabelImportImage();
-                if (!imageDataUrl) return;
-                navigateTo(ViewType.LABEL_EDITOR, { ...selectedSize, importedImageDataUrl: imageDataUrl } as OpenEditorParams);
-              } catch (err: any) {
-                toast.show('Erro ao importar arquivo: ' + (err.message || err));
-              }
-            }}
           />
         );
       case ViewType.LABEL_EDITOR: {

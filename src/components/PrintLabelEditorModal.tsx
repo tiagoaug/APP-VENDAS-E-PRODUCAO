@@ -2,13 +2,20 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Printer, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
   RotateCcw, Eye, EyeOff, Plus, Minus, Settings2, FileText, Tag,
-  Image as ImageIcon, Layers, Check, X, Lock, BookmarkPlus, Pencil, Trash2, BookOpen,
+  Image as ImageIcon, Layers, Check, X, Lock, BookmarkPlus, Pencil, Trash2, BookOpen, Bluetooth, Share2, RefreshCw,
 } from 'lucide-react';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 import Modal from './Modal';
+import LabelPrintPreviewModal, { PrintOptions } from './LabelPrintPreviewModal';
 import { Product, Variation, SaleType, LabelLayout, Grid, ProductionLot, ServiceOrder, Sector, SectorNote } from '../types';
 import { labelService } from '../services/labelService';
 import { shareImage, shareImages } from '../utils/pdfExport';
 import { toast } from '../utils/toast';
+import {
+  isAbleMarkPrinterConnected, printAbleMarkLabel, listAbleMarkPairedDevices, connectAbleMarkPrinter,
+  AbleMarkPairedDevice,
+} from '../lib/ablemarkPrinter';
+import { applyPrintTransform, DIRECTION_TO_ROTATION } from '../utils/labelPrintTransform';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -174,6 +181,14 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   const [myPresetsPopupOpen, setMyPresetsPopupOpen] = useState(false);
   const [printing, setPrinting]     = useState(false);
   const [exportingJpg, setExportingJpg] = useState(false);
+  const [preparingBt, setPreparingBt] = useState(false);
+  const [showBtPreview, setShowBtPreview] = useState(false);
+  const [btFramesCache, setBtFramesCache] = useState<HTMLCanvasElement[]>([]);
+  const [showConnectPrompt, setShowConnectPrompt] = useState(false);
+  const [btDevices, setBtDevices] = useState<AbleMarkPairedDevice[]>([]);
+  const [loadingBtDevices, setLoadingBtDevices] = useState(false);
+  const [connectingBtAddress, setConnectingBtAddress] = useState<string | null>(null);
+  const [showShareFormatPicker, setShowShareFormatPicker] = useState(false);
   const [qrPreview, setQrPreview] = useState('');
 
   // Custom presets — padrões salvos pelo usuário
@@ -213,15 +228,6 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   const scale  = Math.min(scaleW, scaleH);
   const previewW = W * scale, previewH = H * scale;
 
-  // Lote "mapa" agrupando múltiplas variantes (sem variationId único) — instruções
-  // por setor são exclusivas de uma variante e não fazem sentido nesse contexto.
-  // Quando a impressão veio de uma seleção específica (batchItems), o que importa é
-  // quantas variantes DISTINTAS estão nessa seleção — não a composição do mapa
-  // inteiro (um mapa pode cortar várias cores juntas, mas o pedido impresso é só uma).
-  const isMultiVariantMap = batchItems && batchItems.length > 0
-    ? new Set(batchItems.map(bi => bi.variation.id)).size > 1
-    : !!lot && (!lot.variationId || (((lot as any).metadata?.groups?.length ?? 0) > 1));
-
   const rawLayout = layouts[sizeKey === 'manual' ? `${manualW}x${manualH}` : sizeKey] ?? defaultLayout(paperDims);
   const def = defaultLayout(paperDims);
   const layout: Layout = {
@@ -229,7 +235,6 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
     elems: {
       ...def.elems,
       ...(rawLayout.elems || {}),
-      ...(isMultiVariantMap ? { sectornotes: { ...def.elems.sectornotes, ...(rawLayout.elems?.sectornotes || {}), visible: false } } : {})
     }
   };
 
@@ -265,18 +270,30 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   };
   const sectorNotesText: string = getSectorNotesText(variation, layout.elems.sectornotes.noteFilter);
 
-  // Lista de descrições por setor cadastradas para a variante atual — usada para
-  // escolher qual instrução exibir em "Obs. Variante" (ver Configurar Elementos).
-  const availableSectorNotes: { sectorId: string; sectorName: string; noteName: string; text: string }[] =
-    variation?.sectorNotes
-      ? Object.entries(variation.sectorNotes).flatMap(([sid, notes]) => {
-          const sector = sectors.find(s => s.id === sid);
-          const sectorName = (sector?.name || sid).toUpperCase();
-          return (notes as SectorNote[])
-            .filter(n => n.text)
-            .map(n => ({ sectorId: sid, sectorName, noteName: n.name || '(sem nome)', text: n.text }));
-        })
-      : [];
+  // Lista de descrições por setor disponíveis pra escolher em "Obs. Variante" (ver
+  // Configurar Elementos). Em impressão em lote (batchItems, várias etiquetas de uma vez —
+  // possivelmente com variantes diferentes), reúne a UNIÃO das opções de todas as variantes
+  // do lote, não só a variante "atual" — cada etiqueta resolve seu próprio texto pra essa
+  // escolha na hora de desenhar (ver buildLabelFrames), então a lista só precisa cobrir
+  // todas as opções possíveis, não decidir qual variante "vale".
+  const sectorNotesSourceVariations: (Variation | undefined)[] =
+    batchItems && batchItems.length > 0 ? batchItems.map(bi => bi.variation) : [variation];
+  const availableSectorNotes: { sectorId: string; sectorName: string; noteName: string; text: string }[] = (() => {
+    const seen = new Map<string, { sectorId: string; sectorName: string; noteName: string; text: string }>();
+    for (const v of sectorNotesSourceVariations) {
+      if (!v?.sectorNotes) continue;
+      Object.entries(v.sectorNotes).forEach(([sid, notes]) => {
+        const sector = sectors.find(s => s.id === sid);
+        const sectorName = (sector?.name || sid).toUpperCase();
+        (notes as SectorNote[]).filter(n => n.text).forEach(n => {
+          const noteName = n.name || '(sem nome)';
+          const key = `${sid}::${noteName}`;
+          if (!seen.has(key)) seen.set(key, { sectorId: sid, sectorName, noteName, text: n.text });
+        });
+      });
+    }
+    return Array.from(seen.values());
+  })();
   const previewSize = selectedSizes[0] || availSizes[0] || '38';
 
   const activeGrid = grids.find(g => g.id === product.defaultGridId);
@@ -466,12 +483,15 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
     } finally { setPrinting(false); }
   };
 
-  const handleExportJpg = async () => {
-    setExportingJpg(true);
-    try {
-      const DPI = 300;
-      const mmToPx = (mm: number) => Math.round(mm * DPI / 25.4);
-      const ptToPxHigh = (pt: number) => pt * DPI / 72;
+  // Extraído de handleExportJpg pra ser reutilizado também pelo caminho de impressão
+  // Bluetooth (handlePrintBluetooth) — a única diferença entre os dois é a resolução (DPI):
+  // exportação JPG usa 300 DPI (qualidade de arquivo), a impressora térmica usa ~203 DPI
+  // (8 pontos/mm, a mesma densidade já validada em hardware real no editor de etiqueta geral
+  // — ver DOTS_PER_MM em LabelEditorView.tsx). Mandar um bitmap de 300 DPI pra uma impressora
+  // de 8 pontos/mm faria a etiqueta sair fisicamente ~1.5x maior que o tamanho configurado.
+  const buildLabelFrames = async (dpi: number): Promise<{ frames: HTMLCanvasElement[]; fileNames: string[] | null; cW: number; cH: number }> => {
+      const mmToPx = (mm: number) => Math.round(mm * dpi / 25.4);
+      const ptToPxHigh = (pt: number) => pt * dpi / 72;
       const cW = mmToPx(W);
       const cH = mmToPx(H);
       const e = layout.elems;
@@ -713,6 +733,15 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         }
       }
 
+      return { frames, fileNames, cW, cH };
+  };
+
+  const handleExportJpg = async () => {
+    setExportingJpg(true);
+    try {
+      const { frames, fileNames, cW, cH } = await buildLabelFrames(300);
+      const mmToPx = (mm: number) => Math.round(mm * 300 / 25.4);
+
       if (frames.length === 0) {
         toast.show('Nenhuma etiqueta para gerar. Selecione ao menos um tamanho ou variação.');
         return;
@@ -749,6 +778,87 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
     } finally {
       setExportingJpg(false);
     }
+  };
+
+  // Impressão via Bluetooth (Ablemark BR-L100) — reaproveita buildLabelFrames (uma etiqueta
+  // por unidade física, já respeitando a grade de tamanhos/quantidades) só que a 8 pontos/mm
+  // em vez de 300 DPI. Abre o mesmo LabelPrintPreviewModal usado pelo editor de etiqueta geral
+  // (Print Studio) pra escolher direção/deslocamento/densidade/papel antes de mandar.
+  // Gera os quadros e abre a pré-visualização — só chamado quando já se sabe que a
+  // impressora está conectada (direto, ou depois de conectar pelo popup abaixo).
+  const proceedToBtPreview = async () => {
+    setPreparingBt(true);
+    try {
+      const { frames } = await buildLabelFrames(8 * 25.4);
+      if (frames.length === 0) {
+        toast.show('Nenhuma etiqueta para gerar. Selecione ao menos um tamanho ou variação.');
+        return;
+      }
+      setBtFramesCache(frames);
+      setShowBtPreview(true);
+    } catch (err) {
+      console.error('Erro ao preparar impressão Bluetooth:', err);
+      toast.show('Erro ao preparar impressão: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setPreparingBt(false);
+    }
+  };
+
+  const handleOpenBluetoothPrint = async () => {
+    if (await isAbleMarkPrinterConnected()) {
+      await proceedToBtPreview();
+      return;
+    }
+    // Impressora desconectada — em vez de só avisar e mandar o usuário sair daqui pra
+    // conectar em outra tela, oferece a conexão direto neste popup e já segue pra
+    // impressão assim que conectar.
+    setShowConnectPrompt(true);
+    setLoadingBtDevices(true);
+    try {
+      const list = await listAbleMarkPairedDevices();
+      setBtDevices(list);
+    } finally {
+      setLoadingBtDevices(false);
+    }
+  };
+
+  const handleConnectBtDevice = async (address: string) => {
+    setConnectingBtAddress(address);
+    try {
+      const { connected, error } = await connectAbleMarkPrinter(address);
+      if (connected) {
+        setShowConnectPrompt(false);
+        await proceedToBtPreview();
+      } else {
+        toast.show('Falha ao conectar: ' + (error || '(sem detalhe)'));
+      }
+    } finally {
+      setConnectingBtAddress(null);
+    }
+  };
+
+  const handleConfirmBtPrint = async (options: PrintOptions) => {
+    const rotationDeg = DIRECTION_TO_ROTATION[options.direction];
+    let sent = 0;
+    let failed = 0;
+    for (let i = 0; i < btFramesCache.length; i++) {
+      const transformed = applyPrintTransform(
+        btFramesCache[i], W, H,
+        { offsetXmm: options.offsetXmm, offsetYmm: options.offsetYmm, rotationDeg },
+        8,
+      );
+      const base64 = transformed.toDataURL('image/png').split('base64,')[1];
+      for (let c = 0; c < options.copies; c++) {
+        try {
+          const written = await Filesystem.writeFile({ path: `label_${Date.now()}_${i}_${c}.png`, data: base64, directory: Directory.Cache });
+          const { sent: ok } = await printAbleMarkLabel(written.uri, options.paperType, options.density);
+          if (ok) sent++; else failed++;
+        } catch {
+          failed++;
+        }
+      }
+    }
+    toast.show(failed === 0 ? `${sent} etiqueta(s) enviada(s) para a impressora!` : `${sent} enviada(s), ${failed} falharam.`);
   };
 
   // ── Helpers preview ──────────────────────────────────────────────────────────
@@ -1053,7 +1163,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 {ELEM_KEYS.map(key => {
                   const el = layout.elems[key];
                   const isSel = selected === key;
-                  const isLocked = key === 'sectornotes' && isMultiVariantMap;
+                  const isLocked = false;
                   return (
                     <div
                       key={key}
@@ -1132,7 +1242,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => { ELEM_KEYS.forEach(k => { if (k === 'sectornotes' && isMultiVariantMap) return; updateElem(k, { visible: true }); }); }}
+                    onClick={() => { ELEM_KEYS.forEach(k => updateElem(k, { visible: true })); }}
                     className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2 flex items-center justify-center gap-1.5 active:scale-95 ${
                       dk ? 'border-slate-700 bg-slate-800 text-slate-300 hover:border-emerald-500 hover:text-emerald-400' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-emerald-400 hover:text-emerald-600'
                     }`}
@@ -1401,6 +1511,13 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                     <button type="button" aria-label="Negrito" onClick={() => updateElem(selected, { bold: !sel.bold })}
                       className={`w-10 h-9 border-l flex items-center justify-center text-[13px] font-black transition-all ${sel.bold ? `bg-indigo-600 text-white ${dk ? 'border-slate-700' : 'border-indigo-500'}` : `${dk ? 'border-slate-700 text-slate-400 hover:bg-slate-700' : 'border-slate-200 text-slate-500 hover:bg-slate-100'}`}`}>B</button>
                   </div>
+                  <input
+                    type="range" min={3} max={30} step={0.5}
+                    value={sel.fontSize || 8}
+                    onChange={e => updateElem(selected, { fontSize: parseFloat(e.target.value) })}
+                    className="w-full"
+                    aria-label="Tamanho da fonte"
+                  />
                 </div>
               </div>
 
@@ -1495,21 +1612,83 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
 
         {/* Actions */}
         <div className="flex flex-col gap-2">
-          <div className="flex gap-2">
-            <button type="button" onClick={handleExportJpg} disabled={printing || exportingJpg}
-              className="flex-1 py-4 rounded-2xl bg-emerald-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
-              <ImageIcon size={16}/> {exportingJpg ? 'Gerando…' : (batchItems && batchItems.length > 1 ? `Gerar JPG (${batchItems.length})` : 'Gerar JPG')}
-            </button>
-            <button type="button" onClick={handlePrint} disabled={printing || exportingJpg}
-              className="flex-1 py-4 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
-              <Printer size={16}/> {printing ? 'Gerando…' : (batchItems && batchItems.length > 1 ? `Imprimir ${batchItems.length} Etiquetas` : 'Gerar PDF')}
-            </button>
-          </div>
+          <button type="button" onClick={() => setShowShareFormatPicker(true)} disabled={printing || exportingJpg}
+            className="w-full py-4 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
+            <Share2 size={16}/> {(printing || exportingJpg) ? 'Gerando…' : 'Compartilhar'}
+          </button>
+          <button type="button" onClick={handleOpenBluetoothPrint} disabled={printing || exportingJpg || preparingBt}
+            className="w-full py-4 rounded-2xl bg-sky-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-sky-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
+            <Bluetooth size={16}/> {preparingBt ? 'Preparando…' : 'Imprimir na Impressora (Print Studio)'}
+          </button>
           <button type="button" onClick={onClose} className={`w-full py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest ${dk?'bg-slate-800 text-slate-400':'bg-slate-100 text-slate-500'}`}>
             Cancelar
           </button>
         </div>
       </div>
+
+      {/* ── Popup: escolher formato de compartilhamento ── */}
+      <Modal isOpen={showShareFormatPicker} onClose={() => setShowShareFormatPicker(false)} title="Compartilhar Etiqueta" maxWidth="max-w-xs" zIndex={98000}>
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-bold text-center text-slate-500 dark:text-slate-400">Em qual formato?</p>
+          <button
+            type="button"
+            onClick={() => { setShowShareFormatPicker(false); handleExportJpg(); }}
+            className="flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest bg-emerald-600 text-white"
+          >
+            <ImageIcon size={16} /> {batchItems && batchItems.length > 1 ? `JPG (${batchItems.length})` : 'JPG'}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowShareFormatPicker(false); handlePrint(); }}
+            className={`flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest ${dk ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+          >
+            <FileText size={16} /> {batchItems && batchItems.length > 1 ? `PDF (${batchItems.length})` : 'PDF'}
+          </button>
+        </div>
+      </Modal>
+
+      {/* ── Popup: conectar impressora (só aparece se tentar imprimir desconectado) ── */}
+      <Modal isOpen={showConnectPrompt} onClose={() => setShowConnectPrompt(false)} title="Conectar Impressora" maxWidth="max-w-xs" zIndex={98000}>
+        <div className="flex flex-col gap-3">
+          <p className="text-xs font-bold text-center text-slate-500 dark:text-slate-400">
+            A impressora está desconectada — conecte pra continuar.
+          </p>
+          <button
+            type="button"
+            onClick={async () => { setLoadingBtDevices(true); try { setBtDevices(await listAbleMarkPairedDevices()); } finally { setLoadingBtDevices(false); } }}
+            disabled={loadingBtDevices}
+            className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest ${dk ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+          >
+            <RefreshCw size={13} className={loadingBtDevices ? 'animate-spin' : ''} /> Listar dispositivos pareados
+          </button>
+          {btDevices.map(d => (
+            <button
+              key={d.address}
+              type="button"
+              onClick={() => handleConnectBtDevice(d.address)}
+              disabled={!!connectingBtAddress}
+              className={`flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl border-2 transition-all ${dk ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}
+            >
+              <div className="flex items-center gap-2 min-w-0">
+                <Bluetooth size={13} className="text-indigo-500 shrink-0" />
+                <span className="text-xs font-black truncate">{d.name}</span>
+              </div>
+              {connectingBtAddress === d.address && <RefreshCw size={13} className="animate-spin text-indigo-400" />}
+            </button>
+          ))}
+        </div>
+      </Modal>
+
+      <LabelPrintPreviewModal
+        isOpen={showBtPreview}
+        onClose={() => setShowBtPreview(false)}
+        isDarkMode={dk}
+        widthMm={W}
+        heightMm={H}
+        previewDataUrls={btFramesCache.map(f => f.toDataURL('image/png'))}
+        totalLabelsNote={btFramesCache.length > 1 ? `${btFramesCache.length} etiquetas na grade × cópias` : undefined}
+        onConfirmPrint={handleConfirmBtPrint}
+      />
 
       {/* ── Modal: Salvar Padrão ── */}
       {savePresetModal.open && (

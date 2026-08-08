@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  Printer, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Minus, Plus,
+  Printer, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Minus, Plus, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import Modal from './Modal';
-import { LabelElement } from '../types';
 
 export type PrintDirection = 'down' | 'up' | 'left' | 'right';
 export type PrintPaperType = 2 | 1 | 4; // 2 = Espaço (confirmado), 1 = Contínuo, 4 = Marca preta (ambos não testados em hardware)
@@ -25,22 +24,37 @@ interface LabelPrintPreviewModalProps {
   isDarkMode: boolean;
   widthMm: number;
   heightMm: number;
-  elements: LabelElement[];
+  /** Imagens já renderizadas (dataURL) pra mostrar no preview, uma por etiqueta do lote — o
+   * modal não sabe nada sobre o modelo de dados que gerou elas (elementos do editor livre,
+   * canvas do editor de produto, etc.), só exibe o resultado. Com mais de uma, mostra
+   * setas de avançar/voltar pra conferir cada etiqueta antes de imprimir o lote inteiro. */
+  previewDataUrls: string[];
+  /** Nota opcional acima do botão de imprimir — ex.: "48 etiquetas (grade) × cópias". */
+  totalLabelsNote?: string;
   onConfirmPrint: (options: PrintOptions) => Promise<void>;
 }
 
 const PREVIEW_WIDTH = 260;
 
 export default function LabelPrintPreviewModal({
-  isOpen, onClose, isDarkMode, widthMm, heightMm, elements, onConfirmPrint,
+  isOpen, onClose, isDarkMode, widthMm, heightMm, previewDataUrls, totalLabelsNote, onConfirmPrint,
 }: LabelPrintPreviewModalProps) {
   const [options, setOptions] = useState<PrintOptions>(DEFAULT_OPTIONS);
   const [printing, setPrinting] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState(0);
+
+  // Volta pra primeira etiqueta só quando a modal ABRE — dependia antes também de
+  // `previewDataUrls`, mas esse array é recriado (nova referência) a cada render do pai
+  // (`.map(f => f.toDataURL(...))` sem memoização), então qualquer re-render alheio do pai
+  // (ex.: um snapshot do Firestore chegando em outro lugar da árvore) resetava a navegação
+  // de volta pra página 1 no meio da conferência do usuário.
+  useEffect(() => { if (isOpen) setPreviewIndex(0); }, [isOpen]);
+  // Se o lote encolher (ou o índice ficar inválido por qualquer motivo), não deixa a imagem
+  // sumir silenciosamente — trava no último item válido.
+  const safePreviewIndex = Math.min(previewIndex, Math.max(0, previewDataUrls.length - 1));
 
   const aspect = widthMm / heightMm;
   const previewHeight = PREVIEW_WIDTH / aspect;
-  const pxPerMmX = PREVIEW_WIDTH / widthMm;
-  const pxPerMmY = previewHeight / heightMm;
 
   const patch = (p: Partial<PrintOptions>) => setOptions(prev => ({ ...prev, ...p }));
 
@@ -74,48 +88,40 @@ export default function LabelPrintPreviewModal({
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Visualização da Impressão" icon={<Printer size={20} />} maxWidth="max-w-md" zIndex={95000}>
       <div className="flex flex-col gap-4">
-        {/* Preview somente leitura */}
-        <div className="mx-auto">
+        {/* Preview somente leitura — com mais de 1 etiqueta, dá pra avançar/voltar pra
+            conferir cada uma antes de mandar o lote inteiro pra impressora. */}
+        <div className="mx-auto flex flex-col items-center gap-2">
           <div
             className="relative bg-white rounded-lg border-2 border-dashed border-slate-300 overflow-hidden"
             style={{ width: PREVIEW_WIDTH, height: previewHeight }}
           >
-            {elements.map(el => (
-              <div
-                key={el.id}
-                className="absolute flex items-center justify-center"
-                style={{
-                  left: el.x * pxPerMmX, top: el.y * pxPerMmY, width: el.w * pxPerMmX, height: el.h * pxPerMmY,
-                  transform: `rotate(${el.rotation}deg)`,
-                }}
-              >
-                {el.type === 'text' ? (
-                  <span
-                    className="text-black whitespace-pre-wrap break-words w-full"
-                    style={{
-                      fontSize: (el.fontSize || 4) * pxPerMmX, fontWeight: el.bold ? 900 : 400,
-                      fontStyle: el.italic ? 'italic' : 'normal', textDecoration: el.underline ? 'underline' : 'none',
-                      textAlign: el.align || 'center', letterSpacing: `${el.letterSpacing || 0}px`, lineHeight: el.lineHeight || 1,
-                    }}
-                  >
-                    {el.text}
-                  </span>
-                ) : el.type === 'line' ? (
-                  <div className="w-full h-full bg-black" />
-                ) : el.type === 'shape' ? (
-                  <div className="w-full h-full border-2 border-black" />
-                ) : el.imageDataUrl ? (
-                  <img
-                    src={el.imageDataUrl}
-                    alt=""
-                    className="w-full h-full object-contain"
-                    style={{ filter: el.grayscale ? 'grayscale(1)' : 'none' }}
-                    draggable={false}
-                  />
-                ) : null}
-              </div>
-            ))}
+            {previewDataUrls[safePreviewIndex] && (
+              <img src={previewDataUrls[safePreviewIndex]} alt="" className="w-full h-full object-contain" draggable={false} />
+            )}
           </div>
+          {previewDataUrls.length > 1 && (
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setPreviewIndex(Math.max(0, safePreviewIndex - 1))}
+                disabled={safePreviewIndex <= 0}
+                className={`p-1.5 rounded-full disabled:opacity-30 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                Etiqueta {safePreviewIndex + 1} de {previewDataUrls.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPreviewIndex(Math.min(previewDataUrls.length - 1, safePreviewIndex + 1))}
+                disabled={safePreviewIndex >= previewDataUrls.length - 1}
+                className={`p-1.5 rounded-full disabled:opacity-30 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Direção de saída */}
@@ -197,6 +203,10 @@ export default function LabelPrintPreviewModal({
             ))}
           </div>
         </div>
+
+        {totalLabelsNote && (
+          <p className="text-center text-[10px] font-bold text-slate-400">{totalLabelsNote}</p>
+        )}
 
         <button
           type="button"

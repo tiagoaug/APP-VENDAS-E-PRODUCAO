@@ -4050,6 +4050,41 @@ export default function PCPView({
     const variation = product?.variations.find(v => v.id === lot.variationId);
     labelService.printLotLabel(lot, product?.name || 'Produto', variation?.colorName || 'Cor');
   };
+
+  // Botão "Imprimir Etiquetas na Impressora" da Central de Compartilhamento — mesma
+  // resolução produto/variação/grade já usada pelo botão "Imprimir/Compartilhar" de um
+  // item só (ver onClick da "Etiqueta Deste Pedido"), só que aplicada a TODOS os itens
+  // selecionados de uma vez, abrindo o Editor de Etiqueta em modo lote (batchItems) —
+  // que já sabe imprimir uma etiqueta por item na Ablemark.
+  const handlePrintLabelsFromShare = () => {
+    const batch: { product: Product; variation: Variation; sizeGrid: string; lotId?: string; orderId?: string; itemIdx?: number }[] = [];
+    for (const f of shareModal.selectedItems) {
+      const resolvedProductId = f.si.productId || f.orderItem?.productId;
+      const resolvedVariationId = f.si.variationId || f.orderItem?.variationId;
+      const itemProduct = products.find(p => p.id === resolvedProductId);
+      const itemVariation = itemProduct?.variations.find(v => v.id === resolvedVariationId);
+      const labelSizesSource = f.si?.fractionLabel ? (f.si?.sizes || f.orderItem?.sizes) : (f.orderItem?.sizes || f.si?.sizes);
+      if (itemProduct && itemVariation && labelSizesSource) {
+        const szStr = Object.entries(labelSizesSource as Record<string, { toProduction: number }>)
+          .filter(([, s]) => s.toProduction > 0)
+          .sort(([a], [b]) => Number(a) - Number(b))
+          .map(([sz, s]) => `${sz}x${s.toProduction}`)
+          .join('-');
+        if (szStr) {
+          batch.push({ product: itemProduct, variation: itemVariation, sizeGrid: szStr, lotId: f.lot?.id, orderId: f.si?.orderId, itemIdx: f.siIdx });
+        }
+      }
+    }
+    if (batch.length === 0) {
+      toast.show('Nenhuma etiqueta válida entre os itens selecionados.');
+      return;
+    }
+    setLabelModalProduct(batch[0].product);
+    setLabelModalLot(null);
+    setLabelModalSizeGrid('');
+    setLabelModalBatchItems(batch);
+    setShareModal(prev => ({ ...prev, isOpen: false }));
+  };
   const handleBatchCreateLots = async () => {
     if (selectedOrderItems.length === 0) return;
 
@@ -13311,6 +13346,7 @@ export default function PCPView({
         initialFormat={shareModal.format}
         title="Central de Compartilhamento - PCP"
         sectors={sectors}
+        onPrintLabels={handlePrintLabelsFromShare}
         showGroupingToggle={true}
         showPCPTotalGridToggle={true}
         showMaterialsToggle={true}

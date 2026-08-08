@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ChevronLeft, ChevronRight, ListStart, Hash, Boxes } from 'lucide-react';
+import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ChevronLeft, ChevronRight, ListStart, Hash, Boxes, Bluetooth } from 'lucide-react';
 
 
 export interface ExportProfile {
@@ -76,6 +76,11 @@ interface ExportNoteModalProps {
    * numa imagem só. */
   onPreview?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace', itemsPerPage?: number) => Promise<string[] | boolean>;
   sectors?: { id: string; name: string; color?: string }[];
+  /** Quando fornecido, exibe um botão extra "Imprimir Etiquetas" (etiquetas de produto/pedido,
+   * não a Ficha Técnica que este modal gera) — usado pelo PCP pra imprimir em lote as
+   * etiquetas dos itens selecionados na impressora térmica, direto da tela de compartilhamento,
+   * sem precisar selecionar item por item. Não chama onConfirm/onPreview, é uma ação paralela. */
+  onPrintLabels?: () => void;
 }
 
 const DEFAULT_PREDEFINED_NOTES = [
@@ -116,7 +121,8 @@ export default function ExportNoteModal({
   showOSDataToggle = false,
   showSoleGridToggle = false,
   onPreview,
-  sectors = []
+  sectors = [],
+  onPrintLabels,
 }: ExportNoteModalProps) {
   const [note, setNote] = useState('');
   const [isObservationOpen, setIsObservationOpen] = useState(false);
@@ -794,6 +800,16 @@ export default function ExportNoteModal({
                 {selectedFormat === 'pdf' ? <FileText size={16} /> : <Send size={16} className="rotate-45" />}
                 Gerar {selectedFormat.toUpperCase()}
               </button>
+
+              {onPrintLabels && (
+                <button
+                  type="button"
+                  onClick={onPrintLabels}
+                  className="w-full py-3 rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 bg-sky-600 text-white"
+                >
+                  <Bluetooth size={16} /> Imprimir Etiquetas na Impressora
+                </button>
+              )}
 
               {/* Format Toggles */}
               <div className={`p-1.5 rounded-[20px] shadow-sm flex gap-1.5 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100 border'}`}>

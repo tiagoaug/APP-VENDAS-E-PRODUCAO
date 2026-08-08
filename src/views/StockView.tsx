@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import PrintLabelEditorModal from "../components/PrintLabelEditorModal";
 import Modal from "../components/Modal";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { toast } from '../utils/toast';
 import { isHybridProduct, getWholesaleBoxes, getRetailPairs, getStockValue, getWholesaleValue, getRetailValue, productHasSaleType } from '../utils/stockPools';
 import { useStockLotDuplicates, DuplicateStockByRefColor } from '../hooks/useStockLotDuplicates';
@@ -120,6 +121,7 @@ export default function StockView({
   const showProductionTabs = !modulesConfig || modulesConfig.production;
   const [searchTerm, setSearchTerm] = useState("");
   const [isEditing, setIsEditing] = useState(false);
+  const [showBalancoConfirm, setShowBalancoConfirm] = useState(false);
   const [editedStocks, setEditedStocks] = useState<Record<string, Product>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [productForLabels, setProductForLabels] = useState<Product | null>(null);
@@ -399,7 +401,7 @@ export default function StockView({
           {!isEditing ? (
             <div className="flex gap-2">
               <button
-                onClick={handleStartEditing}
+                onClick={() => setShowBalancoConfirm(true)}
                 className="px-5 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-[1.2rem] text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-indigo-500/20 flex items-center gap-2 active:scale-95"
                 title="Iniciar Balanço de Estoque"
                 aria-label="Entrar no modo de edição de estoque para fazer balanço"
@@ -1054,6 +1056,17 @@ export default function StockView({
           </div>
         )}
       </Modal>
+
+      <ConfirmDialog
+        isOpen={showBalancoConfirm}
+        title="Fazer Balanço de Estoque"
+        message="Você vai entrar no modo de edição de estoque. Cada número que você digitar substitui a quantidade atual daquele produto: se aumentar, o sistema cria um novo lote de estoque; se diminuir, ele reduz ou remove lotes existentes (começando pelos mais antigos). As alterações só valem depois de clicar em Salvar. Deseja continuar?"
+        confirmLabel="Iniciar Balanço"
+        cancelLabel="Cancelar"
+        isDanger={false}
+        onConfirm={() => { setShowBalancoConfirm(false); handleStartEditing(); }}
+        onCancel={() => setShowBalancoConfirm(false)}
+      />
     </div>
   );
 }

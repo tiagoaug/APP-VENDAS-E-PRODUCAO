@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import QRCode from 'qrcode';
@@ -11,10 +11,8 @@ import { LabelElement } from '../types';
 import { printAbleMarkLabel } from '../lib/ablemarkPrinter';
 import { toast } from '../utils/toast';
 import LabelPrintPreviewModal, { PrintOptions } from '../components/LabelPrintPreviewModal';
-
-const DIRECTION_TO_ROTATION: Record<PrintOptions['direction'], number> = {
-  down: 0, right: 90, up: 180, left: 270,
-};
+import ImageSourcePickerModal from '../components/ImageSourcePickerModal';
+import { DIRECTION_TO_ROTATION } from '../utils/labelPrintTransform';
 
 // Densidade padrão de impressoras térmicas de etiqueta (203 dpi ≈ 8 pontos/mm) — não há uma
 // folha de especificação da BR-L100 documentando isso, mas é o padrão quase universal do
@@ -45,6 +43,10 @@ function newId(): string {
   return `el_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function wrapDeg(deg: number): number {
+  return ((deg % 360) + 360) % 360;
+}
+
 function initialElements(session: LabelEditorSession): LabelElement[] {
   if (session.elements) return session.elements;
   if (session.importedImageDataUrl) {
@@ -56,7 +58,10 @@ function initialElements(session: LabelEditorSession): LabelElement[] {
   return [];
 }
 
-type DragMode = 'move' | 'resize' | 'rotate';
+// 'resize' = alça do canto (redimensiona largura E altura juntas, como já era). As quatro
+// variantes de borda redimensionam só um eixo — 'resize-left'/'resize-top' também deslocam
+// x/y pra manter a borda oposta fixa (senão o elemento "puxaria" pro lado errado).
+type DragMode = 'move' | 'resize' | 'resize-right' | 'resize-bottom' | 'resize-left' | 'resize-top' | 'rotate';
 interface DragState {
   mode: DragMode;
   id: string;
@@ -89,14 +94,27 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   const [qrValue, setQrValue] = useState('');
   const [saving, setSaving] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [showImageSourcePicker, setShowImageSourcePicker] = useState(false);
+  const [printPreviewImage, setPrintPreviewImage] = useState('');
   const [zoom, setZoom] = useState(1);
   const [textTab, setTextTab] = useState<TextTab>('content');
+  // Texto livre do campo de ângulo — separado de `selected.rotation` de propósito: um input
+  // numérico controlado direto pelo valor do elemento trava ao apagar tudo (parseInt("") vira
+  // NaN, a atualização é ignorada, e o campo volta pro valor antigo no meio da digitação).
+  // Aqui só sincroniza de volta quando a rotação muda por outra via (slider, alça, +/-) ou ao
+  // trocar de elemento — nunca no meio de uma edição de texto inválida/vazia.
+  const [angleInput, setAngleInput] = useState('0');
+  const [rotationStep, setRotationStep] = useState(5);
   const printingRef = useRef(false);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
 
   const selected = elements.find(e => e.id === selectedId) || null;
+
+  useEffect(() => {
+    if (selected) setAngleInput(String(Math.round(selected.rotation)));
+  }, [selectedId, selected?.rotation]);
   // Escala "encaixar na tela": zoom 1.0x sempre cabe inteiro na largura/altura disponíveis
   // (importante depois de girar a área — uma etiqueta 24×75mm não pode usar a mesma largura
   // de referência que uma 75×24mm, senão fica cortada por baixo). zoom continua ajustável a
@@ -147,9 +165,9 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
     });
   };
 
-  const handleAddImage = async () => {
+  const pickImage = async (source: CameraSource) => {
     try {
-      const photo = await Camera.getPhoto({ source: CameraSource.Prompt, resultType: CameraResultType.DataUrl, quality: 85 });
+      const photo = await Camera.getPhoto({ source, resultType: CameraResultType.DataUrl, quality: 85 });
       if (photo.dataUrl) {
         addElement({
           id: newId(), type: 'image', x: widthMm * 0.2, y: widthMm * 0.2, w: widthMm * 0.6, h: widthMm * 0.6,
@@ -236,16 +254,34 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         x: Math.max(0, Math.min(widthMm - drag.startW, drag.startX + dxMm)),
         y: Math.max(0, Math.min(heightMm - drag.startH, drag.startY + dyMm)),
       });
-    } else if (drag.mode === 'resize') {
+    } else if (drag.mode.startsWith('resize')) {
       // Desfaz a rotação do elemento no vetor de deslocamento do ponteiro, pra redimensionar
       // no referencial local do elemento (senão arrastar o handle de um elemento rotacionado
       // muda w/h na direção errada).
       const rad = (-drag.startRotation * Math.PI) / 180;
       const localDx = dxPx * Math.cos(rad) - dyPx * Math.sin(rad);
       const localDy = dxPx * Math.sin(rad) + dyPx * Math.cos(rad);
-      const newW = Math.max(3, drag.startW + localDx / drag.pxPerMmX);
-      const newH = Math.max(3, drag.startH + localDy / drag.pxPerMmY);
-      updateElement(drag.id, { w: newW, h: newH });
+      const patch: Partial<LabelElement> = {};
+
+      if (drag.mode === 'resize' || drag.mode === 'resize-right') {
+        patch.w = Math.max(3, drag.startW + localDx / drag.pxPerMmX);
+      }
+      if (drag.mode === 'resize' || drag.mode === 'resize-bottom') {
+        patch.h = Math.max(3, drag.startH + localDy / drag.pxPerMmY);
+      }
+      if (drag.mode === 'resize-left') {
+        // Borda esquerda: encolhe/cresce a largura a partir do lado esquerdo, deslocando x
+        // pra manter a borda direita no lugar (senão o elemento inteiro "andaria" com o handle).
+        const newW = Math.max(3, drag.startW - localDx / drag.pxPerMmX);
+        patch.w = newW;
+        patch.x = drag.startX + (drag.startW - newW);
+      }
+      if (drag.mode === 'resize-top') {
+        const newH = Math.max(3, drag.startH - localDy / drag.pxPerMmY);
+        patch.h = newH;
+        patch.y = drag.startY + (drag.startH - newH);
+      }
+      updateElement(drag.id, patch);
     } else if (drag.mode === 'rotate') {
       const angleRad = Math.atan2(e.clientY - drag.centerY, e.clientX - drag.centerX);
       // 0° de rotação = handle apontando pra cima (referencial do handle, ver renderização
@@ -482,9 +518,27 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
 
                   {selectedId === el.id && (
                     <>
+                      {/* Canto — redimensiona largura e altura juntas */}
                       <div
                         onPointerDown={e => beginDrag(e, el.id, 'resize')}
-                        className="absolute -right-2 -bottom-2 w-4 h-4 rounded-sm bg-indigo-500 border-2 border-white cursor-nwse-resize"
+                        className="absolute -right-2 -bottom-2 w-4 h-4 rounded-sm bg-indigo-500 border-2 border-white cursor-nwse-resize z-10"
+                      />
+                      {/* Bordas — redimensionam só um eixo (escalar/esticar independente) */}
+                      <div
+                        onPointerDown={e => beginDrag(e, el.id, 'resize-right')}
+                        className="absolute -right-1.5 top-1/2 -translate-y-1/2 w-3 h-6 rounded-full bg-indigo-500 border-2 border-white cursor-ew-resize"
+                      />
+                      <div
+                        onPointerDown={e => beginDrag(e, el.id, 'resize-left')}
+                        className="absolute -left-1.5 top-1/2 -translate-y-1/2 w-3 h-6 rounded-full bg-indigo-500 border-2 border-white cursor-ew-resize"
+                      />
+                      <div
+                        onPointerDown={e => beginDrag(e, el.id, 'resize-bottom')}
+                        className="absolute bottom-[-6px] left-1/2 -translate-x-1/2 h-3 w-6 rounded-full bg-indigo-500 border-2 border-white cursor-ns-resize"
+                      />
+                      <div
+                        onPointerDown={e => beginDrag(e, el.id, 'resize-top')}
+                        className="absolute top-[-6px] left-1/2 -translate-x-1/2 h-3 w-6 rounded-full bg-indigo-500 border-2 border-white cursor-ns-resize"
                       />
                       <div
                         onPointerDown={e => beginDrag(e, el.id, 'rotate')}
@@ -580,21 +634,84 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
             </button>
           )}
 
-          {/* Ângulo digitado — alternativa à alça de girar no canvas, vale pra qualquer tipo
-              de elemento (texto, imagem, QR, linha, forma), não só texto. */}
+          {/* Tamanho — alternativa em barra às alças de borda do canvas (escalar/esticar) */}
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+              <span>Largura</span><span>{selected.w.toFixed(1)}mm</span>
+            </div>
+            <input
+              type="range" min={3} max={Math.max(widthMm, heightMm) * 1.5} step={0.5}
+              value={selected.w}
+              onChange={e => updateElement(selected.id, { w: parseFloat(e.target.value) })}
+              className="w-full"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
+              <span>Altura</span><span>{selected.h.toFixed(1)}mm</span>
+            </div>
+            <input
+              type="range" min={3} max={Math.max(widthMm, heightMm) * 1.5} step={0.5}
+              value={selected.h}
+              onChange={e => updateElement(selected.id, { h: parseFloat(e.target.value) })}
+              className="w-full"
+            />
+          </div>
+
+          {/* Ângulo — campo digitado (corrigido: não trava mais ao apagar tudo), barra
+              deslizante 0-360°, e +/- com passo configurável. Alternativa à alça de girar no
+              canvas, vale pra qualquer tipo de elemento (texto, imagem, QR, linha, forma). */}
           <div className="flex items-center gap-2">
             <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 shrink-0">Ângulo</span>
             <input
               type="number"
-              value={Math.round(selected.rotation)}
+              value={angleInput}
               onChange={e => {
+                setAngleInput(e.target.value);
                 const raw = parseInt(e.target.value, 10);
-                if (Number.isNaN(raw)) return;
-                updateElement(selected.id, { rotation: ((raw % 360) + 360) % 360 });
+                if (!Number.isNaN(raw)) updateElement(selected.id, { rotation: wrapDeg(raw) });
               }}
+              onBlur={() => setAngleInput(String(Math.round(selected.rotation)))}
               className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold outline-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
             />
             <span className="text-[10px] font-black text-slate-400 shrink-0">°</span>
+          </div>
+          <input
+            type="range" min={0} max={360} step={rotationStep}
+            value={Math.round(selected.rotation)}
+            onChange={e => updateElement(selected.id, { rotation: wrapDeg(parseInt(e.target.value, 10)) })}
+            className="w-full"
+          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => updateElement(selected.id, { rotation: wrapDeg(Math.round(selected.rotation) - rotationStep) })}
+              className={`p-2 rounded-lg ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+            >
+              <Minus size={13} />
+            </button>
+            <div className="flex-1 flex items-center justify-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-400">
+              passo
+              <input
+                type="number"
+                min={1}
+                max={180}
+                value={rotationStep}
+                onChange={e => {
+                  const raw = parseInt(e.target.value, 10);
+                  if (!Number.isNaN(raw) && raw > 0) setRotationStep(Math.min(180, raw));
+                }}
+                className={`w-12 px-1.5 py-1 rounded text-center text-xs font-bold outline-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
+              />
+              °
+            </div>
+            <button
+              type="button"
+              onClick={() => updateElement(selected.id, { rotation: wrapDeg(Math.round(selected.rotation) + rotationStep) })}
+              className={`p-2 rounded-lg ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+            >
+              <Plus size={13} />
+            </button>
           </div>
 
           <div className="flex gap-2 pt-1">
@@ -612,7 +729,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
       <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
         <div className="grid grid-cols-3 gap-2">
           <button type="button" onClick={handleAddText} className={btnCls()}><Type size={16} /> Texto</button>
-          <button type="button" onClick={handleAddImage} className={btnCls()}><ImagePlus size={16} /> Imagem</button>
+          <button type="button" onClick={() => setShowImageSourcePicker(true)} className={btnCls()}><ImagePlus size={16} /> Imagem</button>
           <button type="button" onClick={() => setAddingQr(v => !v)} className={btnCls(addingQr)}><QrCode size={16} /> QR Code</button>
           <button type="button" onClick={handleAddDate} className={btnCls()}><Calendar size={16} /> Data</button>
           <button type="button" onClick={handleAddLine} className={btnCls()}><Minus size={16} /> Linha</button>
@@ -636,7 +753,15 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         <button type="button" onClick={handleSave} disabled={saving} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
           <Save size={14} /> {saving ? 'Salvando...' : 'Salvar'}
         </button>
-        <button type="button" onClick={() => setShowPrintPreview(true)} className="flex-[2] flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40">
+        <button
+          type="button"
+          onClick={async () => {
+            const canvas = await renderToCanvas({ offsetXmm: 0, offsetYmm: 0, rotationDeg: 0 });
+            setPrintPreviewImage(canvas.toDataURL('image/png'));
+            setShowPrintPreview(true);
+          }}
+          className="flex-[2] flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
+        >
           <Printer size={14} /> Imprimir
         </button>
       </div>
@@ -647,8 +772,16 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         isDarkMode={isDarkMode}
         widthMm={widthMm}
         heightMm={heightMm}
-        elements={elements}
+        previewDataUrls={[printPreviewImage]}
         onConfirmPrint={handlePrint}
+      />
+
+      <ImageSourcePickerModal
+        isOpen={showImageSourcePicker}
+        onClose={() => setShowImageSourcePicker(false)}
+        isDarkMode={isDarkMode}
+        onPickCamera={() => pickImage(CameraSource.Camera)}
+        onPickGallery={() => pickImage(CameraSource.Photos)}
       />
     </div>
   );

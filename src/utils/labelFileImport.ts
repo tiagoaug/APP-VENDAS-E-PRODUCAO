@@ -1,8 +1,6 @@
 import { FilePicker } from '@capawesome/capacitor-file-picker';
 
-// Renderiza a 1ª página de um PDF como PNG — carregado sob demanda (import dinâmico) porque
-// pdfjs-dist é uma dependência pesada, só usada nesse fluxo de importação de etiqueta.
-async function renderPdfFirstPageToDataUrl(base64: string): Promise<string> {
+async function loadPdf(base64: string) {
   const pdfjsLib = await import('pdfjs-dist');
   pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString();
 
@@ -10,8 +8,11 @@ async function renderPdfFirstPageToDataUrl(base64: string): Promise<string> {
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
 
-  const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
-  const page = await pdf.getPage(1);
+  return pdfjsLib.getDocument({ data: bytes }).promise;
+}
+
+async function renderPdfPageToDataUrl(pdf: Awaited<ReturnType<typeof loadPdf>>, pageNumber: number): Promise<string> {
+  const page = await pdf.getPage(pageNumber);
   const viewport = page.getViewport({ scale: 3 });
   const canvas = document.createElement('canvas');
   canvas.width = viewport.width;
@@ -21,10 +22,27 @@ async function renderPdfFirstPageToDataUrl(base64: string): Promise<string> {
   return canvas.toDataURL('image/png');
 }
 
-/** Abre o seletor de arquivo nativo (imagem ou PDF) e devolve um PNG dataURL pronto pra usar
- * como elemento de imagem no editor de etiqueta — PDF é rasterizado (1ª página), imagem é
- * usada direto. Retorna null se o usuário cancelar. */
-export async function pickLabelImportImage(): Promise<string | null> {
+/** Renderiza TODAS as páginas de um PDF (base64, sem prefixo data:) como PNG dataURLs, em
+ * ordem — carregado sob demanda (import dinâmico) porque pdfjs-dist é uma dependência
+ * pesada, só usada nesse fluxo de importação de etiqueta. */
+export async function renderAllPdfPages(base64: string): Promise<string[]> {
+  const pdf = await loadPdf(base64);
+  const pages: string[] = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    pages.push(await renderPdfPageToDataUrl(pdf, i));
+  }
+  return pages;
+}
+
+export type LabelImportResult =
+  | { kind: 'image'; dataUrl: string }
+  | { kind: 'pdf'; pages: string[] };
+
+/** Abre o seletor de arquivo nativo (imagem ou PDF) — imagem vira um único dataURL pronto pra
+ * usar; PDF é rasterizado PÁGINA POR PÁGINA (todas, não só a primeira), pra quem importa um
+ * PDF de várias páginas poder escolher quais viram etiqueta (ver PdfPageSelectModal).
+ * Retorna null se o usuário cancelar. */
+export async function pickLabelImportFile(): Promise<LabelImportResult | null> {
   const result = await FilePicker.pickFiles({
     types: ['image/png', 'image/jpeg', 'application/pdf'],
     limit: 1,
@@ -33,7 +51,8 @@ export async function pickLabelImportImage(): Promise<string | null> {
   const file = result.files[0];
   if (!file || !file.data) return null;
   if (file.mimeType === 'application/pdf') {
-    return renderPdfFirstPageToDataUrl(file.data);
+    const pages = await renderAllPdfPages(file.data);
+    return { kind: 'pdf', pages };
   }
-  return `data:${file.mimeType};base64,${file.data}`;
+  return { kind: 'image', dataUrl: `data:${file.mimeType};base64,${file.data}` };
 }
