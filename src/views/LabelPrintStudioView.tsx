@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import {
   Bluetooth, CheckCircle2, XCircle, RefreshCw, Ruler, Plus, Trash2,
-  FilePlus, Upload, FolderOpen, X, ChevronDown, ChevronUp, RotateCcw, Pencil, Star,
+  FilePlus, Upload, FolderOpen, X, ChevronDown, ChevronUp, RotateCcw, Pencil, Star, Wifi,
 } from 'lucide-react';
 import { LabelPaperSize, LabelFile } from '../types';
 import {
@@ -14,6 +14,7 @@ import {
   resetAbleMarkPrinter,
   printAbleMarkLabel,
 } from '../lib/ablemarkPrinter';
+import { EpsonDiscoveredPrinter, discoverEpsonPrinters } from '../lib/epsonPrinter';
 import { toast } from '../utils/toast';
 import { pickLabelImportFile } from '../utils/labelFileImport';
 import PdfPageSelectModal, { CropRect, CroppedPage, FitMode } from '../components/PdfPageSelectModal';
@@ -158,6 +159,21 @@ export default function LabelPrintStudioView({
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [resetting, setResetting] = useState(false);
+  // Marca da impressora — Ablemark já funciona de ponta a ponta; Epson (linha TM-m, Wi-Fi
+  // Direct) ainda é só a estrutura (ver src/lib/epsonPrinter.ts), esperando o SDK oficial.
+  const [printerBrand, setPrinterBrand] = useState<'ABLEMARK' | 'EPSON'>('ABLEMARK');
+  const [epsonPrinters, setEpsonPrinters] = useState<EpsonDiscoveredPrinter[]>([]);
+  const [epsonLoading, setEpsonLoading] = useState(false);
+
+  const handleDiscoverEpson = async () => {
+    setEpsonLoading(true);
+    try {
+      const list = await discoverEpsonPrinters();
+      setEpsonPrinters(list);
+    } finally {
+      setEpsonLoading(false);
+    }
+  };
 
   const [preferredSize, setPreferredSizeState] = useState<PreferredSizeRef | null>(() => readPreferredSize());
   // Se o preferido é um preset, já resolve de cara (PRESET_SIZES é uma constante). Se for um
@@ -406,23 +422,73 @@ export default function LabelPrintStudioView({
     <div className={outerCardCls}>
     <div className="flex flex-col gap-4">
       {/* Conexão */}
-      <div className={connected ? miniCardConnectedCls : miniCardCls}>
+      <div className={printerBrand === 'ABLEMARK' && connected ? miniCardConnectedCls : miniCardCls}>
+        {/* Marca da impressora — Epson ainda é só estrutura (ver epsonPrinter.ts), pra não
+            atrapalhar quem já usa a Ablemark hoje enquanto o SDK oficial não chega. */}
+        <div className="flex gap-1.5 mb-3">
+          <button
+            type="button"
+            onClick={() => setPrinterBrand('ABLEMARK')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
+              printerBrand === 'ABLEMARK' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            <Bluetooth size={12} /> Ablemark BR-L100
+          </button>
+          <button
+            type="button"
+            onClick={() => setPrinterBrand('EPSON')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
+              printerBrand === 'EPSON' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            <Wifi size={12} /> Epson (Wi-Fi Direct)
+          </button>
+        </div>
+
         <div className="flex items-center justify-between mb-3">
-          <span className={connected ? 'text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-3' : sectionTitleCls}>
-            Impressora (Ablemark BR-L100)
+          <span className={printerBrand === 'ABLEMARK' && connected ? 'text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-3' : sectionTitleCls}>
+            {printerBrand === 'ABLEMARK' ? 'Impressora (Ablemark BR-L100)' : 'Impressora (Epson TM-m)'}
           </span>
-          {connected ? (
-            <span className="flex items-center gap-1.5 text-[10px] font-black text-emerald-600 dark:text-emerald-400">
-              <CheckCircle2 size={14} /> Conectada
-            </span>
+          {printerBrand === 'ABLEMARK' ? (
+            connected ? (
+              <span className="flex items-center gap-1.5 text-[10px] font-black text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 size={14} /> Conectada
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-[10px] font-black text-rose-500">
+                <XCircle size={13} /> Desconectada
+              </span>
+            )
           ) : (
-            <span className="flex items-center gap-1.5 text-[10px] font-black text-rose-500">
-              <XCircle size={13} /> Desconectada
+            <span className="flex items-center gap-1.5 text-[10px] font-black text-amber-500">
+              <XCircle size={13} /> Em desenvolvimento
             </span>
           )}
         </div>
 
-        {connected ? (
+        {printerBrand === 'EPSON' ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
+              Suporte a impressoras Epson (linha TM-m, Wi-Fi Direct) já tem a estrutura pronta —
+              falta integrar o SDK oficial da Epson (aguardando conta de desenvolvedor + impressora pra validar).
+            </p>
+            <button
+              type="button"
+              onClick={handleDiscoverEpson}
+              disabled={epsonLoading}
+              className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >
+              <RefreshCw size={13} className={epsonLoading ? 'animate-spin' : ''} /> Procurar impressoras
+            </button>
+            {epsonPrinters.map(p => (
+              <div key={p.target} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
+                <Wifi size={13} className="text-indigo-500 shrink-0" />
+                <span className="text-xs font-black truncate">{p.name}</span>
+              </div>
+            ))}
+          </div>
+        ) : connected ? (
           <button
             type="button"
             onClick={handleDisconnect}
@@ -462,17 +528,20 @@ export default function LabelPrintStudioView({
           </div>
         )}
 
-        {/* Resetar conexão/cache — dentro do card da impressora (ação relacionada), laranja
-            claro chapado (sem o relevo 3D dos outros minicards) pra não competir visualmente
-            com o status de conexão acima, mas ainda se destacar como ação de recuperação. */}
-        <button
-          type="button"
-          onClick={handleResetConnection}
-          disabled={resetting}
-          className="w-full flex items-center justify-center gap-1.5 mt-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white bg-amber-400 hover:bg-amber-500 disabled:opacity-60 transition-colors"
-        >
-          <RotateCcw size={13} className={resetting ? 'animate-spin' : ''} /> {resetting ? 'Resetando...' : 'Resetar conexão e cache (se a impressão falhar)'}
-        </button>
+        {/* Resetar conexão/cache — só faz sentido pra Ablemark hoje (Epson ainda não tem
+            conexão real nenhuma pra resetar). Dentro do card da impressora (ação relacionada),
+            laranja claro chapado (sem o relevo 3D dos outros minicards) pra não competir
+            visualmente com o status de conexão acima, mas ainda se destacar como recuperação. */}
+        {printerBrand === 'ABLEMARK' && (
+          <button
+            type="button"
+            onClick={handleResetConnection}
+            disabled={resetting}
+            className="w-full flex items-center justify-center gap-1.5 mt-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white bg-amber-400 hover:bg-amber-500 disabled:opacity-60 transition-colors"
+          >
+            <RotateCcw size={13} className={resetting ? 'animate-spin' : ''} /> {resetting ? 'Resetando...' : 'Resetar conexão e cache (se a impressão falhar)'}
+          </button>
+        )}
       </div>
 
       {/* Tamanhos de etiqueta */}
