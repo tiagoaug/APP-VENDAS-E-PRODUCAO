@@ -1,10 +1,26 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Product, Grid, ProductionLot, AppModulesConfig } from '../types';
+import { Product, Grid, ProductionLot, AppModulesConfig, ProductionConfigItem } from '../types';
 import { SaleType } from '../types';
 import { ArrowLeft, Search, Boxes, Package, Filter, X, MessageSquare, MessageSquarePlus, Settings2, Grid3X3, CheckCircle2, Trash2, ClipboardList, Factory } from 'lucide-react';
 import { getWholesaleBoxes, getRetailPairs, productHasSaleType } from '../utils/stockPools';
 import { getOrderEffectiveSector, ORDER_FINALIZED } from '../utils/productionRoute';
 import { toast } from '../utils/toast';
+import { getBadgeColorClasses } from '../utils/badgeColors';
+
+// Preferência local (por aparelho) de mostrar ou não o badge de pares-por-caixa (ex.: "12P")
+// nas linhas de Atacado — fica em "Filtrar Produtos", junto dos outros filtros da tela.
+const SHOW_PKG_BADGE_KEY = 'stock_glance_show_pkg_badge';
+function loadShowPkgBadge(): boolean {
+  try {
+    const raw = localStorage.getItem(SHOW_PKG_BADGE_KEY);
+    return raw === null ? true : raw === '1';
+  } catch {
+    return true;
+  }
+}
+function persistShowPkgBadge(value: boolean) {
+  try { localStorage.setItem(SHOW_PKG_BADGE_KEY, value ? '1' : '0'); } catch { /* ignore */ }
+}
 
 // Aba extra além de Atacado/Varejo — reaproveita a listagem de caixas prontas (Atacado)
 // e soma o que ainda está em produção (PCP) por produto+cor, pra planejar reposição.
@@ -27,10 +43,18 @@ interface StockGlanceViewProps {
   /** Aba "Reposição" depende de dados de produção — some do seletor quando o módulo
    * Produção não está ativo (Vendas sozinho não tem "produzindo" pra mostrar). */
   modulesConfig?: AppModulesConfig;
+  /** Usado só na aba Atacado, pra resolver o NOME de cada padrão de embalagem
+   * (Grid tipo PACKAGING) e quebrar "X cx" por padrão quando há mais de um
+   * misturado na mesma cor — mesma fonte que StockView.tsx já usa. */
+  productionConfigs?: ProductionConfigItem[];
 }
 
 type RetailSizeRow = { size: string; ready: number };
-type ProductRow = { variationId: string; colorName: string; ready: number; unit: string; note?: string; sizeRows?: RetailSizeRow[]; producing?: number };
+// Quebra do total de caixas por padrão de embalagem — cada padrão vira um badge colorido
+// (ex.: "12P") indicando quantos pares aquela caixa tem, já que caixas de padrões diferentes
+// (12 pares x 15 pares, por exemplo) têm quantidade e valor diferentes entre si.
+type PkgBreakdownRow = { label: string; qty: number; isAvulso: boolean; capacity: number; badgeColor?: string };
+type ProductRow = { variationId: string; colorName: string; ready: number; unit: string; note?: string; sizeRows?: RetailSizeRow[]; producing?: number; pkgBreakdown?: PkgBreakdownRow[] };
 type ProductCard = { product: Product; rows: ProductRow[] };
 
 // Mensagens rápidas pra observação por cor — mesmo padrão de "Textos Rápidos" do
@@ -56,7 +80,8 @@ function persistQuickMessages(list: string[]) {
 /** Visão de estoque 100% somente leitura — sem opção de editar/balanço em nenhum lugar
  * desta tela, e sem informação de produção: mostra só o estoque real (Variation.stock).
  * Única exceção: observação livre por cor (não altera estoque, só anotação). */
-export default function StockGlanceView({ products, isDarkMode, onBack, onUpdateVariationNote, grids = [], lots = [], modulesConfig }: StockGlanceViewProps) {
+export default function StockGlanceView({ products, isDarkMode, onBack, onUpdateVariationNote, grids = [], lots = [], modulesConfig, productionConfigs = [] }: StockGlanceViewProps) {
+  const packagingItems = useMemo(() => productionConfigs.filter(c => c.type === 'PACKAGING'), [productionConfigs]);
   const [activeTab, setActiveTab] = useState<GlanceTab>(SaleType.WHOLESALE);
   const showReposicaoTab = !modulesConfig || modulesConfig.production;
   // Reposição reaproveita a mesma listagem/agrupamento do Atacado (caixas prontas) — só
@@ -66,6 +91,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
   const [search, setSearch] = useState('');
   const [colorFilter, setColorFilter] = useState<string | null>(null);
   const [showFilterModal, setShowFilterModal] = useState(false);
+  const [showPkgBadge, setShowPkgBadge] = useState(() => loadShowPkgBadge());
   const [notesProductId, setNotesProductId] = useState<string | null>(null);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [gradeOpenRowId, setGradeOpenRowId] = useState<string | null>(null);
@@ -131,13 +157,27 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
             const variationRows: ProductRow[] = [];
 
             if (includeWholesale) {
+              const boxQty = getWholesaleBoxes(product, variation);
+              // Quebra por padrão de embalagem (mesma fonte que StockView.tsx usa pra editar
+              // estoque) — resíduo não alocado a nenhum padrão entra como "Avulso", igual lá.
+              const allocations = variation.stockPkgAllocations || [];
+              const totalAllocated = allocations.reduce((s, a) => s + (a.qty || 0), 0);
+              const breakdown: PkgBreakdownRow[] = allocations
+                .filter(a => (a.qty || 0) > 0)
+                .map(a => {
+                  const pkg = packagingItems.find(p => p.id === a.pkgId);
+                  return { label: pkg?.name || 'Avulso', qty: a.qty, isAvulso: false, capacity: pkg?.metadata?.capacity || 0, badgeColor: pkg?.metadata?.badgeColor };
+                });
+              const residual = boxQty - totalAllocated;
+              if (residual > 0) breakdown.push({ label: 'Avulso', qty: residual, isAvulso: true, capacity: 0 });
               variationRows.push({
                 variationId: variation.id,
                 colorName: variation.colorName,
-                ready: getWholesaleBoxes(product, variation),
+                ready: boxQty,
                 unit: 'cx',
                 note: variation.stockNote,
                 producing,
+                pkgBreakdown: breakdown.length > 0 ? breakdown : undefined,
               });
             }
             if (includeRetail) {
@@ -276,7 +316,10 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
           aria-label="Filtrar"
           className={`relative w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${activeFilterCount > 0 ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-900 text-slate-400' : 'bg-white text-slate-500 shadow-sm'}`}
         >
-          <Filter size={16} />
+          {/* Anel pulsante — chama atenção pro filtro, já que ele também esconde a opção de
+              mostrar/ocultar o badge de pares por caixa. */}
+          <span className="absolute inset-0 rounded-full bg-indigo-400 animate-ping opacity-60 pointer-events-none" />
+          <Filter size={16} className="relative" />
           {activeFilterCount > 0 && (
             <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-orange-500 text-white text-[8px] font-black rounded-full flex items-center justify-center border-2 border-white dark:border-slate-900">
               {activeFilterCount}
@@ -400,6 +443,32 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                       ))}
                     </div>
                   )}
+
+                  {/* Badges de pares-por-caixa (ex.: "12P") — um por padrão de embalagem em
+                      uso nessa cor, na cor escolhida no cadastro do padrão (Produção →
+                      Configurações → Padrão Embalagens). Visibilidade controlável em
+                      "Filtrar Produtos" (showPkgBadge). */}
+                  {row.pkgBreakdown && showPkgBadge && (
+                    <div className="flex flex-wrap gap-1.5 pt-1 mt-0.5 border-t border-dashed border-slate-300/60 dark:border-slate-700/60">
+                      {row.pkgBreakdown.map((b, i) => (
+                        <div
+                          key={i}
+                          className={`flex items-center gap-1 px-2 py-1 rounded-lg max-w-full overflow-hidden ${
+                            b.isAvulso
+                              ? isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-200 text-slate-600'
+                              : getBadgeColorClasses(b.badgeColor, isDarkMode)
+                          }`}
+                        >
+                          {b.capacity > 0 ? (
+                            <span className="text-[9px] font-black uppercase tracking-wide shrink-0">{b.capacity}P</span>
+                          ) : (
+                            <span className="text-[9px] font-black uppercase tracking-wide truncate min-w-0">{b.label}</span>
+                          )}
+                          <span className="text-[8px] font-bold uppercase tracking-wide shrink-0 opacity-75">{b.qty} cx</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -472,6 +541,24 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                   </div>
                 </div>
               )}
+
+              {/* Mostrar/ocultar o badge de pares-por-caixa (ex.: "12P") nas linhas de Atacado
+                  — preferência do aparelho, persistida local. */}
+              <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60">
+                <div className="min-w-0">
+                  <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Badge de Pares por Caixa</label>
+                  <p className="text-[9px] font-bold text-slate-400 mt-0.5">Ex.: "12P" — cor definida no padrão de embalagem</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPkgBadge(v => { const next = !v; persistShowPkgBadge(next); return next; })}
+                  title={showPkgBadge ? 'Ocultar badge' : 'Mostrar badge'}
+                  aria-label={showPkgBadge ? 'Ocultar badge de pares por caixa' : 'Mostrar badge de pares por caixa'}
+                  className={`relative w-12 h-7 rounded-full shrink-0 transition-all ${showPkgBadge ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}
+                >
+                  <span className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow-sm transition-all ${showPkgBadge ? 'left-6' : 'left-1'}`} />
+                </button>
+              </div>
             </div>
 
             <div className="p-5 pt-2 shrink-0 flex gap-2">

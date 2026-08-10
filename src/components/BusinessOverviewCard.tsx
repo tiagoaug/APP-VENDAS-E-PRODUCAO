@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PurchaseType, Sale, Product, SaleType, ProductionLot } from '../types';
+import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PurchaseType, Sale, Product, SaleType, ProductionLot, ProductionConfigItem } from '../types';
 import { TrendingUp, TrendingDown, DollarSign, Wallet, CheckCircle2, AlertCircle, Package, ChevronDown, Tag, Factory, X, ShoppingBag, Landmark, Boxes, Calendar, Banknote } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -30,6 +30,9 @@ interface BusinessOverviewCardProps {
   isDarkMode: boolean;
   products: Product[];
   productionLots: ProductionLot[];
+  /** Padrões de embalagem (Grid tipo PACKAGING) — usado só pra prorratear o valor do
+   * estoque Atacado por pares reais de cada padrão (ver getWholesaleValue). */
+  productionConfigs?: ProductionConfigItem[];
   accounts: Account[];
   sales: Sale[];
   transactions: Transaction[];
@@ -135,6 +138,7 @@ export default function BusinessOverviewCard({
   isDarkMode,
   products,
   productionLots,
+  productionConfigs = [],
   accounts,
   sales,
   transactions,
@@ -267,18 +271,20 @@ export default function BusinessOverviewCard({
     return { items: [...items].sort((a, b) => b.amount - a.amount), linkedToSale, other };
   }, [transactions, overviewConfig.periodType, overviewConfig.periodDate]);
 
+  const packagingItems = useMemo(() => productionConfigs.filter(c => c.type === 'PACKAGING'), [productionConfigs]);
+
   const resumo = useMemo(() => ({
     consolidatedBalance: computeAccountBalance(accounts),
     pendingReceivables: computePendingReceivables(sales),
     monthlyBalance: computeMonthlySettledBalance(transactions, accounts),
-    stockValue: computeStockValue(products),
-  }), [accounts, sales, transactions, products]);
+    stockValue: computeStockValue(products, packagingItems),
+  }), [accounts, sales, transactions, products, packagingItems]);
 
   const businessOverview = useMemo(() => {
     const { start, end } = getPeriodRange(overviewConfig.periodType, overviewConfig.periodDate);
     const { income, expenses } = computePeriodFinancials(transactions, start, end);
 
-    const stockProfit = computeStockProfit(products);
+    const stockProfit = computeStockProfit(products, packagingItems);
     const productionProfit = computeProductionProfit(products, productionLots);
     const accountBalance = computeAccountBalance(accounts, overviewConfig.selectedAccountIds);
     const pendingReceivables = computePendingReceivables(sales);
@@ -329,7 +335,7 @@ export default function BusinessOverviewCard({
     }
 
     return { sources, includedTotal, expenses, income, profit, margin, comparison, salesProfitInPeriod: salesProfit };
-  }, [overviewConfig, products, productionLots, accounts, sales, transactions, businessAccounts]);
+  }, [overviewConfig, products, productionLots, packagingItems, accounts, sales, transactions, businessAccounts]);
 
   const cashFlowTrend = useMemo(() => {
     const months: { label: string; profit: number }[] = [];

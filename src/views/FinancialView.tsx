@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, Product, SaleType, ProductionLot } from '../types';
+import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, Product, SaleType, ProductionLot, ProductionConfigItem } from '../types';
 import { Search, Plus, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash, ChevronDown, ChevronUp, Tag, FileText } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -20,6 +20,9 @@ interface FinancialViewProps {
   sales: Sale[];
   products: Product[];
   productionLots?: ProductionLot[];
+  /** Padrões de embalagem (Grid tipo PACKAGING) — usado só pra prorratear o valor do
+   * estoque Atacado por pares reais de cada padrão (ver getWholesaleValue). */
+  productionConfigs?: ProductionConfigItem[];
   onSave: (transaction: Omit<Transaction, 'id'>) => Promise<void>;
   onEdit: (id: string, transaction: Partial<Transaction>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
@@ -39,6 +42,7 @@ export default function FinancialView({
   sales,
   products,
   productionLots = [],
+  productionConfigs = [],
   onSave,
   onEdit,
   onDelete,
@@ -443,6 +447,7 @@ export default function FinancialView({
           isDarkMode={isDarkMode}
           products={products}
           productionLots={productionLots}
+          productionConfigs={productionConfigs}
           accounts={accounts}
           sales={sales}
           transactions={transactions}

@@ -1,5 +1,10 @@
 import { FilePicker } from '@capawesome/capacitor-file-picker';
 
+// Fator de escala usado pra rasterizar cada página do PDF — exportado porque o recorte
+// automático (PdfPageSelectModal) precisa converter uma margem física (mm) em pixels da
+// imagem renderizada, e isso depende de saber essa mesma escala.
+export const PDF_RENDER_SCALE = 3;
+
 async function loadPdf(base64: string) {
   const pdfjsLib = await import('pdfjs-dist');
   pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString();
@@ -13,7 +18,7 @@ async function loadPdf(base64: string) {
 
 async function renderPdfPageToDataUrl(pdf: Awaited<ReturnType<typeof loadPdf>>, pageNumber: number): Promise<string> {
   const page = await pdf.getPage(pageNumber);
-  const viewport = page.getViewport({ scale: 3 });
+  const viewport = page.getViewport({ scale: PDF_RENDER_SCALE });
   const canvas = document.createElement('canvas');
   canvas.width = viewport.width;
   canvas.height = viewport.height;

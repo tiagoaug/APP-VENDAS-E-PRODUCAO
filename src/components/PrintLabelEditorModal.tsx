@@ -1525,67 +1525,6 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           </div>
         )}
 
-        {/* Label options — desnecessárias quando a grade já vem definida pelo pedido/lote */}
-        {!sizeGridOverride && (
-        <div className={`flex flex-col gap-3 p-4 rounded-2xl border ${dk?'bg-slate-900 border-slate-800':'bg-slate-50 border-slate-100'}`}>
-          <label className="text-[10px] font-black uppercase tracking-widest text-slate-800 dark:text-slate-100">Opções de Impressão</label>
-
-          {/* Variation */}
-          <div className="flex flex-wrap gap-1.5">
-            {(product.variations || []).map(v=>(
-              <button key={v.id} type="button" onClick={()=>{setSelectedVariationId(v.id);setSelectedSizes([]);}}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2 text-[9px] font-black transition-all ${selectedVariationId===v.id?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600':'border-slate-100 dark:border-slate-800 text-slate-400'}`}>
-                <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{backgroundColor:v.color}}/>
-                {v.colorName}
-              </button>
-            ))}
-          </div>
-
-          {/* Mode: per size or box */}
-          <div className="flex gap-2">
-            <button type="button" onClick={()=>setIsBoxLabel(false)}
-              className={`flex-1 py-2 rounded-xl border-2 text-[9px] font-black uppercase transition-all ${!isBoxLabel?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600':'border-slate-100 dark:border-slate-800 text-slate-400'}`}>
-              Por Tamanho
-            </button>
-            <button type="button" onClick={()=>setIsBoxLabel(true)}
-              className={`flex-1 py-2 rounded-xl border-2 text-[9px] font-black uppercase transition-all ${isBoxLabel?'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600':'border-slate-100 dark:border-slate-800 text-slate-400'}`}>
-              Caixa
-            </button>
-          </div>
-
-          {!isBoxLabel && (
-            <>
-              <div className="flex flex-wrap gap-1.5">
-                {availSizes.map(sz=>(
-                  <button key={sz} type="button" onClick={()=>setSelectedSizes(p=>p.includes(sz)?p.filter(s=>s!==sz):[...p,sz])}
-                    className={`min-w-[36px] h-10 rounded-xl border-2 font-black text-[10px] transition-all flex flex-col items-center justify-center ${selectedSizes.includes(sz)?'border-indigo-500 bg-indigo-500 text-white':'border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400'}`}>
-                    {sz}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={()=>setUseStockQty(false)}
-                  className={`flex-1 py-2 rounded-xl border-2 text-[9px] font-black uppercase transition-all ${!useStockQty?'border-indigo-500 bg-indigo-50 text-indigo-600':'border-slate-100 text-slate-400'}`}>1 etiq.</button>
-                <button type="button" onClick={()=>setUseStockQty(true)}
-                  className={`flex-1 py-2 rounded-xl border-2 text-[9px] font-black uppercase transition-all ${useStockQty?'border-indigo-500 bg-indigo-50 text-indigo-600':'border-slate-100 text-slate-400'}`}>Qtd estoque</button>
-                {!useStockQty && (
-                  <input type="number" min={1} value={customQty} onChange={e=>setCustomQty(Math.max(1,+e.target.value))} title="Quantidade"
-                    className={`w-16 text-center px-2 py-2 rounded-xl border-2 text-[10px] font-black outline-none ${dk?'bg-slate-800 border-slate-700 text-white':'bg-white border-slate-200 text-slate-800'}`}/>
-                )}
-              </div>
-            </>
-          )}
-
-          {isBoxLabel && (
-            <div className="flex items-center gap-2">
-              <span className="text-[9px] font-black text-slate-400 uppercase">Qtd. caixas:</span>
-              <input type="number" min={1} value={customQty} onChange={e=>setCustomQty(Math.max(1,+e.target.value))} title="Quantidade"
-                className={`w-16 text-center px-2 py-2 rounded-xl border-2 text-[10px] font-black outline-none ${dk?'bg-slate-800 border-slate-700 text-white':'bg-white border-slate-200 text-slate-800'}`}/>
-            </div>
-          )}
-        </div>
-        )}
-
         {/* JPG do lote: imagem combinada x arquivos separados + espaçamento */}
         {batchItems && batchItems.length > 1 && (
           <div className={`flex flex-col gap-3 p-4 rounded-2xl border ${dk?'bg-slate-900 border-slate-800':'bg-slate-50 border-slate-100'}`}>

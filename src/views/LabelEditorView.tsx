@@ -5,13 +5,15 @@ import QRCode from 'qrcode';
 import {
   Type, ImagePlus, QrCode, Calendar, Minus, Square, Trash2, Copy, Save, Printer,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Plus, Check, X, ZoomIn, ZoomOut,
-  RotateCwSquare, Contrast,
+  RotateCwSquare, Contrast, Crop as CropIcon,
 } from 'lucide-react';
 import { LabelElement } from '../types';
 import { printAbleMarkLabel } from '../lib/ablemarkPrinter';
 import { toast } from '../utils/toast';
 import LabelPrintPreviewModal, { PrintOptions } from '../components/LabelPrintPreviewModal';
 import ImageSourcePickerModal from '../components/ImageSourcePickerModal';
+import Modal from '../components/Modal';
+import CropEditor, { CropRect, FULL_CROP, CENTER_CROP, cropEquals, cropImageToDataUrl } from '../components/CropEditor';
 import { DIRECTION_TO_ROTATION } from '../utils/labelPrintTransform';
 
 // Densidade padrão de impressoras térmicas de etiqueta (203 dpi ≈ 8 pontos/mm) — não há uma
@@ -45,6 +47,19 @@ function newId(): string {
 
 function wrapDeg(deg: number): number {
   return ((deg % 360) + 360) % 360;
+}
+
+// Mesmo conjunto de fontes do editor de etiqueta de produto (PrintLabelEditorModal) — só
+// famílias "seguras" pro Canvas 2D/CSS do WebView (nada de fonte customizada/embutida).
+const FONT_OPTIONS: { value: NonNullable<LabelElement['fontFamily']>; label: string; css: string }[] = [
+  { value: 'helvetica', label: 'Sans',  css: 'Helvetica, Arial, sans-serif' },
+  { value: 'arial',     label: 'Arial', css: 'Arial, sans-serif' },
+  { value: 'times',     label: 'Serif', css: 'Georgia, serif' },
+  { value: 'courier',   label: 'Mono',  css: 'monospace' },
+  { value: 'avenir',    label: 'Geo',   css: '"Century Gothic","Trebuchet MS",sans-serif' },
+];
+function cssFontFamily(f?: LabelElement['fontFamily']): string {
+  return FONT_OPTIONS.find(o => o.value === f)?.css || FONT_OPTIONS[0].css;
 }
 
 function initialElements(session: LabelEditorSession): LabelElement[] {
@@ -95,6 +110,12 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   const [saving, setSaving] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showImageSourcePicker, setShowImageSourcePicker] = useState(false);
+  // Recorte de uma imagem já adicionada ao editor — corta e "assa" a região recortada de vez
+  // no imageDataUrl do elemento (não é um crop-por-referência tipo o do import de PDF; aqui é
+  // só uma imagem solta, então recortar já substitui o arquivo direto).
+  const [showImageCrop, setShowImageCrop] = useState(false);
+  const [imageCropRect, setImageCropRect] = useState<CropRect>(FULL_CROP);
+  const [croppingImage, setCroppingImage] = useState(false);
   const [printPreviewImage, setPrintPreviewImage] = useState('');
   const [zoom, setZoom] = useState(1);
   const [textTab, setTextTab] = useState<TextTab>('content');
@@ -223,6 +244,26 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
     setSelectedId(null);
   };
 
+  const handleOpenImageCrop = () => {
+    if (!selected?.imageDataUrl) return;
+    setImageCropRect(FULL_CROP);
+    setShowImageCrop(true);
+  };
+
+  const handleApplyImageCrop = async () => {
+    if (!selected?.imageDataUrl) return;
+    setCroppingImage(true);
+    try {
+      const cropped = await cropImageToDataUrl(selected.imageDataUrl, imageCropRect);
+      updateElement(selected.id, { imageDataUrl: cropped });
+      setShowImageCrop(false);
+    } catch (err: any) {
+      toast.show('Erro ao recortar imagem: ' + (err?.message || err));
+    } finally {
+      setCroppingImage(false);
+    }
+  };
+
   // ─── Arrastar/redimensionar/rotacionar por ponteiro ──────────────────────────
   const beginDrag = (e: React.PointerEvent, id: string, mode: DragMode) => {
     e.stopPropagation();
@@ -248,11 +289,16 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
     const dyPx = e.clientY - drag.startPointerY;
 
     if (drag.mode === 'move') {
+      // Sem trava nos limites da folha de propósito: pra um elemento rotacionado 90/270°, a
+      // caixa armazenada (x/y/w/h, não rotacionada) não bate com o retângulo visual na tela
+      // (que gira em torno do centro), então travar em [0, larguraMm-w] usava a largura
+      // ERRADA e criava uma "parede invisível" bem antes do que o usuário via na tela. Deixar
+      // arrastar livre (inclusive um pouco pra fora da folha) resolve pra qualquer rotação.
       const dxMm = dxPx / drag.pxPerMmX;
       const dyMm = dyPx / drag.pxPerMmY;
       updateElement(drag.id, {
-        x: Math.max(0, Math.min(widthMm - drag.startW, drag.startX + dxMm)),
-        y: Math.max(0, Math.min(heightMm - drag.startH, drag.startY + dyMm)),
+        x: drag.startX + dxMm,
+        y: drag.startY + dyMm,
       });
     } else if (drag.mode.startsWith('resize')) {
       // Desfaz a rotação do elemento no vetor de deslocamento do ponteiro, pra redimensionar
@@ -341,7 +387,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         const fontPx = Math.max(6, (el.fontSize || 4) * DOTS_PER_MM);
         const lineHeight = (el.lineHeight || 1) * fontPx * 1.15;
         ctx.fillStyle = '#000000';
-        ctx.font = `${el.italic ? 'italic ' : ''}${el.bold ? 'bold ' : ''}${fontPx}px sans-serif`;
+        ctx.font = `${el.italic ? 'italic ' : ''}${el.bold ? 'bold ' : ''}${fontPx}px ${cssFontFamily(el.fontFamily)}`;
         try { (ctx as any).letterSpacing = `${el.letterSpacing || 0}px`; } catch { /* não suportado, ignora */ }
         ctx.textAlign = el.align === 'left' ? 'left' : el.align === 'right' ? 'right' : 'center';
         ctx.textBaseline = 'middle';
@@ -469,7 +515,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
               onPointerUp={endDrag}
               onPointerCancel={endDrag}
               onClick={() => setSelectedId(null)}
-              className="relative bg-white rounded-lg border-2 border-dashed border-slate-300 overflow-hidden touch-none select-none shrink-0"
+              className="relative bg-white rounded-lg border-2 border-dashed border-slate-300 touch-none select-none shrink-0"
               style={{ width: canvasWidthPx, height: canvasHeightPx }}
             >
               {elements.map(el => (
@@ -492,6 +538,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
                       className="pointer-events-none text-black whitespace-pre-wrap break-words w-full"
                       style={{
                         fontSize: (el.fontSize || 4) * pxPerMmX,
+                        fontFamily: cssFontFamily(el.fontFamily),
                         fontWeight: el.bold ? 900 : 400,
                         fontStyle: el.italic ? 'italic' : 'normal',
                         textDecoration: el.underline ? 'underline' : 'none',
@@ -574,12 +621,20 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
               </div>
 
               {textTab === 'content' && (
-                <textarea
-                  value={selected.text || ''}
-                  onChange={e => updateElement(selected.id, { text: e.target.value })}
-                  rows={2}
-                  className={`px-3 py-2 rounded-lg text-xs font-bold outline-none resize-none ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-50 text-slate-900'}`}
-                />
+                <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                  <div className={`px-4 py-2 border-b ${isDarkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
+                    <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Texto da etiqueta</span>
+                  </div>
+                  <div className={`p-3 ${isDarkMode ? 'bg-slate-800/30' : 'bg-white'}`}>
+                    <textarea
+                      value={selected.text || ''}
+                      onChange={e => updateElement(selected.id, { text: e.target.value })}
+                      rows={2}
+                      placeholder="Digite aqui o que vai sair impresso neste texto..."
+                      className={`w-full px-3 py-2 rounded-lg text-xs font-bold outline-none resize-none ${isDarkMode ? 'bg-slate-900 text-white placeholder:text-slate-500' : 'bg-slate-50 text-slate-900 placeholder:text-slate-400'}`}
+                    />
+                  </div>
+                </div>
               )}
 
               {textTab === 'style' && (
@@ -599,6 +654,26 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
 
               {textTab === 'font' && (
                 <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Família</span>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {FONT_OPTIONS.map(f => (
+                        <button
+                          key={f.value}
+                          type="button"
+                          onClick={() => updateElement(selected.id, { fontFamily: f.value })}
+                          style={{ fontFamily: f.css }}
+                          className={`py-2 rounded-lg border text-[9px] font-black transition-all ${
+                            (selected.fontFamily === f.value || (!selected.fontFamily && f.value === 'helvetica'))
+                              ? 'border-indigo-500 bg-indigo-600 text-white'
+                              : `border-transparent ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`
+                          }`}
+                        >
+                          {f.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="flex flex-col gap-1">
                     <div className="flex items-center justify-between text-[9px] font-black uppercase tracking-widest text-slate-400">
                       <span>Tamanho</span><span>{(selected.fontSize || 4).toFixed(1)}mm</span>
@@ -623,15 +698,24 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
           )}
 
           {selected.type === 'image' && (
-            <button
-              type="button"
-              onClick={() => updateElement(selected.id, { grayscale: !selected.grayscale })}
-              className={`flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest ${
-                selected.grayscale ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
-              }`}
-            >
-              <Contrast size={13} /> Tons de cinza
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => updateElement(selected.id, { grayscale: !selected.grayscale })}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest ${
+                  selected.grayscale ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                <Contrast size={13} /> Tons de cinza
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenImageCrop}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+              >
+                <CropIcon size={13} /> Recortar
+              </button>
+            </div>
           )}
 
           {/* Tamanho — alternativa em barra às alças de borda do canvas (escalar/esticar) */}
@@ -783,6 +867,41 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         onPickCamera={() => pickImage(CameraSource.Camera)}
         onPickGallery={() => pickImage(CameraSource.Photos)}
       />
+
+      {selected?.imageDataUrl && (
+        <Modal isOpen={showImageCrop} onClose={() => setShowImageCrop(false)} title="Recortar Imagem" icon={<CropIcon size={20} />} maxWidth="max-w-md" zIndex={98000}>
+          <div className="flex flex-col gap-4">
+            <p className="text-[10px] font-bold text-center text-slate-400 uppercase tracking-widest">
+              Arraste pra mover, use os cantos pra redimensionar
+            </p>
+            <CropEditor imageSrc={selected.imageDataUrl} crop={imageCropRect} onChangeCrop={setImageCropRect} isDarkMode={isDarkMode} />
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => setImageCropRect(FULL_CROP)}
+                className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${cropEquals(imageCropRect, FULL_CROP) ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+              >
+                Imagem inteira
+              </button>
+              <button
+                type="button"
+                onClick={() => setImageCropRect(CENTER_CROP)}
+                className={`flex-1 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${cropEquals(imageCropRect, CENTER_CROP) ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+              >
+                Recorte central
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={handleApplyImageCrop}
+              disabled={croppingImage}
+              className="flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
+            >
+              <Check size={16} /> {croppingImage ? 'Recortando...' : 'Aplicar recorte'}
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

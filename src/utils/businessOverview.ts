@@ -1,4 +1,4 @@
-import { Product, ProductionLot, Sale, Account, AccountType, Transaction, TransactionType, SaleStatus, SaleType } from '../types';
+import { Product, ProductionLot, Sale, Account, AccountType, Transaction, TransactionType, SaleStatus, SaleType, ProductionConfigItem } from '../types';
 import { getActiveProductionUnits } from './productionRoute';
 import { getStockValue } from './stockPools';
 
@@ -38,12 +38,12 @@ export function getPeriodRange(type: OverviewPeriodType, dateStr: string): { sta
 
 // Custo e venda total do estoque pronto (mesma base do card "Patrimônio em
 // Estoque" do Dashboard) — profit = saleValue - costValue.
-export function computeStockValue(products: Product[]): { costValue: number; saleValue: number; profit: number } {
+export function computeStockValue(products: Product[], packagingItems: ProductionConfigItem[] = []): { costValue: number; saleValue: number; profit: number } {
   let costValue = 0;
   let saleValue = 0;
   for (const p of products) {
     for (const v of p.variations || []) {
-      const val = getStockValue(p, v);
+      const val = getStockValue(p, v, packagingItems);
       costValue += val.costValue;
       saleValue += val.saleValue;
     }
@@ -52,8 +52,8 @@ export function computeStockValue(products: Product[]): { costValue: number; sal
 }
 
 // Lucro parado em estoque pronto (venda - custo de tudo que já saiu da produção).
-export function computeStockProfit(products: Product[]): number {
-  return computeStockValue(products).profit;
+export function computeStockProfit(products: Product[], packagingItems: ProductionConfigItem[] = []): number {
+  return computeStockValue(products, packagingItems).profit;
 }
 
 // Lucro represado em pares ainda em produção (mapas ativos, sem contar o que já

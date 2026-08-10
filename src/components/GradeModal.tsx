@@ -25,7 +25,8 @@ export default function GradeModal({ isOpen, onClose, onSave, grid }: GradeModal
       setType(GridType.FORMA);
       setSizes([]);
     }
-  }, [grid, isOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grid?.id, isOpen]);
 
   const addSize = () => {
     const trimmed = newSize.trim();

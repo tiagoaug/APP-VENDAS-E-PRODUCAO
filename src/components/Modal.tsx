@@ -68,8 +68,11 @@ export default function Modal({ isOpen, onClose, title, icon, children, maxWidth
               </button>
             </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-2 sm:p-8 custom-scrollbar">
+            {/* Content — min-h-0 é essencial aqui: sem ele, um filho flex-1 dentro de um
+                flex-col não encolhe abaixo da altura do próprio conteúdo (default min-height:
+                auto), então com bastante conteúdo (ex.: 20 miniaturas de página) a rolagem
+                nunca ativa e o excesso fica cortado/espremido pelo overflow-hidden do card. */}
+            <div className="flex-1 min-h-0 overflow-y-auto p-2 sm:p-8 custom-scrollbar">
               {children}
             </div>
 

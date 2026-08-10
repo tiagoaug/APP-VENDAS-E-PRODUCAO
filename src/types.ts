@@ -107,6 +107,7 @@ export type LabelElement = {
   // type 'text'
   text?: string;
   fontSize?: number;
+  fontFamily?: 'helvetica' | 'arial' | 'times' | 'courier' | 'avenir'; // mesmo conjunto do editor de etiqueta de produto (PrintLabelEditorModal)
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;

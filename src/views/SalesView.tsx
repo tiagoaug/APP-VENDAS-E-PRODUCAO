@@ -1092,7 +1092,17 @@ export default function SalesView({
           >
             <div className="flex items-center justify-between mb-3 px-1">
               <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Disponível em Estoque</span>
-              <Eye size={14} className="text-slate-400" />
+              {/* "Mostrar" + seta com círculo pulsante — deixa mais óbvio que o card inteiro é
+                  clicável e leva pra visão detalhada (o ícone de olho sozinho passava batido). */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[9px] font-black uppercase tracking-widest text-indigo-500">Mostrar</span>
+                <span className="relative flex items-center justify-center w-5 h-5">
+                  <span className="absolute inset-0 rounded-full bg-indigo-400 animate-ping opacity-75" />
+                  <span className="relative flex items-center justify-center w-5 h-5 rounded-full bg-indigo-500">
+                    <ChevronRight size={12} className="text-white" />
+                  </span>
+                </span>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className={`flex items-center gap-2 p-2.5 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>

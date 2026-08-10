@@ -401,6 +401,18 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       toast.show('Por favor preencha nome e referência.');
       return null;
     }
+    // Obrigatório pra Atacado: sem o preço POR PAR, o valor de estoque não tem como ser
+    // prorateado corretamente entre embalagens de tamanhos diferentes (ex.: caixa de 12 pares
+    // x caixa de 15 pares) — cairia de volta no preço fixo por caixa, que subestima/superestima
+    // o valor real conforme a mistura de embalagens em estoque.
+    if (type === SaleType.WHOLESALE) {
+      const uc = parseFloat(unitCostPrice as string) || 0;
+      const us = parseFloat(unitSalePrice as string) || 0;
+      if (uc <= 0 || us <= 0) {
+        toast.show('Preencha o Custo Unitário por Par e a Venda Unitária por Par — obrigatórios pro cálculo correto do valor do estoque.');
+        return null;
+      }
+    }
     const id = existingProduct?.id || productIdRef.current || generateId();
     productIdRef.current = id;
     return {
@@ -2094,7 +2106,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   {type === SaleType.WHOLESALE && (
                     <div className="col-span-1 sm:col-span-2 group">
                       <label className="text-[10px] uppercase font-black text-amber-600 dark:text-amber-400 px-1 mb-2 block tracking-widest leading-none">
-                        Custo Unitário por Par (R$)
+                        Custo Unitário por Par (R$) <span className="text-rose-500">*</span>
                       </label>
                       <div className="relative">
                         <input
@@ -2165,7 +2177,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   {type === SaleType.WHOLESALE && (
                     <div className="col-span-1 sm:col-span-2 group">
                       <label className="text-[10px] uppercase font-black text-sky-600 dark:text-sky-400 px-1 mb-2 block tracking-widest leading-none">
-                        Venda Unitária por Par (R$)
+                        Venda Unitária por Par (R$) <span className="text-rose-500">*</span>
                       </label>
                       <div className="relative">
                         <input

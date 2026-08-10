@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Printer, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Minus, Plus, ChevronLeft, ChevronRight,
+  Printer, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Minus, Plus, ChevronLeft, ChevronRight, Pencil,
 } from 'lucide-react';
 import Modal from './Modal';
 
@@ -31,13 +31,17 @@ interface LabelPrintPreviewModalProps {
   previewDataUrls: string[];
   /** Nota opcional acima do botão de imprimir — ex.: "48 etiquetas (grade) × cópias". */
   totalLabelsNote?: string;
+  /** Quando informado, mostra um botão "Voltar à edição" que fecha esta prévia e chama isso —
+   * usado nos fluxos onde a edição (ex.: recorte do PDF) é uma tela separada da prévia, então
+   * o "Voltar" genérico do rodapé não basta pra corrigir algo antes de imprimir. */
+  onBackToEdit?: () => void;
   onConfirmPrint: (options: PrintOptions) => Promise<void>;
 }
 
 const PREVIEW_WIDTH = 260;
 
 export default function LabelPrintPreviewModal({
-  isOpen, onClose, isDarkMode, widthMm, heightMm, previewDataUrls, totalLabelsNote, onConfirmPrint,
+  isOpen, onClose, isDarkMode, widthMm, heightMm, previewDataUrls, totalLabelsNote, onBackToEdit, onConfirmPrint,
 }: LabelPrintPreviewModalProps) {
   const [options, setOptions] = useState<PrintOptions>(DEFAULT_OPTIONS);
   const [printing, setPrinting] = useState(false);
@@ -206,6 +210,17 @@ export default function LabelPrintPreviewModal({
 
         {totalLabelsNote && (
           <p className="text-center text-[10px] font-bold text-slate-400">{totalLabelsNote}</p>
+        )}
+
+        {onBackToEdit && (
+          <button
+            type="button"
+            onClick={() => { onClose(); onBackToEdit(); }}
+            disabled={printing}
+            className={`flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+          >
+            <Pencil size={14} /> Voltar à edição
+          </button>
         )}
 
         <button

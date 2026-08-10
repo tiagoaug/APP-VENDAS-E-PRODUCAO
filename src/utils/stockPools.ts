@@ -1,4 +1,41 @@
-import { Product, SaleType, Variation } from '../types';
+import { Product, SaleType, Variation, ProductionConfigItem, StockPkgAllocation } from '../types';
+
+/** Quantos pares um padrão de embalagem carrega — `metadata.capacity` quando cadastrado
+ * direto, senão soma de `metadata.sizeQuantities` (mesma fonte que PackagingBuilderModal/
+ * PurchaseFormView já usam pra mostrar "N pares" de um padrão). */
+function getPkgCapacity(pkg: ProductionConfigItem | undefined): number {
+  if (!pkg?.metadata) return 0;
+  if (pkg.metadata.capacity) return Number(pkg.metadata.capacity) || 0;
+  const sizeQty = pkg.metadata.sizeQuantities as Record<string, number> | undefined;
+  if (sizeQty) return Object.values(sizeQty).reduce((s, q) => s + (Number(q) || 0), 0);
+  return 0;
+}
+
+/** Valor (custo OU venda, uma chamada por vez) do pool Atacado, prorateado por par quando
+ * há preço unitário (`unitPrice`) cadastrado: cada padrão de embalagem em uso
+ * (`stockPkgAllocations`) contribui `caixas × pares-do-padrão × unitPrice`, em vez de tratar
+ * toda caixa como se tivesse o mesmo número de pares. Caixas "avulsas" (sem padrão vinculado)
+ * e padrões sem capacidade cadastrada caem no preço fixo por caixa (`flatBoxPrice`), já que
+ * não dá pra saber quantos pares têm — mesma base usada quando não há preço por par. */
+function computeWholesalePoolValue(
+  boxQty: number,
+  flatBoxPrice: number,
+  unitPrice: number | undefined,
+  allocations: StockPkgAllocation[],
+  packagingItems: ProductionConfigItem[],
+): number {
+  if (!unitPrice) return boxQty * flatBoxPrice;
+  const totalAllocated = allocations.reduce((s, a) => s + (a.qty || 0), 0);
+  let value = 0;
+  allocations.forEach(a => {
+    if ((a.qty || 0) <= 0) return;
+    const capacity = getPkgCapacity(packagingItems.find(p => p.id === a.pkgId));
+    value += capacity > 0 ? a.qty * capacity * unitPrice : a.qty * flatBoxPrice;
+  });
+  const residual = boxQty - totalAllocated;
+  if (residual > 0) value += residual * flatBoxPrice;
+  return value;
+}
 
 /**
  * Produto híbrido: vendido tanto em Atacado (caixas) quanto em Varejo (pares por
@@ -51,13 +88,27 @@ export function getPoolQty(product: Product | undefined, variation: Variation | 
 }
 
 /**
- * Valor (custo/venda) só do pool Atacado — caixas vezes preço por caixa. Zero para
- * produto sem pool Atacado.
+ * Valor (custo/venda) só do pool Atacado. Quando o produto tem preço por par cadastrado
+ * (unitCostPrice/unitSalePrice — já existente pra todo produto Atacado, não só híbrido) E
+ * há mais de um padrão de embalagem em uso (stockPkgAllocations), prorateia por padrão
+ * (pares reais de cada caixa × preço por par) em vez de tratar toda caixa como do mesmo
+ * tamanho — do contrário caixas de 12 e 15 pares, por exemplo, valeriam o mesmo. Sem preço
+ * por par cadastrado, cai no cálculo antigo (preço fixo por caixa). `packagingItems` (Grids
+ * tipo PACKAGING) é opcional — sem ele, não dá pra saber a capacidade de cada padrão, então
+ * também cai no preço fixo.
  */
-export function getWholesaleValue(product: Product | undefined, variation: Variation | undefined): { cost: number; sale: number } {
+export function getWholesaleValue(
+  product: Product | undefined,
+  variation: Variation | undefined,
+  packagingItems: ProductionConfigItem[] = [],
+): { cost: number; sale: number } {
   if (!product) return { cost: 0, sale: 0 };
   const qty = getWholesaleBoxes(product, variation);
-  return { cost: qty * (product.costPrice || 0), sale: qty * (product.salePrice || 0) };
+  const allocations = variation?.stockPkgAllocations || [];
+  return {
+    cost: computeWholesalePoolValue(qty, product.costPrice || 0, product.unitCostPrice, allocations, packagingItems),
+    sale: computeWholesalePoolValue(qty, product.salePrice || 0, product.unitSalePrice, allocations, packagingItems),
+  };
 }
 
 /**
@@ -82,8 +133,12 @@ export function getRetailValue(product: Product | undefined, variation: Variatio
  * Para produto NÃO-híbrido, equivale à fórmula única já usada em todo o código
  * antes desta mudança (só um dos dois pools é não-zero).
  */
-export function getStockValue(product: Product | undefined, variation: Variation | undefined): { costValue: number; saleValue: number } {
-  const w = getWholesaleValue(product, variation);
+export function getStockValue(
+  product: Product | undefined,
+  variation: Variation | undefined,
+  packagingItems: ProductionConfigItem[] = [],
+): { costValue: number; saleValue: number } {
+  const w = getWholesaleValue(product, variation, packagingItems);
   const r = getRetailValue(product, variation);
   return { costValue: w.cost + r.cost, saleValue: w.sale + r.sale };
 }

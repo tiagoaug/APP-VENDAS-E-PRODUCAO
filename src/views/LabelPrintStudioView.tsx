@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import {
   Bluetooth, CheckCircle2, XCircle, RefreshCw, Ruler, Plus, Trash2,
-  FilePlus, Upload, FolderOpen, X, ChevronDown, ChevronUp, RotateCcw, Pencil,
+  FilePlus, Upload, FolderOpen, X, ChevronDown, ChevronUp, RotateCcw, Pencil, Star,
 } from 'lucide-react';
 import { LabelPaperSize, LabelFile } from '../types';
 import {
@@ -16,7 +16,7 @@ import {
 } from '../lib/ablemarkPrinter';
 import { toast } from '../utils/toast';
 import { pickLabelImportFile } from '../utils/labelFileImport';
-import PdfPageSelectModal, { CropRect, CroppedPage } from '../components/PdfPageSelectModal';
+import PdfPageSelectModal, { CropRect, CroppedPage, FitMode } from '../components/PdfPageSelectModal';
 import LabelPrintPreviewModal, { PrintOptions } from '../components/LabelPrintPreviewModal';
 import { applyPrintTransform, DIRECTION_TO_ROTATION } from '../utils/labelPrintTransform';
 
@@ -48,10 +48,14 @@ async function cropImageToDataUrl(pageDataUrl: string, crop: CropRect): Promise<
   return canvas.toDataURL('image/png');
 }
 
-/** Recorta uma página segundo `crop` (frações 0..1, mesmo recorte relativo aplicado a todas
- * as páginas do lote) e desenha só essa região esticada pra preencher a etiqueta inteira de
- * widthMm×heightMm — sem sobrar borda branca, já que o recorte É o conteúdo da etiqueta. */
-async function renderPageToLabelCanvas(pageDataUrl: string, widthMm: number, heightMm: number, crop: CropRect): Promise<HTMLCanvasElement> {
+/** Recorta uma página segundo `crop` (frações 0..1, mesmo recorte relativo aplicado a todas as
+ * páginas do lote) e desenha essa região dentro da etiqueta widthMm×heightMm segundo `fitMode`:
+ * "contain" encaixa a região inteira dentro da etiqueta (pode sobrar borda branca se a
+ * proporção não bater), "cover" preenche a etiqueta inteira sem borda (corta um pouco além do
+ * recorte se precisar) — nos dois casos SEM distorcer; antes disso sempre esticava pra
+ * preencher exatamente, deformando o conteúdo quando a proporção do recorte não batia com a
+ * da etiqueta (foi isso que fazia o conteúdo real da etiqueta parecer "pequeno demais"). */
+async function renderPageToLabelCanvas(pageDataUrl: string, widthMm: number, heightMm: number, crop: CropRect, fitMode: FitMode): Promise<HTMLCanvasElement> {
   const img = await loadImageEl(pageDataUrl);
   const pxW = Math.max(1, Math.round(widthMm * DOTS_PER_MM));
   const pxH = Math.max(1, Math.round(heightMm * DOTS_PER_MM));
@@ -65,7 +69,23 @@ async function renderPageToLabelCanvas(pageDataUrl: string, widthMm: number, hei
   const sy = crop.y * img.naturalHeight;
   const sw = crop.w * img.naturalWidth;
   const sh = crop.h * img.naturalHeight;
-  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, pxW, pxH);
+
+  // Escala pra encaixar (contain, min) ou preencher (cover, max) sem distorcer — igual ao
+  // CSS object-fit — e centraliza o resultado na etiqueta.
+  const scale = fitMode === 'contain' ? Math.min(pxW / sw, pxH / sh) : Math.max(pxW / sw, pxH / sh);
+  const dw = sw * scale;
+  const dh = sh * scale;
+  const dx = (pxW - dw) / 2;
+  const dy = (pxH - dh) / 2;
+  ctx.save();
+  if (fitMode === 'cover') {
+    // "cover" pode extrapolar a etiqueta — recorta o excesso pra não desenhar fora do canvas.
+    ctx.beginPath();
+    ctx.rect(0, 0, pxW, pxH);
+    ctx.clip();
+  }
+  ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+  ctx.restore();
   return canvas;
 }
 
@@ -83,6 +103,29 @@ const PRESET_SIZES: { name: string; widthMm: number; heightMm: number }[] = [
   { name: '40 × 30 mm', widthMm: 40, heightMm: 30 },
   { name: '100 × 150 mm', widthMm: 100, heightMm: 150 },
 ];
+
+// Tamanho "preferido" — pré-selecionado sempre que a tela abre, em vez do primeiro preset da
+// lista. É uma preferência do aparelho (não do catálogo compartilhado via Firestore), então
+// fica salva local no dispositivo: cada operador/impressora pode ter uma etiqueta diferente
+// como a mais usada no dia a dia.
+const PREFERRED_SIZE_KEY = 'labelPreferredSize';
+interface PreferredSizeRef { kind: 'preset' | 'custom'; key: string; }
+function readPreferredSize(): PreferredSizeRef | null {
+  try {
+    const raw = localStorage.getItem(PREFERRED_SIZE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+function writePreferredSize(p: PreferredSizeRef | null) {
+  try {
+    if (p) localStorage.setItem(PREFERRED_SIZE_KEY, JSON.stringify(p));
+    else localStorage.removeItem(PREFERRED_SIZE_KEY);
+  } catch {
+    /* localStorage indisponível — preferência simplesmente não persiste, sem quebrar a tela */
+  }
+}
 
 export interface OpenEditorParams {
   widthMm: number;
@@ -116,9 +159,42 @@ export default function LabelPrintStudioView({
   const [connecting, setConnecting] = useState(false);
   const [resetting, setResetting] = useState(false);
 
-  const [selectedSize, setSelectedSize] = useState<SelectedSize | null>(
-    PRESET_SIZES[0] ? { ...PRESET_SIZES[0] } : null,
-  );
+  const [preferredSize, setPreferredSizeState] = useState<PreferredSizeRef | null>(() => readPreferredSize());
+  // Se o preferido é um preset, já resolve de cara (PRESET_SIZES é uma constante). Se for um
+  // tamanho cadastrado (Firestore), ainda não dá — `labelPaperSizes` só chega depois via prop —
+  // então cai no primeiro preset por enquanto, e o efeito abaixo troca assim que os dados chegarem.
+  const [selectedSize, setSelectedSize] = useState<SelectedSize | null>(() => {
+    const pref = readPreferredSize();
+    if (pref?.kind === 'preset') {
+      const p = PRESET_SIZES.find(s => s.name === pref.key);
+      if (p) return { ...p };
+    }
+    return PRESET_SIZES[0] ? { ...PRESET_SIZES[0] } : null;
+  });
+  // Garante que a resolução do preferido "custom" (Firestore) só troca a seleção UMA vez,
+  // assim que os dados chegarem — depois disso, o usuário pode escolher outro tamanho
+  // livremente sem a preferência salva ficar "puxando" de volta a cada re-render.
+  const appliedCustomPreferredRef = useRef(false);
+  useEffect(() => {
+    if (appliedCustomPreferredRef.current) return;
+    if (preferredSize?.kind !== 'custom') {
+      appliedCustomPreferredRef.current = true;
+      return;
+    }
+    const match = labelPaperSizes.find(s => s.id === preferredSize.key);
+    if (match) {
+      setSelectedSize({ name: match.name, widthMm: match.widthMm, heightMm: match.heightMm, paperSizeId: match.id });
+      appliedCustomPreferredRef.current = true;
+    }
+  }, [preferredSize, labelPaperSizes]);
+
+  const togglePreferredSize = (kind: 'preset' | 'custom', key: string) => {
+    setPreferredSizeState(prev => {
+      const next: PreferredSizeRef | null = (prev?.kind === kind && prev.key === key) ? null : { kind, key };
+      writePreferredSize(next);
+      return next;
+    });
+  };
   const [sizesExpanded, setSizesExpanded] = useState(false);
   const [showAddSize, setShowAddSize] = useState(false);
   const [editingSizeId, setEditingSizeId] = useState<string | null>(null);
@@ -178,7 +254,7 @@ export default function LabelPrintStudioView({
       return;
     }
     try {
-      const frames = await Promise.all(items.map(it => renderPageToLabelCanvas(it.dataUrl, selectedSize.widthMm, selectedSize.heightMm, it.crop)));
+      const frames = await Promise.all(items.map(it => renderPageToLabelCanvas(it.dataUrl, selectedSize.widthMm, selectedSize.heightMm, it.crop, it.fitMode)));
       setBatchFrames(frames);
       setShowBatchPreview(true);
     } catch (err: any) {
@@ -295,6 +371,18 @@ export default function LabelPrintStudioView({
     setNewSizeHeight('');
   };
 
+  // Lista única (presets + cadastrados) pra poder ordenar com o preferido sempre no topo,
+  // independente de ser preset ou cadastrado — "sempre mostrada preferencialmente".
+  type SizeRow = { kind: 'preset' | 'custom'; key: string; name: string; widthMm: number; heightMm: number; custom?: LabelPaperSize };
+  const sizeRows: SizeRow[] = [
+    ...PRESET_SIZES.map(s => ({ kind: 'preset' as const, key: s.name, name: s.name, widthMm: s.widthMm, heightMm: s.heightMm })),
+    ...labelPaperSizes.map(s => ({ kind: 'custom' as const, key: s.id, name: s.name, widthMm: s.widthMm, heightMm: s.heightMm, custom: s })),
+  ].sort((a, b) => {
+    const aPref = preferredSize?.kind === a.kind && preferredSize.key === a.key ? 0 : 1;
+    const bPref = preferredSize?.kind === b.kind && preferredSize.key === b.key ? 0 : 1;
+    return aPref - bPref;
+  });
+
   // Efeito "3D" dos minicards: sombra elevada + borda inferior grossa simulando profundidade,
   // que "afunda" (translateY + sombra menor) enquanto o dedo/mouse pressiona um botão interno.
   const miniCardCls = `relative rounded-2xl p-4 border-b-[3px] transition-shadow ${
@@ -373,16 +461,15 @@ export default function LabelPrintStudioView({
             ))}
           </div>
         )}
-      </div>
 
-      {/* Resetar conexão/cache — card próprio, cores invertidas (fundo laranja, texto branco)
-          pra chamar mais atenção como ação de recuperação/emergência. */}
-      <div className={`relative rounded-2xl p-4 border-b-[3px] transition-shadow bg-gradient-to-b from-amber-500 to-amber-600 border-amber-700 shadow-[0_6px_16px_-4px_rgba(217,119,6,0.45)]`}>
+        {/* Resetar conexão/cache — dentro do card da impressora (ação relacionada), laranja
+            claro chapado (sem o relevo 3D dos outros minicards) pra não competir visualmente
+            com o status de conexão acima, mas ainda se destacar como ação de recuperação. */}
         <button
           type="button"
           onClick={handleResetConnection}
           disabled={resetting}
-          className={`w-full flex items-center justify-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-white disabled:opacity-60 ${pressBtnCls}`}
+          className="w-full flex items-center justify-center gap-1.5 mt-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white bg-amber-400 hover:bg-amber-500 disabled:opacity-60 transition-colors"
         >
           <RotateCcw size={13} className={resetting ? 'animate-spin' : ''} /> {resetting ? 'Resetando...' : 'Resetar conexão e cache (se a impressão falhar)'}
         </button>
@@ -455,54 +542,64 @@ export default function LabelPrintStudioView({
             )}
 
             <div className="flex flex-col gap-1.5">
-              {PRESET_SIZES.map(s => (
-                <button
-                  key={s.name}
-                  type="button"
-                  onClick={() => setSelectedSize({ ...s })}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 text-left transition-all ${
-                    selectedSize?.name === s.name && !selectedSize?.paperSizeId
-                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
-                      : isDarkMode ? 'border-transparent bg-slate-800/50' : 'border-transparent bg-slate-50'
-                  }`}
-                >
-                  <Ruler size={13} className="text-slate-400 shrink-0" />
-                  <span className="text-xs font-bold">{s.name}</span>
-                </button>
-              ))}
-              {labelPaperSizes.map(s => (
-                <div
-                  key={s.id}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border-2 transition-all ${
-                    selectedSize?.paperSizeId === s.id
-                      ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
-                      : isDarkMode ? 'border-transparent bg-slate-800/50' : 'border-transparent bg-slate-50'
-                  }`}
-                >
+              {sizeRows.map(row => {
+                const isPreferred = preferredSize?.kind === row.kind && preferredSize.key === row.key;
+                const isActive = row.kind === 'preset'
+                  ? selectedSize?.name === row.name && !selectedSize?.paperSizeId
+                  : selectedSize?.paperSizeId === row.key;
+                const starBtn = (
                   <button
                     type="button"
-                    onClick={() => setSelectedSize({ name: s.name, widthMm: s.widthMm, heightMm: s.heightMm, paperSizeId: s.id })}
-                    className="flex-1 flex items-center gap-2 text-left min-w-0"
+                    onClick={() => togglePreferredSize(row.kind, row.key)}
+                    title={isPreferred ? 'Remover como preferida' : 'Marcar como preferida (pré-selecionada sempre)'}
+                    className={`p-1.5 rounded-lg shrink-0 ${isPreferred ? 'text-amber-500' : 'text-slate-300 dark:text-slate-600 hover:text-amber-400'}`}
                   >
-                    <Ruler size={13} className="text-indigo-400 shrink-0" />
-                    <span className="text-xs font-bold truncate">{s.name} — {s.widthMm}×{s.heightMm}mm</span>
+                    <Star size={14} fill={isPreferred ? 'currentColor' : 'none'} />
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleStartEditSize(s)}
-                    className="p-1.5 rounded-lg text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 shrink-0"
+                );
+                return (
+                  <div
+                    key={`${row.kind}_${row.key}`}
+                    className={`flex items-center gap-1 px-2 py-1.5 rounded-xl border-2 transition-all ${
+                      isActive
+                        ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
+                        : isDarkMode ? 'border-transparent bg-slate-800/50' : 'border-transparent bg-slate-50'
+                    }`}
                   >
-                    <Pencil size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDeletePaperSize(s.id)}
-                    className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 shrink-0"
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              ))}
+                    {starBtn}
+                    <button
+                      type="button"
+                      onClick={() => (row.kind === 'preset'
+                        ? setSelectedSize({ name: row.name, widthMm: row.widthMm, heightMm: row.heightMm })
+                        : setSelectedSize({ name: row.name, widthMm: row.widthMm, heightMm: row.heightMm, paperSizeId: row.key }))}
+                      className="flex-1 flex items-center gap-2 text-left min-w-0 px-1 py-0.5"
+                    >
+                      <Ruler size={13} className={`shrink-0 ${row.kind === 'custom' ? 'text-indigo-400' : 'text-slate-400'}`} />
+                      <span className="text-xs font-bold truncate">
+                        {row.kind === 'custom' ? `${row.name} — ${row.widthMm}×${row.heightMm}mm` : row.name}
+                      </span>
+                    </button>
+                    {row.kind === 'custom' && row.custom && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleStartEditSize(row.custom!)}
+                          className="p-1.5 rounded-lg text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 shrink-0"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onDeletePaperSize(row.custom!.id)}
+                          className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/20 shrink-0"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </>
         )}
@@ -582,6 +679,7 @@ export default function LabelPrintStudioView({
           heightMm={selectedSize.heightMm}
           previewDataUrls={batchFrames.map(f => f.toDataURL('image/png'))}
           totalLabelsNote={batchFrames.length > 1 ? `${batchFrames.length} páginas × cópias` : undefined}
+          onBackToEdit={pdfPagesToSelect.length > 0 ? () => setShowPdfPageSelect(true) : undefined}
           onConfirmPrint={handleConfirmBatchPrint}
         />
       )}

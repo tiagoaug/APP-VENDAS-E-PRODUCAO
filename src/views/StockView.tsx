@@ -529,9 +529,9 @@ export default function StockView({
             <p className={`text-3xl font-black italic tracking-tighter ${isDarkMode ? 'text-white' : 'text-white'}`}>
               <span className="text-sm not-italic opacity-50 mr-2">R$</span>
               {products.reduce((acc, p) => acc + p.variations.reduce((vAcc, v) => {
-                if (stockTypeFilter === SaleType.WHOLESALE) return vAcc + getWholesaleValue(p, v).cost;
+                if (stockTypeFilter === SaleType.WHOLESALE) return vAcc + getWholesaleValue(p, v, packagingItems).cost;
                 if (stockTypeFilter === SaleType.RETAIL) return vAcc + getRetailValue(p, v).cost;
-                return vAcc + getStockValue(p, v).costValue;
+                return vAcc + getStockValue(p, v, packagingItems).costValue;
               }, 0), 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </div>

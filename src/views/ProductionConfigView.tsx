@@ -86,6 +86,7 @@ import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import CalculatorModal from '../components/CalculatorModal';
+import { BADGE_COLOR_OPTIONS, BADGE_COLOR_CLASSES, DEFAULT_BADGE_COLOR } from '../utils/badgeColors';
 
 import ConsumptionCalculatorModal from '../components/ConsumptionCalculatorModal';
 import { toast } from '../utils/toast';
@@ -1988,7 +1989,10 @@ function GenericConfigList({
                       <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{item.metadata?.days || 0} DIAS</p>
                     ) : type === 'PACKAGING' ? (
                       <div className="flex flex-col gap-3 mt-1">
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{item.metadata?.capacity || 0} PARES {item.metadata?.mode !== 'FREE' && `• ${(item.metadata?.sizes || []).length} TAMANHOS`}</p>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest flex items-center gap-1.5">
+                          <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${BADGE_COLOR_CLASSES[(item.metadata?.badgeColor as keyof typeof BADGE_COLOR_CLASSES) || DEFAULT_BADGE_COLOR].swatch}`} />
+                          {item.metadata?.capacity || 0} PARES {item.metadata?.mode !== 'FREE' && `• ${(item.metadata?.sizes || []).length} TAMANHOS`}
+                        </p>
                         {item.metadata?.mode !== 'FREE' && (item.metadata?.sizes || []).length > 0 && (
                           <div className={`p-3 rounded-2xl flex flex-wrap gap-x-4 gap-y-2 ${isDarkMode ? 'bg-slate-950/50' : 'bg-slate-50/50'}`}>
                             {(item.metadata?.sizes || []).map((size: string) => (
@@ -3323,6 +3327,29 @@ function GenericConfigList({
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Nome do Padrão *</label><input type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value } : null)} placeholder="Ex: FEMININO 33-40" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /></div>
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Tipo de Grade</label><div className={`flex gap-2 p-1.5 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-100'}`}><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FIXED' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(!editingItem?.metadata?.mode || editingItem?.metadata?.mode === 'FIXED') ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Fixa</button><button type="button" onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, mode: 'FREE' } } : null)} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${editingItem?.metadata?.mode === 'FREE' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:text-slate-500'}`}>Grade Livre</button></div></div>
               <div className="flex flex-col gap-2"><label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Capacidade Total (Pares) *</label><div className="relative group"><input type="number" value={editingItem?.metadata?.capacity || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: Number(e.target.value) } } : null)} placeholder="Ex: 12" className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none text-center pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`} required /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir capacidade total" onClick={() => setActiveCalc({ initialValue: editingItem?.metadata?.capacity || 0, onResult: (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, capacity: val } } : null) })} className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition-all"><Calculator size={16} /></button></div></div>
+
+              {/* Cor do badge de estoque (ex.: "12P") — escolhida aqui pra diferenciar de
+                  relance, no Estoque, caixas de padrões diferentes (12 pares x 15 pares...). */}
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Cor do Badge no Estoque</label>
+                <div className="flex flex-wrap gap-2 px-2">
+                  {BADGE_COLOR_OPTIONS.map(color => {
+                    const active = (editingItem?.metadata?.badgeColor || DEFAULT_BADGE_COLOR) === color;
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        onClick={() => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, badgeColor: color } } : null)}
+                        title={color}
+                        aria-label={`Cor ${color}`}
+                        className={`w-9 h-9 rounded-full ${BADGE_COLOR_CLASSES[color].swatch} flex items-center justify-center transition-all ${active ? 'ring-2 ring-offset-2 ring-slate-900 dark:ring-white dark:ring-offset-slate-950 scale-110' : 'opacity-60 hover:opacity-100'}`}
+                      >
+                        {active && <Check size={16} className="text-white" strokeWidth={3} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-2 ml-2">

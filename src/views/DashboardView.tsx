@@ -1,6 +1,6 @@
 import { useState, useMemo, ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Sale, Purchase, Product, Variation, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig, SaleType, ServiceOrder, PaymentTerm, ProductionOrder } from "../types";
+import { Sale, Purchase, Product, Variation, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig, SaleType, ServiceOrder, PaymentTerm, ProductionOrder, ProductionConfigItem } from "../types";
 import { Share2, TrendingUp, TrendingDown, Package, PackageOpen, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings, Sparkles, ScanLine, QrCode, Trash2, Bell } from "lucide-react";
 import { format, differenceInDays, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -29,6 +29,9 @@ interface DashboardViewProps {
   people: Person[];
   categories: Category[];
   productionLots?: any[];
+  /** Padrões de embalagem (Grid tipo PACKAGING) — usado só pra prorratear o valor do
+   * estoque Atacado por pares reais de cada padrão (ver getWholesaleValue). */
+  productionConfigs?: ProductionConfigItem[];
   sectors?: any[];
   purchaseRequests?: any[];
   serviceOrders?: ServiceOrder[];
@@ -62,6 +65,7 @@ export default function DashboardView({
   people,
   categories,
   productionLots = [],
+  productionConfigs = [],
   sectors = [],
   purchaseRequests = [],
   serviceOrders = [],
@@ -81,6 +85,7 @@ export default function DashboardView({
   modulesConfig,
   activeCollaborator = null,
 }: DashboardViewProps) {
+  const packagingItems = useMemo(() => productionConfigs.filter(c => c.type === 'PACKAGING'), [productionConfigs]);
   const [checksSearch, setChecksSearch] = useState("");
   const [lowStockSearch, setLowStockSearch] = useState("");
   const [customerDebtsSearch, setCustomerDebtsSearch] = useState("");
@@ -326,7 +331,7 @@ export default function DashboardView({
 
         // Custo/venda por pool — produto híbrido usa preço de caixa para o pool
         // Atacado e preço unitário por par para o pool Varejo (getStockValue).
-        const { costValue, saleValue } = getStockValue(p, v);
+        const { costValue, saleValue } = getStockValue(p, v, packagingItems);
         acc.totalCostValue += costValue;
         acc.totalSaleValue += saleValue;
         acc.estimatedProfit += saleValue - costValue;
@@ -360,7 +365,7 @@ export default function DashboardView({
       pendingReceivables,
       personalBalance
     };
-  }, [transactions, accounts, products, sales]);
+  }, [transactions, accounts, products, sales, packagingItems]);
 
   const recentActivity = useMemo(() => {
     const businessTransactions = transactions.filter(t => !t.isPersonal && accounts.find(a => a.id === t.accountId)?.type !== AccountType.PERSONAL);
@@ -1945,6 +1950,7 @@ export default function DashboardView({
                 isDarkMode={isDarkMode}
                 products={products}
                 productionLots={productionLots}
+                productionConfigs={productionConfigs}
                 accounts={accounts}
                 sales={sales}
                 transactions={transactions}

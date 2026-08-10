@@ -3873,6 +3873,7 @@ export default function App() {
             accounts={accounts}
             people={people}
             productionLots={productionLots}
+            productionConfigs={productionConfigs}
             sectors={sectors}
             purchaseRequests={purchaseRequests}
             serviceOrders={serviceOrders}
@@ -5224,6 +5225,7 @@ export default function App() {
             sales={sales}
             products={products}
             productionLots={productionLots}
+            productionConfigs={productionConfigs}
             onSave={async (newTx) => {
               try {
                 await financeService.createTransaction(newTx);
@@ -5435,6 +5437,7 @@ export default function App() {
             grids={grids}
             lots={productionLots}
             modulesConfig={modulesConfig}
+            productionConfigs={productionConfigs}
           />
         );
       case ViewType.SALE_FORM:
