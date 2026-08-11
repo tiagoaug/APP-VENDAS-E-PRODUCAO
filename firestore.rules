@@ -110,8 +110,16 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // Client ID/Secret do app Bling da própria empresa + tokens de acesso — mesmo
+      // isolamento do shopeeIntegration acima, só que aqui o próprio client_id/secret
+      // também é sensível (não é uma chave de parceiro compartilhada, é a credencial da
+      // conta), então nunca pode ser lido pelo client de jeito nenhum.
+      match /blingIntegration/{document=**} {
+        allow read, write: if false;
+      }
+
       match /{collection}/{document=**} {
-        allow read, write: if isOwner(userId) && collection != 'shopeeIntegration';
+        allow read, write: if isOwner(userId) && collection != 'shopeeIntegration' && collection != 'blingIntegration';
       }
     }
 
@@ -124,6 +132,19 @@ service cloud.firestore {
     // Nonces temporários do fluxo de OAuth (state -> uid), consumidos pelo callback
     // público da Shopee. Só Admin SDK.
     match /shopeeAuthNonces/{nonce} {
+      allow read, write: if false;
+    }
+
+    // Índice global uid -> uid, usado pelo webhook público do Bling (chega sem contexto de
+    // usuário) pra confirmar que aquele uid embutido na URL do webhook é de uma conta
+    // realmente conectada. Só Admin SDK.
+    match /blingWebhookIndex/{uid} {
+      allow read, write: if false;
+    }
+
+    // Nonces temporários do fluxo de OAuth (state -> uid), consumidos pelo callback
+    // público do Bling. Só Admin SDK.
+    match /blingAuthNonces/{nonce} {
       allow read, write: if false;
     }
   }

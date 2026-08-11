@@ -285,6 +285,102 @@ export const printOrderItemSheet = ({
   wrap.remove();
 };
 
+// ─── Shared A4 Picking List (Lista de Separação) Printer ─────────────────────
+
+export interface PrintPickingListRow {
+  reference: string;
+  productName: string;
+  variationName: string;
+  size?: string;
+  photoUrl?: string;
+  quantidade: number;
+  pedidos: string;
+}
+
+export interface PrintPickingListOptions {
+  rows: PrintPickingListRow[];
+  mostrarMiniaturas: boolean;
+  incluirCheckbox: boolean;
+  pageSize?: 'a4' | '100x150';
+}
+
+export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pageSize = 'a4' }: PrintPickingListOptions) => {
+  const container = document.getElementById('_lot_print_container');
+  if (container) container.remove();
+
+  const wrap = document.createElement('div');
+  wrap.id = '_lot_print_container';
+
+  const style = document.createElement('style');
+  style.innerHTML = PRINT_STYLES;
+  wrap.appendChild(style);
+
+  // Sobrescreve o @page padrão (A4) da PRINT_STYLES quando o papel é etiqueta 100x150 — mesma
+  // cascata CSS (regra depois vence), fonte da tabela também reduzida pro formato estreito.
+  if (pageSize === '100x150') {
+    const override = document.createElement('style');
+    override.innerHTML = `
+      @page { size: 100mm 150mm; margin: 3mm; }
+      @media print {
+        th, td { font-size: 6px !important; padding: 1.5px 2px !important; }
+        h1 { font-size: 13px !important; }
+        p { font-size: 7px !important; }
+        .badge { font-size: 6px !important; padding: 2px 5px !important; }
+      }
+    `;
+    wrap.appendChild(override);
+  }
+
+  const date = new Date().toLocaleString('pt-BR');
+
+  const rowsHtml = rows
+    .map(
+      (r) => `
+        <tr>
+          ${incluirCheckbox ? '<td style="width:36px;text-align:center;"><span style="display:inline-block;width:16px;height:16px;border:2px solid #000;"></span></td>' : ''}
+          ${mostrarMiniaturas ? `<td style="width:52px;">${r.photoUrl ? `<img src="${r.photoUrl}" style="width:40px;height:40px;object-fit:cover;border:1px solid #000;" />` : ''}</td>` : ''}
+          <td><strong>${r.reference}</strong> — ${r.productName}</td>
+          <td>${r.variationName}</td>
+          <td class="gc">${r.size || 'Atacado'}</td>
+          <td class="gv">${r.quantidade}</td>
+          <td>${r.pedidos}</td>
+        </tr>`
+    )
+    .join('');
+
+  wrap.innerHTML += `
+    <div class="pp">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000;padding-bottom:12px;margin-bottom:22px;">
+        <div>
+          <h1 style="margin:0;font-size:26px;font-weight:900;letter-spacing:-1px;text-transform:uppercase;">GESTÃO PRO</h1>
+          <p style="margin:3px 0 0 0;font-size:10px;font-weight:800;color:#4b5563;text-transform:uppercase;letter-spacing:2px;">Integração Bling</p>
+        </div>
+        <div style="text-align:right;">
+          <span class="badge">Lista de Separação</span>
+          <p style="margin:6px 0 0 0;font-size:12px;font-weight:900;text-transform:uppercase;color:#374151;">Emissão: ${date}</p>
+        </div>
+      </div>
+
+      <table>
+        <thead><tr>
+          ${incluirCheckbox ? '<th></th>' : ''}
+          ${mostrarMiniaturas ? '<th></th>' : ''}
+          <th>Referência / Produto</th>
+          <th>Cor</th>
+          <th style="width:100px;">Tamanho</th>
+          <th style="width:80px;">Qtd</th>
+          <th>Pedidos</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+  `;
+
+  document.body.appendChild(wrap);
+  window.print();
+  wrap.remove();
+};
+
 /**
  * Shares a jsPDF document using native share on mobile or downloads it on web.
  */

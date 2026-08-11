@@ -15,7 +15,8 @@ import {
   Lock,
   AlertTriangle,
   Store,
-  Truck
+  Truck,
+  Building2
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
@@ -74,7 +75,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
         setConfirmTitle("Desativar Vendas");
         setConfirmMessage(`Ao desativar o Módulo de Vendas, o Módulo de ${dependents} também será desativado automaticamente. Deseja continuar?`);
       } else {
-        const moduleName = module === 'personal' ? 'Pessoal' : module === 'sales' ? 'Vendas' : module === 'production' ? 'Produção' : module === 'entregas' ? 'Entregas' : 'Marketplace';
+        const moduleName = module === 'personal' ? 'Pessoal' : module === 'sales' ? 'Vendas' : module === 'production' ? 'Produção' : module === 'entregas' ? 'Entregas' : module === 'bling' ? 'Bling' : 'Marketplace';
         setConfirmTitle(`Desativar ${moduleName}`);
         setConfirmMessage(`Tem certeza que deseja ocultar o Módulo ${moduleName}? Os dados não serão apagados, mas as funções ficarão inacessíveis.`);
       }
@@ -152,6 +153,15 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       disabled: !config.sales,
       color: 'bg-teal-600',
       features: ['Mapa e Geocodificação', 'Rotas Otimizadas', 'Navegação Google/Apple Maps']
+    },
+    {
+      id: 'bling',
+      name: 'Módulo Bling',
+      description: 'Integração com o ERP Bling — vinculação de produtos e emissão de notas fiscais.',
+      icon: <Building2 size={28} />,
+      active: config.bling,
+      color: 'bg-amber-500',
+      features: ['Vinculação de Produtos', 'Pedidos de Marketplaces', 'Emissão de NF-e']
     }
   ];
 
@@ -163,6 +173,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     { label: 'Config. Produção', icon: <Settings size={20} />, view: ViewType.PRODUCTION_CONFIG, module: 'production' },
     { label: 'Config. Marketplace', icon: <Store size={20} />, view: ViewType.MARKETPLACE_CONNECTION, module: 'marketplace' },
     { label: 'Config. Entregas', icon: <Truck size={20} />, view: ViewType.DELIVERY_CONFIG, module: 'entregas' },
+    { label: 'Conexão Bling', icon: <Building2 size={20} />, view: ViewType.BLING_CONNECTION, module: 'bling' },
     { label: 'Estoque Central', icon: <Boxes size={20} />, view: ViewType.STOCK, module: 'sales' },
     { label: 'Finanças Pessoais', icon: <Users size={20} />, view: ViewType.PERSONAL_FINANCIAL, module: 'personal' },
   ];

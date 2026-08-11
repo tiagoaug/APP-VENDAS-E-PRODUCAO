@@ -685,6 +685,60 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   <div className="flex flex-col gap-6">
                     <div className={`p-6 rounded-[2rem] border flex flex-col gap-8 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                       <div className="flex flex-col gap-6">
+                        {/* Foto da Variante */}
+                        <div className="flex justify-center">
+                          <label className="relative cursor-pointer group" title="Toque para adicionar foto desta cor/variante">
+                            <div className={`w-20 h-20 rounded-3xl overflow-hidden border-2 flex items-center justify-center transition-all ${v.photoUrl ? 'border-indigo-300 dark:border-indigo-600' : 'border-dashed border-slate-200 dark:border-slate-700'} ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                              {v.photoUrl
+                                ? <img src={v.photoUrl} alt={`Foto da variante ${v.colorName}`} className="w-full h-full object-cover" />
+                                : <div className="flex flex-col items-center gap-1">
+                                    <Camera size={22} className="text-slate-300 dark:text-slate-600" />
+                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Foto</span>
+                                  </div>
+                              }
+                            </div>
+                            {v.photoUrl && (
+                              <button
+                                type="button"
+                                onClick={e => { e.preventDefault(); updateVariation(activeVariationIndex, { photoUrl: undefined }); }}
+                                className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-md hover:bg-rose-600 transition-all"
+                                title="Remover foto"
+                              >
+                                <X size={12} strokeWidth={3} />
+                              </button>
+                            )}
+                            <div className="absolute inset-0 rounded-3xl bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <Camera size={18} className="text-white" />
+                            </div>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={e => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                const reader = new FileReader();
+                                reader.onload = ev => {
+                                  const result = ev.target?.result as string;
+                                  const img = new Image();
+                                  img.onload = () => {
+                                    const maxSide = 400;
+                                    const ratio = Math.min(maxSide / img.width, maxSide / img.height, 1);
+                                    const canvas = document.createElement('canvas');
+                                    canvas.width = img.width * ratio;
+                                    canvas.height = img.height * ratio;
+                                    canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                                    updateVariation(activeVariationIndex, { photoUrl: canvas.toDataURL('image/jpeg', 0.82) });
+                                  };
+                                  img.src = result;
+                                };
+                                reader.readAsDataURL(file);
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
+                        </div>
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                           {/* Cor da Variante */}
                           <div className="flex flex-col gap-3">

@@ -40,7 +40,8 @@ import {
   MapPin,
   Route,
   Navigation,
-  Compass
+  Compass,
+  Building2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
@@ -164,6 +165,11 @@ const ProductionEngineeringView = lazy(() => import("./views/ProductionEngineeri
 const MarketplaceConnectionView = lazy(() => import("./views/MarketplaceConnectionView"));
 const MarketplaceOrdersView = lazy(() => import("./views/MarketplaceOrdersView"));
 const MarketplaceSkuMappingView = lazy(() => import("./views/MarketplaceSkuMappingView"));
+const BlingConnectionView = lazy(() => import("./views/BlingConnectionView"));
+const BlingProductMappingView = lazy(() => import("./views/BlingProductMappingView"));
+const BlingInvoiceEmissionView = lazy(() => import("./views/BlingInvoiceEmissionView"));
+const BlingPickingListView = lazy(() => import("./views/BlingPickingListView"));
+const BlingStockView = lazy(() => import("./views/BlingStockView"));
 const DeliveryRouteBuilderView = lazy(() => import("./views/DeliveryRouteBuilderView"));
 const DeliveryRouteDetailView = lazy(() => import("./views/DeliveryRouteDetailView"));
 const DeliveryCarriersView = lazy(() => import("./views/DeliveryCarriersView"));
@@ -254,6 +260,13 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
     ViewType.DELIVERY_CARRIERS,
     ViewType.DELIVERY_NAV_PREFS,
     ViewType.DELIVERY_PRINT_CONFIG,
+  ],
+  bling: [
+    ViewType.BLING_CONNECTION,
+    ViewType.BLING_PRODUCT_MAPPING,
+    ViewType.BLING_INVOICE_EMISSION,
+    ViewType.BLING_PICKING_LIST,
+    ViewType.BLING_STOCK,
   ]
 };
 
@@ -727,6 +740,7 @@ export default function App() {
     production: true,
     marketplace: false,
     entregas: false,
+    bling: false,
   };
 
   const [modulesConfig, setModulesConfig] = useState<AppModulesConfig>(() => {
@@ -3849,6 +3863,7 @@ export default function App() {
     const isPersonalView = MODULE_VIEWS.personal.includes(view);
     const isMarketplaceView = MODULE_VIEWS.marketplace.includes(view);
     const isDeliveryView = MODULE_VIEWS.entregas.includes(view);
+    const isBlingView = MODULE_VIEWS.bling.includes(view);
     // "Modelos / Ficha Técnica" é o catálogo de produtos — Vendas precisa dele sozinho
     // (tem que cadastrar o que vende) mesmo com o módulo Produção desativado. As outras
     // telas de Produção (rota, matriz, grade etc.) continuam exigindo os dois módulos juntos.
@@ -3860,6 +3875,7 @@ export default function App() {
     if (isPersonalView && !modulesConfig.personal) return renderView(ViewType.DASHBOARD);
     if (isMarketplaceView && (!modulesConfig.sales || !modulesConfig.marketplace)) return renderView(ViewType.DASHBOARD);
     if (isDeliveryView && (!modulesConfig.sales || !modulesConfig.entregas)) return renderView(ViewType.DASHBOARD);
+    if (isBlingView && !modulesConfig.bling) return renderView(ViewType.DASHBOARD);
     if (!isViewAllowed(activeCollaborator, view)) return renderView(ViewType.DASHBOARD);
 
     switch (view) {
@@ -5991,6 +6007,42 @@ export default function App() {
             onNavigate={navigateTo}
           />
         );
+      case ViewType.BLING_CONNECTION:
+        return (
+          <BlingConnectionView
+            isDarkMode={isDarkMode}
+            onNavigate={navigateTo}
+          />
+        );
+      case ViewType.BLING_PRODUCT_MAPPING:
+        return (
+          <BlingProductMappingView
+            isDarkMode={isDarkMode}
+            products={products}
+          />
+        );
+      case ViewType.BLING_INVOICE_EMISSION:
+        return (
+          <BlingInvoiceEmissionView
+            isDarkMode={isDarkMode}
+            products={products}
+            onNavigate={navigateTo}
+          />
+        );
+      case ViewType.BLING_PICKING_LIST:
+        return (
+          <BlingPickingListView
+            isDarkMode={isDarkMode}
+            products={products}
+          />
+        );
+      case ViewType.BLING_STOCK:
+        return (
+          <BlingStockView
+            isDarkMode={isDarkMode}
+            products={products}
+          />
+        );
       case ViewType.MARKETPLACE_SKU_MAPPING:
         return (
           <MarketplaceSkuMappingView
@@ -6574,6 +6626,14 @@ export default function App() {
       return "marketplace";
     if (
       [
+        ViewType.BLING_CONNECTION,
+        ViewType.BLING_PRODUCT_MAPPING,
+        ViewType.BLING_INVOICE_EMISSION,
+      ].includes(currentView)
+    )
+      return "bling";
+    if (
+      [
         ViewType.DELIVERY_MENU,
         ViewType.DELIVERY_ROUTE_BUILDER,
         ViewType.DELIVERY_ROUTE_DETAIL,
@@ -6692,6 +6752,16 @@ export default function App() {
         return "Pedidos Marketplace";
       case ViewType.MARKETPLACE_SKU_MAPPING:
         return "Mapeamento de SKU";
+      case ViewType.BLING_CONNECTION:
+        return "Conexão Bling";
+      case ViewType.BLING_PRODUCT_MAPPING:
+        return "Vincular Produtos Bling";
+      case ViewType.BLING_INVOICE_EMISSION:
+        return "Emissão de Notas Fiscais";
+      case ViewType.BLING_PICKING_LIST:
+        return "Lista de Separação";
+      case ViewType.BLING_STOCK:
+        return "Estoque Bling";
       case ViewType.DELIVERY_MENU:
         return "Módulo Entregas";
       case ViewType.DELIVERY_ROUTE_BUILDER:
@@ -6767,6 +6837,11 @@ export default function App() {
       case ViewType.MARKETPLACE_CONNECTION:
       case ViewType.MARKETPLACE_ORDERS:
       case ViewType.MARKETPLACE_SKU_MAPPING: return <Store size={24} className="text-orange-500 dark:text-orange-400" />;
+      case ViewType.BLING_CONNECTION:
+      case ViewType.BLING_PRODUCT_MAPPING:
+      case ViewType.BLING_INVOICE_EMISSION:
+      case ViewType.BLING_PICKING_LIST:
+      case ViewType.BLING_STOCK: return <Building2 size={24} className="text-amber-500 dark:text-amber-400" />;
       case ViewType.DELIVERY_MENU:
       case ViewType.DELIVERY_ROUTE_BUILDER:
       case ViewType.DELIVERY_ROUTE_DETAIL:
@@ -7099,6 +7174,18 @@ export default function App() {
               appTheme={appTheme}
               iconMode={navIconMode}
               tintColor={NAV_TAB_COLORS.marketplace}
+              monoColor={navMonoColor}
+            />
+          )}
+          {modulesConfig.bling && isViewAllowed(activeCollaborator, ViewType.BLING_CONNECTION) && (
+            <TabItem
+              icon={<Building2 size={20} />}
+              label="Bling"
+              active={activeTab === "bling"}
+              onClick={() => resetTo(ViewType.BLING_CONNECTION)}
+              appTheme={appTheme}
+              iconMode={navIconMode}
+              tintColor={NAV_TAB_COLORS.bling}
               monoColor={navMonoColor}
             />
           )}

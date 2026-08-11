@@ -794,6 +794,11 @@ export enum ViewType {
   MARKETPLACE_CONNECTION = 'MARKETPLACE_CONNECTION',
   MARKETPLACE_ORDERS = 'MARKETPLACE_ORDERS',
   MARKETPLACE_SKU_MAPPING = 'MARKETPLACE_SKU_MAPPING',
+  BLING_CONNECTION = 'BLING_CONNECTION',
+  BLING_PRODUCT_MAPPING = 'BLING_PRODUCT_MAPPING',
+  BLING_INVOICE_EMISSION = 'BLING_INVOICE_EMISSION',
+  BLING_PICKING_LIST = 'BLING_PICKING_LIST',
+  BLING_STOCK = 'BLING_STOCK',
   DELIVERY_MENU = 'DELIVERY_MENU',
   DELIVERY_ROUTE_BUILDER = 'DELIVERY_ROUTE_BUILDER',
   DELIVERY_ROUTE_DETAIL = 'DELIVERY_ROUTE_DETAIL',
@@ -886,6 +891,7 @@ export type AppModulesConfig = {
   production: boolean;
   marketplace: boolean;
   entregas: boolean;
+  bling: boolean;
 };
 
 // ─── Marketplace (integração com plataformas externas, ex.: Shopee) ────────
@@ -946,6 +952,79 @@ export type MarketplaceOrder = {
   updatedAt?: number;
   importedAt?: number;
   returnedAt?: number;
+};
+
+// ─── Integração Bling (ERP + emissão de NF-e) ──────────────────────────────
+// Mesmo desenho do bloco Marketplace acima: nada de credencial/token nos tipos usados no
+// cliente — client_secret e tokens ficam só em Cloud Functions/Firestore admin-only (ver
+// firestore.rules). O usuário cadastra Client ID/Secret do PRÓPRIO app Bling (diferente da
+// Shopee, que usa uma chave de parceiro única pro app inteiro) — cada empresa registra o
+// dela no portal de desenvolvedor do Bling.
+
+// Status de conexão — nunca contém client_secret nem tokens. Esses ficam em
+// users/{uid}/blingIntegration (só Admin SDK).
+export type BlingConnection = {
+  id: string; // fixo: 'bling'
+  connected: boolean;
+  hasCredentials: boolean; // true assim que Client ID/Secret foram salvos, mesmo antes de autorizar
+  companyName?: string; // denormalizado da conta Bling, só exibição
+  connectedAt?: number;
+  lastProductSyncAt?: number;
+  lastOrderSyncAt?: number;
+};
+
+export type BlingMatchOrigin = 'AUTOMATICO_GTIN' | 'AUTOMATICO_SKU' | 'MANUAL';
+
+export type BlingProductMapping = {
+  id: string;
+  blingProdutoId: string;
+  blingSku?: string;
+  blingNome?: string; // denormalizado, só exibição
+  productId: string;
+  productName?: string; // denormalizado, só exibição
+  variationId: string;
+  variationName?: string; // denormalizado, só exibição
+  size?: string; // ausente = mapeado como ATACADO (stock['WHOLESALE'])
+  saleType: SaleType;
+  origem: BlingMatchOrigin;
+  createdAt: number;
+  updatedAt?: number;
+};
+
+// Produto do Bling que o usuário marcou "Ignorar" no assistente de vinculação — não é uma
+// vinculação, só evita que o mesmo produto continue aparecendo na aba "Pendentes".
+export type BlingIgnoredProduct = {
+  id: string; // = blingProdutoId
+  blingNome?: string; // denormalizado, só exibição
+  ignoredAt: number;
+};
+
+export type BlingOrderOrigin = 'PROPRIO' | 'MERCADO_LIVRE' | 'SHOPEE' | 'LOJA_VIRTUAL' | 'OUTRO';
+export type BlingOrderStatus = 'PENDENTE' | 'PRONTO_PARA_EMITIR' | 'EMITINDO' | 'EMITIDA' | 'REJEITADA';
+
+export type BlingOrderItem = {
+  blingProdutoId: string;
+  descricao: string;
+  quantidade: number;
+  valorUnitario: number;
+  mapeado: boolean; // true quando existe BlingProductMapping pra este blingProdutoId
+  separado?: boolean; // true quando o estoque já foi abatido pra este item (ver Lista de Separação)
+};
+
+export type BlingOrder = {
+  id: string;
+  blingPedidoId: string;
+  numero: string;
+  origem: BlingOrderOrigin;
+  cliente: string;
+  valorTotal: number;
+  itens: BlingOrderItem[];
+  status: BlingOrderStatus;
+  notaFiscalId?: string;
+  danfeUrl?: string;
+  motivoRejeicao?: string;
+  createdAt: number;
+  updatedAt?: number;
 };
 
 export type SectorId =

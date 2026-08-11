@@ -9,6 +9,10 @@ import { AIProviderMessage, RunChatFn } from "./providers/types";
 import { getShopeeAuthUrl, handleShopeeOAuthCallback } from "./marketplace/auth";
 import { handleShopeeWebhook } from "./marketplace/webhook";
 import { importShopeeOrder, revertMarketplaceOrderReturn, pushStockToShopee } from "./marketplace/sync";
+import { saveBlingCredentials, getBlingAuthUrl, handleBlingOAuthCallback, disconnectBling } from "./bling/auth";
+import { fetchBlingProducts, syncBlingOrders, emitBlingInvoice, emitBlingInvoicesBatch } from "./bling/sync";
+import { handleBlingWebhook } from "./bling/webhook";
+import { abaterEstoqueBling, AbaterEstoqueItem } from "./bling/picking";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -277,5 +281,129 @@ export const shopeeRevertOrderReturn = onCall({ secrets: shopeeSecrets, region: 
     return await revertMarketplaceOrderReturn(db, request.auth.uid, marketplaceOrderId);
   } catch (err: any) {
     throw new HttpsError("internal", err?.message || "Falha ao processar devolução.");
+  }
+});
+
+// ─── Integração Bling ───────────────────────────────────────────────────────
+// Ver src/bling/*.ts — lógica de negócio lá; aqui só a casca de autenticação/roteamento.
+// Sem secrets globais: cada conta cadastra seu próprio Client ID/Secret do Bling (ver
+// bling/auth.ts), diferente da Shopee que usa uma chave de parceiro única pro app inteiro.
+
+export const blingSaveCredentials = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  const { clientId, clientSecret } = request.data || {};
+  if (!clientId || typeof clientId !== "string" || !clientSecret || typeof clientSecret !== "string") {
+    throw new HttpsError("invalid-argument", "clientId e clientSecret são obrigatórios.");
+  }
+  return await saveBlingCredentials(db, request.auth.uid, clientId, clientSecret);
+});
+
+export const blingGetAuthUrl = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  const callbackUrl = request.data?.callbackUrl;
+  if (!callbackUrl || typeof callbackUrl !== "string") {
+    throw new HttpsError("invalid-argument", "callbackUrl é obrigatório (URL pública da function blingOAuthCallback).");
+  }
+  try {
+    const url = await getBlingAuthUrl(db, request.auth.uid, callbackUrl);
+    return { url };
+  } catch (err: any) {
+    throw new HttpsError("failed-precondition", err?.message || "Falha ao gerar URL de autorização do Bling.");
+  }
+});
+
+export const blingDisconnect = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  return await disconnectBling(db, request.auth.uid);
+});
+
+export const blingOAuthCallback = onRequest({ region: "us-central1", timeoutSeconds: 60 }, async (req, res) => {
+  const redirectUri = `https://${req.hostname}${req.path}`;
+  let result: { ok: boolean; message: string };
+  try {
+    result = await handleBlingOAuthCallback(db, {
+      code: req.query.code as string | undefined,
+      state: req.query.state as string | undefined,
+      redirectUri,
+    });
+  } catch (err: any) {
+    console.error("[blingOAuthCallback] erro inesperado:", err?.message || err);
+    result = { ok: false, message: err?.message || "Falha inesperada ao conectar com o Bling." };
+  }
+  // "https://localhost/" é a origem padrão do WebView do Capacitor Android (androidScheme
+  // 'https' + hostname 'localhost', ver capacitor.config.ts) — como o fluxo de autorização
+  // navega essa MESMA WebView pro Bling e o Bling redireciona de volta pra cá (fora do domínio
+  // do app), não dá pra usar history.back() de forma confiável; o link recarrega o app do zero
+  // dentro da mesma WebView. window.close() é só uma tentativa a mais pro caso raro de ter
+  // aberto numa aba/Custom Tab externa que realmente pode ser fechada por script.
+  res.status(result.ok ? 200 : 400).send(
+    `<!doctype html><html><body style="font-family:sans-serif;text-align:center;padding:48px">
+      <h2>${result.ok ? "✅" : "⚠️"} ${result.message}</h2>
+      <p>Pode fechar esta janela e voltar pro app.</p>
+      <a href="https://localhost/" onclick="try{window.close()}catch(e){}"
+         style="display:inline-block;margin-top:24px;padding:14px 28px;background:#4f46e5;color:#fff;
+         text-decoration:none;border-radius:12px;font-weight:bold;">Voltar pro app</a>
+    </body></html>`
+  );
+});
+
+export const blingWebhook = onRequest({ region: "us-central1" }, async (req, res) => {
+  const uid = req.query.uid as string | undefined;
+  const result = await handleBlingWebhook(db, uid);
+  res.status(result.status).send(result.body);
+});
+
+export const blingFetchProducts = onCall({ region: "us-central1", timeoutSeconds: 300 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  try {
+    const produtos = await fetchBlingProducts(db, request.auth.uid);
+    return { produtos };
+  } catch (err: any) {
+    throw new HttpsError("internal", err?.message || "Falha ao buscar produtos do Bling.");
+  }
+});
+
+export const blingSyncOrders = onCall({ region: "us-central1", timeoutSeconds: 300 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  try {
+    return await syncBlingOrders(db, request.auth.uid);
+  } catch (err: any) {
+    throw new HttpsError("internal", err?.message || "Falha ao sincronizar pedidos do Bling.");
+  }
+});
+
+export const blingEmitInvoice = onCall({ region: "us-central1", timeoutSeconds: 120 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  const pedidoId = request.data?.pedidoId;
+  if (!pedidoId || typeof pedidoId !== "string") {
+    throw new HttpsError("invalid-argument", "pedidoId é obrigatório.");
+  }
+  try {
+    return await emitBlingInvoice(db, request.auth.uid, pedidoId);
+  } catch (err: any) {
+    throw new HttpsError("internal", err?.message || "Falha ao emitir nota fiscal.");
+  }
+});
+
+export const blingEmitInvoicesBatch = onCall({ region: "us-central1", timeoutSeconds: 540 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  const pedidoIds = request.data?.pedidoIds;
+  if (!Array.isArray(pedidoIds) || pedidoIds.some((id) => typeof id !== "string")) {
+    throw new HttpsError("invalid-argument", "pedidoIds é obrigatório (array de strings).");
+  }
+  const resultados = await emitBlingInvoicesBatch(db, request.auth.uid, pedidoIds);
+  return { resultados };
+});
+
+export const blingAbaterEstoque = onCall({ region: "us-central1", timeoutSeconds: 120 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  const items = request.data?.items;
+  if (!Array.isArray(items) || items.some((i) => !i?.blingOrderId || !i?.blingProdutoId || typeof i?.quantidade !== "number")) {
+    throw new HttpsError("invalid-argument", "items é obrigatório (array de {blingOrderId, blingProdutoId, quantidade}).");
+  }
+  try {
+    return await abaterEstoqueBling(db, request.auth.uid, items as AbaterEstoqueItem[]);
+  } catch (err: any) {
+    throw new HttpsError("internal", err?.message || "Falha ao abater estoque.");
   }
 });
