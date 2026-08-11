@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, FileCheck2, AlertTriangle, ChevronDown, ChevronUp, Tags as TagsIcon, ChevronRight, ExternalLink, Store, Loader2, ShoppingBag, Globe, Building2, HelpCircle } from 'lucide-react';
+import { RefreshCw, FileCheck2, AlertTriangle, ChevronDown, ChevronUp, Tags as TagsIcon, ChevronRight, ExternalLink, Store, Loader2, ShoppingBag, Globe, Building2, HelpCircle, FileDown, CheckCircle2, Clock3 } from 'lucide-react';
 import { BlingOrder, BlingProductMapping, Product, ViewType } from '../types';
 import { subscribeToBlingOrders, subscribeToBlingMappings, syncBlingOrdersNow, emitBlingInvoice, emitBlingInvoicesBatch } from '../services/blingService';
 import { toast } from '../utils/toast';
+import { printShippingLabel } from '../utils/pdfExport';
 
 interface BlingInvoiceEmissionViewProps {
   isDarkMode: boolean;
@@ -33,6 +34,7 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [emittingSingle, setEmittingSingle] = useState<string | null>(null);
   const [emittingBatch, setEmittingBatch] = useState(false);
+  const [activeTab, setActiveTab] = useState<'pendentes' | 'autorizadas' | 'rejeitadas'>('pendentes');
 
   useEffect(() => subscribeToBlingOrders(setOrders), []);
   useEffect(() => subscribeToBlingMappings(setMappings), []);
@@ -41,6 +43,12 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
   const productById = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
 
   const pending = useMemo(() => orders.filter((o) => o.status === 'PENDENTE' || o.status === 'PRONTO_PARA_EMITIR'), [orders]);
+  const authorized = useMemo(() => orders.filter((o) => o.status === 'EMITIDA').sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)), [orders]);
+  // Pedidos que saíram de "pendente" mas falharam na emissão (situação real não confirmou
+  // autorização) caem aqui — antes ficavam sem nenhuma aba pra aparecer, e pareciam ter
+  // "sumido" depois de tentar emitir (o `pending` acima não inclui REJEITADA, e só entrava em
+  // "autorizadas" quem tivesse status EMITIDA).
+  const rejected = useMemo(() => orders.filter((o) => o.status === 'REJEITADA').sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)), [orders]);
 
   const toggleSelect = (id: string, mapped: boolean) => {
     if (!mapped) return;
@@ -75,8 +83,13 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
     setEmittingSingle(order.id);
     try {
       const res = await emitBlingInvoice(order.id);
-      if (res.ok) toast.show(`Nota emitida — pedido ${order.numero}.`);
-      else toast.show(`Falha ao emitir pedido ${order.numero}: ${res.motivo || 'erro desconhecido'}`);
+      if (res.ok) {
+        toast.show(`Nota autorizada — pedido ${order.numero}.`);
+        setActiveTab('autorizadas');
+      } else {
+        toast.show(`Falha ao emitir pedido ${order.numero}: ${res.motivo || 'erro desconhecido'}`);
+        setActiveTab('rejeitadas');
+      }
     } catch (e: any) {
       toast.show('Erro ao emitir nota fiscal: ' + (e.message || e));
     } finally {
@@ -94,8 +107,10 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
       const results = await emitBlingInvoicesBatch(ids);
       const ok = results.filter((r) => r.ok).length;
       const fail = results.length - ok;
-      toast.show(`${ok} nota(s) emitida(s)${fail > 0 ? `, ${fail} com falha` : ''}.`);
+      toast.show(`${ok} nota(s) autorizada(s)${fail > 0 ? `, ${fail} com falha` : ''}.`);
       setSelected(new Set());
+      if (ok > 0) setActiveTab('autorizadas');
+      else if (fail > 0) setActiveTab('rejeitadas');
     } catch (e: any) {
       toast.show('Erro ao emitir notas em lote: ' + (e.message || e));
     } finally {
@@ -125,12 +140,46 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
         </button>
       </div>
 
-      {pending.length === 0 && (
+      <div className={`flex items-center gap-1 p-1 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-slate-100'}`}>
+        <button
+          onClick={() => setActiveTab('pendentes')}
+          className={`flex-1 h-9 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-colors ${
+            activeTab === 'pendentes'
+              ? (isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm')
+              : 'text-slate-400'
+          }`}
+        >
+          <Clock3 size={12} /> Pendentes ({pending.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('autorizadas')}
+          className={`flex-1 h-9 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-colors ${
+            activeTab === 'autorizadas'
+              ? (isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm')
+              : 'text-slate-400'
+          }`}
+        >
+          <CheckCircle2 size={12} /> Autorizadas ({authorized.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('rejeitadas')}
+          className={`flex-1 h-9 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-colors ${
+            activeTab === 'rejeitadas'
+              ? (isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm')
+              : 'text-slate-400'
+          }`}
+        >
+          <AlertTriangle size={12} /> Rejeitadas ({rejected.length})
+        </button>
+      </div>
+
+      {activeTab === 'pendentes' && pending.length === 0 && (
         <div className={`p-10 rounded-[2.5rem] border-2 border-dashed text-center ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-300'}`}>
           <p className="text-xs font-black uppercase tracking-widest">Nenhum pedido pendente de emissão</p>
         </div>
       )}
 
+      {activeTab === 'pendentes' && (
       <div className="flex flex-col gap-3">
         {pending.map((order) => {
           const mapped = isFullyMapped(order);
@@ -212,29 +261,110 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
           );
         })}
       </div>
+      )}
 
-      {orders.some((o) => o.status === 'EMITIDA') && (
-        <div className="flex flex-col gap-3 mt-2">
-          <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Notas Emitidas</h3>
-          {orders.filter((o) => o.status === 'EMITIDA').map((order) => (
-            <div key={order.id} className={`p-4 rounded-[1.75rem] border shadow-sm flex items-center justify-between gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-              <div className="min-w-0">
-                <p className={`text-xs font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Pedido {order.numero}</p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider truncate">{order.cliente}</p>
+      {activeTab === 'autorizadas' && (
+        authorized.length === 0 ? (
+          <div className={`p-10 rounded-[2.5rem] border-2 border-dashed text-center ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-300'}`}>
+            <p className="text-xs font-black uppercase tracking-widest">Nenhuma nota autorizada ainda</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {authorized.map((order) => (
+              <div key={order.id} className={`p-4 rounded-[1.75rem] border shadow-sm flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className={`text-xs font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                      Pedido {order.numero}{order.notaNumero ? ` · NF-e ${order.notaNumero}` : ''}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider truncate">{order.cliente}</p>
+                  </div>
+                  <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shrink-0">
+                    Autorizada
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-dashed border-slate-100 dark:border-slate-800">
+                  {order.danfeUrl && (
+                    <a
+                      href={order.danfeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest"
+                    >
+                      <ExternalLink size={12} /> DANFE
+                    </a>
+                  )}
+                  {order.pdfUrl && (
+                    <a
+                      href={order.pdfUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest"
+                    >
+                      <FileDown size={12} /> PDF Simplificado
+                    </a>
+                  )}
+                  {order.etiquetaTransporte && (
+                    <button
+                      onClick={() =>
+                        printShippingLabel({
+                          pedidoNumero: order.numero,
+                          notaNumero: order.notaNumero,
+                          etiqueta: order.etiquetaTransporte!,
+                        })
+                      }
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest"
+                    >
+                      <FileDown size={12} /> Etiqueta de Transporte
+                    </button>
+                  )}
+                  {!order.danfeUrl && !order.pdfUrl && !order.etiquetaTransporte && (
+                    <p className="text-[10px] font-bold text-slate-400 italic">Links ainda não disponíveis — sincronize novamente em instantes.</p>
+                  )}
+                </div>
               </div>
-              {order.danfeUrl && (
-                <a
-                  href={order.danfeUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 shrink-0"
-                >
-                  DANFE <ExternalLink size={12} />
-                </a>
-              )}
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {activeTab === 'rejeitadas' && (
+        rejected.length === 0 ? (
+          <div className={`p-10 rounded-[2.5rem] border-2 border-dashed text-center ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-300'}`}>
+            <p className="text-xs font-black uppercase tracking-widest">Nenhuma nota rejeitada</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {rejected.map((order) => {
+              const isRetrying = emittingSingle === order.id;
+              return (
+                <div key={order.id} className={`p-4 rounded-[1.75rem] border shadow-sm flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className={`text-xs font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Pedido {order.numero}</p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider truncate">{order.cliente}</p>
+                    </div>
+                    <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-400 shrink-0">
+                      Rejeitada
+                    </span>
+                  </div>
+                  {order.motivoRejeicao && (
+                    <p className="text-[10px] font-bold text-rose-500">{order.motivoRejeicao}</p>
+                  )}
+                  <button
+                    onClick={() => handleEmitOne(order)}
+                    disabled={isRetrying}
+                    className="self-start flex items-center gap-1.5 h-8 px-3 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 disabled:opacity-30 text-[10px] font-black uppercase tracking-widest"
+                  >
+                    {isRetrying ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                    {isRetrying ? 'Tentando...' : 'Tentar Novamente'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )
       )}
     </div>
   );

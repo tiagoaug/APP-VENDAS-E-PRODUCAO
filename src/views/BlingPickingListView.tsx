@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Download, Printer, PackageMinus, ImageOff, AlertTriangle, CheckSquare, Square, Loader2 } from 'lucide-react';
+import { Download, Printer, PackageMinus, ImageOff, AlertTriangle, CheckSquare, Square, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
 import { Product, BlingOrder, BlingProductMapping, SaleType } from '../types';
 import { subscribeToBlingOrders, subscribeToBlingMappings, abaterEstoqueBling, BlingAbaterEstoqueItem } from '../services/blingService';
 import { toast } from '../utils/toast';
@@ -22,7 +22,7 @@ export interface PickingGroup {
   variationName: string;
   photoUrl?: string;
   totalQty: number;
-  contributions: { blingOrderId: string; blingProdutoId: string; quantidade: number; orderNumero: string }[];
+  contributions: { blingOrderId: string; blingProdutoId: string; quantidade: number; orderNumero: string; clienteNome: string }[];
 }
 
 export interface PickingFlatRow {
@@ -50,6 +50,7 @@ export default function BlingPickingListView({ isDarkMode, products }: BlingPick
   const [orders, setOrders] = useState<BlingOrder[]>([]);
   const [mappings, setMappings] = useState<BlingProductMapping[]>([]);
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [abating, setAbating] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -91,7 +92,7 @@ export default function BlingPickingListView({ isDarkMode, products }: BlingPick
         });
 
         const key = `${mapping.productId}|${mapping.variationId}|${mapping.size || 'ATACADO'}`;
-        const contribution = { blingOrderId: order.id, blingProdutoId: item.blingProdutoId, quantidade: item.quantidade, orderNumero: order.numero };
+        const contribution = { blingOrderId: order.id, blingProdutoId: item.blingProdutoId, quantidade: item.quantidade, orderNumero: order.numero, clienteNome: order.cliente };
         const existing = map.get(key);
         if (existing) {
           existing.totalQty += item.quantidade;
@@ -128,6 +129,14 @@ export default function BlingPickingListView({ isDarkMode, products }: BlingPick
 
   const toggleOne = (key: string) => {
     setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleExpand = (key: string) => {
+    setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
@@ -236,31 +245,52 @@ export default function BlingPickingListView({ isDarkMode, products }: BlingPick
       <div className="flex flex-col gap-3">
         {groups.map((g) => {
           const isChecked = checked.has(g.key);
+          const isExpanded = expanded.has(g.key);
           const orderNumbers = Array.from(new Set(g.contributions.map((c) => c.orderNumero)));
           return (
-            <button
+            <div
               key={g.key}
-              onClick={() => toggleOne(g.key)}
-              className={`p-4 rounded-[1.75rem] border-2 flex items-center gap-3 text-left transition-all ${
+              className={`rounded-[1.75rem] border-2 overflow-hidden transition-all ${
                 isChecked
                   ? isDarkMode ? 'bg-emerald-900/20 border-emerald-700/50' : 'bg-emerald-50 border-emerald-300'
                   : isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'
               }`}
             >
-              {isChecked ? <CheckSquare size={20} className="text-emerald-500 shrink-0" /> : <Square size={20} className="text-slate-300 shrink-0" />}
-              <Thumb src={g.photoUrl} isDarkMode={isDarkMode} />
-              <div className="min-w-0 flex-1">
-                <p className={`text-sm font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                  {g.reference} · {g.variationName}{g.size ? ` · ${g.size}` : ' · Atacado'}
-                </p>
-                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider truncate">
-                  {g.productName} · Pedidos {orderNumbers.join(', ')}
-                </p>
+              <div className="flex items-center gap-3 p-4">
+                <button onClick={() => toggleOne(g.key)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                  {isChecked ? <CheckSquare size={20} className="text-emerald-500 shrink-0" /> : <Square size={20} className="text-slate-300 shrink-0" />}
+                  <Thumb src={g.photoUrl} isDarkMode={isDarkMode} />
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-sm font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                      {g.reference} · {g.variationName}{g.size ? ` · ${g.size}` : ' · Atacado'}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider truncate">
+                      {g.productName} · Pedidos {orderNumbers.join(', ')}
+                    </p>
+                  </div>
+                </button>
+                <div className={`shrink-0 px-3 py-1.5 rounded-xl text-sm font-black ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-900'}`}>
+                  {g.totalQty}
+                </div>
+                <button onClick={() => toggleExpand(g.key)} className="p-1.5 text-slate-400 shrink-0">
+                  {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </button>
               </div>
-              <div className={`shrink-0 px-3 py-1.5 rounded-xl text-sm font-black ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-900'}`}>
-                {g.totalQty}
-              </div>
-            </button>
+
+              {isExpanded && (
+                <div className={`flex flex-col gap-1.5 px-4 pb-4 pt-1 border-t border-dashed ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                  {g.contributions.map((c, idx) => (
+                    <div key={idx} className="flex items-center justify-between gap-2 text-xs pt-1.5">
+                      <div className="min-w-0">
+                        <p className={`font-bold truncate ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>Pedido {c.orderNumero}</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider truncate">{c.clienteNome}</p>
+                      </div>
+                      <span className={`font-black shrink-0 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{c.quantidade}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           );
         })}
       </div>

@@ -1,7 +1,7 @@
 ﻿import { Share } from '@capacitor/share';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
-import type { jsPDF } from 'jspdf';
+import jsPDF from 'jspdf';
 import type { ProductionLot, Product, ProductionConfigItem, ServiceOrder } from '../types';
 import { toast } from './toast';
 
@@ -379,6 +379,124 @@ export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pag
   document.body.appendChild(wrap);
   window.print();
   wrap.remove();
+};
+
+// ─── Shared Shipping Label (Etiqueta de Transporte) Printer ─────────────────
+// A API v3 do Bling não expõe um endpoint pra gerar o PDF combinado "DANFE Simplificado +
+// Etiqueta de Transporte" que aparece no menu de impressão do site deles (recurso só da
+// interface web). O que a API realmente devolve, junto da nota fiscal, é o endereço do
+// destinatário (`transporte.etiqueta`) — com isso dá pra montar nossa própria etiqueta
+// impressa aqui, no mesmo padrão de impressão via window.print() já usado acima.
+
+export interface PrintShippingLabelOptions {
+  pedidoNumero: string;
+  notaNumero?: string;
+  etiqueta: {
+    nome?: string;
+    endereco?: string;
+    numero?: string;
+    complemento?: string;
+    bairro?: string;
+    municipio?: string;
+    uf?: string;
+    cep?: string;
+  };
+}
+
+const shippingLabelHtml = ({ pedidoNumero, notaNumero, etiqueta }: PrintShippingLabelOptions): string => `
+  <div class="pp" style="height:100%;">
+    <div style="border:3px solid #000;border-radius:14px;padding:16px;height:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:14px;">
+      <div style="border-bottom:2px solid #000;padding-bottom:10px;">
+        <h1 style="font-size:15px;font-weight:900;text-transform:uppercase;letter-spacing:-0.5px;">Etiqueta de Transporte</h1>
+        <p style="margin-top:3px;font-size:9px;font-weight:800;color:#4b5563;text-transform:uppercase;">Pedido ${pedidoNumero}${notaNumero ? ` &middot; NF-e ${notaNumero}` : ''}</p>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:6px;">
+        <p style="font-size:17px;font-weight:900;text-transform:uppercase;">${etiqueta.nome || '—'}</p>
+        <p style="font-size:12px;font-weight:700;">${etiqueta.endereco || ''}${etiqueta.numero ? `, ${etiqueta.numero}` : ''}${etiqueta.complemento ? ` — ${etiqueta.complemento}` : ''}</p>
+        <p style="font-size:12px;font-weight:700;">${etiqueta.bairro || ''}</p>
+        <p style="font-size:15px;font-weight:900;">${etiqueta.municipio || ''}${etiqueta.uf ? ` / ${etiqueta.uf}` : ''}</p>
+        <p style="font-size:15px;font-weight:900;letter-spacing:1px;">CEP ${etiqueta.cep || '—'}</p>
+      </div>
+    </div>
+  </div>
+`;
+
+/** Imprime uma ou várias etiquetas de transporte, uma por página (100x150mm cada). */
+export const printShippingLabels = (labels: PrintShippingLabelOptions[]) => {
+  if (labels.length === 0) return;
+  const container = document.getElementById('_lot_print_container');
+  if (container) container.remove();
+
+  const wrap = document.createElement('div');
+  wrap.id = '_lot_print_container';
+
+  const style = document.createElement('style');
+  style.innerHTML = PRINT_STYLES;
+  wrap.appendChild(style);
+
+  const override = document.createElement('style');
+  override.innerHTML = `
+    @page { size: 100mm 150mm; margin: 5mm; }
+    @media print { h1, p { margin: 0; } }
+  `;
+  wrap.appendChild(override);
+
+  wrap.innerHTML += labels.map(shippingLabelHtml).join('');
+
+  document.body.appendChild(wrap);
+  window.print();
+  wrap.remove();
+};
+
+export const printShippingLabel = (options: PrintShippingLabelOptions) => printShippingLabels([options]);
+
+/** Monta um PDF (uma página 100x150mm por etiqueta) pra compartilhar — mesmo conteúdo da
+ * impressão acima, desenhado direto no jsPDF (sem canvas intermediário). */
+export const buildShippingLabelsPdf = (labels: PrintShippingLabelOptions[]): jsPDF => {
+  const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: [100, 150] });
+
+  labels.forEach(({ pedidoNumero, notaNumero, etiqueta }, idx) => {
+    if (idx > 0) doc.addPage([100, 150], 'p');
+
+    doc.setDrawColor(0);
+    doc.setLineWidth(0.8);
+    doc.roundedRect(5, 5, 90, 140, 3, 3);
+
+    doc.setLineWidth(0.4);
+    doc.line(8, 22, 92, 22);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.text('ETIQUETA DE TRANSPORTE', 8, 13);
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`Pedido ${pedidoNumero}${notaNumero ? ` · NF-e ${notaNumero}` : ''}`, 8, 18);
+
+    let y = 40;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(14);
+    doc.text(etiqueta.nome || '—', 8, y, { maxWidth: 84 });
+
+    y += 12;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    const linha1 = `${etiqueta.endereco || ''}${etiqueta.numero ? `, ${etiqueta.numero}` : ''}${etiqueta.complemento ? ` — ${etiqueta.complemento}` : ''}`;
+    doc.text(linha1, 8, y, { maxWidth: 84 });
+
+    y += 8;
+    doc.text(etiqueta.bairro || '', 8, y, { maxWidth: 84 });
+
+    y += 10;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text(`${etiqueta.municipio || ''}${etiqueta.uf ? ` / ${etiqueta.uf}` : ''}`, 8, y, { maxWidth: 84 });
+
+    y += 8;
+    doc.text(`CEP ${etiqueta.cep || '—'}`, 8, y);
+  });
+
+  return doc;
 };
 
 /**

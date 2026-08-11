@@ -170,6 +170,7 @@ const BlingProductMappingView = lazy(() => import("./views/BlingProductMappingVi
 const BlingInvoiceEmissionView = lazy(() => import("./views/BlingInvoiceEmissionView"));
 const BlingPickingListView = lazy(() => import("./views/BlingPickingListView"));
 const BlingStockView = lazy(() => import("./views/BlingStockView"));
+const BlingInvoicesView = lazy(() => import("./views/BlingInvoicesView"));
 const DeliveryRouteBuilderView = lazy(() => import("./views/DeliveryRouteBuilderView"));
 const DeliveryRouteDetailView = lazy(() => import("./views/DeliveryRouteDetailView"));
 const DeliveryCarriersView = lazy(() => import("./views/DeliveryCarriersView"));
@@ -267,6 +268,7 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
     ViewType.BLING_INVOICE_EMISSION,
     ViewType.BLING_PICKING_LIST,
     ViewType.BLING_STOCK,
+    ViewType.BLING_INVOICES,
   ]
 };
 
@@ -6041,6 +6043,13 @@ export default function App() {
           <BlingStockView
             isDarkMode={isDarkMode}
             products={products}
+            onReconcileStockBalance={handleReconcileStockBalance}
+          />
+        );
+      case ViewType.BLING_INVOICES:
+        return (
+          <BlingInvoicesView
+            isDarkMode={isDarkMode}
           />
         );
       case ViewType.MARKETPLACE_SKU_MAPPING:
@@ -6629,6 +6638,9 @@ export default function App() {
         ViewType.BLING_CONNECTION,
         ViewType.BLING_PRODUCT_MAPPING,
         ViewType.BLING_INVOICE_EMISSION,
+        ViewType.BLING_PICKING_LIST,
+        ViewType.BLING_STOCK,
+        ViewType.BLING_INVOICES,
       ].includes(currentView)
     )
       return "bling";
@@ -6762,6 +6774,8 @@ export default function App() {
         return "Lista de Separação";
       case ViewType.BLING_STOCK:
         return "Estoque Bling";
+      case ViewType.BLING_INVOICES:
+        return "Notas Fiscais";
       case ViewType.DELIVERY_MENU:
         return "Módulo Entregas";
       case ViewType.DELIVERY_ROUTE_BUILDER:
@@ -6841,7 +6855,8 @@ export default function App() {
       case ViewType.BLING_PRODUCT_MAPPING:
       case ViewType.BLING_INVOICE_EMISSION:
       case ViewType.BLING_PICKING_LIST:
-      case ViewType.BLING_STOCK: return <Building2 size={24} className="text-amber-500 dark:text-amber-400" />;
+      case ViewType.BLING_STOCK:
+      case ViewType.BLING_INVOICES: return <Building2 size={24} className="text-amber-500 dark:text-amber-400" />;
       case ViewType.DELIVERY_MENU:
       case ViewType.DELIVERY_ROUTE_BUILDER:
       case ViewType.DELIVERY_ROUTE_DETAIL:

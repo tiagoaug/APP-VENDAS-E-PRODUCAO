@@ -280,6 +280,47 @@ export interface BlingEmissionResult {
 const NFE_SITUACAO_SUCESSO = new Set([5, 6]);
 const NFE_SITUACAO_FALHA = new Set([2, 4, 9]);
 
+interface NfeEtiqueta {
+  nome?: string;
+  endereco?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  municipio?: string;
+  uf?: string;
+  cep?: string;
+}
+
+/** GET nfe/{id} — mesma consulta usada tanto ao emitir quanto ao só atualizar os dados de uma
+ * nota já existente (ver `refreshBlingInvoiceDetails`), fatorada aqui pra não duplicar a lógica
+ * de extração dos campos (ver comentário mais detalhado sobre `linkDanfe`/`linkPDF` abaixo). */
+async function fetchNfeDetails(accessToken: string, notaFiscalId: string) {
+  const find = await blingCall<{
+    data: {
+      situacao?: number;
+      numero?: number;
+      linkDanfe?: string;
+      linkPDF?: string;
+      transporte?: { etiqueta?: NfeEtiqueta };
+    };
+  }>({ accessToken, path: `nfe/${notaFiscalId}` });
+
+  const situacao = find?.data?.situacao;
+  // `linkDanfe` e `linkPDF` são dois campos distintos na resposta do Bling (fonte:
+  // AlexandreBellas/bling-erp-api-js, src/entities/nfes/interfaces/find.interface.ts) — na
+  // prática ambos costumam apontar pro mesmo DANFE completo hospedado pelo Bling. A API v3 não
+  // expõe um campo separado para o "DANFE Simplificado + Etiqueta de Transporte" que aparece no
+  // menu de impressão do site do Bling (isso é um recurso só da interface web deles); por isso
+  // guardamos os dois links que a API realmente devolve, e a etiqueta de transporte (endereço
+  // do destinatário) é montada no próprio app a partir de `transporte.etiqueta`.
+  const danfeUrl = find?.data?.linkDanfe || find?.data?.linkPDF;
+  const pdfUrl = find?.data?.linkPDF && find.data.linkPDF !== danfeUrl ? find.data.linkPDF : undefined;
+  const notaNumero = find?.data?.numero ? String(find.data.numero) : undefined;
+  const etiquetaTransporte = find?.data?.transporte?.etiqueta;
+
+  return { situacao, danfeUrl, pdfUrl, notaNumero, etiquetaTransporte };
+}
+
 /**
  * Emite a NF-e de um pedido já sincronizado: gera a nota a partir do pedido de venda no Bling
  * (se ainda não tiver uma), envia pra autorização na SEFAZ e busca o resultado (link do DANFE
@@ -312,14 +353,20 @@ export async function emitBlingInvoice(db: firestore.Firestore, uid: string, ord
       await orderRef.set({ notaFiscalId, status: "EMITINDO", updatedAt: Date.now() }, { merge: true });
     }
 
-    await blingCall({ accessToken, method: "POST", path: `nfe/${notaFiscalId}/enviar` });
+    let enviarErr: any;
+    try {
+      await blingCall({ accessToken, method: "POST", path: `nfe/${notaFiscalId}/enviar` });
+    } catch (err: any) {
+      // Bling responde 400 aqui quando a nota já foi enviada/autorizada antes (ex.: reprocessamento
+      // após timeout, clique duplo, ou re-execução de um lote que já tinha emitido essa nota) — não é
+      // necessariamente uma falha real. Em vez de assumir erro na hora, guarda o erro e deixa a
+      // consulta de situação logo abaixo confirmar o estado real da nota no Bling; só é tratado como
+      // falha de fato se a situação não vier como autorizada/emitida (ver abaixo).
+      enviarErr = err;
+      console.warn(`Bling nfe/${notaFiscalId}/enviar falhou (pedido ${orderId}), verificando situação real antes de desistir:`, err?.message);
+    }
 
-    const find = await blingCall<{ data: { situacao?: number; linkDanfe?: string; linkPDF?: string } }>({
-      accessToken,
-      path: `nfe/${notaFiscalId}`,
-    });
-    const situacao = find?.data?.situacao;
-    const danfeUrl = find?.data?.linkDanfe || find?.data?.linkPDF;
+    const { situacao, danfeUrl, pdfUrl, notaNumero, etiquetaTransporte } = await fetchNfeDetails(accessToken, notaFiscalId);
 
     if (situacao !== undefined && NFE_SITUACAO_FALHA.has(situacao)) {
       await orderRef.set({ status: "REJEITADA", motivoRejeicao: `Situação da NF-e: ${situacao}`, updatedAt: Date.now() }, { merge: true });
@@ -327,11 +374,23 @@ export async function emitBlingInvoice(db: firestore.Firestore, uid: string, ord
     }
 
     const emitida = situacao !== undefined && NFE_SITUACAO_SUCESSO.has(situacao);
+
+    // Situação não confirma sucesso E a chamada de envio realmente falhou (não foi só um "já
+    // enviada antes") — aí sim é uma falha de verdade, com o motivo original do Bling.
+    if (!emitida && enviarErr) {
+      const motivo = enviarErr?.message || "Falha ao enviar nota fiscal.";
+      await orderRef.set({ status: "REJEITADA", motivoRejeicao: motivo, notaFiscalId, updatedAt: Date.now() }, { merge: true });
+      return { pedidoId: orderId, ok: false, notaFiscalId, motivo };
+    }
+
     await orderRef.set(
       {
         status: emitida ? "EMITIDA" : "EMITINDO",
         notaFiscalId,
+        notaNumero: notaNumero || null,
         danfeUrl: danfeUrl || null,
+        pdfUrl: pdfUrl || null,
+        etiquetaTransporte: etiquetaTransporte || null,
         updatedAt: Date.now(),
       },
       { merge: true }
@@ -353,4 +412,48 @@ export async function emitBlingInvoicesBatch(db: firestore.Firestore, uid: strin
     results.push(await emitBlingInvoice(db, uid, orderId));
   }
   return results;
+}
+
+/**
+ * Só busca e atualiza os dados de uma nota fiscal já gerada (número, DANFE, PDF, etiqueta de
+ * transporte) — sem chamar `/enviar` de novo. Usado pra "preencher" pedidos que foram emitidos
+ * antes desses campos existirem (ex.: notas autorizadas antes desse deploy) e pra atualizar o
+ * status de pedidos que ainda estavam "EMITINDO" da última vez que foram consultados.
+ */
+export async function refreshBlingInvoiceDetails(db: firestore.Firestore, uid: string, orderId: string): Promise<BlingEmissionResult> {
+  const orderRef = db.collection("users").doc(uid).collection("blingOrders").doc(orderId);
+  const orderSnap = await orderRef.get();
+  if (!orderSnap.exists) return { pedidoId: orderId, ok: false, motivo: "Pedido não encontrado." };
+  const order = orderSnap.data() as { notaFiscalId?: string };
+  if (!order.notaFiscalId) return { pedidoId: orderId, ok: false, motivo: "Pedido ainda não tem nota fiscal gerada." };
+
+  try {
+    const accessToken = await getValidBlingAccessToken(db, uid);
+    const { situacao, danfeUrl, pdfUrl, notaNumero, etiquetaTransporte } = await fetchNfeDetails(accessToken, order.notaFiscalId);
+    const emitida = situacao !== undefined && NFE_SITUACAO_SUCESSO.has(situacao);
+    const falhou = situacao !== undefined && NFE_SITUACAO_FALHA.has(situacao);
+
+    await orderRef.set(
+      {
+        status: falhou ? "REJEITADA" : emitida ? "EMITIDA" : "EMITINDO",
+        ...(falhou ? { motivoRejeicao: `Situação da NF-e: ${situacao}` } : {}),
+        notaNumero: notaNumero || null,
+        danfeUrl: danfeUrl || null,
+        pdfUrl: pdfUrl || null,
+        etiquetaTransporte: etiquetaTransporte || null,
+        updatedAt: Date.now(),
+      },
+      { merge: true }
+    );
+
+    return {
+      pedidoId: orderId,
+      ok: emitida,
+      notaFiscalId: order.notaFiscalId,
+      danfeUrl,
+      motivo: emitida ? undefined : `Situação atual da nota: ${situacao ?? "desconhecida"}.`,
+    };
+  } catch (err: any) {
+    return { pedidoId: orderId, ok: false, motivo: err?.message || "Falha ao atualizar dados da nota fiscal." };
+  }
 }

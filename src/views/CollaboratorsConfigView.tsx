@@ -21,6 +21,7 @@ import {
   EyeOff,
   Sparkles,
   Lock,
+  Building2,
 } from 'lucide-react';
 import { Collaborator } from '../types';
 import { SECTORS } from '../utils/collaborators';
@@ -30,7 +31,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import { toast } from '../utils/toast';
 
 const SECTOR_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
-  ShoppingBag, ShoppingCart, Package, Boxes, Factory, PackageOpen, Wallet, Users, Landmark, Database,
+  ShoppingBag, ShoppingCart, Package, Boxes, Factory, PackageOpen, Wallet, Users, Landmark, Database, Building2,
 };
 
 interface CollaboratorsConfigViewProps {

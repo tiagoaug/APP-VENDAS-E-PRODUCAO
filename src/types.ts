@@ -799,6 +799,7 @@ export enum ViewType {
   BLING_INVOICE_EMISSION = 'BLING_INVOICE_EMISSION',
   BLING_PICKING_LIST = 'BLING_PICKING_LIST',
   BLING_STOCK = 'BLING_STOCK',
+  BLING_INVOICES = 'BLING_INVOICES',
   DELIVERY_MENU = 'DELIVERY_MENU',
   DELIVERY_ROUTE_BUILDER = 'DELIVERY_ROUTE_BUILDER',
   DELIVERY_ROUTE_DETAIL = 'DELIVERY_ROUTE_DETAIL',
@@ -1021,7 +1022,19 @@ export type BlingOrder = {
   itens: BlingOrderItem[];
   status: BlingOrderStatus;
   notaFiscalId?: string;
+  notaNumero?: string;
   danfeUrl?: string;
+  pdfUrl?: string;
+  etiquetaTransporte?: {
+    nome?: string;
+    endereco?: string;
+    numero?: string;
+    complemento?: string;
+    bairro?: string;
+    municipio?: string;
+    uf?: string;
+    cep?: string;
+  };
   motivoRejeicao?: string;
   createdAt: number;
   updatedAt?: number;
@@ -1030,7 +1043,7 @@ export type BlingOrder = {
 export type SectorId =
   | 'vendas' | 'compras' | 'cadastro_produtos' | 'cadastro_insumos'
   | 'producao_pcp' | 'estoque' | 'financeiro' | 'clientes_fornecedores'
-  | 'pessoal' | 'sistema' | 'entregas';
+  | 'pessoal' | 'sistema' | 'entregas' | 'bling';
 
 export type Collaborator = {
   id: string;

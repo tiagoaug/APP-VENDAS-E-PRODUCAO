@@ -10,7 +10,7 @@ import { getShopeeAuthUrl, handleShopeeOAuthCallback } from "./marketplace/auth"
 import { handleShopeeWebhook } from "./marketplace/webhook";
 import { importShopeeOrder, revertMarketplaceOrderReturn, pushStockToShopee } from "./marketplace/sync";
 import { saveBlingCredentials, getBlingAuthUrl, handleBlingOAuthCallback, disconnectBling } from "./bling/auth";
-import { fetchBlingProducts, syncBlingOrders, emitBlingInvoice, emitBlingInvoicesBatch } from "./bling/sync";
+import { fetchBlingProducts, syncBlingOrders, emitBlingInvoice, emitBlingInvoicesBatch, refreshBlingInvoiceDetails } from "./bling/sync";
 import { handleBlingWebhook } from "./bling/webhook";
 import { abaterEstoqueBling, AbaterEstoqueItem } from "./bling/picking";
 
@@ -393,6 +393,15 @@ export const blingEmitInvoicesBatch = onCall({ region: "us-central1", timeoutSec
   }
   const resultados = await emitBlingInvoicesBatch(db, request.auth.uid, pedidoIds);
   return { resultados };
+});
+
+export const blingRefreshInvoice = onCall({ region: "us-central1", timeoutSeconds: 60 }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  const pedidoId = request.data?.pedidoId;
+  if (!pedidoId || typeof pedidoId !== "string") {
+    throw new HttpsError("invalid-argument", "pedidoId é obrigatório.");
+  }
+  return await refreshBlingInvoiceDetails(db, request.auth.uid, pedidoId);
 });
 
 export const blingAbaterEstoque = onCall({ region: "us-central1", timeoutSeconds: 120 }, async (request) => {

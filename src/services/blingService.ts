@@ -82,6 +82,15 @@ export async function emitBlingInvoicesBatch(pedidoIds: string[]): Promise<Bling
   return res.data.resultados;
 }
 
+/** Só busca/atualiza número, DANFE, PDF e etiqueta de transporte de uma nota já gerada — sem
+ * reenviar pra autorização. Usado pra "preencher" pedidos autorizados antes desses campos
+ * existirem no app, e pra atualizar pedidos que ainda estavam em processamento. */
+export async function refreshBlingInvoiceDetails(pedidoId: string): Promise<BlingEmissionResult> {
+  const fn = httpsCallable<{ pedidoId: string }, BlingEmissionResult>(functions, 'blingRefreshInvoice');
+  const res = await fn({ pedidoId });
+  return res.data;
+}
+
 export interface BlingAbaterEstoqueItem {
   blingOrderId: string;
   blingProdutoId: string;
