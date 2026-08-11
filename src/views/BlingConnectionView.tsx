@@ -31,7 +31,8 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
   const [showSecret, setShowSecret] = useState(false);
   const [savingCredentials, setSavingCredentials] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [syncing, setSyncing] = useState(false);
+  const [syncingOrders, setSyncingOrders] = useState(false);
+  const [syncingProducts, setSyncingProducts] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
 
   useEffect(() => subscribeToBlingConnection(setConnection), []);
@@ -67,30 +68,31 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
     }
   };
 
-  const handleSync = async () => {
-    setSyncing(true);
-    const errors: string[] = [];
-    let ordersMessage = '';
-
-    try {
-      await fetchBlingProducts();
-    } catch (e: any) {
-      errors.push('produtos: ' + (e.message || e));
-    }
-
+  // Produtos e pedidos sincronizam separado de propósito — produto novo só nasce em ciclos de
+  // meses (coleção nova, por exemplo), enquanto pedido precisa ser puxado com frequência (várias
+  // vezes ao dia). Juntar os dois deixava a sincronização de pedidos mais lenta à toa.
+  const handleSyncOrders = async () => {
+    setSyncingOrders(true);
     try {
       const res = await syncBlingOrdersNow();
-      ordersMessage = res.message || `Pedidos sincronizados (${res.ordersImported}).`;
+      toast.show(res.message || `Pedidos sincronizados (${res.ordersImported}).`);
     } catch (e: any) {
-      errors.push('pedidos: ' + (e.message || e));
+      toast.show('Erro ao sincronizar pedidos: ' + (e.message || e));
+    } finally {
+      setSyncingOrders(false);
     }
+  };
 
-    if (errors.length > 0) {
-      toast.show('Erro ao sincronizar — ' + errors.join(' · '));
-    } else {
-      toast.show('Produtos e ' + ordersMessage.charAt(0).toLowerCase() + ordersMessage.slice(1));
+  const handleSyncProducts = async () => {
+    setSyncingProducts(true);
+    try {
+      const produtos = await fetchBlingProducts();
+      toast.show(`${produtos.length} produto(s) sincronizado(s).`);
+    } catch (e: any) {
+      toast.show('Erro ao sincronizar produtos: ' + (e.message || e));
+    } finally {
+      setSyncingProducts(false);
     }
-    setSyncing(false);
   };
 
   const handleDisconnect = async () => {
@@ -189,12 +191,21 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
             </div>
 
             <button
-              onClick={handleSync}
-              disabled={syncing}
-              className="w-full h-12 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition-all"
+              onClick={handleSyncOrders}
+              disabled={syncingOrders}
+              className={`w-full h-12 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition-all ${syncingOrders ? 'animate-pulse' : ''}`}
             >
-              <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
-              {syncing ? 'Sincronizando...' : 'Sincronizar Produtos e Pedidos'}
+              <RefreshCw size={16} className={syncingOrders ? 'animate-spin' : ''} />
+              {syncingOrders ? 'Sincronizando...' : 'Sincronizar Pedidos'}
+            </button>
+
+            <button
+              onClick={handleSyncProducts}
+              disabled={syncingProducts}
+              className={`w-full h-10 rounded-2xl disabled:opacity-60 font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'} ${syncingProducts ? 'animate-pulse' : ''}`}
+            >
+              <RefreshCw size={13} className={syncingProducts ? 'animate-spin' : ''} />
+              {syncingProducts ? 'Sincronizando produtos...' : 'Sincronizar Produtos'}
             </button>
 
             <a

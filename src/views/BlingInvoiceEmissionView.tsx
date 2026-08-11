@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, FileCheck2, AlertTriangle, ChevronDown, ChevronUp, Tags as TagsIcon, ChevronRight, ExternalLink, Store, Loader2, ShoppingBag, Globe, Building2, HelpCircle, FileDown, CheckCircle2, Clock3 } from 'lucide-react';
+import { RefreshCw, FileCheck2, AlertTriangle, ChevronDown, ChevronUp, Tags as TagsIcon, ChevronRight, ExternalLink, Store, Loader2, ShoppingBag, Globe, Building2, HelpCircle, FileDown, CheckCircle2, Clock3, PackageCheck, ImageOff } from 'lucide-react';
 import { BlingOrder, BlingProductMapping, Product, ViewType } from '../types';
 import { subscribeToBlingOrders, subscribeToBlingMappings, syncBlingOrdersNow, emitBlingInvoice, emitBlingInvoicesBatch } from '../services/blingService';
 import { toast } from '../utils/toast';
@@ -26,6 +26,17 @@ function isFullyMapped(order: BlingOrder): boolean {
   return order.itens.every((i) => i.mapeado);
 }
 
+function ItemThumb({ src }: { src?: string }) {
+  if (!src) {
+    return (
+      <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600">
+        <ImageOff size={16} />
+      </div>
+    );
+  }
+  return <img src={src} className="w-10 h-10 shrink-0 rounded-xl object-cover border border-black/5" alt="" />;
+}
+
 export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavigate }: BlingInvoiceEmissionViewProps) {
   const [orders, setOrders] = useState<BlingOrder[]>([]);
   const [mappings, setMappings] = useState<BlingProductMapping[]>([]);
@@ -34,7 +45,7 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [emittingSingle, setEmittingSingle] = useState<string | null>(null);
   const [emittingBatch, setEmittingBatch] = useState(false);
-  const [activeTab, setActiveTab] = useState<'pendentes' | 'autorizadas' | 'rejeitadas'>('pendentes');
+  const [activeTab, setActiveTab] = useState<'pendentes' | 'autorizadas' | 'rejeitadas' | 'concluidas'>('pendentes');
 
   useEffect(() => subscribeToBlingOrders(setOrders), []);
   useEffect(() => subscribeToBlingMappings(setMappings), []);
@@ -49,6 +60,9 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
   // "sumido" depois de tentar emitir (o `pending` acima não inclui REJEITADA, e só entrava em
   // "autorizadas" quem tivesse status EMITIDA).
   const rejected = useMemo(() => orders.filter((o) => o.status === 'REJEITADA').sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)), [orders]);
+  // Autorizada que o Bling já avançou sozinho (pedido marcado "atendido" por lá, independente da
+  // nossa emissão) — ver comentário em functions/src/bling/sync.ts sobre o sinal usado.
+  const concluded = useMemo(() => orders.filter((o) => o.status === 'CONCLUIDA').sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)), [orders]);
 
   const toggleSelect = (id: string, mapped: boolean) => {
     if (!mapped) return;
@@ -122,55 +136,48 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
 
   return (
     <div className="flex flex-col gap-6 pb-32">
-      <div className="flex items-center gap-2">
-        <button
-          onClick={handleSync}
-          disabled={syncing}
-          className={`flex-1 h-11 rounded-2xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 ${isDarkMode ? 'bg-slate-900 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
-        >
-          <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'Sincronizando...' : 'Sincronizar Pedidos'}
-        </button>
-        <button
-          onClick={handleEmitBatch}
-          disabled={selectedCount === 0 || emittingBatch}
-          className="flex-1 h-11 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2"
-        >
-          {emittingBatch ? <Loader2 size={14} className="animate-spin" /> : <FileCheck2 size={14} />}
-          {emittingBatch ? 'Emitindo...' : `Emitir Selecionadas (${selectedCount})`}
-        </button>
-      </div>
+      <div className={`p-2 rounded-[2rem] border shadow-sm flex flex-col gap-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className={`flex-1 h-11 rounded-2xl bg-orange-500 hover:bg-orange-600 disabled:opacity-40 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 ${syncing ? 'animate-pulse' : ''}`}
+          >
+            <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /> {syncing ? 'Sincronizando...' : 'Sincronizar Pedidos'}
+          </button>
+          <button
+            onClick={handleEmitBatch}
+            disabled={selectedCount === 0 || emittingBatch}
+            className="flex-1 h-11 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2"
+          >
+            {emittingBatch ? <Loader2 size={14} className="animate-spin" /> : <FileCheck2 size={14} />}
+            {emittingBatch ? 'Emitindo...' : `Emitir Selecionadas (${selectedCount})`}
+          </button>
+        </div>
 
-      <div className={`flex items-center gap-1 p-1 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-slate-100'}`}>
-        <button
-          onClick={() => setActiveTab('pendentes')}
-          className={`flex-1 h-9 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-colors ${
-            activeTab === 'pendentes'
-              ? (isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm')
-              : 'text-slate-400'
-          }`}
-        >
-          <Clock3 size={12} /> Pendentes ({pending.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('autorizadas')}
-          className={`flex-1 h-9 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-colors ${
-            activeTab === 'autorizadas'
-              ? (isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm')
-              : 'text-slate-400'
-          }`}
-        >
-          <CheckCircle2 size={12} /> Autorizadas ({authorized.length})
-        </button>
-        <button
-          onClick={() => setActiveTab('rejeitadas')}
-          className={`flex-1 h-9 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 transition-colors ${
-            activeTab === 'rejeitadas'
-              ? (isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm')
-              : 'text-slate-400'
-          }`}
-        >
-          <AlertTriangle size={12} /> Rejeitadas ({rejected.length})
-        </button>
+        <div className={`grid grid-cols-2 gap-1 p-1 rounded-2xl ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
+          {(
+            [
+              { key: 'pendentes' as const, label: 'Pendentes', icon: <Clock3 size={13} />, color: 'text-amber-500', count: pending.length },
+              { key: 'autorizadas' as const, label: 'Autorizadas', icon: <CheckCircle2 size={13} />, color: 'text-emerald-500', count: authorized.length },
+              { key: 'rejeitadas' as const, label: 'Rejeitadas', icon: <AlertTriangle size={13} />, color: 'text-rose-500', count: rejected.length },
+              { key: 'concluidas' as const, label: 'Concluídas', icon: <PackageCheck size={13} />, color: 'text-indigo-500', count: concluded.length },
+            ]
+          ).map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`h-10 rounded-xl text-[10px] font-black uppercase tracking-wide flex items-center justify-center gap-1.5 transition-colors ${
+                activeTab === tab.key
+                  ? (isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm')
+                  : 'text-slate-400'
+              }`}
+            >
+              <span className={tab.color}>{tab.icon}</span>
+              {tab.label} ({tab.count})
+            </button>
+          ))}
+        </div>
       </div>
 
       {activeTab === 'pendentes' && pending.length === 0 && (
@@ -223,17 +230,22 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
                   {order.itens.map((item, idx) => {
                     const mapping = mappingByBlingId.get(item.blingProdutoId);
                     const product = mapping ? productById.get(mapping.productId) : undefined;
+                    const variation = product?.variations.find((v) => v.id === mapping?.variationId);
+                    const photoUrl = variation?.photoUrl || product?.photoUrl;
                     return (
                       <div key={idx} className="flex items-center justify-between text-xs gap-2">
-                        <div className="min-w-0">
-                          <p className={`font-bold truncate ${item.mapeado ? (isDarkMode ? 'text-slate-300' : 'text-slate-700') : 'text-amber-600 dark:text-amber-400'}`}>
-                            {item.quantidade}x {item.descricao}{!item.mapeado && ' (sem vínculo)'}
-                          </p>
-                          {mapping && (
-                            <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider truncate">
-                              → {product?.reference || '?'} · {mapping.productName} · {mapping.variationName}{mapping.size ? ` · ${mapping.size}` : ' · Atacado'}
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {mapping && <ItemThumb src={photoUrl} />}
+                          <div className="min-w-0">
+                            <p className={`font-bold truncate ${item.mapeado ? (isDarkMode ? 'text-slate-300' : 'text-slate-700') : 'text-amber-600 dark:text-amber-400'}`}>
+                              {item.quantidade}x {item.descricao}{!item.mapeado && ' (sem vínculo)'}
                             </p>
-                          )}
+                            {mapping && (
+                              <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold uppercase tracking-wider truncate">
+                                → {product?.reference || '?'} · {mapping.productName} · {mapping.variationName}{mapping.size ? ` · ${mapping.size}` : ' · Atacado'}
+                              </p>
+                            )}
+                          </div>
                         </div>
                         <span className="text-slate-400 font-bold shrink-0">R$ {item.valorUnitario.toFixed(2)}</span>
                       </div>
@@ -363,6 +375,59 @@ export default function BlingInvoiceEmissionView({ isDarkMode, products, onNavig
                 </div>
               );
             })}
+          </div>
+        )
+      )}
+
+      {activeTab === 'concluidas' && (
+        concluded.length === 0 ? (
+          <div className={`p-10 rounded-[2.5rem] border-2 border-dashed text-center ${isDarkMode ? 'border-slate-800 text-slate-600' : 'border-slate-100 text-slate-300'}`}>
+            <p className="text-xs font-black uppercase tracking-widest">Nenhum pedido concluído ainda</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {concluded.map((order) => (
+              <div key={order.id} className={`p-4 rounded-[1.75rem] border shadow-sm flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className={`text-xs font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                      Pedido {order.numero}{order.notaNumero ? ` · NF-e ${order.notaNumero}` : ''}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider truncate">{order.cliente}</p>
+                  </div>
+                  <span className="px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 shrink-0">
+                    Concluída
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-dashed border-slate-100 dark:border-slate-800">
+                  {order.danfeUrl && (
+                    <a
+                      href={order.danfeUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase tracking-widest"
+                    >
+                      <ExternalLink size={12} /> DANFE
+                    </a>
+                  )}
+                  {order.etiquetaTransporte && (
+                    <button
+                      onClick={() =>
+                        printShippingLabel({
+                          pedidoNumero: order.numero,
+                          notaNumero: order.notaNumero,
+                          etiqueta: order.etiquetaTransporte!,
+                        })
+                      }
+                      className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-black uppercase tracking-widest"
+                    >
+                      <FileDown size={12} /> Etiqueta de Transporte
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )
       )}

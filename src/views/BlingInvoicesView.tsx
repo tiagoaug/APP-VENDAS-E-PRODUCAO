@@ -14,9 +14,12 @@ type DateFilter = 'dia' | 'semana' | 'mes' | 'periodo';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
   EMITIDA: { label: 'Autorizada', color: 'text-emerald-700 dark:text-emerald-400', bg: 'bg-emerald-100 dark:bg-emerald-900/30' },
+  CONCLUIDA: { label: 'Concluída', color: 'text-indigo-700 dark:text-indigo-400', bg: 'bg-indigo-100 dark:bg-indigo-900/30' },
   REJEITADA: { label: 'Rejeitada', color: 'text-rose-700 dark:text-rose-400', bg: 'bg-rose-100 dark:bg-rose-900/30' },
   EMITINDO: { label: 'Processando', color: 'text-amber-700 dark:text-amber-400', bg: 'bg-amber-100 dark:bg-amber-900/30' },
 };
+
+const SELECTABLE_STATUSES = new Set(['EMITIDA', 'CONCLUIDA']);
 
 export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps) {
   const [orders, setOrders] = useState<BlingOrder[]>([]);
@@ -58,7 +61,7 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
   // Só notas autorizadas têm garantidamente o endereço do destinatário (etiquetaTransporte) —
   // pedidos emitidos antes do campo existir no app também não têm até serem atualizados (botão
   // de refresh por linha, ou reabrindo a Emissão de Notas e emitindo de novo).
-  const selectable = useMemo(() => filtered.filter((o) => o.status === 'EMITIDA' && o.etiquetaTransporte), [filtered]);
+  const selectable = useMemo(() => filtered.filter((o) => SELECTABLE_STATUSES.has(o.status) && o.etiquetaTransporte), [filtered]);
   const allChecked = selectable.length > 0 && selectable.every((o) => checked.has(o.id));
 
   const toggleAll = () => {
@@ -66,7 +69,7 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
   };
 
   const toggleOne = (order: BlingOrder) => {
-    if (order.status !== 'EMITIDA' || !order.etiquetaTransporte) return;
+    if (!SELECTABLE_STATUSES.has(order.status) || !order.etiquetaTransporte) return;
     setChecked((prev) => {
       const next = new Set(prev);
       if (next.has(order.id)) next.delete(order.id); else next.add(order.id);
@@ -115,39 +118,59 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
 
   return (
     <div className="flex flex-col gap-6 pb-32">
-      <div className={`flex items-center gap-1 p-1 rounded-2xl overflow-x-auto ${isDarkMode ? 'bg-slate-900' : 'bg-slate-100'}`}>
-        {(['dia', 'semana', 'mes', 'periodo'] as DateFilter[]).map((f) => (
-          <button
-            key={f}
-            onClick={() => setDateFilter(f)}
-            className={`flex-1 h-9 px-2 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-colors ${
-              dateFilter === f
-                ? (isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm')
-                : 'text-slate-400'
-            }`}
-          >
-            {f === 'dia' ? 'Dia' : f === 'semana' ? 'Semana' : f === 'mes' ? 'Mês' : 'Período'}
-          </button>
-        ))}
-      </div>
-
-      {dateFilter === 'periodo' && (
-        <div className="flex items-center gap-2">
-          <input
-            type="date"
-            value={periodoInicio}
-            onChange={(e) => setPeriodoInicio(e.target.value)}
-            className={`flex-1 h-11 px-3 rounded-2xl text-xs font-bold ${isDarkMode ? 'bg-slate-900 border border-slate-800 text-white' : 'bg-white border border-slate-200 text-slate-900'}`}
-          />
-          <span className="text-[10px] font-black uppercase text-slate-400">até</span>
-          <input
-            type="date"
-            value={periodoFim}
-            onChange={(e) => setPeriodoFim(e.target.value)}
-            className={`flex-1 h-11 px-3 rounded-2xl text-xs font-bold ${isDarkMode ? 'bg-slate-900 border border-slate-800 text-white' : 'bg-white border border-slate-200 text-slate-900'}`}
-          />
+      <div className={`p-2 rounded-[2rem] border shadow-sm flex flex-col gap-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+        <div className={`flex items-center gap-1 p-1 rounded-2xl ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
+          {(['dia', 'semana', 'mes', 'periodo'] as DateFilter[]).map((f) => (
+            <button
+              key={f}
+              onClick={() => setDateFilter(f)}
+              className={`flex-1 h-9 px-2 rounded-xl text-[10px] font-black uppercase tracking-widest whitespace-nowrap transition-colors ${
+                dateFilter === f
+                  ? (isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm')
+                  : 'text-slate-400'
+              }`}
+            >
+              {f === 'dia' ? 'Dia' : f === 'semana' ? 'Semana' : f === 'mes' ? 'Mês' : 'Período'}
+            </button>
+          ))}
         </div>
-      )}
+
+        {dateFilter === 'periodo' && (
+          <div className="flex items-center gap-2 px-1">
+            <input
+              type="date"
+              value={periodoInicio}
+              onChange={(e) => setPeriodoInicio(e.target.value)}
+              className={`flex-1 h-11 px-3 rounded-2xl text-xs font-bold ${isDarkMode ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-200 text-slate-900'}`}
+            />
+            <span className="text-[10px] font-black uppercase text-slate-400">até</span>
+            <input
+              type="date"
+              value={periodoFim}
+              onChange={(e) => setPeriodoFim(e.target.value)}
+              className={`flex-1 h-11 px-3 rounded-2xl text-xs font-bold ${isDarkMode ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-200 text-slate-900'}`}
+            />
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handlePrint}
+            disabled={checkedCount === 0}
+            className="flex-1 h-11 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 disabled:opacity-40 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
+          >
+            <Printer size={14} /> Imprimir ({checkedCount})
+          </button>
+          <button
+            onClick={handleSharePdf}
+            disabled={checkedCount === 0 || sharing}
+            className="flex-1 h-11 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
+          >
+            {sharing ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
+            {sharing ? 'Gerando...' : `Compartilhar PDF (${checkedCount})`}
+          </button>
+        </div>
+      </div>
 
       <div className="flex items-center gap-2">
         <button
@@ -157,24 +180,6 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
         >
           {allChecked ? <CheckSquare size={15} /> : <Square size={15} />}
           {allChecked ? 'Desmarcar Todos' : `Selecionar Todos (${selectable.length})`}
-        </button>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <button
-          onClick={handlePrint}
-          disabled={checkedCount === 0}
-          className="flex-1 h-11 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 disabled:opacity-40 text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
-        >
-          <Printer size={14} /> Imprimir ({checkedCount})
-        </button>
-        <button
-          onClick={handleSharePdf}
-          disabled={checkedCount === 0 || sharing}
-          className="flex-1 h-11 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
-        >
-          {sharing ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
-          {sharing ? 'Gerando...' : `Compartilhar PDF (${checkedCount})`}
         </button>
       </div>
 
@@ -192,10 +197,10 @@ export default function BlingInvoicesView({ isDarkMode }: BlingInvoicesViewProps
       <div className="flex flex-col gap-3">
         {filtered.map((order) => {
           const isChecked = checked.has(order.id);
-          const isSelectable = order.status === 'EMITIDA' && !!order.etiquetaTransporte;
+          const isSelectable = SELECTABLE_STATUSES.has(order.status) && !!order.etiquetaTransporte;
           const statusCfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.EMITINDO;
           const isRefreshing = refreshingId === order.id;
-          const missingData = order.status === 'EMITIDA' && (!order.danfeUrl || !order.etiquetaTransporte);
+          const missingData = SELECTABLE_STATUSES.has(order.status) && (!order.danfeUrl || !order.etiquetaTransporte);
           const dateLabel = format(new Date(order.updatedAt || order.createdAt), 'dd/MM/yyyy HH:mm');
 
           return (

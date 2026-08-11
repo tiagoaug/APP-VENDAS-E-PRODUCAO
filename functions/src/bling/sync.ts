@@ -254,6 +254,23 @@ export async function syncBlingOrders(db: firestore.Firestore, uid: string): Pro
     }
   }
 
+  // Autorizada → Concluída: a situação do PEDIDO (não da NF-e) é um dado separado que também
+  // pode avançar sozinho no Bling depois que a nota já foi autorizada por aqui (ex.: alguém
+  // marca o pedido como "Atendido" direto no site, ou o próprio Bling avança automaticamente).
+  // Reaproveita o mesmo sinal já validado (`situacao.valor !== OPEN_SITUATION_VALOR`) — só que
+  // agora aplicado a pedidos que JÁ estão EMITIDA aqui, em vez de servir só pra decidir limpeza.
+  // Limitação conhecida: só enxerga pedidos que ainda estão na 1ª página (100) da listagem.
+  {
+    const situacaoByPedidoId = new Map(allPedidos.map((p) => [String(p.id), p.situacao?.valor]));
+    const emitidaSnap = await ordersRef.where("status", "==", "EMITIDA").get();
+    for (const doc of emitidaSnap.docs) {
+      const valor = situacaoByPedidoId.get(doc.id);
+      if (valor !== undefined && valor !== OPEN_SITUATION_VALOR) {
+        await doc.ref.set({ status: "CONCLUIDA", updatedAt: Date.now() }, { merge: true });
+      }
+    }
+  }
+
   await db
     .collection("users")
     .doc(uid)

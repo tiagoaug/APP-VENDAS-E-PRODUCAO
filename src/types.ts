@@ -1001,7 +1001,7 @@ export type BlingIgnoredProduct = {
 };
 
 export type BlingOrderOrigin = 'PROPRIO' | 'MERCADO_LIVRE' | 'SHOPEE' | 'LOJA_VIRTUAL' | 'OUTRO';
-export type BlingOrderStatus = 'PENDENTE' | 'PRONTO_PARA_EMITIR' | 'EMITINDO' | 'EMITIDA' | 'REJEITADA';
+export type BlingOrderStatus = 'PENDENTE' | 'PRONTO_PARA_EMITIR' | 'EMITINDO' | 'EMITIDA' | 'REJEITADA' | 'CONCLUIDA';
 
 export type BlingOrderItem = {
   blingProdutoId: string;
