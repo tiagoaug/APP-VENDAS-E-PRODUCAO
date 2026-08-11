@@ -302,9 +302,12 @@ export interface PrintPickingListOptions {
   mostrarMiniaturas: boolean;
   incluirCheckbox: boolean;
   pageSize?: 'a4' | '100x150';
+  /** Sem cinza/azul-claro em lugar nenhum — só preto sólido e branco, contraste máximo pra
+   * impressoras térmicas (que têm dificuldade em reproduzir tons de cinza de forma legível). */
+  pretoBranco?: boolean;
 }
 
-export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pageSize = 'a4' }: PrintPickingListOptions) => {
+export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pageSize = 'a4', pretoBranco = false }: PrintPickingListOptions) => {
   const container = document.getElementById('_lot_print_container');
   if (container) container.remove();
 
@@ -329,6 +332,17 @@ export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pag
       }
     `;
     wrap.appendChild(override);
+  }
+
+  if (pretoBranco) {
+    const bwOverride = document.createElement('style');
+    bwOverride.innerHTML = `
+      @media print {
+        th, .badge, .gc { background: #000 !important; color: #fff !important; }
+        p, h1 { color: #000 !important; }
+      }
+    `;
+    wrap.appendChild(bwOverride);
   }
 
   const date = new Date().toLocaleString('pt-BR');

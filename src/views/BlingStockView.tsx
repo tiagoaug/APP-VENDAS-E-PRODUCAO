@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X, ArrowUpCircle, ArrowDownCircle, Loader2, Lightbulb, ChevronDown, ChevronUp } from 'lucide-react';
+import { X, ArrowUpCircle, ArrowDownCircle, Loader2, Lightbulb, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
 import { Product, Variation, BlingOrder, BlingProductMapping, SaleType } from '../types';
 import { subscribeToBlingOrders, subscribeToBlingMappings } from '../services/blingService';
 import { productHasSaleType } from '../utils/stockPools';
@@ -26,15 +26,23 @@ interface MovementTarget {
  * sempre, mantendo o histórico de lotes coerente com o resto do app.
  */
 function ManualMovementModal({ target, isDarkMode, onClose, onConfirm }: { target: MovementTarget; isDarkMode: boolean; onClose: () => void; onConfirm: (newQty: number) => Promise<void> }) {
-  const [mode, setMode] = useState<'entrada' | 'saida'>('entrada');
+  const [mode, setMode] = useState<'entrada' | 'saida' | 'ajustar'>('entrada');
   const [qty, setQty] = useState('');
   const [saving, setSaving] = useState(false);
 
   const parsedQty = Math.max(0, Math.floor(Number(qty) || 0));
-  const resultingQty = mode === 'entrada' ? target.currentQty + parsedQty : Math.max(0, target.currentQty - parsedQty);
+  const resultingQty = mode === 'ajustar' ? parsedQty : mode === 'entrada' ? target.currentQty + parsedQty : Math.max(0, target.currentQty - parsedQty);
+  const canConfirm = mode === 'ajustar' ? qty !== '' : parsedQty > 0;
+
+  // "Ajustar" edita o número final direto (ex.: vê 28, digita 26) em vez de somar/subtrair uma
+  // quantidade — pré-preenche com o valor atual pra já cair editando o dígito certo.
+  const switchMode = (next: 'entrada' | 'saida' | 'ajustar') => {
+    setMode(next);
+    setQty(next === 'ajustar' ? String(target.currentQty) : '');
+  };
 
   const handleConfirm = async () => {
-    if (parsedQty === 0) return;
+    if (!canConfirm) return;
     setSaving(true);
     try {
       await onConfirm(resultingQty);
@@ -64,21 +72,27 @@ function ManualMovementModal({ target, isDarkMode, onClose, onConfirm }: { targe
 
         <div className="flex items-center gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800">
           <button
-            onClick={() => setMode('entrada')}
+            onClick={() => switchMode('entrada')}
             className={`flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 ${mode === 'entrada' ? 'bg-emerald-600 text-white' : 'text-slate-400'}`}
           >
             <ArrowUpCircle size={14} /> Entrada
           </button>
           <button
-            onClick={() => setMode('saida')}
+            onClick={() => switchMode('saida')}
             className={`flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 ${mode === 'saida' ? 'bg-rose-600 text-white' : 'text-slate-400'}`}
           >
             <ArrowDownCircle size={14} /> Saída
           </button>
+          <button
+            onClick={() => switchMode('ajustar')}
+            className={`flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 ${mode === 'ajustar' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
+          >
+            <Pencil size={13} /> Ajustar
+          </button>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Quantidade</label>
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">{mode === 'ajustar' ? 'Nova quantidade' : 'Quantidade'}</label>
           <input
             type="number"
             inputMode="numeric"
@@ -98,7 +112,7 @@ function ManualMovementModal({ target, isDarkMode, onClose, onConfirm }: { targe
 
         <button
           onClick={handleConfirm}
-          disabled={parsedQty === 0 || saving}
+          disabled={!canConfirm || saving}
           className="w-full h-12 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 disabled:opacity-40 font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2"
         >
           {saving ? <Loader2 size={16} className="animate-spin" /> : null}

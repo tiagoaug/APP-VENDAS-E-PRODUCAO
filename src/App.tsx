@@ -6856,7 +6856,7 @@ export default function App() {
       case ViewType.BLING_INVOICE_EMISSION:
       case ViewType.BLING_PICKING_LIST:
       case ViewType.BLING_STOCK:
-      case ViewType.BLING_INVOICES: return <Building2 size={24} className="text-amber-500 dark:text-amber-400" />;
+      case ViewType.BLING_INVOICES: return <Building2 size={24} className="text-green-700 dark:text-green-500" />;
       case ViewType.DELIVERY_MENU:
       case ViewType.DELIVERY_ROUTE_BUILDER:
       case ViewType.DELIVERY_ROUTE_DETAIL:

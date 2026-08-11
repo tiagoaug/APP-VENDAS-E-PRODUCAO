@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Building2, Link2, RefreshCw, CheckCircle2, Clock, ListOrdered, Tags as TagsIcon, ChevronRight, KeyRound, Eye, EyeOff, LogOut, PackageMinus, Boxes, FileText } from 'lucide-react';
+import { Building2, Link2, RefreshCw, CheckCircle2, Clock, ListOrdered, Tags as TagsIcon, ChevronRight, KeyRound, Eye, EyeOff, LogOut, PackageMinus, Boxes, FileText, ExternalLink } from 'lucide-react';
 import { BlingConnection, ViewType } from '../types';
 import { subscribeToBlingConnection, saveBlingCredentials, getBlingAuthUrl, syncBlingOrdersNow, fetchBlingProducts, disconnectBling } from '../services/blingService';
 import { toast } from '../utils/toast';
@@ -196,6 +196,16 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
               <RefreshCw size={16} className={syncing ? 'animate-spin' : ''} />
               {syncing ? 'Sincronizando...' : 'Sincronizar Produtos e Pedidos'}
             </button>
+
+            <a
+              href="https://www.bling.com.br"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full h-12 rounded-2xl bg-[#00e28a] hover:bg-[#00c97a] text-black font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-[#00e28a]/30 transition-all"
+            >
+              <ExternalLink size={16} />
+              Abrir Bling
+            </a>
 
             <button
               onClick={handleDisconnect}

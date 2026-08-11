@@ -4,7 +4,7 @@ import autoTable from 'jspdf-autotable';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import {
   Share2, Printer, Image as ImageIcon, FileText, Layers, ImageOff, CheckSquare,
-  Bluetooth, RefreshCw, CheckCircle2, XCircle, ChevronRight, ChevronDown, X, FileStack, Save,
+  Bluetooth, RefreshCw, CheckCircle2, XCircle, ChevronRight, ChevronDown, X, FileStack, Save, Gauge,
 } from 'lucide-react';
 import Modal from './Modal';
 import { PickingGroup, PickingFlatRow } from '../views/BlingPickingListView';
@@ -68,6 +68,9 @@ interface ExportProfile {
 
 const DEFAULT_PROFILE: ExportProfile = { agrupar: true, mostrarMiniaturas: true, incluirCheckbox: true, pageSize: 'a4' };
 
+type Densidade = 1 | 2 | 3;
+const DENSIDADE_LABEL: Record<Densidade, string> = { 1: 'Leve', 2: 'Normal', 3: 'Escura' };
+
 function loadExportProfile(): ExportProfile {
   try {
     const raw = localStorage.getItem(PROFILE_KEY);
@@ -121,6 +124,11 @@ function buildPickingLabelDataUrl(row: DisplayRow, incluirCheckbox: boolean): st
 
 async function buildPickingListJpg(rows: DisplayRow[], mostrarMiniaturas: boolean, incluirCheckbox: boolean, pageSize: PageSize): Promise<string> {
   const compact = pageSize === '100x150';
+  // Preto e branco sólido pra tudo que não seja a miniatura real do produto — tons de cinza
+  // claro (zebra, cinza do subtítulo, linhas de grade) ficam abaixo do limiar de conversão
+  // preto/branco 1bpp que a impressora térmica usa (ver AbleMarkL100Protocol.kt, luminância <
+  // 135 = preto): na prática qualquer cor clara puxada pro branco desaparece na impressão.
+  const palette = { header: '#000000', zebraA: '#ffffff', zebraB: '#ffffff', grid: '#000000', text: '#000000', sub: '#000000', placeholder: '#000000' };
   const rowH = compact ? 34 : 64;
   const width = compact ? 420 : 900;
   const headerH = compact ? 38 : 90;
@@ -140,7 +148,7 @@ async function buildPickingListJpg(rows: DisplayRow[], mostrarMiniaturas: boolea
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
 
-  ctx.fillStyle = '#0f172a';
+  ctx.fillStyle = palette.header;
   ctx.fillRect(0, 0, width, headerH);
   ctx.fillStyle = '#ffffff';
   ctx.textAlign = 'center';
@@ -176,13 +184,13 @@ async function buildPickingListJpg(rows: DisplayRow[], mostrarMiniaturas: boolea
 
   rows.forEach((r, i) => {
     const y = headerH + i * rowH;
-    ctx.fillStyle = i % 2 === 0 ? '#f8fafc' : '#ffffff';
+    ctx.fillStyle = i % 2 === 0 ? palette.zebraA : palette.zebraB;
     ctx.fillRect(0, y, width, rowH);
-    ctx.strokeStyle = '#e2e8f0';
+    ctx.strokeStyle = palette.grid;
     ctx.strokeRect(0, y, width, rowH);
 
     if (incluirCheckbox) {
-      ctx.strokeStyle = '#0f172a';
+      ctx.strokeStyle = palette.text;
       ctx.lineWidth = compact ? 1 : 2;
       ctx.strokeRect(checkboxX, y + rowH / 2 - checkboxSize / 2, checkboxSize, checkboxSize);
     }
@@ -193,20 +201,20 @@ async function buildPickingListJpg(rows: DisplayRow[], mostrarMiniaturas: boolea
       if (img) {
         ctx.drawImage(img, thumbX, thumbY, thumbSize, thumbSize);
       } else {
-        ctx.fillStyle = '#e2e8f0';
+        ctx.fillStyle = palette.placeholder;
         ctx.fillRect(thumbX, thumbY, thumbSize, thumbSize);
       }
     }
 
-    ctx.fillStyle = '#0f172a';
+    ctx.fillStyle = palette.text;
     ctx.font = fontName;
     ctx.fillText(`${r.reference} · ${r.variationName}${r.size ? ` · ${r.size}` : ' · Atacado'}`, textX, y + rowH * 0.35);
     ctx.font = fontSub;
-    ctx.fillStyle = '#64748b';
+    ctx.fillStyle = palette.sub;
     ctx.fillText(`${r.productName} — Pedidos ${r.pedidos}`, textX, y + rowH * 0.7);
 
     ctx.textAlign = 'right';
-    ctx.fillStyle = '#0f172a';
+    ctx.fillStyle = palette.text;
     ctx.font = fontQty;
     ctx.fillText(String(r.quantidade), width - (compact ? 8 : 20), y + rowH / 2 + (compact ? 4 : 6));
     ctx.textAlign = 'left';
@@ -221,6 +229,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
   const [mostrarMiniaturas, setMostrarMiniaturas] = useState(savedProfile.mostrarMiniaturas);
   const [incluirCheckbox, setIncluirCheckbox] = useState(savedProfile.incluirCheckbox);
   const [pageSize, setPageSize] = useState<PageSize>(savedProfile.pageSize);
+  const [densidade, setDensidade] = useState<Densidade>(2);
   const [paperOpen, setPaperOpen] = useState(false);
   const [printChoiceOpen, setPrintChoiceOpen] = useState(false);
   const [thermalOpen, setThermalOpen] = useState(false);
@@ -281,7 +290,9 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
       const pageWidth = compact ? 100 : 210;
       const headerH = compact ? 12 : 30;
 
-      doc.setFillColor(15, 23, 42);
+      // Preto sólido em vez de navy/cinza — mesmo raciocínio do JPG (ver buildPickingListJpg):
+      // tons de cinza/azul-escuro somem em impressoras térmicas/monocromáticas.
+      doc.setFillColor(0, 0, 0);
       doc.rect(0, 0, pageWidth, headerH, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
@@ -307,8 +318,9 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
         head,
         body,
         theme: 'grid',
-        headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold', fontSize: compact ? 6.5 : 9 },
-        bodyStyles: { fontSize: compact ? 6 : 8.5, cellPadding: compact ? 1.2 : 3 },
+        headStyles: { fillColor: [0, 0, 0], textColor: 255, fontStyle: 'bold', fontSize: compact ? 6.5 : 9 },
+        bodyStyles: { fontSize: compact ? 6 : 8.5, cellPadding: compact ? 1.2 : 3, textColor: [0, 0, 0] },
+        styles: { lineColor: [0, 0, 0], lineWidth: 0.2 },
         margin: compact ? { left: 2, right: 2 } : undefined,
       });
 
@@ -376,7 +388,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
         const dataUrl = buildPickingLabelDataUrl(row, incluirCheckbox);
         const base64 = dataUrl.split('base64,')[1];
         const written = await Filesystem.writeFile({ path: `bling_pick_${g.key.replace(/[^a-zA-Z0-9]/g, '_')}.png`, data: base64, directory: Directory.Cache });
-        const { sent, error } = await printAbleMarkLabel(written.uri, 2, 2);
+        const { sent, error } = await printAbleMarkLabel(written.uri, 2, densidade);
         if (!sent) {
           toast.show(`Falha ao imprimir ${g.reference}: ${error || 'sem detalhe'}`);
           break;
@@ -511,6 +523,24 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
               ))}
             </div>
           )}
+
+          <div className="flex flex-col gap-2">
+            <p className="px-1 text-[10px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5"><Gauge size={12} /> Densidade de impressão</p>
+            <div className="flex items-center gap-1 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800">
+              {([1, 2, 3] as Densidade[]).map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setDensidade(d)}
+                  className={`flex-1 h-10 rounded-xl text-[10px] font-black uppercase tracking-widest transition-colors ${
+                    densidade === d ? 'bg-emerald-600 text-white' : 'text-slate-400'
+                  }`}
+                >
+                  {DENSIDADE_LABEL[d]}
+                </button>
+              ))}
+            </div>
+            <p className="px-1 text-[9px] text-slate-400 font-bold leading-snug">Mais escura = etiqueta mais visível, mas gasta mais a fita/cabeça de impressão.</p>
+          </div>
 
           <button
             onClick={handlePrintThermalLabels}

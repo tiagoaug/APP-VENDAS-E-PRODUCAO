@@ -160,7 +160,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       description: 'Integração com o ERP Bling — vinculação de produtos e emissão de notas fiscais.',
       icon: <Building2 size={28} />,
       active: config.bling,
-      color: 'bg-amber-500',
+      color: 'bg-green-700',
       features: ['Vinculação de Produtos', 'Pedidos de Marketplaces', 'Emissão de NF-e']
     }
   ];
