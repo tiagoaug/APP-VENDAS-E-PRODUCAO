@@ -1,13 +1,23 @@
 import { initializeApp } from 'firebase/app';
 import { Capacitor } from '@capacitor/core';
 import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithCredential, signOut } from 'firebase/auth';
+import {
+  initializeAuth, indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence,
+  GoogleAuthProvider, signInWithPopup, signInWithCredential, signOut,
+} from 'firebase/auth';
 import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+// `getAuth()` puro trava indefinidamente dentro do WKWebView do iOS (não acontece no Android,
+// que usa Chromium) — problema conhecido do SDK JS do Firebase Auth quando a inicialização do
+// IndexedDB não sai limpa nesse WebView. `initializeAuth` com uma cadeia explícita de fallback
+// de persistência resolve: se IndexedDB falhar, cai pra localStorage, depois sessionStorage,
+// depois memória, em vez de ficar esperando pra sempre.
+export const auth = initializeAuth(app, {
+  persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence, inMemoryPersistence],
+});
 export const googleProvider = new GoogleAuthProvider();
 
 export const signInWithGoogle = async () => {
