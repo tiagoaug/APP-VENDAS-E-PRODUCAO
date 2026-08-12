@@ -13,6 +13,7 @@ import {
   isAbleMarkPrinterConnected,
   resetAbleMarkPrinter,
   printAbleMarkLabel,
+  isAblemarkPlatform,
 } from '../lib/ablemarkPrinter';
 import { EpsonDiscoveredPrinter, discoverEpsonPrinters } from '../lib/epsonPrinter';
 import { toast } from '../utils/toast';
@@ -159,9 +160,13 @@ export default function LabelPrintStudioView({
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [resetting, setResetting] = useState(false);
-  // Marca da impressora — Ablemark já funciona de ponta a ponta; Epson (linha TM-m, Wi-Fi
-  // Direct) ainda é só a estrutura (ver src/lib/epsonPrinter.ts), esperando o SDK oficial.
-  const [printerBrand, setPrinterBrand] = useState<'ABLEMARK' | 'EPSON'>('ABLEMARK');
+  // Marca da impressora — Ablemark já funciona de ponta a ponta (só Android — Bluetooth
+  // Classic/SPP não roda no iOS sem certificação MFi do fabricante, fora do nosso controle);
+  // Epson (linha TM-m, Wi-Fi Direct) ainda é só a estrutura (ver src/lib/epsonPrinter.ts),
+  // esperando o SDK oficial, mas por ser rede em vez de Bluetooth deve funcionar nas duas
+  // plataformas quando integrado. Fora do Android já começa em EPSON, já que Ablemark nem
+  // aparece como opção lá.
+  const [printerBrand, setPrinterBrand] = useState<'ABLEMARK' | 'EPSON'>(isAblemarkPlatform() ? 'ABLEMARK' : 'EPSON');
   const [epsonPrinters, setEpsonPrinters] = useState<EpsonDiscoveredPrinter[]>([]);
   const [epsonLoading, setEpsonLoading] = useState(false);
 
@@ -424,7 +429,10 @@ export default function LabelPrintStudioView({
       {/* Conexão */}
       <div className={printerBrand === 'ABLEMARK' && connected ? miniCardConnectedCls : miniCardCls}>
         {/* Marca da impressora — Epson ainda é só estrutura (ver epsonPrinter.ts), pra não
-            atrapalhar quem já usa a Ablemark hoje enquanto o SDK oficial não chega. */}
+            atrapalhar quem já usa a Ablemark hoje enquanto o SDK oficial não chega. Fora do
+            Android nem faz sentido mostrar esse seletor: Ablemark não existe lá (Bluetooth
+            Classic bloqueado pelo iOS sem MFi), então só sobraria uma opção pra "escolher". */}
+        {isAblemarkPlatform() && (
         <div className="flex gap-1.5 mb-3">
           <button
             type="button"
@@ -445,6 +453,7 @@ export default function LabelPrintStudioView({
             <Wifi size={12} /> Epson (Wi-Fi Direct)
           </button>
         </div>
+        )}
 
         <div className="flex items-center justify-between mb-3">
           <span className={printerBrand === 'ABLEMARK' && connected ? 'text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-3' : sectionTitleCls}>

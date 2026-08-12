@@ -10,7 +10,7 @@ import Modal from './Modal';
 import { PickingGroup, PickingFlatRow } from '../views/BlingPickingListView';
 import { sharePDF, shareImage, printPickingList, PrintPickingListRow } from '../utils/pdfExport';
 import {
-  listAbleMarkPairedDevices, connectAbleMarkPrinter, isAbleMarkPrinterConnected, printAbleMarkLabel, AbleMarkPairedDevice,
+  listAbleMarkPairedDevices, connectAbleMarkPrinter, isAbleMarkPrinterConnected, printAbleMarkLabel, isAblemarkPlatform, AbleMarkPairedDevice,
 } from '../lib/ablemarkPrinter';
 import { toast } from '../utils/toast';
 
@@ -475,21 +475,23 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
                 <Printer size={18} className="text-indigo-500" />
                 <div className="text-left">
                   <p className="text-xs font-black">Impressão Nativa</p>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Diálogo de impressão do Android</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Diálogo de impressão do sistema</p>
                 </div>
               </div>
               <ChevronRight size={16} className="text-slate-400" />
             </button>
-            <button onClick={openThermalFlow} className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-              <div className="flex items-center gap-3">
-                <Bluetooth size={18} className="text-indigo-500" />
-                <div className="text-left">
-                  <p className="text-xs font-black">Impressora Térmica Ablemark</p>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">1 etiqueta por referência marcada</p>
+            {isAblemarkPlatform() && (
+              <button onClick={openThermalFlow} className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                <div className="flex items-center gap-3">
+                  <Bluetooth size={18} className="text-indigo-500" />
+                  <div className="text-left">
+                    <p className="text-xs font-black">Impressora Térmica Ablemark</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">1 etiqueta por referência marcada</p>
+                  </div>
                 </div>
-              </div>
-              <ChevronRight size={16} className="text-slate-400" />
-            </button>
+                <ChevronRight size={16} className="text-slate-400" />
+              </button>
+            )}
           </div>
         </div>
       )}

@@ -52,13 +52,21 @@ export async function connectEpsonPrinter(target: string): Promise<{ connected: 
 
 export async function disconnectEpsonPrinter(): Promise<void> {
   if (!Capacitor.isNativePlatform()) return;
-  await EpsonPrinter.disconnect();
+  try {
+    await EpsonPrinter.disconnect();
+  } catch {
+    // sem implementação nativa ainda em nenhuma plataforma — nada a fazer
+  }
 }
 
 export async function isEpsonPrinterConnected(): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false;
-  const result = await EpsonPrinter.isConnected();
-  return result.connected;
+  try {
+    const result = await EpsonPrinter.isConnected();
+    return result.connected;
+  } catch {
+    return false;
+  }
 }
 
 export async function printEpsonLabel(imagePath: string): Promise<{ sent: boolean; error?: string }> {

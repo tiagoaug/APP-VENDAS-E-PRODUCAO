@@ -111,7 +111,7 @@ import {
   LabelPaperSize,
   LabelFile,
 } from "./types";
-import { isBluetoothEnabled as isPrinterBluetoothEnabled, requestEnableBluetooth as requestPrinterBluetoothEnable } from "./lib/ablemarkPrinter";
+import { isBluetoothEnabled as isPrinterBluetoothEnabled, requestEnableBluetooth as requestPrinterBluetoothEnable, isAblemarkPlatform } from "./lib/ablemarkPrinter";
 import type { OpenEditorParams } from "./views/LabelPrintStudioView";
 
 // Views — DashboardView e LoginView ficam estáticas (primeira tela vista por
@@ -171,6 +171,8 @@ const BlingInvoiceEmissionView = lazy(() => import("./views/BlingInvoiceEmission
 const BlingPickingListView = lazy(() => import("./views/BlingPickingListView"));
 const BlingStockView = lazy(() => import("./views/BlingStockView"));
 const BlingInvoicesView = lazy(() => import("./views/BlingInvoicesView"));
+const BlingHealthView = lazy(() => import("./views/BlingHealthView"));
+const BlingDevolucoesView = lazy(() => import("./views/BlingDevolucoesView"));
 const DeliveryRouteBuilderView = lazy(() => import("./views/DeliveryRouteBuilderView"));
 const DeliveryRouteDetailView = lazy(() => import("./views/DeliveryRouteDetailView"));
 const DeliveryCarriersView = lazy(() => import("./views/DeliveryCarriersView"));
@@ -269,6 +271,8 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
     ViewType.BLING_PICKING_LIST,
     ViewType.BLING_STOCK,
     ViewType.BLING_INVOICES,
+    ViewType.BLING_HEALTH,
+    ViewType.BLING_DEVOLUCOES,
   ]
 };
 
@@ -6052,6 +6056,19 @@ export default function App() {
             isDarkMode={isDarkMode}
           />
         );
+      case ViewType.BLING_HEALTH:
+        return (
+          <BlingHealthView
+            isDarkMode={isDarkMode}
+          />
+        );
+      case ViewType.BLING_DEVOLUCOES:
+        return (
+          <BlingDevolucoesView
+            isDarkMode={isDarkMode}
+            products={products}
+          />
+        );
       case ViewType.MARKETPLACE_SKU_MAPPING:
         return (
           <MarketplaceSkuMappingView
@@ -6641,6 +6658,8 @@ export default function App() {
         ViewType.BLING_PICKING_LIST,
         ViewType.BLING_STOCK,
         ViewType.BLING_INVOICES,
+        ViewType.BLING_HEALTH,
+        ViewType.BLING_DEVOLUCOES,
       ].includes(currentView)
     )
       return "bling";
@@ -6776,6 +6795,10 @@ export default function App() {
         return "Estoque Bling";
       case ViewType.BLING_INVOICES:
         return "Notas Fiscais";
+      case ViewType.BLING_HEALTH:
+        return "Saúde do Negócio";
+      case ViewType.BLING_DEVOLUCOES:
+        return "Devoluções";
       case ViewType.DELIVERY_MENU:
         return "Módulo Entregas";
       case ViewType.DELIVERY_ROUTE_BUILDER:
@@ -6856,7 +6879,9 @@ export default function App() {
       case ViewType.BLING_INVOICE_EMISSION:
       case ViewType.BLING_PICKING_LIST:
       case ViewType.BLING_STOCK:
-      case ViewType.BLING_INVOICES: return <Building2 size={24} className="text-green-700 dark:text-green-500" />;
+      case ViewType.BLING_INVOICES:
+      case ViewType.BLING_HEALTH:
+      case ViewType.BLING_DEVOLUCOES: return <Building2 size={24} className="text-green-700 dark:text-green-500" />;
       case ViewType.DELIVERY_MENU:
       case ViewType.DELIVERY_ROUTE_BUILDER:
       case ViewType.DELIVERY_ROUTE_DETAIL:
@@ -6961,10 +6986,15 @@ export default function App() {
           <motion.button
             type="button"
             onClick={async () => {
-              const enabled = await isPrinterBluetoothEnabled();
-              if (!enabled) {
-                const grantedNow = await requestPrinterBluetoothEnable();
-                if (!grantedNow) return;
+              // Só faz sentido checar/pedir Bluetooth em quem tem impressora Ablemark de
+              // verdade (Android) — fora disso a tela de etiquetas ainda serve pra criar/editar
+              // arquivos e imprimir por outros meios, não pode ficar travada nesse pré-requisito.
+              if (isAblemarkPlatform()) {
+                const enabled = await isPrinterBluetoothEnabled();
+                if (!enabled) {
+                  const grantedNow = await requestPrinterBluetoothEnable();
+                  if (!grantedNow) return;
+                }
               }
               navigateTo(ViewType.LABEL_PRINT_STUDIO);
             }}

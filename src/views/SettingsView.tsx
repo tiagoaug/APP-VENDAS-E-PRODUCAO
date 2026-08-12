@@ -39,6 +39,7 @@ import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator } from '
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
 import { isViewAllowed, isSectorAllowed } from '../utils/collaborators';
 import { openPrintStudio } from '../lib/printStudio';
+import { isAblemarkPlatform } from '../lib/ablemarkPrinter';
 import AIAssistantSettings from '../components/AIAssistantSettings';
 import AblemarkPrinterTestModal from '../components/AblemarkPrinterTestModal';
 
@@ -426,7 +427,10 @@ export default function SettingsView({
               )}
 
               {/* Teste da impressora Ablemark BR-L100 — ferramenta temporária de validação do
-                  protocolo (transporte SPP + JBIG), não é uma tela final de impressão. */}
+                  protocolo (transporte SPP + JBIG), não é uma tela final de impressão. Só faz
+                  sentido no Android — no iOS o Bluetooth Classic/SPP nem funciona (bloqueio de
+                  MFi do fabricante, fora do nosso controle). */}
+              {isAblemarkPlatform() && (
               <button
                 type="button"
                 onClick={() => setShowAblemarkTest(true)}
@@ -434,6 +438,7 @@ export default function SettingsView({
               >
                 Teste — Impressora Ablemark
               </button>
+              )}
 
               {/* Tema */}
               <div className="flex flex-col gap-2.5">

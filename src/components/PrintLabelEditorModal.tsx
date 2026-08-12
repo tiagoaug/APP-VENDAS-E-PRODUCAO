@@ -13,7 +13,7 @@ import { shareImage, shareImages } from '../utils/pdfExport';
 import { toast } from '../utils/toast';
 import {
   isAbleMarkPrinterConnected, printAbleMarkLabel, listAbleMarkPairedDevices, connectAbleMarkPrinter,
-  AbleMarkPairedDevice,
+  isAblemarkPlatform, AbleMarkPairedDevice,
 } from '../lib/ablemarkPrinter';
 import { applyPrintTransform, DIRECTION_TO_ROTATION } from '../utils/labelPrintTransform';
 
@@ -1555,10 +1555,12 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
             className="w-full py-4 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
             <Share2 size={16}/> {(printing || exportingJpg) ? 'Gerando…' : 'Compartilhar'}
           </button>
+          {isAblemarkPlatform() && (
           <button type="button" onClick={handleOpenBluetoothPrint} disabled={printing || exportingJpg || preparingBt}
             className="w-full py-4 rounded-2xl bg-sky-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-sky-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
             <Bluetooth size={16}/> {preparingBt ? 'Preparando…' : 'Imprimir na Impressora (Print Studio)'}
           </button>
+          )}
           <button type="button" onClick={onClose} className={`w-full py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest ${dk?'bg-slate-800 text-slate-400':'bg-slate-100 text-slate-500'}`}>
             Cancelar
           </button>

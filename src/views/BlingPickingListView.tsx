@@ -5,6 +5,7 @@ import { subscribeToBlingOrders, subscribeToBlingMappings, abaterEstoqueBling, B
 import { toast } from '../utils/toast';
 import ConfirmDialog from '../components/ConfirmDialog';
 import BlingPickingExportModal from '../components/BlingPickingExportModal';
+import { isAblemarkPlatform } from '../lib/ablemarkPrinter';
 
 interface BlingPickingListViewProps {
   isDarkMode: boolean;
@@ -232,7 +233,7 @@ export default function BlingPickingListView({ isDarkMode, products }: BlingPick
         </div>
         <div className="min-w-0 flex-1">
           <p className={`text-xs font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Imprimir Lista de Separação</p>
-          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Impressão nativa ou etiquetas na Ablemark</p>
+          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{isAblemarkPlatform() ? 'Impressão nativa ou etiquetas na Ablemark' : 'Impressão nativa'}</p>
         </div>
       </button>
 

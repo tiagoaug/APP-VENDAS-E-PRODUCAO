@@ -21,14 +21,26 @@ interface AbleMarkPrinterPlugin {
 const AbleMarkPrinter = registerPlugin<AbleMarkPrinterPlugin>('AbleMarkPrinter');
 
 // Cliente da impressora de etiqueta Ablemark BR-L100 (Bluetooth Classic/SPP, protocolo X4 —
-// ver android/app/src/main/java/com/musgo/vendaseproducao/printstudio/printer/) — só funciona
-// no app Android nativo, não tem equivalente web. `imagePath` precisa ser uma URI de arquivo já
-// salva (ex.: retorno de Filesystem.writeFile), nunca base64 bruto — mesma convenção do Print
-// Studio (ver printStudio.ts).
+// ver android/app/src/main/java/com/musgo/vendaseproducao/printstudio/printer/) — só existe
+// implementação nativa em Kotlin (Android). No iOS isso nem teria como funcionar de verdade:
+// a Apple bloqueia Bluetooth Classic/SPP de acessório de terceiro sem certificação MFi do
+// fabricante (a Ablemark não tem), então não é uma limitação nossa, é uma parede do iOS. Por
+// isso os guards abaixo checam a PLATAFORMA (Android), não só "é nativo" — `isNativePlatform()`
+// sozinho retornaria true no iOS também, e a chamada bateria na ponte nativa sem implementação
+// lá, estourando erro real em vez de cair no fallback gracioso.
+// Exportado pra UI poder esconder de vez os botões/opções de Ablemark fora do Android (em vez
+// de só deixar a chamada falhar graciosamente) — evita mostrar um caminho sem saída pro usuário
+// no iOS.
+export function isAblemarkPlatform(): boolean {
+  return Capacitor.getPlatform() === 'android';
+}
+
+// `imagePath` precisa ser uma URI de arquivo já salva (ex.: retorno de Filesystem.writeFile),
+// nunca base64 bruto — mesma convenção do Print Studio (ver printStudio.ts).
 // Checagem/pedido de Bluetooth ligado — usado antes de abrir a área de impressão, pra pedir
 // pro usuário ligar o Bluetooth em vez de só falhar depois na conexão com a impressora.
 export async function isBluetoothEnabled(): Promise<boolean> {
-  if (!Capacitor.isNativePlatform()) return false;
+  if (!isAblemarkPlatform()) return false;
   try {
     const result = await AbleMarkPrinter.isBluetoothEnabled();
     return result.enabled;
@@ -38,7 +50,7 @@ export async function isBluetoothEnabled(): Promise<boolean> {
 }
 
 export async function requestEnableBluetooth(): Promise<boolean> {
-  if (!Capacitor.isNativePlatform()) return false;
+  if (!isAblemarkPlatform()) return false;
   try {
     const result = await AbleMarkPrinter.requestEnableBluetooth();
     return result.enabled;
@@ -49,7 +61,7 @@ export async function requestEnableBluetooth(): Promise<boolean> {
 }
 
 export async function listAbleMarkPairedDevices(): Promise<AbleMarkPairedDevice[]> {
-  if (!Capacitor.isNativePlatform()) return [];
+  if (!isAblemarkPlatform()) return [];
   try {
     const result = await AbleMarkPrinter.listPairedDevices();
     return result.devices;
@@ -60,7 +72,7 @@ export async function listAbleMarkPairedDevices(): Promise<AbleMarkPairedDevice[
 }
 
 export async function connectAbleMarkPrinter(address: string): Promise<{ connected: boolean; error?: string }> {
-  if (!Capacitor.isNativePlatform()) {
+  if (!isAblemarkPlatform()) {
     return { connected: false, error: 'Impressora disponível apenas no app Android.' };
   }
   try {
@@ -74,8 +86,12 @@ export async function connectAbleMarkPrinter(address: string): Promise<{ connect
 }
 
 export async function disconnectAbleMarkPrinter(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
-  await AbleMarkPrinter.disconnect();
+  if (!isAblemarkPlatform()) return;
+  try {
+    await AbleMarkPrinter.disconnect();
+  } catch {
+    // best-effort — se a ponte nativa já estiver num estado ruim, não há o que fazer aqui
+  }
 }
 
 // Apaga só os PNGs temporários gerados pra impressão (label_*/ablemark_test_*, ver
@@ -105,7 +121,7 @@ async function clearLabelPrintCache(): Promise<void> {
  * impressão. Depois disso o usuário precisa conectar de novo.
  */
 export async function resetAbleMarkPrinter(): Promise<void> {
-  if (!Capacitor.isNativePlatform()) return;
+  if (!isAblemarkPlatform()) return;
   try {
     await AbleMarkPrinter.resetConnection();
   } catch (err: any) {
@@ -115,13 +131,17 @@ export async function resetAbleMarkPrinter(): Promise<void> {
 }
 
 export async function isAbleMarkPrinterConnected(): Promise<boolean> {
-  if (!Capacitor.isNativePlatform()) return false;
-  const result = await AbleMarkPrinter.isConnected();
-  return result.connected;
+  if (!isAblemarkPlatform()) return false;
+  try {
+    const result = await AbleMarkPrinter.isConnected();
+    return result.connected;
+  } catch {
+    return false;
+  }
 }
 
 export async function printAbleMarkLabel(imagePath: string, paperType = 2, density = 2): Promise<{ sent: boolean; error?: string }> {
-  if (!Capacitor.isNativePlatform()) {
+  if (!isAblemarkPlatform()) {
     return { sent: false, error: 'Impressora disponível apenas no app Android.' };
   }
   try {
