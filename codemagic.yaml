@@ -9,6 +9,10 @@ workflows:
       vars:
         XCODE_PROJECT: "ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
+    cache:
+      cache_paths:
+        - $HOME/Library/Caches/org.swift.swiftpm
+        - $HOME/Library/Developer/Xcode/DerivedData
     scripts:
       - name: Instalar dependências (npm)
         script: npm ci
@@ -23,6 +27,17 @@ workflows:
           else
             echo "Sem Podfile — build 100% via Swift Package Manager."
           fi
+      # Resolve os pacotes SPM (Firebase, MLKit, Capacitor core etc.) separado do build, com
+      # retry manual — os downloads desses .zip grandes do GitHub Releases falham às vezes por
+      # instabilidade de rede na máquina de build (não é um erro do nosso config), então tenta
+      # de novo automaticamente em vez de derrubar o build inteiro na primeira falha.
+      - name: Resolver pacotes Swift Package Manager (com retry)
+        script: |
+          for i in 1 2 3; do
+            xcodebuild -resolvePackageDependencies -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" && break
+            echo "Tentativa $i falhou, tentando de novo em 15s..."
+            sleep 15
+          done
       # Build só pra simulador: não precisa de conta de desenvolvedor Apple nem de
       # certificado de assinatura — serve pra validar que o projeto compila (inclusive
       # detectar se algum plugin sem Package.swift quebra o build via SPM).
