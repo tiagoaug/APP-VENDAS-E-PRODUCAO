@@ -12,7 +12,7 @@ workflows:
     cache:
       cache_paths:
         - $HOME/Library/Caches/org.swift.swiftpm
-        - $HOME/Library/Developer/Xcode/DerivedData
+        - $CM_BUILD_DIR/DerivedData
     scripts:
       - name: Instalar dependências (npm)
         script: npm ci
@@ -34,13 +34,16 @@ workflows:
       - name: Resolver pacotes Swift Package Manager (com retry)
         script: |
           for i in 1 2 3; do
-            xcodebuild -resolvePackageDependencies -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" && break
+            xcodebuild -resolvePackageDependencies -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -derivedDataPath "$CM_BUILD_DIR/DerivedData" && break
             echo "Tentativa $i falhou, tentando de novo em 15s..."
             sleep 15
           done
       # Build só pra simulador: não precisa de conta de desenvolvedor Apple nem de
       # certificado de assinatura — serve pra validar que o projeto compila (inclusive
       # detectar se algum plugin sem Package.swift quebra o build via SPM).
+      # -derivedDataPath explícito: sem isso o xcodebuild salva o .app na pasta padrão do
+      # DerivedData (fora de qualquer caminho do repo), e o glob de `artifacts` abaixo nunca
+      # encontra nada — build passa, mas não aparece nenhum artefato/Quick Launch no Codemagic.
       - name: Build para iOS Simulator (sem assinatura)
         script: |
           xcodebuild build \
@@ -49,9 +52,10 @@ workflows:
             -configuration Debug \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$CM_BUILD_DIR/DerivedData" \
             CODE_SIGNING_ALLOWED=NO
     artifacts:
-      - ios/App/build/**/*.app
+      - DerivedData/Build/Products/*/*.app
 
   # Fica pronto pra quando houver conta de desenvolvedor Apple (US$99/ano) — hoje incompleto
   # de propósito: falta configurar a assinatura (ver comentários abaixo) antes de rodar.
