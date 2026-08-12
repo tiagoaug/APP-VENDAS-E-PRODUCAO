@@ -1,0 +1,78 @@
+workflows:
+  ios-simulator-build:
+    name: iOS - Build de validação (simulador, sem assinatura)
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    environment:
+      node: 20
+      xcode: latest
+      vars:
+        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+    scripts:
+      - name: Instalar dependências (npm)
+        script: npm ci
+      - name: Build do frontend (Vite)
+        script: npm run build
+      - name: Sincronizar Capacitor iOS
+        script: npx cap sync ios
+      - name: Instalar CocoaPods (se algum plugin precisar — este projeto usa SPM por padrão)
+        script: |
+          if [ -f "ios/App/Podfile" ]; then
+            cd ios/App && pod install
+          else
+            echo "Sem Podfile — build 100% via Swift Package Manager."
+          fi
+      # Build só pra simulador: não precisa de conta de desenvolvedor Apple nem de
+      # certificado de assinatura — serve pra validar que o projeto compila (inclusive
+      # detectar se algum plugin sem Package.swift quebra o build via SPM).
+      - name: Build para iOS Simulator (sem assinatura)
+        script: |
+          xcodebuild build \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO
+    artifacts:
+      - ios/App/build/**/*.app
+
+  # Fica pronto pra quando houver conta de desenvolvedor Apple (US$99/ano) — hoje incompleto
+  # de propósito: falta configurar a assinatura (ver comentários abaixo) antes de rodar.
+  ios-device-build:
+    name: iOS - Build assinado (dispositivo real / TestFlight)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      node: 20
+      xcode: latest
+      # ios_signing:
+      #   distribution_type: app_store
+      #   bundle_identifier: com.musgo.vendaseproducao
+      # Também exige conectar a integração "App Store Connect" nas configurações do
+      # Codemagic (Team settings → Integrations) antes de habilitar esse workflow.
+      vars:
+        XCODE_PROJECT: "ios/App/App.xcodeproj"
+        XCODE_SCHEME: "App"
+    scripts:
+      - name: Instalar dependências (npm)
+        script: npm ci
+      - name: Build do frontend (Vite)
+        script: npm run build
+      - name: Sincronizar Capacitor iOS
+        script: npx cap sync ios
+      - name: Instalar CocoaPods (se necessário)
+        script: |
+          if [ -f "ios/App/Podfile" ]; then
+            cd ios/App && pod install
+          fi
+      # - name: Assinatura automática de código
+      #   script: xcode-project use-profiles
+      # - name: Build e assinatura do .ipa
+      #   script: |
+      #     xcode-project build-ipa \
+      #       --project "$XCODE_PROJECT" \
+      #       --scheme "$XCODE_SCHEME"
+    artifacts:
+      - ios/App/build/ios/ipa/*.ipa
