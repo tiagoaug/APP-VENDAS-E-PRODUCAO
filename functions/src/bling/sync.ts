@@ -1,6 +1,7 @@
 import type { firestore } from "firebase-admin";
 import { blingCall } from "./blingClient";
 import { getValidBlingAccessToken } from "./auth";
+import { consumeNotesForNewOrder } from "./notes";
 
 export interface BlingRemoteProduct {
   id: string;
@@ -187,6 +188,16 @@ export async function syncBlingOrders(db: firestore.Firestore, uid: string): Pro
   console.log(`[syncBlingOrders] ${allPedidos.length} pedido(s) retornado(s) pelo Bling, ${pedidos.length} em aberto (valor=${OPEN_SITUATION_VALOR}).`);
 
   const ordersRef = db.collection("users").doc(uid).collection("blingOrders");
+  // "Livro de vendas" — registro leve e permanente de todo pedido com NF-e já autorizada/emitida
+  // (ver loop dedicado depois da limpeza abaixo), usado só pelo Painel de Saúde pra contar pares
+  // vendidos. Existe separado de `blingOrders` porque `blingOrders` só guarda pedidos "Em
+  // aberto" (voltado pro fluxo de emissão de NF-e) — um pedido que o Bling fatura/atende rápido
+  // (antes do próximo sync) sai de "Em aberto" sem nunca ter entrado em `blingOrders`, e sem
+  // esse ledger separado essa venda nunca seria contada em lugar nenhum do app.
+  const ledgerRef = db.collection("users").doc(uid).collection("blingSalesLedger");
+  // Cache do detalhe já buscado pra cada pedido "em aberto" processado no loop abaixo, reusado
+  // no loop do livro de vendas logo depois — evita rebuscar o mesmo pedido duas vezes.
+  const pedidoDetailCache = new Map<string, { itens: { quantidade: number }[]; notaFiscalId?: number; origem: string; valorTotal: number; numero: string; dataVenda: number }>();
   let imported = 0;
 
   for (const pedidoSummary of pedidos) {
@@ -195,6 +206,7 @@ export async function syncBlingOrders(db: firestore.Firestore, uid: string): Pro
     if (existingSnap.exists && existingSnap.data()?.status === "EMITIDA") {
       continue; // já emitida — não sobrescreve
     }
+    const isNewOrder = !existingSnap.exists;
 
     const detail = await blingCall<{
       data: {
@@ -203,6 +215,8 @@ export async function syncBlingOrders(db: firestore.Firestore, uid: string): Pro
         total?: number;
         contato?: { nome?: string };
         loja?: { id: number };
+        notaFiscal?: { id: number };
+        data?: string; // data do pedido — "YYYY-MM-DD" (campo `data` do IFindResponse de pedidosVendas)
         itens: { descricao: string; quantidade: number; valor: number; produto?: { id: number } }[];
       };
     }>({ accessToken, path: `pedidos/vendas/${pedidoSummary.id}` });
@@ -219,12 +233,23 @@ export async function syncBlingOrders(db: firestore.Firestore, uid: string): Pro
     const allMapped = itens.length > 0 && itens.every((i) => i.mapeado);
     const now = Date.now();
     const origem = (pedido.loja?.id && channelOrigins.get(String(pedido.loja.id))) || "PROPRIO";
+    const numero = String(pedido.numero ?? pedidoSummary.numeroLoja ?? pedido.id);
+    const dataVenda = pedido.data ? new Date(pedido.data).getTime() : now;
+
+    pedidoDetailCache.set(docId, {
+      itens: itens.map((i) => ({ quantidade: i.quantidade })),
+      notaFiscalId: pedido.notaFiscal?.id,
+      origem,
+      valorTotal: Number(pedido.total || 0),
+      numero,
+      dataVenda,
+    });
 
     await ordersRef.doc(docId).set(
       {
         id: docId,
         blingPedidoId: docId,
-        numero: String(pedido.numero ?? pedidoSummary.numeroLoja ?? pedido.id),
+        numero,
         origem,
         cliente: pedido.contato?.nome || "Cliente não informado",
         valorTotal: Number(pedido.total || 0),
@@ -236,6 +261,11 @@ export async function syncBlingOrders(db: firestore.Firestore, uid: string): Pro
       { merge: true }
     );
     imported++;
+
+    if (isNewOrder) {
+      const pares = itens.reduce((s, i) => s + i.quantidade, 0);
+      await consumeNotesForNewOrder(db, uid, docId, pares);
+    }
   }
 
   // Limpa pedidos locais que não estão mais "Em aberto" no Bling (foram pagos/faturados/
@@ -271,6 +301,69 @@ export async function syncBlingOrders(db: firestore.Firestore, uid: string): Pro
     }
   }
 
+  // Livro de vendas — roda pra TODOS os pedidos vistos nessa página (abertos ou não), não só os
+  // novos, porque um pedido pode ainda não ter DANFE numa sincronização e ganhar depois. Só
+  // conta como "venda" quem tem `notaFiscal` vinculada E a NF-e está com situação
+  // Autorizada/Emitida DANFE (NFE_SITUACAO_SUCESSO, mesmo critério da emissão) — não usa
+  // "saiu de Em aberto" como proxy aqui porque isso também inclui cancelamentos, cujo
+  // significado exato dos outros valores de `situacao.valor` não é conhecido (ver comentário de
+  // OPEN_SITUATION_VALOR acima).
+  for (const p of allPedidos) {
+    const docId = String(p.id);
+    const existingLedgerSnap = await ledgerRef.doc(docId).get();
+    // Entradas gravadas antes do campo `dataVenda` existir (versão anterior deste código, que
+    // usava a data de descoberta em vez da data real do pedido) ficam com o filtro de período
+    // quebrado — repara aqui em vez de deixar erradas pra sempre.
+    const needsDateRepair = existingLedgerSnap.exists && (existingLedgerSnap.data() as any)?.dataVenda === undefined;
+    if (existingLedgerSnap.exists && !needsDateRepair) continue;
+
+    let cached = pedidoDetailCache.get(docId);
+    if (!cached) {
+      try {
+        const detail = await blingCall<{
+          data: { numero?: number; total?: number; loja?: { id: number }; notaFiscal?: { id: number }; itens?: { quantidade: number }[]; data?: string };
+        }>({ accessToken, path: `pedidos/vendas/${p.id}` });
+        const d = detail.data;
+        cached = {
+          itens: (d.itens || []).map((it) => ({ quantidade: Number(it.quantidade || 0) })),
+          notaFiscalId: d.notaFiscal?.id,
+          origem: (d.loja?.id && channelOrigins.get(String(d.loja.id))) || "PROPRIO",
+          valorTotal: Number(d.total || 0),
+          numero: String(d.numero ?? p.numeroLoja ?? p.id),
+          dataVenda: d.data ? new Date(d.data).getTime() : Date.now(),
+        };
+      } catch (err: any) {
+        console.warn(`[syncBlingOrders] Falha ao buscar detalhe do pedido ${docId} pro livro de vendas:`, err?.message || err);
+        continue;
+      }
+    }
+
+    if (needsDateRepair) {
+      await ledgerRef.doc(docId).set({ dataVenda: cached.dataVenda }, { merge: true });
+      continue;
+    }
+
+    if (!cached.notaFiscalId) continue; // sem NF-e gerada ainda — não é uma venda confirmada
+
+    try {
+      const { situacao } = await fetchNfeDetails(accessToken, String(cached.notaFiscalId));
+      if (situacao === undefined || !NFE_SITUACAO_SUCESSO.has(situacao)) continue; // DANFE ainda não autorizado
+
+      const pares = cached.itens.reduce((s, i) => s + i.quantidade, 0);
+      await ledgerRef.doc(docId).set({
+        id: docId,
+        numero: cached.numero,
+        origem: cached.origem,
+        totalPares: pares,
+        valorTotal: cached.valorTotal,
+        dataVenda: cached.dataVenda,
+        createdAt: Date.now(),
+      });
+    } catch (err: any) {
+      console.warn(`[syncBlingOrders] Falha ao checar NF-e do pedido ${docId} pro livro de vendas:`, err?.message || err);
+    }
+  }
+
   await db
     .collection("users")
     .doc(uid)
@@ -280,6 +373,42 @@ export async function syncBlingOrders(db: firestore.Firestore, uid: string): Pro
 
   const message = removed > 0 ? `${imported} pedido(s) sincronizado(s), ${removed} removido(s) (não estão mais em aberto).` : `${imported} pedido(s) sincronizado(s).`;
   return { ok: true, message, ordersImported: imported };
+}
+
+/**
+ * Roda a sincronização automática de pedidos pra todo usuário Bling conectado que tenha
+ * configurado um intervalo (`autoSyncIntervalMinutes`, ver `blingSetAutoSyncInterval` em
+ * index.ts) e já tenha passado tempo suficiente desde o último sync (`lastOrderSyncAt`).
+ * Chamada pelo `blingAutoSyncScheduler` (index.ts), que dispara a cada 5 minutos — esse é o grão
+ * mínimo de precisão possível pra qualquer intervalo configurado (um intervalo de 15min pode
+ * atrasar até ~5min do horário exato, por exemplo).
+ *
+ * Varre a coleção `users` inteira em vez de um collection group query — não precisa de índice
+ * extra no Firestore, e o número de usuários (cada um sua própria conta Bling) é pequeno o
+ * bastante nesse projeto pra isso ser barato.
+ */
+export async function runAutoSyncForDueUsers(db: firestore.Firestore): Promise<void> {
+  const usersSnap = await db.collection("users").get();
+  const now = Date.now();
+
+  for (const userDoc of usersSnap.docs) {
+    const uid = userDoc.id;
+    try {
+      const connRef = db.collection("users").doc(uid).collection("blingConnections").doc("bling");
+      const connSnap = await connRef.get();
+      if (!connSnap.exists) continue;
+      const conn = connSnap.data() as { connected?: boolean; autoSyncIntervalMinutes?: number | null; lastOrderSyncAt?: number };
+      if (!conn.connected || !conn.autoSyncIntervalMinutes) continue;
+
+      const dueAt = (conn.lastOrderSyncAt || 0) + conn.autoSyncIntervalMinutes * 60_000;
+      if (now < dueAt) continue;
+
+      await syncBlingOrders(db, uid);
+      console.log(`[blingAutoSync] Sincronização automática executada pra uid=${uid}.`);
+    } catch (err: any) {
+      console.error(`[blingAutoSync] Falha ao sincronizar uid=${uid}:`, err?.message || err);
+    }
+  }
 }
 
 export interface BlingEmissionResult {

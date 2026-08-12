@@ -1,12 +1,23 @@
 import { useEffect, useState } from 'react';
-import { Building2, Link2, RefreshCw, CheckCircle2, Clock, ListOrdered, Tags as TagsIcon, ChevronRight, KeyRound, Eye, EyeOff, LogOut, PackageMinus, Boxes, FileText, ExternalLink } from 'lucide-react';
+import { Building2, Link2, RefreshCw, CheckCircle2, Clock, ListOrdered, Tags as TagsIcon, ChevronRight, KeyRound, Eye, EyeOff, LogOut, PackageMinus, Boxes, FileText, ExternalLink, Timer, HeartPulse, PackageX, ChevronDown, ChevronUp } from 'lucide-react';
 import { BlingConnection, ViewType } from '../types';
-import { subscribeToBlingConnection, saveBlingCredentials, getBlingAuthUrl, syncBlingOrdersNow, fetchBlingProducts, disconnectBling } from '../services/blingService';
+import { subscribeToBlingConnection, saveBlingCredentials, getBlingAuthUrl, syncBlingOrdersNow, fetchBlingProducts, disconnectBling, setBlingAutoSyncInterval } from '../services/blingService';
 import { toast } from '../utils/toast';
 
 // URL pública da Cloud Function `blingOAuthCallback` — só existe depois do primeiro deploy de
 // functions (mesmo padrão de SHOPEE_OAUTH_CALLBACK_URL em MarketplaceConnectionView.tsx).
 const BLING_OAUTH_CALLBACK_URL = 'https://us-central1-app-vendas-e-producao.cloudfunctions.net/blingOAuthCallback';
+
+// null = só manual. O scheduler (blingAutoSyncScheduler) roda a cada 5min de qualquer forma, então
+// esse é o menor intervalo que faz sentido oferecer.
+const AUTO_SYNC_OPTIONS: { value: number | null; label: string }[] = [
+  { value: null, label: 'Manual' },
+  { value: 15, label: '15 min' },
+  { value: 30, label: '30 min' },
+  { value: 60, label: '1 h' },
+  { value: 120, label: '2 h' },
+  { value: 360, label: '6 h' },
+];
 
 interface BlingConnectionViewProps {
   isDarkMode: boolean;
@@ -34,8 +45,23 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
   const [syncingOrders, setSyncingOrders] = useState(false);
   const [syncingProducts, setSyncingProducts] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [savingInterval, setSavingInterval] = useState(false);
+  const [autoSyncOpen, setAutoSyncOpen] = useState(false);
+  const [syncSectionOpen, setSyncSectionOpen] = useState(false);
 
   useEffect(() => subscribeToBlingConnection(setConnection), []);
+
+  const handleSetAutoSyncInterval = async (minutes: number | null) => {
+    setSavingInterval(true);
+    try {
+      await setBlingAutoSyncInterval(minutes);
+      toast.show(minutes ? `Sincronização automática a cada ${AUTO_SYNC_OPTIONS.find((o) => o.value === minutes)?.label}.` : 'Sincronização automática desligada — só manual.');
+    } catch (e: any) {
+      toast.show('Erro ao configurar sincronização automática: ' + (e.message || e));
+    } finally {
+      setSavingInterval(false);
+    }
+  };
 
   const isConnected = !!connection?.connected;
   const hasCredentials = !!connection?.hasCredentials;
@@ -179,34 +205,77 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
           </button>
         ) : (
           <div className="flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><Clock size={10} /> Últ. Sync Produtos</p>
-                <p className={`text-xs font-bold mt-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{formatDate(connection?.lastProductSyncAt)}</p>
-              </div>
-              <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
-                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><Clock size={10} /> Últ. Sync Pedidos</p>
-                <p className={`text-xs font-bold mt-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{formatDate(connection?.lastOrderSyncAt)}</p>
-              </div>
+            <div className={`rounded-2xl overflow-hidden ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
+              <button onClick={() => setSyncSectionOpen((v) => !v)} className="w-full p-3 flex items-center justify-between gap-2 text-left">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                  <RefreshCw size={11} /> Sincronização · Pedidos {formatDate(connection?.lastOrderSyncAt)}
+                </p>
+                {syncSectionOpen ? <ChevronUp size={14} className="text-slate-400 shrink-0" /> : <ChevronDown size={14} className="text-slate-400 shrink-0" />}
+              </button>
+
+              {syncSectionOpen && (
+                <div className="px-3 pb-3 flex flex-col gap-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><Clock size={10} /> Últ. Sync Produtos</p>
+                      <p className={`text-xs font-bold mt-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{formatDate(connection?.lastProductSyncAt)}</p>
+                    </div>
+                    <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1"><Clock size={10} /> Últ. Sync Pedidos</p>
+                      <p className={`text-xs font-bold mt-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{formatDate(connection?.lastOrderSyncAt)}</p>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleSyncOrders}
+                    disabled={syncingOrders}
+                    className={`w-full h-12 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition-all ${syncingOrders ? 'animate-pulse' : ''}`}
+                  >
+                    <RefreshCw size={16} className={syncingOrders ? 'animate-spin' : ''} />
+                    {syncingOrders ? 'Sincronizando...' : 'Sincronizar Pedidos'}
+                  </button>
+
+                  <button
+                    onClick={handleSyncProducts}
+                    disabled={syncingProducts}
+                    className={`w-full h-10 rounded-2xl disabled:opacity-60 font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-600'} ${syncingProducts ? 'animate-pulse' : ''}`}
+                  >
+                    <RefreshCw size={13} className={syncingProducts ? 'animate-spin' : ''} />
+                    {syncingProducts ? 'Sincronizando produtos...' : 'Sincronizar Produtos'}
+                  </button>
+
+                  <div className={`rounded-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                    <button onClick={() => setAutoSyncOpen((v) => !v)} className="w-full p-3 flex items-center justify-between gap-2 text-left">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                        <Timer size={11} /> Sincronização automática · {AUTO_SYNC_OPTIONS.find((o) => o.value === (connection?.autoSyncIntervalMinutes ?? null))?.label || 'Manual'}
+                      </p>
+                      {autoSyncOpen ? <ChevronUp size={14} className="text-slate-400 shrink-0" /> : <ChevronDown size={14} className="text-slate-400 shrink-0" />}
+                    </button>
+                    {autoSyncOpen && (
+                      <div className="px-3 pb-3">
+                        <div className={`grid grid-cols-3 gap-1 p-1 rounded-2xl ${isDarkMode ? 'bg-slate-950' : 'bg-slate-50'}`}>
+                          {AUTO_SYNC_OPTIONS.map((opt) => {
+                            const isActive = (connection?.autoSyncIntervalMinutes ?? null) === opt.value;
+                            return (
+                              <button
+                                key={String(opt.value)}
+                                onClick={() => handleSetAutoSyncInterval(opt.value)}
+                                disabled={savingInterval}
+                                className={`h-9 rounded-xl text-[10px] font-black uppercase tracking-wide transition-colors disabled:opacity-50 ${
+                                  isActive ? 'bg-indigo-600 text-white' : (isDarkMode ? 'text-slate-400' : 'text-slate-500')
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
-
-            <button
-              onClick={handleSyncOrders}
-              disabled={syncingOrders}
-              className={`w-full h-12 rounded-2xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 transition-all ${syncingOrders ? 'animate-pulse' : ''}`}
-            >
-              <RefreshCw size={16} className={syncingOrders ? 'animate-spin' : ''} />
-              {syncingOrders ? 'Sincronizando...' : 'Sincronizar Pedidos'}
-            </button>
-
-            <button
-              onClick={handleSyncProducts}
-              disabled={syncingProducts}
-              className={`w-full h-10 rounded-2xl disabled:opacity-60 font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'} ${syncingProducts ? 'animate-pulse' : ''}`}
-            >
-              <RefreshCw size={13} className={syncingProducts ? 'animate-spin' : ''} />
-              {syncingProducts ? 'Sincronizando produtos...' : 'Sincronizar Produtos'}
-            </button>
 
             <a
               href="https://www.bling.com.br"
@@ -233,11 +302,13 @@ export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingCon
       {isConnected && (
         <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
           {[
+            { id: ViewType.BLING_HEALTH, label: 'Saúde do Negócio', icon: <HeartPulse size={22} />, color: 'text-rose-500' },
             { id: ViewType.BLING_PRODUCT_MAPPING, label: 'Vincular Produtos', icon: <TagsIcon size={22} />, color: 'text-indigo-500' },
             { id: ViewType.BLING_PICKING_LIST, label: 'Lista de Separação', icon: <PackageMinus size={22} />, color: 'text-amber-500' },
             { id: ViewType.BLING_INVOICE_EMISSION, label: 'Emitir Notas Fiscais', icon: <ListOrdered size={22} />, color: 'text-emerald-500' },
             { id: ViewType.BLING_INVOICES, label: 'Notas Fiscais', icon: <FileText size={22} />, color: 'text-violet-500' },
             { id: ViewType.BLING_STOCK, label: 'Estoque Bling', icon: <Boxes size={22} />, color: 'text-sky-500' },
+            { id: ViewType.BLING_DEVOLUCOES, label: 'Devoluções', icon: <PackageX size={22} />, color: 'text-orange-500' },
           ].map((item, index, array) => (
             <button
               key={item.id}

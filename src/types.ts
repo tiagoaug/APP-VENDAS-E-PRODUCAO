@@ -800,6 +800,8 @@ export enum ViewType {
   BLING_PICKING_LIST = 'BLING_PICKING_LIST',
   BLING_STOCK = 'BLING_STOCK',
   BLING_INVOICES = 'BLING_INVOICES',
+  BLING_HEALTH = 'BLING_HEALTH',
+  BLING_DEVOLUCOES = 'BLING_DEVOLUCOES',
   DELIVERY_MENU = 'DELIVERY_MENU',
   DELIVERY_ROUTE_BUILDER = 'DELIVERY_ROUTE_BUILDER',
   DELIVERY_ROUTE_DETAIL = 'DELIVERY_ROUTE_DETAIL',
@@ -972,6 +974,10 @@ export type BlingConnection = {
   connectedAt?: number;
   lastProductSyncAt?: number;
   lastOrderSyncAt?: number;
+  // null/ausente = só sincronização manual. Em minutos — checado pelo blingAutoSyncScheduler
+  // (functions/src/index.ts), que roda a cada 5min e dispara syncBlingOrders quando já passou
+  // esse intervalo desde lastOrderSyncAt.
+  autoSyncIntervalMinutes?: number | null;
 };
 
 export type BlingMatchOrigin = 'AUTOMATICO_GTIN' | 'AUTOMATICO_SKU' | 'MANUAL';
@@ -1038,6 +1044,56 @@ export type BlingOrder = {
   motivoRejeicao?: string;
   createdAt: number;
   updatedAt?: number;
+};
+
+// "Livro de vendas" — um registro por pedido Bling com NF-e autorizada/emitida (situação
+// Autorizada/Emitida DANFE), independente de o pedido ainda estar em BlingOrders (que só guarda
+// pedidos "Em aberto") — ver comentário completo em functions/src/bling/sync.ts. Usado só pelo
+// Painel de Saúde pra contar pares vendidos de forma completa, sem depender de o app ter
+// sincronizado o pedido enquanto ainda estava em aberto.
+export type BlingSalesLedgerEntry = {
+  id: string; // = blingPedidoId
+  numero: string;
+  origem: BlingOrderOrigin;
+  totalPares: number;
+  valorTotal: number;
+  dataVenda: number; // data real do pedido no Bling — usar pra filtro de período, não createdAt
+  createdAt: number; // quando o app registrou a venda no livro (auditoria, não pra filtro)
+};
+
+// "Notas de terceiros" — talão físico pré-impresso comprado fora do Bling (não é a NF-e
+// eletrônica, que já tem seu próprio fluxo em BlingOrder). Ver functions/src/bling/notes.ts.
+export type BlingNotesCounter = {
+  id: 'counter';
+  total: number;
+  totalCadastrado: number;
+  totalConsumido: number;
+  totalDevolvido: number;
+  updatedAt: number;
+};
+
+export type BlingNoteAdjustmentType = 'CADASTRO' | 'AJUSTE_MANUAL' | 'CONSUMO_VENDA' | 'DEVOLUCAO';
+
+export type BlingNoteAdjustment = {
+  id: string;
+  type: BlingNoteAdjustmentType;
+  delta: number;
+  balanceAfter: number;
+  motivo?: string;
+  blingOrderId?: string;
+  createdAt: number;
+};
+
+export type BlingDevolucao = {
+  id: string;
+  productId: string;
+  productReference: string;
+  productName: string;
+  variationId: string;
+  variationName: string;
+  size?: string; // ausente = Atacado
+  quantidade: number;
+  createdAt: number;
 };
 
 export type SectorId =

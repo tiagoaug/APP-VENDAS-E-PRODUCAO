@@ -1,7 +1,7 @@
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { app } from '../lib/firebase';
 import { firebaseService } from './firebaseService';
-import { BlingConnection, BlingIgnoredProduct, BlingOrder, BlingProductMapping } from '../types';
+import { BlingConnection, BlingIgnoredProduct, BlingOrder, BlingProductMapping, BlingNotesCounter, BlingNoteAdjustment, BlingDevolucao, BlingSalesLedgerEntry } from '../types';
 
 const functions = getFunctions(app, 'us-central1');
 
@@ -9,6 +9,10 @@ const CONNECTION_PATH = 'blingConnections';
 const MAPPINGS_PATH = 'blingProductMappings';
 const IGNORED_PATH = 'blingIgnoredProducts';
 const ORDERS_PATH = 'blingOrders';
+const NOTES_COUNTER_PATH = 'blingNotesCounter';
+const NOTE_ADJUSTMENTS_PATH = 'blingNoteAdjustments';
+const DEVOLUCOES_PATH = 'blingDevolucoes';
+const SALES_LEDGER_PATH = 'blingSalesLedger';
 
 // ─── Cloud Functions (lógica sensível/servidor — client_secret, tokens, chamadas à API do
 // Bling) — mesma separação já usada em marketplaceService.ts pra Shopee: nada de credencial
@@ -60,6 +64,13 @@ export async function syncBlingOrdersNow(): Promise<{ ok: boolean; message: stri
   return res.data;
 }
 
+/** `intervalMinutes: null` desliga a sincronização automática (só manual). */
+export async function setBlingAutoSyncInterval(intervalMinutes: number | null): Promise<{ ok: boolean }> {
+  const fn = httpsCallable<{ intervalMinutes: number | null }, { ok: boolean }>(functions, 'blingSetAutoSyncInterval');
+  const res = await fn({ intervalMinutes });
+  return res.data;
+}
+
 export interface BlingEmissionResult {
   pedidoId: string;
   ok: boolean;
@@ -106,6 +117,37 @@ export async function abaterEstoqueBling(items: BlingAbaterEstoqueItem[]): Promi
   return res.data;
 }
 
+/** Ajuste manual do saldo de "notas de terceiros" — passe `delta` (soma/subtrai) OU `setTo`
+ * (fixa um valor absoluto, usado no cadastro inicial do talão). */
+export async function adjustBlingNotes(input: { delta?: number; setTo?: number; motivo?: string }): Promise<BlingNotesCounter> {
+  const fn = httpsCallable<typeof input, BlingNotesCounter>(functions, 'blingAdjustNotes');
+  const res = await fn(input);
+  return res.data;
+}
+
+export interface BlingRegisterDevolucaoInput {
+  productId: string;
+  variationId: string;
+  size?: string;
+  quantidade: number;
+}
+
+/** Devolução avulsa (por referência/tamanho/quantidade) — restitui o estoque e devolve o saldo
+ * de notas de terceiros correspondente. */
+export async function registerBlingDevolucao(input: BlingRegisterDevolucaoInput): Promise<{ ok: boolean; message: string }> {
+  const fn = httpsCallable<BlingRegisterDevolucaoInput, { ok: boolean; message: string }>(functions, 'blingRegisterDevolucao');
+  const res = await fn(input);
+  return res.data;
+}
+
+/** Devolução "só nota" — sem produto/estoque envolvido, só devolve a quantidade pro saldo de
+ * notas de terceiros. */
+export async function registerNotesOnlyReturn(input: { quantidade: number; motivo?: string }): Promise<BlingNotesCounter> {
+  const fn = httpsCallable<typeof input, BlingNotesCounter>(functions, 'blingRegisterNotesOnlyReturn');
+  const res = await fn(input);
+  return res.data;
+}
+
 // ─── Firestore direto (dados não sensíveis — status de conexão, mapeamentos, pedidos) ───
 
 export function subscribeToBlingConnection(callback: (connection: BlingConnection | null) => void) {
@@ -140,6 +182,32 @@ export async function unignoreBlingProduct(id: string): Promise<void> {
 
 export function subscribeToBlingOrders(callback: (orders: BlingOrder[]) => void) {
   return firebaseService.subscribeToCollection<BlingOrder>(ORDERS_PATH, (all) => {
+    callback([...all].sort((a, b) => b.createdAt - a.createdAt));
+  });
+}
+
+export function subscribeToBlingNotesCounter(callback: (counter: BlingNotesCounter | null) => void) {
+  return firebaseService.subscribeToCollection<BlingNotesCounter>(NOTES_COUNTER_PATH, (all) => {
+    callback(all.find((c) => c.id === 'counter') || null);
+  });
+}
+
+export function subscribeToBlingNoteAdjustments(callback: (adjustments: BlingNoteAdjustment[]) => void) {
+  return firebaseService.subscribeToCollection<BlingNoteAdjustment>(NOTE_ADJUSTMENTS_PATH, (all) => {
+    callback([...all].sort((a, b) => b.createdAt - a.createdAt));
+  });
+}
+
+export function subscribeToBlingDevolucoes(callback: (devolucoes: BlingDevolucao[]) => void) {
+  return firebaseService.subscribeToCollection<BlingDevolucao>(DEVOLUCOES_PATH, (all) => {
+    callback([...all].sort((a, b) => b.createdAt - a.createdAt));
+  });
+}
+
+/** Registro por pedido com NF-e autorizada/emitida — fonte confiável de "pares vendidos" pro
+ * Painel de Saúde, ver comentário completo em functions/src/bling/sync.ts. */
+export function subscribeToBlingSalesLedger(callback: (entries: BlingSalesLedgerEntry[]) => void) {
+  return firebaseService.subscribeToCollection<BlingSalesLedgerEntry>(SALES_LEDGER_PATH, (all) => {
     callback([...all].sort((a, b) => b.createdAt - a.createdAt));
   });
 }

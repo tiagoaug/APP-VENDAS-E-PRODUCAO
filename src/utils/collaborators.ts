@@ -45,8 +45,8 @@ export const SECTORS: { id: SectorId; label: string; icon: string; tasks: string
   },
   {
     id: 'bling', label: 'Integração Bling', icon: 'Building2',
-    tasks: ['Vincular Produtos', 'Lista de Separação', 'Emitir Notas Fiscais', 'Estoque Bling', 'Notas Fiscais'],
-    views: [ViewType.BLING_CONNECTION, ViewType.BLING_PRODUCT_MAPPING, ViewType.BLING_INVOICE_EMISSION, ViewType.BLING_PICKING_LIST, ViewType.BLING_STOCK, ViewType.BLING_INVOICES],
+    tasks: ['Vincular Produtos', 'Lista de Separação', 'Emitir Notas Fiscais', 'Estoque Bling', 'Notas Fiscais', 'Saúde do Negócio', 'Devoluções'],
+    views: [ViewType.BLING_CONNECTION, ViewType.BLING_PRODUCT_MAPPING, ViewType.BLING_INVOICE_EMISSION, ViewType.BLING_PICKING_LIST, ViewType.BLING_STOCK, ViewType.BLING_INVOICES, ViewType.BLING_HEALTH, ViewType.BLING_DEVOLUCOES],
   },
   {
     id: 'financeiro', label: 'Financeiro', icon: 'Wallet',

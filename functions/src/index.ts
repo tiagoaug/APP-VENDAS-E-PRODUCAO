@@ -1,4 +1,5 @@
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
+import { onSchedule } from "firebase-functions/v2/scheduler";
 import { defineSecret } from "firebase-functions/params";
 import * as admin from "firebase-admin";
 import { TOOLS, executeTool } from "./tools";
@@ -10,9 +11,10 @@ import { getShopeeAuthUrl, handleShopeeOAuthCallback } from "./marketplace/auth"
 import { handleShopeeWebhook } from "./marketplace/webhook";
 import { importShopeeOrder, revertMarketplaceOrderReturn, pushStockToShopee } from "./marketplace/sync";
 import { saveBlingCredentials, getBlingAuthUrl, handleBlingOAuthCallback, disconnectBling } from "./bling/auth";
-import { fetchBlingProducts, syncBlingOrders, emitBlingInvoice, emitBlingInvoicesBatch, refreshBlingInvoiceDetails } from "./bling/sync";
+import { fetchBlingProducts, syncBlingOrders, emitBlingInvoice, emitBlingInvoicesBatch, refreshBlingInvoiceDetails, runAutoSyncForDueUsers } from "./bling/sync";
 import { handleBlingWebhook } from "./bling/webhook";
 import { abaterEstoqueBling, AbaterEstoqueItem } from "./bling/picking";
+import { adjustThirdPartyNotes, registerBlingDevolucao, registerNotesOnlyReturn, RegisterDevolucaoInput } from "./bling/notes";
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -372,6 +374,23 @@ export const blingSyncOrders = onCall({ region: "us-central1", timeoutSeconds: 3
   }
 });
 
+// null = só sincronização manual (padrão). Qualquer outro valor é o intervalo em minutos entre
+// disparos automáticos — checado pelo blingAutoSyncScheduler abaixo, que roda a cada 5min (esse
+// é o grão mínimo real de qualquer intervalo escolhido).
+export const blingSetAutoSyncInterval = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  const minutes = request.data?.intervalMinutes;
+  if (minutes !== null && (typeof minutes !== "number" || minutes < 5)) {
+    throw new HttpsError("invalid-argument", "intervalMinutes precisa ser null (manual) ou um número >= 5.");
+  }
+  await db.collection("users").doc(request.auth.uid).collection("blingConnections").doc("bling").set({ autoSyncIntervalMinutes: minutes }, { merge: true });
+  return { ok: true };
+});
+
+export const blingAutoSyncScheduler = onSchedule({ schedule: "every 5 minutes", region: "us-central1", timeoutSeconds: 300 }, async () => {
+  await runAutoSyncForDueUsers(db);
+});
+
 export const blingEmitInvoice = onCall({ region: "us-central1", timeoutSeconds: 120 }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
   const pedidoId = request.data?.pedidoId;
@@ -414,5 +433,46 @@ export const blingAbaterEstoque = onCall({ region: "us-central1", timeoutSeconds
     return await abaterEstoqueBling(db, request.auth.uid, items as AbaterEstoqueItem[]);
   } catch (err: any) {
     throw new HttpsError("internal", err?.message || "Falha ao abater estoque.");
+  }
+});
+
+export const blingAdjustNotes = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  const { delta, setTo, motivo } = request.data || {};
+  if (delta === undefined && setTo === undefined) {
+    throw new HttpsError("invalid-argument", "Informe delta ou setTo.");
+  }
+  if (delta !== undefined && typeof delta !== "number") throw new HttpsError("invalid-argument", "delta precisa ser número.");
+  if (setTo !== undefined && typeof setTo !== "number") throw new HttpsError("invalid-argument", "setTo precisa ser número.");
+  try {
+    return await adjustThirdPartyNotes(db, request.auth.uid, { delta, setTo, motivo });
+  } catch (err: any) {
+    throw new HttpsError("internal", err?.message || "Falha ao ajustar notas de terceiros.");
+  }
+});
+
+export const blingRegisterDevolucao = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  const input = request.data as RegisterDevolucaoInput;
+  if (!input?.productId || !input?.variationId || typeof input?.quantidade !== "number") {
+    throw new HttpsError("invalid-argument", "productId, variationId e quantidade são obrigatórios.");
+  }
+  try {
+    return await registerBlingDevolucao(db, request.auth.uid, input);
+  } catch (err: any) {
+    throw new HttpsError("internal", err?.message || "Falha ao registrar devolução.");
+  }
+});
+
+export const blingRegisterNotesOnlyReturn = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
+  const { quantidade, motivo } = request.data || {};
+  if (typeof quantidade !== "number" || quantidade <= 0) {
+    throw new HttpsError("invalid-argument", "quantidade precisa ser um número maior que zero.");
+  }
+  try {
+    return await registerNotesOnlyReturn(db, request.auth.uid, { quantidade, motivo });
+  } catch (err: any) {
+    throw new HttpsError("internal", err?.message || "Falha ao registrar devolução de nota.");
   }
 });
