@@ -364,7 +364,7 @@ export default function PersonalFinancialView({
         }}
         category={editingCategory || undefined}
         categories={categories}
-        modulesConfig={{ personal: true, sales: true, production: true, marketplace: false, entregas: false, bling: false }}
+        modulesConfig={{ personal: true, sales: true, production: true, ai: false, entregas: false, bling: false }}
       />
 
       <FamilyMemberModal 

@@ -15,8 +15,7 @@ const DEVOLUCOES_PATH = 'blingDevolucoes';
 const SALES_LEDGER_PATH = 'blingSalesLedger';
 
 // ─── Cloud Functions (lógica sensível/servidor — client_secret, tokens, chamadas à API do
-// Bling) — mesma separação já usada em marketplaceService.ts pra Shopee: nada de credencial
-// nem token passa perto do Firestore lido pelo cliente. ──────────────────────────────────
+// Bling) — nada de credencial nem token passa perto do Firestore lido pelo cliente. ──────
 
 /** Salva Client ID/Secret do app Bling da própria empresa (cada conta Bling registra o seu,
  * diferente da Shopee que usa uma chave de parceiro única) — guardado só server-side. */

@@ -701,15 +701,40 @@ export type Category = {
   color: string;
   type: CategoryType;
   isPersonal?: boolean;
-  module?: keyof AppModulesConfig;
+  module?: keyof AppModulesConfig | 'any' | (keyof AppModulesConfig | 'any')[];
   parentId?: string;
-  isRoot?: boolean;
+};
+
+// Modelo de categoria compartilhado ENTRE CONTAS (não fica em users/{uid} como o resto dos
+// dados) — qualquer conta pode ler pra oferecer como sugestão pronta pra tocar e adicionar
+// (ex.: no Assistente de Configuração Inicial de uma conta nova), mas só quem criou pode
+// editar/apagar o próprio modelo.
+export type CategoryTemplate = {
+  id: string;
+  name: string;
+  type: CategoryType;
+  color: string;
+  module?: Category['module'];
+  isPersonal?: boolean;
+  createdBy: string;
+  createdAt: number;
 };
 
 export type ColorValue = {
   id: string;
   name: string;
   hex: string;
+  isComposite?: boolean; // false/ausente = cor primária; true = cor composta (ex.: "Preto Dourado")
+};
+
+// Modelo de cor compartilhado ENTRE CONTAS — mesmo desenho de CategoryTemplate (ver types.ts).
+export type ColorTemplate = {
+  id: string;
+  name: string;
+  hex: string;
+  isComposite?: boolean;
+  createdBy: string;
+  createdAt: number;
 };
 
 export type PaymentMethod = {
@@ -737,6 +762,7 @@ export type Account = {
 
 export enum ViewType {
   DASHBOARD = 'DASHBOARD',
+  ONBOARDING_WELCOME = 'ONBOARDING_WELCOME',
   PRODUCTS = 'PRODUCTS',
   PURCHASES = 'PURCHASES',
   SALES = 'SALES',
@@ -790,10 +816,6 @@ export enum ViewType {
   // com PRINT_STUDIO acima (módulo nativo antigo HP/Epson, sem relação).
   LABEL_PRINT_STUDIO = 'LABEL_PRINT_STUDIO',
   LABEL_EDITOR = 'LABEL_EDITOR',
-  MARKETPLACE_MENU = 'MARKETPLACE_MENU',
-  MARKETPLACE_CONNECTION = 'MARKETPLACE_CONNECTION',
-  MARKETPLACE_ORDERS = 'MARKETPLACE_ORDERS',
-  MARKETPLACE_SKU_MAPPING = 'MARKETPLACE_SKU_MAPPING',
   BLING_CONNECTION = 'BLING_CONNECTION',
   BLING_PRODUCT_MAPPING = 'BLING_PRODUCT_MAPPING',
   BLING_INVOICE_EMISSION = 'BLING_INVOICE_EMISSION',
@@ -892,77 +914,24 @@ export type AppModulesConfig = {
   personal: boolean;
   sales: boolean;
   production: boolean;
-  marketplace: boolean;
+  ai: boolean;
   entregas: boolean;
   bling: boolean;
 };
 
-// ─── Marketplace (integração com plataformas externas, ex.: Shopee) ────────
+export type BusinessType = 'REVENDA' | 'FABRICACAO' | 'HIBRIDO';
 
-export type MarketplaceChannel = 'SHOPEE';
-
-// Status de conexão da loja — NUNCA contém token; tokens ficam em
-// users/{uid}/shopeeIntegration (só Admin SDK, ver firestore.rules).
-export type MarketplaceConnection = {
-  id: string; // = channel
-  channel: MarketplaceChannel;
-  shopId: string;
-  shopName?: string;
-  connected: boolean;
-  connectedAt?: number;
-  lastOrderSyncAt?: number;
-  lastStockPushAt?: number;
-};
-
-export type MarketplaceSkuMapping = {
-  id: string;
-  channel: MarketplaceChannel;
-  externalItemId: string; // Shopee item_id
-  externalModelId?: string; // Shopee model_id (variação) — ausente = item sem variação
-  externalSkuLabel?: string; // texto da Shopee, só exibição
-  productId: string;
-  productName?: string; // denormalizado, só exibição
-  variationId: string;
-  variationName?: string; // denormalizado, só exibição
-  size?: string; // ausente = mapeado como ATACADO (stock['WHOLESALE'])
-  saleType: SaleType;
-  createdAt: number;
-  updatedAt?: number;
-};
-
-export type MarketplaceOrderStatus = 'PENDING_IMPORT' | 'PARTIALLY_MAPPED' | 'STOCK_DEBITED' | 'RETURNED' | 'ERROR';
-
-export type MarketplaceOrderItem = {
-  externalItemId: string;
-  externalModelId?: string;
-  externalName: string; // nome da Shopee, exibido quando o item ainda não tem mapeamento
-  quantity: number;
-  price: number;
-  mapping?: { productId: string; variationId: string; size?: string; saleType: SaleType };
-};
-
-export type MarketplaceOrder = {
-  id: string;
-  channel: MarketplaceChannel;
-  externalOrderId: string; // Shopee order_sn
-  orderNumber: string; // sequência interna, ex. "MKT #0001"
-  status: MarketplaceOrderStatus;
-  buyerName?: string;
-  items: MarketplaceOrderItem[];
-  total: number;
-  errorReason?: string;
-  createdAt: number;
-  updatedAt?: number;
-  importedAt?: number;
-  returnedAt?: number;
-};
+export interface OnboardingStatus {
+  id: string; // sempre 'main_onboarding_status'
+  businessType?: BusinessType;
+  completedAt?: number;
+  skippedAt?: number;
+}
 
 // ─── Integração Bling (ERP + emissão de NF-e) ──────────────────────────────
-// Mesmo desenho do bloco Marketplace acima: nada de credencial/token nos tipos usados no
-// cliente — client_secret e tokens ficam só em Cloud Functions/Firestore admin-only (ver
-// firestore.rules). O usuário cadastra Client ID/Secret do PRÓPRIO app Bling (diferente da
-// Shopee, que usa uma chave de parceiro única pro app inteiro) — cada empresa registra o
-// dela no portal de desenvolvedor do Bling.
+// Nada de credencial/token nos tipos usados no cliente — client_secret e tokens ficam só
+// em Cloud Functions/Firestore admin-only (ver firestore.rules). O usuário cadastra Client
+// ID/Secret do PRÓPRIO app Bling — cada empresa registra o dela no portal de desenvolvedor.
 
 // Status de conexão — nunca contém client_secret nem tokens. Esses ficam em
 // users/{uid}/blingIntegration (só Admin SDK).

@@ -14,7 +14,7 @@ import {
   Boxes,
   Lock,
   AlertTriangle,
-  Store,
+  Sparkles,
   Truck,
   Building2
 } from 'lucide-react';
@@ -55,14 +55,6 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
         setIsConfirmOpen(true);
         return;
       }
-      if (module === 'marketplace') {
-        setConfirmTitle("Atualização Futura");
-        setConfirmMessage("O Módulo Marketplace está em atualização e será liberado em uma versão futura.");
-        setPendingModule(null);
-        setIsConfirmOpen(true);
-        return;
-      }
-
       // Activation is usually safe
       const newConfig = { ...config };
       newConfig[module] = true;
@@ -70,12 +62,12 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     } else {
       // Deactivation requires warning
       setPendingModule(module);
-      if (module === 'sales' && (config.production || config.marketplace || config.entregas)) {
-        const dependents = [config.production && 'Produção', config.marketplace && 'Marketplace', config.entregas && 'Entregas'].filter(Boolean).join(' e ');
+      if (module === 'sales' && (config.production || config.entregas)) {
+        const dependents = [config.production && 'Produção', config.entregas && 'Entregas'].filter(Boolean).join(' e ');
         setConfirmTitle("Desativar Vendas");
         setConfirmMessage(`Ao desativar o Módulo de Vendas, o Módulo de ${dependents} também será desativado automaticamente. Deseja continuar?`);
       } else {
-        const moduleName = module === 'personal' ? 'Pessoal' : module === 'sales' ? 'Vendas' : module === 'production' ? 'Produção' : module === 'entregas' ? 'Entregas' : module === 'bling' ? 'Bling' : 'Marketplace';
+        const moduleName = module === 'personal' ? 'Pessoal' : module === 'sales' ? 'Vendas' : module === 'production' ? 'Produção' : module === 'entregas' ? 'Entregas' : module === 'bling' ? 'Bling' : 'Assistente de IA';
         setConfirmTitle(`Desativar ${moduleName}`);
         setConfirmMessage(`Tem certeza que deseja ocultar o Módulo ${moduleName}? Os dados não serão apagados, mas as funções ficarão inacessíveis.`);
       }
@@ -93,7 +85,6 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     if (pendingModule === 'sales') {
       newConfig.sales = false;
       newConfig.production = false;
-      newConfig.marketplace = false;
       newConfig.entregas = false;
     } else {
       newConfig[pendingModule] = false;
@@ -134,15 +125,13 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
       features: ['Engenharia de Produto', 'Estoque de Insumos', 'Controle de PCP', 'Necessidade de Compras']
     },
     {
-      id: 'marketplace',
-      name: 'Módulo Marketplace',
-      description: 'Integração com plataformas externas (Shopee) — pedidos e estoque.',
-      icon: <Store size={28} />,
-      active: config.marketplace,
-      disabled: !config.marketplace,
-      locked: true,
-      color: 'bg-orange-500',
-      features: ['Pedidos Shopee', 'Sincronização de Estoque', 'Devoluções']
+      id: 'ai',
+      name: 'Módulo Assistente de IA',
+      description: 'Assistente inteligente no cabeçalho e no Dashboard, com prompts rápidos e consultas ao seu negócio.',
+      icon: <Sparkles size={28} />,
+      active: config.ai,
+      color: 'bg-violet-600',
+      features: ['Perguntas sobre o Negócio', 'Prompts Rápidos', 'Relatórios sob Demanda']
     },
     {
       id: 'entregas',
@@ -171,7 +160,6 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
     { label: 'Gerenciar Contas', icon: <Wallet size={20} />, view: ViewType.ACCOUNTS, module: 'sales' },
     { label: 'Relatórios', icon: <BarChart3 size={20} />, view: ViewType.REPORTS, module: 'sales' },
     { label: 'Config. Produção', icon: <Settings size={20} />, view: ViewType.PRODUCTION_CONFIG, module: 'production' },
-    { label: 'Config. Marketplace', icon: <Store size={20} />, view: ViewType.MARKETPLACE_CONNECTION, module: 'marketplace' },
     { label: 'Config. Entregas', icon: <Truck size={20} />, view: ViewType.DELIVERY_CONFIG, module: 'entregas' },
     { label: 'Conexão Bling', icon: <Building2 size={20} />, view: ViewType.BLING_CONNECTION, module: 'bling' },
     { label: 'Estoque Central', icon: <Boxes size={20} />, view: ViewType.STOCK, module: 'sales' },
@@ -233,7 +221,7 @@ export default function ModuleConfigView({ config, onSave, onNavigate, isDarkMod
             {module.disabled && (
               <div className="absolute inset-0 bg-slate-950/20 backdrop-blur-[1px] rounded-[2.5rem] flex items-center justify-center">
                 <div className="bg-slate-900/90 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
-                  <Lock size={12} /> {module.locked ? 'Atualização Futura' : 'Requer Vendas'}
+                  <Lock size={12} /> Requer Vendas
                 </div>
               </div>
             )}

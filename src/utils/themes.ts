@@ -67,7 +67,6 @@ export const NAV_TAB_COLORS: Record<string, string> = {
   purchases: '#ea580c',   // Compras — orange
   sales: '#a21caf',       // Vendas — fuchsia
   production: '#059669',  // Prod. — emerald
-  marketplace: '#ee4d2d', // Market. — laranja Shopee
   entregas: '#0d9488',    // Entregas — teal
   bling: '#15803d',       // Bling — verde escuro
   financial: '#0891b2',   // Finan. — cyan

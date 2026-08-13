@@ -4,8 +4,7 @@ import { BlingConnection, ViewType } from '../types';
 import { subscribeToBlingConnection, saveBlingCredentials, getBlingAuthUrl, syncBlingOrdersNow, fetchBlingProducts, disconnectBling, setBlingAutoSyncInterval } from '../services/blingService';
 import { toast } from '../utils/toast';
 
-// URL pública da Cloud Function `blingOAuthCallback` — só existe depois do primeiro deploy de
-// functions (mesmo padrão de SHOPEE_OAUTH_CALLBACK_URL em MarketplaceConnectionView.tsx).
+// URL pública da Cloud Function `blingOAuthCallback` — só existe depois do primeiro deploy de functions.
 const BLING_OAUTH_CALLBACK_URL = 'https://us-central1-app-vendas-e-producao.cloudfunctions.net/blingOAuthCallback';
 
 // null = só manual. O scheduler (blingAutoSyncScheduler) roda a cada 5min de qualquer forma, então
@@ -29,10 +28,9 @@ function formatDate(ts?: number) {
   return new Date(ts).toLocaleString('pt-BR');
 }
 
-/** Tela de conexão com o Bling — diferente da Shopee (MarketplaceConnectionView), aqui o
- * usuário precisa colar o Client ID/Secret do PRÓPRIO app cadastrado no portal de
- * desenvolvedor do Bling antes de poder conectar, já que o Bling não tem um app de parceiro
- * compartilhado como a Shopee. As credenciais são enviadas direto pra uma Cloud Function (nunca
+/** Tela de conexão com o Bling — o usuário precisa colar o Client ID/Secret do PRÓPRIO app
+ * cadastrado no portal de desenvolvedor do Bling antes de poder conectar, já que o Bling
+ * não tem um app de parceiro compartilhado. As credenciais são enviadas direto pra uma Cloud Function (nunca
  * gravadas em Firestore lido pelo cliente) — depois disso, o fluxo de login é o mesmo (abre o
  * Bling pra autorizar, volta com o token trocado no backend). */
 export default function BlingConnectionView({ isDarkMode, onNavigate }: BlingConnectionViewProps) {

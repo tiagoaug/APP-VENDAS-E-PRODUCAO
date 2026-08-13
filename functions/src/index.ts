@@ -7,9 +7,6 @@ import { runAnthropicChat } from "./providers/anthropic";
 import { runOpenAIChat } from "./providers/openai";
 import { runGeminiChat } from "./providers/gemini";
 import { AIProviderMessage, RunChatFn } from "./providers/types";
-import { getShopeeAuthUrl, handleShopeeOAuthCallback } from "./marketplace/auth";
-import { handleShopeeWebhook } from "./marketplace/webhook";
-import { importShopeeOrder, revertMarketplaceOrderReturn, pushStockToShopee } from "./marketplace/sync";
 import { saveBlingCredentials, getBlingAuthUrl, handleBlingOAuthCallback, disconnectBling } from "./bling/auth";
 import { fetchBlingProducts, syncBlingOrders, emitBlingInvoice, emitBlingInvoicesBatch, refreshBlingInvoiceDetails, runAutoSyncForDueUsers } from "./bling/sync";
 import { handleBlingWebhook } from "./bling/webhook";
@@ -20,8 +17,6 @@ admin.initializeApp();
 const db = admin.firestore();
 
 const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
-const shopeePartnerId = defineSecret("SHOPEE_PARTNER_ID");
-const shopeePartnerKey = defineSecret("SHOPEE_PARTNER_KEY");
 
 type AIProviderId = "anthropic" | "openai" | "gemini";
 
@@ -212,84 +207,9 @@ export const resolveMapsShortLink = onCall({ region: "us-central1", timeoutSecon
   }
 });
 
-// ─── Marketplace: Shopee ──────────────────────────────────────────────────
-// Ver src/marketplace/*.ts — a lógica de negócio fica lá; aqui só a casca de
-// autenticação/roteamento (onCall exige request.auth, onRequest é público e por isso
-// verifica a assinatura da Shopee manualmente em cada handler).
-
-const shopeeSecrets = [shopeePartnerId, shopeePartnerKey];
-
-export const shopeeGetAuthUrl = onCall({ secrets: shopeeSecrets, region: "us-central1" }, async (request) => {
-  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
-  const callbackUrl = request.data?.callbackUrl;
-  if (!callbackUrl || typeof callbackUrl !== "string") {
-    throw new HttpsError("invalid-argument", "callbackUrl é obrigatório (URL pública da function shopeeOAuthCallback).");
-  }
-  const url = await getShopeeAuthUrl(db, request.auth.uid, shopeePartnerId.value(), shopeePartnerKey.value(), callbackUrl);
-  return { url };
-});
-
-export const shopeeOAuthCallback = onRequest({ secrets: shopeeSecrets, region: "us-central1" }, async (req, res) => {
-  const result = await handleShopeeOAuthCallback(db, shopeePartnerId.value(), shopeePartnerKey.value(), {
-    code: req.query.code as string | undefined,
-    shop_id: req.query.shop_id as string | undefined,
-    state: req.query.state as string | undefined,
-  });
-  res.status(result.ok ? 200 : 400).send(
-    `<!doctype html><html><body style="font-family:sans-serif;text-align:center;padding:48px">
-      <h2>${result.ok ? "✅" : "⚠️"} ${result.message}</h2>
-      <p>Pode fechar esta janela e voltar pro app.</p>
-    </body></html>`
-  );
-});
-
-export const shopeeWebhook = onRequest({ secrets: shopeeSecrets, region: "us-central1" }, async (req, res) => {
-  const rawBody = req.rawBody ? req.rawBody.toString("utf8") : JSON.stringify(req.body || {});
-  const signature = (req.headers["authorization"] as string) || undefined;
-  const pushUrl = `https://${req.hostname}${req.path}`;
-  const result = await handleShopeeWebhook(db, shopeePartnerId.value(), shopeePartnerKey.value(), pushUrl, rawBody, signature);
-  res.status(result.status).send(result.body);
-});
-
-export const shopeeSyncStockNow = onCall({ secrets: shopeeSecrets, region: "us-central1", timeoutSeconds: 300 }, async (request) => {
-  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
-  try {
-    return await pushStockToShopee(db, request.auth.uid, shopeePartnerId.value(), shopeePartnerKey.value());
-  } catch (err: any) {
-    throw new HttpsError("internal", err?.message || "Falha ao sincronizar estoque com a Shopee.");
-  }
-});
-
-export const shopeeImportOrderManually = onCall({ secrets: shopeeSecrets, region: "us-central1", timeoutSeconds: 60 }, async (request) => {
-  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
-  const orderSn = request.data?.orderSn;
-  if (!orderSn || typeof orderSn !== "string") {
-    throw new HttpsError("invalid-argument", "orderSn é obrigatório.");
-  }
-  try {
-    return await importShopeeOrder(db, request.auth.uid, shopeePartnerId.value(), shopeePartnerKey.value(), orderSn);
-  } catch (err: any) {
-    throw new HttpsError("internal", err?.message || "Falha ao importar pedido da Shopee.");
-  }
-});
-
-export const shopeeRevertOrderReturn = onCall({ secrets: shopeeSecrets, region: "us-central1" }, async (request) => {
-  if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");
-  const marketplaceOrderId = request.data?.marketplaceOrderId;
-  if (!marketplaceOrderId || typeof marketplaceOrderId !== "string") {
-    throw new HttpsError("invalid-argument", "marketplaceOrderId é obrigatório.");
-  }
-  try {
-    return await revertMarketplaceOrderReturn(db, request.auth.uid, marketplaceOrderId);
-  } catch (err: any) {
-    throw new HttpsError("internal", err?.message || "Falha ao processar devolução.");
-  }
-});
-
 // ─── Integração Bling ───────────────────────────────────────────────────────
 // Ver src/bling/*.ts — lógica de negócio lá; aqui só a casca de autenticação/roteamento.
-// Sem secrets globais: cada conta cadastra seu próprio Client ID/Secret do Bling (ver
-// bling/auth.ts), diferente da Shopee que usa uma chave de parceiro única pro app inteiro.
+// Sem secrets globais: cada conta cadastra seu próprio Client ID/Secret do Bling (ver bling/auth.ts).
 
 export const blingSaveCredentials = onCall({ region: "us-central1" }, async (request) => {
   if (!request.auth) throw new HttpsError("unauthenticated", "É necessário estar autenticado.");

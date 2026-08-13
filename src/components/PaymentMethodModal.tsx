@@ -25,18 +25,18 @@ export default function PaymentMethodModal({ isOpen, onClose, onSave, method }: 
     <div className="fixed inset-0 bg-slate-900/50 z-[999] flex items-center justify-center p-4">
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-sm flex flex-col gap-4">
         <h2 className="text-xl font-black text-slate-800 dark:text-white">
-          {method ? 'Editar Método' : 'Novo Método de Pagamento'}
+          {method ? 'Editar Meio de Recebimento' : 'Novo Meio de Recebimento'}
         </h2>
         <input
           type="text"
-          placeholder="Nome (Ex: Pix)"
+          placeholder="Nome (Ex: Chave PIX)"
           className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl px-4 py-3"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
         <input
           type="text"
-          placeholder="Chave (Ex: CPF, E-mail)"
+          placeholder="Chave (Ex: CPF, E-mail, Celular)"
           className="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-xl px-4 py-3"
           value={value}
           onChange={(e) => setValue(e.target.value)}

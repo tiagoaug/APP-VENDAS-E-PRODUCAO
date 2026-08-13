@@ -13,6 +13,7 @@ import EngineeringEditor from '../components/EngineeringEditor';
 import ProductCostSummaryModal from '../components/ProductCostSummaryModal';
 import Modal from '../components/Modal';
 import ComboBox from '../components/ComboBox';
+import StepWizardBar from '../components/StepWizardBar';
 import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
 import DatePicker from '../components/DatePicker';
@@ -36,7 +37,13 @@ interface ProductFormViewProps {
   modulesConfig: AppModulesConfig;
   restrictedProductMode?: boolean;
   module?: 'SALES' | 'PRODUCTION';
+  guided?: boolean;
 }
+
+// Ordem das seções no Cadastro Guiado — cada chave corresponde a um bloco já existente do
+// formulário principal, só envolvido por showSection() em vez de duplicado.
+type GuidedSectionKey = 'foto' | 'tipoVenda' | 'status' | 'referencia' | 'nome' | 'preco' | 'categoria' | 'fornecedor' | 'variacoes';
+const GUIDED_SECTIONS: GuidedSectionKey[] = ['foto', 'tipoVenda', 'status', 'referencia', 'nome', 'preco', 'categoria', 'fornecedor', 'variacoes'];
 
 // Sincroniza as observações do "Fluxo de Setores/Serviços" de uma peça de corte (Engenharia)
 // com "Instruções por Setor" da cor — cada nota gerada aqui carrega um id estável
@@ -102,7 +109,7 @@ function syncAssemblySectorNotes(
   return cleaned;
 }
 
-export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, productionConfigs, flowTags, onSave, onSaveOnly, onCancel, onSaveConfigItem, onDeleteConfigItem, isDarkMode, sectors, modulesConfig, restrictedProductMode = false, module = 'SALES' }: ProductFormViewProps) {
+export default function ProductFormView({ productId, products, grids, suppliers, categories, colors, productionConfigs, flowTags, onSave, onSaveOnly, onCancel, onSaveConfigItem, onDeleteConfigItem, isDarkMode, sectors, modulesConfig, restrictedProductMode = false, module = 'SALES', guided = false }: ProductFormViewProps) {
   const existingProduct = useMemo(() => products.find(p => p.id === productId), [productId, products]);
   // Fixa o id do produto no momento em que o formulário é aberto: ao criar um modelo novo
   // (productId nulo), o primeiro salvamento gera um id aleatório e os salvamentos
@@ -240,6 +247,13 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [workDaysPerMonth, setWorkDaysPerMonth] = useState<number | string>(existingProduct?.workDaysPerMonth || 26);
   const [sectorPrices, setSectorPrices] = useState<Record<string, number>>(existingProduct?.sectorPrices || {});
   const [photoUrl, setPhotoUrl] = useState<string>(existingProduct?.photoUrl || '');
+
+  // Cadastro Guiado — só faz sentido criando um modelo do zero (nunca editando um já
+  // existente); "Encerrar assistente" na barra só sai do modo guiado, não do formulário.
+  const [guidedDismissed, setGuidedDismissed] = useState(false);
+  const [guidedStepIndex, setGuidedStepIndex] = useState(0);
+  const isGuided = guided && !existingProduct && !guidedDismissed;
+  const showSection = (key: GuidedSectionKey) => !isGuided || GUIDED_SECTIONS[guidedStepIndex] === key;
 
   // Scroll to top when variation is opened or modal toggled
   useEffect(() => {
@@ -401,6 +415,14 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       toast.show('Por favor preencha nome e referência.');
       return null;
     }
+    // Custo e Venda são obrigatórios em qualquer modo — sem eles não dá pra calcular
+    // lucro nem valor de estoque.
+    const cp = parseFloat(costPrice as string) || 0;
+    const sp = parseFloat(salePrice as string) || 0;
+    if (cp <= 0 || sp <= 0) {
+      toast.show('Preencha o Custo e o Valor de Venda — obrigatórios no cadastro.');
+      return null;
+    }
     // Obrigatório pra Atacado: sem o preço POR PAR, o valor de estoque não tem como ser
     // prorateado corretamente entre embalagens de tamanhos diferentes (ex.: caixa de 12 pares
     // x caixa de 15 pares) — cairia de volta no preço fixo por caixa, que subestima/superestima
@@ -409,7 +431,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       const uc = parseFloat(unitCostPrice as string) || 0;
       const us = parseFloat(unitSalePrice as string) || 0;
       if (uc <= 0 || us <= 0) {
-        toast.show('Preencha o Custo Unitário por Par e a Venda Unitária por Par — obrigatórios pro cálculo correto do valor do estoque.');
+        toast.show('Preencha o Preço de Compra do Par e o Valor de Venda do Par — obrigatórios pro cálculo correto do valor do estoque.');
         return null;
       }
     }
@@ -552,6 +574,69 @@ export default function ProductFormView({ productId, products, grids, suppliers,
 
     updateVariation(variationIdx, { consumptions: newConsumptions });
   };
+
+  const guidedSteps: { key: GuidedSectionKey; label: string; description: string; isComplete: boolean }[] = [
+    {
+      key: 'foto', label: 'Adicione uma foto (opcional)',
+      description: 'Uma foto ajuda a reconhecer o modelo rapidinho na lista de produtos. Pode pular esse passo e adicionar depois, a qualquer momento.',
+      isComplete: true,
+    },
+    {
+      key: 'tipoVenda', label: 'Como você vende esse modelo?',
+      description: 'Escolha se esse modelo é vendido no Atacado (caixa fechada, com grade de tamanhos), no Varejo (par avulso) ou nos dois formatos.',
+      isComplete: saleTypes.length > 0,
+    },
+    {
+      key: 'status', label: 'Esse modelo está em uso?',
+      description: 'Diz se esse modelo está disponível pra compra e venda agora, ou se já saiu de linha / parou de ser vendido.',
+      isComplete: true,
+    },
+    {
+      key: 'referencia', label: 'Referência interna',
+      description: 'O código curto que você usa pra identificar esse modelo — geralmente o mesmo código do fornecedor. Nomes curtos funcionam melhor em telas pequenas.',
+      isComplete: reference.trim() !== '',
+    },
+    {
+      key: 'nome', label: 'Nome do modelo',
+      description: 'Como esse modelo vai aparecer nas listas, nos pedidos e nos relatórios do sistema.',
+      isComplete: name.trim() !== '',
+    },
+    {
+      key: 'preco', label: 'Precificação de compra e venda',
+      description: 'Quanto você paga (custo) e quanto cobra (venda) por esse modelo — por caixa e por par, no caso de Atacado. Todos os valores aqui são obrigatórios.',
+      isComplete: (parseFloat(costPrice as string) || 0) > 0 && (parseFloat(salePrice as string) || 0) > 0
+        && (type !== SaleType.WHOLESALE || ((parseFloat(unitCostPrice as string) || 0) > 0 && (parseFloat(unitSalePrice as string) || 0) > 0)),
+    },
+    {
+      key: 'categoria', label: 'Categoria do produto',
+      description: 'Agrupa esse modelo dentro de uma categoria já cadastrada, pra facilitar filtros e relatórios depois.',
+      isComplete: true,
+    },
+    {
+      key: 'fornecedor', label: 'Fornecedor principal',
+      description: 'De quem você compra esse modelo — usado nos relatórios de compra e na ficha do produto.',
+      isComplete: true,
+    },
+    {
+      key: 'variacoes', label: 'Cores e variações',
+      description: 'Cadastre cada cor que esse modelo tem disponível, uma de cada vez. Toque em "Adicionar Cor" pra cada nova variação.',
+      isComplete: variations.length > 0,
+    },
+  ];
+
+  const handleGuidedAdvance = () => {
+    const next = guidedStepIndex + 1;
+    // Último passo: sem "Continuar" — o cadastro se conclui pelos botões de Salvar do rodapé.
+    if (next >= guidedSteps.length) return;
+    setGuidedStepIndex(next);
+  };
+
+  const handleGuidedBack = () => {
+    if (guidedStepIndex === 0) return;
+    setGuidedStepIndex(guidedStepIndex - 1);
+  };
+
+  const handleGuidedDismiss = () => setGuidedDismissed(true);
 
   if (activeVariationIndex !== null) {
     const v = variations[activeVariationIndex];
@@ -1877,7 +1962,33 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       <div className="flex flex-col gap-4 pb-60 px-2 sm:px-4 pt-4 min-h-screen">
         <div className={`p-4 sm:p-6 rounded-[2rem] border flex flex-col gap-6 shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
 
+          {isGuided && (
+            <StepWizardBar
+              isDarkMode={isDarkMode}
+              title="Cadastro Guiado"
+              stepIndex={guidedStepIndex + 1}
+              totalSteps={guidedSteps.length}
+              label={guidedSteps[guidedStepIndex].label}
+              isComplete={guidedSteps[guidedStepIndex].isComplete}
+              onContinue={handleGuidedAdvance}
+              onSkipStep={handleGuidedAdvance}
+              onDismiss={handleGuidedDismiss}
+              onBack={handleGuidedBack}
+              canGoBack={guidedStepIndex > 0}
+            />
+          )}
+
+          {isGuided && (
+            <div className="flex items-start gap-3 p-4 rounded-2xl bg-amber-500 text-white">
+              <Info size={18} className="shrink-0 mt-0.5" />
+              <p className="text-xs font-bold leading-relaxed">
+                {guidedSteps[guidedStepIndex].description}
+              </p>
+            </div>
+          )}
+
           {/* Foto do produto */}
+          {showSection('foto') && (
           <div className="flex justify-center">
             <label className="relative cursor-pointer group" title="Toque para adicionar foto do produto">
               <div className={`w-24 h-24 rounded-3xl overflow-hidden border-2 flex items-center justify-center transition-all ${photoUrl ? 'border-indigo-300 dark:border-indigo-600' : 'border-dashed border-slate-200 dark:border-slate-700'} ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
@@ -1933,8 +2044,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               />
             </label>
           </div>
+          )}
 
-          {module === 'SALES' && (
+          {module === 'SALES' && showSection('tipoVenda') && (
             <div className="grid grid-cols-2 gap-3 p-1.5 bg-slate-100 dark:bg-slate-800/50 rounded-2xl">
               <button
                 onClick={() => {
@@ -1963,7 +2075,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             </div>
           )}
 
-          {module === 'SALES' && (
+          {module === 'SALES' && showSection('status') && (
             <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${status === ProductStatus.ACTIVE ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}>
@@ -1994,8 +2106,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               </div>
             )}
 
-            {module === 'SALES' && (
+            {module === 'SALES' && (showSection('referencia') || showSection('nome')) && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {showSection('referencia') && (
                 <div>
                   <label className="text-[10px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-1.5 block tracking-wider">Referência Interna</label>
                   <input
@@ -2006,7 +2119,9 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     onChange={(e) => setReference(e.target.value)}
                   />
                 </div>
+                )}
 
+                {showSection('nome') && (
                 <div>
                   <label className="text-[10px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-1.5 block tracking-wider">Nome do Modelo</label>
                   <input
@@ -2017,6 +2132,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     onChange={(e) => setName(e.target.value)}
                   />
                 </div>
+                )}
               </div>
             )}
 
@@ -2106,7 +2222,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               </div>
             )}
 
-            {module === 'SALES' && (
+            {module === 'SALES' && showSection('preco') && (
               <div className={`p-5 sm:p-6 rounded-3xl border shadow-sm transition-all duration-500 ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-amber-50/40 border-amber-100 dark:bg-amber-900/10 dark:border-amber-900/20 shadow-amber-100/20' : 'bg-indigo-50/40 border-indigo-100 dark:bg-indigo-900/10 dark:border-indigo-900/20 shadow-indigo-100/20'}`}>
                 <div className="flex items-center gap-4 mb-8">
                   <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg transform transition-transform duration-500 ${saleTypes.includes(SaleType.WHOLESALE) ? 'bg-amber-500 rotate-3 text-white' : 'bg-indigo-500 -rotate-3 text-white'}`}>
@@ -2114,7 +2230,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   </div>
                   <div>
                     <h4 className={`text-[11px] font-black uppercase tracking-[0.2em] ${saleTypes.includes(SaleType.WHOLESALE) ? 'text-amber-600 dark:text-amber-400' : 'text-indigo-600 dark:text-indigo-400'}`}>
-                      Configurações de {saleTypes.length > 1 ? 'Venda Híbrida' : saleTypes.includes(SaleType.WHOLESALE) ? 'Atacado' : 'Varejo'}
+                      Área de Precificação de Compra e Venda
                     </h4>
                     <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest mt-1">
                       {saleTypes.includes(SaleType.WHOLESALE) ? 'Precificação por grade fechada' : 'Precificação por par individual'}
@@ -2125,7 +2241,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   <div className="group">
                     <label className="text-[10px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
-                      {type === SaleType.WHOLESALE ? 'Custo por Caixa (R$)' : 'Custo Unitário (R$)'}
+                      {type === SaleType.WHOLESALE ? 'Custo por Caixa / Valor de Compra (R$)' : 'Custo Unitário (R$)'} <span className="text-rose-500">*</span>
                     </label>
                     <div className="relative">
                       <input
@@ -2160,7 +2276,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   {type === SaleType.WHOLESALE && (
                     <div className="col-span-1 sm:col-span-2 group">
                       <label className="text-[10px] uppercase font-black text-amber-600 dark:text-amber-400 px-1 mb-2 block tracking-widest leading-none">
-                        Custo Unitário por Par (R$) <span className="text-rose-500">*</span>
+                        Preço de Compra do Par / Custo Unitário (R$) <span className="text-rose-500">*</span>
                       </label>
                       <div className="relative">
                         <input
@@ -2196,7 +2312,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
 
                   <div className="group">
                     <label className="text-[10px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none group-hover:text-slate-900 dark:group-hover:text-white transition-colors">
-                      {type === SaleType.WHOLESALE ? 'Venda por Caixa (R$)' : 'Venda Unitária (R$)'}
+                      {type === SaleType.WHOLESALE ? 'Valor de Venda da Caixa (R$)' : 'Venda Unitária (R$)'} <span className="text-rose-500">*</span>
                     </label>
                     <div className="relative">
                       <input
@@ -2231,7 +2347,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                   {type === SaleType.WHOLESALE && (
                     <div className="col-span-1 sm:col-span-2 group">
                       <label className="text-[10px] uppercase font-black text-sky-600 dark:text-sky-400 px-1 mb-2 block tracking-widest leading-none">
-                        Venda Unitária por Par (R$) <span className="text-rose-500">*</span>
+                        Valor de Venda do Par (R$) <span className="text-rose-500">*</span>
                       </label>
                       <div className="relative">
                         <input
@@ -2291,22 +2407,24 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     </div>
                   )}
 
-                  <div className={type === SaleType.WHOLESALE ? "col-span-1 sm:col-span-2" : "col-span-1"}>
-                    <label className="text-[10px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none">
-                      {type === SaleType.WHOLESALE ? 'Estoque Mínimo (Caixas)' : 'Estoque Mín. Global'}
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        className={`w-full border-2 rounded-2xl px-6 py-4.5 pl-12 text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-500'}`}
-                        value={minStockInBoxes}
-                        aria-label="Estoque mínimo global"
-                        title="Estoque Mínimo"
-                        onChange={(e) => setMinStockInBoxes(e.target.value)}
-                      />
-                      <Package size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  {type !== SaleType.WHOLESALE && (
+                    <div className="col-span-1">
+                      <label className="text-[10px] uppercase font-black text-slate-700 dark:text-slate-200 px-1 mb-2 block tracking-widest leading-none">
+                        Estoque Mín. Global
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          className={`w-full border-2 rounded-2xl px-6 py-4.5 pl-12 text-sm font-black transition-all outline-none focus:ring-0 ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-100 text-slate-900 focus:border-indigo-500'}`}
+                          value={minStockInBoxes}
+                          aria-label="Estoque mínimo global"
+                          title="Estoque Mínimo"
+                          onChange={(e) => setMinStockInBoxes(e.target.value)}
+                        />
+                        <Package size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {saleTypes.includes(SaleType.WHOLESALE) && saleTypes.includes(SaleType.RETAIL) && (
                     <div className="col-span-1">
@@ -2355,9 +2473,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               </div>
             )}
 
-            {module === 'SALES' && (
+            {module === 'SALES' && (showSection('fornecedor') || showSection('categoria')) && (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {showSection('fornecedor') && (
                   <div>
                     <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Fornecedor Principal</label>
                     <ComboBox
@@ -2369,6 +2488,8 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       icon={<User size={18} />}
                     />
                   </div>
+                  )}
+                  {showSection('categoria') && (
                   <div>
                     <label className="text-[10px] uppercase font-bold text-slate-700 dark:text-slate-200 px-1 mb-1 block tracking-wider">Categoria do Produto</label>
                     <ComboBox
@@ -2380,9 +2501,11 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                       icon={<Tag size={18} />}
                     />
                   </div>
+                  )}
                 </div>
 
-                {/* Seção de Agendamento de Reajuste */}
+                {/* Seção de Agendamento de Reajuste — não faz parte do Cadastro Guiado */}
+                {!isGuided && (
                 <div className="p-5 sm:p-6 rounded-[2rem] border-2 border-dashed border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/10">
                   <div className="flex items-center gap-3 mb-6">
                     <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-500 flex items-center justify-center">
@@ -2433,6 +2556,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                     </div>
                   </div>
                 </div>
+                )}
               </>
             )}
 
@@ -2571,6 +2695,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
         )}
 
         {/* CARD DEDICADO PARA CORES E VARIAÇÕES */}
+        {showSection('variacoes') && (
         <section className={`mt-6 p-4 sm:p-6 rounded-3xl border-2 shadow-xl ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
             <div className="flex flex-col">
@@ -2713,6 +2838,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
             )}
           </div>
         </section>
+        )}
 
         <div className="grid grid-cols-3 gap-3 mt-4">
           <button

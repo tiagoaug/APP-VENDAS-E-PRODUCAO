@@ -38,8 +38,8 @@ export interface LocalSkuEntry {
 
 /** "Achata" o catálogo local pra um índice pesquisável de SKUs por variação/tamanho — o campo
  * `Variation.sku` do app não é por tamanho, então cada tamanho de uma cor com SKU cadastrado
- * vira uma entrada candidata separada (mesma ambiguidade que MarketplaceSkuMappingView já
- * aceita: 1 SKU por cor, o tamanho é escolhido/confirmado por quem vincula). */
+ * vira uma entrada candidata separada (1 SKU por cor, o tamanho é escolhido/confirmado por
+ * quem vincula). */
 export function buildLocalSkuIndex(products: Product[]): LocalSkuEntry[] {
   const entries: LocalSkuEntry[] = [];
   for (const product of products) {

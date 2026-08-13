@@ -36,7 +36,7 @@ export default function AccountModal({ isOpen, onClose, onSave, account, modules
       <div className="bg-white dark:bg-slate-900 rounded-[2.5rem] p-8 w-full max-w-sm flex flex-col gap-6 shadow-2xl border border-slate-100 dark:border-slate-800">
         <div className="flex flex-col gap-1">
           <h2 className="text-2xl font-black text-slate-800 dark:text-white uppercase tracking-tight">
-            {account ? 'Editar Conta' : 'Nova Conta'}
+            {account ? 'Editar Conta de Movimentação' : 'Nova Conta de Movimentação'}
           </h2>
           <p className="text-xs text-slate-400">Configure os detalhes da conta bancária</p>
         </div>

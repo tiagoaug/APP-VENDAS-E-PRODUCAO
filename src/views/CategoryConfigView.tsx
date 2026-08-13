@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Category, CategoryType, AppModulesConfig } from '../types';
 import { ArrowLeft, Shield, ChevronRight, LayoutGrid, CheckCircle2 } from 'lucide-react';
 import Modal from '../components/Modal';
+import { getCategoryModules } from '../utils/categories';
 
 interface CategoryConfigViewProps {
   categories: Category[];
@@ -14,7 +15,7 @@ interface CategoryConfigViewProps {
 export default function CategoryConfigView({ categories, onEdit, onBack, isDarkMode }: CategoryConfigViewProps) {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
 
-  const handleModuleChange = (id: string, module: keyof AppModulesConfig) => {
+  const handleModuleChange = (id: string, module: keyof AppModulesConfig | 'any') => {
     onEdit(id, { module });
 
     const children = categories.filter(c => c.parentId === id);
@@ -25,13 +26,13 @@ export default function CategoryConfigView({ categories, onEdit, onBack, isDarkM
     setSelectedCategoryId(null);
   };
 
-  const getModuleName = (module?: string) => {
-    switch (module) {
-      case 'sales': return 'Vendas';
-      case 'production': return 'Produção';
-      case 'personal': return 'Pessoal';
-      default: return 'Não Definido';
-    }
+  const moduleLabel = (m: keyof AppModulesConfig | 'any') =>
+    m === 'sales' ? 'Vendas' : m === 'production' ? 'Produção' : m === 'personal' ? 'Pessoal' : 'Todos';
+
+  const getModuleName = (module?: Category['module']) => {
+    const list = getCategoryModules(module);
+    if (list.length === 0) return 'Não Definido';
+    return list.map(moduleLabel).join(' + ');
   };
 
   const translateType = (type: CategoryType) => {
@@ -135,24 +136,27 @@ export default function CategoryConfigView({ categories, onEdit, onBack, isDarkM
           <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mb-2">
             Escolha o módulo para <strong>{selectedCategory?.name}</strong> e todas as suas subcategorias:
           </p>
-          {(['sales', 'production', 'personal'] as const).map(m => (
-            <button
-              key={m}
-              onClick={() => handleModuleChange(selectedCategoryId!, m)}
-              className={`w-full p-4 rounded-2xl flex items-center justify-between border-2 transition-all group ${
-                selectedCategory?.module === m
-                  ? 'bg-indigo-50 border-indigo-500 dark:bg-indigo-900/20'
-                  : 'bg-slate-50 dark:bg-slate-800/50 border-transparent hover:border-slate-200 dark:hover:border-slate-700'
-              }`}
-            >
-              <span className={`text-sm font-black uppercase tracking-widest ${selectedCategory?.module === m ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400'}`}>
-                {getModuleName(m)}
-              </span>
-              {selectedCategory?.module === m && (
-                <CheckCircle2 size={20} className="text-indigo-500" />
-              )}
-            </button>
-          ))}
+          {(['sales', 'production', 'personal', 'any'] as const).map(m => {
+            const isSelected = getCategoryModules(selectedCategory?.module).includes(m);
+            return (
+              <button
+                key={m}
+                onClick={() => handleModuleChange(selectedCategoryId!, m)}
+                className={`w-full p-4 rounded-2xl flex items-center justify-between border-2 transition-all group ${
+                  isSelected
+                    ? 'bg-indigo-50 border-indigo-500 dark:bg-indigo-900/20'
+                    : 'bg-slate-50 dark:bg-slate-800/50 border-transparent hover:border-slate-200 dark:hover:border-slate-700'
+                }`}
+              >
+                <span className={`text-sm font-black uppercase tracking-widest ${isSelected ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-400'}`}>
+                  {moduleLabel(m)}
+                </span>
+                {isSelected && (
+                  <CheckCircle2 size={20} className="text-indigo-500" />
+                )}
+              </button>
+            );
+          })}
         </div>
       </Modal>
     </div>

@@ -11,10 +11,15 @@ interface ColorModalProps {
 
 export default function ColorModal({ isOpen, onClose, onSave, color }: ColorModalProps) {
   const [name, setName] = useState(color?.name || '');
+  const [isComposite, setIsComposite] = useState(color?.isComposite || false);
 
   useEffect(() => {
     if (color) {
       setName(color.name);
+      setIsComposite(!!color.isComposite);
+    } else {
+      setName('');
+      setIsComposite(false);
     }
   }, [color]);
 
@@ -33,12 +38,27 @@ export default function ColorModal({ isOpen, onClose, onSave, color }: ColorModa
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
+
+        <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            className="w-5 h-5 rounded-md border-slate-200 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
+            checked={isComposite}
+            onChange={(e) => setIsComposite(e.target.checked)}
+          />
+          <div className="flex flex-col">
+            <span className="text-xs font-black uppercase tracking-widest dark:text-white">Cor Composta</span>
+            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Ex: Preto Dourado — combinação de duas cores</span>
+          </div>
+        </label>
+
         <div className="flex gap-2">
           <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300">Cancelar</button>
-          <button 
+          <button
             onClick={() => {
-              onSave({ name, hex: '#000000' });
+              onSave({ name, hex: '#000000', isComposite });
               setName('');
+              setIsComposite(false);
               onClose();
             }}
             className="flex-1 py-3 rounded-xl bg-indigo-600 font-bold text-white shadow-lg"

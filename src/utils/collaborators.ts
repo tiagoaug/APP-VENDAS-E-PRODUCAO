@@ -50,7 +50,7 @@ export const SECTORS: { id: SectorId; label: string; icon: string; tasks: string
   },
   {
     id: 'financeiro', label: 'Financeiro', icon: 'Wallet',
-    tasks: ['Fluxo de Caixa', 'Contas Bancárias', 'Relatórios', 'Meios de Pagamento'],
+    tasks: ['Fluxo de Caixa', 'Contas de Movimentação', 'Relatórios', 'Meios de Recebimento'],
     views: [ViewType.FINANCIAL, ViewType.ACCOUNTS, ViewType.REPORTS, ViewType.REPORT_DETAILED, ViewType.PAYMENT_METHODS],
   },
   {
@@ -131,6 +131,12 @@ export function isDashboardCardAllowed(collab: Collaborator | null, cardId: stri
 
 export function collaboratorCanUseAI(collab: Collaborator | null): boolean {
   return !collab || collab.isUnrestricted || collab.canUseAI;
+}
+
+// true = sessão do dono da conta (sem colaborador ativo, ou colaborador de Acesso Total) —
+// usado pra gatear funcionalidades que só o dono deve ver, ex. o Assistente de Configuração.
+export function isAccountOwnerSession(collab: Collaborator | null): boolean {
+  return !collab || collab.isUnrestricted;
 }
 
 // Lista de cards efetiva pro Dashboard: sem colaborador ativo (ou de Acesso Total)

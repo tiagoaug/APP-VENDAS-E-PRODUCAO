@@ -616,7 +616,7 @@ export default function DashboardView({
 
         // Mostra só os cards do(s) setor(es) do colaborador ativo — sem colaborador
         // ativo (ou colaborador de acesso total), nada muda do comportamento atual.
-        if (card.id === 'ai_assistant' && (!aiEnabled || !collaboratorCanUseAI(activeCollaborator))) return null;
+        if (card.id === 'ai_assistant' && (!modulesConfig.ai || !aiEnabled || !collaboratorCanUseAI(activeCollaborator))) return null;
         if (!isDashboardCardAllowed(activeCollaborator, card.id)) return null;
 
         // Strict Modular Gating

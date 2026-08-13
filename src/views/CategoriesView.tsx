@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Category, CategoryType, AppModulesConfig, ViewType } from '../types';
-import { Search, Plus, Tags, Trash2, Edit, ShoppingBag, TrendingDown, TrendingUp, Factory, LayoutGrid, User, Package, PlusCircle, Settings, ChevronRight, ChevronDown, Scissors } from 'lucide-react';
+import { Category, CategoryType, AppModulesConfig, ViewType, CategoryTemplate } from '../types';
+import { Search, Plus, Tags, Trash2, Edit, ShoppingBag, TrendingDown, TrendingUp, Factory, LayoutGrid, User, Package, PlusCircle, Settings, ChevronRight, ChevronDown, Scissors, Bookmark, BookmarkCheck, Sparkles } from 'lucide-react';
 
 import CategoryModal from '../components/CategoryModal';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { getCategoryModules, categoryModulesInclude } from '../utils/categories';
+import { subscribeToCategoryTemplates, saveCategoryTemplate } from '../services/categoryTemplatesService';
 
 interface CategoriesViewProps {
   categories: Category[];
@@ -18,7 +20,17 @@ interface CategoriesViewProps {
 export default function CategoriesView({ categories, onAdd, onEdit, onDelete, isDarkMode, modulesConfig, onNavigate }: CategoriesViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
-  
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+
+  // Modelos de categoria salvos por qualquer conta (coleção compartilhada, fora de
+  // users/{uid}) — pool de sugestões prontas pra tocar e adicionar, alimentada pelo botão
+  // de marcador em cada categoria já cadastrada (ver handleSaveAsTemplate abaixo).
+  const [templates, setTemplates] = useState<CategoryTemplate[]>([]);
+  useEffect(() => {
+    const unsub = subscribeToCategoryTemplates(setTemplates);
+    return () => unsub();
+  }, []);
+
   const allTabs = [
     { id: CategoryType.PRODUCT, label: 'Produtos', icon: <ShoppingBag size={14} />, color: 'bg-indigo-500', text: 'text-indigo-600', module: 'sales' },
     { id: CategoryType.EXPENSE, label: 'Despesas', icon: <TrendingDown size={14} />, color: 'bg-rose-500', text: 'text-rose-600', module: 'sales' },
@@ -46,39 +58,102 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [idToDelete, setIdToDelete] = useState<string | null>(null);
 
-  const rootCategories = categories.filter(c => 
-    c.isRoot && 
-    modulesConfig[ (c.module || (c.type === CategoryType.PRODUCTION || c.type === CategoryType.SUPPLY || c.type === CategoryType.CUTTING_TOOL ? 'production' : c.isPersonal ? 'personal' : 'sales')) as keyof AppModulesConfig ]
-  );
-
   const filtered = categories.filter(c => {
-    if (c.isRoot) return false; // Don't show in the bottom list if it's a root card
-
     const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const categoryModule = c.module || (c.type === CategoryType.PRODUCTION || c.type === CategoryType.SUPPLY || c.type === CategoryType.CUTTING_TOOL ? 'production' : c.isPersonal ? 'personal' : 'sales');
-    if (!modulesConfig[categoryModule as keyof AppModulesConfig]) return false;
+    const categoryModule = getCategoryModules(c.module).length > 0
+      ? c.module
+      : (c.type === CategoryType.PRODUCTION || c.type === CategoryType.SUPPLY || c.type === CategoryType.CUTTING_TOOL ? 'production' : c.isPersonal ? 'personal' : 'sales');
+    if (!categoryModulesInclude(categoryModule, modulesConfig)) return false;
 
     if (activeTab === CategoryType.OTHER) {
-      return (c.isPersonal || c.module === 'personal') && matchesSearch;
+      return (c.isPersonal || getCategoryModules(c.module).includes('personal')) && matchesSearch;
     }
     return c.type === activeTab && matchesSearch;
   });
 
-  const suggestedSupplies = ['SOLADOS', 'PALMILHAS', 'COURO/SINTÉTICO', 'FORROS', 'ADESIVOS', 'LINHAS', 'EMBALAGENS', 'MATERIAIS'];
-  const suggestedTools = ['LATERAL', 'FRENTE', 'TRASEIRA', 'BIQUEIRA', 'CONTRAFORTE', 'PALMILHA', 'VIRA', 'OUTROS'];
-
-  const handleAddSuggested = (name: string) => {
-    const exists = categories.some(c => c.name.toUpperCase() === name.toUpperCase() && c.type === CategoryType.SUPPLY);
-    if (!exists) {
-      onAdd({ name, type: CategoryType.SUPPLY, color: 'bg-emerald-500' });
-    }
+  // Categorias pré-prontas por tipo — o usuário só toca pra selecionar em vez de digitar
+  // cada uma manualmente; o botão vira "✓ desabilitado" quando já foi adicionada, dando o
+  // feedback visual de quais já estão selecionadas (mesma mecânica que já existia só pra
+  // Insumos/Facas, agora generalizada pros outros tipos de categoria).
+  const CATEGORY_SUGGESTIONS: Partial<Record<CategoryType, { names: string[]; color: string; wrap: string; header: string; activeBtn: string }>> = {
+    [CategoryType.PRODUCTION]: {
+      names: ['CORTE', 'COSTURA', 'MONTAGEM', 'ACABAMENTO', 'EMBALAGEM'],
+      color: 'bg-orange-500',
+      wrap: 'bg-orange-50/30 dark:bg-orange-950/20 border-orange-100/50 dark:border-orange-900/30',
+      header: 'text-orange-600 dark:text-orange-400',
+      activeBtn: 'text-orange-600 border-orange-100 hover:border-orange-500 dark:text-orange-400 dark:border-orange-900',
+    },
+    [CategoryType.GENERAL]: {
+      names: ['GERAL', 'DIVERSOS', 'ADMINISTRATIVO'],
+      color: 'bg-blue-500',
+      wrap: 'bg-blue-50/30 dark:bg-blue-950/20 border-blue-100/50 dark:border-blue-900/30',
+      header: 'text-blue-600 dark:text-blue-400',
+      activeBtn: 'text-blue-600 border-blue-100 hover:border-blue-500 dark:text-blue-400 dark:border-blue-900',
+    },
+    [CategoryType.SUPPLY]: {
+      names: ['SOLADOS', 'PALMILHAS', 'COURO/SINTÉTICO', 'FORROS', 'ADESIVOS', 'LINHAS', 'EMBALAGENS', 'MATERIAIS'],
+      color: 'bg-emerald-500',
+      wrap: 'bg-emerald-50/30 dark:bg-emerald-950/20 border-emerald-100/50 dark:border-emerald-900/30',
+      header: 'text-emerald-600 dark:text-emerald-400',
+      activeBtn: 'text-emerald-600 border-emerald-100 hover:border-emerald-500 dark:text-emerald-400 dark:border-emerald-900',
+    },
+    [CategoryType.CUTTING_TOOL]: {
+      names: ['LATERAL', 'FRENTE', 'TRASEIRA', 'BIQUEIRA', 'CONTRAFORTE', 'PALMILHA', 'VIRA', 'OUTROS'],
+      color: 'bg-orange-500',
+      wrap: 'bg-orange-50/30 dark:bg-orange-950/20 border-orange-100/50 dark:border-orange-900/30',
+      header: 'text-orange-600 dark:text-orange-400',
+      activeBtn: 'text-orange-600 border-orange-100 hover:border-orange-500 dark:text-orange-400 dark:border-orange-900',
+    },
+    [CategoryType.OTHER]: {
+      names: ['ALIMENTAÇÃO', 'TRANSPORTE', 'SAÚDE', 'LAZER', 'MORADIA', 'EDUCAÇÃO', 'VESTUÁRIO'],
+      color: 'bg-indigo-500',
+      wrap: 'bg-indigo-50/30 dark:bg-indigo-950/20 border-indigo-100/50 dark:border-indigo-900/30',
+      header: 'text-indigo-600 dark:text-indigo-400',
+      activeBtn: 'text-indigo-600 border-indigo-100 hover:border-indigo-500 dark:text-indigo-400 dark:border-indigo-900',
+    },
   };
 
-  const handleAddSuggestedTool = (name: string) => {
-    const exists = categories.some(c => c.name.toUpperCase() === name.toUpperCase() && c.type === CategoryType.CUTTING_TOOL);
-    if (!exists) {
-      onAdd({ name, type: CategoryType.CUTTING_TOOL, color: 'bg-orange-500' });
-    }
+  const handleAddSuggested = (name: string, type: CategoryType) => {
+    const config = CATEGORY_SUGGESTIONS[type];
+    if (!config) return;
+    const exists = categories.some(c => c.name.toUpperCase() === name.toUpperCase() && c.type === type);
+    if (exists) return;
+    onAdd({
+      name,
+      type,
+      color: config.color,
+      ...(type === CategoryType.OTHER ? { isPersonal: true } : {}),
+    });
+  };
+
+  // Modelos disponíveis pro tipo ativo — o usuário escolhe entre eles ou cria uma nova
+  // categoria do zero (fluxo "Nova" já existente, sem mudança nenhuma).
+  const templatesForActiveTab = templates.filter(t => t.type === activeTab);
+
+  const handleAddFromTemplate = (template: CategoryTemplate) => {
+    const exists = categories.some(c => c.name.toUpperCase() === template.name.toUpperCase() && c.type === template.type);
+    if (exists) return;
+    onAdd({
+      name: template.name,
+      type: template.type,
+      color: template.color,
+      module: template.module,
+      isPersonal: template.isPersonal,
+    });
+  };
+
+  const isSavedAsTemplate = (cat: Category) =>
+    templates.some(t => t.name.toUpperCase() === cat.name.toUpperCase() && t.type === cat.type);
+
+  const handleSaveAsTemplate = (cat: Category) => {
+    if (isSavedAsTemplate(cat)) return;
+    saveCategoryTemplate({
+      name: cat.name,
+      type: cat.type,
+      color: cat.color,
+      module: cat.module,
+      isPersonal: cat.isPersonal,
+    });
   };
 
   const handleDeleteClick = (id: string) => {
@@ -123,54 +198,15 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
       />
       <div className="flex flex-col gap-4">
         <div className="flex items-center justify-between px-1">
-           <h2 className={`text-sm font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Categorias Principais</h2>
-            <button 
+           <h2 className={`text-sm font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Todas as Categorias</h2>
+            <button
               onClick={() => onNavigate(ViewType.CATEGORY_CONFIG)}
-              title="Configurar Categorias"
+              title="Configurar Hierarquia de Módulos"
               className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
             >
               <Settings size={14} />
               Configurar
             </button>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {rootCategories.map((cat) => (
-            <button
-              key={cat.id}
-              onClick={() => {
-                // When clicking a root card, we might want to filter the list below or edit it
-                setEditingCategory(cat);
-                setIsModalOpen(true);
-              }}
-              className={`flex flex-col items-center justify-center gap-3 p-5 rounded-[2.5rem] border transition-all hover:scale-[1.02] active:scale-[0.98] ${
-                isDarkMode ? 'bg-slate-900 border-slate-800 text-white shadow-xl shadow-slate-950/20' : 'bg-white border-slate-100 text-slate-800 shadow-xl shadow-slate-200/30'
-              }`}
-            >
-              <div className={`w-12 h-12 rounded-[1.25rem] flex items-center justify-center shadow-inner ${
-                cat.color.replace('bg-', 'bg-opacity-10 ')
-              }`}>
-                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-lg ${cat.color} text-white`}>
-                  <LayoutGrid size={20} />
-                </div>
-              </div>
-              <span className="text-[11px] font-black uppercase tracking-widest text-center">{cat.name}</span>
-            </button>
-          ))}
-          
-          {rootCategories.length === 0 && (
-            <div className={`col-span-full p-8 rounded-[2.5rem] border border-dashed flex flex-col items-center justify-center text-center gap-2 ${isDarkMode ? 'bg-slate-900/30 border-slate-800 text-slate-600' : 'bg-slate-50/50 border-slate-200 text-slate-400'}`}>
-              <LayoutGrid size={24} className="opacity-20" />
-              <p className="text-[11px] font-bold uppercase tracking-widest">Nenhuma categoria principal definida</p>
-              <p className="text-[11px] font-medium max-w-[200px]">Marque "Categoria Principal" ao criar ou editar para fixá-la aqui.</p>
-            </div>
-          )}
-        </div>
-
-        <div className="h-px bg-slate-100 dark:bg-slate-800 my-2" />
-
-        <div className="flex items-center justify-between px-1">
-           <h2 className={`text-sm font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Todas as Categorias</h2>
         </div>
 
         <div className="grid grid-cols-4 gap-2">
@@ -215,28 +251,17 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
           </div>
         </div>
 
-        {(activeTab === CategoryType.SUPPLY || activeTab === CategoryType.CUTTING_TOOL) && (() => {
-          const isSupply = activeTab === CategoryType.SUPPLY;
-          const suggestions = isSupply ? suggestedSupplies : suggestedTools;
-          const handleAdd = isSupply ? handleAddSuggested : handleAddSuggestedTool;
-          const catType = isSupply ? CategoryType.SUPPLY : CategoryType.CUTTING_TOOL;
-          const label = isSupply ? 'Sugestões de Insumos' : 'Sugestões de Categorias';
-          const wrapCls = isSupply
-            ? 'bg-emerald-50/30 dark:bg-emerald-950/20 border-emerald-100/50 dark:border-emerald-900/30'
-            : 'bg-orange-50/30 dark:bg-orange-950/20 border-orange-100/50 dark:border-orange-900/30';
-          const headerCls = isSupply
-            ? 'text-emerald-600 dark:text-emerald-400'
-            : 'text-orange-600 dark:text-orange-400';
-          const activeBtnCls = isSupply
-            ? 'text-emerald-600 border-emerald-100 hover:border-emerald-500 dark:text-emerald-400 dark:border-emerald-900'
-            : 'text-orange-600 border-orange-100 hover:border-orange-500 dark:text-orange-400 dark:border-orange-900';
+        {(() => {
+          const config = CATEGORY_SUGGESTIONS[activeTab];
+          if (!config) return null;
+          const label = `Sugestões de ${tabs.find(t => t.id === activeTab)?.label || 'Categorias'}`;
 
           return (
-            <div className={`rounded-[2rem] border-2 overflow-hidden ${wrapCls}`}>
+            <div className={`rounded-[2rem] border-2 overflow-hidden ${config.wrap}`}>
               <button
                 type="button"
                 onClick={() => setSuggestionsOpen(o => !o)}
-                className={`w-full flex items-center justify-between px-4 py-3 ${headerCls}`}
+                className={`w-full flex items-center justify-between px-4 py-3 ${config.header}`}
               >
                 <div className="flex items-center gap-2">
                   <PlusCircle size={14} />
@@ -246,19 +271,19 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
               </button>
               {suggestionsOpen && (
                 <div className="px-4 pb-4 flex flex-wrap gap-2">
-                  {suggestions.map(name => {
-                    const exists = categories.some(c => c.name.toUpperCase() === name.toUpperCase() && c.type === catType);
+                  {config.names.map(name => {
+                    const exists = categories.some(c => c.name.toUpperCase() === name.toUpperCase() && c.type === activeTab);
                     return (
                       <button
                         type="button"
                         key={name}
-                        onClick={() => handleAdd(name)}
+                        onClick={() => handleAddSuggested(name, activeTab)}
                         disabled={exists}
                         title={`Adicionar sugestão: ${name}`}
                         className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all border-2 ${
                           exists
                             ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600 border-transparent'
-                            : `bg-white dark:bg-slate-900 ${activeBtnCls} shadow-sm active:scale-95`
+                            : `bg-white dark:bg-slate-900 ${config.activeBtn} shadow-sm active:scale-95`
                         }`}
                       >
                         {name} {exists && '✓'}
@@ -270,6 +295,45 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
             </div>
           );
         })()}
+
+        {templatesForActiveTab.length > 0 && (
+          <div className="rounded-[2rem] border-2 overflow-hidden bg-violet-50/30 dark:bg-violet-950/20 border-violet-100/50 dark:border-violet-900/30">
+            <button
+              type="button"
+              onClick={() => setTemplatesOpen(o => !o)}
+              className="w-full flex items-center justify-between px-4 py-3 text-violet-600 dark:text-violet-400"
+            >
+              <div className="flex items-center gap-2">
+                <Sparkles size={14} />
+                <span className="text-[11px] font-black uppercase tracking-widest">Modelos Disponíveis</span>
+              </div>
+              <ChevronDown size={16} className={`transition-transform duration-200 ${templatesOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {templatesOpen && (
+              <div className="px-4 pb-4 flex flex-wrap gap-2">
+                {templatesForActiveTab.map(template => {
+                  const exists = categories.some(c => c.name.toUpperCase() === template.name.toUpperCase() && c.type === template.type);
+                  return (
+                    <button
+                      type="button"
+                      key={template.id}
+                      onClick={() => handleAddFromTemplate(template)}
+                      disabled={exists}
+                      title={`Adicionar modelo: ${template.name}`}
+                      className={`px-3 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest transition-all border-2 ${
+                        exists
+                          ? 'bg-slate-100 text-slate-300 dark:bg-slate-800 dark:text-slate-600 border-transparent'
+                          : 'bg-white dark:bg-slate-900 text-violet-600 border-violet-100 hover:border-violet-500 dark:text-violet-400 dark:border-violet-900 shadow-sm active:scale-95'
+                      }`}
+                    >
+                      {template.name} {exists && '✓'}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col gap-3">
@@ -294,23 +358,37 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                           <span className="px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-400 text-[11px] font-black uppercase tracking-widest border border-indigo-200 dark:border-indigo-800/50">Pessoal</span>
                         )}
                       </h3>
-                      <div className="mt-1 flex items-center gap-2">
-                        <span className="text-[11px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">
-                          {children.length > 0 ? `${children.length} Subcategorias` : 'Categoria Principal'}
-                        </span>
-                      </div>
+                      {children.length > 0 && (
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="text-[11px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">
+                            {children.length} Subcategorias
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-2 pr-2">
-                      <button 
-                        onClick={() => { setEditingCategory(parent); setIsModalOpen(true); }} 
+                      <button
+                        onClick={() => handleSaveAsTemplate(parent)}
+                        disabled={isSavedAsTemplate(parent)}
+                        title={isSavedAsTemplate(parent) ? 'Já é um modelo disponível' : 'Salvar como modelo pra outras contas'}
+                        className={`p-2 rounded-xl transition-colors ${
+                          isSavedAsTemplate(parent)
+                            ? 'text-violet-500'
+                            : isDarkMode ? 'text-slate-600 hover:text-violet-400 hover:bg-slate-800' : 'text-slate-300 hover:text-violet-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {isSavedAsTemplate(parent) ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}
+                      </button>
+                      <button
+                        onClick={() => { setEditingCategory(parent); setIsModalOpen(true); }}
                         title="Editar Categoria"
                         className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-600 hover:text-indigo-400 hover:bg-slate-800' : 'text-slate-300 hover:text-indigo-600 hover:bg-slate-50'}`}
                       >
                         <Edit size={16} />
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleDeleteClick(parent.id)}
                         title="Excluir Categoria"
                         className={`p-2 rounded-xl transition-colors ${isDarkMode ? 'text-slate-600 hover:text-rose-500 hover:bg-slate-800' : 'text-slate-300 hover:text-rose-500 hover:bg-slate-50'}`}
@@ -329,14 +407,26 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
                     </div>
                     
                     <div className="flex items-center gap-1 pr-1">
-                      <button 
-                        onClick={() => { setEditingCategory(child); setIsModalOpen(true); }} 
+                      <button
+                        onClick={() => handleSaveAsTemplate(child)}
+                        disabled={isSavedAsTemplate(child)}
+                        title={isSavedAsTemplate(child) ? 'Já é um modelo disponível' : 'Salvar como modelo pra outras contas'}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          isSavedAsTemplate(child)
+                            ? 'text-violet-500'
+                            : isDarkMode ? 'text-slate-600 hover:text-violet-400 hover:bg-slate-800' : 'text-slate-300 hover:text-violet-600 hover:bg-slate-50'
+                        }`}
+                      >
+                        {isSavedAsTemplate(child) ? <BookmarkCheck size={14} /> : <Bookmark size={14} />}
+                      </button>
+                      <button
+                        onClick={() => { setEditingCategory(child); setIsModalOpen(true); }}
                         title="Editar Subcategoria"
                         className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'text-slate-600 hover:text-indigo-400 hover:bg-slate-800' : 'text-slate-300 hover:text-indigo-600 hover:bg-slate-50'}`}
                       >
                         <Edit size={14} />
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleDeleteClick(child.id)}
                         title="Excluir Subcategoria"
                         className={`p-1.5 rounded-lg transition-colors ${isDarkMode ? 'text-slate-600 hover:text-rose-500 hover:bg-slate-800' : 'text-slate-300 hover:text-rose-500 hover:bg-slate-50'}`}

@@ -41,7 +41,8 @@ import {
   Route,
   Navigation,
   Compass,
-  Building2
+  Building2,
+  Info
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { format } from "date-fns";
@@ -110,6 +111,8 @@ import {
   Carrier,
   LabelPaperSize,
   LabelFile,
+  OnboardingStatus,
+  BusinessType,
 } from "./types";
 import { isBluetoothEnabled as isPrinterBluetoothEnabled, requestEnableBluetooth as requestPrinterBluetoothEnable, isAblemarkPlatform } from "./lib/ablemarkPrinter";
 import type { OpenEditorParams } from "./views/LabelPrintStudioView";
@@ -119,6 +122,7 @@ import type { OpenEditorParams } from "./views/LabelPrintStudioView";
 // jogar o app inteiro num chunk só (eram >4MB minificados em um único arquivo).
 import DashboardView from "./views/DashboardView";
 import LoginView from "./views/LoginView";
+const OnboardingWelcomeView = lazy(() => import("./views/OnboardingWelcomeView"));
 const ProductsView = lazy(() => import("./views/ProductsView"));
 const ProductFormView = lazy(() => import("./views/ProductFormView"));
 const PurchasesView = lazy(() => import("./views/PurchasesView"));
@@ -162,9 +166,6 @@ const GeneralReceiptsView = lazy(() => import("./views/GeneralReceiptsView"));
 const SoleReceiptView = lazy(() => import("./views/SoleReceiptView"));
 
 const ProductionEngineeringView = lazy(() => import("./views/ProductionEngineeringView"));
-const MarketplaceConnectionView = lazy(() => import("./views/MarketplaceConnectionView"));
-const MarketplaceOrdersView = lazy(() => import("./views/MarketplaceOrdersView"));
-const MarketplaceSkuMappingView = lazy(() => import("./views/MarketplaceSkuMappingView"));
 const BlingConnectionView = lazy(() => import("./views/BlingConnectionView"));
 const BlingProductMappingView = lazy(() => import("./views/BlingProductMappingView"));
 const BlingInvoiceEmissionView = lazy(() => import("./views/BlingInvoiceEmissionView"));
@@ -181,7 +182,9 @@ const DeliveryPrintConfigView = lazy(() => import("./views/DeliveryPrintConfigVi
 
 
 // Modals
+import StepWizardBar from "./components/StepWizardBar";
 import AccountModal from "./components/AccountModal";
+import ProductCreationChoiceModal from "./components/ProductCreationChoiceModal";
 import PaymentMethodModal from "./components/PaymentMethodModal";
 import Modal from "./components/Modal";
 import TransactionModal from "./components/TransactionModal";
@@ -197,7 +200,7 @@ import { parseLocaleNumber } from './utils/numbers';
 import { generateId } from './utils/id';
 import { seedProductionOrderSequence } from './utils/sequenceSeeds';
 import { ThemeId, THEME_VISUALS, ALL_THEME_CLASSES, FONT_OPTIONS, NavIconMode, NAV_TAB_COLORS } from './utils/themes';
-import { isViewAllowed, collaboratorCanUseAI, getEffectiveDashboardCards } from './utils/collaborators';
+import { isViewAllowed, collaboratorCanUseAI, getEffectiveDashboardCards, isAccountOwnerSession } from './utils/collaborators';
 import { subscribeToAIGeneralSettings } from './services/aiSettingsService';
 
 const MODAL_VIEWS = [
@@ -248,12 +251,6 @@ const MODULE_VIEWS: Record<string, ViewType[]> = {
   ],
   personal: [
     ViewType.PERSONAL_FINANCIAL
-  ],
-  marketplace: [
-    ViewType.MARKETPLACE_MENU,
-    ViewType.MARKETPLACE_CONNECTION,
-    ViewType.MARKETPLACE_ORDERS,
-    ViewType.MARKETPLACE_SKU_MAPPING,
   ],
   entregas: [
     ViewType.DELIVERY_MENU,
@@ -397,6 +394,23 @@ export default function App() {
   const [collabSessionConfirmed, setCollabSessionConfirmed] = useState<boolean>(() => {
     return sessionStorage.getItem('collab_session_confirmed') === '1';
   });
+  // Espelha o "decidido no primeiro snapshot" do gate de colaboradores acima, mas como
+  // state (não variável local do useEffect) pra poder ser lido pelo efeito de auto-disparo
+  // do Assistente de Configuração Inicial, que precisa esperar o gate resolver primeiro.
+  const [collabGateReady, setCollabGateReady] = useState(false);
+
+  const [onboardingStatus, setOnboardingStatus] = useState<OnboardingStatus | null>(null);
+  const [onboardingStatusDecided, setOnboardingStatusDecided] = useState(false);
+  const [onboardingActive, setOnboardingActive] = useState(false);
+  const [onboardingStepIndex, setOnboardingStepIndex] = useState(0);
+  const onboardingAutoTriggeredRef = useRef(false);
+
+  // Cadastro Guiado de Modelo — wizard separado do Assistente de Configuração Inicial acima
+  // (ciclo de vida diferente: este roda toda vez que a pessoa escolhe "Cadastro Guiado" em
+  // "Cadastrar Novo Modelo", não só uma vez por conta).
+  const [showProductCreationChoice, setShowProductCreationChoice] = useState(false);
+  const [productWizardActive, setProductWizardActive] = useState(false);
+  const [productWizardStepIndex, setProductWizardStepIndex] = useState(0);
 
   const switchCollaborator = (id: string, pin: string): boolean => {
     const target = collaborators.find(c => c.id === id);
@@ -744,7 +758,7 @@ export default function App() {
     personal: true,
     sales: true,
     production: true,
-    marketplace: false,
+    ai: true,
     entregas: false,
     bling: false,
   };
@@ -780,6 +794,24 @@ export default function App() {
     if (user) {
       await firebaseService.saveDocument("app_modules_config", { ...newConfig, id: 'main_modules_config' });
     }
+  };
+
+  // Estado do Assistente de Configuração Inicial — mesmo padrão de app_modules_config acima.
+  // Ausência do doc = usuário nunca interagiu (nem concluiu, nem pulou) com o assistente.
+  useEffect(() => {
+    if (!user) return;
+    const unsubOnboardingStatus = firebaseService.subscribeToCollection<OnboardingStatus>(
+      "onboarding_status",
+      (data) => {
+        setOnboardingStatus(data.find(s => s.id === 'main_onboarding_status') || null);
+        setOnboardingStatusDecided(true);
+      }
+    );
+    return () => unsubOnboardingStatus();
+  }, [user]);
+
+  const saveOnboardingStatus = async (patch: Partial<OnboardingStatus>) => {
+    await firebaseService.saveDocument("onboarding_status", { ...onboardingStatus, ...patch, id: 'main_onboarding_status' });
   };
 
   // Liga/desliga global do Assistente de IA — configurado em Mais Opções > Sistema & Backup > Assistente de IA
@@ -868,6 +900,7 @@ export default function App() {
         if (!collabGateDecided) {
           collabGateDecided = true;
           setNeedsCollabGate(data.length > 0);
+          setCollabGateReady(true);
         }
       },
     );
@@ -1201,13 +1234,155 @@ export default function App() {
 
     setCurrentView(view);
     setHistory((prev) => [...prev, view]);
-    
-    // Reset sub-screen when navigating to a new root view, 
+
+    // Reset sub-screen when navigating to a new root view,
     // unless we specifically set it later
     if (view !== ViewType.PRODUCTION_CONFIG) {
       setProductionSubScreen('MENU');
     }
   };
+
+  // ── Assistente de Configuração Inicial ──────────────────────────────────
+  // Camada fina de orquestração por cima das telas de cadastro já existentes: cada etapa
+  // navega pro ViewType real (Categorias, Cores, Grades, Pessoas, Contas, Meios de
+  // Pagamento, Produto) e observa os arrays já reativos do Firestore pra saber quando a
+  // etapa foi cumprida — nenhuma dessas telas precisa de um callback de "registro criado".
+  // Revenda pura não fabrica nada, então não faz sentido pedir grade de numeração de
+  // produção nessa etapa — só entra pra quem fabrica (Fabricação própria/Híbrido).
+  const onboardingSteps: { view: ViewType; label: string; isComplete: boolean; params?: { initialFilter: 'CUSTOMER' | 'SUPPLIER' } }[] = [
+    { view: ViewType.CATEGORIES, label: 'Cadastre uma Categoria', isComplete: categories.length > 0 },
+    { view: ViewType.COLORS, label: 'Cadastre uma Cor', isComplete: colors.length > 0 },
+    ...(onboardingStatus?.businessType !== 'REVENDA'
+      ? [{ view: ViewType.GRIDS, label: 'Cadastre uma Grade/Unidade', isComplete: grids.length > 0 }]
+      : []),
+    { view: ViewType.PEOPLE, params: { initialFilter: 'CUSTOMER' as const }, label: 'Cadastre um Cliente', isComplete: people.some(p => p.isCustomer) },
+    { view: ViewType.PEOPLE, params: { initialFilter: 'SUPPLIER' as const }, label: 'Cadastre um Fornecedor', isComplete: people.some(p => p.isSupplier) },
+    { view: ViewType.ACCOUNTS, label: 'Cadastre uma Conta de Movimentação', isComplete: accounts.length > 0 },
+    { view: ViewType.PAYMENT_METHODS, label: 'Cadastre um Meio de Recebimento', isComplete: paymentMethods.length > 0 },
+    { view: ViewType.PRODUCT_FORM, label: 'Crie seu primeiro Produto', isComplete: products.length > 0 },
+  ];
+
+  const goToOnboardingStep = (index: number) => {
+    setOnboardingStepIndex(index);
+    const step = onboardingSteps[index];
+    navigateTo(step.view, step.params ?? null);
+  };
+
+  const handleOnboardingSelectBusinessType = async (type: BusinessType) => {
+    await saveModulesConfig({ ...modulesConfig, production: type !== 'REVENDA' });
+    await saveOnboardingStatus({ businessType: type });
+    setOnboardingActive(true);
+    goToOnboardingStep(0);
+  };
+
+  const handleOnboardingWelcomeSkip = async () => {
+    await saveOnboardingStatus({ skippedAt: Date.now() });
+    navigateTo(ViewType.DASHBOARD);
+  };
+
+  const handleOnboardingAdvance = () => {
+    const next = onboardingStepIndex + 1;
+    if (next >= onboardingSteps.length) {
+      setOnboardingActive(false);
+      saveOnboardingStatus({ completedAt: Date.now() });
+      navigateTo(ViewType.DASHBOARD);
+      return;
+    }
+    goToOnboardingStep(next);
+  };
+
+  const handleOnboardingDismiss = () => {
+    setOnboardingActive(false);
+    if (!onboardingStatus) {
+      saveOnboardingStatus({ skippedAt: Date.now() });
+    }
+  };
+
+  const handleOpenOnboardingWizard = () => {
+    const firstIncomplete = onboardingSteps.findIndex(s => !s.isComplete);
+    setOnboardingActive(true);
+    goToOnboardingStep(firstIncomplete === -1 ? 0 : firstIncomplete);
+  };
+
+  // ── Cadastro Guiado de Modelo ────────────────────────────────────────────
+  // Mesma mecânica do Assistente de Configuração Inicial acima: cada etapa navega pro
+  // ViewType real (Fornecedores, Categorias, Cores) e observa os arrays já reativos do
+  // Firestore. Ao concluir as 3 etapas, entra no ProductFormView já em modo guiado
+  // (currentParams.guided) — o formulário cuida do resto (seção por vez) sozinho.
+  const productWizardSteps: { view: ViewType; label: string; description: string; isComplete: boolean; params?: any }[] = [
+    {
+      view: ViewType.PEOPLE, params: { initialFilter: 'SUPPLIER' as const }, label: 'Escolha ou cadastre seu fornecedor',
+      description: 'De quem você compra esse modelo. Toque num fornecedor já cadastrado pra continuar, ou cadastre um novo tocando no botão + aqui embaixo.',
+      isComplete: people.some(p => p.isSupplier),
+    },
+    {
+      view: ViewType.CATEGORIES, label: 'Cadastre a categoria do modelo',
+      description: 'Agrupa esse modelo dentro de uma categoria, pra facilitar filtros e relatórios depois. Escolha uma existente ou cadastre uma nova.',
+      isComplete: categories.length > 0,
+    },
+    {
+      view: ViewType.COLORS, label: 'Cadastre as cores que o modelo terá',
+      description: 'Garanta que as cores desse modelo já existem na paleta. Você escolhe quais cores usar depois, dentro do próprio cadastro do produto.',
+      isComplete: colors.length > 0,
+    },
+  ];
+
+  const goToProductWizardStep = (index: number) => {
+    setProductWizardStepIndex(index);
+    const step = productWizardSteps[index];
+    navigateTo(step.view, step.params ?? null);
+  };
+
+  const handleOpenProductCreationChoice = () => {
+    setShowProductCreationChoice(true);
+  };
+
+  const handleChooseGuidedProductCreation = () => {
+    setShowProductCreationChoice(false);
+    setProductWizardActive(true);
+    goToProductWizardStep(0);
+  };
+
+  const handleChooseDirectProductCreation = () => {
+    setShowProductCreationChoice(false);
+    navigateTo(ViewType.PRODUCT_FORM);
+  };
+
+  const handleProductWizardAdvance = () => {
+    const next = productWizardStepIndex + 1;
+    if (next >= productWizardSteps.length) {
+      setProductWizardActive(false);
+      navigateTo(ViewType.PRODUCT_FORM, { guided: true });
+      return;
+    }
+    goToProductWizardStep(next);
+  };
+
+  const handleProductWizardBack = () => {
+    const prev = productWizardStepIndex - 1;
+    if (prev < 0) return;
+    goToProductWizardStep(prev);
+  };
+
+  const handleProductWizardDismiss = () => {
+    setProductWizardActive(false);
+  };
+
+  // Auto-disparo no primeiro login: só depois do gate de colaboradores resolver (senão
+  // pisca a tela de boas-vindas antes do CollaboratorGateView aparecer numa conta com
+  // colaboradores), só pra sessão do dono (nunca colaborador restrito), e só uma vez por
+  // sessão (o ref evita re-navegar de volta se o usuário sair do assistente manualmente).
+  useEffect(() => {
+    if (!user) return;
+    if (!collabGateReady) return;
+    if (needsCollabGate && !collabSessionConfirmed) return;
+    if (!isAccountOwnerSession(activeCollaborator)) return;
+    if (!onboardingStatusDecided) return;
+    if (onboardingStatus) return;
+    if (onboardingAutoTriggeredRef.current) return;
+    onboardingAutoTriggeredRef.current = true;
+    navigateTo(ViewType.ONBOARDING_WELCOME);
+  }, [user, collabGateReady, needsCollabGate, collabSessionConfirmed, activeCollaborator, onboardingStatusDecided, onboardingStatus]);
 
   // Resolução compartilhada com o "Scanner Rápido" do Dashboard
   // (scannerService.resolveScanResult) — garante que ambos tenham o mesmo
@@ -3867,7 +4042,6 @@ export default function App() {
     const isSalesView = MODULE_VIEWS.sales.includes(view);
     const isProductionView = MODULE_VIEWS.production.includes(view);
     const isPersonalView = MODULE_VIEWS.personal.includes(view);
-    const isMarketplaceView = MODULE_VIEWS.marketplace.includes(view);
     const isDeliveryView = MODULE_VIEWS.entregas.includes(view);
     const isBlingView = MODULE_VIEWS.bling.includes(view);
     // "Modelos / Ficha Técnica" é o catálogo de produtos — Vendas precisa dele sozinho
@@ -3879,12 +4053,19 @@ export default function App() {
     if (isProductCatalogView && !modulesConfig.sales && !modulesConfig.production) return renderView(ViewType.DASHBOARD);
     if (isProductionView && !isProductCatalogView && (!modulesConfig.sales || !modulesConfig.production)) return renderView(ViewType.DASHBOARD);
     if (isPersonalView && !modulesConfig.personal) return renderView(ViewType.DASHBOARD);
-    if (isMarketplaceView && (!modulesConfig.sales || !modulesConfig.marketplace)) return renderView(ViewType.DASHBOARD);
     if (isDeliveryView && (!modulesConfig.sales || !modulesConfig.entregas)) return renderView(ViewType.DASHBOARD);
     if (isBlingView && !modulesConfig.bling) return renderView(ViewType.DASHBOARD);
     if (!isViewAllowed(activeCollaborator, view)) return renderView(ViewType.DASHBOARD);
 
     switch (view) {
+      case ViewType.ONBOARDING_WELCOME:
+        return (
+          <OnboardingWelcomeView
+            isDarkMode={isDarkMode}
+            onSelectBusinessType={handleOnboardingSelectBusinessType}
+            onSkip={handleOnboardingWelcomeSkip}
+          />
+        );
       case ViewType.DASHBOARD:
         return (
           <DashboardView
@@ -3909,7 +4090,7 @@ export default function App() {
             onNavigate={navigateTo}
             onNavigateProduction={navigateToProduction}
             onNavigateGrids={() => navigateTo(ViewType.GRIDS)}
-            onAddProduct={() => navigateTo(ViewType.PRODUCT_FORM)}
+            onAddProduct={handleOpenProductCreationChoice}
             onAddTransaction={(type) => {
               setTransactionModalType(type);
               setIsTransactionModalOpen(true);
@@ -3974,13 +4155,15 @@ export default function App() {
             onLogout={handleLogout}
             showEngineeringThumbnails={showEngineeringThumbnails}
             setShowEngineeringThumbnails={setShowEngineeringThumbnails}
+            onOpenOnboardingWizard={handleOpenOnboardingWizard}
+            onOpenProductCreationChoice={handleOpenProductCreationChoice}
           />
         );
       case ViewType.PRODUCTS:
         return (
           <ProductsView
             products={products}
-            onAdd={() => navigateTo(ViewType.PRODUCT_FORM)}
+            onAdd={handleOpenProductCreationChoice}
             onEdit={(id) => navigateTo(ViewType.PRODUCT_FORM, id)}
             onDelete={(id) => firebaseService.deleteDocument("products", id)}
             onToggleStatus={(id, status) => {
@@ -4030,6 +4213,7 @@ export default function App() {
             isDarkMode={isDarkMode}
             aiPrefillData={aiPersonPrefill}
             onPrefillConsumed={() => setAiPersonPrefill(null)}
+            initialFilter={currentParams?.initialFilter}
           />
         );
       case ViewType.PERSON_DETAIL:
@@ -4441,6 +4625,7 @@ export default function App() {
             sectors={sectors}
             modulesConfig={modulesConfig}
             restrictedProductMode={!modulesConfig.production}
+            guided={currentParams?.guided === true}
           />
         );
       case ViewType.PURCHASES:
@@ -5223,7 +5408,7 @@ export default function App() {
             onNavigateStockOrphaned={() => navigateTo(ViewType.STOCK, { initialShowOrphaned: true })}
             onNavigateStockFinalizedRepair={() => navigateTo(ViewType.STOCK, { initialShowConfigMenu: true })}
             onNavigateProducts={() => navigateTo(ViewType.PRODUCTS)}
-            onAddProduct={() => navigateTo(ViewType.PRODUCT_FORM)}
+            onAddProduct={handleOpenProductCreationChoice}
             productionConfigs={productionConfigs}
             carriers={carriers}
             onSendToRouteBuilder={(saleId) => navigateTo(ViewType.DELIVERY_ROUTE_BUILDER, { preselectSaleId: saleId })}
@@ -5836,7 +6021,7 @@ export default function App() {
             categories={categories}
             initialScreen={productionSubScreen}
             onNavigate={navigateTo}
-            onAddProduct={() => navigateTo(ViewType.PRODUCT_FORM)}
+            onAddProduct={handleOpenProductCreationChoice}
             onNavigateGrids={() => navigateTo(ViewType.GRIDS)}
             lots={productionLots}
             products={products}
@@ -5850,7 +6035,7 @@ export default function App() {
             products={products}
             categories={categories}
             showThumbnails={showEngineeringThumbnails}
-            onAdd={() => navigateTo(ViewType.PRODUCT_FORM)}
+            onAdd={handleOpenProductCreationChoice}
             onEdit={(id) => navigateTo(ViewType.PRODUCT_FORM, id)}
             onDelete={async (id) => {
               try {
@@ -5953,66 +6138,6 @@ export default function App() {
             initialParams={currentParams}
           />
         );
-      case ViewType.MARKETPLACE_MENU:
-        return (
-          <div className="flex flex-col gap-6 pb-32">
-            <div className="flex flex-col gap-3">
-              <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Marketplace</h3>
-              <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                {[
-                  { id: ViewType.MARKETPLACE_CONNECTION, label: 'Conexão Shopee', icon: <Store size={22} />, color: 'text-orange-500' },
-                  { id: ViewType.MARKETPLACE_ORDERS, label: 'Pedidos Marketplace', icon: <ClipboardList size={22} />, color: 'text-indigo-600' },
-                  { id: ViewType.MARKETPLACE_SKU_MAPPING, label: 'Mapeamento de SKU', icon: <Tags size={22} />, color: 'text-emerald-600' },
-                ].map((item, index, array) => (
-                  <button
-                    key={item.id}
-                    onClick={() => navigateTo(item.id)}
-                    className={`w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors ${index !== array.length - 1 ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={`w-10 h-10 flex items-center justify-center shrink-0 ${item.color}`}>
-                        {item.icon}
-                      </div>
-                      <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.label}</p>
-                    </div>
-                    <ChevronRight size={20} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.8 }}
-              className="mt-4 p-8 rounded-[3rem] border-2 border-dashed border-slate-100 dark:border-slate-800 flex flex-col items-center text-center gap-4"
-            >
-              <div className={`w-16 h-16 rounded-[1.8rem] flex items-center justify-center ${isDarkMode ? 'bg-slate-900 text-orange-500' : 'bg-orange-50 text-orange-600'}`}>
-                <Store size={32} strokeWidth={1.5} />
-              </div>
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Módulo Marketplace</p>
-                <p className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-1">
-                  Importe pedidos de plataformas externas, controle devoluções e mantenha o estoque sincronizado.
-                </p>
-              </div>
-            </motion.div>
-          </div>
-        );
-      case ViewType.MARKETPLACE_CONNECTION:
-        return (
-          <MarketplaceConnectionView
-            isDarkMode={isDarkMode}
-            onNavigate={navigateTo}
-          />
-        );
-      case ViewType.MARKETPLACE_ORDERS:
-        return (
-          <MarketplaceOrdersView
-            isDarkMode={isDarkMode}
-            onNavigate={navigateTo}
-          />
-        );
       case ViewType.BLING_CONNECTION:
         return (
           <BlingConnectionView
@@ -6067,14 +6192,6 @@ export default function App() {
           <BlingDevolucoesView
             isDarkMode={isDarkMode}
             products={products}
-          />
-        );
-      case ViewType.MARKETPLACE_SKU_MAPPING:
-        return (
-          <MarketplaceSkuMappingView
-            isDarkMode={isDarkMode}
-            products={products}
-            grids={grids}
           />
         );
       case ViewType.DELIVERY_MENU:
@@ -6436,7 +6553,7 @@ export default function App() {
             categories={categories}
             initialScreen="INSUMOS"
             onNavigate={navigateTo}
-            onAddProduct={() => navigateTo(ViewType.PRODUCT_FORM)}
+            onAddProduct={handleOpenProductCreationChoice}
             onNavigateGrids={() => navigateTo(ViewType.GRIDS)}
             lots={productionLots}
             products={products}
@@ -6643,15 +6760,6 @@ export default function App() {
       return "production";
     if (
       [
-        ViewType.MARKETPLACE_MENU,
-        ViewType.MARKETPLACE_CONNECTION,
-        ViewType.MARKETPLACE_ORDERS,
-        ViewType.MARKETPLACE_SKU_MAPPING,
-      ].includes(currentView)
-    )
-      return "marketplace";
-    if (
-      [
         ViewType.BLING_CONNECTION,
         ViewType.BLING_PRODUCT_MAPPING,
         ViewType.BLING_INVOICE_EMISSION,
@@ -6703,6 +6811,8 @@ export default function App() {
 
   const viewTitle = useMemo(() => {
     switch (currentView) {
+      case ViewType.ONBOARDING_WELCOME:
+        return "Configuração Inicial";
       case ViewType.DASHBOARD:
         return "GESTAO PRO";
       case ViewType.PRODUCTS:
@@ -6720,7 +6830,7 @@ export default function App() {
       case ViewType.COLORS:
         return "Cores";
       case ViewType.PAYMENT_METHODS:
-        return "Pagamentos";
+        return "Meios de Recebimento";
       case ViewType.REPORTS:
         return "Relatórios";
       case ViewType.PRINT_CENTER:
@@ -6738,7 +6848,7 @@ export default function App() {
       case ViewType.FINANCIAL:
         return "Financeiro";
       case ViewType.ACCOUNTS:
-        return "Gerenciamento de Contas";
+        return "Contas de Movimentação";
       case ViewType.PERSONAL_FINANCIAL:
         return "Financeiro Pessoal";
       case ViewType.SETTINGS:
@@ -6775,14 +6885,6 @@ export default function App() {
         return "Ficha Técnica";
       case ViewType.PRODUCTION_SERVICE_ORDER_FORM:
         return "Emissão de Ordem de Serviço";
-      case ViewType.MARKETPLACE_MENU:
-        return "Módulo Marketplace";
-      case ViewType.MARKETPLACE_CONNECTION:
-        return "Conexão Shopee";
-      case ViewType.MARKETPLACE_ORDERS:
-        return "Pedidos Marketplace";
-      case ViewType.MARKETPLACE_SKU_MAPPING:
-        return "Mapeamento de SKU";
       case ViewType.BLING_CONNECTION:
         return "Conexão Bling";
       case ViewType.BLING_PRODUCT_MAPPING:
@@ -6829,6 +6931,7 @@ export default function App() {
   const viewIcon = useMemo(() => {
     const viewToUse = MODAL_VIEWS.includes(currentView) ? lastNonModalView : currentView;
     switch(viewToUse) {
+      case ViewType.ONBOARDING_WELCOME: return <Sparkles size={24} className="text-indigo-600 dark:text-indigo-400" />;
       case ViewType.DASHBOARD: return <LayoutDashboard size={24} className="text-indigo-600 dark:text-indigo-400" />;
       case ViewType.PURCHASES:
       case ViewType.PURCHASE_FORM: return <ShoppingCart size={24} className="text-cyan-500 dark:text-cyan-400" />;
@@ -6870,10 +6973,6 @@ export default function App() {
       case ViewType.PRODUCTION_ENGINEERING: return <Database size={24} className="text-indigo-600 dark:text-indigo-400" />;
       case ViewType.PRODUCT_SHEET: return <FileText size={24} className="text-slate-500 dark:text-slate-400" />;
       case ViewType.PRODUCTION_SERVICE_ORDER_FORM: return <ClipboardList size={24} className="text-indigo-600 dark:text-indigo-400" />;
-      case ViewType.MARKETPLACE_MENU:
-      case ViewType.MARKETPLACE_CONNECTION:
-      case ViewType.MARKETPLACE_ORDERS:
-      case ViewType.MARKETPLACE_SKU_MAPPING: return <Store size={24} className="text-orange-500 dark:text-orange-400" />;
       case ViewType.BLING_CONNECTION:
       case ViewType.BLING_PRODUCT_MAPPING:
       case ViewType.BLING_INVOICE_EMISSION:
@@ -6897,6 +6996,7 @@ export default function App() {
   const headerTitle = useMemo(() => {
     if (MODAL_VIEWS.includes(currentView)) {
       switch (lastNonModalView) {
+        case ViewType.ONBOARDING_WELCOME: return "Configuração Inicial";
         case ViewType.DASHBOARD: return "GESTAO PRO";
         case ViewType.PURCHASES: return "Compras";
         case ViewType.SALES: return "Vendas";
@@ -7007,7 +7107,7 @@ export default function App() {
             <Printer size={20} />
           </motion.button>
           )}
-          {aiEnabled && collaboratorCanUseAI(activeCollaborator) && (
+          {modulesConfig.ai && aiEnabled && collaboratorCanUseAI(activeCollaborator) && (
             <motion.button
               type="button"
               onClick={() => setIsAIAssistantOpen(true)}
@@ -7069,6 +7169,42 @@ export default function App() {
         }
       >
         <Suspense fallback={<ViewLoadingFallback />}>
+          {onboardingActive && onboardingSteps[onboardingStepIndex]?.view === currentView && (
+            <StepWizardBar
+              isDarkMode={isDarkMode}
+              title="Configuração Inicial"
+              stepIndex={onboardingStepIndex + 1}
+              totalSteps={onboardingSteps.length}
+              label={onboardingSteps[onboardingStepIndex].label}
+              isComplete={onboardingSteps[onboardingStepIndex].isComplete}
+              onContinue={handleOnboardingAdvance}
+              onSkipStep={handleOnboardingAdvance}
+              onDismiss={handleOnboardingDismiss}
+            />
+          )}
+          {productWizardActive && productWizardSteps[productWizardStepIndex]?.view === currentView && (
+            <StepWizardBar
+              isDarkMode={isDarkMode}
+              title="Cadastro Guiado"
+              stepIndex={productWizardStepIndex + 1}
+              totalSteps={productWizardSteps.length}
+              label={productWizardSteps[productWizardStepIndex].label}
+              isComplete={productWizardSteps[productWizardStepIndex].isComplete}
+              onContinue={handleProductWizardAdvance}
+              onSkipStep={handleProductWizardAdvance}
+              onDismiss={handleProductWizardDismiss}
+              onBack={handleProductWizardBack}
+              canGoBack={productWizardStepIndex > 0}
+            />
+          )}
+          {productWizardActive && productWizardSteps[productWizardStepIndex]?.view === currentView && (
+            <div className="flex items-start gap-3 p-4 mb-4 rounded-2xl bg-amber-500 text-white">
+              <Info size={18} className="shrink-0 mt-0.5" />
+              <p className="text-xs font-bold leading-relaxed">
+                {productWizardSteps[productWizardStepIndex].description}
+              </p>
+            </div>
+          )}
           {renderView(currentView)}
         </Suspense>
       </Modal>
@@ -7210,18 +7346,6 @@ export default function App() {
               monoColor={navMonoColor}
             />
           )}
-          {modulesConfig.sales && modulesConfig.marketplace && isViewAllowed(activeCollaborator, ViewType.MARKETPLACE_MENU) && (
-            <TabItem
-              icon={<Store size={20} />}
-              label="Market."
-              active={activeTab === "marketplace"}
-              onClick={() => resetTo(ViewType.MARKETPLACE_MENU)}
-              appTheme={appTheme}
-              iconMode={navIconMode}
-              tintColor={NAV_TAB_COLORS.marketplace}
-              monoColor={navMonoColor}
-            />
-          )}
           {modulesConfig.bling && isViewAllowed(activeCollaborator, ViewType.BLING_CONNECTION) && (
             <TabItem
               icon={<Building2 size={20} />}
@@ -7282,6 +7406,13 @@ export default function App() {
           />
         </div>
       </nav>
+      <ProductCreationChoiceModal
+        isOpen={showProductCreationChoice}
+        onClose={() => setShowProductCreationChoice(false)}
+        onChooseGuided={handleChooseGuidedProductCreation}
+        onChooseDirect={handleChooseDirectProductCreation}
+        isDarkMode={isDarkMode}
+      />
       <AccountModal
         isOpen={isAccountModalOpen}
         onClose={() => setIsAccountModalOpen(false)}

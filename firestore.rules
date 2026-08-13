@@ -100,39 +100,19 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if isOwner(userId);
 
-      // Tokens de acesso da integração com marketplaces (ex.: Shopee) — só a Admin SDK
-      // (Cloud Functions) pode ler/escrever aqui, nunca o client. Isolado explicitamente
+      // Client ID/Secret do app Bling da própria empresa + tokens de acesso — só a Admin
+      // SDK (Cloud Functions) pode ler/escrever aqui, nunca o client. Isolado explicitamente
       // por documentação; a exclusão real acontece na condição da regra coringa abaixo,
       // porque no Firestore uma regra mais específica NÃO sobrescreve uma mais ampla que
       // também bata no mesmo caminho — se qualquer regra aplicável permitir, o acesso é
       // permitido. Por isso a regra coringa precisa excluir este caminho na própria condição.
-      match /shopeeIntegration/{document=**} {
-        allow read, write: if false;
-      }
-
-      // Client ID/Secret do app Bling da própria empresa + tokens de acesso — mesmo
-      // isolamento do shopeeIntegration acima, só que aqui o próprio client_id/secret
-      // também é sensível (não é uma chave de parceiro compartilhada, é a credencial da
-      // conta), então nunca pode ser lido pelo client de jeito nenhum.
       match /blingIntegration/{document=**} {
         allow read, write: if false;
       }
 
       match /{collection}/{document=**} {
-        allow read, write: if isOwner(userId) && collection != 'shopeeIntegration' && collection != 'blingIntegration';
+        allow read, write: if isOwner(userId) && collection != 'blingIntegration';
       }
-    }
-
-    // Índice global shopId -> uid, usado pelo webhook público da Shopee (chega sem
-    // contexto de usuário) pra descobrir de qual conta é aquela loja. Só Admin SDK.
-    match /shopeeShopIndex/{shopId} {
-      allow read, write: if false;
-    }
-
-    // Nonces temporários do fluxo de OAuth (state -> uid), consumidos pelo callback
-    // público da Shopee. Só Admin SDK.
-    match /shopeeAuthNonces/{nonce} {
-      allow read, write: if false;
     }
 
     // Índice global uid -> uid, usado pelo webhook público do Bling (chega sem contexto de
@@ -146,6 +126,30 @@ service cloud.firestore {
     // público do Bling. Só Admin SDK.
     match /blingAuthNonces/{nonce} {
       allow read, write: if false;
+    }
+
+    // Modelos de categoria compartilhados ENTRE CONTAS — pool de sugestões que qualquer
+    // conta nova pode tocar pra adicionar às próprias categorias (ex.: no Assistente de
+    // Configuração Inicial). Única coleção fora de users/{uid} com leitura liberada pra
+    // qualquer usuário logado; escrita segue dono-do-documento (createdBy), não dono-da-conta.
+    match /categoryTemplates/{templateId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && incoming().createdBy == request.auth.uid
+        && incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 60
+        && incoming().type is string
+        && incoming().createdAt is number;
+      allow update, delete: if isSignedIn() && existing().createdBy == request.auth.uid;
+    }
+
+    // Modelos de cor compartilhados ENTRE CONTAS — mesmo desenho de categoryTemplates acima.
+    match /colorTemplates/{templateId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && incoming().createdBy == request.auth.uid
+        && incoming().name is string && incoming().name.size() > 0 && incoming().name.size() <= 60
+        && incoming().createdAt is number;
+      allow update, delete: if isSignedIn() && existing().createdBy == request.auth.uid;
     }
   }
 }

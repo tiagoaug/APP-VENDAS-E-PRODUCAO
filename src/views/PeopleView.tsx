@@ -17,15 +17,22 @@ interface PeopleViewProps {
   isDarkMode: boolean;
   aiPrefillData?: Partial<Person> | null;
   onPrefillConsumed?: () => void;
+  initialFilter?: 'ALL' | 'CUSTOMER' | 'SUPPLIER';
 }
 
-export default function PeopleView({ people, sales, purchases, transactions, onAdd, onEdit, onDelete, onShowDetail, isDarkMode, aiPrefillData, onPrefillConsumed }: PeopleViewProps) {
+export default function PeopleView({ people, sales, purchases, transactions, onAdd, onEdit, onDelete, onShowDetail, isDarkMode, aiPrefillData, onPrefillConsumed, initialFilter }: PeopleViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [filter, setFilter] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER' | 'SELLER' | 'BUYER'>('ALL');
+  const [filter, setFilter] = useState<'ALL' | 'CUSTOMER' | 'SUPPLIER' | 'SELLER' | 'BUYER'>(() => initialFilter ?? 'ALL');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPerson, setEditingPerson] = useState<Person | null>(null);
   const [aiInitialData, setAiInitialData] = useState<Partial<Person> | null>(null);
+
+  // A tela não desmonta entre navegações pro mesmo ViewType (ex.: assistente indo de
+  // "Cliente" pra "Fornecedor" em sequência) — sem isso o filtro só reagiria no 1º mount.
+  useEffect(() => {
+    if (initialFilter) setFilter(initialFilter);
+  }, [initialFilter]);
 
   useEffect(() => {
     if (aiPrefillData) {

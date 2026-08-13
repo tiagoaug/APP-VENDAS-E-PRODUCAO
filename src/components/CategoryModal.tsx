@@ -1,6 +1,7 @@
 
 import { useState, useEffect } from 'react';
 import { Category, CategoryType, AppModulesConfig } from '../types';
+import { getCategoryModules, CategoryModuleValue } from '../utils/categories';
 
 
 interface CategoryModalProps {
@@ -16,55 +17,71 @@ interface CategoryModalProps {
 export default function CategoryModal({ isOpen, onClose, onSave, category, categories, defaultType, modulesConfig }: CategoryModalProps) {
   const [name, setName] = useState(category?.name || '');
   const [type, setType] = useState<CategoryType>(category?.type || defaultType || CategoryType.PRODUCT);
-  const [module, setModule] = useState<keyof AppModulesConfig>(category?.module || 'sales');
-  const [isPersonal, setIsPersonal] = useState(category?.isPersonal || defaultType === CategoryType.OTHER || category?.module === 'personal');
+  const [modules, setModules] = useState<CategoryModuleValue[]>(() => {
+    const initial = getCategoryModules(category?.module);
+    return initial.length > 0 ? initial : ['sales'];
+  });
+  const [isPersonal, setIsPersonal] = useState(category?.isPersonal || defaultType === CategoryType.OTHER || getCategoryModules(category?.module).includes('personal'));
   const [parentId, setParentId] = useState<string | undefined>(category?.parentId);
-  const [isRoot, setIsRoot] = useState(category?.isRoot || false);
 
   useEffect(() => {
     if (category) {
       setName(category.name);
       setType(category.type);
-      setModule(category.module || 'sales');
-      setIsPersonal(!!category.isPersonal || category.module === 'personal');
+      const initial = getCategoryModules(category.module);
+      setModules(initial.length > 0 ? initial : ['sales']);
+      setIsPersonal(!!category.isPersonal || initial.includes('personal'));
       setParentId(category.parentId);
-      setIsRoot(!!category.isRoot);
     } else if (defaultType) {
       setType(defaultType);
-      
-      let suggestedModule: keyof AppModulesConfig = 'sales';
+
+      let suggestedModule: CategoryModuleValue = 'sales';
       if (defaultType === CategoryType.PRODUCTION || defaultType === CategoryType.SUPPLY || defaultType === CategoryType.CUTTING_TOOL) suggestedModule = 'production';
       if (defaultType === CategoryType.OTHER) suggestedModule = 'personal';
-      
-      setModule(suggestedModule);
+
+      setModules([suggestedModule]);
       setIsPersonal(defaultType === CategoryType.OTHER);
       setParentId(undefined);
-      setIsRoot(false);
     }
   }, [category, defaultType]);
+
+  // Toca num módulo pra ligar/desligar ele (multi-seleção); "Todos" é um atalho que
+  // seleciona tudo de uma vez — nunca deixa a seleção ficar totalmente vazia.
+  const toggleModule = (m: CategoryModuleValue) => {
+    setModules(prev => {
+      if (m === 'any') {
+        return prev.length === 1 && prev[0] === 'any' ? ['sales'] : ['any'];
+      }
+      const base = prev.includes('any') ? [] : prev;
+      const next = base.includes(m) ? base.filter(x => x !== m) : [...base, m];
+      if (next.length === 0) return base;
+      if (m === 'personal') setIsPersonal(true);
+      return next;
+    });
+  };
 
   const handleParentChange = (id: string) => {
     setParentId(id || undefined);
     if (id) {
       const parent = categories.find(c => c.id === id);
       if (parent?.module) {
-        setModule(parent.module);
+        const parentModules = getCategoryModules(parent.module);
+        if (parentModules.length > 0) setModules(parentModules);
       }
       if (parent?.type) {
         setType(parent.type);
       }
-      setIsRoot(false);
     }
   };
 
   const handleTypeChange = (newType: CategoryType) => {
     setType(newType);
-    if (newType === CategoryType.PRODUCTION || newType === CategoryType.SUPPLY || newType === CategoryType.CUTTING_TOOL) setModule('production');
+    if (newType === CategoryType.PRODUCTION || newType === CategoryType.SUPPLY || newType === CategoryType.CUTTING_TOOL) setModules(['production']);
     else if (newType === CategoryType.OTHER) {
-      setModule('personal');
+      setModules(['personal']);
       setIsPersonal(true);
     }
-    else setModule('sales');
+    else setModules(['sales']);
   };
 
   if (!isOpen) return null;
@@ -75,10 +92,9 @@ export default function CategoryModal({ isOpen, onClose, onSave, category, categ
       name,
       type,
       color: category?.color || 'bg-indigo-500',
-      module,
+      module: modules,
       isPersonal,
       parentId,
-      isRoot: !parentId && isRoot
     });
     onClose();
   };
@@ -139,40 +155,24 @@ export default function CategoryModal({ isOpen, onClose, onSave, category, categ
 
         <div className="flex flex-col gap-1.5">
           <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 pl-1">Módulo Vinculado</span>
-          <div className="grid grid-cols-3 gap-2">
-            {(['sales', 'production', 'personal'] as const).map(m => (
+          <span className="text-[9px] font-bold text-slate-400 pl-1 -mt-1">Pode marcar mais de um</span>
+          <div className="grid grid-cols-4 gap-2">
+            {(['sales', 'production', 'personal', 'any'] as const).map(m => (
               <button
                 key={m}
                 type="button"
-                onClick={() => {
-                  setModule(m);
-                  if (m === 'personal') setIsPersonal(true);
-                }}
+                onClick={() => toggleModule(m)}
                 className={`py-2 px-1 rounded-xl text-[8px] font-black uppercase tracking-widest border transition-all ${
-                  module === m 
-                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' 
+                  modules.includes(m)
+                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-md'
                     : 'bg-slate-50 dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-400'
                 }`}
               >
-                {m === 'sales' ? 'Vendas' : m === 'production' ? 'Produção' : 'Pessoal'}
+                {m === 'sales' ? 'Vendas' : m === 'production' ? 'Produção' : m === 'personal' ? 'Pessoal' : 'Todos'}
               </button>
             ))}
           </div>
         </div>
-
-        <label className={`flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800 cursor-pointer select-none transition-opacity ${parentId ? 'opacity-50 cursor-not-allowed' : ''}`}>
-          <input 
-            type="checkbox" 
-            className="w-5 h-5 rounded-md border-slate-200 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500"
-            checked={isRoot && !parentId}
-            disabled={!!parentId}
-            onChange={(e) => setIsRoot(e.target.checked)}
-          />
-          <div className="flex flex-col">
-            <span className="text-xs font-black uppercase tracking-widest dark:text-white">Categoria Principal</span>
-            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Exibir como card no topo</span>
-          </div>
-        </label>
 
         <label className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800 cursor-pointer select-none">
           <input 
