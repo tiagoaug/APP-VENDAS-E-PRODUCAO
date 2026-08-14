@@ -1454,6 +1454,55 @@ export default function PCPView({
     return () => clearTimeout(timer);
   }, [initialOSId, initialOSNonce, serviceOrders, selectedSectorId]);
 
+  // Troca pro setor atual do pedido dentro do Mapa e destaca o card dele na lista "Pedidos no
+  // Setor" do Monitor — em vez de abrir o modal do Mapa. Usado pelo deep-link de Lembretes
+  // (initialOpenMode === 'sector') e pelo scanner de etiquetas (handleScanLotResult), que quer
+  // aterrissar direto no Monitor, no setor onde o pedido está agora, não na "ficha" do Mapa.
+  // Retorna o id do setor encontrado (ou undefined se o pedido já foi finalizado/não achado),
+  // pra quem chamar decidir se mostra algum aviso.
+  const focusPedidoInSectorMonitor = (lot: ProductionLot, targetOrderId: string | undefined, targetItemIdx?: number): string | undefined => {
+    const allSourceItems: any[] = (lot as any).metadata?.sourceItems || [
+      { orderId: lot.productionOrderId, itemIdx: 0, qty: lot.quantity }
+    ];
+    const matchesTarget = (s: any) => s.orderId === targetOrderId && (targetItemIdx === undefined || s.itemIdx === targetItemIdx);
+
+    const targetItem = allSourceItems.find(matchesTarget)
+      || allSourceItems.find((s: any) => s.orderId === targetOrderId)
+      || allSourceItems[0];
+    if (!targetItem) return undefined;
+
+    const targetSectorId = getOrderEffectiveSector(lot, targetItem.orderId, targetItem);
+    if (!targetSectorId || targetSectorId === ORDER_FINALIZED) return undefined;
+
+    setActiveTab('monitor');
+    setIsDetailModalOpen(false);
+    if (targetSectorId !== selectedSectorId) {
+      setSelectedSectorId(targetSectorId);
+    }
+
+    const idx = allSourceItems.indexOf(targetItem);
+    const itemKey = `${lot.id}::${targetItem.orderId}::${idx}`;
+    const gradeKey = `grade-${itemKey}`;
+
+    // Expande o item na lista do setor
+    setFichaItemExpanded(prev => {
+      const next = new Set(prev);
+      next.add(gradeKey);
+      return next;
+    });
+
+    setTimeout(() => {
+      const el = document.getElementById(`pedido-card-${itemKey}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setHighlightedPedidoKey(itemKey);
+        setTimeout(() => setHighlightedPedidoKey(null), 2500);
+      }
+    }, 450);
+
+    return targetSectorId;
+  };
+
   // Chegando via lembrete do Dashboard ("Lembretes e Vencimentos") com um pedido/mapa em setor específico,
   // troca para o setor certo, expande a grade/detalhes e rola até o card dele na lista.
   const initialSectorHandledKeyRef = useRef<string | null>(null);
@@ -1465,46 +1514,9 @@ export default function PCPView({
     if (!lot) return;
     initialSectorHandledKeyRef.current = signature;
 
-    const allSourceItems: any[] = (lot as any).metadata?.sourceItems || [
-      { orderId: lot.productionOrderId, itemIdx: 0, qty: lot.quantity }
-    ];
     const itemIdxNum = initialItemIdx !== undefined && initialItemIdx !== '' ? Number(initialItemIdx) : undefined;
-    const matchesTarget = (s: any) => s.orderId === initialOrderId && (itemIdxNum === undefined || s.itemIdx === itemIdxNum);
-
-    const targetItem = allSourceItems.find(matchesTarget)
-      || allSourceItems.find((s: any) => s.orderId === initialOrderId)
-      || allSourceItems[0];
-
-    if (targetItem) {
-      const targetSectorId = getOrderEffectiveSector(lot, targetItem.orderId, targetItem);
-      if (targetSectorId && targetSectorId !== ORDER_FINALIZED) {
-        if (targetSectorId !== selectedSectorId) {
-          setSelectedSectorId(targetSectorId);
-        }
-
-        const idx = allSourceItems.indexOf(targetItem);
-        const itemKey = `${lot.id}::${targetItem.orderId}::${idx}`;
-        const gradeKey = `grade-${itemKey}`;
-
-        // Expande o item na lista do setor
-        setFichaItemExpanded(prev => {
-          const next = new Set(prev);
-          next.add(gradeKey);
-          return next;
-        });
-
-        const timer = setTimeout(() => {
-          const el = document.getElementById(`pedido-card-${itemKey}`);
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            setHighlightedPedidoKey(itemKey);
-            setTimeout(() => setHighlightedPedidoKey(null), 2500);
-          }
-        }, 450);
-        return () => clearTimeout(timer);
-      }
-    }
-  }, [initialLotId, initialOrderId, initialItemIdx, initialScanNonce, lots, initialOpenMode, selectedSectorId]);
+    focusPedidoInSectorMonitor(lot, initialOrderId, itemIdxNum);
+  }, [initialLotId, initialOrderId, initialItemIdx, initialScanNonce, lots, initialOpenMode]);
 
   const deadlineConfigs = useMemo(() => {
     return (productionConfigs || []).filter(c => c.type === 'DEADLINE');
@@ -4291,52 +4303,21 @@ export default function PCPView({
       return;
     }
 
-    // Etiqueta de pedido vinculado (PRD|...|lotId|orderId|itemIdx) -> abre o Mapa direto no pedido
+    // Etiqueta de pedido vinculado (PRD|...|lotId|orderId|itemIdx) -> mostra no Monitor PCP,
+    // já no setor onde o pedido está agora (em vez de abrir a "ficha" do Mapa).
     if (parsed?.type === 'PRODUCT' && parsed.lotId && parsed.orderId) {
       // Busca local primeiro e, se não encontrar (Mapa ainda não sincronizado
-      // localmente), carrega direto do Firestore — "carrega diretamente" o Mapa
-      // mesmo que a lista local `lots` ainda não tenha esse documento.
+      // localmente), carrega direto do Firestore.
       const lot = await scannerService.findLotById(parsed.lotId, lots);
       if (!lot) { toast.show(SCAN_ERRORS.lotNotFound(parsed.lotId)); return; }
 
-      const allSourceItems: any[] = (lot as any).metadata?.sourceItems || [
-        { orderId: lot.productionOrderId, itemIdx: 0, qty: lot.quantity }
-      ];
-      const currentSectorId = lot.route && lot.route[lot.currentSectorIndex];
-      const sourceItems = allSourceItems.filter((si: any) =>
-        getOrderEffectiveSector(lot, si.orderId, si) === currentSectorId
-      );
-
       const itemIdxNum = parsed.itemIdx !== undefined && parsed.itemIdx !== '' ? Number(parsed.itemIdx) : undefined;
-      const matchesTarget = (s: any) => s.orderId === parsed.orderId && (itemIdxNum === undefined || s.itemIdx === itemIdxNum);
-      const si = sourceItems.find(matchesTarget)
-        || sourceItems.find((s: any) => s.orderId === parsed.orderId);
-
-      setSelectedLot(lot);
-      setIsDetailModalOpen(true);
-      // Limpa filtros deixados por uma sessão anterior do modal, que poderiam
-      // esconder o card do pedido recém-escaneado.
-      setSourceFilterModel('');
-      setSourceFilterColor('');
-      if (si) {
-        const idx = sourceItems.indexOf(si);
-        const focusKey = `${parsed.orderId}-${idx}`;
-        setExpandedSourceItems(prev => new Set(prev).add(focusKey));
-        setScanFocusKey(focusKey);
-      } else {
-        // O pedido escaneado não está no setor atual do Mapa — foi direcionado
-        // individualmente para outro setor. Avisa o usuário onde ele está.
-        const movedItem = allSourceItems.find(matchesTarget) || allSourceItems.find((s: any) => s.orderId === parsed.orderId);
-        const movedSectorId = movedItem ? getOrderEffectiveSector(lot, movedItem.orderId, movedItem) : undefined;
-        const movedSectorName = movedSectorId ? sectors.find(s => s.id === movedSectorId)?.name : undefined;
-        toast.show(movedSectorName
-          ? `Este pedido já foi direcionado para o setor "${movedSectorName}".`
-          : 'Pedido não encontrado neste Mapa.');
-      }
+      const sectorId = focusPedidoInSectorMonitor(lot, parsed.orderId, itemIdxNum);
+      if (!sectorId) toast.show('Pedido não encontrado ou já finalizado neste Mapa.');
       return;
     }
 
-    // Formato LOT|id -> abre o Mapa direto no pedido vinculado
+    // Formato LOT|id -> mostra no Monitor PCP, no setor atual do primeiro pedido do Mapa
     const lotId = parsed?.type === 'LOT' ? parsed.lotId : '';
     if (!lotId) { toast.show('QR Code inválido'); return; }
 
@@ -4347,23 +4328,8 @@ export default function PCPView({
     }
     if (!lot) { toast.show(SCAN_ERRORS.lotNotFound(lotId)); return; }
 
-    setSelectedLot(lot);
-    setIsDetailModalOpen(true);
-
-    const allSourceItems: any[] = (lot as any).metadata?.sourceItems || [
-      { orderId: lot.productionOrderId, itemIdx: 0, qty: lot.quantity }
-    ];
-    const currentSectorId = lot.route && lot.route[lot.currentSectorIndex];
-    const sourceItems = allSourceItems.filter((si: any) =>
-      getOrderEffectiveSector(lot, si.orderId, si) === currentSectorId
-    );
-    const firstItem = sourceItems[0];
-    if (firstItem) {
-      const idx = sourceItems.indexOf(firstItem);
-      const focusKey = `${firstItem.orderId}-${idx}`;
-      setExpandedSourceItems(prev => new Set(prev).add(focusKey));
-      setScanFocusKey(focusKey);
-    }
+    const sectorId = focusPedidoInSectorMonitor(lot, undefined, undefined);
+    if (!sectorId) toast.show('Pedido não encontrado ou já finalizado neste Mapa.');
   };
 
   // ── Dados filtrados para exportação PCP ─────────────────────────────────────
@@ -14074,4 +14040,4 @@ export default function PCPView({
       </Modal>
     </div>
   );
-}
+} E 

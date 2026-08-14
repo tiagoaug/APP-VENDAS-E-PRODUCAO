@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
-import QRCode from 'qrcode';
+import { toDottedQRDataURL } from '../utils/dottedQRCode';
 import {
   Type, ImagePlus, QrCode, Calendar, Minus, Square, Trash2, Copy, Save, Printer,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Plus, Check, X, ZoomIn, ZoomOut,
@@ -204,7 +204,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   const handleConfirmQr = async () => {
     if (!qrValue.trim()) return;
     try {
-      const dataUrl = await QRCode.toDataURL(qrValue.trim(), { margin: 1, width: 300 });
+      const dataUrl = await toDottedQRDataURL(qrValue.trim(), { margin: 1, width: 800 });
       const side = Math.min(widthMm, heightMm) * 0.6;
       addElement({
         id: newId(), type: 'qr', x: widthMm * 0.2, y: heightMm * 0.2, w: side, h: side,

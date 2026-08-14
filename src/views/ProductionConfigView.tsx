@@ -79,7 +79,8 @@ import {
   Percent,
   AlertTriangle,
   Eye,
-  EyeOff
+  EyeOff,
+  Info
 } from 'lucide-react';
 import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, ProductionScreenType, ViewType, Product, SoleStockEntry, ProductionLot } from '../types';
 import Modal from '../components/Modal';
@@ -702,7 +703,7 @@ export default function ProductionConfigView({
                     />
                     <ConfigMenuItem
                       icon={<Footprints size={24} />}
-                      label="Matrizes de Solados"
+                      label="Solados"
                       desc="Catálogo e moldes"
                       color="text-orange-600"
                       bg="bg-orange-50"
@@ -745,7 +746,7 @@ export default function ProductionConfigView({
                     />
                     <ConfigMenuItem
                       icon={<Box size={24} />}
-                      label="Infesto"
+                      label="Camadas de Dobra Para Corte"
                       desc="Camadas empilhadas"
                       color="text-sky-600"
                       bg="bg-sky-50"
@@ -1231,44 +1232,15 @@ export default function ProductionConfigView({
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Valor por Par Padrão (R$)</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={editingSector?.defaultServiceValue ?? ''}
-                onChange={(e) => setEditingSector(prev => prev ? { ...prev, defaultServiceValue: parseFloat(e.target.value) || 0 } : null)}
-                placeholder="Ex: 1.50"
-                className={`w-full px-6 py-4 rounded-2xl font-bold transition-all outline-none ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'} border-2`}
-              />
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-2">Prestador de Serviço Padrão</label>
-              <ComboBox
-                options={people
-                  .filter(p => p.isSupplier || p.isServiceProvider)
-                  .map(p => ({ id: p.id || '', name: p.name }))}
-                value={editingSector?.defaultServiceProviderId || ''}
-                onChange={(id) => {
-                  const selectedPerson = people.find(p => p.id === id);
-                  setEditingSector(prev => prev ? { 
-                    ...prev, 
-                    defaultServiceProviderId: id,
-                    defaultServiceProviderName: selectedPerson ? selectedPerson.name : '' 
-                  } : null);
-                }}
-                placeholder="Selecionar da agenda..."
-                isDarkMode={isDarkMode}
-                icon={<Users size={18} />}
-              />
-            </div>
-          </div>
-
           <div className="flex flex-col gap-4">
             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-2">Flow Tags do Setor (Obrigações)</label>
+
+            <div className="flex items-start gap-3 p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-100 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300">
+              <Info size={18} className="shrink-0 mt-0.5" />
+              <p className="text-[11px] font-bold leading-relaxed normal-case tracking-normal">
+                Flow Tags são as etapas/obrigações que este setor acompanha durante a produção (ex.: "Cabedal Solado", "Palmilha", "Peças Cortadas"). Marque aqui as que se aplicam a este setor — elas viram as opções de status que um pedido pode assumir enquanto estiver aqui, tanto no Monitor PCP quanto na etiqueta/ficha impressa. Um setor pode ter mais de uma marcada.
+              </p>
+            </div>
 
             <div className="grid grid-cols-2 gap-3">
               {flowTags.map((tag) => {
@@ -1312,7 +1284,7 @@ export default function ProductionConfigView({
             </div>
             <div className="flex flex-col gap-0.5">
               <span className={`text-[11px] font-black uppercase tracking-tight ${editingSector?.isProductionCycleEnd ? 'text-indigo-900 dark:text-white' : ''}`}>Fim do Ciclo de Produção</span>
-              <span className="text-[10px] font-bold normal-case tracking-normal opacity-80">Ao chegar aqui, o pedido pode ser finalizado individualmente (baixa de estoque/reserva), sem depender do nome do setor.</span>
+              <span className="text-[10px] font-bold normal-case tracking-normal opacity-80">Ao chegar aqui, o pedido pode ser finalizado individualmente (baixa de estoque/reserva), sem depender do nome do setor. <span className="text-red-600 dark:text-red-400 font-black">Só clique se aqui acontece o final da sua produção.</span></span>
             </div>
             {editingSector?.isProductionCycleEnd && <div className="ml-auto w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center flex-shrink-0"><Check size={12} className="text-white" strokeWidth={4} /></div>}
           </button>
@@ -3756,23 +3728,6 @@ function SectorCard({ sector, flowTags, isDarkMode, pendingCount, onEdit, onDele
         <div className={`flex items-center gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-violet-900/20 text-violet-400' : 'bg-violet-50 text-violet-600'}`}>
           <CheckCircle2 size={14} className="shrink-0" />
           <p className="text-[9px] font-black uppercase tracking-widest leading-tight">Fim do Ciclo de Produção — finaliza o pedido (baixa de estoque/reserva) ao concluir aqui</p>
-        </div>
-      )}
-
-      {(sector.defaultServiceValue !== undefined || sector.defaultServiceProviderName) && (
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-bold px-2 py-1">
-          {sector.defaultServiceValue !== undefined && sector.defaultServiceValue > 0 && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-[9px] font-black uppercase text-slate-400">Custo/Par:</span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-extrabold">R$ {sector.defaultServiceValue.toFixed(2)}</span>
-            </div>
-          )}
-          {sector.defaultServiceProviderName && (
-            <div className="flex items-center gap-1.5">
-              <span className="text-[9px] font-black uppercase text-slate-400">Prestador Padrão:</span>
-              <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">{sector.defaultServiceProviderName}</span>
-            </div>
-          )}
         </div>
       )}
 

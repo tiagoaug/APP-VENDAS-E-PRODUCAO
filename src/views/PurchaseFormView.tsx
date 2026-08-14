@@ -1497,24 +1497,14 @@ export default function PurchaseFormView({
             <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
               Conta para Pagamento
             </label>
-            <div className="relative">
-              <select
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl px-5 py-4 text-[12px] font-black uppercase tracking-widest appearance-none focus:ring-4 focus:ring-slate-900/5 dark:focus:ring-indigo-500/10 transition-all text-slate-900 dark:text-slate-100"
-                value={accountId}
-                onChange={(e) => setAccountId(e.target.value)}
-                aria-label="Conta para pagamento"
-                title="Conta"
-              >
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-              <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none">
-                <ChevronDown size={14} className="text-indigo-400" strokeWidth={3} />
-              </div>
-            </div>
+            <ComboBox
+              options={accounts.map((a) => ({ id: a.id, name: a.name }))}
+              value={accountId}
+              onChange={setAccountId}
+              isDarkMode={isDarkMode}
+              usePopupModal
+              placeholder="Conta para Pagamento"
+            />
           </div>
           </>)}
         </div>

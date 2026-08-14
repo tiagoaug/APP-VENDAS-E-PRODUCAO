@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { ChevronDown, Search, X } from "lucide-react";
 
 interface ComboBoxProps {
-  options: { id: string; name: string }[];
+  options: { id: string; name: string; disabled?: boolean }[];
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
@@ -80,8 +80,9 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
             filteredOptions.map(option => (
               <div
                 key={option.id}
-                className={`${compact ? 'px-4 py-2.5 text-[10px]' : 'px-5 py-4 text-[13px]'} font-bold uppercase cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 active:bg-indigo-50 ${value === option.id ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200"}`}
+                className={`${compact ? 'px-4 py-2.5 text-[10px]' : 'px-5 py-4 text-[13px]'} font-bold uppercase ${option.disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700 active:bg-indigo-50'} ${value === option.id ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400" : "text-slate-700 dark:text-slate-200"}`}
                 onClick={() => {
+                  if (option.disabled) return;
                   onChange(option.id);
                   setIsOpen(false);
                   setSearch("");
@@ -124,8 +125,9 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
                 filteredOptions.map(option => (
                   <div
                     key={option.id}
-                    className={`px-4 py-3.5 rounded-xl text-[13px] font-bold uppercase cursor-pointer transition-all ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'} ${value === option.id ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400" : (isDarkMode ? 'text-slate-200' : 'text-slate-700')}`}
+                    className={`px-4 py-3.5 rounded-xl text-[13px] font-bold uppercase transition-all ${option.disabled ? 'cursor-not-allowed opacity-40' : `cursor-pointer ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-slate-50'}`} ${value === option.id ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400" : (isDarkMode ? 'text-slate-200' : 'text-slate-700')}`}
                     onClick={() => {
+                      if (option.disabled) return;
                       onChange(option.id);
                       closePopup();
                     }}

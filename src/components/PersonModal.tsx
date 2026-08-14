@@ -1,6 +1,8 @@
 ﻿import { useState, useEffect } from 'react';
 import { DeliveryAddress, Person } from '../types';
-import { X, Plus, Trash2, ChevronDown, MapPin } from 'lucide-react';
+import { X, Plus, Trash2, ChevronDown, MapPin, Contact as ContactIcon } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { Contacts } from '@capacitor-community/contacts';
 import { toast } from '../utils/toast';
 import DeliveryAddressForm from './DeliveryAddressForm';
 
@@ -108,6 +110,31 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
     setInternalContacts(internalContacts.filter((_, i) => i !== index));
   };
 
+  // Importa nome/telefone/e-mail direto da agenda nativa do aparelho (Android/iOS) — evita
+  // digitar de novo um contato que a pessoa já tem salvo no celular.
+  const handleImportFromContacts = async () => {
+    try {
+      const perm = await Contacts.checkPermissions();
+      if (perm.contacts !== 'granted') {
+        const req = await Contacts.requestPermissions();
+        if (req.contacts !== 'granted') {
+          toast.show('Permissão de acesso aos contatos negada.');
+          return;
+        }
+      }
+      const { contact } = await Contacts.pickContact({ projection: { name: true, phones: true, emails: true } });
+      if (!contact) return;
+
+      if (contact.name?.display) setName(contact.name.display);
+      const primaryPhone = contact.phones?.find(p => p.isPrimary) || contact.phones?.[0];
+      if (primaryPhone?.number) setPhone(primaryPhone.number);
+      const primaryEmail = contact.emails?.find(e => e.isPrimary) || contact.emails?.[0];
+      if (primaryEmail?.address) setEmail(primaryEmail.address);
+    } catch (e) {
+      toast.show('Não foi possível importar o contato: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  };
+
   const handleSave = () => {
     if (!name) {
       toast.show('O nome é obrigatório');
@@ -177,6 +204,17 @@ export default function PersonModal({ isOpen, onClose, onSave, person, sellers, 
           <div className="mb-6 p-3 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 border-2 border-indigo-100 dark:border-indigo-800 text-[11px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 text-center">
             Dados preenchidos pela IA — revise antes de salvar
           </div>
+        )}
+
+        {Capacitor.isNativePlatform() && (
+          <button
+            type="button"
+            onClick={handleImportFromContacts}
+            className="w-full mb-6 flex items-center justify-center gap-2 py-3.5 rounded-2xl border-2 border-dashed border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 text-[11px] font-black uppercase tracking-widest hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors active:scale-[0.98]"
+          >
+            <ContactIcon size={16} />
+            Importar da Agenda
+          </button>
         )}
 
         <div className="space-y-4">

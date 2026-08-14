@@ -6,7 +6,6 @@ interface StepWizardBarProps {
   title: string; // ex.: "Configuração Inicial", "Cadastro Guiado"
   stepIndex: number; // 1-based
   totalSteps: number;
-  label: string;
   isComplete: boolean;
   onContinue: () => void;
   onSkipStep: () => void;
@@ -16,7 +15,7 @@ interface StepWizardBarProps {
 }
 
 export default function StepWizardBar({
-  isDarkMode, title, stepIndex, totalSteps, label, isComplete, onContinue, onSkipStep, onDismiss, onBack, canGoBack,
+  isDarkMode, title, stepIndex, totalSteps, isComplete, onContinue, onSkipStep, onDismiss, onBack, canGoBack,
 }: StepWizardBarProps) {
   return (
     <motion.div
@@ -65,9 +64,6 @@ export default function StepWizardBar({
             </button>
           )}
           {isComplete && <Check size={16} className="text-emerald-500 shrink-0" />}
-          <p className={`text-sm font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-            {label}
-          </p>
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <button

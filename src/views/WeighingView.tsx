@@ -2,10 +2,11 @@
 import { ProductionConfigItem, ColorValue, WeighingRecord, SoleStockEntry } from '../types';
 import {
   Scale, ChevronLeft, Package, Calculator, Weight, ArrowLeft, X, Info, Palette,
-  ChevronDown, Save, Clock, Trash2, Warehouse, CheckCircle2, Plus,
+  Save, Clock, Trash2, Warehouse, CheckCircle2, Plus,
   Calculator as CalcIcon, DollarSign, Replace, PlusCircle, Search
 } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
+import ComboBox from '../components/ComboBox';
 import { firebaseService } from '../services/firebaseService';
 import { toast } from '../utils/toast';
 
@@ -430,29 +431,23 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
             </div>
           </div>
 
-          <div className="relative">
-            <select
-              value={selectedMoldId}
-              onChange={(e) => {
-                setSelectedMoldId(e.target.value);
-                setSelectedColorId('');
-                setSelectedSize('');
-                setWeight('');
-              }}
-              className={`w-full appearance-none border-2 rounded-2xl px-6 py-4 pl-12 text-sm font-black transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}
-            >
-              <option value="">Selecione uma matriz...</option>
-              {molds.map(mold => {
-                const hasWeights = mold.metadata?.averageWeight || Object.keys(mold.metadata?.sizeWeights || {}).length > 0 || Object.keys(mold.metadata?.colorWeights || {}).length > 0;
-                return (
-                  <option key={mold.id} value={mold.id} disabled={!hasWeights}>
-                    {mold.name} {!hasWeights ? '(sem peso cadastrado)' : ''}
-                  </option>
-                );
-              })}
-            </select>
-            <Package size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
-          </div>
+          <ComboBox
+            options={molds.map(mold => {
+              const hasWeights = mold.metadata?.averageWeight || Object.keys(mold.metadata?.sizeWeights || {}).length > 0 || Object.keys(mold.metadata?.colorWeights || {}).length > 0;
+              return { id: mold.id, name: `${mold.name}${!hasWeights ? ' (sem peso cadastrado)' : ''}`, disabled: !hasWeights };
+            })}
+            value={selectedMoldId}
+            onChange={(id) => {
+              setSelectedMoldId(id);
+              setSelectedColorId('');
+              setSelectedSize('');
+              setWeight('');
+            }}
+            placeholder="Selecione uma matriz..."
+            isDarkMode={isDarkMode}
+            icon={<Package size={18} />}
+            usePopupModal
+          />
         </div>
 
         {selectedMold && (
@@ -473,31 +468,25 @@ export default function WeighingView({ productionConfigs, colors, stockEntries, 
                   </div>
                 </div>
 
-                <div className="relative">
-                  <select
-                    value={selectedColorId}
-                    onChange={(e) => setSelectedColorId(e.target.value)}
-                    className={`w-full appearance-none border-2 rounded-2xl px-6 py-4 pl-12 text-sm font-black transition-all outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-violet-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-violet-600'}`}
-                  >
-                    {availableColors.map(color => {
-                      const colorSizeWeights = selectedMold?.metadata?.colorSizeWeights?.[color.id];
-                      const hasSizeWeights = colorSizeWeights && Object.keys(colorSizeWeights).length > 0;
-                      const hasColorWeight = selectedMold?.metadata?.colorWeights?.[color.id];
-                      const weightInfo = hasSizeWeights 
-                        ? `${Object.keys(colorSizeWeights).length} tam` 
-                        : hasColorWeight 
-                          ? `${hasColorWeight}g` 
-                          : 's/peso';
-                      return (
-                        <option key={color.id} value={color.id}>
-                          {color.name} ({weightInfo})
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <Palette size={18} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <ChevronDown size={18} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
+                <ComboBox
+                  options={availableColors.map(color => {
+                    const colorSizeWeights = selectedMold?.metadata?.colorSizeWeights?.[color.id];
+                    const hasSizeWeights = colorSizeWeights && Object.keys(colorSizeWeights).length > 0;
+                    const hasColorWeight = selectedMold?.metadata?.colorWeights?.[color.id];
+                    const weightInfo = hasSizeWeights
+                      ? `${Object.keys(colorSizeWeights).length} tam`
+                      : hasColorWeight
+                        ? `${hasColorWeight}g`
+                        : 's/peso';
+                    return { id: color.id, name: `${color.name} (${weightInfo})` };
+                  })}
+                  value={selectedColorId}
+                  onChange={setSelectedColorId}
+                  placeholder="Selecione a cor..."
+                  isDarkMode={isDarkMode}
+                  icon={<Palette size={18} />}
+                  usePopupModal
+                />
 
                 {selectedColorId && hasColorWeights && (
                   <div className="mt-4 flex items-center gap-2 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800">

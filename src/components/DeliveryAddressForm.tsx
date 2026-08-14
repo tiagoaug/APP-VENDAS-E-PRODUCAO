@@ -27,18 +27,19 @@ interface DeliveryAddressFormProps {
 }
 
 const inputClass = (isDarkMode: boolean) =>
-  `w-full h-11 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-teal-500 rounded-xl px-4 text-sm font-bold transition-all outline-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`;
+  `w-full h-11 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-violet-500 rounded-xl px-4 text-sm font-bold transition-all outline-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`;
 
 const textareaClass = (isDarkMode: boolean) =>
-  `w-full ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-teal-500 rounded-xl px-4 py-3 text-sm font-bold transition-all outline-none resize-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`;
+  `w-full ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-violet-500 rounded-xl px-4 py-3 text-sm font-bold transition-all outline-none resize-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`;
 
 const labelClass = 'text-[11px] font-black uppercase tracking-widest text-slate-400 ml-1';
 
-type AddressInputMode = 'manual' | 'paste_address' | 'paste_location';
+type AddressInputMode = 'manual' | 'paste_address' | 'paste_location' | 'map';
 const MODE_LABELS: Record<AddressInputMode, string> = {
   manual: 'Digitação Manual',
   paste_address: 'Colar Endereço',
   paste_location: 'Colar Localização',
+  map: 'Escolher no Mapa',
 };
 
 export default function DeliveryAddressForm({ isDarkMode, address, priority, onChange, onPriorityChange, fieldsExpanded = true, locked = false }: DeliveryAddressFormProps) {
@@ -161,7 +162,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
     <div className="flex flex-col gap-3">
       {fieldsExpanded && !locked && (
         <>
-          <div className={`grid grid-cols-3 gap-1 p-1 rounded-xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-100'}`}>
+          <div className={`grid grid-cols-4 gap-1 p-1 rounded-xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-100'}`}>
             {(Object.keys(MODE_LABELS) as AddressInputMode[]).map(mode => (
               <button
                 key={mode}
@@ -169,7 +170,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
                 onClick={() => setInputMode(mode)}
                 className={`py-2 rounded-lg text-[9px] font-black uppercase tracking-wide transition-all ${
                   inputMode === mode
-                    ? 'bg-teal-600 text-white shadow-sm'
+                    ? 'bg-violet-600 text-white shadow-sm'
                     : isDarkMode ? 'text-slate-400' : 'text-slate-500'
                 }`}
               >
@@ -227,7 +228,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
                 type="button"
                 onClick={handleSearchPastedAddress}
                 disabled={isSearchingPastedAddress}
-                className="w-full h-10 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+                className="w-full h-10 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
               >
                 {isSearchingPastedAddress ? <Loader2 size={14} className="animate-spin" /> : <ClipboardPaste size={14} />}
                 Buscar Endereço Colado
@@ -263,7 +264,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
                 type="button"
                 onClick={handleVerifyPastedLocation}
                 disabled={isVerifyingLocation}
-                className="w-full h-10 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+                className="w-full h-10 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
               >
                 {isVerifyingLocation ? <Loader2 size={14} className="animate-spin" /> : <MapPin size={14} />}
                 Verificar Localização
@@ -282,6 +283,32 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
               )}
             </div>
           )}
+
+          {inputMode === 'map' && (
+            <p className={`text-[11px] font-bold px-1 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+              Escolha a localização buscando no mapa e colocando um ponto de localização.
+            </p>
+          )}
+        </>
+      )}
+
+      {(locked || inputMode === 'map') && (
+        <>
+          <DeliveryMap
+            isDarkMode={isDarkMode}
+            height={160}
+            marker={a.lat !== undefined && a.lng !== undefined ? { lat: a.lat, lng: a.lng } : null}
+            onMarkerChange={handlePinChange}
+            flyTo={mapFlyTo}
+          />
+          <button
+            type="button"
+            onClick={() => setShowMapModal(true)}
+            className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            <Maximize2 size={12} />
+            Ver Mapa Ampliado
+          </button>
         </>
       )}
 
@@ -295,7 +322,7 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
             type="button"
             onClick={handleSearch}
             disabled={isSearching}
-            className="flex-1 h-10 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
+            className="flex-1 h-10 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
           >
             {isSearching ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
             Buscar Endereço
@@ -338,23 +365,6 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
               : 'Localização geocodificada — arraste o pin pra ajustar'}
         </div>
       )}
-
-      <DeliveryMap
-        isDarkMode={isDarkMode}
-        height={220}
-        marker={a.lat !== undefined && a.lng !== undefined ? { lat: a.lat, lng: a.lng } : null}
-        onMarkerChange={handlePinChange}
-        flyTo={mapFlyTo}
-      />
-
-      <button
-        type="button"
-        onClick={() => setShowMapModal(true)}
-        className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'text-slate-400 hover:text-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
-      >
-        <Maximize2 size={12} />
-        Ver Mapa Ampliado
-      </button>
 
       <Modal
         isOpen={showMapModal}

@@ -1,14 +1,19 @@
 import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, ProductionConfigItem, Carrier } from '../types';
-import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin, ListChecks, Pencil } from 'lucide-react';
+import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, StockLotRevertPreview, ProductionConfigItem, Carrier } from '../types';
+import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin, ListChecks, Pencil, ArrowLeft } from 'lucide-react';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import ProductionOrderModal from '../components/ProductionOrderModal';
 import SeparacaoCaixasModal from '../components/SeparacaoCaixasModal';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { exportSale } from '../utils/saleExport';
+import { exportStockShortageReport, StockShortageItem } from '../utils/stockShortageExport';
 import ExportNoteModal from '../components/ExportNoteModal';
+import PedidosClientesPanel from '../components/PedidosClientesPanel';
+import StockLotsPanel from '../components/StockLotsPanel';
+import StockEntryHistoryModal from '../components/StockEntryHistoryModal';
+import StockDiagnosticsModal from '../components/StockDiagnosticsModal';
 import SalePaymentModal from '../components/SalePaymentModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { toast } from '../utils/toast';
@@ -17,10 +22,12 @@ import { firebaseService } from '../services/firebaseService';
 import { getWholesaleBoxes, getRetailPairs } from '../utils/stockPools';
 import { summarizeStockRepairIssues } from '../utils/stockRepair';
 import { buildSeparationRows } from '../utils/separationRows';
-import { buildSeparationReconcileGroups } from '../utils/separationReconcile';
+import { buildSeparationReconcileGroups, SeparationReconcileGroup } from '../utils/separationReconcile';
 import { useStockLotDuplicates } from '../hooks/useStockLotDuplicates';
+import { StockDuplicateFixPlan } from '../utils/stockDuplicateFix';
 import { buildOrphanedFinalizedKeyFixes } from '../utils/finalizedKeyRepair';
-import { buildOrphanedReservedLots } from '../utils/stockOrphanedReservations';
+import { UndercreditGroup } from '../utils/stockUndercreditFix';
+import { buildOrphanedReservedLots, readResolvedOrphanedLotKeys, OrphanedReservedLot } from '../utils/stockOrphanedReservations';
 import StockRepairBanner from '../components/StockRepairBanner';
 import DeliveryAddressForm from '../components/DeliveryAddressForm';
 import DeliveryItemsPicker, { deliveryItemKey } from '../components/DeliveryItemsPicker';
@@ -103,8 +110,16 @@ interface SalesViewProps {
   onNavigatePCP: () => void;
   onNavigateStockReconcile: () => void;
   onNavigateStockDiagnostic: () => void;
-  onNavigateStockFinalizedRepair: () => void;
+  onNavigateStockBalance: () => void;
   onNavigateStockOrphaned?: () => void;
+  onPreviewRevertStockLot?: (stockLot: StockLot) => StockLotRevertPreview;
+  onRevertStockLot?: (stockLot: StockLot) => Promise<StockLotRevertPreview>;
+  onFixPkgAllocations?: () => Promise<{ fixed: number; total: number }>;
+  onReconcileSeparationGroup?: (group: SeparationReconcileGroup) => Promise<void>;
+  onApplyStockDuplicateFix?: (plan: StockDuplicateFixPlan) => Promise<void>;
+  onRepairOrphanedFinalizedKeys?: () => Promise<{ fixed: number; lotsTouched: number }>;
+  onApplyUndercreditFix?: (group: UndercreditGroup) => Promise<void>;
+  onReleaseOrphanedLot?: (entry: OrphanedReservedLot) => Promise<void>;
   onNavigateProducts?: () => void;
   onAddProduct?: () => void;
   productionConfigs: ProductionConfigItem[];
@@ -151,8 +166,16 @@ export default function SalesView({
   onNavigatePCP,
   onNavigateStockReconcile,
   onNavigateStockDiagnostic,
-  onNavigateStockFinalizedRepair,
+  onNavigateStockBalance,
   onNavigateStockOrphaned,
+  onPreviewRevertStockLot,
+  onRevertStockLot,
+  onFixPkgAllocations,
+  onReconcileSeparationGroup,
+  onApplyStockDuplicateFix,
+  onRepairOrphanedFinalizedKeys,
+  onApplyUndercreditFix,
+  onReleaseOrphanedLot,
   onNavigateProducts,
   onAddProduct,
   productionConfigs,
@@ -199,6 +222,11 @@ export default function SalesView({
   const [showSeparationInfo, setShowSeparationInfo] = usePersistedToggle('salesView_showSeparationInfo', true);
   const [showSummaryBar, setShowSummaryBar] = usePersistedToggle('salesView_showSummaryBar', true);
   const [showStockGlanceCard, setShowStockGlanceCard] = usePersistedToggle('salesView_showStockGlanceCard', true);
+  // Miniatura do produto no popup "Pedido & Separação" — opcional pois nem toda base tem
+  // foto cadastrada, e alguém pode preferir a lista mais compacta sem imagens.
+  const [showSeparationThumbnails, setShowSeparationThumbnails] = usePersistedToggle('salesView_showSeparationThumbnails', true);
+  // Toque na miniatura amplia a foto em tela cheia; outro toque (em qualquer lugar) fecha.
+  const [zoomedThumbnail, setZoomedThumbnail] = useState<string | null>(null);
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [paymentModalSale, setPaymentModalSale] = useState<Sale | null>(null);
   const [paymentModalMode, setPaymentModalMode] = useState<'PAYMENT' | 'HISTORY'>('PAYMENT');
@@ -213,8 +241,25 @@ export default function SalesView({
   // Colapsa "Localização de Entrega" por padrão — os campos em lista (um por linha, telas
   // estreitas) ocupam bastante altura, e nem toda venda mexe com Entregas.
   const [expandedDeliveryIds, setExpandedDeliveryIds] = useState<string[]>([]);
+  // Sub-acordeões dentro de "Localização de Entrega" — Transportadora e Endereço de Entrega,
+  // cada um recolhido por padrão pelo mesmo motivo (altura em telas estreitas).
+  const [expandedCarrierCardIds, setExpandedCarrierCardIds] = useState<string[]>([]);
+  const [expandedAddressCardIds, setExpandedAddressCardIds] = useState<string[]>([]);
   const [sentToDeliveryIds, setSentToDeliveryIds] = useState<string[]>([]);
-  const [showCrossCheckCard, setShowCrossCheckCard] = usePersistedToggle('salesView_showCrossCheckCard', false);
+  const [showManagementCard, setShowManagementCard] = usePersistedToggle('salesView_showManagementCard', false);
+  // Dentro de "Gerenciamento": escolhe entre Cruzamento, Expedição, Lotes — sempre volta pro
+  // seletor quando o card é reaberto, não fica "preso" na última escolha.
+  const [managementView, setManagementView] = useState<'chooser' | 'cruzamento' | 'expedicao' | 'lotes'>('chooser');
+  const [managementSearchTerm, setManagementSearchTerm] = useState('');
+  // Histórico de Movimentações abre como modal aqui mesmo (sem navegar pra Estoque) — antes
+  // navegava pra StockView e abria o modal via useEffect pós-mount, o que mostrava um frame
+  // da tela de Estoque "pelada" antes do modal aparecer (parecia abrir a tela errada).
+  const [showEntryHistoryModal, setShowEntryHistoryModal] = useState(false);
+  // Diagnósticos e Correções abre como modal aqui mesmo (sem navegar pra Estoque) — mesmo
+  // motivo do Histórico acima. Usado tanto pelo card em Gerenciamento quanto pelo aviso de
+  // "Reparar Finalizados" que aparece no topo de Vendas quando há pendência.
+  const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false);
+  const [isExportingShortage, setIsExportingShortage] = useState(false);
 
   const crossCheckData = useMemo(() => {
     const map = new Map<string, {
@@ -312,6 +357,31 @@ export default function SalesView({
       a.stockKey.localeCompare(b.stockKey)
     );
   }, [sales, products, lots]);
+
+  // "Produtos em Falta" pro exportador de JPG do Cruzamento — só os itens com déficit
+  // (estoque menor que a demanda das vendas visíveis), o que de fato precisa de ação.
+  const handleExportStockShortage = async () => {
+    const shortageItems: StockShortageItem[] = crossCheckData
+      .filter(d => d.stock - d.demand < 0)
+      .map(d => ({
+        reference: d.reference,
+        productName: d.productName,
+        colorName: d.colorName || 'Sem cor',
+        size: d.isWholesale ? undefined : d.stockKey,
+        unit: d.isWholesale ? 'cx' : 'pr',
+        missing: Math.abs(d.stock - d.demand),
+      }));
+    if (shortageItems.length === 0) {
+      toast.show('Nenhum produto em falta no momento.');
+      return;
+    }
+    setIsExportingShortage(true);
+    try {
+      await exportStockShortageReport(shortageItems, `Produtos_em_Falta_${format(new Date(), 'yyyy-MM-dd')}`);
+    } finally {
+      setIsExportingShortage(false);
+    }
+  };
 
   // Resumo geral de estoque real (Atacado/Varejo) — alimenta o card-resumo e o botão
   // "Disponível" da barra (ver StockGlanceView, que mostra o detalhe por referência).
@@ -455,7 +525,10 @@ export default function SalesView({
   // Caixas reservadas presas em pedidos que não as referenciam mais — sobra do bug de
   // concorrência da separação de caixas (já corrigido, ver src/utils/
   // stockOrphanedReservations.ts). Correção fica em Estoque > Configurar > Reservas Órfãs.
-  const orphanedReservedLotsCount = useMemo(() => buildOrphanedReservedLots(stockLots, sales, products).length, [stockLots, sales, products]);
+  const orphanedReservedLotsCount = useMemo(() => {
+    const resolved = readResolvedOrphanedLotKeys();
+    return buildOrphanedReservedLots(stockLots, sales, products).filter(e => !resolved[e.key]).length;
+  }, [stockLots, sales, products]);
 
   // Lotes RESERVADO (caixas já produzidas, com a grade exata, aguardando "Liberar
   // Pedido" para o cliente), agrupados por venda.
@@ -821,7 +894,7 @@ export default function SalesView({
       {orphanedFinalizedKeyCount > 0 && (
         <button
           type="button"
-          onClick={onNavigateStockFinalizedRepair}
+          onClick={() => setShowDiagnosticsModal(true)}
           className={`w-full flex items-center gap-3 p-4 rounded-2xl border transition-all active:scale-[0.99] text-left ${isDarkMode ? 'bg-orange-500/10 border-orange-500/30 hover:bg-orange-500/15' : 'bg-orange-50 border-orange-200 hover:bg-orange-100'}`}
         >
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-orange-500/20 text-orange-400' : 'bg-orange-100 text-orange-600'}`}>
@@ -840,19 +913,24 @@ export default function SalesView({
       )}
 
       <div className="flex flex-col gap-4">
-        {/* Card único dividido em 4 partes (2 por linha) — antes era uma barra de 4
-            botões numa linha só, que espremia "Configurar" até cortar o texto. */}
+        {/* Card único com 3 botões numa linha — "Conf. Estoque" foi dissolvido: a tela
+            Expedição e Estoque (StockView) não tem mais entrada direta própria, só é
+            alcançada de dentro de Gerenciamento (Cruzamento, Diagnósticos e Correções,
+            Expedição, Estoque, Lotes, Fazer Balanço). */}
         <div className={`p-2 rounded-[2rem] border shadow-sm ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-100/80 border-slate-100'}`}>
-          <div className="grid grid-cols-2 gap-2">
-            {/* Linha de cima: Cruzamento + Configurar */}
-            {showCrossCheckCard !== undefined && (
+          <div className="grid grid-cols-3 gap-2">
+            {showManagementCard !== undefined && (
               <button
-                onClick={() => setShowCrossCheckCard(v => !v)}
-                className={`py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 shadow-sm ${showCrossCheckCard ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-emerald-400' : 'bg-white text-slate-600 hover:text-emerald-600'}`}
-                title="Cruzamento de Demanda x Estoque e Produção"
+                onClick={() => {
+                  setShowManagementCard(v => !v);
+                  setManagementView('chooser');
+                  setManagementSearchTerm('');
+                }}
+                className={`py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 shadow-sm ${showManagementCard ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-emerald-400' : 'bg-white text-slate-600 hover:text-emerald-600'}`}
+                title="Gerenciamento — Cruzamento, Diagnósticos, Expedição, Estoque, Lotes, Balanço"
               >
-                <PackagePlus size={18} strokeWidth={2.5} className={isIndustrial ? 'text-emerald-600' : (showCrossCheckCard ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-500')} />
-                <span className="text-[10px] font-black tracking-[0.15em]">Cruzamento</span>
+                <PackagePlus size={18} strokeWidth={2.5} className={isIndustrial ? 'text-emerald-600' : (showManagementCard ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-500')} />
+                <span className="text-[10px] font-black tracking-[0.15em]">Gerenciamento</span>
               </button>
             )}
             <button
@@ -871,15 +949,6 @@ export default function SalesView({
               <span className="text-[10px] font-black tracking-[0.15em]">Filtros</span>
             </button>
 
-            {/* Linha de baixo: Estoque + Disponível */}
-            <button
-              onClick={onNavigateStock}
-              className={`py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 shadow-sm ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-amber-400' : 'bg-white text-slate-600 hover:text-amber-600'}`}
-              title="Estoque de Produtos"
-            >
-              <Boxes size={18} strokeWidth={2.5} className={isIndustrial ? 'text-amber-600' : 'text-amber-500'} />
-              <span className="text-[10px] font-black tracking-[0.15em]">Conf. Estoque</span>
-            </button>
             <button
               onClick={onNavigateStockGlance}
               className={`py-3 px-3 rounded-2xl flex items-center justify-center gap-2 transition-all duration-300 shadow-sm ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:text-sky-400' : 'bg-white text-slate-600 hover:text-sky-600'}`}
@@ -891,8 +960,8 @@ export default function SalesView({
           </div>
         </div>
 
-        {/* Card de Cruzamento de Demanda x Estoque/Produção */}
-        {showCrossCheckCard && (
+        {/* Painel de Gerenciamento — escolhe entre Cruzamento e Diagnósticos e Correções */}
+        {showManagementCard && managementView === 'chooser' && (
           <div className={`p-4 rounded-[2rem] border shadow-sm animate-in fade-in slide-in-from-top-4 duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
             <div className="flex items-center justify-between mb-4 px-2">
               <div className="flex items-center gap-3">
@@ -900,14 +969,169 @@ export default function SalesView({
                   <PackagePlus size={20} strokeWidth={2.5} />
                 </div>
                 <div>
+                  <h3 className={`text-[14px] font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Gerenciamento</h3>
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1">Escolha uma ferramenta</p>
+                </div>
+              </div>
+              <button onClick={() => setShowManagementCard(false)} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all">
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <button
+                type="button"
+                onClick={() => setManagementView('cruzamento')}
+                className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.99] ${isDarkMode ? 'bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/15' : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'}`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-600'}`}>
+                  <PackagePlus size={18} strokeWidth={2.5} />
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Cruzamento de Estoque</p>
+                  <p className="text-[9px] font-bold text-slate-400 normal-case tracking-normal mt-0.5">Compara demanda das vendas com estoque e produção — mostra o que falta, está em dia ou sobrando</p>
+                </div>
+                <ChevronRight size={16} className="text-emerald-500 shrink-0 ml-auto" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowDiagnosticsModal(true)}
+                className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.99] ${isDarkMode ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/15' : 'bg-amber-50 border-amber-200 hover:bg-amber-100'}`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-600'}`}>
+                  <Wrench size={18} strokeWidth={2.5} />
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Diagnósticos e Correções</p>
+                  <p className="text-[9px] font-bold text-slate-400 normal-case tracking-normal mt-0.5">Alocações de embalagem, separações, estoque não creditado, reservas órfãs e mais</p>
+                </div>
+                <ChevronRight size={16} className="text-amber-500 shrink-0 ml-auto" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowEntryHistoryModal(true)}
+                className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.99] ${isDarkMode ? 'bg-slate-500/10 border-slate-500/30 hover:bg-slate-500/15' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-slate-500/20 text-slate-300' : 'bg-slate-200 text-slate-600'}`}>
+                  <History size={18} strokeWidth={2.5} />
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Histórico de Movimentações</p>
+                  <p className="text-[9px] font-bold text-slate-400 normal-case tracking-normal mt-0.5">Entradas e saídas de estoque, com opção de reverter</p>
+                </div>
+                <ChevronRight size={16} className="text-slate-400 shrink-0 ml-auto" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setManagementView('expedicao')}
+                className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.99] ${isDarkMode ? 'bg-sky-500/10 border-sky-500/30 hover:bg-sky-500/15' : 'bg-sky-50 border-sky-200 hover:bg-sky-100'}`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-sky-500/20 text-sky-400' : 'bg-sky-100 text-sky-600'}`}>
+                  <Truck size={18} strokeWidth={2.5} />
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Expedição</p>
+                  <p className="text-[9px] font-bold text-slate-400 normal-case tracking-normal mt-0.5">Separação e entrega dos pedidos de clientes</p>
+                </div>
+                <ChevronRight size={16} className="text-sky-500 shrink-0 ml-auto" />
+              </button>
+
+              <button
+                type="button"
+                onClick={onNavigateStock}
+                className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.99] ${isDarkMode ? 'bg-violet-500/10 border-violet-500/30 hover:bg-violet-500/15' : 'bg-violet-50 border-violet-200 hover:bg-violet-100'}`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-violet-500/20 text-violet-400' : 'bg-violet-100 text-violet-600'}`}>
+                  <Package size={18} strokeWidth={2.5} />
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Estoque</p>
+                  <p className="text-[9px] font-bold text-slate-400 normal-case tracking-normal mt-0.5">Inventário de produtos prontos, por referência e cor</p>
+                </div>
+                <ChevronRight size={16} className="text-violet-500 shrink-0 ml-auto" />
+              </button>
+
+              {modulesConfig.production && (
+                <button
+                  type="button"
+                  onClick={() => setManagementView('lotes')}
+                  className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.99] ${isDarkMode ? 'bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/15' : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'}`}
+                >
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-600'}`}>
+                    <Boxes size={18} strokeWidth={2.5} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Lotes</p>
+                    <p className="text-[9px] font-bold text-slate-400 normal-case tracking-normal mt-0.5">Registro de produção (StockLots) gerado na finalização</p>
+                  </div>
+                  <ChevronRight size={16} className="text-emerald-500 shrink-0 ml-auto" />
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={onNavigateStockBalance}
+                className={`w-full flex items-center gap-3 p-4 rounded-2xl border text-left transition-all active:scale-[0.99] ${isDarkMode ? 'bg-indigo-500/10 border-indigo-500/30 hover:bg-indigo-500/15' : 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100'}`}
+              >
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-indigo-500/20 text-indigo-400' : 'bg-indigo-100 text-indigo-600'}`}>
+                  <TrendingUp size={18} strokeWidth={2.5} />
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fazer Balanço</p>
+                  <p className="text-[9px] font-bold text-slate-400 normal-case tracking-normal mt-0.5">Editar manualmente o estoque de todos os produtos</p>
+                </div>
+                <ChevronRight size={16} className="text-indigo-500 shrink-0 ml-auto" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Card de Cruzamento de Demanda x Estoque/Produção */}
+        {showManagementCard && managementView === 'cruzamento' && (
+          <div className={`p-4 rounded-[2rem] border shadow-sm animate-in fade-in slide-in-from-top-4 duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <div className="flex items-center justify-between mb-4 px-2">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setManagementView('chooser')}
+                  title="Voltar pro Gerenciamento"
+                  aria-label="Voltar pro Gerenciamento"
+                  className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all shrink-0"
+                >
+                  <ArrowLeft size={16} strokeWidth={2.5} />
+                </button>
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>
+                  <PackagePlus size={20} strokeWidth={2.5} />
+                </div>
+                <div>
                   <h3 className={`text-[14px] font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Cruzamento de Estoque</h3>
                   <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1">Vendas vs Físico vs Produção</p>
                 </div>
               </div>
-              <button onClick={() => setShowCrossCheckCard(false)} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all">
+              <button onClick={() => setShowManagementCard(false)} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all shrink-0">
                 <X size={16} strokeWidth={2.5} />
               </button>
             </div>
+
+            <div className={`flex items-start gap-2.5 p-3.5 rounded-2xl mb-3 ${isDarkMode ? 'bg-indigo-900/20 border border-indigo-800/40' : 'bg-indigo-50 border border-indigo-100'}`}>
+              <Info size={15} className={`shrink-0 mt-0.5 ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`} />
+              <p className={`text-[10px] font-bold leading-relaxed normal-case tracking-normal ${isDarkMode ? 'text-indigo-300' : 'text-indigo-700'}`}>
+                O Cruzamento compara a demanda das vendas em aberto (que ainda não foram totalmente separadas) com o estoque físico disponível e o que está em produção — assim dá pra ver, por referência e cor, o que já está garantido, o que falta comprar/produzir, e o que já sobrou.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleExportStockShortage}
+              disabled={isExportingShortage}
+              className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] disabled:opacity-60 mb-3 ${isDarkMode ? 'bg-rose-500/15 text-rose-400 hover:bg-rose-500/20' : 'bg-rose-50 text-rose-600 hover:bg-rose-100'}`}
+            >
+              <Share2 size={14} strokeWidth={2.5} />
+              {isExportingShortage ? 'Gerando...' : 'Exportar JPG — Produtos em Falta'}
+            </button>
 
             <div className="space-y-2 max-h-[60vh] overflow-y-auto custom-scrollbar pr-1 pb-20">
               {crossCheckData.length === 0 && (
@@ -917,11 +1141,19 @@ export default function SalesView({
                 const balance = d.stock - d.demand;
                 const isDeficit = balance < 0;
                 const unit = d.isWholesale ? 'cx' : 'pr';
-                
+                const dProduct = products.find(p => p.id === d.productId);
+                const dVariation = dProduct?.variations.find(v => v.id === d.variationId);
+                const dPhoto = dVariation?.photoUrl || dProduct?.photoUrl;
+
                 return (
                   <div key={d.key} className={`p-3 rounded-2xl border flex flex-col gap-2 ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50' : 'bg-slate-50/50 border-slate-100'}`}>
                     <div className="flex items-center justify-between min-w-0">
-                      <div className="min-w-0 pr-2">
+                      <div className="flex items-center gap-2 min-w-0 pr-2">
+                        <div className={`w-9 h-9 rounded-xl overflow-hidden shrink-0 flex items-center justify-center border ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}>
+                          {dPhoto
+                            ? <img src={dPhoto} alt={d.productName} className="w-full h-full object-cover" />
+                            : <Package size={14} className="text-slate-300" />}
+                        </div>
                         <p className={`text-[12px] font-black uppercase tracking-tight truncate flex items-center gap-1 ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
                           <span>{d.reference ? `${d.reference} , ` : ''}{d.productName} , </span>
                           <span className={`font-black text-black dark:text-white`}>{d.colorName || 'Sem cor'}</span>
@@ -938,7 +1170,7 @@ export default function SalesView({
                         </span>
                       </div>
                     </div>
-                    
+
                     <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 dark:border-slate-700/50">
                       <div className="flex-1 flex flex-col items-center justify-center py-1 rounded-lg bg-white dark:bg-slate-800">
                         <span className="text-[8px] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Demanda</span>
@@ -1009,6 +1241,101 @@ export default function SalesView({
                   </div>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {/* Expedição — Pedidos de Clientes, trazido de dentro do antigo StockView */}
+        {showManagementCard && managementView === 'expedicao' && (
+          <div className={`p-4 rounded-[2rem] border shadow-sm animate-in fade-in slide-in-from-top-4 duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <div className="flex items-center justify-between mb-4 px-2">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setManagementView('chooser')}
+                  title="Voltar pro Gerenciamento"
+                  aria-label="Voltar pro Gerenciamento"
+                  className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all shrink-0"
+                >
+                  <ArrowLeft size={16} strokeWidth={2.5} />
+                </button>
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-sky-500/20 text-sky-400' : 'bg-sky-50 text-sky-600'}`}>
+                  <Truck size={20} strokeWidth={2.5} />
+                </div>
+                <div>
+                  <h3 className={`text-[14px] font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Expedição</h3>
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1">Pedidos de Clientes</p>
+                </div>
+              </div>
+              <button onClick={() => setShowManagementCard(false)} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all shrink-0">
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="relative mb-3">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="text"
+                placeholder="Buscar cliente ou pedido..."
+                value={managementSearchTerm}
+                onChange={(e) => setManagementSearchTerm(e.target.value)}
+                className={`w-full border rounded-xl py-3 pl-11 pr-4 text-[11px] font-bold uppercase tracking-widest outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-100 text-slate-800'}`}
+              />
+            </div>
+
+            <div className="max-h-[65vh] overflow-y-auto custom-scrollbar pr-1 pb-2">
+              <PedidosClientesPanel
+                sales={sales}
+                stockLots={stockLots}
+                productionOrders={productionOrders}
+                products={products}
+                isDarkMode={isDarkMode}
+                searchTerm={managementSearchTerm}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Lotes — Registro de Produção, trazido de dentro do antigo StockView */}
+        {showManagementCard && managementView === 'lotes' && (
+          <div className={`p-4 rounded-[2rem] border shadow-sm animate-in fade-in slide-in-from-top-4 duration-300 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <div className="flex items-center justify-between mb-4 px-2">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setManagementView('chooser')}
+                  title="Voltar pro Gerenciamento"
+                  aria-label="Voltar pro Gerenciamento"
+                  className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all shrink-0"
+                >
+                  <ArrowLeft size={16} strokeWidth={2.5} />
+                </button>
+                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-50 text-emerald-600'}`}>
+                  <Boxes size={20} strokeWidth={2.5} />
+                </div>
+                <div>
+                  <h3 className={`text-[14px] font-black uppercase tracking-tight leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Lotes</h3>
+                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1">Registro de Produção</p>
+                </div>
+              </div>
+              <button onClick={() => setShowManagementCard(false)} className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all shrink-0">
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="relative mb-3">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+              <input
+                type="text"
+                placeholder="Buscar produto ou cliente..."
+                value={managementSearchTerm}
+                onChange={(e) => setManagementSearchTerm(e.target.value)}
+                className={`w-full border rounded-xl py-3 pl-11 pr-4 text-[11px] font-bold uppercase tracking-widest outline-none ${isDarkMode ? 'bg-slate-950 border-slate-800 text-slate-100' : 'bg-slate-50 border-slate-100 text-slate-800'}`}
+              />
+            </div>
+
+            <div className="max-h-[65vh] overflow-y-auto custom-scrollbar pr-1 pb-2">
+              <StockLotsPanel stockLots={stockLots} isDarkMode={isDarkMode} searchTerm={managementSearchTerm} />
             </div>
           </div>
         )}
@@ -1312,6 +1639,11 @@ export default function SalesView({
                 <Boxes size={14} strokeWidth={2.5} />
                 {showSeparationInfo ? 'Avisos de Separação Visíveis' : 'Avisos de Separação Ocultos'}
               </button>
+              <button onClick={() => setShowSeparationThumbnails(v => !v)}
+                className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showSeparationThumbnails ? 'bg-gradient-to-b from-sky-500 to-sky-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(14,165,233,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
+                <Package size={14} strokeWidth={2.5} />
+                {showSeparationThumbnails ? 'Miniaturas na Separação Visíveis' : 'Miniaturas na Separação Ocultas'}
+              </button>
               <button onClick={() => setShowSummaryBar(v => !v)}
                 className={`w-full py-2.5 rounded-xl text-[10px] font-black tracking-wider border transition-all flex items-center justify-center gap-2 ${showSummaryBar ? 'bg-gradient-to-b from-emerald-500 to-emerald-600 text-white border-transparent shadow-[0_2px_8px_-2px_rgba(16,185,129,0.5)] ring-1 ring-inset ring-white/20' : isDarkMode ? 'border-slate-700/50 bg-slate-800/30 text-slate-400 hover:bg-slate-800/80' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50 shadow-sm'}`}>
                 <DollarSign size={14} strokeWidth={2.5} />
@@ -1493,22 +1825,22 @@ export default function SalesView({
                     const selectedCarrier = carriers.find(c => c.id === sale.carrierId);
                     return (
                       <>
-                      <div className={`flex flex-col gap-2 px-4 py-3 rounded-2xl ${isDarkMode ? 'bg-teal-900/10 border border-teal-800/30' : 'bg-teal-50/60 border border-teal-100'}`} onClick={(e) => e.stopPropagation()}>
+                      <div className={`flex flex-col gap-2 px-4 py-3 rounded-2xl ${isDarkMode ? 'bg-violet-900/10 border border-violet-800/30' : 'bg-violet-50/60 border border-violet-100'}`} onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
                           onClick={() => setExpandedDeliveryIds(prev => prev.includes(sale.id) ? prev.filter(id => id !== sale.id) : [...prev, sale.id])}
                           className="flex items-center justify-between gap-2 w-full"
                         >
                           <span className="flex items-center gap-2">
-                            <Truck size={14} className="text-teal-600 shrink-0" />
-                            <span className="text-[10px] font-black text-teal-700 dark:text-teal-400 uppercase tracking-widest">
+                            <Truck size={14} className="text-violet-600 shrink-0" />
+                            <span className="text-[10px] font-black text-violet-700 dark:text-violet-400 uppercase tracking-widest">
                               Localização de Entrega
                             </span>
                           </span>
                           <span className="relative flex items-center justify-center w-7 h-7 shrink-0">
-                            <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-50 animate-ping" />
-                            <span className={`relative flex items-center justify-center w-7 h-7 rounded-full ${isDarkMode ? 'bg-emerald-900/40' : 'bg-emerald-100'}`}>
-                              {isDeliveryOpen ? <ChevronUp size={16} className="text-teal-600" /> : <ChevronDown size={16} className="text-teal-600" />}
+                            <span className="absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-50 animate-ping" />
+                            <span className={`relative flex items-center justify-center w-7 h-7 rounded-full ${isDarkMode ? 'bg-violet-900/40' : 'bg-violet-100'}`}>
+                              {isDeliveryOpen ? <ChevronUp size={16} className="text-violet-600" /> : <ChevronDown size={16} className="text-violet-600" />}
                             </span>
                           </span>
                         </button>
@@ -1536,47 +1868,91 @@ export default function SalesView({
                             {sentToDeliveryIds.includes(sale.id) ? 'Enviado' : 'Enviar para Entrega'}
                           </button>
                         )}
-                        {isDeliveryOpen && carriers.length > 0 && (
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Transportadora</label>
-                            <button
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); setCarrierSearch(''); setCarrierPickerTarget({ saleId: sale.id }); }}
-                              className={`w-full h-11 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent hover:border-teal-500 rounded-xl px-4 text-sm font-bold transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
-                            >
-                              <span className="truncate">{selectedCarrier ? selectedCarrier.name : 'Nenhuma — entregar pela rota do app'}</span>
-                              <ChevronDown size={16} className="text-slate-400 shrink-0" />
-                            </button>
-                          </div>
-                        )}
-                        {isDeliveryOpen && !selectedCarrier && (() => {
-                          const customer = people.find(p => p.id === sale.customerId);
-                          if (!customer?.defaultDeliveryAddress) return null;
+                        {isDeliveryOpen && carriers.length > 0 && (() => {
+                          const isCarrierCardOpen = expandedCarrierCardIds.includes(sale.id);
                           return (
-                            <button
-                              type="button"
-                              onClick={() => onUpdateDeliveryInfo(sale.id, { deliveryAddress: customer.defaultDeliveryAddress })}
-                              className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all bg-orange-500 text-white hover:bg-orange-600"
-                            >
-                              <MapPin size={12} />
-                              Usar Endereço Cadastrado do Cliente
-                            </button>
+                            <div className={`rounded-xl border overflow-hidden ${isDarkMode ? 'bg-slate-900/40 border-violet-800/30' : 'bg-white border-violet-100'}`}>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setExpandedCarrierCardIds(prev => prev.includes(sale.id) ? prev.filter(id => id !== sale.id) : [...prev, sale.id]); }}
+                                className="flex items-center justify-between gap-2 w-full px-3 py-2.5"
+                              >
+                                <span className="flex items-center gap-1.5">
+                                  <Truck size={13} className="text-violet-600 shrink-0" />
+                                  <span className="text-[9px] font-black text-violet-600 dark:text-violet-400 uppercase tracking-widest">Transportadora</span>
+                                </span>
+                                {isCarrierCardOpen ? <ChevronUp size={16} className="text-violet-600 shrink-0" /> : <ChevronDown size={16} className="text-violet-600 shrink-0" />}
+                              </button>
+                              {isCarrierCardOpen && (
+                                <div className="flex flex-col gap-2 px-3 pb-3">
+                                  <p className="text-[9px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-widest leading-snug">
+                                    Esse pedido vai ser entregue em alguma transportadora cadastrada?
+                                  </p>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setCarrierSearch(''); setCarrierPickerTarget({ saleId: sale.id }); }}
+                                    className={`w-full h-11 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent hover:border-violet-500 rounded-xl px-4 text-sm font-bold transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                                  >
+                                    <span className="truncate">{selectedCarrier ? selectedCarrier.name : 'Nenhuma — entregar pela rota do app'}</span>
+                                    <ChevronDown size={16} className="text-slate-400 shrink-0" />
+                                  </button>
+                                  {selectedCarrier && (
+                                    <p className="text-[9px] font-bold text-violet-600 dark:text-violet-400 px-1">
+                                      Mostrando o endereço cadastrado da transportadora — edite o cadastro dela em Configurações de Entrega pra corrigir.
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           );
                         })()}
-                        {selectedCarrier && isDeliveryOpen && (
-                          <p className="text-[9px] font-bold text-teal-600 dark:text-teal-400 px-1">
-                            Mostrando o endereço cadastrado da transportadora — edite o cadastro dela em Configurações de Entrega pra corrigir.
-                          </p>
-                        )}
-                        <DeliveryAddressForm
-                          isDarkMode={isDarkMode}
-                          address={selectedCarrier ? selectedCarrier.address : sale.deliveryAddress}
-                          priority={sale.deliveryPriority}
-                          fieldsExpanded={isDeliveryOpen}
-                          locked={!!selectedCarrier}
-                          onChange={(address) => selectedCarrier ? undefined : onUpdateDeliveryInfo(sale.id, { deliveryAddress: address })}
-                          onPriorityChange={(priority) => onUpdateDeliveryInfo(sale.id, { deliveryPriority: priority })}
-                        />
+                        {isDeliveryOpen && (() => {
+                          const isAddressCardOpen = expandedAddressCardIds.includes(sale.id);
+                          return (
+                            <div className={`rounded-xl border overflow-hidden ${isDarkMode ? 'bg-slate-900/40 border-violet-800/30' : 'bg-white border-violet-100'}`}>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setExpandedAddressCardIds(prev => prev.includes(sale.id) ? prev.filter(id => id !== sale.id) : [...prev, sale.id]); }}
+                                className="flex items-center justify-between gap-2 w-full px-3 py-2.5"
+                              >
+                                <span className="flex items-center gap-1.5">
+                                  <MapPin size={13} className="text-violet-600 shrink-0" />
+                                  <span className="text-[9px] font-black text-violet-600 dark:text-violet-400 uppercase tracking-widest">Endereço de Entrega</span>
+                                </span>
+                                {isAddressCardOpen ? <ChevronUp size={16} className="text-violet-600 shrink-0" /> : <ChevronDown size={16} className="text-violet-600 shrink-0" />}
+                              </button>
+                              {isAddressCardOpen && (
+                                <div className="flex flex-col gap-2 px-3 pb-3">
+                                  <p className="text-[9px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-widest leading-snug">
+                                    Esse pedido vai ser entregue em qual endereço? Caso não seja escolhida transportadora, escolha entre as três opções abaixo ou use o endereço cadastrado do cliente.
+                                  </p>
+                                  {!selectedCarrier && (() => {
+                                    const customer = people.find(p => p.id === sale.customerId);
+                                    if (!customer?.defaultDeliveryAddress) return null;
+                                    return (
+                                      <button
+                                        type="button"
+                                        onClick={() => onUpdateDeliveryInfo(sale.id, { deliveryAddress: customer.defaultDeliveryAddress })}
+                                        className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all bg-orange-500 text-white hover:bg-orange-600"
+                                      >
+                                        <MapPin size={12} />
+                                        Usar Endereço Cadastrado do Cliente
+                                      </button>
+                                    );
+                                  })()}
+                                  <DeliveryAddressForm
+                                    isDarkMode={isDarkMode}
+                                    address={selectedCarrier ? selectedCarrier.address : sale.deliveryAddress}
+                                    priority={sale.deliveryPriority}
+                                    locked={!!selectedCarrier}
+                                    onChange={(address) => selectedCarrier ? undefined : onUpdateDeliveryInfo(sale.id, { deliveryAddress: address })}
+                                    onPriorityChange={(priority) => onUpdateDeliveryInfo(sale.id, { deliveryPriority: priority })}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                         {(() => {
                           const items = sale.deliveryItems || [];
                           const preview = items.length > 0 ? formatDeliveryItemsList(items, products) : '';
@@ -1584,13 +1960,13 @@ export default function SalesView({
                             <button
                               type="button"
                               onClick={() => setItemsPickerTarget({ saleId: sale.id })}
-                              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all active:scale-[0.98] ${items.length > 0 ? `text-left ${isDarkMode ? 'bg-teal-900/20 border border-teal-700' : 'bg-teal-50 border border-teal-200'}` : `justify-center border-2 border-dashed ${isDarkMode ? 'border-teal-800 text-teal-400 hover:bg-teal-900/20' : 'border-teal-200 text-teal-700 hover:bg-teal-50'}`}`}
+                              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all active:scale-[0.98] ${items.length > 0 ? `text-left ${isDarkMode ? 'bg-violet-900/20 border border-violet-700' : 'bg-violet-50 border border-violet-200'}` : `justify-center border-2 border-dashed ${isDarkMode ? 'border-violet-800 text-violet-400 hover:bg-violet-900/20' : 'border-violet-200 text-violet-700 hover:bg-violet-50'}`}`}
                             >
-                              {items.length > 0 ? <Pencil size={13} className="shrink-0 text-teal-600" /> : <ListChecks size={13} className="shrink-0" />}
+                              {items.length > 0 ? <Pencil size={13} className="shrink-0 text-violet-600" /> : <ListChecks size={13} className="shrink-0" />}
                               <span className={items.length > 0 ? 'min-w-0 flex-1' : ''}>
                                 {items.length > 0 ? (
                                   <>
-                                    <span className="block text-[9px] font-black uppercase tracking-widest text-teal-600 dark:text-teal-400">Itens na Entrega ({items.length})</span>
+                                    <span className="block text-[9px] font-black uppercase tracking-widest text-violet-600 dark:text-violet-400">Itens na Entrega ({items.length})</span>
                                     <span className={`block text-[10px] font-bold truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{preview}</span>
                                   </>
                                 ) : (
@@ -1607,9 +1983,9 @@ export default function SalesView({
                         {(sale.additionalDeliveryAddresses || []).map((entry, idx) => {
                           const entryCarrier = entry.carrierId ? carriers.find(c => c.id === entry.carrierId) : undefined;
                           return (
-                            <div key={idx} className={`flex flex-col gap-2 pt-3 mt-1 border-t ${isDarkMode ? 'border-teal-800/30' : 'border-teal-100'}`}>
+                            <div key={idx} className={`flex flex-col gap-2 pt-3 mt-1 border-t ${isDarkMode ? 'border-violet-800/30' : 'border-violet-100'}`}>
                               <div className="flex items-center justify-between gap-2 px-1">
-                                <span className="text-[10px] font-black text-teal-700 dark:text-teal-400 uppercase tracking-widest">
+                                <span className="text-[10px] font-black text-violet-700 dark:text-violet-400 uppercase tracking-widest">
                                   Endereço {idx + 2}
                                 </span>
                                 <button
@@ -1630,7 +2006,7 @@ export default function SalesView({
                                   <button
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); setCarrierSearch(''); setCarrierPickerTarget({ saleId: sale.id, addressIndex: idx }); }}
-                                    className={`w-full h-11 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent hover:border-teal-500 rounded-xl px-4 text-sm font-bold transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                                    className={`w-full h-11 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent hover:border-violet-500 rounded-xl px-4 text-sm font-bold transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
                                   >
                                     <span className="truncate">{entryCarrier ? entryCarrier.name : 'Nenhuma — entregar pela rota do app'}</span>
                                     <ChevronDown size={16} className="text-slate-400 shrink-0" />
@@ -1638,7 +2014,7 @@ export default function SalesView({
                                 </div>
                               )}
                               {entryCarrier && isDeliveryOpen && (
-                                <p className="text-[9px] font-bold text-teal-600 dark:text-teal-400 px-1">
+                                <p className="text-[9px] font-bold text-violet-600 dark:text-violet-400 px-1">
                                   Mostrando o endereço cadastrado da transportadora — edite o cadastro dela em Configurações de Entrega pra corrigir.
                                 </p>
                               )}
@@ -1661,13 +2037,13 @@ export default function SalesView({
                                   <button
                                     type="button"
                                     onClick={() => setItemsPickerTarget({ saleId: sale.id, addressIndex: idx })}
-                                    className={`flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all active:scale-[0.98] ${items.length > 0 ? `text-left ${isDarkMode ? 'bg-teal-900/20 border border-teal-700' : 'bg-teal-50 border border-teal-200'}` : `justify-center border-2 border-dashed ${isDarkMode ? 'border-teal-800 text-teal-400 hover:bg-teal-900/20' : 'border-teal-200 text-teal-700 hover:bg-teal-50'}`}`}
+                                    className={`flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all active:scale-[0.98] ${items.length > 0 ? `text-left ${isDarkMode ? 'bg-violet-900/20 border border-violet-700' : 'bg-violet-50 border border-violet-200'}` : `justify-center border-2 border-dashed ${isDarkMode ? 'border-violet-800 text-violet-400 hover:bg-violet-900/20' : 'border-violet-200 text-violet-700 hover:bg-violet-50'}`}`}
                                   >
-                                    {items.length > 0 ? <Pencil size={13} className="shrink-0 text-teal-600" /> : <ListChecks size={13} className="shrink-0" />}
+                                    {items.length > 0 ? <Pencil size={13} className="shrink-0 text-violet-600" /> : <ListChecks size={13} className="shrink-0" />}
                                     <span className={items.length > 0 ? 'min-w-0 flex-1' : ''}>
                                       {items.length > 0 ? (
                                         <>
-                                          <span className="block text-[9px] font-black uppercase tracking-widest text-teal-600 dark:text-teal-400">Itens na Entrega ({items.length})</span>
+                                          <span className="block text-[9px] font-black uppercase tracking-widest text-violet-600 dark:text-violet-400">Itens na Entrega ({items.length})</span>
                                           <span className={`block text-[10px] font-bold truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{preview}</span>
                                         </>
                                       ) : (
@@ -2090,6 +2466,31 @@ export default function SalesView({
       </button>
 
       {/* Modals */}
+      <StockEntryHistoryModal
+        isOpen={showEntryHistoryModal}
+        onClose={() => setShowEntryHistoryModal(false)}
+        stockLots={stockLots}
+        isDarkMode={isDarkMode}
+        onPreviewRevertStockLot={onPreviewRevertStockLot}
+        onRevertStockLot={onRevertStockLot}
+      />
+
+      <StockDiagnosticsModal
+        isOpen={showDiagnosticsModal}
+        onClose={() => setShowDiagnosticsModal(false)}
+        isDarkMode={isDarkMode}
+        products={products}
+        stockLots={stockLots}
+        lots={lots}
+        sales={sales}
+        onFixPkgAllocations={onFixPkgAllocations}
+        onReconcileSeparationGroup={onReconcileSeparationGroup}
+        onApplyStockDuplicateFix={onApplyStockDuplicateFix}
+        onRepairOrphanedFinalizedKeys={onRepairOrphanedFinalizedKeys}
+        onApplyUndercreditFix={onApplyUndercreditFix}
+        onReleaseOrphanedLot={onReleaseOrphanedLot}
+      />
+
       <ExportNoteModal
         isOpen={exportModal.isOpen}
         onClose={() => setExportModal(prev => ({ ...prev, isOpen: false }))}
@@ -2327,18 +2728,33 @@ export default function SalesView({
                     >
                       {/* Product header */}
                       <div className="flex items-start justify-between gap-2 mb-2">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[10px] font-black uppercase tracking-wider">
-                              {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
-                              {row.variation?.colorName && ` · ${row.variation.colorName}`}
-                            </span>
-                          </div>
-                          {row.item.size && (
-                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Nº {row.item.size}</span>
+                        <div className="flex items-start gap-2 min-w-0">
+                          {showSeparationThumbnails && (() => {
+                            const photo = row.variation?.photoUrl || row.product?.photoUrl;
+                            return (
+                              <div
+                                onClick={photo ? (e) => { e.stopPropagation(); setZoomedThumbnail(photo); } : undefined}
+                                className={`w-10 h-10 rounded-xl overflow-hidden shrink-0 flex items-center justify-center border ${photo ? 'cursor-zoom-in' : ''} ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}
+                              >
+                                {photo
+                                  ? <img src={photo} alt={row.product?.name} className="w-full h-full object-cover" />
+                                  : <Package size={16} className="text-slate-300" />}
+                              </div>
+                            );
+                          })()}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[10px] font-black uppercase tracking-wider">
+                                {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
+                                {row.variation?.colorName && ` · ${row.variation.colorName}`}
+                              </span>
                             </div>
-                          )}
+                            {row.item.size && (
+                              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Nº {row.item.size}</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <div className="text-right shrink-0">
                           <p className={`text-[11px] font-black uppercase tracking-widest ${row.separated > 0 ? 'text-indigo-500' : 'text-slate-400'}`}>
@@ -2443,18 +2859,33 @@ export default function SalesView({
                     >
                       {/* Header row */}
                       <div className={`flex items-center justify-between gap-2 ${revertChoiceMode === 'partial' ? 'mb-2' : ''}`}>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[9px] font-black uppercase tracking-wider">
-                              {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
-                              {row.variation?.colorName && ` · ${row.variation.colorName}`}
-                            </span>
+                        <div className="flex items-center gap-2 min-w-0">
+                          {showSeparationThumbnails && (() => {
+                            const photo = row.variation?.photoUrl || row.product?.photoUrl;
+                            return (
+                              <div
+                                onClick={photo ? (e) => { e.stopPropagation(); setZoomedThumbnail(photo); } : undefined}
+                                className={`w-9 h-9 rounded-xl overflow-hidden shrink-0 flex items-center justify-center border ${photo ? 'cursor-zoom-in' : ''} ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}
+                              >
+                                {photo
+                                  ? <img src={photo} alt={row.product?.name} className="w-full h-full object-cover" />
+                                  : <Package size={14} className="text-slate-300" />}
+                              </div>
+                            );
+                          })()}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[9px] font-black uppercase tracking-wider">
+                                {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
+                                {row.variation?.colorName && ` · ${row.variation.colorName}`}
+                              </span>
+                            </div>
+                            {row.item.size && (
+                              <p className={`text-[9px] font-bold mt-0.5 uppercase tracking-widest ${isReverting ? 'text-amber-500' : 'text-emerald-500'}`}>
+                                Nº {row.item.size}
+                              </p>
+                            )}
                           </div>
-                          {row.item.size && (
-                            <p className={`text-[9px] font-bold mt-0.5 uppercase tracking-widest ${isReverting ? 'text-amber-500' : 'text-emerald-500'}`}>
-                              Nº {row.item.size}
-                            </p>
-                          )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           {isReverting
@@ -2915,7 +3346,7 @@ export default function SalesView({
             placeholder="Buscar transportadora..."
             value={carrierSearch}
             onChange={(e) => setCarrierSearch(e.target.value)}
-            className={`w-full h-12 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-teal-500 rounded-2xl px-4 text-sm font-bold transition-all outline-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+            className={`w-full h-12 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent focus:border-violet-500 rounded-2xl px-4 text-sm font-bold transition-all outline-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
           />
           <div className="flex flex-col gap-2 max-h-80 overflow-y-auto force-scrollbar">
             {(() => {
@@ -2939,7 +3370,7 @@ export default function SalesView({
                   <button
                     type="button"
                     onClick={() => applyCarrier(null)}
-                    className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-teal-700' : 'bg-white border-slate-100 hover:border-teal-200'}`}
+                    className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-violet-700' : 'bg-white border-slate-100 hover:border-violet-200'}`}
                   >
                     <p className={`text-xs font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>Nenhuma — entregar pela rota do app</p>
                   </button>
@@ -2948,9 +3379,9 @@ export default function SalesView({
                       key={c.id}
                       type="button"
                       onClick={() => applyCarrier(c.id)}
-                      className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-teal-700' : 'bg-white border-slate-100 hover:border-teal-200'}`}
+                      className={`flex items-center gap-3 p-3 rounded-2xl border text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-violet-700' : 'bg-white border-slate-100 hover:border-violet-200'}`}
                     >
-                      <div className={`p-2 rounded-lg shrink-0 ${isDarkMode ? 'bg-teal-900/30 text-teal-400' : 'bg-teal-50 text-teal-600'}`}>
+                      <div className={`p-2 rounded-lg shrink-0 ${isDarkMode ? 'bg-violet-900/30 text-violet-400' : 'bg-violet-50 text-violet-600'}`}>
                         <Truck size={14} />
                       </div>
                       <div className="min-w-0">
@@ -3048,6 +3479,20 @@ export default function SalesView({
             setProductionOrderSale(null);
           }}
         />
+      )}
+
+      {/* Miniatura ampliada — toque em qualquer lugar fecha (mesmo gesto que abriu). */}
+      {zoomedThumbnail && (
+        <div
+          className="fixed inset-0 z-[300] flex items-center justify-center p-6 bg-slate-950/80 backdrop-blur-sm"
+          onClick={() => setZoomedThumbnail(null)}
+        >
+          <img
+            src={zoomedThumbnail}
+            alt=""
+            className="max-w-full max-h-full rounded-2xl shadow-2xl object-contain"
+          />
+        </div>
       )}
 
     </div>

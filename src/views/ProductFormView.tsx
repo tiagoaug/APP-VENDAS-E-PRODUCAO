@@ -1968,7 +1968,6 @@ export default function ProductFormView({ productId, products, grids, suppliers,
               title="Cadastro Guiado"
               stepIndex={guidedStepIndex + 1}
               totalSteps={guidedSteps.length}
-              label={guidedSteps[guidedStepIndex].label}
               isComplete={guidedSteps[guidedStepIndex].isComplete}
               onContinue={handleGuidedAdvance}
               onSkipStep={handleGuidedAdvance}

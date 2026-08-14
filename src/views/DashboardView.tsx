@@ -124,7 +124,9 @@ export default function DashboardView({
     persistScanHistory([resolved.entry, ...scanHistory].slice(0, 10));
 
     const { sectorId, lotId, orderId, itemIdx, scanNonce } = resolved.nav;
-    onNavigateProduction('PCP', sectorId, lotId, orderId, itemIdx, scanNonce);
+    // openMode 'sector' -> mostra no Monitor PCP, no setor atual do pedido, em vez de abrir
+    // o modal do Mapa.
+    onNavigateProduction('PCP', sectorId, lotId, orderId, itemIdx, scanNonce, undefined, 'sector');
   };
 
   const [customerDashboardTab, setCustomerDashboardTab] = useState<'DEBITS' | 'CREDITS'>('DEBITS');
@@ -1178,7 +1180,7 @@ export default function DashboardView({
                   />
                   <ConfigMenuItem
                     icon={<Footprints size={20} />}
-                    label="Matrizes de Solados"
+                    label="Solados"
                     desc="Moldes e mapeamentos"
                     color="text-orange-600"
                     bg="bg-orange-50"
@@ -2156,11 +2158,11 @@ export default function DashboardView({
               { label: 'Setores de Produção',   desc: 'Fluxo da fábrica',           screen: 'SECTORS'    as const, color: 'text-indigo-600',  bg: 'bg-indigo-50 dark:bg-indigo-950/20'  },
               { label: 'Etapas e Processos',    desc: 'Serviços e Flow Tags',        screen: 'FLOW_TAGS'  as const, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/20' },
               { label: 'Prazos de Entrega',     desc: 'SLA por processo',            screen: 'PRAZOS'     as const, color: 'text-teal-600',    bg: 'bg-teal-50 dark:bg-teal-950/20'      },
-              { label: 'Matrizes de Solados',   desc: 'Catálogo e moldes',           screen: 'MATRIZES'   as const, color: 'text-orange-600',  bg: 'bg-orange-50 dark:bg-orange-950/20'  },
+              { label: 'Solados',               desc: 'Catálogo e moldes',           screen: 'MATRIZES'   as const, color: 'text-orange-600',  bg: 'bg-orange-50 dark:bg-orange-950/20'  },
               { label: 'Materiais e Insumos',   desc: 'Componentes de produção',     screen: 'INSUMOS'    as const, color: 'text-blue-600',    bg: 'bg-blue-50 dark:bg-blue-950/20'      },
               { label: 'Unidades de Medida',    desc: 'KG, MT, UN, PR...',           screen: 'UNIDADES'   as const, color: 'text-slate-600',   bg: 'bg-slate-100 dark:bg-slate-800'      },
               { label: 'Facas de Corte',        desc: 'Matrizes de corte',           screen: 'FACAS'      as const, color: 'text-rose-600',    bg: 'bg-rose-50 dark:bg-rose-950/20'      },
-              { label: 'Infesto',               desc: 'Camadas empilhadas',          screen: 'INFESTO'    as const, color: 'text-sky-600',     bg: 'bg-sky-50 dark:bg-sky-950/20'        },
+              { label: 'Camadas de Dobra Para Corte', desc: 'Camadas empilhadas',    screen: 'INFESTO'    as const, color: 'text-sky-600',     bg: 'bg-sky-50 dark:bg-sky-950/20'        },
               { label: 'Peças',                 desc: 'Entradas e peças',            screen: 'PECAS'      as const, color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/20' },
               { label: 'Padrão Embalagens',     desc: 'Caixas e grades',             screen: 'EMBALAGENS' as const, color: 'text-amber-600',   bg: 'bg-amber-50 dark:bg-amber-950/20'    },
             ];

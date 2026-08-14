@@ -1399,7 +1399,9 @@ export default function App() {
     scannerService.pushScanHistory(resolved.entry);
 
     const { sectorId, lotId, orderId, itemIdx, scanNonce } = resolved.nav;
-    navigateTo(ViewType.PRODUCTION_PCP, { initialSectorId: sectorId, initialLotId: lotId, initialOrderId: orderId, initialItemIdx: itemIdx, initialScanNonce: scanNonce });
+    // openMode 'sector' -> mostra no Monitor PCP, no setor atual do pedido, em vez de abrir
+    // o modal do Mapa (mesmo comportamento do botão "Escanear" dentro do PCP).
+    navigateTo(ViewType.PRODUCTION_PCP, { initialSectorId: sectorId, initialLotId: lotId, initialOrderId: orderId, initialItemIdx: itemIdx, initialScanNonce: scanNonce, initialOpenMode: 'sector' });
   };
 
   const navigateToProduction = (
@@ -5406,7 +5408,15 @@ export default function App() {
             onNavigateStockReconcile={() => navigateTo(ViewType.STOCK, { initialShowReconcile: true })}
             onNavigateStockDiagnostic={() => navigateTo(ViewType.STOCK, { initialShowDiagnostic: true })}
             onNavigateStockOrphaned={() => navigateTo(ViewType.STOCK, { initialShowOrphaned: true })}
-            onNavigateStockFinalizedRepair={() => navigateTo(ViewType.STOCK, { initialShowConfigMenu: true })}
+            onNavigateStockBalance={() => navigateTo(ViewType.STOCK, { initialShowBalancoConfirm: true })}
+            onPreviewRevertStockLot={buildStockLotRevertPreview}
+            onRevertStockLot={handleRevertStockLot}
+            onFixPkgAllocations={handleFixPkgAllocations}
+            onReconcileSeparationGroup={handleReconcileSeparationGroup}
+            onApplyStockDuplicateFix={handleApplyStockDuplicateFix}
+            onRepairOrphanedFinalizedKeys={handleRepairOrphanedFinalizedKeys}
+            onApplyUndercreditFix={handleApplyUndercreditFix}
+            onReleaseOrphanedLot={handleReleaseOrphanedLot}
             onNavigateProducts={() => navigateTo(ViewType.PRODUCTS)}
             onAddProduct={handleOpenProductCreationChoice}
             productionConfigs={productionConfigs}
@@ -5618,18 +5628,15 @@ export default function App() {
             sales={sales}
             productionOrders={productionOrders}
             lots={productionLots}
-            onFixPkgAllocations={handleFixPkgAllocations}
             onNavigatePCP={() => navigateTo(ViewType.PRODUCTION_PCP, { initialTab: 'monitor' })}
             onReconcileSeparationGroup={handleReconcileSeparationGroup}
             onApplyStockDuplicateFix={handleApplyStockDuplicateFix}
-            onRepairOrphanedFinalizedKeys={handleRepairOrphanedFinalizedKeys}
-            onApplyUndercreditFix={handleApplyUndercreditFix}
             onReleaseOrphanedLot={handleReleaseOrphanedLot}
+            onBackToManagement={() => navigateTo(ViewType.SALES)}
             initialShowReconcile={currentParams?.initialShowReconcile}
             initialShowDiagnostic={currentParams?.initialShowDiagnostic}
-            initialShowUndercredit={currentParams?.initialShowUndercredit}
             initialShowOrphaned={currentParams?.initialShowOrphaned}
-            initialShowConfigMenu={currentParams?.initialShowConfigMenu}
+            initialShowBalancoConfirm={currentParams?.initialShowBalancoConfirm}
             modulesConfig={modulesConfig}
             showThumbnails={showEngineeringThumbnails}
           />
@@ -6713,6 +6720,7 @@ export default function App() {
             onSave={saveCollaborator}
             onDelete={deleteCollaborator}
             isDarkMode={isDarkMode}
+            dashboardCards={(dashboardConfig || defaultDashboardConfig).cards}
           />
         );
       case ViewType.MANUAL:
@@ -7175,7 +7183,6 @@ export default function App() {
               title="Configuração Inicial"
               stepIndex={onboardingStepIndex + 1}
               totalSteps={onboardingSteps.length}
-              label={onboardingSteps[onboardingStepIndex].label}
               isComplete={onboardingSteps[onboardingStepIndex].isComplete}
               onContinue={handleOnboardingAdvance}
               onSkipStep={handleOnboardingAdvance}
@@ -7188,7 +7195,6 @@ export default function App() {
               title="Cadastro Guiado"
               stepIndex={productWizardStepIndex + 1}
               totalSteps={productWizardSteps.length}
-              label={productWizardSteps[productWizardStepIndex].label}
               isComplete={productWizardSteps[productWizardStepIndex].isComplete}
               onContinue={handleProductWizardAdvance}
               onSkipStep={handleProductWizardAdvance}

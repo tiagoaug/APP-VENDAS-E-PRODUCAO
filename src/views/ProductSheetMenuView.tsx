@@ -98,7 +98,7 @@ export default function ProductSheetMenuView({
         },
         { 
           id: 'SOLES',
-          label: "Matrizes de Solados", 
+          label: "Solados",
           desc: "Moldes e mapeamentos",
           icon: <Footprints size={24} />, 
           color: "text-orange-600",

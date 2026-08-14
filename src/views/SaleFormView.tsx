@@ -1388,63 +1388,54 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
           <div className="flex flex-col gap-3">
              <div>
                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest">Condição</label>
-                <div className="relative">
-                  <select
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-full pl-5 pr-10 py-4 text-[11px] font-black uppercase appearance-none text-slate-700 dark:text-slate-200 cursor-pointer"
-                    value={paymentTerm}
-                    aria-label="Condição de pagamento"
-                    title="Condição de Pagamento"
-                    onChange={(e) => {
-                      const term = e.target.value as PaymentTerm;
-                      setPaymentTerm(term);
-                      if (term === PaymentTerm.INSTALLMENTS && !reminderAt) {
-                        const due = new Date(dueDate);
-                        due.setHours(9, 0, 0, 0);
-                        const customerName = people.find(p => p.id === customerId)?.name;
-                        setReminderAt(due.getTime());
-                        setReminderTitle(`Vencimento — ${customerName || 'Cliente'}`);
-                      }
-                    }}
-                  >
-                    <option value={PaymentTerm.CASH}>À Vista</option>
-                    <option value={PaymentTerm.INSTALLMENTS}>A Prazo</option>
-                  </select>
-                  <ChevronDown size={16} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
+                <ComboBox
+                  options={[
+                    { id: PaymentTerm.CASH, name: 'À Vista' },
+                    { id: PaymentTerm.INSTALLMENTS, name: 'A Prazo' },
+                  ]}
+                  value={paymentTerm}
+                  onChange={(v) => {
+                    const term = v as PaymentTerm;
+                    setPaymentTerm(term);
+                    if (term === PaymentTerm.INSTALLMENTS && !reminderAt) {
+                      const due = new Date(dueDate);
+                      due.setHours(9, 0, 0, 0);
+                      const customerName = people.find(p => p.id === customerId)?.name;
+                      setReminderAt(due.getTime());
+                      setReminderTitle(`Vencimento — ${customerName || 'Cliente'}`);
+                    }
+                  }}
+                  placeholder="Condição de Pagamento"
+                  isDarkMode={isDarkMode}
+                  usePopupModal
+                />
              </div>
              <div>
                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Pagamento</label>
-                <div className="relative">
-                  <CreditCard size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  <select
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-full pl-12 pr-10 py-4 text-[11px] font-black uppercase appearance-none text-slate-700 dark:text-slate-200 cursor-pointer"
-                    value={paymentMethodId}
-                    aria-label="Método de pagamento"
-                    title="Método de Pagamento"
-                    onChange={(e) => setPaymentMethodId(e.target.value)}
-                  >
-                    <option value="">SELECIONE O MÉTODO</option>
-                    {paymentMethods.map(pm => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
-                  </select>
-                  <ChevronDown size={16} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
+                <ComboBox
+                  options={paymentMethods.map(pm => ({ id: pm.id, name: pm.name }))}
+                  value={paymentMethodId}
+                  onChange={setPaymentMethodId}
+                  placeholder="SELECIONE O MÉTODO"
+                  isDarkMode={isDarkMode}
+                  icon={<CreditCard size={16} />}
+                  usePopupModal
+                />
              </div>
              <div>
                 <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Tipo Pagamento</label>
-                <div className="relative">
-                  <Clock size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                  <select
-                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-full pl-12 pr-10 py-4 text-[11px] font-black uppercase appearance-none text-slate-700 dark:text-slate-200 cursor-pointer"
-                    value={paymentStatus}
-                    aria-label="Status do pagamento"
-                    title="Status do Pagamento"
-                    onChange={(e) => setPaymentStatus(e.target.value as PaymentStatus)}
-                  >
-                    <option value={PaymentStatus.PENDING}>Pendente</option>
-                    <option value={PaymentStatus.PAID}>Quitado</option>
-                  </select>
-                  <ChevronDown size={16} className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-                </div>
+                <ComboBox
+                  options={[
+                    { id: PaymentStatus.PENDING, name: 'Pendente' },
+                    { id: PaymentStatus.PAID, name: 'Quitado' },
+                  ]}
+                  value={paymentStatus}
+                  onChange={(v) => setPaymentStatus(v as PaymentStatus)}
+                  placeholder="Status do Pagamento"
+                  isDarkMode={isDarkMode}
+                  icon={<Clock size={16} />}
+                  usePopupModal
+                />
              </div>
              {paymentTerm === PaymentTerm.INSTALLMENTS && (
                <div>
@@ -1462,19 +1453,15 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
 
           <div>
              <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Conta de Destino</label>
-             <div className="relative">
-                <select 
-                  className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-4 text-[11px] font-black uppercase appearance-none text-slate-700 dark:text-slate-200 cursor-pointer pr-10"
-                  value={accountId}
-                  aria-label="Conta de destino"
-                  title="Conta de Destino"
-                  onChange={(e) => setAccountId(e.target.value)}
-                >
-                  <option value="">SELECIONE A CONTA</option>
-                  {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name} (SALDO: R$ {acc.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})</option>)}
-                </select>
-                <Wallet size={14} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-             </div>
+             <ComboBox
+               options={accounts.map(acc => ({ id: acc.id, name: `${acc.name} (Saldo: R$ ${acc.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})` }))}
+               value={accountId}
+               onChange={setAccountId}
+               placeholder="SELECIONE A CONTA"
+               isDarkMode={isDarkMode}
+               icon={<Wallet size={16} />}
+               usePopupModal
+             />
           </div>
 
           <div className="mt-4">

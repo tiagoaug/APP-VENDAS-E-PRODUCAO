@@ -19,6 +19,21 @@ export interface OrphanedReservedLot {
   customerName?: string;
 }
 
+// Chave do localStorage onde ficam os "Já Resolvi Manualmente" (ver dismissOrphanedLot em
+// StockView.tsx). Compartilhada aqui pra que outras telas que só mostram a CONTAGEM (ex.:
+// banner de SalesView) também descontem os já resolvidos, em vez de reimplementar a leitura
+// e ficar mostrando o aviso pra sempre depois do usuário dispensar.
+export const ORPHANED_RESOLVED_STORAGE_KEY = 'pcp_resolved_orphaned_lots_v1';
+
+export function readResolvedOrphanedLotKeys(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(ORPHANED_RESOLVED_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
 export function buildOrphanedReservedLots(stockLots: StockLot[], sales: Sale[], products: Product[]): OrphanedReservedLot[] {
   const saleById = new Map(sales.map(s => [s.id, s]));
   const out: OrphanedReservedLot[] = [];

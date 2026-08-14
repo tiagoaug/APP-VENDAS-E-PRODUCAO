@@ -22,9 +22,10 @@ import {
   Sparkles,
   Lock,
   Building2,
+  LayoutDashboard,
 } from 'lucide-react';
-import { Collaborator } from '../types';
-import { SECTORS } from '../utils/collaborators';
+import { Collaborator, DashboardCardConfig } from '../types';
+import { SECTORS, isDashboardCardAllowed } from '../utils/collaborators';
 import { NAV_MONO_PALETTE } from '../utils/themes';
 import { generateId } from '../utils/id';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -39,6 +40,11 @@ interface CollaboratorsConfigViewProps {
   onSave: (collab: Collaborator) => void | Promise<void>;
   onDelete: (id: string) => void | Promise<void>;
   isDarkMode: boolean;
+  // Lista global de cards do Dashboard (mesma usada no próprio Dashboard) — aqui serve só
+  // pra listar rótulo/ordem; quais cards ficam realmente visíveis pro colaborador continua
+  // filtrado pelos setores dele (isDashboardCardAllowed), então essa tela só deixa REFINAR
+  // pra menos dentro do que os setores já liberam, nunca liberar um card fora deles.
+  dashboardCards: DashboardCardConfig[];
 }
 
 function emptyDraft(): Collaborator {
@@ -53,7 +59,7 @@ function emptyDraft(): Collaborator {
   };
 }
 
-export default function CollaboratorsConfigView({ collaborators, onSave, onDelete, isDarkMode }: CollaboratorsConfigViewProps) {
+export default function CollaboratorsConfigView({ collaborators, onSave, onDelete, isDarkMode, dashboardCards }: CollaboratorsConfigViewProps) {
   const [draft, setDraft] = useState<Collaborator | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [showPin, setShowPin] = useState(false);
@@ -78,6 +84,24 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
         ? draft.sectors.filter(s => s !== sectorId)
         : [...draft.sectors, sectorId],
     });
+  };
+
+  // Card já liberado pelos setores do colaborador (isDashboardCardAllowed) — aqui só se
+  // decide se ele fica visível ou escondido pra ESSE colaborador especificamente, sem
+  // mexer no card global nem liberar nada fora do que os setores já permitem.
+  const isDashboardCardVisibleForDraft = (card: DashboardCardConfig) => {
+    const override = draft?.dashboardConfig?.find(c => c.id === card.id);
+    return override ? override.visible : card.visible;
+  };
+
+  const toggleDashboardCard = (card: DashboardCardConfig) => {
+    if (!draft) return;
+    const nextVisible = !isDashboardCardVisibleForDraft(card);
+    const existing = draft.dashboardConfig || [];
+    const next = existing.some(c => c.id === card.id)
+      ? existing.map(c => c.id === card.id ? { ...c, visible: nextVisible } : c)
+      : [...existing, { ...card, visible: nextVisible }];
+    setDraft({ ...draft, dashboardConfig: next });
   };
 
   // onSave não era esperado aqui (await ausente) — o modal fechava (setDraft(null))
@@ -361,6 +385,38 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
               </div>
             </div>
           )}
+
+          {!draft.isUnrestricted && draft.sectors.length > 0 && (() => {
+            const allowedCards = dashboardCards.filter(card => isDashboardCardAllowed(draft, card.id));
+            if (allowedCards.length === 0) return null;
+            return (
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Cards do Dashboard</label>
+                <p className="text-[10px] text-slate-400 font-medium px-1 -mt-1 mb-1 leading-relaxed">
+                  Já filtrado pelos setores marcados acima — escolha quais desses cards este colaborador vê no Dashboard dele.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {allowedCards.map(card => {
+                    const visible = isDashboardCardVisibleForDraft(card);
+                    return (
+                      <button
+                        key={card.id}
+                        type="button"
+                        onClick={() => toggleDashboardCard(card)}
+                        className={`flex items-center justify-between gap-3 p-4 rounded-2xl border-2 transition-all text-left ${visible ? (isDarkMode ? 'bg-slate-800 border-indigo-500' : 'bg-white border-indigo-500 shadow-md') : (isDarkMode ? 'bg-slate-950 border-slate-900 opacity-60' : 'bg-slate-50 border-slate-100 opacity-60')}`}
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <LayoutDashboard size={16} className="shrink-0" />
+                          <span className={`text-xs font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{card.label}</span>
+                        </span>
+                        {visible && <Check size={16} className="text-indigo-500 shrink-0" strokeWidth={3} />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           <button
             type="button"
