@@ -237,6 +237,7 @@ export default function SalesView({
   const [exportModal, setExportModal] = useState<{isOpen: boolean, sale?: Sale, format: 'pdf' | 'jpg'}>({ isOpen: false, format: 'pdf' });
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [saleToDelete, setSaleToDelete] = useState<string | null>(null);
+  const [cancelSaleTarget, setCancelSaleTarget] = useState<string | null>(null);
   // Detalhes de Entrega abrem num popup dedicado (por venda) em vez de expandir o card
   // inline — carrega Transportadora/Endereço/Itens junto, sem precisar caçar um botão de
   // "expandir" genérico no card.
@@ -800,14 +801,17 @@ export default function SalesView({
       {(() => {
         const saleBeingDeleted = saleToDelete ? sales.find(s => s.id === saleToDelete) : null;
         const mustCancelAndRevert = saleBeingDeleted ? saleProductionHasProgressed(saleBeingDeleted, productionOrders, lots) : false;
+        const alreadyCancelled = saleBeingDeleted?.status === SaleStatus.CANCELLED;
         return (
           <ConfirmDialog
             isOpen={!!saleToDelete}
-            title={mustCancelAndRevert ? "Cancelar e Estornar Pedido?" : "Excluir Registro?"}
+            title={mustCancelAndRevert ? "Cancelar e Estornar Pedido?" : "Excluir Pedido?"}
             message={mustCancelAndRevert
               ? "Este pedido já está em produção (houve baixa em algum setor) e não pode mais ser excluído. Ele será cancelado e os lançamentos financeiros/estoque serão estornados — a produção em andamento seguirá normalmente e as caixas produzidas entrarão no estoque geral."
-              : "Deseja realmente excluir esta venda e reverter os lançamentos financeiros/estoque? Esta ação não pode ser desfeita."}
-            confirmLabel={mustCancelAndRevert ? "Sim, Cancelar e Estornar" : "Sim, Excluir"}
+              : alreadyCancelled
+                ? "Este pedido já está cancelado (estoque e financeiro já foram estornados). O registro será apagado definitivamente do histórico. Esta ação não pode ser desfeita."
+                : "Os produtos deste pedido voltarão ao estoque e os lançamentos financeiros serão estornados. Em seguida o pedido será apagado definitivamente. Esta ação não pode ser desfeita."}
+            confirmLabel={mustCancelAndRevert ? "Sim, Cancelar e Estornar" : "Sim, Excluir Pedido"}
             cancelLabel="Agora não"
             onConfirm={() => {
               if (saleToDelete) {
@@ -817,6 +821,26 @@ export default function SalesView({
               }
             }}
             onCancel={() => setSaleToDelete(null)}
+            isDanger={true}
+          />
+        );
+      })()}
+      {(() => {
+        const saleBeingCancelled = cancelSaleTarget ? sales.find(s => s.id === cancelSaleTarget) : null;
+        return (
+          <ConfirmDialog
+            isOpen={!!cancelSaleTarget}
+            title="Cancelar Pedido?"
+            message={`O pedido${saleBeingCancelled ? ` #${saleBeingCancelled.orderNumber}` : ''} será cancelado: os produtos reservados voltarão ao estoque geral e os lançamentos financeiros (contas a receber/receitas) serão estornados. O registro é mantido no histórico marcado como Cancelado — não é apagado. Esta ação não pode ser desfeita.`}
+            confirmLabel="Sim, Cancelar Pedido"
+            cancelLabel="Agora não"
+            onConfirm={() => {
+              if (cancelSaleTarget) {
+                onCancelAndRevert(cancelSaleTarget);
+                setCancelSaleTarget(null);
+              }
+            }}
+            onCancel={() => setCancelSaleTarget(null)}
             isDanger={true}
           />
         );
@@ -2356,12 +2380,12 @@ export default function SalesView({
                                 <X size={20} strokeWidth={2.5} />
                               </button>
                             </div>
-                            <div className="p-3 flex flex-col gap-1.5">
+                            <div className="p-3 flex flex-col gap-2">
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleCopyMessage(sale); setActiveMenuId(null); }}
-                                className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] ${isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-600 hover:bg-slate-50'}`}
+                                className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
                               >
-                                <Copy size={16} /> Copiar Texto
+                                <Copy size={16} className="text-sky-500" /> Copiar Texto
                               </button>
                               {sale.status === SaleStatus.SALE && sale.deliveryStatus !== 'DELIVERED' && (
                                 (() => {
@@ -2372,9 +2396,9 @@ export default function SalesView({
                                     <button
                                       type="button"
                                       onClick={(e) => { e.stopPropagation(); setSeparacaoSale(sale); setActiveMenuId(null); }}
-                                      className="w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all active:scale-[0.98]"
+                                      className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
                                     >
-                                      <Boxes size={16} /> Separar Caixas
+                                      <Boxes size={16} className="text-indigo-500" /> Separar Caixas
                                     </button>
                                   );
                                 })()
@@ -2382,44 +2406,54 @@ export default function SalesView({
                               {sale.status === SaleStatus.SALE && sale.deliveryStatus !== 'DELIVERED' && (reservedLotsBySale.get(sale.id) || []).length > 0 && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleReleaseClick(sale); setActiveMenuId(null); }}
-                                  className="w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-all active:scale-[0.98]"
+                                  className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
                                 >
-                                  <PackageCheck size={16} /> Liberar Pedido
+                                  <PackageCheck size={16} className="text-emerald-500" /> Liberar Pedido
                                 </button>
                               )}
                               {sale.status === SaleStatus.SALE && getUnfulfilledStockStatus(sale)?.ready ? (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setExpediteSale(sale); setActiveMenuId(null); }}
-                                  className="w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 transition-all active:scale-[0.98]"
+                                  className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
                                 >
-                                  <Truck size={16} /> Expedir / Baixar
+                                  <Truck size={16} className="text-emerald-600" /> Expedir / Baixar
                                 </button>
                               ) : null}
                               {sale.status === SaleStatus.SALE && (sale.deliveryStatus === 'DELIVERED' || sale.items.some(it => it.fulfilled === true) || sale.items.some(it => (it.boxesSeparated || 0) > 0)) && (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); setRevertSale(sale); setActiveMenuId(null); }}
-                                  className="w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-all active:scale-[0.98]"
+                                  className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
                                 >
-                                  <RotateCcw size={16} /> Reverter Expedição
+                                  <RotateCcw size={16} className="text-amber-500" /> Reverter Expedição
                                 </button>
                               )}
                               {sale.status === SaleStatus.SALE && (reservedLotsBySale.get(sale.id) || []).length > 0 && (
                                 <button
                                   type="button"
                                   onClick={(e) => { e.stopPropagation(); setTransferSale(sale); setActiveMenuId(null); }}
-                                  className="w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 text-violet-500 hover:bg-violet-50 dark:hover:bg-violet-500/10 transition-all active:scale-[0.98]"
+                                  className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
                                 >
-                                  <Boxes size={16} /> Transferir para Estoque
+                                  <Boxes size={16} className="text-violet-500" /> Transferir para Estoque
                                 </button>
                               )}
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setSaleToDelete(sale.id); setActiveMenuId(null); }}
-                                className="w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-all active:scale-[0.98]"
-                              >
-                                {saleProductionHasProgressed(sale, productionOrders, lots)
-                                  ? <><Ban size={16} /> Cancelar e Estornar</>
-                                  : <><Trash2 size={16} /> Excluir</>}
-                              </button>
+                              {sale.status !== SaleStatus.CANCELLED && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setCancelSaleTarget(sale.id); setActiveMenuId(null); }}
+                                  className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
+                                >
+                                  <Ban size={16} className="text-orange-500" /> Cancelar Pedido
+                                </button>
+                              )}
+                              {(sale.status === SaleStatus.CANCELLED || !saleProductionHasProgressed(sale, productionOrders, lots)) && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setSaleToDelete(sale.id); setActiveMenuId(null); }}
+                                  className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
+                                >
+                                  <Trash2 size={16} className="text-rose-500" /> Excluir Pedido
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>,

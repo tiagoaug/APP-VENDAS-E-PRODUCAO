@@ -78,14 +78,21 @@ object AbleMarkL100Protocol {
         val lenHi = ((jbigLen ushr 8) and 0xFF).toByte()
         val widthLo = (width and 0xFF).toByte()
         val widthHi = ((width ushr 8) and 0xFF).toByte()
-        val heightByte = (height and 0xFF).toByte()
+        // Altura em 2 bytes little-endian, igual à largura logo acima — antes era só 1 byte
+        // (`(height and 0xFF)`), truncando silenciosamente qualquer altura > 255px. Isso nunca
+        // apareceu em etiquetas na orientação original (altura pequena, ex.: 192px numa 75x24mm
+        // a 8dots/mm), mas estourava ao girar 90°/270° (a altura final do bitmap passa a ser o
+        // que era a LARGURA original, facilmente > 255px) — a impressora recebia uma altura
+        // errada e a impressão saía como se não tivesse girado.
+        val heightLo = (height and 0xFF).toByte()
+        val heightHi = ((height ushr 8) and 0xFF).toByte()
         return byteArrayOf(
             0x1F, 40, 115, 2, 0, b8, b9,
             0x1D, 87, 32, 3,
             0x1B, 97, 1,
             0x1A, 12, 0xFF.toByte(),
             0x1F, 40, 74,
-            lenLo, lenHi, widthLo, widthHi, heightByte
+            lenLo, lenHi, widthLo, widthHi, heightLo, heightHi
         )
     }
 

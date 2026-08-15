@@ -383,32 +383,45 @@ export async function syncBlingOrders(db: firestore.Firestore, uid: string): Pro
  * mínimo de precisão possível pra qualquer intervalo configurado (um intervalo de 15min pode
  * atrasar até ~5min do horário exato, por exemplo).
  *
- * Varre a coleção `users` inteira em vez de um collection group query — não precisa de índice
- * extra no Firestore, e o número de usuários (cada um sua própria conta Bling) é pequeno o
- * bastante nesse projeto pra isso ser barato.
+ * Usa uma Collection Group Query em `blingConnections` (varre a subcoleção em QUALQUER
+ * usuário) em vez de listar `users` e depois ler a subcoleção de cada um — `saveBlingCredentials`
+ * (auth.ts) nunca dá um `.set()` direto no documento `users/{uid}`, só escreve nas subcoleções
+ * dele (`blingIntegration`, `blingConnections`), então esse documento pai nunca "existe" de
+ * verdade pro Firestore; `db.collection("users").get()` (a abordagem antiga) SEMPRE voltava
+ * vazio por causa disso — a sincronização automática nunca rodava pra ninguém, silenciosamente
+ * (o loop simplesmente não tinha nenhum uid pra iterar). Collection group query não depende do
+ * documento pai existir, só das subcoleções — e como não tem nenhum filtro/orderBy, não precisa
+ * de índice composto extra no Firestore.
  */
 export async function runAutoSyncForDueUsers(db: firestore.Firestore): Promise<void> {
-  const usersSnap = await db.collection("users").get();
+  const connsSnap = await db.collectionGroup("blingConnections").get();
   const now = Date.now();
+  let notConnected = 0, noInterval = 0, notDue = 0, ran = 0;
 
-  for (const userDoc of usersSnap.docs) {
-    const uid = userDoc.id;
+  for (const connDoc of connsSnap.docs) {
+    if (connDoc.id !== "bling") continue; // só o doc fixo de conexão, não outros docs futuros na mesma subcoleção
+    const uid = connDoc.ref.parent.parent?.id;
+    if (!uid) continue;
     try {
-      const connRef = db.collection("users").doc(uid).collection("blingConnections").doc("bling");
-      const connSnap = await connRef.get();
-      if (!connSnap.exists) continue;
-      const conn = connSnap.data() as { connected?: boolean; autoSyncIntervalMinutes?: number | null; lastOrderSyncAt?: number };
-      if (!conn.connected || !conn.autoSyncIntervalMinutes) continue;
+      const conn = connDoc.data() as { connected?: boolean; autoSyncIntervalMinutes?: number | null; lastOrderSyncAt?: number };
+      if (!conn.connected) { notConnected++; continue; }
+      if (!conn.autoSyncIntervalMinutes) { noInterval++; continue; }
 
       const dueAt = (conn.lastOrderSyncAt || 0) + conn.autoSyncIntervalMinutes * 60_000;
-      if (now < dueAt) continue;
+      if (now < dueAt) {
+        notDue++;
+        console.log(`[blingAutoSync] uid=${uid} ainda não é hora — faltam ${Math.round((dueAt - now) / 60_000)}min (intervalo=${conn.autoSyncIntervalMinutes}min, último sync=${conn.lastOrderSyncAt ? new Date(conn.lastOrderSyncAt).toISOString() : "nunca"}).`);
+        continue;
+      }
 
+      ran++;
       await syncBlingOrders(db, uid);
       console.log(`[blingAutoSync] Sincronização automática executada pra uid=${uid}.`);
     } catch (err: any) {
       console.error(`[blingAutoSync] Falha ao sincronizar uid=${uid}:`, err?.message || err);
     }
   }
+  console.log(`[blingAutoSync] Resumo: ${connsSnap.docs.length} conexão(ões) Bling encontrada(s), ${notConnected} desconectada(s), ${noInterval} sem intervalo configurado (Manual), ${notDue} com intervalo mas ainda não venceu, ${ran} sincronizada(s) agora.`);
 }
 
 export interface BlingEmissionResult {

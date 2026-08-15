@@ -5,6 +5,7 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import {
   Share2, Printer, Image as ImageIcon, FileText, Layers, ImageOff, CheckSquare,
   Bluetooth, RefreshCw, CheckCircle2, XCircle, ChevronRight, ChevronDown, X, FileStack, Save, Gauge,
+  Hash, Tag, Crop,
 } from 'lucide-react';
 import Modal from './Modal';
 import { PickingGroup, PickingFlatRow } from '../views/BlingPickingListView';
@@ -13,6 +14,50 @@ import {
   listAbleMarkPairedDevices, connectAbleMarkPrinter, isAbleMarkPrinterConnected, printAbleMarkLabel, isAblemarkPlatform, AbleMarkPairedDevice,
 } from '../lib/ablemarkPrinter';
 import { toast } from '../utils/toast';
+import { renderAllPdfPages } from '../utils/labelFileImport';
+import PdfPageSelectModal, { CropRect, CroppedPage, FitMode } from './PdfPageSelectModal';
+import { loadImageEl } from './CropEditor';
+import LabelPrintPreviewModal, { PrintOptions } from './LabelPrintPreviewModal';
+import { applyPrintTransform, DIRECTION_TO_ROTATION } from '../utils/labelPrintTransform';
+
+// Mesmo tamanho da etiqueta térmica única já usada nesta tela (ver LABEL_W/LABEL_H acima) —
+// consistência entre os dois jeitos de imprimir na Ablemark a partir da Lista de Separação.
+const STUDIO_WIDTH_MM = 75;
+const STUDIO_HEIGHT_MM = 24;
+const STUDIO_DOTS_PER_MM = 8; // mesma densidade de LabelPrintStudioView/LabelEditorView
+
+/** Recorta uma página (a MESMA lógica de LabelPrintStudioView.renderPageToLabelCanvas,
+ * duplicada aqui por não ser exportada de lá) segundo `crop` e desenha dentro da etiqueta
+ * STUDIO_WIDTH_MM×STUDIO_HEIGHT_MM conforme `fitMode`, sem distorcer. */
+async function renderPickingPageToLabelCanvas(pageDataUrl: string, crop: CropRect, fitMode: FitMode): Promise<HTMLCanvasElement> {
+  const img = await loadImageEl(pageDataUrl);
+  const pxW = Math.max(1, Math.round(STUDIO_WIDTH_MM * STUDIO_DOTS_PER_MM));
+  const pxH = Math.max(1, Math.round(STUDIO_HEIGHT_MM * STUDIO_DOTS_PER_MM));
+  const canvas = document.createElement('canvas');
+  canvas.width = pxW;
+  canvas.height = pxH;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, pxW, pxH);
+  const sx = crop.x * img.naturalWidth;
+  const sy = crop.y * img.naturalHeight;
+  const sw = crop.w * img.naturalWidth;
+  const sh = crop.h * img.naturalHeight;
+  const scale = fitMode === 'contain' ? Math.min(pxW / sw, pxH / sh) : Math.max(pxW / sw, pxH / sh);
+  const dw = sw * scale;
+  const dh = sh * scale;
+  const dx = (pxW - dw) / 2;
+  const dy = (pxH - dh) / 2;
+  ctx.save();
+  if (fitMode === 'cover') {
+    ctx.beginPath();
+    ctx.rect(0, 0, pxW, pxH);
+    ctx.clip();
+  }
+  ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+  ctx.restore();
+  return canvas;
+}
 
 interface BlingPickingExportModalProps {
   isOpen: boolean;
@@ -63,10 +108,12 @@ interface ExportProfile {
   agrupar: boolean;
   mostrarMiniaturas: boolean;
   incluirCheckbox: boolean;
+  mostrarPedido: boolean;
+  mostrarModelo: boolean;
   pageSize: PageSize;
 }
 
-const DEFAULT_PROFILE: ExportProfile = { agrupar: true, mostrarMiniaturas: true, incluirCheckbox: true, pageSize: 'a4' };
+const DEFAULT_PROFILE: ExportProfile = { agrupar: true, mostrarMiniaturas: true, incluirCheckbox: true, mostrarPedido: true, mostrarModelo: true, pageSize: 'a4' };
 
 type Densidade = 1 | 2 | 3;
 const DENSIDADE_LABEL: Record<Densidade, string> = { 1: 'Leve', 2: 'Normal', 3: 'Escura' };
@@ -85,7 +132,7 @@ function loadExportProfile(): ExportProfile {
 const LABEL_W = 600;
 const LABEL_H = 192;
 
-function buildPickingLabelDataUrl(row: DisplayRow, incluirCheckbox: boolean): string {
+function buildPickingLabelDataUrl(row: DisplayRow, incluirCheckbox: boolean, mostrarModelo: boolean, mostrarPedido: boolean): string {
   const canvas = document.createElement('canvas');
   canvas.width = LABEL_W;
   canvas.height = LABEL_H;
@@ -102,27 +149,35 @@ function buildPickingLabelDataUrl(row: DisplayRow, incluirCheckbox: boolean): st
     ctx.strokeRect(16, 16, 32, 32);
   }
 
+  let y = 14;
   ctx.font = 'bold 34px sans-serif';
-  ctx.fillText(`${row.reference} — ${row.variationName}`, padX, 14, LABEL_W - padX - 16);
+  ctx.fillText(`${row.reference} — ${row.variationName}`, padX, y, LABEL_W - padX - 16);
+  y += 42;
 
-  ctx.font = 'bold 30px sans-serif';
-  ctx.fillText(row.productName, padX, 56, LABEL_W - padX - 16);
+  if (mostrarModelo) {
+    ctx.font = 'bold 30px sans-serif';
+    ctx.fillText(row.productName, padX, y, LABEL_W - padX - 16);
+    y += 40;
+  }
 
   ctx.font = 'bold 64px sans-serif';
-  ctx.fillText(`Tam ${row.size || 'Atacado'}`, padX, 96);
+  ctx.fillText(`Tam ${row.size || 'Atacado'}`, padX, y);
 
   ctx.font = 'bold 44px sans-serif';
   ctx.textAlign = 'right';
-  ctx.fillText(`${row.quantidade}x`, LABEL_W - 16, 96);
+  ctx.fillText(`${row.quantidade}x`, LABEL_W - 16, y);
   ctx.textAlign = 'left';
+  y += 64;
 
-  ctx.font = '22px sans-serif';
-  ctx.fillText(`Pedidos: ${row.pedidos}`, padX, 160, LABEL_W - padX - 16);
+  if (mostrarPedido) {
+    ctx.font = '22px sans-serif';
+    ctx.fillText(`Pedidos: ${row.pedidos}`, padX, y, LABEL_W - padX - 16);
+  }
 
   return canvas.toDataURL('image/png');
 }
 
-async function buildPickingListJpg(rows: DisplayRow[], mostrarMiniaturas: boolean, incluirCheckbox: boolean, pageSize: PageSize): Promise<string> {
+async function buildPickingListJpg(rows: DisplayRow[], mostrarMiniaturas: boolean, incluirCheckbox: boolean, pageSize: PageSize, mostrarModelo: boolean, mostrarPedido: boolean): Promise<string> {
   const compact = pageSize === '100x150';
   // Preto e branco sólido pra tudo que não seja a miniatura real do produto — tons de cinza
   // claro (zebra, cinza do subtítulo, linhas de grade) ficam abaixo do limiar de conversão
@@ -209,9 +264,15 @@ async function buildPickingListJpg(rows: DisplayRow[], mostrarMiniaturas: boolea
     ctx.fillStyle = palette.text;
     ctx.font = fontName;
     ctx.fillText(`${r.reference} · ${r.variationName}${r.size ? ` · ${r.size}` : ' · Atacado'}`, textX, y + rowH * 0.35);
-    ctx.font = fontSub;
-    ctx.fillStyle = palette.sub;
-    ctx.fillText(`${r.productName} — Pedidos ${r.pedidos}`, textX, y + rowH * 0.7);
+    const subParts = [
+      ...(mostrarModelo ? [r.productName] : []),
+      ...(mostrarPedido ? [`Pedidos ${r.pedidos}`] : []),
+    ];
+    if (subParts.length > 0) {
+      ctx.font = fontSub;
+      ctx.fillStyle = palette.sub;
+      ctx.fillText(subParts.join(' — '), textX, y + rowH * 0.7);
+    }
 
     ctx.textAlign = 'right';
     ctx.fillStyle = palette.text;
@@ -228,6 +289,8 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
   const [agrupar, setAgrupar] = useState(savedProfile.agrupar);
   const [mostrarMiniaturas, setMostrarMiniaturas] = useState(savedProfile.mostrarMiniaturas);
   const [incluirCheckbox, setIncluirCheckbox] = useState(savedProfile.incluirCheckbox);
+  const [mostrarPedido, setMostrarPedido] = useState(savedProfile.mostrarPedido);
+  const [mostrarModelo, setMostrarModelo] = useState(savedProfile.mostrarModelo);
   const [pageSize, setPageSize] = useState<PageSize>(savedProfile.pageSize);
   const [densidade, setDensidade] = useState<Densidade>(2);
   const [paperOpen, setPaperOpen] = useState(false);
@@ -235,8 +298,16 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
   const [thermalOpen, setThermalOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // Print Studio (mesmo pipeline de "Importar PDF" da Ablemark — Selecionar Páginas > Recortar
+  // Etiqueta) alimentado pelo PDF que a Lista de Separação já gera, em vez de um arquivo do
+  // usuário. Vai direto pro lote de impressão (sem passar pelo Editor de Etiqueta livre).
+  const [studioPages, setStudioPages] = useState<string[]>([]);
+  const [showStudioPageSelect, setShowStudioPageSelect] = useState(false);
+  const [studioBatchFrames, setStudioBatchFrames] = useState<HTMLCanvasElement[]>([]);
+  const [showStudioBatchPreview, setShowStudioBatchPreview] = useState(false);
+
   const handleSaveProfile = () => {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify({ agrupar, mostrarMiniaturas, incluirCheckbox, pageSize }));
+    localStorage.setItem(PROFILE_KEY, JSON.stringify({ agrupar, mostrarMiniaturas, incluirCheckbox, mostrarPedido, mostrarModelo, pageSize }));
     toast.show('Perfil de exportação salvo — carrega automático da próxima vez.');
   };
 
@@ -273,7 +344,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
   const handleShareJpg = async () => {
     setBusy(true);
     try {
-      const dataUrl = await buildPickingListJpg(displayRows, mostrarMiniaturas, incluirCheckbox, pageSize);
+      const dataUrl = await buildPickingListJpg(displayRows, mostrarMiniaturas, incluirCheckbox, pageSize, mostrarModelo, mostrarPedido);
       await shareImage(dataUrl, `Lista_Separacao_${new Date().toISOString().slice(0, 10)}`);
     } catch (e: any) {
       toast.show('Erro ao gerar JPG: ' + (e.message || e));
@@ -282,48 +353,64 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
     }
   };
 
+  // Extraído de handleSharePdf pra também alimentar o Print Studio (recorte/impressão Ablemark)
+  // com o MESMO PDF já usado pra compartilhar — mesmas opções (miniaturas/checkbox/pedido/
+  // modelo/tamanho de papel), sem duplicar a lógica da tabela em dois lugares.
+  const buildPickingListPdfDoc = (): jsPDF => {
+    const compact = pageSize === '100x150';
+    const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: compact ? [100, 150] : 'a4' });
+    const pageWidth = compact ? 100 : 210;
+    const headerH = compact ? 12 : 30;
+
+    // Preto sólido em vez de navy/cinza — mesmo raciocínio do JPG (ver buildPickingListJpg):
+    // tons de cinza/azul-escuro somem em impressoras térmicas/monocromáticas.
+    doc.setFillColor(0, 0, 0);
+    doc.rect(0, 0, pageWidth, headerH, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(compact ? 11 : 18);
+    doc.text('Lista de Separação', pageWidth / 2, compact ? 6 : 14, { align: 'center' });
+    doc.setFontSize(compact ? 6.5 : 9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(new Date().toLocaleString('pt-BR'), pageWidth / 2, compact ? 10 : 22, { align: 'center' });
+
+    const head = [[
+      ...(incluirCheckbox ? [''] : []),
+      'Referência',
+      ...(mostrarModelo ? ['Produto'] : []),
+      'Cor',
+      'Tamanho',
+      'Qtd',
+      ...(mostrarPedido ? ['Pedidos'] : []),
+    ]];
+    const body = displayRows.map((r) => [
+      ...(incluirCheckbox ? [''] : []),
+      r.reference,
+      ...(mostrarModelo ? [r.productName] : []),
+      r.variationName,
+      r.size || 'Atacado',
+      String(r.quantidade),
+      ...(mostrarPedido ? [r.pedidos] : []),
+    ]);
+
+    autoTable(doc, {
+      startY: headerH + (compact ? 2 : 8),
+      head,
+      body,
+      theme: 'grid',
+      headStyles: { fillColor: [0, 0, 0], textColor: 255, fontStyle: 'bold', fontSize: compact ? 6.5 : 9 },
+      bodyStyles: { fontSize: compact ? 6 : 8.5, cellPadding: compact ? 1.2 : 3, textColor: [0, 0, 0] },
+      styles: { lineColor: [0, 0, 0], lineWidth: 0.2 },
+      margin: compact ? { left: 2, right: 2 } : undefined,
+    });
+
+    return doc;
+  };
+
   const handleSharePdf = async () => {
     setBusy(true);
     try {
-      const compact = pageSize === '100x150';
-      const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: compact ? [100, 150] : 'a4' });
-      const pageWidth = compact ? 100 : 210;
-      const headerH = compact ? 12 : 30;
-
-      // Preto sólido em vez de navy/cinza — mesmo raciocínio do JPG (ver buildPickingListJpg):
-      // tons de cinza/azul-escuro somem em impressoras térmicas/monocromáticas.
-      doc.setFillColor(0, 0, 0);
-      doc.rect(0, 0, pageWidth, headerH, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(compact ? 11 : 18);
-      doc.text('Lista de Separação', pageWidth / 2, compact ? 6 : 14, { align: 'center' });
-      doc.setFontSize(compact ? 6.5 : 9);
-      doc.setFont('helvetica', 'normal');
-      doc.text(new Date().toLocaleString('pt-BR'), pageWidth / 2, compact ? 10 : 22, { align: 'center' });
-
-      const head = [[...(incluirCheckbox ? [''] : []), 'Referência', 'Produto', 'Cor', 'Tamanho', 'Qtd', 'Pedidos']];
-      const body = displayRows.map((r) => [
-        ...(incluirCheckbox ? [''] : []),
-        r.reference,
-        r.productName,
-        r.variationName,
-        r.size || 'Atacado',
-        String(r.quantidade),
-        r.pedidos,
-      ]);
-
-      autoTable(doc, {
-        startY: headerH + (compact ? 2 : 8),
-        head,
-        body,
-        theme: 'grid',
-        headStyles: { fillColor: [0, 0, 0], textColor: 255, fontStyle: 'bold', fontSize: compact ? 6.5 : 9 },
-        bodyStyles: { fontSize: compact ? 6 : 8.5, cellPadding: compact ? 1.2 : 3, textColor: [0, 0, 0] },
-        styles: { lineColor: [0, 0, 0], lineWidth: 0.2 },
-        margin: compact ? { left: 2, right: 2 } : undefined,
-      });
-
+      const doc = buildPickingListPdfDoc();
       await sharePDF(doc, `Lista_Separacao_${new Date().toISOString().slice(0, 10)}`);
     } catch (e: any) {
       toast.show('Erro ao gerar PDF: ' + (e.message || e));
@@ -335,7 +422,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
   const handleNativePrint = () => {
     setPrintChoiceOpen(false);
     const rows: PrintPickingListRow[] = displayRows.map((r) => ({ ...r }));
-    printPickingList({ rows, mostrarMiniaturas, incluirCheckbox, pageSize });
+    printPickingList({ rows, mostrarMiniaturas, incluirCheckbox, pageSize, mostrarModelo, mostrarPedido });
   };
 
   const openThermalFlow = async () => {
@@ -343,6 +430,63 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
     setThermalOpen(true);
     const ok = await isAbleMarkPrinterConnected();
     setThermalConnected(ok);
+  };
+
+  // Gera o MESMO PDF do "PDF" acima, mas em vez de compartilhar, rasteriza as páginas e abre
+  // a mesma tela de Selecionar Páginas/Recortar Etiqueta usada em "Importar PDF" no Print
+  // Studio — reaproveita o pipeline já validado em vez de reinventar o recorte aqui.
+  const handleOpenPrintStudio = async () => {
+    setPrintChoiceOpen(false);
+    setBusy(true);
+    try {
+      const doc = buildPickingListPdfDoc();
+      const base64 = doc.output('datauristring').split('base64,')[1];
+      const pages = await renderAllPdfPages(base64);
+      setStudioPages(pages);
+      setShowStudioPageSelect(true);
+    } catch (e: any) {
+      toast.show('Erro ao preparar etiquetas: ' + (e.message || e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Cada página recortada vira uma etiqueta do lote — sem branch pra "1 página só" (que no
+  // Print Studio abriria o Editor de Etiqueta livre): aqui vai sempre direto pro lote, mesmo
+  // com 1 página.
+  const handleConfirmStudioPages = async (items: CroppedPage[]) => {
+    setShowStudioPageSelect(false);
+    try {
+      const frames = await Promise.all(items.map((it) => renderPickingPageToLabelCanvas(it.dataUrl, it.crop, it.fitMode)));
+      setStudioBatchFrames(frames);
+      setShowStudioBatchPreview(true);
+    } catch (e: any) {
+      toast.show('Erro ao preparar páginas: ' + (e.message || e));
+    }
+  };
+
+  const handleConfirmStudioPrint = async (options: PrintOptions) => {
+    const rotationDeg = DIRECTION_TO_ROTATION[options.direction];
+    let sent = 0;
+    let failed = 0;
+    for (let i = 0; i < studioBatchFrames.length; i++) {
+      const transformed = applyPrintTransform(
+        studioBatchFrames[i], STUDIO_WIDTH_MM, STUDIO_HEIGHT_MM,
+        { offsetXmm: options.offsetXmm, offsetYmm: options.offsetYmm, rotationDeg },
+        STUDIO_DOTS_PER_MM,
+      );
+      const base64 = transformed.toDataURL('image/png').split('base64,')[1];
+      for (let c = 0; c < options.copies; c++) {
+        try {
+          const written = await Filesystem.writeFile({ path: `picking_studio_${Date.now()}_${i}_${c}.png`, data: base64, directory: Directory.Cache });
+          const { sent: ok } = await printAbleMarkLabel(written.uri, options.paperType, options.density);
+          if (ok) sent++; else failed++;
+        } catch {
+          failed++;
+        }
+      }
+    }
+    toast.show(failed === 0 ? `${sent} etiqueta(s) enviada(s) para a impressora!` : `${sent} enviada(s), ${failed} falharam.`);
   };
 
   const handleListDevices = async () => {
@@ -385,7 +529,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
           quantidade: g.totalQty,
           pedidos: Array.from(new Set(g.contributions.map((c) => c.orderNumero))).join(', '),
         };
-        const dataUrl = buildPickingLabelDataUrl(row, incluirCheckbox);
+        const dataUrl = buildPickingLabelDataUrl(row, incluirCheckbox, mostrarModelo, mostrarPedido);
         const base64 = dataUrl.split('base64,')[1];
         const written = await Filesystem.writeFile({ path: `bling_pick_${g.key.replace(/[^a-zA-Z0-9]/g, '_')}.png`, data: base64, directory: Directory.Cache });
         const { sent, error } = await printAbleMarkLabel(written.uri, 2, densidade);
@@ -411,6 +555,8 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
           <ToggleRow icon={<Layers size={18} />} label="Agrupar itens" sublabel={agrupar ? 'Soma referências repetidas' : 'Lista simples por pedido'} value={agrupar} onChange={() => setAgrupar((v) => !v)} />
           <ToggleRow icon={<ImageOff size={18} />} label="Mostrar miniaturas" sublabel={mostrarMiniaturas ? 'Com foto do produto' : 'Sem foto'} value={mostrarMiniaturas} onChange={() => setMostrarMiniaturas((v) => !v)} />
           <ToggleRow icon={<CheckSquare size={18} />} label="Incluir checkbox" sublabel={incluirCheckbox ? 'Caixinha pra marcar no papel' : 'Sem caixinha'} value={incluirCheckbox} onChange={() => setIncluirCheckbox((v) => !v)} />
+          <ToggleRow icon={<Hash size={18} />} label="Mostrar número do pedido" sublabel={mostrarPedido ? 'Com os pedidos vinculados' : 'Sem os pedidos'} value={mostrarPedido} onChange={() => setMostrarPedido((v) => !v)} />
+          <ToggleRow icon={<Tag size={18} />} label="Mostrar nome do modelo" sublabel={mostrarModelo ? 'Com o nome do produto' : 'Só a referência'} value={mostrarModelo} onChange={() => setMostrarModelo((v) => !v)} />
 
           <button onClick={() => setPaperOpen((v) => !v)} className="w-full flex items-center gap-3 p-4 rounded-2xl border border-transparent hover:border-slate-100 dark:hover:border-slate-800 transition-all text-left">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
@@ -492,9 +638,43 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
                 <ChevronRight size={16} className="text-slate-400" />
               </button>
             )}
+            {isAblemarkPlatform() && (
+              <button onClick={handleOpenPrintStudio} disabled={busy} className={`flex items-center justify-between p-4 rounded-2xl disabled:opacity-40 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                <div className="flex items-center gap-3">
+                  <Crop size={18} className="text-indigo-500" />
+                  <div className="text-left">
+                    <p className="text-xs font-black">Print Studio (Recortar Etiqueta)</p>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Selecionar páginas e recortar, igual ao Importar PDF</p>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-slate-400" />
+              </button>
+            )}
           </div>
         </div>
       )}
+
+      <PdfPageSelectModal
+        isOpen={showStudioPageSelect}
+        onClose={() => setShowStudioPageSelect(false)}
+        isDarkMode={isDarkMode}
+        pages={studioPages}
+        widthMm={STUDIO_WIDTH_MM}
+        heightMm={STUDIO_HEIGHT_MM}
+        onConfirm={handleConfirmStudioPages}
+      />
+
+      <LabelPrintPreviewModal
+        isOpen={showStudioBatchPreview}
+        onClose={() => setShowStudioBatchPreview(false)}
+        isDarkMode={isDarkMode}
+        widthMm={STUDIO_WIDTH_MM}
+        heightMm={STUDIO_HEIGHT_MM}
+        previewDataUrls={studioBatchFrames.map((f) => f.toDataURL('image/png'))}
+        totalLabelsNote={studioBatchFrames.length > 1 ? `${studioBatchFrames.length} etiquetas × cópias` : undefined}
+        onBackToEdit={() => { setShowStudioBatchPreview(false); setShowStudioPageSelect(true); }}
+        onConfirmPrint={handleConfirmStudioPrint}
+      />
 
       <Modal isOpen={thermalOpen} onClose={() => setThermalOpen(false)} title="Impressora Térmica Ablemark" icon={<Bluetooth size={18} />} maxWidth="max-w-md" zIndex={90000}>
         <div className="flex flex-col gap-4">

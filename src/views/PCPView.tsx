@@ -29,6 +29,7 @@ import ScannerModal from '../components/ScannerModal';
 import PrintOSModal from '../components/PrintOSModal';
 import PrintLabelEditorModal from '../components/PrintLabelEditorModal';
 import CompletedServiceOrdersModal from '../components/CompletedServiceOrdersModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { Camera } from 'lucide-react';
 import { labelService } from '../services/labelService';
 import { printLotSheet, printOrderItemSheet, shareImage, sharePDF } from '../utils/pdfExport';
@@ -368,6 +369,7 @@ export default function PCPView({
   const [searchTerm, setSearchTerm] = useState('');
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedLot, setSelectedLot] = useState<ProductionLot | null>(null);
+  const [removeItemConfirm, setRemoveItemConfirm] = useState<{ lot: ProductionLot; item: any; orderNumber: string; productName: string; isOnlyItem: boolean } | null>(null);
   // Mantém o snapshot do mapa aberto no modal de detalhe em sincronia com a
   // lista viva `lots` — sem isso, atualizações externas (ex.: reversão de
   // histórico de estoque que devolve um pedido para Expedição) não refletem
@@ -4238,9 +4240,12 @@ export default function PCPView({
   // mais de uma ficha dentro do mapa (ex.: itens/variações diferentes do mesmo pedido) — ao
   // filtrar só por orderId, "Retirar do Mapa" numa ficha removia TODAS as fichas daquele
   // pedido de uma vez, esvaziando o mapa inteiro em vez de tirar só o item clicado.
-  const handleRemoveItemFromLot = async (lot: ProductionLot, item: any) => {
-    if (!confirm('Deseja retirar este pedido do mapa? Ele voltará para a lista de pendentes.')) return;
+  const requestRemoveItemFromLot = (lot: ProductionLot, item: any, orderNumber: string, productName: string) => {
+    const items: any[] = (lot as any).metadata?.sourceItems || [];
+    setRemoveItemConfirm({ lot, item, orderNumber, productName, isOnlyItem: items.length <= 1 });
+  };
 
+  const handleRemoveItemFromLot = async (lot: ProductionLot, item: any) => {
     const lotMetadata = (lot as any).metadata;
     const items: any[] = lotMetadata?.sourceItems || [];
     const itemIndex = items.indexOf(item);
@@ -5015,6 +5020,21 @@ export default function PCPView({
 
   return (
     <div className={`flex flex-col gap-6 pb-32 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+      <ConfirmDialog
+        isOpen={!!removeItemConfirm}
+        title="Retirar do Mapa?"
+        message={removeItemConfirm?.isOnlyItem
+          ? `O pedido #${removeItemConfirm?.orderNumber} (${removeItemConfirm?.productName}) é o único vinculado a este mapa — ao retirar, o mapa/lote de produção inteiro será excluído. O pedido voltará para a lista de pendentes de produção.`
+          : `O pedido #${removeItemConfirm?.orderNumber} (${removeItemConfirm?.productName}) será removido deste mapa e voltará para a lista de pendentes de produção. A quantidade dele será descontada do lote — os demais pedidos vinculados a este mapa não serão afetados.`}
+        confirmLabel="Sim, Retirar do Mapa"
+        cancelLabel="Cancelar"
+        isDanger={true}
+        onConfirm={() => {
+          if (removeItemConfirm) handleRemoveItemFromLot(removeItemConfirm.lot, removeItemConfirm.item);
+          setRemoveItemConfirm(null);
+        }}
+        onCancel={() => setRemoveItemConfirm(null)}
+      />
       <header className="flex flex-col gap-4">
         {/* Linha 1: Voltar + Título */}
         <div className="flex items-center gap-4 px-2">
@@ -10062,7 +10082,7 @@ export default function PCPView({
                                     });
                                     setMoveSectorTarget('');
                                   }}
-                                  className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95"
+                                  className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95 border border-amber-600/60 shadow-[0_3px_0_0_rgba(180,83,9,0.85)] active:shadow-[0_1px_0_0_rgba(180,83,9,0.85)] active:translate-y-[2px]"
                                 >
                                   <ArrowLeftRight size={11} strokeWidth={3} /> Mudar Setor
                                 </button>
@@ -10096,8 +10116,8 @@ export default function PCPView({
                                 <button
                                   type="button"
                                   title="Retirar este pedido do mapa"
-                                  onClick={() => handleRemoveItemFromLot(selectedLot, si)}
-                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[9px] font-black uppercase tracking-wider transition-all active:scale-95"
+                                  onClick={() => requestRemoveItemFromLot(selectedLot, si, String(order?.saleOrderNumber || selectedLot.saleOrderNumber || ''), productName)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-400 text-white text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 border border-rose-700/60 shadow-[0_3px_0_0_rgba(159,18,57,0.85)] active:shadow-[0_1px_0_0_rgba(159,18,57,0.85)] active:translate-y-[2px]"
                                 >
                                   <MinusCircle size={12} />
                                   Retirar do Mapa
@@ -10370,7 +10390,7 @@ export default function PCPView({
                                         });
                                         setMoveSectorTarget('');
                                       }}
-                                      className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95"
+                                      className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1 transition-all active:scale-95 border border-amber-600/60 shadow-[0_3px_0_0_rgba(180,83,9,0.85)] active:shadow-[0_1px_0_0_rgba(180,83,9,0.85)] active:translate-y-[2px]"
                                     >
                                       <ArrowLeftRight size={11} strokeWidth={3} /> Mudar Setor
                                     </button>
@@ -10383,8 +10403,8 @@ export default function PCPView({
                                     <button
                                       type="button"
                                       title="Retirar este pedido do mapa"
-                                      onClick={() => handleRemoveItemFromLot(selectedLot, si)}
-                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[9px] font-black uppercase tracking-wider transition-all active:scale-95"
+                                      onClick={() => requestRemoveItemFromLot(selectedLot, si, String(order?.saleOrderNumber || selectedLot.saleOrderNumber || ''), productName)}
+                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500 hover:bg-rose-400 text-white text-[9px] font-black uppercase tracking-wider transition-all active:scale-95 border border-rose-700/60 shadow-[0_3px_0_0_rgba(159,18,57,0.85)] active:shadow-[0_1px_0_0_rgba(159,18,57,0.85)] active:translate-y-[2px]"
                                     >
                                       <MinusCircle size={12} />
                                       Retirar do Mapa

@@ -22,6 +22,9 @@ interface PartialPaymentModalProps {
   onPay: (amount: number, accountId: string, note: string) => Promise<void>;
   isDarkMode: boolean;
   initialMode?: 'PAYMENT' | 'HISTORY';
+  // Pré-preenche o campo de valor (ex.: botão "Quitar Total" fora do modal) — sem isso o
+  // usuário precisaria abrir o modal e clicar em "Quitar Total" de novo lá dentro.
+  initialAmount?: number;
 }
 
 export default function PartialPaymentModal({
@@ -32,10 +35,11 @@ export default function PartialPaymentModal({
   entityLabel,
   onPay,
   isDarkMode,
-  initialMode = 'PAYMENT'
+  initialMode = 'PAYMENT',
+  initialAmount
 }: PartialPaymentModalProps) {
   const [viewMode, setViewMode] = useState<'PAYMENT' | 'HISTORY'>(initialMode);
-  const [amount, setAmount] = useState<string>('');
+  const [amount, setAmount] = useState<string>(initialAmount ? initialAmount.toFixed(2) : '');
   const [accountId, setAccountId] = useState(accounts[0]?.id || '');
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -154,12 +158,12 @@ export default function PartialPaymentModal({
                 <div>
                   <div className="flex items-center justify-between ml-1 mb-2">
                     <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest block">Valor do Pagamento</label>
-                    <button 
+                    <button
                       type="button"
                       onClick={() => setAmount(remaining.toFixed(2))}
-                      className="text-[9px] font-black uppercase text-indigo-500 tracking-widest hover:text-indigo-600 transition-colors flex items-center gap-1"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 shadow-sm"
                     >
-                      <CheckCircle2 size={10} />
+                      <CheckCircle2 size={12} strokeWidth={3} />
                       Quitar Total
                     </button>
                   </div>

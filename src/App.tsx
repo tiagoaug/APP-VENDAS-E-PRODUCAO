@@ -4669,6 +4669,30 @@ export default function App() {
               await executePurchaseDeletion(purchase);
             }}
             onUpdate={(purchase) => firebaseService.saveDocument("purchases", purchase)}
+            accounts={accounts}
+            onSaveTransaction={async (newTx) => {
+              try {
+                await financeService.createTransaction(newTx);
+                toast.show('Pagamento registrado com sucesso!');
+              } catch (err: any) {
+                console.error('onSaveTransaction error:', err);
+                toast.show('Erro ao registrar pagamento: ' + (err.message || err));
+              }
+            }}
+            onUpdatePurchase={async (id, updates) => {
+              try {
+                await firebaseService.updateDocument("purchases", id, updates);
+              } catch (err: any) {
+                toast.show('Erro ao atualizar compra: ' + (err.message || err));
+              }
+            }}
+            onUpdatePerson={async (id, updates) => {
+              try {
+                await firebaseService.updateDocument("people", id, updates);
+              } catch (err: any) {
+                toast.show('Erro ao atualizar cadastro: ' + (err.message || err));
+              }
+            }}
             isDarkMode={isDarkMode}
             initialSearchQuery={searchContext}
           />

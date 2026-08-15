@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Purchase, Person, Product, PurchaseType, PaymentStatus, PaymentTerm, SaleType, GeneralPurchaseItem, ProductionConfigItem } from "../types";
+import { Purchase, Person, Product, PurchaseType, PaymentStatus, PaymentTerm, SaleType, GeneralPurchaseItem, ProductionConfigItem, Account, Transaction, TransactionType, PaymentHistory } from "../types";
 import {
   ShoppingCart,
   Plus,
@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronUp,
   Share2,
+  DollarSign,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -25,6 +26,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import ChecksModal from "../components/ChecksModal";
 import ExportNoteModal from "../components/ExportNoteModal";
 import AddPurchaseEntriesModal from "../components/AddPurchaseEntriesModal";
+import PartialPaymentModal from "../components/PartialPaymentModal";
 import { exportPurchase } from "../utils/purchaseExport";
 import { toast } from '../utils/toast';
 import { firebaseService } from '../services/firebaseService';
@@ -67,6 +69,13 @@ interface PurchasesViewProps {
   onUpdate: (purchase: Purchase) => void;
   isDarkMode: boolean;
   initialSearchQuery?: string;
+  // Área de Pagamentos (quitação total / parcial da notinha) — sincroniza com o Financeiro
+  // (cria Transaction de despesa) e atualiza paymentHistory/paymentStatus da compra, igual ao
+  // fluxo já existente em "Financeiro > Contas a Pagar" (ver FinancialView/PartialPaymentModal).
+  accounts: Account[];
+  onSaveTransaction: (transaction: Omit<Transaction, 'id'>) => Promise<void>;
+  onUpdatePurchase: (id: string, updates: Partial<Purchase>) => Promise<void>;
+  onUpdatePerson?: (id: string, updates: Partial<Person>) => Promise<void>;
 }
 
 export default function PurchasesView({
@@ -81,6 +90,10 @@ export default function PurchasesView({
   onUpdate,
   isDarkMode,
   initialSearchQuery = '',
+  accounts,
+  onSaveTransaction,
+  onUpdatePurchase,
+  onUpdatePerson,
 }: PurchasesViewProps) {
   const [selectedNote, setSelectedNote] = useState<string | null>(null);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
@@ -120,6 +133,60 @@ export default function PurchasesView({
   const [selectedPurchaseForItems, setSelectedPurchaseForItems] = useState<Purchase | null>(null);
   const [exportModal, setExportModal] = useState<{ isOpen: boolean; purchase?: Purchase; format: 'pdf' | 'jpg' }>({ isOpen: false, format: 'pdf' });
   const [addEntryPurchase, setAddEntryPurchase] = useState<Purchase | null>(null);
+
+  // Área de Pagamentos — quitação total/parcial da notinha direto no card, sem precisar ir
+  // até Financeiro > Contas a Pagar (ver PartialPaymentModal, reaproveitado de lá).
+  const [paymentPurchase, setPaymentPurchase] = useState<Purchase | null>(null);
+  const [paymentModalMode, setPaymentModalMode] = useState<'PAYMENT' | 'HISTORY'>('PAYMENT');
+  const [paymentPresetAmount, setPaymentPresetAmount] = useState<number | undefined>(undefined);
+
+  const handlePartialPayment = (purchase: Purchase, mode: 'PAYMENT' | 'HISTORY' = 'PAYMENT', presetAmount?: number) => {
+    setPaymentPurchase(purchase);
+    setPaymentModalMode(mode);
+    setPaymentPresetAmount(presetAmount);
+  };
+
+  const onPartialPay = async (amount: number, accountId: string, note: string) => {
+    if (!paymentPurchase) return;
+    const supplier = people.find(s => s.id === paymentPurchase.supplierId);
+
+    await onSaveTransaction({
+      type: TransactionType.EXPENSE,
+      categoryId: paymentPurchase.categoryId || '',
+      accountId,
+      amount,
+      date: Date.now(),
+      description: `PAGTO PARCIAL COMPRA - ${supplier?.name || ''} ${note ? `(${note})` : ''}`,
+      status: 'COMPLETED',
+      contactId: paymentPurchase.supplierId,
+      contactName: supplier?.name,
+      relatedId: paymentPurchase.id,
+    });
+
+    const newPayment: PaymentHistory = {
+      id: crypto.randomUUID(),
+      date: Date.now(),
+      amount,
+      accountId,
+      note,
+    };
+    const currentHistory = paymentPurchase.paymentHistory || [];
+    const updatedHistory = [...currentHistory, newPayment];
+    const totalPaid = updatedHistory.reduce((acc, p) => acc + p.amount, 0);
+    const isPaid = totalPaid >= paymentPurchase.total;
+
+    await onUpdatePurchase(paymentPurchase.id, {
+      paymentHistory: updatedHistory,
+      paymentStatus: isPaid ? PaymentStatus.PAID : PaymentStatus.PENDING,
+    });
+
+    if (totalPaid > paymentPurchase.total && onUpdatePerson && supplier) {
+      const overpaid = totalPaid - paymentPurchase.total;
+      const currentCredit = supplier.credit || 0;
+      await onUpdatePerson(supplier.id, { credit: currentCredit + overpaid });
+      toast.show(`Sobrepagamento de R$ ${overpaid.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} adicionado como crédito ao fornecedor!`);
+    }
+  };
 
   const handleConfirmAddEntries = (newItems: GeneralPurchaseItem[]) => {
     if (!addEntryPurchase) return;
@@ -343,6 +410,20 @@ export default function PurchasesView({
         isDanger={true}
       />
 
+      {paymentPurchase && (
+        <PartialPaymentModal
+          isOpen={!!paymentPurchase}
+          onClose={() => setPaymentPurchase(null)}
+          entity={paymentPurchase}
+          accounts={accounts}
+          entityLabel={people.find(s => s.id === paymentPurchase.supplierId)?.name}
+          onPay={onPartialPay}
+          isDarkMode={isDarkMode}
+          initialMode={paymentModalMode}
+          initialAmount={paymentPresetAmount}
+        />
+      )}
+
       {/* Note Modal */}
       {selectedNote && (
         <div className="fixed inset-0 z-[100] flex animate-in fade-in duration-300">
@@ -565,7 +646,7 @@ export default function PurchasesView({
         </div>
       )}
 
-      <div className="flex flex-col gap-3 mt-2">
+      <div className="flex flex-col gap-8 mt-2">
         {filteredPurchases.map((purchase) => {
           const supplier = suppliers.find((s) => s.id === purchase.supplierId);
           const itemCount = purchase.type === PurchaseType.GENERAL
@@ -581,7 +662,7 @@ export default function PurchasesView({
             <div
               key={purchase.id}
               onClick={() => onEdit(purchase.id)}
-              className={`p-5 rounded-[1.5rem] border flex flex-col gap-4 relative overflow-hidden group cursor-pointer ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"}`}
+              className={`p-5 rounded-[1.5rem] border flex flex-col gap-4 relative overflow-hidden group cursor-pointer transition-all ${isDarkMode ? "bg-slate-900 border-slate-800 shadow-[0_6px_0_0_rgba(0,0,0,0.45)]" : "bg-white border-slate-200 shadow-[0_6px_0_0_rgba(148,163,184,0.35)]"}`}
             >
               {/* Linha 1: nome no topo + info/total/badges abaixo */}
               <div className="flex flex-col gap-3 z-10">
@@ -724,6 +805,23 @@ export default function PurchasesView({
                 </div>
               )}
 
+              {/* Área de Pagamentos — só compras "a prazo" ainda pendentes (mesma condição
+                  de "Financeiro > Contas a Pagar") ganham o atalho de pagamento aqui no card.
+                  Uma única cápsula: o formulário completo (valor pago/restante, quitação
+                  total, parcial, histórico) mora dentro do PartialPaymentModal. */}
+              {purchase.paymentTerm === PaymentTerm.INSTALLMENTS && purchase.paymentStatus !== PaymentStatus.PAID && (
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); handlePartialPayment(purchase, 'PAYMENT'); }}
+                  className={`flex items-center justify-center gap-2 w-full py-3 rounded-full border text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98] z-10 ${isDarkMode ? 'bg-slate-950/40 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-200 text-slate-700'}`}
+                >
+                  <span className="flex items-center justify-center w-6 h-6 rounded-full bg-rose-500 animate-[pulse_0.7s_cubic-bezier(0.4,0,0.6,1)_infinite] shrink-0">
+                    <DollarSign size={14} strokeWidth={3} className="text-white" />
+                  </span>
+                  Clique para Adicionar Pagamento
+                </button>
+              )}
+
               {/* Action Bar (Footer) */}
               <div className="flex justify-between items-center pt-4 border-t border-slate-100 dark:border-slate-800/50 z-10">
                 <div className="flex items-center gap-3">
@@ -789,10 +887,6 @@ export default function PurchasesView({
                 </div>
               </div>
 
-              {/* Subtle background decoration */}
-              <div className="absolute -right-4 -bottom-4 opacity-[0.03] dark:opacity-10 text-slate-900 dark:text-white pointer-events-none group-hover:scale-110 transition-transform duration-500">
-                <History size={120} strokeWidth={1} />
-              </div>
             </div>
           );
         })}

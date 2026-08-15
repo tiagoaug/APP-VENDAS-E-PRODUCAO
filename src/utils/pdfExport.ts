@@ -305,9 +305,13 @@ export interface PrintPickingListOptions {
   /** Sem cinza/azul-claro em lugar nenhum — só preto sólido e branco, contraste máximo pra
    * impressoras térmicas (que têm dificuldade em reproduzir tons de cinza de forma legível). */
   pretoBranco?: boolean;
+  /** Nome do modelo (produto) junto da referência — desliga quando só a referência já basta. */
+  mostrarModelo?: boolean;
+  /** Coluna de pedidos vinculados — desliga quando a lista é só de conferência de estoque. */
+  mostrarPedido?: boolean;
 }
 
-export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pageSize = 'a4', pretoBranco = false }: PrintPickingListOptions) => {
+export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pageSize = 'a4', pretoBranco = false, mostrarModelo = true, mostrarPedido = true }: PrintPickingListOptions) => {
   const container = document.getElementById('_lot_print_container');
   if (container) container.remove();
 
@@ -353,11 +357,11 @@ export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pag
         <tr>
           ${incluirCheckbox ? '<td style="width:36px;text-align:center;"><span style="display:inline-block;width:16px;height:16px;border:2px solid #000;"></span></td>' : ''}
           ${mostrarMiniaturas ? `<td style="width:52px;">${r.photoUrl ? `<img src="${r.photoUrl}" style="width:40px;height:40px;object-fit:cover;border:1px solid #000;" />` : ''}</td>` : ''}
-          <td><strong>${r.reference}</strong> — ${r.productName}</td>
+          <td><strong>${r.reference}</strong>${mostrarModelo ? ` — ${r.productName}` : ''}</td>
           <td>${r.variationName}</td>
           <td class="gc">${r.size || 'Atacado'}</td>
           <td class="gv">${r.quantidade}</td>
-          <td>${r.pedidos}</td>
+          ${mostrarPedido ? `<td>${r.pedidos}</td>` : ''}
         </tr>`
     )
     .join('');
@@ -379,11 +383,11 @@ export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pag
         <thead><tr>
           ${incluirCheckbox ? '<th></th>' : ''}
           ${mostrarMiniaturas ? '<th></th>' : ''}
-          <th>Referência / Produto</th>
+          <th>${mostrarModelo ? 'Referência / Produto' : 'Referência'}</th>
           <th>Cor</th>
           <th style="width:100px;">Tamanho</th>
           <th style="width:80px;">Qtd</th>
-          <th>Pedidos</th>
+          ${mostrarPedido ? '<th>Pedidos</th>' : ''}
         </tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table>
