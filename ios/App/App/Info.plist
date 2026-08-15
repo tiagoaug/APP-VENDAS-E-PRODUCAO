@@ -57,6 +57,10 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Necessário para selecionar imagens da galeria.</string>
 
+	<!-- Face ID — login rápido na tela "Quem é Você?" (ver CollaboratorGateView). -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>Usado para confirmar sua identidade e entrar mais rápido, sem digitar o PIN.</string>
+
 	<!-- Contatos — importação/sincronização de clientes e fornecedores. -->
 	<key>NSContactsUsageDescription</key>
 	<string>Necessário para importar e sincronizar contatos de clientes e fornecedores.</string>

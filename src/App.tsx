@@ -52,6 +52,7 @@ import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { doc, collection, query, where, getDocs, deleteField } from "firebase/firestore";
 import { firebaseService, deepClean } from "./services/firebaseService";
 import { notificationService, ReminderNotification } from "./services/notificationService";
+import { getBiometryLabel, authenticateBiometric } from "./utils/biometricAuth";
 import { resolveSoleConsumption } from "./utils/soleNeeds";
 import { getSourceItemKey, saleProductionHasProgressed } from "./utils/productionRoute";
 import { pickWholesaleStockLots, pickRetailStockLots } from "./utils/stockLotPicker";
@@ -412,6 +413,42 @@ export default function App() {
   const [productWizardActive, setProductWizardActive] = useState(false);
   const [productWizardStepIndex, setProductWizardStepIndex] = useState(0);
 
+  // Biometria (Face ID / Digital) na tela "Quem é Você?" — preferência 100% local ao
+  // aparelho (não sincronizada no Firestore), já que a digital/rosto cadastrado no SO é
+  // sempre do dono físico deste celular específico, não do colaborador na nuvem.
+  const [biometricLabel, setBiometricLabel] = useState<string | null>(null);
+  const [biometricEnabledIds, setBiometricEnabledIds] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('biometric_enabled_collaborators') || '[]'); } catch { return []; }
+  });
+
+  useEffect(() => {
+    getBiometryLabel().then(setBiometricLabel);
+  }, []);
+
+  const persistBiometricEnabledIds = (ids: string[]) => {
+    setBiometricEnabledIds(ids);
+    localStorage.setItem('biometric_enabled_collaborators', JSON.stringify(ids));
+  };
+
+  const handleEnableBiometric = async (id: string): Promise<boolean> => {
+    const ok = await authenticateBiometric('Confirme sua identidade para ativar a entrada por biometria');
+    if (ok) {
+      persistBiometricEnabledIds(Array.from(new Set([...biometricEnabledIds, id])));
+    }
+    return ok;
+  };
+
+  const handleBiometricLogin = async (id: string): Promise<boolean> => {
+    const ok = await authenticateBiometric('Confirme sua identidade para entrar');
+    if (ok) {
+      setActiveCollaboratorId(id);
+      localStorage.setItem('active_collaborator_id', id);
+      setCollabSessionConfirmed(true);
+      sessionStorage.setItem('collab_session_confirmed', '1');
+    }
+    return ok;
+  };
+
   const switchCollaborator = (id: string, pin: string): boolean => {
     const target = collaborators.find(c => c.id === id);
     if (!target || target.locked) return false;
@@ -451,6 +488,9 @@ export default function App() {
     if (activeCollaboratorId === id) {
       setActiveCollaboratorId(null);
       localStorage.removeItem('active_collaborator_id');
+    }
+    if (biometricEnabledIds.includes(id)) {
+      persistBiometricEnabledIds(biometricEnabledIds.filter(bid => bid !== id));
     }
   };
 
@@ -7063,6 +7103,10 @@ export default function App() {
         lastActiveId={activeCollaboratorId}
         onConfirm={confirmCollabSession}
         onLogout={handleLogout}
+        biometricLabel={biometricLabel}
+        biometricEnabledIds={biometricEnabledIds}
+        onBiometricLogin={handleBiometricLogin}
+        onEnableBiometric={handleEnableBiometric}
       />
     );
   }

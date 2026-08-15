@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Users, KeyRound, LogOut, Eye, EyeOff, Lock } from "lucide-react";
+import { Users, KeyRound, LogOut, Eye, EyeOff, Lock, Fingerprint } from "lucide-react";
 import { Collaborator } from "../types";
 
 interface CollaboratorGateViewProps {
@@ -7,28 +7,59 @@ interface CollaboratorGateViewProps {
   lastActiveId: string | null;
   onConfirm: (id: string, pin: string) => boolean;
   onLogout: () => void;
+  // Nome do tipo de biometria disponível neste aparelho (ex.: "Face ID", "Digital") — null
+  // quando o aparelho não tem biometria disponível/cadastrada no sistema operacional.
+  biometricLabel: string | null;
+  // Ids de colaboradores com biometria lembrada NESTE aparelho (preferência local, não
+  // sincronizada — a digital/rosto cadastrado é sempre do dono físico deste celular).
+  biometricEnabledIds: string[];
+  // Dispara o prompt nativo; se confirmado, já loga o colaborador (equivalente a um PIN
+  // correto) e retorna true/false pro resultado.
+  onBiometricLogin: (id: string) => Promise<boolean>;
+  // Dispara o prompt nativo pra confirmar que a biometria funciona neste aparelho e, se ok,
+  // marca esse colaborador como "lembrado" pra próximas vezes.
+  onEnableBiometric: (id: string) => Promise<boolean>;
 }
 
-export default function CollaboratorGateView({ collaborators, lastActiveId, onConfirm, onLogout }: CollaboratorGateViewProps) {
+export default function CollaboratorGateView({ collaborators, lastActiveId, onConfirm, onLogout, biometricLabel, biometricEnabledIds, onBiometricLogin, onEnableBiometric }: CollaboratorGateViewProps) {
   const [selectedId, setSelectedId] = useState<string | null>(lastActiveId);
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
   const [showPin, setShowPin] = useState(false);
+  const [useManualPin, setUseManualPin] = useState(false);
+  const [rememberBiometric, setRememberBiometric] = useState(false);
+  const [biometricBusy, setBiometricBusy] = useState(false);
+  const [biometricError, setBiometricError] = useState(false);
 
   const selectCollaborator = (id: string) => {
     setSelectedId(id);
     setPin("");
     setError(false);
     setShowPin(false);
+    setUseManualPin(false);
+    setRememberBiometric(false);
+    setBiometricError(false);
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!selectedId) return;
     const ok = onConfirm(selectedId, pin);
     if (!ok) {
       setError(true);
       setPin("");
+      return;
     }
+    if (rememberBiometric && biometricLabel) {
+      await onEnableBiometric(selectedId);
+    }
+  };
+
+  const handleBiometricLogin = async (id: string) => {
+    setBiometricBusy(true);
+    setBiometricError(false);
+    const ok = await onBiometricLogin(id);
+    setBiometricBusy(false);
+    if (!ok) setBiometricError(true);
   };
 
   return (
@@ -45,6 +76,9 @@ export default function CollaboratorGateView({ collaborators, lastActiveId, onCo
         <div className="w-full bg-white p-6 rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-white relative z-10 flex flex-col gap-3">
           {collaborators.map(collab => {
             const isSelected = selectedId === collab.id;
+            const biometricEnabledForThis = biometricEnabledIds.includes(collab.id);
+            const showBiometricPanel = !!biometricLabel && biometricEnabledForThis && !useManualPin;
+
             return (
               <div key={collab.id} className="flex flex-col gap-2">
                 <button
@@ -56,7 +90,7 @@ export default function CollaboratorGateView({ collaborators, lastActiveId, onCo
                     {collab.name.charAt(0).toUpperCase()}
                   </div>
                   <span className="text-sm font-black text-slate-800 uppercase tracking-tight truncate flex-1">{collab.name}</span>
-                  {collab.locked ? <Lock size={16} className="text-rose-400 shrink-0" /> : <KeyRound size={16} className="text-slate-400 shrink-0" />}
+                  {collab.locked ? <Lock size={16} className="text-rose-400 shrink-0" /> : biometricEnabledForThis && biometricLabel ? <Fingerprint size={16} className="text-indigo-400 shrink-0" /> : <KeyRound size={16} className="text-slate-400 shrink-0" />}
                 </button>
 
                 {isSelected && collab.locked && (
@@ -67,7 +101,31 @@ export default function CollaboratorGateView({ collaborators, lastActiveId, onCo
                   </div>
                 )}
 
-                {isSelected && !collab.locked && (
+                {isSelected && !collab.locked && showBiometricPanel && (
+                  <div className="flex flex-col gap-2 px-1 animate-in fade-in slide-in-from-top-1 duration-150">
+                    <button
+                      type="button"
+                      disabled={biometricBusy}
+                      onClick={() => handleBiometricLogin(collab.id)}
+                      className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs shadow-lg shadow-indigo-600/30 hover:bg-indigo-700 transition-all disabled:opacity-60"
+                    >
+                      <Fingerprint size={18} />
+                      {biometricBusy ? 'Verificando...' : `Entrar com ${biometricLabel}`}
+                    </button>
+                    {biometricError && (
+                      <p className="text-rose-500 text-[11px] text-center font-bold">Não foi possível confirmar. Tente novamente ou use o PIN.</p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setUseManualPin(true)}
+                      className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center hover:text-indigo-600 transition py-1"
+                    >
+                      Usar PIN em vez disso
+                    </button>
+                  </div>
+                )}
+
+                {isSelected && !collab.locked && !showBiometricPanel && (
                   <div className="flex flex-col gap-2 px-1 animate-in fade-in slide-in-from-top-1 duration-150">
                     <div className="relative">
                       <input
@@ -92,6 +150,19 @@ export default function CollaboratorGateView({ collaborators, lastActiveId, onCo
                       </button>
                     </div>
                     {error && <p className="text-rose-500 text-[11px] text-center font-bold">PIN incorreto</p>}
+
+                    {biometricLabel && !biometricEnabledForThis && (
+                      <label className="flex items-center gap-2 px-1 py-1 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={rememberBiometric}
+                          onChange={e => setRememberBiometric(e.target.checked)}
+                          className="w-4 h-4 rounded accent-indigo-600"
+                        />
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Lembrar com {biometricLabel} neste aparelho</span>
+                      </label>
+                    )}
+
                     <button
                       type="button"
                       onClick={handleConfirm}
@@ -99,6 +170,16 @@ export default function CollaboratorGateView({ collaborators, lastActiveId, onCo
                     >
                       Entrar
                     </button>
+
+                    {biometricLabel && biometricEnabledForThis && (
+                      <button
+                        type="button"
+                        onClick={() => { setUseManualPin(false); setBiometricError(false); }}
+                        className="text-[10px] font-black text-slate-400 uppercase tracking-widest text-center hover:text-indigo-600 transition py-1"
+                      >
+                        Usar {biometricLabel}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
