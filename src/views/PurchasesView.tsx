@@ -192,12 +192,11 @@ export default function PurchasesView({
 
   const activeFiltersCount = useMemo(() => {
     let count = 0;
-    if (typeFilter !== 'ALL') count++;
     if (periodFilter) count++;
     if (!expandedCards) count++;
     if (!showItems) count++;
     return count;
-  }, [typeFilter, periodFilter, expandedCards, showItems]);
+  }, [periodFilter, expandedCards, showItems]);
 
   // Generate available months from data
   const availableMonths = useMemo(() => {
@@ -448,6 +447,16 @@ export default function PurchasesView({
         </button>
       </div>
 
+      {/* Tipo de Compra — sempre visível no topo, em vez de escondido no popup de Filtros */}
+      <div className={`flex p-1 rounded-2xl border gap-1 mt-3 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
+        {(['ALL', PurchaseType.GENERAL, PurchaseType.SOLE, PurchaseType.REPLENISHMENT] as const).map((v) => (
+          <button key={v} type="button" onClick={() => setTypeFilter(v)}
+            className={`flex-1 py-2.5 rounded-xl text-[10px] font-black tracking-wider transition-all ${typeFilter === v ? 'bg-indigo-600 text-white shadow-sm' : isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-700'}`}>
+            {v === 'ALL' ? 'Todos' : v === PurchaseType.GENERAL ? 'Geral' : v === PurchaseType.SOLE ? 'Solados' : 'Estoque'}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-col gap-3 mt-2">
         {/* Search Input + Configurar */}
         <div className="flex items-center gap-2">
@@ -506,19 +515,6 @@ export default function PurchasesView({
               <button type="button" onClick={() => setShowFilters(false)} title="Fechar" aria-label="Fechar filtros" className="p-2 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white">
                 <X size={18} strokeWidth={2.5} />
               </button>
-            </div>
-
-            {/* Tipo de Compra */}
-            <div className="flex flex-col gap-2">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Tipo de Compra</p>
-              <div className={`flex p-1 rounded-2xl border gap-1 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                {(['ALL', PurchaseType.REPLENISHMENT, PurchaseType.GENERAL] as const).map((v) => (
-                  <button key={v} type="button" onClick={() => setTypeFilter(v)}
-                    className={`flex-1 py-2 rounded-xl text-[10px] font-black tracking-wider transition-all ${typeFilter === v ? 'bg-indigo-600 text-white shadow-sm' : isDarkMode ? 'text-slate-400 hover:text-white' : 'text-slate-500 hover:text-slate-700'}`}>
-                    {v === 'ALL' ? 'Todos' : v === PurchaseType.REPLENISHMENT ? 'Estoque' : 'Geral'}
-                  </button>
-                ))}
-              </div>
             </div>
 
             {/* Período */}

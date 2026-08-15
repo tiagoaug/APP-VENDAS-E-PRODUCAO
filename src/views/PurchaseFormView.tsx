@@ -2159,8 +2159,12 @@ export default function PurchaseFormView({
                   {/* Header — igual ao de vendas */}
                   <div className="p-5 flex justify-between items-start gap-4">
                     <div className="flex gap-4 flex-1">
-                      <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700 shrink-0">
-                        <Package size={24} className="text-slate-400 dark:text-slate-600" />
+                      <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700 shrink-0 overflow-hidden">
+                        {product.photoUrl ? (
+                          <img src={product.photoUrl} alt={product.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <Package size={24} className="text-slate-400 dark:text-slate-600" />
+                        )}
                       </div>
                       <div className="flex flex-col justify-center relative flex-1 min-w-0">
                         <h4 className="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-slate-100 truncate pr-4">
@@ -3119,8 +3123,12 @@ export default function PurchaseFormView({
                         title={p.name}
                       >
                         <div className="flex items-center gap-4">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isAdded ? 'bg-slate-100 dark:bg-slate-800' : 'bg-indigo-50 dark:bg-indigo-900/20'}`}>
-                            <Package size={20} className={isAdded ? 'text-slate-400' : 'text-indigo-500'} />
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center overflow-hidden ${isAdded ? 'bg-slate-100 dark:bg-slate-800' : 'bg-indigo-50 dark:bg-indigo-900/20'}`}>
+                            {p.photoUrl ? (
+                              <img src={p.photoUrl} alt={p.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <Package size={20} className={isAdded ? 'text-slate-400' : 'text-indigo-500'} />
+                            )}
                           </div>
                           <div>
                             <h4 className="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white line-clamp-1">{p.name}</h4>

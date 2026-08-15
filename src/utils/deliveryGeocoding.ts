@@ -94,7 +94,10 @@ export function parseLatLngFromText(text: string): { lat: number; lng: number } 
     if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) return { lat, lng };
   }
 
-  const coordPattern = /(-?\d{1,3}\.\d{3,})\s*,\s*(-?\d{1,3}\.\d{3,})/;
+  // "+" aqui é espaço codificado em URL (ex.: /maps/search/-19.866155,+-45.010550 — o
+  // formato "lat, lng" da busca do Maps, com o espaço depois da vírgula virando "+" na
+  // URL). Sem aceitar "+" além de espaço, esse padrão MUITO comum de link nunca batia.
+  const coordPattern = /(-?\d{1,3}\.\d{3,})\s*,[\s+]*(-?\d{1,3}\.\d{3,})/;
   const match = text.match(coordPattern);
   if (match) {
     const lat = parseFloat(match[1]);

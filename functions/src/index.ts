@@ -199,10 +199,30 @@ export const resolveMapsShortLink = onCall({ region: "us-central1", timeoutSecon
     throw new HttpsError("invalid-argument", "Domínio não suportado — só links de mapa (Google Maps).");
   }
 
+  // User-Agent de navegador + cookie CONSENT: sem isso, o Google às vezes devolve uma
+  // página de consentimento de cookies (consent.google.com) no meio do redirecionamento
+  // em vez de ir direto pro link com lat/lng — mais comum em requisições sem "cara" de
+  // navegador, como esta (servidor-a-servidor, sem histórico de cookies do usuário).
+  const fetchHeaders = {
+    "User-Agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+    "Accept-Language": "pt-BR,pt;q=0.9,en;q=0.8",
+    "Cookie": "CONSENT=YES+1",
+  };
+
   try {
-    const res = await fetch(parsed.toString(), { method: "GET", redirect: "follow" });
-    return { resolvedUrl: res.url };
-  } catch {
+    const res = await fetch(parsed.toString(), { method: "GET", redirect: "follow", headers: fetchHeaders });
+    let resolvedUrl = res.url;
+
+    // Caiu numa página de consentimento em vez do link de verdade — tenta seguir mais uma
+    // vez a partir dela, já com o cookie de consentimento mandado (geralmente resolve).
+    if (/consent\.google\./i.test(resolvedUrl)) {
+      const retry = await fetch(resolvedUrl, { method: "GET", redirect: "follow", headers: fetchHeaders });
+      resolvedUrl = retry.url;
+    }
+
+    return { resolvedUrl };
+  } catch (err) {
+    console.error("resolveMapsShortLink: falha ao resolver", rawUrl, err);
     throw new HttpsError("unavailable", "Não foi possível resolver o link agora — tente de novo em instantes.");
   }
 });

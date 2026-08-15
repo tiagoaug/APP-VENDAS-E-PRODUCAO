@@ -4234,13 +4234,19 @@ export default function PCPView({
     }
   };
 
-  const handleRemoveItemFromLot = async (lot: ProductionLot, orderId: string) => {
+  // Recebe o próprio sourceItem (não só o orderId) porque um mesmo pedido pode aparecer em
+  // mais de uma ficha dentro do mapa (ex.: itens/variações diferentes do mesmo pedido) — ao
+  // filtrar só por orderId, "Retirar do Mapa" numa ficha removia TODAS as fichas daquele
+  // pedido de uma vez, esvaziando o mapa inteiro em vez de tirar só o item clicado.
+  const handleRemoveItemFromLot = async (lot: ProductionLot, item: any) => {
     if (!confirm('Deseja retirar este pedido do mapa? Ele voltará para a lista de pendentes.')) return;
 
     const lotMetadata = (lot as any).metadata;
-    const items = lotMetadata?.sourceItems || [];
+    const items: any[] = lotMetadata?.sourceItems || [];
+    const itemIndex = items.indexOf(item);
+    if (itemIndex === -1) return;
 
-    const isOnlyItem = (items.length <= 1 && (!lot.productionOrderId || lot.productionOrderId === orderId));
+    const isOnlyItem = items.length <= 1;
 
     if (isOnlyItem) {
       await onDeleteLot(lot.id);
@@ -4249,12 +4255,13 @@ export default function PCPView({
       return;
     }
 
-    const removedItem = items.find((i: any) => i.orderId === orderId);
-    const removedQty = removedItem?.qty || (lot.productionOrderId === orderId ? lot.quantity : 0);
-    const newItems = items.filter((i: any) => i.orderId !== orderId);
+    const removedQty = item.qty || (lot.productionOrderId === item.orderId ? lot.quantity : 0);
+    const newItems = items.filter((_: any, idx: number) => idx !== itemIndex);
 
+    // Só troca o productionOrderId "âncora" do mapa se o pedido removido não sobra em
+    // nenhuma outra ficha — outro item do mesmo pedido pode continuar no mapa.
     let nextOrderId = lot.productionOrderId;
-    if (lot.productionOrderId === orderId) {
+    if (lot.productionOrderId === item.orderId && !newItems.some((i: any) => i.orderId === item.orderId)) {
       nextOrderId = newItems[0]?.orderId || '';
     }
 
@@ -10089,7 +10096,7 @@ export default function PCPView({
                                 <button
                                   type="button"
                                   title="Retirar este pedido do mapa"
-                                  onClick={() => handleRemoveItemFromLot(selectedLot, si.orderId)}
+                                  onClick={() => handleRemoveItemFromLot(selectedLot, si)}
                                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[9px] font-black uppercase tracking-wider transition-all active:scale-95"
                                 >
                                   <MinusCircle size={12} />
@@ -10376,7 +10383,7 @@ export default function PCPView({
                                     <button
                                       type="button"
                                       title="Retirar este pedido do mapa"
-                                      onClick={() => handleRemoveItemFromLot(selectedLot, si.orderId)}
+                                      onClick={() => handleRemoveItemFromLot(selectedLot, si)}
                                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[9px] font-black uppercase tracking-wider transition-all active:scale-95"
                                     >
                                       <MinusCircle size={12} />
@@ -14040,4 +14047,4 @@ export default function PCPView({
       </Modal>
     </div>
   );
-} E 
+}

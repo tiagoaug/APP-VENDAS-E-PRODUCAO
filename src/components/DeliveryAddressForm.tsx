@@ -130,15 +130,20 @@ export default function DeliveryAddressForm({ isDarkMode, address, priority, onC
       return;
     }
 
-    const looksLikeUrl = /https?:\/\//i.test(text);
+    // Link colado sem "https://" na frente (comum ao colar só o texto visível do link,
+    // ex.: "maps.app.goo.gl/xxxx") — reconhece pelos domínios conhecidos do Maps mesmo
+    // sem protocolo, em vez de exigir que o usuário cole a URL completa.
+    const looksLikeUrl = /https?:\/\//i.test(text)
+      || /^(www\.)?(maps\.app\.goo\.gl|goo\.gl\/maps|maps\.google\.[a-z.]+|google\.[a-z.]+\/maps)\//i.test(text);
     if (!looksLikeUrl) {
       setPastedLocationError('Não encontrei coordenadas nesse texto — confira se colou o link/localização completo.');
       return;
     }
+    const normalizedUrl = /https?:\/\//i.test(text) ? text : `https://${text}`;
 
     setIsVerifyingLocation(true);
     try {
-      const resolvedUrl = await resolveMapsShortLink(text);
+      const resolvedUrl = await resolveMapsShortLink(normalizedUrl);
       const coords = resolvedUrl ? parseLatLngFromText(resolvedUrl) : null;
       if (!coords) {
         setPastedLocationError('Não encontrei coordenadas nesse link — confira se é um link de localização do Google Maps.');

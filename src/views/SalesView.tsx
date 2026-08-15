@@ -237,12 +237,12 @@ export default function SalesView({
   const [exportModal, setExportModal] = useState<{isOpen: boolean, sale?: Sale, format: 'pdf' | 'jpg'}>({ isOpen: false, format: 'pdf' });
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [saleToDelete, setSaleToDelete] = useState<string | null>(null);
-  const [expandedIds, setExpandedIds] = useState<string[]>([]);
-  // Colapsa "Localização de Entrega" por padrão — os campos em lista (um por linha, telas
-  // estreitas) ocupam bastante altura, e nem toda venda mexe com Entregas.
-  const [expandedDeliveryIds, setExpandedDeliveryIds] = useState<string[]>([]);
-  // Sub-acordeões dentro de "Localização de Entrega" — Transportadora e Endereço de Entrega,
-  // cada um recolhido por padrão pelo mesmo motivo (altura em telas estreitas).
+  // Detalhes de Entrega abrem num popup dedicado (por venda) em vez de expandir o card
+  // inline — carrega Transportadora/Endereço/Itens junto, sem precisar caçar um botão de
+  // "expandir" genérico no card.
+  const [deliveryDetailsSaleId, setDeliveryDetailsSaleId] = useState<string | null>(null);
+  // Sub-acordeões dentro do popup de Detalhes de Entrega — Transportadora e Endereço de
+  // Entrega, cada um recolhido por padrão (o de Endereço embute um formulário + mapa).
   const [expandedCarrierCardIds, setExpandedCarrierCardIds] = useState<string[]>([]);
   const [expandedAddressCardIds, setExpandedAddressCardIds] = useState<string[]>([]);
   const [sentToDeliveryIds, setSentToDeliveryIds] = useState<string[]>([]);
@@ -433,10 +433,6 @@ export default function SalesView({
     setPopupRevertQtys({});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [itemsPopupSale?.id]);
-
-  const toggleExpand = (id: string) => {
-    setExpandedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
-  };
 
   const handleOpenExport = (e: React.MouseEvent, sale: Sale, format: 'pdf' | 'jpg') => {
     e.stopPropagation();
@@ -1193,9 +1189,6 @@ export default function SalesView({
                                 el.scrollIntoView({ behavior: 'smooth', block: 'center' });
                                 el.classList.add('ring-4', 'ring-indigo-500', 'transition-all', 'duration-300');
                                 setTimeout(() => el.classList.remove('ring-4', 'ring-indigo-500'), 2000);
-                                if (!expandedIds.includes(s.saleId)) {
-                                  setExpandedIds(prev => [...prev, s.saleId]);
-                                }
                             }
                           }}
                           className={`text-[9px] font-black tracking-widest px-1.5 py-0.5 rounded-md flex items-center gap-1 transition-all hover:scale-105 active:scale-95 cursor-pointer ${
@@ -1671,11 +1664,6 @@ export default function SalesView({
         {filteredSales.map((sale) => {
           const totalPaid = (sale.paymentHistory || []).reduce((acc, p) => acc + p.amount, 0);
           const remaining = Math.max(0, sale.total - totalPaid);
-          const isExpanded = expandedCards || expandedIds.includes(sale.id);
-          // O mapa de entrega só monta quando o card foi expandido INDIVIDUALMENTE — não
-          // no "expandir todos" (expandedCards), pra nunca instanciar dezenas de mapas
-          // Leaflet ao mesmo tempo numa lista longa.
-          const isIndividuallyExpanded = expandedIds.includes(sale.id);
 
           return (
             <div id={`sale-card-${sale.id}`} key={sale.id} className={`p-6 rounded-[2.5rem] border shadow-xl dark:shadow-none flex flex-col gap-6 relative overflow-hidden group transition-all duration-300 hover:shadow-2xl ${
@@ -1711,7 +1699,7 @@ export default function SalesView({
                           Estoque
                         </span>
                       )}
-                      {isExpanded && sale.sellerName && (
+                      {sale.sellerName && (
                         <span className="text-[10px] font-black px-2 py-0.5 rounded-md leading-none tracking-widest bg-indigo-600 text-white shadow-sm">
                           {sale.sellerName}
                         </span>
@@ -1787,14 +1775,6 @@ export default function SalesView({
                       </span>
                     );
                   })()}
-
-                  <button
-                    onClick={() => toggleExpand(sale.id)}
-                    className={`w-9 h-9 rounded-full flex items-center justify-center transition-all shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}
-                    title={isExpanded ? "Recolher" : "Expandir"}
-                  >
-                    {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                  </button>
                 </div>
               </div>
             </div>
@@ -1817,33 +1797,19 @@ export default function SalesView({
                 );
               })()}
 
-              {/* Content Row: Localização de Entrega */}
-              {isExpanded && (
-                <div className="flex flex-col gap-3 z-10">
-                  {modulesConfig.entregas && onUpdateDeliveryInfo && isIndividuallyExpanded && sale.status === SaleStatus.SALE && (() => {
-                    const isDeliveryOpen = expandedDeliveryIds.includes(sale.id);
+              {/* Popup: Detalhes de Entrega — aberto pelo botão dedicado no rodapé do card */}
+              {modulesConfig.entregas && onUpdateDeliveryInfo && sale.status === SaleStatus.SALE && (
+                <Modal
+                  isOpen={deliveryDetailsSaleId === sale.id}
+                  onClose={() => setDeliveryDetailsSaleId(null)}
+                  title="Detalhes de Entrega"
+                  icon={<Truck size={20} />}
+                  maxWidth="max-w-lg"
+                >
+                  {(() => {
                     const selectedCarrier = carriers.find(c => c.id === sale.carrierId);
                     return (
-                      <>
-                      <div className={`flex flex-col gap-2 px-4 py-3 rounded-2xl ${isDarkMode ? 'bg-violet-900/10 border border-violet-800/30' : 'bg-violet-50/60 border border-violet-100'}`} onClick={(e) => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={() => setExpandedDeliveryIds(prev => prev.includes(sale.id) ? prev.filter(id => id !== sale.id) : [...prev, sale.id])}
-                          className="flex items-center justify-between gap-2 w-full"
-                        >
-                          <span className="flex items-center gap-2">
-                            <Truck size={14} className="text-violet-600 shrink-0" />
-                            <span className="text-[10px] font-black text-violet-700 dark:text-violet-400 uppercase tracking-widest">
-                              Localização de Entrega
-                            </span>
-                          </span>
-                          <span className="relative flex items-center justify-center w-7 h-7 shrink-0">
-                            <span className="absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-50 animate-ping" />
-                            <span className={`relative flex items-center justify-center w-7 h-7 rounded-full ${isDarkMode ? 'bg-violet-900/40' : 'bg-violet-100'}`}>
-                              {isDeliveryOpen ? <ChevronUp size={16} className="text-violet-600" /> : <ChevronDown size={16} className="text-violet-600" />}
-                            </span>
-                          </span>
-                        </button>
+                      <div className="flex flex-col gap-3">
                         {onSendToRouteBuilder && sale.deliveryStatus !== 'DELIVERED' && (
                           selectedCarrier
                             ? (selectedCarrier.address?.lat !== undefined && selectedCarrier.address?.lng !== undefined)
@@ -1858,46 +1824,49 @@ export default function SalesView({
                                 setSentToDeliveryIds(prev => prev.filter(id => id !== sale.id));
                               }, 2500);
                             }}
-                            className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${
+                            className={`flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${
                               sentToDeliveryIds.includes(sale.id)
                                 ? 'bg-amber-500 text-white'
                                 : 'bg-orange-500 text-white hover:bg-orange-600'
                             }`}
                           >
-                            {sentToDeliveryIds.includes(sale.id) ? <Check size={13} /> : <Truck size={13} />}
+                            {sentToDeliveryIds.includes(sale.id) ? <Check size={14} /> : <Truck size={14} />}
                             {sentToDeliveryIds.includes(sale.id) ? 'Enviado' : 'Enviar para Entrega'}
                           </button>
                         )}
-                        {isDeliveryOpen && carriers.length > 0 && (() => {
+
+                        {carriers.length > 0 && (() => {
                           const isCarrierCardOpen = expandedCarrierCardIds.includes(sale.id);
                           return (
-                            <div className={`rounded-xl border overflow-hidden ${isDarkMode ? 'bg-slate-900/40 border-violet-800/30' : 'bg-white border-violet-100'}`}>
+                            <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-900/40 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); setExpandedCarrierCardIds(prev => prev.includes(sale.id) ? prev.filter(id => id !== sale.id) : [...prev, sale.id]); }}
-                                className="flex items-center justify-between gap-2 w-full px-3 py-2.5"
+                                onClick={() => setExpandedCarrierCardIds(prev => prev.includes(sale.id) ? prev.filter(id => id !== sale.id) : [...prev, sale.id])}
+                                className="flex items-center justify-between gap-2 w-full px-4 py-3"
                               >
-                                <span className="flex items-center gap-1.5">
-                                  <Truck size={13} className="text-violet-600 shrink-0" />
-                                  <span className="text-[9px] font-black text-violet-600 dark:text-violet-400 uppercase tracking-widest">Transportadora</span>
+                                <span className="flex items-center gap-2">
+                                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-sky-500/20 text-sky-400' : 'bg-sky-100 text-sky-600'}`}>
+                                    <Truck size={14} />
+                                  </div>
+                                  <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Transportadora</span>
                                 </span>
-                                {isCarrierCardOpen ? <ChevronUp size={16} className="text-violet-600 shrink-0" /> : <ChevronDown size={16} className="text-violet-600 shrink-0" />}
+                                {isCarrierCardOpen ? <ChevronUp size={16} className="text-slate-400 shrink-0" /> : <ChevronDown size={16} className="text-slate-400 shrink-0" />}
                               </button>
                               {isCarrierCardOpen && (
-                                <div className="flex flex-col gap-2 px-3 pb-3">
-                                  <p className="text-[9px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-widest leading-snug">
+                                <div className="flex flex-col gap-2 px-4 pb-4">
+                                  <p className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest leading-snug">
                                     Esse pedido vai ser entregue em alguma transportadora cadastrada?
                                   </p>
                                   <button
                                     type="button"
-                                    onClick={(e) => { e.stopPropagation(); setCarrierSearch(''); setCarrierPickerTarget({ saleId: sale.id }); }}
-                                    className={`w-full h-11 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent hover:border-violet-500 rounded-xl px-4 text-sm font-bold transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                                    onClick={() => { setCarrierSearch(''); setCarrierPickerTarget({ saleId: sale.id }); }}
+                                    className={`w-full h-11 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-white'} border-2 border-transparent hover:border-sky-500 rounded-xl px-4 text-sm font-bold transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
                                   >
                                     <span className="truncate">{selectedCarrier ? selectedCarrier.name : 'Nenhuma — entregar pela rota do app'}</span>
                                     <ChevronDown size={16} className="text-slate-400 shrink-0" />
                                   </button>
                                   {selectedCarrier && (
-                                    <p className="text-[9px] font-bold text-violet-600 dark:text-violet-400 px-1">
+                                    <p className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 px-1">
                                       Mostrando o endereço cadastrado da transportadora — edite o cadastro dela em Configurações de Entrega pra corrigir.
                                     </p>
                                   )}
@@ -1906,24 +1875,27 @@ export default function SalesView({
                             </div>
                           );
                         })()}
-                        {isDeliveryOpen && (() => {
+
+                        {(() => {
                           const isAddressCardOpen = expandedAddressCardIds.includes(sale.id);
                           return (
-                            <div className={`rounded-xl border overflow-hidden ${isDarkMode ? 'bg-slate-900/40 border-violet-800/30' : 'bg-white border-violet-100'}`}>
+                            <div className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'bg-slate-900/40 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); setExpandedAddressCardIds(prev => prev.includes(sale.id) ? prev.filter(id => id !== sale.id) : [...prev, sale.id]); }}
-                                className="flex items-center justify-between gap-2 w-full px-3 py-2.5"
+                                onClick={() => setExpandedAddressCardIds(prev => prev.includes(sale.id) ? prev.filter(id => id !== sale.id) : [...prev, sale.id])}
+                                className="flex items-center justify-between gap-2 w-full px-4 py-3"
                               >
-                                <span className="flex items-center gap-1.5">
-                                  <MapPin size={13} className="text-violet-600 shrink-0" />
-                                  <span className="text-[9px] font-black text-violet-600 dark:text-violet-400 uppercase tracking-widest">Endereço de Entrega</span>
+                                <span className="flex items-center gap-2">
+                                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-rose-500/20 text-rose-400' : 'bg-rose-100 text-rose-600'}`}>
+                                    <MapPin size={14} />
+                                  </div>
+                                  <span className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Endereço de Entrega</span>
                                 </span>
-                                {isAddressCardOpen ? <ChevronUp size={16} className="text-violet-600 shrink-0" /> : <ChevronDown size={16} className="text-violet-600 shrink-0" />}
+                                {isAddressCardOpen ? <ChevronUp size={16} className="text-slate-400 shrink-0" /> : <ChevronDown size={16} className="text-slate-400 shrink-0" />}
                               </button>
                               {isAddressCardOpen && (
-                                <div className="flex flex-col gap-2 px-3 pb-3">
-                                  <p className="text-[9px] font-bold text-violet-600 dark:text-violet-400 uppercase tracking-widest leading-snug">
+                                <div className="flex flex-col gap-2 px-4 pb-4">
+                                  <p className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-widest leading-snug">
                                     Esse pedido vai ser entregue em qual endereço? Caso não seja escolhida transportadora, escolha entre as três opções abaixo ou use o endereço cadastrado do cliente.
                                   </p>
                                   {!selectedCarrier && (() => {
@@ -1953,6 +1925,7 @@ export default function SalesView({
                             </div>
                           );
                         })()}
+
                         {(() => {
                           const items = sale.deliveryItems || [];
                           const preview = items.length > 0 ? formatDeliveryItemsList(items, products) : '';
@@ -1960,13 +1933,15 @@ export default function SalesView({
                             <button
                               type="button"
                               onClick={() => setItemsPickerTarget({ saleId: sale.id })}
-                              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all active:scale-[0.98] ${items.length > 0 ? `text-left ${isDarkMode ? 'bg-violet-900/20 border border-violet-700' : 'bg-violet-50 border border-violet-200'}` : `justify-center border-2 border-dashed ${isDarkMode ? 'border-violet-800 text-violet-400 hover:bg-violet-900/20' : 'border-violet-200 text-violet-700 hover:bg-violet-50'}`}`}
+                              className={`flex items-center gap-2 px-4 py-3 rounded-2xl transition-all active:scale-[0.98] ${items.length > 0 ? `text-left border ${isDarkMode ? 'bg-slate-900/40 border-slate-800' : 'bg-slate-50 border-slate-100'}` : `justify-center border-2 border-dashed ${isDarkMode ? 'border-slate-700 text-slate-400 hover:bg-slate-800/50' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}`}
                             >
-                              {items.length > 0 ? <Pencil size={13} className="shrink-0 text-violet-600" /> : <ListChecks size={13} className="shrink-0" />}
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-600'}`}>
+                                {items.length > 0 ? <Pencil size={14} /> : <ListChecks size={14} />}
+                              </div>
                               <span className={items.length > 0 ? 'min-w-0 flex-1' : ''}>
                                 {items.length > 0 ? (
                                   <>
-                                    <span className="block text-[9px] font-black uppercase tracking-widest text-violet-600 dark:text-violet-400">Itens na Entrega ({items.length})</span>
+                                    <span className={`block text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Itens na Entrega ({items.length})</span>
                                     <span className={`block text-[10px] font-bold truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{preview}</span>
                                   </>
                                 ) : (
@@ -1976,6 +1951,7 @@ export default function SalesView({
                             </button>
                           );
                         })()}
+
                         {/* Endereços de entrega adicionais — mesmo pedido, produtos a entregar em
                             mais de um lugar (Sale.additionalDeliveryAddresses). Cada um pode ir
                             direto ou por uma transportadora própria, independente do principal
@@ -1983,9 +1959,10 @@ export default function SalesView({
                         {(sale.additionalDeliveryAddresses || []).map((entry, idx) => {
                           const entryCarrier = entry.carrierId ? carriers.find(c => c.id === entry.carrierId) : undefined;
                           return (
-                            <div key={idx} className={`flex flex-col gap-2 pt-3 mt-1 border-t ${isDarkMode ? 'border-violet-800/30' : 'border-violet-100'}`}>
-                              <div className="flex items-center justify-between gap-2 px-1">
-                                <span className="text-[10px] font-black text-violet-700 dark:text-violet-400 uppercase tracking-widest">
+                            <div key={idx} className={`flex flex-col gap-2 p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-900/40 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                                  <MapPin size={13} className="text-rose-500 shrink-0" />
                                   Endereço {idx + 2}
                                 </span>
                                 <button
@@ -2000,28 +1977,28 @@ export default function SalesView({
                                   <X size={14} />
                                 </button>
                               </div>
-                              {isDeliveryOpen && carriers.length > 0 && (
+                              {carriers.length > 0 && (
                                 <div className="space-y-1">
                                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Transportadora deste endereço</label>
                                   <button
                                     type="button"
-                                    onClick={(e) => { e.stopPropagation(); setCarrierSearch(''); setCarrierPickerTarget({ saleId: sale.id, addressIndex: idx }); }}
-                                    className={`w-full h-11 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'} border-2 border-transparent hover:border-violet-500 rounded-xl px-4 text-sm font-bold transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                                    onClick={() => { setCarrierSearch(''); setCarrierPickerTarget({ saleId: sale.id, addressIndex: idx }); }}
+                                    className={`w-full h-11 flex items-center justify-between gap-2 ${isDarkMode ? 'bg-slate-800/50' : 'bg-white'} border-2 border-transparent hover:border-sky-500 rounded-xl px-4 text-sm font-bold transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
                                   >
                                     <span className="truncate">{entryCarrier ? entryCarrier.name : 'Nenhuma — entregar pela rota do app'}</span>
                                     <ChevronDown size={16} className="text-slate-400 shrink-0" />
                                   </button>
                                 </div>
                               )}
-                              {entryCarrier && isDeliveryOpen && (
-                                <p className="text-[9px] font-bold text-violet-600 dark:text-violet-400 px-1">
+                              {entryCarrier && (
+                                <p className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 px-1">
                                   Mostrando o endereço cadastrado da transportadora — edite o cadastro dela em Configurações de Entrega pra corrigir.
                                 </p>
                               )}
                               <DeliveryAddressForm
                                 isDarkMode={isDarkMode}
                                 address={entryCarrier ? entryCarrier.address : entry.address}
-                                fieldsExpanded={isDeliveryOpen}
+                                fieldsExpanded
                                 locked={!!entryCarrier}
                                 onChange={(address) => {
                                   if (entryCarrier) return;
@@ -2037,13 +2014,13 @@ export default function SalesView({
                                   <button
                                     type="button"
                                     onClick={() => setItemsPickerTarget({ saleId: sale.id, addressIndex: idx })}
-                                    className={`flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all active:scale-[0.98] ${items.length > 0 ? `text-left ${isDarkMode ? 'bg-violet-900/20 border border-violet-700' : 'bg-violet-50 border border-violet-200'}` : `justify-center border-2 border-dashed ${isDarkMode ? 'border-violet-800 text-violet-400 hover:bg-violet-900/20' : 'border-violet-200 text-violet-700 hover:bg-violet-50'}`}`}
+                                    className={`flex items-center gap-2 px-3 py-2.5 rounded-xl transition-all active:scale-[0.98] ${items.length > 0 ? `text-left ${isDarkMode ? 'bg-amber-900/20 border border-amber-700' : 'bg-amber-50 border border-amber-200'}` : `justify-center border-2 border-dashed ${isDarkMode ? 'border-amber-800 text-amber-400 hover:bg-amber-900/20' : 'border-amber-200 text-amber-700 hover:bg-amber-50'}`}`}
                                   >
-                                    {items.length > 0 ? <Pencil size={13} className="shrink-0 text-violet-600" /> : <ListChecks size={13} className="shrink-0" />}
+                                    {items.length > 0 ? <Pencil size={13} className="shrink-0 text-amber-600" /> : <ListChecks size={13} className="shrink-0" />}
                                     <span className={items.length > 0 ? 'min-w-0 flex-1' : ''}>
                                       {items.length > 0 ? (
                                         <>
-                                          <span className="block text-[9px] font-black uppercase tracking-widest text-violet-600 dark:text-violet-400">Itens na Entrega ({items.length})</span>
+                                          <span className="block text-[9px] font-black uppercase tracking-widest text-amber-600 dark:text-amber-400">Itens na Entrega ({items.length})</span>
                                           <span className={`block text-[10px] font-bold truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{preview}</span>
                                         </>
                                       ) : (
@@ -2056,19 +2033,19 @@ export default function SalesView({
                             </div>
                           );
                         })}
+
+                        <button
+                          type="button"
+                          onClick={() => onUpdateDeliveryInfo(sale.id, { additionalDeliveryAddresses: [...(sale.additionalDeliveryAddresses || []), { address: {} }] })}
+                          className="flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all active:scale-[0.98]"
+                        >
+                          <Plus size={13} />
+                          Adicionar Outro Ponto de Entrega no Pedido
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onUpdateDeliveryInfo(sale.id, { additionalDeliveryAddresses: [...(sale.additionalDeliveryAddresses || []), { address: {} }] }); }}
-                        className="flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all active:scale-[0.98]"
-                      >
-                        <Plus size={13} />
-                        Adicionar Outro Ponto de Entrega no Pedido
-                      </button>
-                      </>
                     );
                   })()}
-                </div>
+                </Modal>
               )}
 
               {showSeparationInfo && sale.status === SaleStatus.SALE && (() => {
@@ -2187,6 +2164,23 @@ export default function SalesView({
 
               {/* Action Bar (Footer) */}
               <div className="flex flex-col gap-4 pt-4 border-t border-slate-100 dark:border-slate-800/50 z-10">
+                {modulesConfig.entregas && onUpdateDeliveryInfo && sale.status === SaleStatus.SALE && (
+                  <button
+                    type="button"
+                    onClick={() => setDeliveryDetailsSaleId(sale.id)}
+                    className={`flex items-center justify-between gap-2 w-full px-4 py-3 rounded-2xl transition-all active:scale-[0.99] ${isDarkMode ? 'bg-sky-900/10 border border-sky-800/30 hover:bg-sky-900/20' : 'bg-sky-50/60 border border-sky-100 hover:bg-sky-100/60'}`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-sky-500/20 text-sky-400' : 'bg-sky-100 text-sky-600'}`}>
+                        <Truck size={14} />
+                      </div>
+                      <span className="text-[10px] font-black text-sky-700 dark:text-sky-400 uppercase tracking-widest">
+                        Detalhes de Entrega
+                      </span>
+                    </span>
+                    <ChevronRight size={16} className="text-sky-500 shrink-0" />
+                  </button>
+                )}
                 <div className="flex items-center w-full gap-2">
                   <div className="flex items-center gap-2 shrink-0">
                     {/* Note Indicator if exists */}
