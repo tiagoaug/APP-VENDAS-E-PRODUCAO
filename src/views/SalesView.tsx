@@ -8,6 +8,7 @@ import SeparacaoCaixasModal from '../components/SeparacaoCaixasModal';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { exportSale } from '../utils/saleExport';
+import { usePrivacyMode, PRIVACY_BLUR_CLASS } from '../contexts/PrivacyContext';
 import { exportStockShortageReport, StockShortageItem } from '../utils/stockShortageExport';
 import ExportNoteModal from '../components/ExportNoteModal';
 import PedidosClientesPanel from '../components/PedidosClientesPanel';
@@ -193,6 +194,7 @@ export default function SalesView({
   showThumbnails = true,
   companyProfile = null,
 }: SalesViewProps) {
+  const hidePrivacy = usePrivacyMode();
   const isIndustrial = appTheme === 'industrial';
   const hasProduction = modulesConfig.production;
   const [filter, setFilter] = usePersistedState<'ALL' | 'RETAIL' | 'WHOLESALE'>('salesView_filter', 'ALL');
@@ -1435,7 +1437,7 @@ export default function SalesView({
               <div className="w-8 h-8 rounded-full bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center">
                 <DollarSign size={14} strokeWidth={2.5} />
               </div>
-              <p className={`text-[13px] font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+              <p className={`text-[13px] font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-800'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                 R$ {deliveryStats.totalPendingAmount.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
               </p>
               <p className="text-[7px] font-black uppercase tracking-widest text-slate-400 text-center">A Receber</p>

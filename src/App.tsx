@@ -19,6 +19,7 @@ import {
   Database,
   Boxes,
   Eye,
+  EyeOff,
   Factory,
   GanttChartSquare,
   Hammer,
@@ -5563,6 +5564,7 @@ export default function App() {
             productionLots={productionLots}
             productionConfigs={productionConfigs}
             collaborators={collaborators}
+            companyProfile={companyProfile}
             onSave={async (newTx) => {
               try {
                 await financeService.createTransaction(newTx);
@@ -5611,6 +5613,7 @@ export default function App() {
             }}
             onOpenPurchase={(id) => navigateTo(ViewType.PURCHASE_FORM, id)}
             onOpenSale={(id) => navigateTo(ViewType.SALE_FORM, id)}
+            onPayCommission={(params) => navigateTo(ViewType.PURCHASE_FORM, { type: PurchaseType.GENERAL, ...params })}
             isDarkMode={isDarkMode}
           />
         );
@@ -7227,6 +7230,17 @@ export default function App() {
           </h1>
         </div>
         <div className="flex items-center gap-3 text-slate-500">
+          <motion.button
+            type="button"
+            onClick={() => setHideFinancialValues(v => !v)}
+            title={hideFinancialValues ? "Desativar Modo Privacidade" : "Ativar Modo Privacidade"}
+            aria-label={hideFinancialValues ? "Desativar Modo Privacidade" : "Ativar Modo Privacidade"}
+            whileHover={{ scale: 1.15 }}
+            whileTap={{ scale: 0.9 }}
+            className={`p-2 rounded-full transition-colors ${hideFinancialValues ? 'bg-rose-50 dark:bg-rose-900/30 text-rose-500 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+          >
+            {hideFinancialValues ? <EyeOff size={20} /> : <Eye size={20} />}
+          </motion.button>
           {modulesConfig.production && (
           <motion.button
             type="button"
