@@ -22,6 +22,21 @@ function persistShowPkgBadge(value: boolean) {
   try { localStorage.setItem(SHOW_PKG_BADGE_KEY, value ? '1' : '0'); } catch { /* ignore */ }
 }
 
+// Preferência local de mostrar ou não a miniatura (foto do produto) em cada linha — mesmo
+// padrão de persistência do badge de pares por caixa acima.
+const SHOW_THUMBNAILS_KEY = 'stock_glance_show_thumbnails';
+function loadShowThumbnails(): boolean {
+  try {
+    const raw = localStorage.getItem(SHOW_THUMBNAILS_KEY);
+    return raw === null ? true : raw === '1';
+  } catch {
+    return true;
+  }
+}
+function persistShowThumbnails(value: boolean) {
+  try { localStorage.setItem(SHOW_THUMBNAILS_KEY, value ? '1' : '0'); } catch { /* ignore */ }
+}
+
 // Aba extra além de Atacado/Varejo — reaproveita a listagem de caixas prontas (Atacado)
 // e soma o que ainda está em produção (PCP) por produto+cor, pra planejar reposição.
 const REPOSICAO_TAB = 'REPOSICAO' as const;
@@ -47,6 +62,9 @@ interface StockGlanceViewProps {
    * (Grid tipo PACKAGING) e quebrar "X cx" por padrão quando há mais de um
    * misturado na mesma cor — mesma fonte que StockView.tsx já usa. */
   productionConfigs?: ProductionConfigItem[];
+  /** Preferência global "Miniaturas dos Modelos" (Acessibilidade) — desligada, vence o toggle
+   * local "Miniaturas" desta tela (esconde a foto mesmo que ele esteja marcado). */
+  showThumbnails?: boolean;
 }
 
 type RetailSizeRow = { size: string; ready: number };
@@ -54,7 +72,7 @@ type RetailSizeRow = { size: string; ready: number };
 // (ex.: "12P") indicando quantos pares aquela caixa tem, já que caixas de padrões diferentes
 // (12 pares x 15 pares, por exemplo) têm quantidade e valor diferentes entre si.
 type PkgBreakdownRow = { label: string; qty: number; isAvulso: boolean; capacity: number; badgeColor?: string };
-type ProductRow = { variationId: string; colorName: string; ready: number; unit: string; note?: string; sizeRows?: RetailSizeRow[]; producing?: number; pkgBreakdown?: PkgBreakdownRow[] };
+type ProductRow = { variationId: string; colorName: string; ready: number; unit: string; note?: string; sizeRows?: RetailSizeRow[]; producing?: number; pkgBreakdown?: PkgBreakdownRow[]; photoUrl?: string };
 type ProductCard = { product: Product; rows: ProductRow[] };
 
 // Mensagens rápidas pra observação por cor — mesmo padrão de "Textos Rápidos" do
@@ -80,7 +98,7 @@ function persistQuickMessages(list: string[]) {
 /** Visão de estoque 100% somente leitura — sem opção de editar/balanço em nenhum lugar
  * desta tela, e sem informação de produção: mostra só o estoque real (Variation.stock).
  * Única exceção: observação livre por cor (não altera estoque, só anotação). */
-export default function StockGlanceView({ products, isDarkMode, onBack, onUpdateVariationNote, grids = [], lots = [], modulesConfig, productionConfigs = [] }: StockGlanceViewProps) {
+export default function StockGlanceView({ products, isDarkMode, onBack, onUpdateVariationNote, grids = [], lots = [], modulesConfig, productionConfigs = [], showThumbnails: globalShowThumbnails = true }: StockGlanceViewProps) {
   const packagingItems = useMemo(() => productionConfigs.filter(c => c.type === 'PACKAGING'), [productionConfigs]);
   const [activeTab, setActiveTab] = useState<GlanceTab>(SaleType.WHOLESALE);
   const showReposicaoTab = !modulesConfig || modulesConfig.production;
@@ -92,6 +110,8 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
   const [colorFilter, setColorFilter] = useState<string | null>(null);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showPkgBadge, setShowPkgBadge] = useState(() => loadShowPkgBadge());
+  const [showThumbnails, setShowThumbnails] = useState(() => loadShowThumbnails());
+  const effectiveShowThumbnails = globalShowThumbnails && showThumbnails;
   const [notesProductId, setNotesProductId] = useState<string | null>(null);
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [gradeOpenRowId, setGradeOpenRowId] = useState<string | null>(null);
@@ -178,6 +198,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                 note: variation.stockNote,
                 producing,
                 pkgBreakdown: breakdown.length > 0 ? breakdown : undefined,
+                photoUrl: variation.photoUrl || product.photoUrl,
               });
             }
             if (includeRetail) {
@@ -188,6 +209,7 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
               variationRows.push({
                 variationId: variation.id,
                 colorName: variation.colorName,
+                photoUrl: variation.photoUrl || product.photoUrl,
                 ready: getRetailPairs(product, variation),
                 unit: 'pr',
                 note: variation.stockNote,
@@ -405,6 +427,13 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                   {/* Quantidade sempre na frente da cor — observação fica na outra extremidade */}
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
+                      {effectiveShowThumbnails && (
+                        row.photoUrl ? (
+                          <img src={row.photoUrl} alt={row.colorName} className="w-8 h-8 rounded-lg object-cover shrink-0 border border-black/5" />
+                        ) : (
+                          <div className={`w-8 h-8 rounded-lg shrink-0 ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+                        )
+                      )}
                       <span className={`text-[13px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{row.ready} {row.unit}</span>
                       <span className={`text-[11px] font-bold uppercase tracking-tight truncate ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>{row.colorName}</span>
                     </div>
@@ -559,6 +588,27 @@ export default function StockGlanceView({ products, isDarkMode, onBack, onUpdate
                   <span className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow-sm transition-all ${showPkgBadge ? 'left-6' : 'left-1'}`} />
                 </button>
               </div>
+
+              {/* Mostrar/ocultar a miniatura (foto do produto/cor) em cada linha — preferência
+                  do aparelho, persistida local. Some quando "Miniaturas dos Modelos"
+                  (Acessibilidade) está desligada — essa vence em todo o programa. */}
+              {globalShowThumbnails && (
+                <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60">
+                  <div className="min-w-0">
+                    <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block">Miniaturas</label>
+                    <p className="text-[9px] font-bold text-slate-400 mt-0.5">Foto do produto/cor em cada linha</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowThumbnails(v => { const next = !v; persistShowThumbnails(next); return next; })}
+                    title={showThumbnails ? 'Ocultar miniaturas' : 'Mostrar miniaturas'}
+                    aria-label={showThumbnails ? 'Ocultar miniaturas' : 'Mostrar miniaturas'}
+                    className={`relative w-12 h-7 rounded-full shrink-0 transition-all ${showThumbnails ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'}`}
+                  >
+                    <span className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow-sm transition-all ${showThumbnails ? 'left-6' : 'left-1'}`} />
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="p-5 pt-2 shrink-0 flex gap-2">

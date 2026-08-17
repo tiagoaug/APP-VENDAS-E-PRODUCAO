@@ -3,6 +3,7 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import {
   Bluetooth, CheckCircle2, XCircle, RefreshCw, Ruler, Plus, Trash2,
   FilePlus, Upload, FolderOpen, X, ChevronDown, ChevronUp, RotateCcw, Pencil, Star, Wifi,
+  RectangleVertical, RectangleHorizontal,
 } from 'lucide-react';
 import { LabelPaperSize, LabelFile } from '../types';
 import {
@@ -215,6 +216,15 @@ export default function LabelPrintStudioView({
       writePreferredSize(next);
       return next;
     });
+  };
+
+  // Orientação da etiqueta selecionada — não é um state à parte (senão desalinha do tamanho
+  // escolhido); inverte largura/altura do `selectedSize` atual, então vale tanto pro Novo
+  // Arquivo quanto pra Importação de PDF (ambos usam selectedSize.widthMm/heightMm).
+  const sizeOrientation: 'portrait' | 'landscape' = selectedSize && selectedSize.widthMm > selectedSize.heightMm ? 'landscape' : 'portrait';
+  const setSizeOrientation = (target: 'portrait' | 'landscape') => {
+    if (!selectedSize || sizeOrientation === target) return;
+    setSelectedSize({ ...selectedSize, widthMm: selectedSize.heightMm, heightMm: selectedSize.widthMm });
   };
   const [sizesExpanded, setSizesExpanded] = useState(false);
   const [showAddSize, setShowAddSize] = useState(false);
@@ -680,6 +690,37 @@ export default function LabelPrintStudioView({
               })}
             </div>
           </>
+        )}
+      </div>
+
+      {/* Orientação — inverte largura/altura do tamanho selecionado acima; vale tanto pro Novo
+          Arquivo quanto pra Importação de PDF logo abaixo (ambos usam selectedSize). */}
+      <div className={miniCardCls}>
+        <span className={sectionTitleCls}>Orientação da etiqueta</span>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={!selectedSize}
+            onClick={() => setSizeOrientation('portrait')}
+            className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${pressBtnCls} ${
+              sizeOrientation === 'portrait' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            <RectangleVertical size={14} /> Retrato
+          </button>
+          <button
+            type="button"
+            disabled={!selectedSize}
+            onClick={() => setSizeOrientation('landscape')}
+            className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${pressBtnCls} ${
+              sizeOrientation === 'landscape' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            <RectangleHorizontal size={14} /> Paisagem
+          </button>
+        </div>
+        {selectedSize && (
+          <p className="text-[9px] font-bold text-slate-400 mt-2 text-center">{selectedSize.widthMm} × {selectedSize.heightMm} mm</p>
         )}
       </div>
 

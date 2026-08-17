@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
-import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, Product, SaleType, ProductionLot, ProductionConfigItem } from '../types';
-import { Search, Plus, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash, ChevronDown, ChevronUp, Tag, FileText } from 'lucide-react';
+import { useState, useMemo, useRef } from 'react';
+import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, SaleStatus, Product, SaleType, ProductionLot, ProductionConfigItem, Collaborator } from '../types';
+import { Search, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash, ChevronDown, ChevronUp, Tag, FileText } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import TransactionModal from '../components/TransactionModal';
@@ -10,6 +10,24 @@ import PartialPaymentModal from '../components/PartialPaymentModal';
 import BusinessOverviewCard from '../components/BusinessOverviewCard';
 import { toast } from '../utils/toast';
 import { firebaseService } from '../services/firebaseService';
+import { getPeriodRange, computePeriodFinancials, computeSalesProfitInPeriod, computePendingReceivables, computePendingPayables, OverviewPeriodType } from '../utils/businessOverview';
+
+const STATS_PERIOD_LABELS: Record<OverviewPeriodType, string> = { MONTH: 'Mês', QUARTER: 'Trim', SEMESTER: 'Sem', YEAR: 'Ano' };
+const STATS_PERIOD_PHRASE: Record<OverviewPeriodType, string> = { MONTH: 'no mês', QUARTER: 'no trimestre', SEMESTER: 'no semestre', YEAR: 'no ano' };
+
+// Explica pra que serve cada lançamento manual antes de abrir o formulário — evita que alguém
+// lance uma Entrada/Saída avulsa achando que está registrando uma Venda/Compra (que têm telas
+// próprias e já mexem no financeiro sozinhas).
+const MANUAL_ENTRY_INFO: Record<TransactionType, { title: string; message: string }> = {
+  [TransactionType.INCOME]: {
+    title: 'Nova Entrada Manual',
+    message: 'Registra um valor recebido direto no financeiro, sem vínculo com uma Venda — use pra receitas avulsas (outros recebimentos, aportes, etc). Vendas já entram sozinhas ao serem fechadas.',
+  },
+  [TransactionType.EXPENSE]: {
+    title: 'Nova Saída Manual',
+    message: 'Registra uma despesa paga direto no financeiro, sem vínculo com uma Compra — use pra saídas avulsas (contas, taxas, retiradas, etc). Compras já entram sozinhas ao serem pagas.',
+  },
+};
 
 interface FinancialViewProps {
   transactions: Transaction[];
@@ -31,6 +49,9 @@ interface FinancialViewProps {
   onOpenPurchase?: (id: string) => void;
   onOpenSale?: (id: string) => void;
   isDarkMode: boolean;
+  /** Colaboradores marcados como Vendedor (ver Collaborator.isSeller) — alimenta o painel
+   * "Comissão a Vendedores" abaixo, somando Sale.commissionAmount de cada um. */
+  collaborators?: Collaborator[];
 }
 
 export default function FinancialView({
@@ -50,11 +71,32 @@ export default function FinancialView({
   onUpdatePerson,
   onOpenPurchase,
   onOpenSale,
-  isDarkMode
+  isDarkMode,
+  collaborators = [],
 }: FinancialViewProps) {
   const [filterType, setFilterType] = useState<TransactionType | 'ALL' | 'PAYABLE'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
-  
+
+  // Período das métricas de Receitas/Despesas do card "Saldo Confirmado" — independente do
+  // saldo em si (esse é sempre o valor atual das contas, não filtra por período).
+  const [statsPeriodType, setStatsPeriodType] = useState<OverviewPeriodType>('MONTH');
+  const [statsPeriodDate, setStatsPeriodDate] = useState(() => format(new Date(), 'yyyy-MM'));
+  const statsDateInputRef = useRef<HTMLInputElement>(null);
+  const openStatsMonthPicker = () => {
+    const el = statsDateInputRef.current as (HTMLInputElement & { showPicker?: () => void }) | null;
+    if (!el) return;
+    try { el.showPicker ? el.showPicker() : el.focus(); } catch { el.focus(); }
+  };
+
+  // Mostra (ou não) Vendas a Receber/Contas a Pagar junto das métricas do card — total em
+  // aberto AGORA (não segue o filtro de período acima: "a receber" é sempre o saldo pendente
+  // atual, não "quanto ficou pendente em junho").
+  const [showPendingStats, setShowPendingStats] = useState(false);
+
+  // Popup de explicação antes de abrir o lançamento manual de Entrada/Saída — guarda qual tipo
+  // foi clicado (null = popup fechado).
+  const [manualEntryConfirmType, setManualEntryConfirmType] = useState<TransactionType | null>(null);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalInitialType, setModalInitialType] = useState<TransactionType>(TransactionType.INCOME);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | undefined>();
@@ -188,16 +230,63 @@ export default function FinancialView({
   const businessAccounts = useMemo(() => accounts.filter(a => a.type !== AccountType.PERSONAL), [accounts]);
   const businessCategories = useMemo(() => categories.filter(c => !c.isPersonal), [categories]);
 
-  const stats = useMemo(() => {
-    const businessTransactions = transactions.filter(t => !t.isPersonal && accounts.find(a => a.id === t.accountId)?.type !== AccountType.PERSONAL);
-    const income = businessTransactions
-      .filter(t => t.type === TransactionType.INCOME && t.status === 'COMPLETED')
-      .reduce((acc, curr) => acc + curr.amount, 0);
-    const expenses = businessTransactions
-      .filter(t => t.type === TransactionType.EXPENSE && t.status === 'COMPLETED')
-      .reduce((acc, curr) => acc + curr.amount, 0);
-    return { income, expenses, balance: businessAccounts.reduce((acc, a) => acc + a.balance, 0) };
-  }, [transactions, businessAccounts]);
+  // Soma de Receitas/Despesas da busca atual (ex.: nome de fornecedor/cliente) — some `filtered`
+  // (já aplica o texto pesquisado), não a lista completa. Só aparece com busca preenchida — sem
+  // texto, `filtered` é só o filtro de tipo (Tudo/Entradas/Saídas), não faria sentido resumir.
+  const searchTotals = useMemo(() => {
+    if (!searchTerm.trim()) return null;
+    const income = filtered.filter(t => t.type === TransactionType.INCOME).reduce((a, t) => a + t.amount, 0);
+    const expenses = filtered.filter(t => t.type === TransactionType.EXPENSE).reduce((a, t) => a + t.amount, 0);
+    return { income, expenses };
+  }, [filtered, searchTerm]);
+
+  // Receitas/Despesas do período escolhido no filtro do card (ver `statsPeriodType`/
+  // `statsPeriodDate`) — usa `effectiveTransactions` (não só `transactions`, que só carrega
+  // "recente ou em aberto") pra funcionar corretamente em períodos antigos, quando o histórico
+  // completo já foi carregado (ver `handleLoadFullHistory`).
+  const periodFinancials = useMemo(() => {
+    const businessTransactions = effectiveTransactions.filter(t => !t.isPersonal && accounts.find(a => a.id === t.accountId)?.type !== AccountType.PERSONAL);
+    const { start, end } = getPeriodRange(statsPeriodType, statsPeriodDate);
+    return computePeriodFinancials(businessTransactions, start, end);
+  }, [effectiveTransactions, accounts, statsPeriodType, statsPeriodDate]);
+
+  // Lucro com Vendas — agora o destaque principal do card, no lugar do Saldo Confirmado (que
+  // virou uma métrica secundária ao lado de Receitas/Despesas). Total cobrado nas vendas
+  // fechadas do período menos o custo dos produtos vendidos (ver computeSalesProfitInPeriod).
+  const periodSalesProfit = useMemo(() => {
+    const { start, end } = getPeriodRange(statsPeriodType, statsPeriodDate);
+    return computeSalesProfitInPeriod(sales, products, start, end);
+  }, [sales, products, statsPeriodType, statsPeriodDate]);
+
+  // Comissão a Vendedores — soma Sale.commissionAmount (já "assado" na venda, ver SaleFormView)
+  // por colaborador-vendedor. Só conta vendas de verdade (não orçamento nem cancelada), igual
+  // ao resto das métricas de vendas desta tela.
+  const sellerCommissions = useMemo(() => {
+    const sellerCollaborators = collaborators.filter(c => c.isSeller);
+    if (sellerCollaborators.length === 0) return [];
+    const realSales = sales.filter(s => s.status !== SaleStatus.QUOTE && s.status !== SaleStatus.CANCELLED && s.isAccounting !== false);
+    return sellerCollaborators
+      .map(c => {
+        const collabSales = realSales.filter(s => s.sellerId === c.id);
+        const totalCommission = collabSales.reduce((acc, s) => acc + (s.commissionAmount || 0), 0);
+        const totalSales = collabSales.reduce((acc, s) => acc + s.total, 0);
+        return { collaborator: c, salesCount: collabSales.length, totalSales, totalCommission };
+      })
+      .sort((a, b) => b.totalCommission - a.totalCommission);
+  }, [collaborators, sales]);
+  const totalCommissionOwed = sellerCommissions.reduce((acc, s) => acc + s.totalCommission, 0);
+  const [isCommissionExpanded, setIsCommissionExpanded] = useState(false);
+
+  // Total em aberto AGORA — vendas fechadas ainda não totalmente pagas e compras a prazo ainda
+  // não totalmente pagas (ver `showPendingStats`).
+  const pendingReceivables = useMemo(() => computePendingReceivables(sales), [sales]);
+  const pendingPayables = useMemo(() => computePendingPayables(purchases), [purchases]);
+
+  // Receitas/Despesas exibidas — só somam o que ainda está em aberto (pendingReceivables/
+  // pendingPayables) quando o filtro "mostrar a receber/a pagar" está ligado; do contrário é só
+  // o que já foi confirmado no período (periodFinancials).
+  const totalReceitas = periodFinancials.income + (showPendingStats ? pendingReceivables : 0);
+  const totalDespesas = periodFinancials.expenses + (showPendingStats ? pendingPayables : 0);
 
   const handleAdd = (type: TransactionType) => {
     setModalInitialType(type);
@@ -398,28 +487,12 @@ export default function FinancialView({
           </div>
         )}
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 gap-3">
-          <div className={`p-6 rounded-[2.5rem] border shadow-sm relative group ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-gradient-to-br from-sky-100 via-blue-100 to-sky-200 border-sky-200 text-sky-900 shadow-sky-100'}`}>
-             <div className="absolute top-6 right-6 flex flex-col items-end gap-3 text-right">
-                <div className="flex gap-2">
-                   <button 
-                     onClick={() => handleAdd(TransactionType.INCOME)}
-                     className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 active:scale-95 transition-all"
-                     title="Nova Entrada"
-                   >
-                     <Plus size={18} strokeWidth={4} />
-                   </button>
-                   <button 
-                     onClick={() => handleAdd(TransactionType.EXPENSE)}
-                     className="w-10 h-10 rounded-xl bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-500/20 active:scale-95 transition-all"
-                     title="Nova Saída"
-                   >
-                     <Plus size={18} strokeWidth={4} />
-                   </button>
-                </div>
-                
-                <button 
+        {/* Summary Card — Lucro com Vendas/Receitas/Despesas, lançamento manual e Visualização
+            do Meu Negócio, tudo num card só (ver `embedded` em BusinessOverviewCard). */}
+        <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-gradient-to-br from-sky-100 via-blue-100 to-sky-200 border-sky-200 text-sky-900 shadow-sky-100'}`}>
+          <div className="p-6 relative">
+             <div className="absolute top-6 right-6">
+                <button
                   onClick={() => setIsQueryModalOpen(true)}
                   className={`flex flex-col items-center justify-center gap-1 p-2 rounded-2xl transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-indigo-400 border border-slate-700' : 'bg-white/60 text-sky-700 backdrop-blur-md border border-sky-200 shadow-sm'}`}
                 >
@@ -427,34 +500,187 @@ export default function FinancialView({
                   <span className="text-[7px] font-black tracking-[0.1em]">Consultas</span>
                 </button>
              </div>
-             <p className={`text-[10px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Saldo Confirmado</p>
-             <h2 className={`text-3xl font-black mt-2 tracking-tighter ${isDarkMode ? 'text-white' : 'text-sky-900'}`}>R$ {stats.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h2>
-             
-             <div className="flex gap-4 mt-6">
-                <div className="flex-1">
-                   <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Receitas</p>
-                   <p className={`text-sm font-bold ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>R$ {stats.income.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+             <p className={`text-[10px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Lucro com Vendas {STATS_PERIOD_PHRASE[statsPeriodType]}</p>
+             <h2 className={`text-3xl font-black mt-2 tracking-tighter ${periodSalesProfit >= 0 ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') : (isDarkMode ? 'text-rose-400' : 'text-rose-500')}`}>
+               R$ {periodSalesProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+             </h2>
+
+             {/* Filtro de período — controla o Lucro com Vendas acima e Receitas/Despesas
+                 abaixo. */}
+             <div className="flex items-center gap-1.5 mt-4">
+                <div className={`flex gap-0.5 p-0.5 rounded-xl shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-white/60'}`}>
+                   {(Object.keys(STATS_PERIOD_LABELS) as OverviewPeriodType[]).map((pt) => (
+                     <button
+                       key={pt}
+                       type="button"
+                       onClick={() => setStatsPeriodType(pt)}
+                       className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
+                         statsPeriodType === pt ? 'bg-indigo-600 text-white' : isDarkMode ? 'text-slate-400' : 'text-sky-700'
+                       }`}
+                     >
+                       {STATS_PERIOD_LABELS[pt]}
+                     </button>
+                   ))}
                 </div>
-                <div className="flex-1">
-                   <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Despesas</p>
-                   <p className={`text-sm font-bold ${isDarkMode ? 'text-rose-400' : 'text-rose-500'}`}>R$ {stats.expenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <div
+                  onClick={openStatsMonthPicker}
+                  className={`flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white/60 border-sky-200'}`}
+                >
+                  <Calendar size={12} className="text-sky-500 shrink-0" />
+                  <input
+                    ref={statsDateInputRef}
+                    type="month"
+                    value={statsPeriodDate}
+                    onChange={(e) => setStatsPeriodDate(e.target.value)}
+                    className={`flex-1 min-w-0 border-none bg-transparent px-0 py-0 text-[10px] font-black outline-none pointer-events-none ${isDarkMode ? 'text-slate-300' : 'text-sky-700'}`}
+                  />
                 </div>
              </div>
+
+             {/* Sem/Com valores a receber/a pagar — Receitas/Despesas/Receitas-Despesas abaixo
+                 somam ou não o que ainda está em aberto (ver `showPendingStats`). */}
+             <div className={`flex gap-0.5 p-0.5 rounded-xl mt-4 ${isDarkMode ? 'bg-slate-800' : 'bg-white/60'}`}>
+                <button
+                  type="button"
+                  onClick={() => setShowPendingStats(false)}
+                  className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
+                    !showPendingStats ? 'bg-indigo-600 text-white' : isDarkMode ? 'text-slate-400' : 'text-sky-700'
+                  }`}
+                >
+                  Sem valores a receber
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowPendingStats(true)}
+                  className={`flex-1 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
+                    showPendingStats ? 'bg-indigo-600 text-white' : isDarkMode ? 'text-slate-400' : 'text-sky-700'
+                  }`}
+                >
+                  Com valores a receber
+                </button>
+             </div>
+
+             <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-white/40 dark:border-slate-800">
+                <div>
+                   <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Receitas</p>
+                   <p className={`text-sm font-bold ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>R$ {totalReceitas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                </div>
+                <div>
+                   <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Despesas</p>
+                   <p className={`text-sm font-bold ${isDarkMode ? 'text-rose-400' : 'text-rose-500'}`}>R$ {totalDespesas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                </div>
+                <div>
+                   <p className={`text-[8px] font-black tracking-widest truncate ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Receitas - Despesas</p>
+                   <p className={`text-sm font-bold ${(totalReceitas - totalDespesas) >= 0 ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') : (isDarkMode ? 'text-rose-400' : 'text-rose-500')}`}>
+                     R$ {(totalReceitas - totalDespesas).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                   </p>
+                </div>
+             </div>
+
+             {showPendingStats && (
+               <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-white/40 dark:border-slate-800">
+                  <div>
+                     <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Vendas a Receber</p>
+                     <p className={`text-sm font-bold ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>R$ {pendingReceivables.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  </div>
+                  <div>
+                     <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Contas a Pagar</p>
+                     <p className={`text-sm font-bold ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>R$ {pendingPayables.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  </div>
+               </div>
+             )}
+          </div>
+
+          {/* Cápsula de lançamento manual — substitui os antigos botões "+" flutuantes; agora
+              do tamanho do card acima, com o nome de cada função, e confirma o que vai fazer
+              antes de abrir o formulário (ver `manualEntryConfirmType`). */}
+          <div className={`grid grid-cols-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-sky-200'}`}>
+             <button
+               type="button"
+               onClick={() => setManualEntryConfirmType(TransactionType.INCOME)}
+               className={`flex items-center justify-center gap-2 py-4 border-r font-black text-[10px] uppercase tracking-widest active:scale-[0.98] transition-all ${isDarkMode ? 'bg-emerald-900/30 text-emerald-400 border-slate-800' : 'bg-emerald-50 text-emerald-600 border-sky-200'}`}
+             >
+               <TrendingUp size={16} strokeWidth={3} /> Nova Entrada
+             </button>
+             <button
+               type="button"
+               onClick={() => setManualEntryConfirmType(TransactionType.EXPENSE)}
+               className={`flex items-center justify-center gap-2 py-4 font-black text-[10px] uppercase tracking-widest active:scale-[0.98] transition-all ${isDarkMode ? 'bg-rose-900/30 text-rose-400' : 'bg-rose-50 text-rose-600'}`}
+             >
+               <TrendingDown size={16} strokeWidth={3} /> Nova Saída
+             </button>
+          </div>
+
+          {/* Visualização do Meu Negócio — embutida no mesmo card (ver prop `embedded`), em vez
+              de um card avulso separado abaixo. */}
+          <div className={`p-6 border-t ${isDarkMode ? 'border-slate-800' : 'border-sky-200'}`}>
+            <BusinessOverviewCard
+              isDarkMode={isDarkMode}
+              products={products}
+              productionLots={productionLots}
+              productionConfigs={productionConfigs}
+              accounts={accounts}
+              sales={sales}
+              transactions={transactions}
+              purchases={purchases}
+              people={people}
+              categories={categories}
+              onDeleteTransaction={onDelete}
+              embedded
+            />
           </div>
         </div>
 
-        <BusinessOverviewCard
-          isDarkMode={isDarkMode}
-          products={products}
-          productionLots={productionLots}
-          productionConfigs={productionConfigs}
-          accounts={accounts}
-          sales={sales}
-          transactions={transactions}
-          purchases={purchases}
-          people={people}
-          categories={categories}
-          onDeleteTransaction={onDelete}
+        {/* Comissão a Vendedores — só aparece se algum colaborador estiver marcado como
+            Vendedor (ver Collaborator.isSeller em Colaboradores). Soma Sale.commissionAmount,
+            já calculado na hora de salvar cada venda (ver SaleFormView). */}
+        {sellerCommissions.length > 0 && (
+          <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <button
+              type="button"
+              onClick={() => setIsCommissionExpanded(v => !v)}
+              className="w-full flex items-center justify-between gap-3 p-6"
+            >
+              <div className="text-left min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Comissão a Vendedores</p>
+                <p className={`text-2xl font-black tracking-tighter mt-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  R$ {totalCommissionOwed.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+              <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${isCommissionExpanded ? 'rotate-180' : ''}`} />
+            </button>
+            {isCommissionExpanded && (
+              <div className={`flex flex-col gap-2 px-6 pb-6 border-t pt-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                {sellerCommissions.map(({ collaborator, salesCount, totalSales, totalCommission }) => (
+                  <div key={collaborator.id} className={`flex items-center justify-between gap-3 p-3.5 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl shrink-0" style={{ backgroundColor: collaborator.colorHex }} />
+                      <div className="min-w-0">
+                        <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{collaborator.name}</p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                          {salesCount} {salesCount === 1 ? 'venda' : 'vendas'} · {collaborator.commissionPercent ?? 0}% · R$ {totalSales.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} vendido
+                        </p>
+                      </div>
+                    </div>
+                    <p className={`text-sm font-black shrink-0 ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>
+                      R$ {totalCommission.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <ConfirmDialog
+          isOpen={manualEntryConfirmType !== null}
+          title={manualEntryConfirmType ? MANUAL_ENTRY_INFO[manualEntryConfirmType].title : ''}
+          message={manualEntryConfirmType ? MANUAL_ENTRY_INFO[manualEntryConfirmType].message : ''}
+          confirmLabel="Continuar"
+          cancelLabel="Cancelar"
+          isDanger={manualEntryConfirmType === TransactionType.EXPENSE}
+          onConfirm={() => { if (manualEntryConfirmType) handleAdd(manualEntryConfirmType); setManualEntryConfirmType(null); }}
+          onCancel={() => setManualEntryConfirmType(null)}
         />
 
         <div className="flex flex-col gap-4 sticky top-0 z-30 py-4 bg-[#fafafa] dark:bg-slate-950 -mx-4 px-4 border-b border-slate-100 dark:border-slate-900 shadow-sm">
@@ -503,6 +729,22 @@ export default function FinancialView({
               />
             </div>
           </div>
+
+          {/* Soma da busca atual (ex.: nome de fornecedor/cliente) — some `filtered`, já
+              restrito ao texto pesquisado e ao filtro de tipo (Tudo/Entradas/Saídas) acima. */}
+          {searchTotals && (
+            <div className={`flex items-center gap-3 p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-indigo-50 border-indigo-100'}`}>
+              <div className="flex-1 min-w-0">
+                <p className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-indigo-400'}`}>Receitas na busca</p>
+                <p className={`text-sm font-black ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>R$ {searchTotals.income.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              </div>
+              <div className={`w-px h-8 shrink-0 ${isDarkMode ? 'bg-slate-700' : 'bg-indigo-200'}`} />
+              <div className="flex-1 min-w-0">
+                <p className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-indigo-400'}`}>Despesas na busca</p>
+                <p className={`text-sm font-black ${isDarkMode ? 'text-rose-400' : 'text-rose-500'}`}>R$ {searchTotals.expenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-col gap-3">

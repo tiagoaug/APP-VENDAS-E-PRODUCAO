@@ -37,7 +37,7 @@ import {
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
-import { isViewAllowed, isSectorAllowed } from '../utils/collaborators';
+import { isViewAllowed, isSectorAllowed, isViewTaskAllowed } from '../utils/collaborators';
 import { openPrintStudio } from '../lib/printStudio';
 import { isAblemarkPlatform } from '../lib/ablemarkPrinter';
 import AIAssistantSettings from '../components/AIAssistantSettings';
@@ -106,7 +106,7 @@ export default function SettingsView({
 
   const isItemAllowed = (itemId: ViewType | string) => {
     if (itemId === 'SOLE_MATRIX_DIRECT') return isSectorAllowed(activeCollaborator, 'cadastro_insumos');
-    return isViewAllowed(activeCollaborator, itemId as ViewType);
+    return isViewAllowed(activeCollaborator, itemId as ViewType) && isViewTaskAllowed(activeCollaborator, itemId as ViewType);
   };
 
   const closeCollabSwitcher = () => {

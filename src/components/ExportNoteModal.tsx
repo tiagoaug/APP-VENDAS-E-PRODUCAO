@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ChevronLeft, ChevronRight, ListStart, Hash, Boxes, Bluetooth } from 'lucide-react';
+import { X, FileText, Send, DollarSign, EyeOff, Layers, Pencil, Plus, Check, Trash2, Settings2, Save, ChevronDown, ChevronLeft, ChevronRight, ListStart, Hash, Boxes, Bluetooth, Image as ImageIcon } from 'lucide-react';
 
 
 export interface ExportProfile {
@@ -47,7 +47,7 @@ const loadLastState = (): Omit<ExportProfile, 'id' | 'name'> => {
 interface ExportNoteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace', itemsPerPage?: number) => void;
+  onConfirm: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace', itemsPerPage?: number, showThumbnails?: boolean) => void;
   isDarkMode: boolean;
   title?: string;
   initialFormat?: 'pdf' | 'jpg';
@@ -70,11 +70,15 @@ interface ExportNoteModalProps {
   showOSDataToggle?: boolean;
   /** Quando true, exibe a entrada "Detalhes de Setor" com a opção de separação de solas por ficha (Montagem) */
   showSoleGridToggle?: boolean;
+  /** Quando true, exibe um seletor pra incluir a foto/miniatura de cada produto no arquivo
+   * exportado (ligado por padrão quando essa opção aparece — desliga se a imagem deixar o
+   * arquivo poluído ou pesado demais). */
+  showThumbnailsToggle?: boolean;
   /** Retorna um array com uma data URI por página real de saída (já considerando
    * "Dividir em Páginas"), pra pré-visualização poder navegar página a página
    * exatamente como o arquivo final vai ficar — em vez de mostrar tudo cortado
    * numa imagem só. */
-  onPreview?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace', itemsPerPage?: number) => Promise<string[] | boolean>;
+  onPreview?: (note: string, format: 'pdf' | 'jpg', showFinancialValues: boolean, groupMode: 'none' | 'ref_color' | 'ref', pcpTotalGrid: boolean, showMaterials: boolean, showItemGrid: boolean, showSectorNotes: boolean, showOrderList: boolean, splitPages: boolean, showProvider: boolean, showOSData: boolean, showSoleGrid: boolean, selectedSectorIds?: string[], pageSize?: 'a4' | 'marketplace', itemsPerPage?: number, showThumbnails?: boolean) => Promise<string[] | boolean>;
   sectors?: { id: string; name: string; color?: string }[];
   /** Quando fornecido, exibe um botão extra "Imprimir Etiquetas" (etiquetas de produto/pedido,
    * não a Ficha Técnica que este modal gera) — usado pelo PCP pra imprimir em lote as
@@ -120,6 +124,7 @@ export default function ExportNoteModal({
   showProviderToggle = false,
   showOSDataToggle = false,
   showSoleGridToggle = false,
+  showThumbnailsToggle = false,
   onPreview,
   sectors = [],
   onPrintLabels,
@@ -154,6 +159,7 @@ export default function ExportNoteModal({
   const [showProvider, setShowProvider] = useState(true);
   const [showOSData, setShowOSData] = useState(true);
   const [showSoleGrid, setShowSoleGrid] = useState(false);
+  const [showThumbnails, setShowThumbnails] = useState(true);
   // Subcards em acordeão — um por grupo de configurações (Valores, Resumo da
   // Grade, Agrupamento, Dados da OS, Detalhes de Setor). Recolhidos por padrão.
   const [openSections, setOpenSections] = useState<Set<string>>(new Set());
@@ -189,6 +195,7 @@ export default function ExportNoteModal({
       setItemsPerPage(0);
       setShowProvider(true);
       setShowOSData(true);
+      setShowThumbnails(true);
       setOpenSections(new Set());
       setPreviewPages([]);
       setPreviewPageIdx(0);
@@ -277,7 +284,7 @@ export default function ExportNoteModal({
     if (!onPreview) return;
     setIsPreviewLoading(true);
     try {
-      const pages = await onPreview(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage);
+      const pages = await onPreview(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage, showThumbnails);
       if (Array.isArray(pages) && pages.length > 0) {
         setPreviewPages(pages);
         setPreviewPageIdx(0);
@@ -537,6 +544,32 @@ export default function ExportNoteModal({
               </button>
             )}
 
+            {/* Miniaturas — toggle direto (não abre subpopup, é só um liga/desliga) */}
+            {showThumbnailsToggle && (
+              <button
+                type="button"
+                onClick={() => setShowThumbnails(v => !v)}
+                className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all active:scale-[0.99] text-left gap-3 ${
+                  isDarkMode ? 'bg-slate-800/40 border-slate-700 hover:bg-slate-800/70' : 'bg-white border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className={`w-8.5 h-8.5 rounded-xl flex items-center justify-center shrink-0 ${showThumbnails ? (isDarkMode ? 'bg-sky-500/20 text-sky-400' : 'bg-sky-50 text-sky-600') : (isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-100 text-slate-500')}`}>
+                    <ImageIcon size={16} strokeWidth={2.5} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Miniaturas dos Produtos</p>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5 leading-tight truncate">
+                      {showThumbnails ? 'Com foto de cada item' : 'Sem foto'}
+                    </p>
+                  </div>
+                </div>
+                <div className={`w-11 h-6 rounded-full relative shrink-0 transition-colors ${showThumbnails ? 'bg-sky-500' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
+                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${showThumbnails ? 'left-5' : 'left-0.5'}`} />
+                </div>
+              </button>
+            )}
+
             {/* 2. Resumo da Grade Card */}
             {(showPCPTotalGridToggle || showMaterialsToggle || showItemGridToggle || showOrderListToggle || showSectorNotesToggle) && (
               <button
@@ -792,7 +825,7 @@ export default function ExportNoteModal({
               {/* Generate */}
               <button
                 type="button"
-                onClick={() => onConfirm(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage)}
+                onClick={() => onConfirm(note, selectedFormat, showFinancialValues, groupMode, pcpTotalGrid, showMaterials, showItemGrid, showSectorNotes, showOrderList, splitPages, showProvider, showOSData, showSoleGrid, selectedSectorIds, pageSize, itemsPerPage, showThumbnails)}
                 className={`w-full py-3 text-white rounded-xl text-[12px] font-black uppercase tracking-widest active:scale-[0.98] transition-all flex items-center justify-center gap-2 ${
                   selectedFormat === 'pdf' ? 'bg-rose-500' : 'bg-indigo-600'
                 }`}

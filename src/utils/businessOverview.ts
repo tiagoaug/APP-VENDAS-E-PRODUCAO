@@ -1,4 +1,4 @@
-import { Product, ProductionLot, Sale, Account, AccountType, Transaction, TransactionType, SaleStatus, SaleType, ProductionConfigItem } from '../types';
+import { Product, ProductionLot, Sale, Account, AccountType, Transaction, TransactionType, SaleStatus, SaleType, ProductionConfigItem, Purchase, PaymentTerm, PaymentStatus } from '../types';
 import { getActiveProductionUnits } from './productionRoute';
 import { getStockValue } from './stockPools';
 
@@ -93,6 +93,17 @@ export function computePendingReceivables(sales: Sale[]): number {
     .reduce((acc, sale) => {
       const totalPaid = (sale.paymentHistory || []).reduce((a, p) => a + p.amount, 0);
       return acc + Math.max(0, sale.total - totalPaid);
+    }, 0);
+}
+
+// Compras a prazo ainda não totalmente pagas — mesmo filtro do "A Pagar" da tela Financeiro
+// (ver FinancialView), aqui só somado num total em vez de listado compra por compra.
+export function computePendingPayables(purchases: Purchase[]): number {
+  return purchases
+    .filter(p => p.paymentTerm === PaymentTerm.INSTALLMENTS && p.paymentStatus !== PaymentStatus.PAID)
+    .reduce((acc, p) => {
+      const totalPaid = (p.paymentHistory || []).reduce((a, ph) => a + ph.amount, 0);
+      return acc + Math.max(0, p.total - totalPaid);
     }, 0);
 }
 

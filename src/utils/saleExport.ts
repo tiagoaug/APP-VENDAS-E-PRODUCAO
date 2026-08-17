@@ -13,6 +13,32 @@ interface ExportData {
   paymentMethods: PaymentMethod[];
   additionalNote?: string;
   isDarkMode: boolean;
+  /** Inclui a foto de cada produto (variação, com fallback pro produto) na linha do item —
+   * só vale pro JPG (a foto some do PDF, que continua só texto). */
+  showThumbnails?: boolean;
+}
+
+// Desenha o caminho de um retângulo com cantos arredondados — usado tanto pra recortar a foto
+// (clip antes do drawImage) quanto pro placeholder cinza, pra miniatura ter cara de app moderno
+// em vez de um quadrado seco.
+function roundedRectPath(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function loadThumbImage(src: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
 }
 
 export const exportSale = async (data: ExportData, formatType: 'pdf' | 'jpg') => {
@@ -188,13 +214,15 @@ async function generatePDF(data: ExportData, filename: string) {
 }
 
 async function generateJPG(data: ExportData, filename: string) {
-  const { sale, products, people, paymentMethods, additionalNote } = data;
+  const { sale, products, people, paymentMethods, additionalNote, showThumbnails } = data;
   const customer = people.find(p => p.id === sale.customerId);
   const paymentMethod = paymentMethods.find(pm => pm.id === sale.paymentMethodId);
 
   const W = 600;
   const S = 2;
   const pad = 24;
+  const THUMB_SIZE = 40;
+  const THUMB_GAP = 12;
 
   // Helper: word-wrap text to fit maxWidth
   const wrapText = (ctx: CanvasRenderingContext2D, text: string, maxW: number): string[] => {
@@ -216,22 +244,35 @@ async function generateJPG(data: ExportData, filename: string) {
   const mx = mc.getContext('2d')!;
   mx.scale(S, S);
 
-  const DESC_W = W - pad * 2 - 130;
+  const thumbColW = showThumbnails ? THUMB_SIZE + THUMB_GAP : 0;
+  const DESC_W = W - pad * 2 - 130 - thumbColW;
   const itemData = sale.items.map(item => {
     const product = products.find(p => p.id === item.productId);
     const variation = product?.variations?.find(v => v.id === item.variationId);
     const name = `${item.quantity}x ${[product?.reference, product?.name].filter(Boolean).join(' ') || '---'}${variation ? ` - ${variation.colorName}` : ''}`;
     const total = `R$ ${(item.quantity * item.price).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    const photoUrl = variation?.photoUrl || product?.photoUrl;
     mx.font = '500 13px Arial';
     const lines = wrapText(mx, name, DESC_W - 12);
-    return { lines, total, rowH: Math.max(46, lines.length * 19 + 24) };
+    return { lines, total, rowH: Math.max(46, lines.length * 19 + 24, showThumbnails ? THUMB_SIZE + 16 : 0), photoUrl: showThumbnails ? photoUrl : undefined };
   });
   (sale.extraItems || []).forEach(extra => {
     const total = `R$ ${extra.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
     mx.font = '500 13px Arial';
     const lines = wrapText(mx, extra.description, DESC_W - 12);
-    itemData.push({ lines, total, rowH: Math.max(46, lines.length * 19 + 24) });
+    itemData.push({ lines, total, rowH: Math.max(46, lines.length * 19 + 24), photoUrl: undefined });
   });
+
+  // Pré-carrega as fotos (uma vez por URL) antes de desenhar — canvas precisa da imagem já
+  // carregada pro drawImage síncrono funcionar; foto que falhar/não existir cai no placeholder.
+  const thumbImages = new Map<string, HTMLImageElement>();
+  if (showThumbnails) {
+    const urls = Array.from(new Set(itemData.map(i => i.photoUrl).filter((u): u is string => !!u)));
+    await Promise.all(urls.map(async (url) => {
+      const img = await loadThumbImage(url);
+      if (img) thumbImages.set(url, img);
+    }));
+  }
 
   const noteLines: string[] = [];
   if (additionalNote) {
@@ -309,9 +350,29 @@ async function generateJPG(data: ExportData, filename: string) {
   // ── Rows ─────────────────────────────────────────────────────
   itemData.forEach((item, i) => {
     if (i % 2 === 1) { ctx.fillStyle = '#fafafa'; ctx.fillRect(pad, y, W - pad * 2, item.rowH); }
+
+    let textX = pad + 12;
+    if (showThumbnails) {
+      const thumbY = y + (item.rowH - THUMB_SIZE) / 2;
+      const img = item.photoUrl ? thumbImages.get(item.photoUrl) : undefined;
+      const THUMB_RADIUS = 10;
+      if (img) {
+        ctx.save();
+        roundedRectPath(ctx, pad + 12, thumbY, THUMB_SIZE, THUMB_SIZE, THUMB_RADIUS);
+        ctx.clip();
+        ctx.drawImage(img, pad + 12, thumbY, THUMB_SIZE, THUMB_SIZE);
+        ctx.restore();
+      } else {
+        ctx.fillStyle = '#e2e8f0';
+        roundedRectPath(ctx, pad + 12, thumbY, THUMB_SIZE, THUMB_SIZE, THUMB_RADIUS);
+        ctx.fill();
+      }
+      textX = pad + 12 + THUMB_SIZE + THUMB_GAP;
+    }
+
     const tY = y + (item.rowH - (item.lines.length - 1) * 19) / 2;
     ctx.font = '500 13px Arial'; ctx.fillStyle = '#475569'; ctx.textAlign = 'left';
-    item.lines.forEach((line, li) => ctx.fillText(line, pad + 12, tY + li * 19));
+    item.lines.forEach((line, li) => ctx.fillText(line, textX, tY + li * 19));
     ctx.font = 'bold 13px Arial'; ctx.fillStyle = '#0f172a'; ctx.textAlign = 'right';
     ctx.fillText(item.total, W - pad - 12, y + item.rowH / 2 + 5);
     ctx.strokeStyle = '#f1f5f9'; ctx.lineWidth = 1;

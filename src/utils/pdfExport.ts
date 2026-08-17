@@ -309,9 +309,10 @@ export interface PrintPickingListOptions {
   mostrarModelo?: boolean;
   /** Coluna de pedidos vinculados — desliga quando a lista é só de conferência de estoque. */
   mostrarPedido?: boolean;
+  orientation?: 'portrait' | 'landscape';
 }
 
-export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pageSize = 'a4', pretoBranco = false, mostrarModelo = true, mostrarPedido = true }: PrintPickingListOptions) => {
+export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pageSize = 'a4', pretoBranco = false, mostrarModelo = true, mostrarPedido = true, orientation = 'portrait' }: PrintPickingListOptions) => {
   const container = document.getElementById('_lot_print_container');
   if (container) container.remove();
 
@@ -322,12 +323,14 @@ export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pag
   style.innerHTML = PRINT_STYLES;
   wrap.appendChild(style);
 
-  // Sobrescreve o @page padrão (A4) da PRINT_STYLES quando o papel é etiqueta 100x150 — mesma
-  // cascata CSS (regra depois vence), fonte da tabela também reduzida pro formato estreito.
+  // Sobrescreve o @page padrão (A4 retrato) da PRINT_STYLES quando o papel é etiqueta 100x150
+  // e/ou a orientação é paisagem — mesma cascata CSS (regra depois vence). Fonte da tabela
+  // também reduzida pro formato estreito da etiqueta.
   if (pageSize === '100x150') {
+    const [w, h] = orientation === 'landscape' ? [150, 100] : [100, 150];
     const override = document.createElement('style');
     override.innerHTML = `
-      @page { size: 100mm 150mm; margin: 3mm; }
+      @page { size: ${w}mm ${h}mm; margin: 3mm; }
       @media print {
         th, td { font-size: 6px !important; padding: 1.5px 2px !important; }
         h1 { font-size: 13px !important; }
@@ -335,6 +338,10 @@ export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pag
         .badge { font-size: 6px !important; padding: 2px 5px !important; }
       }
     `;
+    wrap.appendChild(override);
+  } else if (orientation === 'landscape') {
+    const override = document.createElement('style');
+    override.innerHTML = `@page { size: A4 landscape; }`;
     wrap.appendChild(override);
   }
 

@@ -65,67 +65,67 @@ export default function AccountsView({ accounts, onAdd, onEdit, onDelete, onAdju
       />
       {/* Header */}
       <div className="flex flex-col gap-1">
-        <h2 className="text-3xl font-black text-slate-800 dark:text-white uppercase">Gerenciamento de Contas</h2>
-        <p className="text-sm text-slate-500">Controle financeiro e fluxo entre contas</p>
+        <h2 className="text-lg font-black text-slate-800 dark:text-white uppercase tracking-tight">Gerenciamento de Contas</h2>
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Controle financeiro e fluxo entre contas</p>
       </div>
 
       {/* Action Buttons */}
       <div className="grid grid-cols-2 gap-3">
-         <button 
+         <button
            onClick={onAdd}
-           className="py-4 px-6 rounded-3xl bg-indigo-600 text-white font-bold flex items-center justify-center gap-2 transition-all active:scale-95"
+           className="py-4 px-6 rounded-3xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
          >
-            <Plus size={20} /> Nova Conta
+            <Plus size={16} /> Nova Conta
          </button>
-         <button 
+         <button
            onClick={onTransfer}
-           className="py-4 px-6 rounded-3xl bg-slate-900 text-white font-bold flex items-center justify-center gap-2 transition-all active:scale-95"
+           className="py-4 px-6 rounded-3xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
          >
-            <ArrowRightLeft size={20} /> Transferir
+            <ArrowRightLeft size={16} /> Transferir
          </button>
       </div>
 
       {/* Summary Cards */}
       <div className="flex flex-col gap-3">
         <div className={`p-6 rounded-3xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} shadow-sm`}>
-          <div className="flex items-center gap-3 text-emerald-500 mb-2">
-            <DollarSign size={20} />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">SALDO TOTAL CONSOLIDADO</span>
+          <div className="flex items-center gap-2 text-emerald-500 mb-2">
+            <DollarSign size={16} />
+            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Saldo Total Consolidado</span>
           </div>
-          <span className="text-4xl font-black text-slate-800 dark:text-white">R$ {totalBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          <span className="text-3xl font-black tracking-tighter text-slate-800 dark:text-white">R$ {totalBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
         </div>
-        
+
         <div className="grid grid-cols-2 gap-3">
           <div className={`p-6 rounded-3xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} shadow-sm`}>
-            <div className="flex items-center gap-3 text-indigo-500 mb-2">
-              <Wallet size={20} />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">CONTAS ATIVAS</span>
+            <div className="flex items-center gap-2 text-indigo-500 mb-2">
+              <Wallet size={16} />
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Contas Ativas</span>
             </div>
-            <span className="text-4xl font-black text-slate-800 dark:text-white">{accounts.length}</span>
+            <span className="text-2xl font-black tracking-tighter text-slate-800 dark:text-white">{accounts.length}</span>
           </div>
           <div className={`p-6 rounded-3xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} shadow-sm`}>
-            <div className="flex items-center gap-3 text-amber-500 mb-2">
-              <RefreshCcw size={20} />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">TRANSF. RECENTES</span>
+            <div className="flex items-center gap-2 text-amber-500 mb-2">
+              <RefreshCcw size={16} />
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Transf. Recentes</span>
             </div>
-            <span className="text-4xl font-black text-slate-800 dark:text-white">0</span>
+            <span className="text-2xl font-black tracking-tighter text-slate-800 dark:text-white">0</span>
           </div>
         </div>
       </div>
 
       {/* Search Bar */}
       <div className={`flex items-center gap-3 p-4 rounded-3xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} shadow-sm`}>
-        <Search size={20} className="text-slate-400" />
-        <input type="text" placeholder="Buscar conta pelo nome..." className="w-full bg-transparent border-none focus:ring-0 text-sm text-slate-700 dark:text-white" />
+        <Search size={18} className="text-slate-400" />
+        <input type="text" placeholder="Buscar conta pelo nome..." className="w-full bg-transparent border-none focus:ring-0 text-xs font-bold tracking-tight text-slate-700 dark:text-white placeholder:text-slate-400" />
       </div>
 
       {/* Filters */}
-      <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
+      <div className="flex gap-1.5 overflow-x-auto pb-2 no-scrollbar">
         {['TODAS', 'BANCOS', 'DINHEIRO', 'POUPANÇA', ...(modulesConfig?.personal ? ['PESSOAL'] : [])].map((f) => (
-          <button 
+          <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-wider transition-all whitespace-nowrap ${filter === f ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}
+            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${filter === f ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'}`}
           >
             {f}
           </button>
@@ -152,12 +152,12 @@ export default function AccountsView({ accounts, onAdd, onEdit, onDelete, onAdju
               )}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-2xl ${account.color} flex items-center justify-center text-white shadow-lg`}>
-                    <Icon size={24} strokeWidth={2.5} />
+                  <div className={`w-11 h-11 rounded-2xl ${account.color} flex items-center justify-center text-white shadow-lg shrink-0`}>
+                    <Icon size={20} strokeWidth={2.5} />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className={`font-black text-sm uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{account.name}</h3>
+                      <h3 className={`font-black text-xs uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{account.name}</h3>
                       {account.isDefault && (
                         <span className="px-1.5 py-0.5 rounded-md bg-amber-500 text-[8px] font-black text-white uppercase tracking-widest flex items-center gap-1 shadow-sm shadow-amber-500/20">
                           <Star size={8} fill="currentColor" /> Padrão
@@ -165,7 +165,7 @@ export default function AccountsView({ accounts, onAdd, onEdit, onDelete, onAdju
                       )}
                     </div>
                     <div className="flex items-center gap-2 mt-1">
-                       <p className={`text-lg font-black tracking-tighter italic ${isPersonal ? 'text-indigo-500' : 'text-indigo-600 dark:text-indigo-400'}`}>
+                       <p className={`text-sm font-black tracking-tight ${isPersonal ? 'text-indigo-500' : 'text-indigo-600 dark:text-indigo-400'}`}>
                          R$ {account.balance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                        </p>
                     </div>
@@ -173,28 +173,28 @@ export default function AccountsView({ accounts, onAdd, onEdit, onDelete, onAdju
                 </div>
 
                 <div className="flex items-center gap-1">
-                   <button 
+                   <button
                      onClick={() => onAdjust(account.id)}
                      className={`p-2 rounded-xl transition-all ${isDarkMode ? 'text-slate-700 hover:text-emerald-400' : 'text-slate-200 hover:text-emerald-600'}`}
                      title="Reajustar Saldo"
                    >
-                     <RefreshCcw size={18} strokeWidth={2.5} />
+                     <RefreshCcw size={16} strokeWidth={2.5} />
                    </button>
-                   <button 
+                   <button
                      onClick={() => onEdit(account.id)}
                      className={`p-2 rounded-xl transition-all ${isDarkMode ? 'text-slate-700 hover:text-indigo-400' : 'text-slate-200 hover:text-indigo-600'}`}
                      title="Editar Conta"
                      aria-label="Editar Conta"
                    >
-                     <Edit size={18} strokeWidth={2.5} />
+                     <Edit size={16} strokeWidth={2.5} />
                    </button>
-                   <button 
+                   <button
                      onClick={() => handleDeleteClick(account.id)}
                      className={`p-2 rounded-xl transition-all ${isDarkMode ? 'text-slate-700 hover:text-rose-500' : 'text-slate-200 hover:text-rose-500'}`}
                      title="Excluir Conta"
                      aria-label="Excluir Conta"
                    >
-                     <Trash2 size={18} strokeWidth={2.5} />
+                     <Trash2 size={16} strokeWidth={2.5} />
                    </button>
                 </div>
               </div>

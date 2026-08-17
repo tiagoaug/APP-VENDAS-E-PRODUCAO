@@ -23,13 +23,17 @@ import {
   Lock,
   Building2,
   LayoutDashboard,
+  Percent,
 } from 'lucide-react';
-import { Collaborator, DashboardCardConfig } from '../types';
-import { SECTORS, isDashboardCardAllowed } from '../utils/collaborators';
+import { Collaborator, DashboardCardConfig, SectorId, TaskPermissionLevel } from '../types';
+import { SECTORS, isDashboardCardAllowed, getTaskLevel } from '../utils/collaborators';
 import { NAV_MONO_PALETTE } from '../utils/themes';
 import { generateId } from '../utils/id';
 import ConfirmDialog from '../components/ConfirmDialog';
+import Modal from '../components/Modal';
 import { toast } from '../utils/toast';
+
+const TASK_LEVEL_LABELS: Record<TaskPermissionLevel, string> = { none: 'Sem acesso', view: 'Visualizar', edit: 'Editar' };
 
 const SECTOR_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   ShoppingBag, ShoppingCart, Package, Boxes, Factory, PackageOpen, Wallet, Users, Landmark, Database, Building2,
@@ -66,6 +70,7 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
   const [revealedPinId, setRevealedPinId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [sectorPopup, setSectorPopup] = useState<SectorId | null>(null);
 
   const startNew = () => { setDraft(emptyDraft()); setShowPin(false); };
   const startEdit = (collab: Collaborator) => { setDraft({ ...collab }); setShowPin(false); };
@@ -84,6 +89,18 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
         ? draft.sectors.filter(s => s !== sectorId)
         : [...draft.sectors, sectorId],
     });
+  };
+
+  // 'edit' nunca fica salvo em taskPermissions — é o nível padrão implícito de qualquer setor
+  // liberado, então gravar só os desvios (view/none) mantém colaboradores antigos (sem esse
+  // campo) se comportando exatamente como hoje: acesso total ao que o setor libera.
+  const setTaskLevel = (sectorId: SectorId, taskId: string, level: TaskPermissionLevel) => {
+    if (!draft) return;
+    const key = `${sectorId}:${taskId}`;
+    const next = { ...(draft.taskPermissions || {}) };
+    if (level === 'edit') delete next[key];
+    else next[key] = level;
+    setDraft({ ...draft, taskPermissions: next });
   };
 
   // Card já liberado pelos setores do colaborador (isDashboardCardAllowed) — aqui só se
@@ -192,6 +209,11 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                     </button>
                   </div>
                 </div>
+                {collab.isSeller && (
+                  <span className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 text-[9px] font-black uppercase tracking-wider">
+                    <Percent size={12} /> Vendedor · {collab.commissionPercent ?? 0}% comissão
+                  </span>
+                )}
                 {collab.isUnrestricted ? (
                   <span className="inline-flex items-center gap-1.5 self-start px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 text-[9px] font-black uppercase tracking-wider">
                     <ShieldCheck size={12} /> Acesso Total
@@ -351,18 +373,61 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
             </div>
           </button>
 
+          <div className={`flex flex-col gap-3 p-4 rounded-2xl border-2 transition-all ${draft.isSeller ? 'border-amber-500 bg-amber-50 dark:bg-amber-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}>
+            <button
+              type="button"
+              onClick={() => setDraft({ ...draft, isSeller: !draft.isSeller })}
+              className="flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3 text-left">
+                <Percent size={20} className={draft.isSeller ? 'text-amber-500' : 'text-slate-400'} />
+                <div>
+                  <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>É Vendedor</p>
+                  <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Pode ser escolhido em Lançamento de Venda</p>
+                </div>
+              </div>
+              <div className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${draft.isSeller ? 'bg-amber-500' : 'bg-slate-200'}`}>
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${draft.isSeller ? 'left-7' : 'left-1'}`} />
+              </div>
+            </button>
+            {draft.isSeller && (
+              <div className="flex items-center gap-3 pl-[52px]">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 shrink-0">Comissão</label>
+                <div className="relative flex-1 max-w-[140px]">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    max={100}
+                    step={0.5}
+                    value={draft.commissionPercent ?? ''}
+                    onChange={e => setDraft({ ...draft, commissionPercent: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })}
+                    placeholder="0"
+                    className={`w-full pl-3 pr-7 py-2 rounded-xl border-2 text-sm font-bold outline-none focus:border-amber-500 transition-colors ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-black text-slate-400">%</span>
+                </div>
+                <p className="text-[9px] text-slate-400 font-medium leading-tight flex-1">sobre o total de cada venda dele</p>
+              </div>
+            )}
+          </div>
+
           {!draft.isUnrestricted && (
             <div className="flex flex-col gap-2">
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Setores liberados</label>
+              <p className="text-[10px] text-slate-400 font-medium px-1 -mt-1 mb-1 leading-relaxed">
+                Toque num setor pra ligar/desligar e refinar o que o colaborador vê ou edita em cada função dele.
+              </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {SECTORS.map(sector => {
                   const Icon = SECTOR_ICONS[sector.icon] || Boxes;
                   const active = draft.sectors.includes(sector.id);
+                  const hasCustomLevels = active && sector.tasks.some(t => getTaskLevel(draft, sector.id, t.id) !== 'edit');
                   return (
                     <button
                       key={sector.id}
                       type="button"
-                      onClick={() => toggleSector(sector.id)}
+                      onClick={() => setSectorPopup(sector.id)}
                       className={`flex flex-col text-left p-4 rounded-2xl border-2 transition-all ${active ? (isDarkMode ? 'bg-slate-800 border-indigo-500' : 'bg-white border-indigo-500 shadow-md') : (isDarkMode ? 'bg-slate-950 border-slate-900 opacity-70' : 'bg-slate-50 border-slate-100 opacity-70')}`}
                     >
                       <div className="flex items-center justify-between mb-2">
@@ -370,14 +435,31 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
                           <Icon size={18} />
                           <span className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{sector.label}</span>
                         </div>
-                        {active && <Check size={16} className="text-indigo-500 shrink-0" strokeWidth={3} />}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {hasCustomLevels && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500" title="Funções refinadas" />
+                          )}
+                          {active && <Check size={16} className="text-indigo-500" strokeWidth={3} />}
+                        </div>
                       </div>
                       <div className="flex flex-wrap gap-1">
-                        {sector.tasks.map((t, i) => (
-                          <span key={i} className="px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-[8px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                            {t}
-                          </span>
-                        ))}
+                        {sector.tasks.map(t => {
+                          const level = getTaskLevel(draft, sector.id, t.id);
+                          return (
+                            <span
+                              key={t.id}
+                              className={`px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase tracking-wider ${
+                                level === 'none'
+                                  ? 'bg-rose-50 dark:bg-rose-900/20 text-rose-400 dark:text-rose-500 line-through'
+                                  : level === 'view'
+                                  ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                              }`}
+                            >
+                              {t.label}
+                            </span>
+                          );
+                        })}
                       </div>
                     </button>
                   );
@@ -385,6 +467,74 @@ export default function CollaboratorsConfigView({ collaborators, onSave, onDelet
               </div>
             </div>
           )}
+
+          {(() => {
+            const sector = SECTORS.find(s => s.id === sectorPopup);
+            if (!sector || !draft) return null;
+            const Icon = SECTOR_ICONS[sector.icon] || Boxes;
+            const active = draft.sectors.includes(sector.id);
+            return (
+              <Modal isOpen onClose={() => setSectorPopup(null)} title={sector.label} icon={<Icon size={18} />} maxWidth="max-w-md" zIndex={92000}>
+                <div className="flex flex-col gap-4">
+                  <button
+                    type="button"
+                    onClick={() => toggleSector(sector.id)}
+                    className={`flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${active ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-slate-50'}`}
+                  >
+                    <div className="text-left">
+                      <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Setor liberado</p>
+                      <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">{active ? 'Colaborador acessa este setor' : 'Colaborador não vê nada daqui'}</p>
+                    </div>
+                    <div className={`w-12 h-6 rounded-full relative shrink-0 transition-colors duration-300 ${active ? 'bg-indigo-500' : 'bg-slate-200'}`}>
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${active ? 'left-7' : 'left-1'}`} />
+                    </div>
+                  </button>
+
+                  {active ? (
+                    <div className="flex flex-col gap-2">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-1">Funções deste setor</p>
+                      {sector.tasks.map(task => {
+                        const level = getTaskLevel(draft, sector.id, task.id);
+                        return (
+                          <div key={task.id} className={`flex flex-col gap-2 p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
+                            <span className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{task.label}</span>
+                            <div className={`flex gap-0.5 p-0.5 rounded-xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                              {(['none', 'view', 'edit'] as TaskPermissionLevel[]).map(lvl => (
+                                <button
+                                  key={lvl}
+                                  type="button"
+                                  onClick={() => setTaskLevel(sector.id, task.id, lvl)}
+                                  className={`flex-1 py-1.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${
+                                    level === lvl
+                                      ? lvl === 'none' ? 'bg-rose-500 text-white' : lvl === 'view' ? 'bg-amber-500 text-white' : 'bg-indigo-600 text-white'
+                                      : isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                                  }`}
+                                >
+                                  {TASK_LEVEL_LABELS[lvl]}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 font-medium text-center py-4 leading-relaxed">
+                      Ative o setor acima pra escolher o que o colaborador pode visualizar ou editar em cada função.
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setSectorPopup(null)}
+                    className="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black uppercase tracking-widest transition-all active:scale-[0.98]"
+                  >
+                    Concluído
+                  </button>
+                </div>
+              </Modal>
+            );
+          })()}
 
           {!draft.isUnrestricted && draft.sectors.length > 0 && (() => {
             const allowedCards = dashboardCards.filter(card => isDashboardCardAllowed(draft, card.id));

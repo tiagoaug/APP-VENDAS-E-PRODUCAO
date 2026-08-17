@@ -102,6 +102,19 @@ type PageSize = 'a4' | '100x150';
 
 const PAGE_SIZE_LABEL: Record<PageSize, string> = { a4: 'A4 (folha inteira)', '100x150': 'Etiqueta 100x150mm' };
 
+type Orientation = 'portrait' | 'landscape';
+
+const ORIENTATION_LABEL: Record<Orientation, string> = { portrait: 'Retrato', landscape: 'Paisagem' };
+
+// Dimensões físicas (mm) de cada tamanho de papel na orientação "retrato" — a paisagem é só
+// essas mesmas dimensões invertidas (ver `pageDimsMm`).
+const PAGE_SIZE_DIMS_MM: Record<PageSize, { w: number; h: number }> = { a4: { w: 210, h: 297 }, '100x150': { w: 100, h: 150 } };
+
+function pageDimsMm(pageSize: PageSize, orientation: Orientation): { w: number; h: number } {
+  const base = PAGE_SIZE_DIMS_MM[pageSize];
+  return orientation === 'landscape' ? { w: base.h, h: base.w } : base;
+}
+
 const PROFILE_KEY = '@app:bling_picking_export_profile';
 
 interface ExportProfile {
@@ -111,9 +124,35 @@ interface ExportProfile {
   mostrarPedido: boolean;
   mostrarModelo: boolean;
   pageSize: PageSize;
+  orientation: Orientation;
 }
 
-const DEFAULT_PROFILE: ExportProfile = { agrupar: true, mostrarMiniaturas: true, incluirCheckbox: true, mostrarPedido: true, mostrarModelo: true, pageSize: 'a4' };
+const DEFAULT_PROFILE: ExportProfile = { agrupar: true, mostrarMiniaturas: true, incluirCheckbox: true, mostrarPedido: true, mostrarModelo: true, pageSize: 'a4', orientation: 'portrait' };
+
+// Miniatura da página no formato/orientação escolhidos — só a silhueta (cabeçalho preto +
+// linhas simulando as linhas da lista), pra dar uma ideia de proporção antes de mandar pra área
+// de recorte. Não é o conteúdo real (esse já é mostrado na hora do recorte).
+function PagePreview({ pageSize, orientation, isDarkMode }: { pageSize: PageSize; orientation: Orientation; isDarkMode: boolean }) {
+  const { w, h } = pageDimsMm(pageSize, orientation);
+  const maxW = 64;
+  const maxH = 64;
+  const scale = Math.min(maxW / w, maxH / h);
+  const boxW = Math.round(w * scale);
+  const boxH = Math.round(h * scale);
+  return (
+    <div
+      className={`shrink-0 rounded-md overflow-hidden border flex flex-col ${isDarkMode ? 'bg-slate-950 border-slate-700' : 'bg-white border-slate-300'}`}
+      style={{ width: boxW, height: boxH }}
+    >
+      <div className="bg-slate-900 dark:bg-slate-100 shrink-0" style={{ height: Math.max(3, boxH * 0.14) }} />
+      <div className="flex-1 flex flex-col justify-evenly px-1 py-0.5 gap-0.5">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className={`h-[2px] rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`} />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 type Densidade = 1 | 2 | 3;
 const DENSIDADE_LABEL: Record<Densidade, string> = { 1: 'Leve', 2: 'Normal', 3: 'Escura' };
@@ -292,8 +331,10 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
   const [mostrarPedido, setMostrarPedido] = useState(savedProfile.mostrarPedido);
   const [mostrarModelo, setMostrarModelo] = useState(savedProfile.mostrarModelo);
   const [pageSize, setPageSize] = useState<PageSize>(savedProfile.pageSize);
+  const [orientation, setOrientation] = useState<Orientation>(savedProfile.orientation);
   const [densidade, setDensidade] = useState<Densidade>(2);
   const [paperOpen, setPaperOpen] = useState(false);
+  const [orientationOpen, setOrientationOpen] = useState(false);
   const [printChoiceOpen, setPrintChoiceOpen] = useState(false);
   const [thermalOpen, setThermalOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -307,7 +348,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
   const [showStudioBatchPreview, setShowStudioBatchPreview] = useState(false);
 
   const handleSaveProfile = () => {
-    localStorage.setItem(PROFILE_KEY, JSON.stringify({ agrupar, mostrarMiniaturas, incluirCheckbox, mostrarPedido, mostrarModelo, pageSize }));
+    localStorage.setItem(PROFILE_KEY, JSON.stringify({ agrupar, mostrarMiniaturas, incluirCheckbox, mostrarPedido, mostrarModelo, pageSize, orientation }));
     toast.show('Perfil de exportação salvo — carrega automático da próxima vez.');
   };
 
@@ -358,8 +399,8 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
   // modelo/tamanho de papel), sem duplicar a lógica da tabela em dois lugares.
   const buildPickingListPdfDoc = (): jsPDF => {
     const compact = pageSize === '100x150';
-    const doc = new jsPDF({ orientation: 'p', unit: 'mm', format: compact ? [100, 150] : 'a4' });
-    const pageWidth = compact ? 100 : 210;
+    const { w: pageWidth, h: pageHeight } = pageDimsMm(pageSize, orientation);
+    const doc = new jsPDF({ orientation: orientation === 'landscape' ? 'l' : 'p', unit: 'mm', format: compact ? [pageWidth, pageHeight] : 'a4' });
     const headerH = compact ? 12 : 30;
 
     // Preto sólido em vez de navy/cinza — mesmo raciocínio do JPG (ver buildPickingListJpg):
@@ -422,7 +463,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
   const handleNativePrint = () => {
     setPrintChoiceOpen(false);
     const rows: PrintPickingListRow[] = displayRows.map((r) => ({ ...r }));
-    printPickingList({ rows, mostrarMiniaturas, incluirCheckbox, pageSize, mostrarModelo, mostrarPedido });
+    printPickingList({ rows, mostrarMiniaturas, incluirCheckbox, pageSize, mostrarModelo, mostrarPedido, orientation });
   };
 
   const openThermalFlow = async () => {
@@ -559,9 +600,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
           <ToggleRow icon={<Tag size={18} />} label="Mostrar nome do modelo" sublabel={mostrarModelo ? 'Com o nome do produto' : 'Só a referência'} value={mostrarModelo} onChange={() => setMostrarModelo((v) => !v)} />
 
           <button onClick={() => setPaperOpen((v) => !v)} className="w-full flex items-center gap-3 p-4 rounded-2xl border border-transparent hover:border-slate-100 dark:hover:border-slate-800 transition-all text-left">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
-              <FileStack size={18} />
-            </div>
+            <PagePreview pageSize={pageSize} orientation={orientation} isDarkMode={isDarkMode} />
             <div className="flex-1 min-w-0">
               <p className="text-xs font-black tracking-tight">Tamanho do papel</p>
               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{PAGE_SIZE_LABEL[pageSize]}</p>
@@ -583,11 +622,49 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
             </div>
           )}
 
+          <button onClick={() => setOrientationOpen((v) => !v)} className="w-full flex items-center gap-3 p-4 rounded-2xl border border-transparent hover:border-slate-100 dark:hover:border-slate-800 transition-all text-left">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400">
+              <FileStack size={18} className={orientation === 'landscape' ? 'rotate-90' : ''} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-black tracking-tight">Orientação da página</p>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{ORIENTATION_LABEL[orientation]}</p>
+            </div>
+            <ChevronDown size={16} className={`text-slate-400 shrink-0 transition-transform ${orientationOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {orientationOpen && (
+            <div className="grid grid-cols-2 gap-2 px-2 pb-2">
+              {(Object.keys(ORIENTATION_LABEL) as Orientation[]).map((o) => (
+                <button
+                  key={o}
+                  onClick={() => { setOrientation(o); setOrientationOpen(false); }}
+                  className={`flex flex-col items-center gap-2 p-3 rounded-xl ${orientation === o ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}
+                >
+                  <PagePreview pageSize={pageSize} orientation={o} isDarkMode={isDarkMode} />
+                  <span className={`text-xs font-black flex items-center gap-1 ${orientation === o ? 'text-white' : isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                    {orientation === o && <CheckCircle2 size={13} />} {ORIENTATION_LABEL[o]}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
           <button onClick={handleSaveProfile} className="mx-1 mt-1 flex items-center justify-center gap-2 h-10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">
             <Save size={13} /> Salvar como perfil padrão
           </button>
 
           <p className="px-1 pt-4 pb-2 text-[10px] font-black uppercase tracking-widest text-slate-400">Ação</p>
+
+          {isAblemarkPlatform() && (
+            <button
+              onClick={handleOpenPrintStudio}
+              disabled={busy || displayRows.length === 0}
+              className="mx-1 mb-2 h-14 rounded-2xl bg-gradient-to-b from-indigo-500 to-indigo-700 disabled:opacity-40 text-white font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30"
+            >
+              <Crop size={16} /> Exportar para Edição
+            </button>
+          )}
+
           <div className="grid grid-cols-2 gap-2 px-1">
             <button onClick={handleShareJpg} disabled={busy || displayRows.length === 0} className="h-12 rounded-2xl bg-indigo-600 disabled:opacity-40 text-white font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-1.5">
               <ImageIcon size={14} /> JPG
@@ -638,18 +715,6 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
                 <ChevronRight size={16} className="text-slate-400" />
               </button>
             )}
-            {isAblemarkPlatform() && (
-              <button onClick={handleOpenPrintStudio} disabled={busy} className={`flex items-center justify-between p-4 rounded-2xl disabled:opacity-40 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
-                <div className="flex items-center gap-3">
-                  <Crop size={18} className="text-indigo-500" />
-                  <div className="text-left">
-                    <p className="text-xs font-black">Print Studio (Recortar Etiqueta)</p>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Selecionar páginas e recortar, igual ao Importar PDF</p>
-                  </div>
-                </div>
-                <ChevronRight size={16} className="text-slate-400" />
-              </button>
-            )}
           </div>
         </div>
       )}
@@ -662,6 +727,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
         widthMm={STUDIO_WIDTH_MM}
         heightMm={STUDIO_HEIGHT_MM}
         onConfirm={handleConfirmStudioPages}
+        allowOddEven={false}
       />
 
       <LabelPrintPreviewModal

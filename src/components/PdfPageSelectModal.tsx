@@ -57,6 +57,11 @@ interface PdfPageSelectModalProps {
   widthMm: number;
   heightMm: number;
   onConfirm: (items: CroppedPage[]) => void;
+  /** Desliga o recorte separado ímpar/par (toggle + atalhos "manter só ímpares/pares") — usado
+   * pelo fluxo da Lista de Separação, onde as páginas do PDF são só a tabela paginada, não
+   * frente/verso alternado como nas etiquetas importadas de transportadora. Default ligado, pra
+   * não mudar o fluxo geral de Importar PDF. */
+  allowOddEven?: boolean;
 }
 
 // Miniaturas leves pra grade de páginas — `pages` vem do pdf.js renderizado a `scale: 3`
@@ -177,7 +182,7 @@ function writeCropPresets(presets: CropPreset[]) {
  *    ímpares e outro pra pares (replicado em cada grupo). Cada página também pode ganhar um
  *    recorte manual próprio pelo visualizador (sobrepõe o recorte do grupo só pra ela). */
 export default function PdfPageSelectModal({
-  isOpen, onClose, isDarkMode, pages, widthMm, heightMm, onConfirm,
+  isOpen, onClose, isDarkMode, pages, widthMm, heightMm, onConfirm, allowOddEven = true,
 }: PdfPageSelectModalProps) {
   const [step, setStep] = useState<1 | 2>(1);
   const [selected, setSelected] = useState<Set<number>>(() => new Set(pages.map((_, i) => i)));
@@ -329,6 +334,12 @@ export default function PdfPageSelectModal({
       setAppliedPresetId(null);
     }
   }, [isOpen, pages]);
+
+  // Se o fluxo que abriu esta modal desliga ímpar/par (ver `allowOddEven`), garante que nenhum
+  // recorte separado fique "preso" ativo — trata como se sempre fosse "mesmo recorte pra todas".
+  useEffect(() => {
+    if (!allowOddEven && splitOddEven) setSplitOddEven(false);
+  }, [allowOddEven, splitOddEven]);
 
   const toggle = (idx: number) => {
     setLastSelectAction(null);
@@ -524,12 +535,16 @@ export default function PdfPageSelectModal({
                     <button type="button" onClick={() => { setLastSelectAction('none'); setSelected(new Set()); }} className={quickCls(lastSelectAction === 'none')}>
                       Nenhuma
                     </button>
-                    <button type="button" onClick={() => { setLastSelectAction('odd'); setSelected(prev => new Set(Array.from(prev).filter(i => i % 2 === 0))); }} className={quickCls(lastSelectAction === 'odd')}>
-                      Manter só ímpares
-                    </button>
-                    <button type="button" onClick={() => { setLastSelectAction('even'); setSelected(prev => new Set(Array.from(prev).filter(i => i % 2 === 1))); }} className={quickCls(lastSelectAction === 'even')}>
-                      Manter só pares
-                    </button>
+                    {allowOddEven && (
+                      <>
+                        <button type="button" onClick={() => { setLastSelectAction('odd'); setSelected(prev => new Set(Array.from(prev).filter(i => i % 2 === 0))); }} className={quickCls(lastSelectAction === 'odd')}>
+                          Manter só ímpares
+                        </button>
+                        <button type="button" onClick={() => { setLastSelectAction('even'); setSelected(prev => new Set(Array.from(prev).filter(i => i % 2 === 1))); }} className={quickCls(lastSelectAction === 'even')}>
+                          Manter só pares
+                        </button>
+                      </>
+                    )}
                   </div>
 
                   <p className="text-[9px] font-bold text-center text-slate-400">
@@ -552,15 +567,17 @@ export default function PdfPageSelectModal({
             <div className={`flex flex-col gap-2 p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
               <span className="text-[9px] font-black uppercase tracking-widest text-rose-500">Recorte</span>
 
-              <div className="flex gap-1.5">
-                <button type="button" onClick={() => { setAppliedPresetId(null); setSplitOddEven(false); }} className={quickCls(!splitOddEven)}>
-                  Mesmo recorte pra todas
-                </button>
-                <button type="button" onClick={() => { setAppliedPresetId(null); setSplitOddEven(true); }} className={quickCls(splitOddEven)}>
-                  Recorte diferente ímpar/par
-                </button>
-              </div>
-              {splitOddEven && (
+              {allowOddEven && (
+                <div className="flex gap-1.5">
+                  <button type="button" onClick={() => { setAppliedPresetId(null); setSplitOddEven(false); }} className={quickCls(!splitOddEven)}>
+                    Mesmo recorte pra todas
+                  </button>
+                  <button type="button" onClick={() => { setAppliedPresetId(null); setSplitOddEven(true); }} className={quickCls(splitOddEven)}>
+                    Recorte diferente ímpar/par
+                  </button>
+                </div>
+              )}
+              {allowOddEven && splitOddEven && (
                 <>
                   <span className="text-[8px] font-black uppercase tracking-widest text-rose-500">Lado sendo editado</span>
                   <div className="flex gap-1.5">

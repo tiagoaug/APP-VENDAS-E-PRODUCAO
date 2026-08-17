@@ -384,6 +384,14 @@ export type Purchase = {
   requestId?: string;
   prioridade?: string;
   deliveryDate?: number;
+  // Compra recorrente/parcelada — cada ocorrência é sua própria Purchase, ligada às demais
+  // pelo mesmo recurrenceGroupId (mesmo padrão de Transaction, ver Financeiro Pessoal). Gerada
+  // toda de uma vez no momento de salvar (uma por mês a partir do vencimento informado), não
+  // por um agendador em segundo plano.
+  isRecurring?: boolean;
+  recurrenceGroupId?: string;
+  installmentNumber?: number;
+  totalInstallments?: number;
 };
 
 export enum SaleStatus {
@@ -511,6 +519,12 @@ export type Sale = {
   notes?: string;
   sellerId?: string;
   sellerName?: string;
+  // Comissão do colaborador-vendedor (ver Collaborator.isSeller/commissionPercent) — "assada"
+  // no valor de agora a cada salvamento, pra não mudar retroativamente o histórico se a % de
+  // comissão do colaborador for alterada depois. Ausente quando o vendedor não é um
+  // colaborador-vendedor (ex.: vendedor é uma Pessoa comum, ou não tem comissão configurada).
+  sellerCommissionPercent?: number;
+  commissionAmount?: number;
   productionOrderId?: string;
   isProductionOrder?: boolean;
   saleDestination?: 'CUSTOMER' | 'STOCK';
@@ -1070,6 +1084,12 @@ export type SectorId =
   | 'producao_pcp' | 'estoque' | 'financeiro' | 'clientes_fornecedores'
   | 'pessoal' | 'sistema' | 'entregas' | 'bling';
 
+// Nível de permissão de uma função específica dentro de um setor liberado (ver SECTORS em
+// utils/collaborators.ts) — 'edit' é o padrão implícito (mesmo comportamento de sempre, acesso
+// total ao setor); 'view' restringe a só visualizar (esconde a ação de criar/editar daquela
+// função específica); 'none' esconde a função inteira, mesmo com o setor liberado.
+export type TaskPermissionLevel = 'none' | 'view' | 'edit';
+
 export type Collaborator = {
   id: string;
   name: string;
@@ -1077,7 +1097,16 @@ export type Collaborator = {
   colorHex: string;
   isUnrestricted: boolean;
   sectors: SectorId[];
+  // Refinamento por função dentro de um setor liberado — chave "sectorId:taskId" (ver
+  // SECTOR_TASKS em utils/collaborators.ts). Ausente = 'edit' (acesso total, como sempre foi).
+  taskPermissions?: Record<string, TaskPermissionLevel>;
   canUseAI: boolean;
+  // Colaborador pode ser escolhido como "Vendedor/Responsável" no Lançamento de Venda (junto
+  // das Pessoas marcadas isSeller) — commissionPercent (0-100) é aplicado sobre o total de cada
+  // venda dele pra alimentar o painel "Comissão a Vendedores" em Financeiro (ver Sale.
+  // commissionAmount, calculado e "assado" na venda a cada salvamento).
+  isSeller?: boolean;
+  commissionPercent?: number;
   themePref?: string;
   fontScalePref?: number;
   fontFamilyPref?: string;

@@ -127,6 +127,10 @@ interface SalesViewProps {
   onUpdateDeliveryInfo?: (saleId: string, data: { deliveryAddress?: Sale['deliveryAddress']; additionalDeliveryAddresses?: Sale['additionalDeliveryAddresses']; deliveryPriority?: Sale['deliveryPriority']; carrierId?: string | null; deliveryItems?: Sale['deliveryItems']; deliveryItemsNote?: Sale['deliveryItemsNote'] }) => Promise<void>;
   carriers?: Carrier[];
   onSendToRouteBuilder?: (saleId: string) => void;
+  /** Preferência global "Miniaturas dos Modelos" (Acessibilidade) — desligada, esconde foto em
+   * TODO canto que mostraria uma (Resumo do Pedido, Exportar Venda em JPG etc), não só listas
+   * de produto. */
+  showThumbnails?: boolean;
 }
 
 export default function SalesView({
@@ -183,6 +187,7 @@ export default function SalesView({
   onUpdateDeliveryInfo,
   carriers = [],
   onSendToRouteBuilder,
+  showThumbnails = true,
 }: SalesViewProps) {
   const isIndustrial = appTheme === 'industrial';
   const hasProduction = modulesConfig.production;
@@ -440,9 +445,16 @@ export default function SalesView({
     setExportModal({ isOpen: true, sale, format });
   };
 
-  const handleConfirmExport = async (note: string, format: 'pdf' | 'jpg') => {
+  const handleConfirmExport = async (
+    note: string, format: 'pdf' | 'jpg',
+    _showFinancialValues?: boolean, _groupMode?: 'none' | 'ref_color' | 'ref', _pcpTotalGrid?: boolean,
+    _showMaterials?: boolean, _showItemGrid?: boolean, _showSectorNotes?: boolean, _showOrderList?: boolean,
+    _splitPages?: boolean, _showProvider?: boolean, _showOSData?: boolean, _showSoleGrid?: boolean,
+    _selectedSectorIds?: string[], _pageSize?: 'a4' | 'marketplace', _itemsPerPage?: number,
+    exportShowThumbnails?: boolean,
+  ) => {
     if (!exportModal.sale) return;
-    
+
     try {
       await exportSale({
         sale: exportModal.sale,
@@ -450,7 +462,10 @@ export default function SalesView({
         people,
         paymentMethods,
         additionalNote: note,
-        isDarkMode
+        isDarkMode,
+        // Só mostra foto se a preferência global "Miniaturas dos Modelos" (Acessibilidade)
+        // também estiver ligada — desligada, ela vence mesmo com o toggle local marcado.
+        showThumbnails: showThumbnails && exportShowThumbnails,
       }, format);
       setExportModal(prev => ({ ...prev, isOpen: false }));
     } catch (error) {
@@ -2524,6 +2539,7 @@ export default function SalesView({
         onClose={() => setExportModal(prev => ({ ...prev, isOpen: false }))}
         onConfirm={handleConfirmExport}
         isDarkMode={isDarkMode}
+        showThumbnailsToggle={showThumbnails}
         initialFormat={exportModal.format}
         title={exportModal.sale?.status === SaleStatus.QUOTE ? "Exportar Orçamento" : exportModal.sale?.status === SaleStatus.CONFIRMED ? "Exportar Pedido" : "Exportar Venda"}
       />
@@ -2571,11 +2587,19 @@ export default function SalesView({
                   const unit = item.saleType === SaleType.WHOLESALE ? 'cx' : 'pares';
                   const lineTotal = item.price * item.quantity;
                   const isLast = idx === s.items.length - 1;
+                  const photoUrl = variation?.photoUrl || product?.photoUrl;
                   return (
                     <div
                       key={idx}
                       className={`flex items-center justify-between px-5 py-3.5 gap-3 ${!isLast ? (isDarkMode ? 'border-b border-slate-800' : 'border-b border-slate-50') : ''}`}
                     >
+                      {showThumbnails && (
+                        photoUrl ? (
+                          <img src={photoUrl} alt="" className="w-10 h-10 rounded-xl object-cover shrink-0 border border-black/5" />
+                        ) : (
+                          <div className={`w-10 h-10 rounded-xl shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                        )
+                      )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-900 dark:bg-slate-700 text-white text-[9px] font-black uppercase tracking-widest">

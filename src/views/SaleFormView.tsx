@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Sale, Product, SaleType, SaleItem, SaleExtraItem, SalePayment, Grid, Person, PaymentMethod, SaleStatus, PaymentTerm, Account, ProductStatus, PaymentStatus, ProductionOrder, ProductionLot, Sector, AppModulesConfig, ProductionConfigItem, ReminderTonePattern } from '../types';
+import { Sale, Product, SaleType, SaleItem, SaleExtraItem, SalePayment, Grid, Person, PaymentMethod, SaleStatus, PaymentTerm, Account, ProductStatus, PaymentStatus, ProductionOrder, ProductionLot, Sector, AppModulesConfig, ProductionConfigItem, ReminderTonePattern, Collaborator } from '../types';
+import { canEditTask } from '../utils/collaborators';
 import { firebaseService } from '../services/firebaseService';
 import { notificationService } from '../services/notificationService';
 import ComboBox from '../components/ComboBox';
@@ -53,10 +54,20 @@ interface SaleFormViewProps {
   onCreateProductionOrder: (order: ProductionOrder, lots: ProductionLot[], deductions: { productId: string; variationId: string; size?: string; quantity: number }[]) => Promise<void>;
   modulesConfig: AppModulesConfig;
   isDarkMode: boolean;
+  activeCollaborator?: Collaborator | null;
+  // Colaboradores marcados como Vendedor (ver Collaborator.isSeller) entram junto das Pessoas
+  // isSeller no combo "Vendedor/Responsável" — a comissão é calculada a partir daqui na hora
+  // de salvar (ver Sale.commissionAmount).
+  collaborators?: Collaborator[];
 }
 
-export default function SaleFormView({ saleId, sales, products, grids, people, paymentMethods, accounts, productionOrders, lots, sectors, productionConfigs, onSave, onDelete, onCancelOnly, onCancelAndRevert, onCancel, onCreateProductionOrder, modulesConfig, isDarkMode }: SaleFormViewProps) {
+export default function SaleFormView({ saleId, sales, products, grids, people, paymentMethods, accounts, productionOrders, lots, sectors, productionConfigs, onSave, onDelete, onCancelOnly, onCancelAndRevert, onCancel, onCreateProductionOrder, modulesConfig, isDarkMode, activeCollaborator = null, collaborators = [] }: SaleFormViewProps) {
+  const sellerCollaborators = useMemo(() => collaborators.filter(c => c.isSeller), [collaborators]);
   const hasProduction = modulesConfig.production;
+  // Refinamento por função dentro do setor Vendas (ver taskPermissions em Collaborator) — 'Vender'
+  // cobre Venda/Pedido (ambos fecham negócio), 'Emitir Orçamentos' cobre só o Orçamento.
+  const canVender = canEditTask(activeCollaborator, 'vendas', 'vender');
+  const canOrcamento = canEditTask(activeCollaborator, 'vendas', 'emitir_orcamentos');
   const [deliveryDate, setDeliveryDate] = useState<string>('');
   const [prioridade, setPrioridade] = useState<string>('NORMAL');
 
@@ -108,7 +119,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
   const [customerId, setCustomerId] = useState('');
   const [sellerId, setSellerId] = useState('');
   const [blocks, setBlocks] = useState<SaleBlock[]>([]);
-  const [status, setStatus] = useState<SaleStatus>(SaleStatus.SALE);
+  const [status, setStatus] = useState<SaleStatus>(() => (!saleId && !canVender && canOrcamento) ? SaleStatus.QUOTE : SaleStatus.SALE);
   const [isInitialized, setIsInitialized] = useState(false);
   const [showSaleModeInfo, setShowSaleModeInfo] = useState(false);
   
@@ -781,6 +792,10 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     
     const customer = people.find(p => p.id === customerId);
     const seller = people.find(p => p.id === sellerId);
+    // Vendedor pode ser uma Pessoa (isSeller) OU um Colaborador (isSeller) — só o colaborador
+    // carrega comissão (Sale.commissionAmount), "assada" agora pra não mudar retroativamente
+    // se a % dele for alterada depois.
+    const sellerCollaborator = sellerCollaborators.find(c => c.id === sellerId);
     const existingSale = saleId ? sales.find(s => s.id === saleId) : null;
 
     const saleToSave: Sale = {
@@ -788,8 +803,10 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       orderNumber,
       date: existingSale ? existingSale.date : Date.now(),
       customerName: customer?.name || 'Venda Avulsa',
-      sellerName: seller?.name || sellerId || '',
+      sellerName: seller?.name || sellerCollaborator?.name || sellerId || '',
       sellerId: sellerId || '',
+      sellerCommissionPercent: sellerCollaborator ? (sellerCollaborator.commissionPercent ?? 0) : undefined,
+      commissionAmount: sellerCollaborator ? total * ((sellerCollaborator.commissionPercent ?? 0) / 100) : undefined,
       items,
       extraItems,
       subtotal,
@@ -1275,27 +1292,30 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
           <button
             type="button"
             onClick={() => setStatus(SaleStatus.SALE)}
-            className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-center ${status === SaleStatus.SALE ? 'bg-[#7c3aed] text-white shadow-lg' : 'text-slate-400'}`}
+            disabled={!canVender}
+            className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-center disabled:opacity-40 disabled:cursor-not-allowed ${status === SaleStatus.SALE ? 'bg-[#7c3aed] text-white shadow-lg' : 'text-slate-400'}`}
             aria-label="Definir como venda"
-            title="Venda"
+            title={canVender ? 'Venda' : 'Sem permissão pra vender'}
           >
             Venda
           </button>
           <button
             type="button"
             onClick={() => setStatus(SaleStatus.CONFIRMED)}
-            className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-center ${status === SaleStatus.CONFIRMED ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-400'}`}
+            disabled={!canVender}
+            className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-center disabled:opacity-40 disabled:cursor-not-allowed ${status === SaleStatus.CONFIRMED ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-400'}`}
             aria-label="Definir como pedido confirmado"
-            title="Pedido confirmado — sem abate de estoque"
+            title={canVender ? 'Pedido confirmado — sem abate de estoque' : 'Sem permissão pra vender'}
           >
             Pedido
           </button>
           <button
             type="button"
             onClick={() => setStatus(SaleStatus.QUOTE)}
-            className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-center ${status === SaleStatus.QUOTE ? 'bg-orange-500 text-white shadow-lg' : 'text-slate-400'}`}
+            disabled={!canOrcamento}
+            className={`py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all text-center disabled:opacity-40 disabled:cursor-not-allowed ${status === SaleStatus.QUOTE ? 'bg-orange-500 text-white shadow-lg' : 'text-slate-400'}`}
             aria-label="Definir como orçamento"
-            title="Orçamento"
+            title={canOrcamento ? 'Orçamento' : 'Sem permissão pra emitir orçamentos'}
           >
             Orçamento
           </button>
@@ -1331,8 +1351,9 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
 
           <div className="relative">
             <label className="text-[9px] uppercase font-black text-slate-400 dark:text-slate-500 px-3 mb-2 block tracking-widest leading-none">Vendedor / Responsável</label>
-            <ComboBox 
+            <ComboBox
               options={[
+                ...sellerCollaborators.map(c => ({ id: c.id, name: c.name })),
                 ...people.filter(p => p.isSeller).map(p => ({ id: p.id, name: p.name })),
                 ...(people.find(p => p.id === customerId)?.internalContacts?.map(c => ({ id: c.name, name: c.name })) || [])
               ]}

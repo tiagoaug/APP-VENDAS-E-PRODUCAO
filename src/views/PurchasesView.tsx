@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
-import { Purchase, Person, Product, PurchaseType, PaymentStatus, PaymentTerm, SaleType, GeneralPurchaseItem, ProductionConfigItem, Account, Transaction, TransactionType, PaymentHistory } from "../types";
+import { Purchase, Person, Product, PurchaseType, PaymentStatus, PaymentTerm, SaleType, GeneralPurchaseItem, ProductionConfigItem, Account, Transaction, TransactionType, PaymentHistory, Collaborator } from "../types";
+import { canEditTask } from "../utils/collaborators";
 import {
   ShoppingCart,
   Plus,
@@ -19,6 +20,7 @@ import {
   ChevronUp,
   Share2,
   DollarSign,
+  Repeat,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -76,6 +78,7 @@ interface PurchasesViewProps {
   onSaveTransaction: (transaction: Omit<Transaction, 'id'>) => Promise<void>;
   onUpdatePurchase: (id: string, updates: Partial<Purchase>) => Promise<void>;
   onUpdatePerson?: (id: string, updates: Partial<Person>) => Promise<void>;
+  activeCollaborator?: Collaborator | null;
 }
 
 export default function PurchasesView({
@@ -94,7 +97,9 @@ export default function PurchasesView({
   onSaveTransaction,
   onUpdatePurchase,
   onUpdatePerson,
+  activeCollaborator = null,
 }: PurchasesViewProps) {
+  const canLancarPedidos = canEditTask(activeCollaborator, 'compras', 'lancar_pedidos');
   const [selectedNote, setSelectedNote] = useState<string | null>(null);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
@@ -290,6 +295,43 @@ export default function PurchasesView({
       return acc + Math.max(0, p.total - totalPaid);
     }, 0);
   }, [filteredPurchases]);
+
+  // Visão Geral de Pagamentos Recorrentes — agrupa as ocorrências de cada série (ver
+  // Purchase.recurrenceGroupId, gerado no momento de salvar em PurchaseFormView) e resume
+  // progresso/próximo vencimento. Usa `effectivePurchases` (não filteredPurchases) pra mostrar
+  // a série inteira independente do filtro de tipo/período/busca ativo no momento.
+  const recurringGroups = useMemo(() => {
+    const groups = new Map<string, Purchase[]>();
+    effectivePurchases.forEach(p => {
+      if (!p.isRecurring || !p.recurrenceGroupId) return;
+      const list = groups.get(p.recurrenceGroupId) || [];
+      list.push(p);
+      groups.set(p.recurrenceGroupId, list);
+    });
+    return Array.from(groups.entries())
+      .map(([groupId, occs]) => {
+        const sorted = [...occs].sort((a, b) => (a.installmentNumber || 0) - (b.installmentNumber || 0));
+        const first = sorted[0];
+        const supplier = suppliers.find(s => s.id === first.supplierId);
+        const paidCount = sorted.filter(o => o.paymentStatus === PaymentStatus.PAID).length;
+        const totalValue = sorted.reduce((acc, o) => acc + o.total, 0);
+        const remainingValue = sorted.filter(o => o.paymentStatus !== PaymentStatus.PAID).reduce((acc, o) => acc + o.total, 0);
+        const nextDue = sorted.find(o => o.paymentStatus !== PaymentStatus.PAID) || null;
+        const description = first.generalItems?.[0]?.description || first.notes || 'Compra recorrente';
+        return {
+          groupId,
+          supplierName: supplier?.name || 'Fornecedor não informado',
+          description,
+          totalInstallments: first.totalInstallments || sorted.length,
+          paidCount,
+          totalValue,
+          remainingValue,
+          nextDue,
+        };
+      })
+      .sort((a, b) => (a.nextDue?.dueDate || Infinity) - (b.nextDue?.dueDate || Infinity));
+  }, [effectivePurchases, suppliers]);
+  const [isRecurringOverviewExpanded, setIsRecurringOverviewExpanded] = useState(false);
 
   // Renderiza uma linha de item do carrinho (compartilhada entre o preview do card e o popup completo)
   const renderPurchaseItemRow = (item: any, idx: number) => {
@@ -518,14 +560,16 @@ export default function PurchasesView({
             </div>
           )}
         </div>
-        <button
-          onClick={onAdd}
-          title="Nova Compra"
-          aria-label="Adicionar nova compra"
-          className="bg-blue-600 text-white p-3 rounded-[1rem] shadow-sm active:scale-95 transition-all flex items-center justify-center cursor-pointer hover:bg-blue-700"
-        >
-          <Plus size={20} strokeWidth={2.5} />
-        </button>
+        {canLancarPedidos && (
+          <button
+            onClick={onAdd}
+            title="Nova Compra"
+            aria-label="Adicionar nova compra"
+            className="bg-blue-600 text-white p-3 rounded-[1rem] shadow-sm active:scale-95 transition-all flex items-center justify-center cursor-pointer hover:bg-blue-700"
+          >
+            <Plus size={20} strokeWidth={2.5} />
+          </button>
+        )}
       </div>
 
       {/* Tipo de Compra — sempre visível no topo, em vez de escondido no popup de Filtros */}
@@ -537,6 +581,52 @@ export default function PurchasesView({
           </button>
         ))}
       </div>
+
+      {/* Visão Geral de Pagamentos Recorrentes — só aparece se houver alguma série de compra
+          recorrente (ver Purchase.isRecurring/recurrenceGroupId, gerada em PurchaseFormView). */}
+      {recurringGroups.length > 0 && (
+        <div className={`rounded-[2rem] border shadow-sm overflow-hidden mt-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+          <button
+            type="button"
+            onClick={() => setIsRecurringOverviewExpanded(v => !v)}
+            className="w-full flex items-center justify-between gap-3 p-4"
+          >
+            <div className="flex items-center gap-3 text-left min-w-0">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-cyan-900/20 text-cyan-400' : 'bg-cyan-50 text-cyan-600'}`}>
+                <Repeat size={18} strokeWidth={2.5} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Pagamentos Recorrentes</p>
+                <p className={`text-sm font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  {recurringGroups.length} {recurringGroups.length === 1 ? 'série ativa' : 'séries ativas'}
+                </p>
+              </div>
+            </div>
+            <ChevronDown size={16} className={`text-slate-400 shrink-0 transition-transform ${isRecurringOverviewExpanded ? 'rotate-180' : ''}`} />
+          </button>
+          {isRecurringOverviewExpanded && (
+            <div className={`flex flex-col gap-2 px-4 pb-4 border-t pt-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              {recurringGroups.map(g => (
+                <div key={g.groupId} className={`flex items-center justify-between gap-3 p-3.5 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
+                  <div className="min-w-0">
+                    <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{g.description}</p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 truncate">
+                      {g.supplierName} · {g.paidCount}/{g.totalInstallments} pagas
+                      {g.nextDue && ` · próx. ${format(g.nextDue.dueDate || g.nextDue.date, 'dd/MM/yyyy')}`}
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className={`text-sm font-black ${g.remainingValue > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                      R$ {g.remainingValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">restante</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-col gap-3 mt-2">
         {/* Search Input + Configurar */}

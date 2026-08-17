@@ -52,9 +52,10 @@ import {
   ShoppingBag,
   Box,
   MessageSquare,
-  Copy
+  Copy,
+  Repeat
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, addMonths } from "date-fns";
 import CalculatorModal from '../components/CalculatorModal';
 import Modal from '../components/Modal';
 import ComboBox from "../components/ComboBox";
@@ -300,6 +301,11 @@ export default function PurchaseFormView({
   const [generateTransaction, setGenerateTransaction] = useState(
     existing?.generateTransaction !== undefined ? existing?.generateTransaction : true
   );
+  // Compra recorrente — só faz sentido pra Compra Geral nova (não editando uma já existente,
+  // que já é uma ocorrência isolada de uma série ou uma compra avulsa). Ver handleSave, gera
+  // `recurringInstallments` compras (uma por mês a partir do vencimento) em vez de uma só.
+  const [isRecurringPurchase, setIsRecurringPurchase] = useState(false);
+  const [recurringInstallments, setRecurringInstallments] = useState(2);
   // Compras de materiais não são mais recebidas direto no formulário — a entrada no
   // estoque (e por cor) é feita na tela "Recebimento de Compras". Por isso o padrão é
   // "não recebido". O estado segue sendo usado apenas pelo toggle de solados ("Já foi
@@ -1087,6 +1093,45 @@ export default function PurchaseFormView({
         await onCreateProductionOrder(order, [], []); // sem lotes — fila de espera
         return;
       }
+    }
+
+    // Compra Recorrente — gera `recurringInstallments` compras (uma por mês a partir do
+    // vencimento), em vez de uma só, todas ligadas por recurrenceGroupId. Mesmo padrão de
+    // Transaction/TransactionModal (Financeiro Pessoal), aplicado aqui a Purchase.
+    if (type === PurchaseType.GENERAL && !purchaseId && isRecurringPurchase && recurringInstallments >= 2) {
+      const groupId = generateId();
+      for (let i = 0; i < recurringInstallments; i++) {
+        const occDueDate = addMonths(dueDate, i).getTime();
+        const occReminderAt = reminderAt ? addMonths(reminderAt, i).getTime() : null;
+        const occurrence: Purchase = {
+          ...purchaseToSave,
+          id: i === 0 ? purchaseToSave.id : generateId(),
+          date: occDueDate,
+          dueDate: occDueDate,
+          isRecurring: true,
+          recurrenceGroupId: groupId,
+          installmentNumber: i + 1,
+          totalInstallments: recurringInstallments,
+          reminderAt: occReminderAt,
+          reminderTitle: reminderTitle || null,
+          reminderAlarmMode,
+          reminderCombineMode,
+          reminderSoundPattern,
+        };
+        if (occurrence.reminderAt) {
+          notificationService.scheduleReminder({
+            id: `purchase-${occurrence.id}`,
+            title: occurrence.reminderTitle || `Vencimento — ${supplierName || 'Fornecedor'}`,
+            body: `${supplierName || 'Fornecedor não informado'} · Parcela ${i + 1}/${recurringInstallments}`,
+            at: occurrence.reminderAt,
+            alarmMode: reminderAlarmMode,
+            combineMode: reminderCombineMode,
+            soundPattern: reminderSoundPattern,
+          });
+        }
+        await onSave(occurrence);
+      }
+      return;
     }
 
     onSave(purchaseToSave);
@@ -2697,6 +2742,88 @@ export default function PurchaseFormView({
            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-emerald-500 dark:peer-checked:bg-emerald-400 border-2 border-transparent"></div>
         </label>
       </div>
+
+      {/* Compra Recorrente — só pra Compra Geral nova (editando uma ocorrência já existente
+          não faz sentido virar "gerador de série" de novo). Gera N compras (uma por mês a
+          partir do vencimento) em vez de uma só — ver handleSave. */}
+      {type === PurchaseType.GENERAL && generateTransaction && !purchaseId && (
+        <div className={`p-6 rounded-[2.5rem] border shadow-sm flex flex-col gap-4 mt-2 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
+          <button
+            type="button"
+            onClick={() => setIsRecurringPurchase(v => !v)}
+            className="flex items-center justify-between gap-3"
+          >
+            <div className="flex items-center gap-3 text-left">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isRecurringPurchase ? 'bg-cyan-50 dark:bg-cyan-900/20 text-cyan-500' : (isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-slate-100 text-slate-400')}`}>
+                <Repeat size={18} strokeWidth={2.5} />
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-widest font-black text-slate-800 dark:text-white">Compra Recorrente</p>
+                <p className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-tight mt-0.5 max-w-[220px]">Ex.: aluguel, assinaturas, mensalidades</p>
+              </div>
+            </div>
+            <div className={`w-11 h-6 rounded-full relative shrink-0 transition-colors ${isRecurringPurchase ? 'bg-cyan-500' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}>
+              <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${isRecurringPurchase ? 'left-5' : 'left-0.5'}`} />
+            </div>
+          </button>
+
+          {isRecurringPurchase && (
+            <>
+              <div>
+                <label className="text-[9px] font-black uppercase text-slate-400 tracking-widest ml-1 mb-2 block">Quantas parcelas</label>
+                <div className={`flex items-center gap-2 border rounded-[1.1rem] p-1.5 ${isDarkMode ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                  <button
+                    type="button"
+                    onClick={() => setRecurringInstallments(v => Math.max(2, v - 1))}
+                    disabled={recurringInstallments <= 2}
+                    aria-label="Diminuir parcelas"
+                    title="Diminuir parcelas"
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 font-black text-base transition-all active:scale-95 disabled:opacity-30 ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm'}`}
+                  >
+                    <Minus size={16} strokeWidth={3} />
+                  </button>
+                  <input
+                    type="number"
+                    min={2}
+                    value={recurringInstallments}
+                    onChange={(e) => setRecurringInstallments(Math.max(2, Number(e.target.value) || 2))}
+                    className={`flex-1 min-w-0 bg-transparent text-center text-sm font-black outline-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setRecurringInstallments(v => v + 1)}
+                    aria-label="Aumentar parcelas"
+                    title="Aumentar parcelas"
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 font-black text-base transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-white' : 'bg-white text-slate-900 shadow-sm'}`}
+                  >
+                    <Plus size={16} strokeWidth={3} />
+                  </button>
+                </div>
+                <p className="text-[9px] font-bold text-slate-400 mt-2 ml-1">
+                  Gera {recurringInstallments} compras, uma por mês a partir do vencimento informado acima ({format(dueDate, 'dd/MM/yyyy')}).
+                </p>
+              </div>
+
+              <div className="relative">
+                <ReminderPickerModal
+                  isDarkMode={isDarkMode}
+                  label="Lembrete antes de cada vencimento"
+                  title={reminderTitle}
+                  onTitleChange={setReminderTitle}
+                  at={reminderAt}
+                  onAtChange={setReminderAt}
+                  alarmMode={reminderAlarmMode}
+                  onAlarmModeChange={setReminderAlarmMode}
+                  combineMode={reminderCombineMode}
+                  onCombineModeChange={setReminderCombineMode}
+                  soundPattern={reminderSoundPattern}
+                  onSoundPatternChange={setReminderSoundPattern}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Aviso: materiais entram no estoque pela tela de Recebimento de Compras */}
       {generalItems.some(i => i.materialId) && (

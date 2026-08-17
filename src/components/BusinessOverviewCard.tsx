@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PurchaseType, Sale, Product, SaleType, ProductionLot, ProductionConfigItem } from '../types';
@@ -40,6 +40,10 @@ interface BusinessOverviewCardProps {
   people: Person[];
   categories: Category[];
   onDeleteTransaction: (id: string) => Promise<void> | void;
+  /** Quando true, não desenha o próprio cartão (borda/fundo/sombra) — usado quando o card já
+   * fica dentro de outro container (ver FinancialView, que agrupa isso junto do "Lucro com
+   * Vendas" num card só). Default false mantém o comportamento normal (card avulso). */
+  embedded?: boolean;
 }
 
 const OVERVIEW_SOURCE_COLORS: Record<string, { chip: string; icon: string; iconBg: string; solid: string; ring: string }> = {
@@ -146,10 +150,22 @@ export default function BusinessOverviewCard({
   people,
   categories,
   onDeleteTransaction,
+  embedded = false,
 }: BusinessOverviewCardProps) {
   const businessAccounts = useMemo(() => accounts.filter(a => a.type !== AccountType.PERSONAL), [accounts]);
 
-  const [isOverviewExpanded, setIsOverviewExpanded] = useState(true);
+  // <input type="month"> só abre o seletor nativo quando o toque acerta o ícone de calendário
+  // do próprio input — na cápsula/pill em volta dele (ícone + texto), tocar fora do ícone só
+  // foca sem abrir nada. `showPicker()` abre o seletor a partir de qualquer clique na cápsula.
+  const periodDateInputRef = useRef<HTMLInputElement>(null);
+  const compPeriodDateInputRef = useRef<HTMLInputElement>(null);
+  const openMonthPicker = (ref: RefObject<HTMLInputElement | null>) => {
+    const el = ref.current as (HTMLInputElement & { showPicker?: () => void }) | null;
+    if (!el) return;
+    try { el.showPicker ? el.showPicker() : el.focus(); } catch { el.focus(); }
+  };
+
+  const [isOverviewExpanded, setIsOverviewExpanded] = useState(false);
   const [isResumoExpanded, setIsResumoExpanded] = useState(true);
   const [overviewConfig, setOverviewConfig] = useState<BusinessOverviewConfig>(DEFAULT_BUSINESS_OVERVIEW_CONFIG);
 
@@ -351,11 +367,11 @@ export default function BusinessOverviewCard({
   }, [transactions]);
 
   return (
-    <div className={`rounded-[2.5rem] border shadow-sm p-6 flex flex-col gap-5 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+    <div className={embedded ? 'flex flex-col gap-5' : `rounded-[2.5rem] border shadow-sm p-6 flex flex-col gap-5 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
       <button
         type="button"
         onClick={() => setIsOverviewExpanded((v) => !v)}
-        className="flex items-center justify-between w-full"
+        className="flex items-center justify-center gap-2 w-full"
         aria-expanded={isOverviewExpanded}
       >
         <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-[11px] font-black uppercase tracking-tight text-indigo-600 dark:text-indigo-400">
@@ -390,13 +406,17 @@ export default function BusinessOverviewCard({
               ))}
             </div>
 
-            <div className={`flex items-center gap-2 rounded-xl px-3 py-2 border-2 ${isDarkMode ? 'bg-orange-900/20 border-orange-800/40' : 'bg-orange-50 border-orange-200'}`}>
+            <div
+              onClick={() => openMonthPicker(periodDateInputRef)}
+              className={`flex items-center gap-2 rounded-xl px-3 py-2 border-2 cursor-pointer ${isDarkMode ? 'bg-orange-900/20 border-orange-800/40' : 'bg-orange-50 border-orange-200'}`}
+            >
               <Calendar size={13} className="text-orange-500 shrink-0" />
               <input
+                ref={periodDateInputRef}
                 type="month"
                 value={overviewConfig.periodDate}
                 onChange={(e) => setPeriodDate(e.target.value)}
-                className={`flex-1 border-none bg-transparent px-0 py-0 text-[10px] font-black outline-none ${isDarkMode ? 'text-orange-400' : 'text-orange-700'}`}
+                className={`flex-1 border-none bg-transparent px-0 py-0 text-[10px] font-black outline-none pointer-events-none ${isDarkMode ? 'text-orange-400' : 'text-orange-700'}`}
               />
             </div>
 
@@ -432,13 +452,19 @@ export default function BusinessOverviewCard({
                       <option key={p} value={p}>{OVERVIEW_PERIOD_LABELS[p]}</option>
                     ))}
                   </select>
-                  <input
-                    type="month"
-                    title="Mês/ano de referência da comparação"
-                    value={overviewConfig.compPeriodDate}
-                    onChange={(e) => setCompPeriodDate(e.target.value)}
-                    className={`flex-1 rounded-xl px-3 py-2.5 text-[10px] font-bold border-none outline-none ${isDarkMode ? 'bg-indigo-900/30 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}
-                  />
+                  <div
+                    onClick={() => openMonthPicker(compPeriodDateInputRef)}
+                    className={`flex-1 flex items-center rounded-xl cursor-pointer ${isDarkMode ? 'bg-indigo-900/30' : 'bg-indigo-50'}`}
+                  >
+                    <input
+                      ref={compPeriodDateInputRef}
+                      type="month"
+                      title="Mês/ano de referência da comparação"
+                      value={overviewConfig.compPeriodDate}
+                      onChange={(e) => setCompPeriodDate(e.target.value)}
+                      className={`w-full rounded-xl px-3 py-2.5 text-[10px] font-bold border-none bg-transparent outline-none pointer-events-none ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}
+                    />
+                  </div>
                 </div>
               )}
             </div>

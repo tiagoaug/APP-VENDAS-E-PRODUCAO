@@ -1,10 +1,11 @@
 import { useState, useMemo, ReactNode } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Sale, Purchase, Product, Variation, CompanyCheck, Transaction, TransactionType, Account, AccountType, SaleStatus, PaymentStatus, Person, ViewType, Category, DashboardConfig, SaleType, ServiceOrder, PaymentTerm, ProductionOrder, ProductionConfigItem } from "../types";
-import { Share2, TrendingUp, TrendingDown, Package, PackageOpen, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings, Sparkles, ScanLine, QrCode, Trash2, Bell } from "lucide-react";
+import { Share2, TrendingUp, TrendingDown, Package, PackageOpen, ShoppingBag, History, CreditCard, CheckCircle2, Clock, DollarSign, Wallet, Boxes, ChevronDown, ChevronUp, Search, Filter, X, RefreshCcw, AlertCircle, Hash, Calendar, Copy, Clipboard, Landmark, User, Factory, ShoppingCart, Plus, Database, Grid3X3, Footprints, Layers, ChevronRight, BarChart3, Users, Palette, Printer, ClipboardList, BookOpen, Settings, Sparkles, ScanLine, QrCode, Trash2, Bell, HelpCircle } from "lucide-react";
 import { format, differenceInDays, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import ConfigMenuItem from '../components/ConfigMenuItem';
+import ConfirmDialog from '../components/ConfirmDialog';
 import ScannerModal from '../components/ScannerModal';
 import { ProductionScreenType } from "../types";
 import { toast } from '../utils/toast';
@@ -95,6 +96,7 @@ export default function DashboardView({
   const [expandedCheckId, setExpandedCheckId] = useState<string | null>(null);
   const [isRecentActivityExpanded, setIsRecentActivityExpanded] = useState(false);
   const [topProductsRankMode, setTopProductsRankMode] = useState<'model' | 'color'>('model');
+  const [showBalanceInfo, setShowBalanceInfo] = useState(false);
 
   // Scanner Rápido (Dashboard)
   const [isQuickScannerOpen, setIsQuickScannerOpen] = useState(false);
@@ -714,7 +716,18 @@ export default function DashboardView({
                 className={`cursor-pointer p-6 rounded-[1.5rem] border shadow-[0_2px_10px_-3px_rgba(6,81,237,0.1)] flex flex-col gap-3 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}
               >
                 <div className={`flex items-center justify-between pb-3 border-b ${isDarkMode ? "border-slate-800" : "border-slate-100"}`}>
-                  <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-sm font-black uppercase tracking-tight text-indigo-600 dark:text-indigo-400">Saldo Consolidado</span>
+                  <span className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-sm font-black uppercase tracking-tight text-indigo-600 dark:text-indigo-400">
+                    Saldo Consolidado
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setShowBalanceInfo(true); }}
+                      title="O que é o Saldo Consolidado?"
+                      aria-label="O que é o Saldo Consolidado?"
+                      className="text-indigo-400 dark:text-indigo-500"
+                    >
+                      <HelpCircle size={15} />
+                    </button>
+                  </span>
                   <div className="w-9 h-9 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl flex items-center justify-center text-indigo-500">
                     <Wallet size={18} strokeWidth={2.5} />
                   </div>
@@ -2283,6 +2296,17 @@ export default function DashboardView({
         onClose={() => setIsQuickScannerOpen(false)}
         onScan={(parsed) => { setIsQuickScannerOpen(false); handleQuickScanResult(parsed); }}
         title="Scanner Rápido"
+      />
+
+      <ConfirmDialog
+        isOpen={showBalanceInfo}
+        title="Saldo Consolidado"
+        message='É a soma dos saldos ATUAIS de todas as contas do negócio (banco, caixa etc — não conta as contas marcadas como "Pessoal"). Cada conta guarda um saldo corrente, ajustado direto sempre que algo confirmado mexe nela (venda recebida, compra paga, lançamento manual concluído, transferência). Não é filtrado por período — é sempre "quanto tem nas contas agora".'
+        confirmLabel="Entendi"
+        cancelLabel=""
+        isDanger={false}
+        onConfirm={() => setShowBalanceInfo(false)}
+        onCancel={() => setShowBalanceInfo(false)}
       />
     </div>
   );

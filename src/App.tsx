@@ -201,7 +201,7 @@ import { parseLocaleNumber } from './utils/numbers';
 import { generateId } from './utils/id';
 import { seedProductionOrderSequence } from './utils/sequenceSeeds';
 import { ThemeId, THEME_VISUALS, ALL_THEME_CLASSES, FONT_OPTIONS, NavIconMode, NAV_TAB_COLORS } from './utils/themes';
-import { isViewAllowed, collaboratorCanUseAI, getEffectiveDashboardCards, isAccountOwnerSession } from './utils/collaborators';
+import { isViewAllowed, collaboratorCanUseAI, getEffectiveDashboardCards, isAccountOwnerSession, isViewTaskAllowed } from './utils/collaborators';
 import { subscribeToAIGeneralSettings } from './services/aiSettingsService';
 
 const MODAL_VIEWS = [
@@ -4098,6 +4098,10 @@ export default function App() {
     if (isDeliveryView && (!modulesConfig.sales || !modulesConfig.entregas)) return renderView(ViewType.DASHBOARD);
     if (isBlingView && !modulesConfig.bling) return renderView(ViewType.DASHBOARD);
     if (!isViewAllowed(activeCollaborator, view)) return renderView(ViewType.DASHBOARD);
+    // Refinamento por função dentro do setor (ver taskPermissions em Collaborator e
+    // VIEW_TASK_MAP em utils/collaborators.ts) — telas de uma função específica bloqueadas
+    // ('none') redirecionam pro Dashboard mesmo com o setor liberado.
+    if (!isViewTaskAllowed(activeCollaborator, view)) return renderView(ViewType.DASHBOARD);
 
     switch (view) {
       case ViewType.ONBOARDING_WELCOME:
@@ -4673,6 +4677,7 @@ export default function App() {
       case ViewType.PURCHASES:
         return (
           <PurchasesView
+            activeCollaborator={activeCollaborator}
             purchases={purchases}
             suppliers={suppliers}
             people={people}
@@ -4975,6 +4980,7 @@ export default function App() {
       case ViewType.SALES:
         return (
           <SalesView
+            showThumbnails={showEngineeringThumbnails}
             sales={sales}
             products={products}
             grids={grids}
@@ -5507,6 +5513,7 @@ export default function App() {
             products={products}
             productionLots={productionLots}
             productionConfigs={productionConfigs}
+            collaborators={collaborators}
             onSave={async (newTx) => {
               try {
                 await financeService.createTransaction(newTx);
@@ -5716,11 +5723,14 @@ export default function App() {
             lots={productionLots}
             modulesConfig={modulesConfig}
             productionConfigs={productionConfigs}
+            showThumbnails={showEngineeringThumbnails}
           />
         );
       case ViewType.SALE_FORM:
         return (
           <SaleFormView
+            activeCollaborator={activeCollaborator}
+            collaborators={collaborators}
             saleId={selectedSaleId}
             sales={sales}
             products={products}
@@ -7096,6 +7106,20 @@ export default function App() {
     return <LoginView />;
   }
 
+  // Espera o primeiro snapshot de colaboradores decidir `needsCollabGate` antes de renderizar
+  // qualquer coisa — sem isso, a sessão persistida do Firebase já libera `user` antes da
+  // assinatura do Firestore resolver, e o Dashboard pisca na tela por um instante antes do
+  // gate "Quem é você?" aparecer (mesmo em contas que exigem o gate).
+  if (!collabGateReady) {
+    return (
+      <div
+        className={`h-screen flex items-center justify-center ${isDarkMode ? "bg-slate-950" : "bg-slate-50"}`}
+      >
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
+      </div>
+    );
+  }
+
   if (needsCollabGate && !collabSessionConfirmed) {
     return (
       <CollaboratorGateView
@@ -7444,7 +7468,7 @@ export default function App() {
               monoColor={navMonoColor}
             />
           )}
-          {modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.FINANCIAL) && (
+          {modulesConfig.sales && isViewAllowed(activeCollaborator, ViewType.FINANCIAL) && isViewTaskAllowed(activeCollaborator, ViewType.FINANCIAL) && (
             <TabItem
               icon={<DollarSign size={20} />}
               label="Finan."
