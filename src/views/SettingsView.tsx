@@ -33,7 +33,8 @@ import {
   Plus,
   Sparkles,
   Truck,
-  Rocket
+  Rocket,
+  Building2
 } from 'lucide-react';
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
@@ -65,6 +66,8 @@ interface SettingsViewProps {
   onLogout: () => void;
   showEngineeringThumbnails?: boolean;
   setShowEngineeringThumbnails?: (v: boolean) => void;
+  hideFinancialValues?: boolean;
+  setHideFinancialValues?: (v: boolean) => void;
   onOpenOnboardingWizard: () => void;
   onOpenProductCreationChoice: () => void;
 }
@@ -91,6 +94,8 @@ export default function SettingsView({
   onLogout,
   showEngineeringThumbnails = true,
   setShowEngineeringThumbnails,
+  hideFinancialValues = false,
+  setHideFinancialValues,
   onOpenOnboardingWizard,
   onOpenProductCreationChoice,
 }: SettingsViewProps) {
@@ -167,6 +172,7 @@ export default function SettingsView({
       title: "Sistema & Backup",
       items: [
         { id: ViewType.COLLABORATORS_CONFIG, label: "Colaboradores", icon: <UserCog size={22} />, color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-900/30", module: 'any' },
+        { id: ViewType.COMPANY_PROFILE, label: "Personalizar Empresa", icon: <Building2 size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/20", module: 'any' },
         { id: 'ONBOARDING_WIZARD', label: "Assistente de Configuração", icon: <Rocket size={22} />, color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-50 dark:bg-rose-900/20", module: 'any' },
         { id: 'AI_SETTINGS', label: "Assistente de IA", icon: <Sparkles size={22} />, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-900/20", module: 'ai' },
         { id: ViewType.PRINT_STUDIO, label: "Print Studio", icon: <Printer size={22} />, color: "text-cyan-600 dark:text-cyan-400", bg: "bg-cyan-50 dark:bg-cyan-900/20", module: 'any' },
@@ -359,7 +365,7 @@ export default function SettingsView({
       </div>
 
       <div className="mt-2 text-center">
-        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">Gestão Cloud Pro v1.2.4</p>
+        <p className="text-[11px] text-slate-300 font-bold uppercase tracking-widest">LIM.O APP v1.2.4</p>
       </div>
 
       {/* ── ACESSIBILIDADE E PERSONALIZAÇÃO — POPUP DE TESTE ── */}
@@ -430,6 +436,30 @@ export default function SettingsView({
                     className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${showEngineeringThumbnails ? 'bg-indigo-600' : 'bg-slate-200'}`}
                   >
                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${showEngineeringThumbnails ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
+              )}
+
+              {/* Modo Privacidade Financeira — borra valores no Financeiro e nos cards do
+                  Dashboard, pra poder mostrar a tela pra alguém sem expor números. */}
+              {setHideFinancialValues && (
+                <div className={`flex items-center justify-between p-4 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50 border border-slate-100'}`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
+                      {hideFinancialValues ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </div>
+                    <div>
+                      <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Modo Privacidade Financeira</p>
+                      <p className="text-[11px] text-slate-400 font-medium uppercase tracking-wider">Borra valores no Financeiro e no Dashboard</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setHideFinancialValues(!hideFinancialValues)}
+                    title="Ativar/desativar Modo Privacidade Financeira"
+                    aria-label="Ativar ou desativar o Modo Privacidade Financeira"
+                    className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${hideFinancialValues ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${hideFinancialValues ? 'left-7' : 'left-1'}`} />
                   </button>
                 </div>
               )}

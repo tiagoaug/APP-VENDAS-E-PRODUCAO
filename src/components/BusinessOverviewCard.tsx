@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, type RefObject } from 'react';
+import { usePrivacyMode, PRIVACY_BLUR_CLASS } from '../contexts/PrivacyContext';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PurchaseType, Sale, Product, SaleType, ProductionLot, ProductionConfigItem } from '../types';
@@ -152,6 +153,7 @@ export default function BusinessOverviewCard({
   onDeleteTransaction,
   embedded = false,
 }: BusinessOverviewCardProps) {
+  const hidePrivacy = usePrivacyMode();
   const businessAccounts = useMemo(() => accounts.filter(a => a.type !== AccountType.PERSONAL), [accounts]);
 
   // <input type="month"> só abre o seletor nativo quando o toque acerta o ícone de calendário
@@ -472,7 +474,7 @@ export default function BusinessOverviewCard({
             <div>
               <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Lucro real agora</p>
               <div className="flex items-center gap-2 mt-1 flex-wrap">
-                <h2 className={`text-3xl font-black tracking-tighter ${businessOverview.profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                <h2 className={`text-3xl font-black tracking-tighter transition-all ${businessOverview.profit >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                   R$ {businessOverview.profit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </h2>
                 {businessOverview.comparison && (
@@ -485,7 +487,7 @@ export default function BusinessOverviewCard({
               {businessOverview.comparison && (
                 <div className="mt-2">
                   <div className="flex justify-between text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                    <span>{businessOverview.comparison.label}: R$ {businessOverview.comparison.profit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className={hidePrivacy ? PRIVACY_BLUR_CLASS : ''}>{businessOverview.comparison.label}: R$ {businessOverview.comparison.profit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     <span>Agora</span>
                   </div>
                   <div className="flex h-2 rounded-full overflow-hidden bg-slate-100 dark:bg-slate-800 gap-0.5">
@@ -515,7 +517,7 @@ export default function BusinessOverviewCard({
                       <ChevronDown size={9} className="rotate-[-90deg] text-indigo-500" />
                     </span>
                   </p>
-                  <p className="text-sm font-black mt-0.5 text-rose-500">R$ {businessOverview.expenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  <p className={`text-sm font-black mt-0.5 text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {businessOverview.expenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                 </button>
               </div>
 
@@ -525,7 +527,7 @@ export default function BusinessOverviewCard({
                   <div>
                     <div className="flex justify-between items-baseline text-[9px] font-black mb-1">
                       <span className="text-emerald-500 uppercase tracking-widest">Fontes marcadas</span>
-                      <span className="text-emerald-500">R$ {businessOverview.includedTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className={`text-emerald-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {businessOverview.includedTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     <div className="h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                       <div
@@ -537,7 +539,7 @@ export default function BusinessOverviewCard({
                   <div>
                     <div className="flex justify-between items-baseline text-[9px] font-black mb-1">
                       <span className="text-rose-500 uppercase tracking-widest">Despesas</span>
-                      <span className="text-rose-500">R$ {businessOverview.expenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className={`text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {businessOverview.expenses.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     <div className="h-2.5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                       <div
@@ -559,7 +561,7 @@ export default function BusinessOverviewCard({
                   <AlertCircle size={18} className="text-amber-500 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-[10px] font-black text-amber-700 dark:text-amber-400">
-                      {nonAccountingLeaks.length} despesa(s) indevida(s) de compras "Não Contábil" — R$ {nonAccountingLeaks.reduce((a, t) => a + t.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      {nonAccountingLeaks.length} despesa(s) indevida(s) de compras "Não Contábil" — <span className={hidePrivacy ? PRIVACY_BLUR_CLASS : ''}>R$ {nonAccountingLeaks.reduce((a, t) => a + t.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </p>
                     <p className="text-[9px] font-bold text-amber-600/80 dark:text-amber-500/80 mt-0.5">Toque pra ver e corrigir</p>
                   </div>
@@ -589,7 +591,7 @@ export default function BusinessOverviewCard({
                     <div className="flex flex-col gap-2 px-3 pb-3.5">
                       <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
                         <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><Landmark size={10} /> Saldo Consolidado</p>
-                        <p className={`text-sm font-black mt-0.5 ${resumo.consolidatedBalance >= 0 ? (isDarkMode ? 'text-white' : 'text-slate-900') : 'text-rose-500'}`}>
+                        <p className={`text-sm font-black mt-0.5 ${resumo.consolidatedBalance >= 0 ? (isDarkMode ? 'text-white' : 'text-slate-900') : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                           R$ {resumo.consolidatedBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
                         <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Soma do saldo de todas as contas do negócio agora (contas de uso Pessoal não entram).</p>
@@ -597,26 +599,26 @@ export default function BusinessOverviewCard({
 
                       <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
                         <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><DollarSign size={10} /> A Receber (Pendente)</p>
-                        <p className="text-sm font-black mt-0.5 text-amber-500">R$ {resumo.pendingReceivables.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        <p className={`text-sm font-black mt-0.5 text-amber-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {resumo.pendingReceivables.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Vendas já fechadas (não orçamento, não cancelada) que ainda não foram pagas por completo: total do pedido menos o que já foi pago.</p>
                       </div>
 
                       <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
                         <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><TrendingUp size={10} /> Balanço do Mês (Liquidados)</p>
-                        <p className={`text-sm font-black mt-0.5 ${resumo.monthlyBalance >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>R$ {resumo.monthlyBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        <p className={`text-sm font-black mt-0.5 ${resumo.monthlyBalance >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {resumo.monthlyBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Receitas menos despesas já confirmadas (liquidadas) desde o dia 1º deste mês até agora — sempre o mês calendário atual, independente do período escolhido acima.</p>
                       </div>
 
                       <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
                         <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><Boxes size={10} /> Patrimônio em Estoque</p>
-                        <p className={`text-[11px] font-black mt-0.5 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Custo: R$ {resumo.stockValue.costValue.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
-                        <p className="text-[9px] font-bold text-emerald-500">Venda: R$ {resumo.stockValue.saleValue.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                        <p className={`text-[11px] font-black mt-0.5 ${isDarkMode ? 'text-white' : 'text-slate-900'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>Custo: R$ {resumo.stockValue.costValue.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
+                        <p className={`text-[9px] font-bold text-emerald-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>Venda: R$ {resumo.stockValue.saleValue.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</p>
                         <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Custo e valor de venda de tudo que está pronto no estoque agora, pelo preço de custo/venda cadastrado em cada modelo × quantidade em estoque.</p>
                       </div>
 
                       <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
                         <p className="text-[8px] font-black text-slate-400 tracking-widest flex items-center gap-1"><ShoppingBag size={10} /> Lucro em Vendas</p>
-                        <p className={`text-sm font-black mt-0.5 ${businessOverview.salesProfitInPeriod >= 0 ? 'text-teal-500' : 'text-rose-500'}`}>R$ {businessOverview.salesProfitInPeriod.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        <p className={`text-sm font-black mt-0.5 ${businessOverview.salesProfitInPeriod >= 0 ? 'text-teal-500' : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {businessOverview.salesProfitInPeriod.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                         <p className="text-[8.5px] font-bold text-slate-400 mt-1 leading-relaxed">Vendas fechadas no período selecionado acima, menos o custo dos produtos vendidos — a margem já ganha ao vender, recebida ou não ainda o dinheiro. Só informativo: não entra na soma de "Lucro Real".</p>
                       </div>
                     </div>
@@ -667,7 +669,7 @@ export default function BusinessOverviewCard({
                         <p className="text-[9px] font-bold text-slate-400">{s.desc}</p>
                       </div>
                     </button>
-                    <p className={`text-[12px] font-black shrink-0 ${checked ? colors.chip : 'text-slate-400'}`}>
+                    <p className={`text-[12px] font-black shrink-0 ${checked ? colors.chip : 'text-slate-400'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                       R$ {s.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                   </div>
@@ -685,7 +687,7 @@ export default function BusinessOverviewCard({
                 </div>
                 <div className="flex items-center justify-between px-1">
                   <span className="text-[9px] font-bold text-slate-400">Total das fontes marcadas</span>
-                  <span className={`text-[13px] font-black ${businessOverview.includedTotal >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                  <span className={`text-[13px] font-black ${businessOverview.includedTotal >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                     R$ {businessOverview.includedTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
@@ -830,7 +832,7 @@ export default function BusinessOverviewCard({
                       <p className={`text-[11px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{supplier || t.description}</p>
                       <p className="text-[9px] font-bold text-slate-400">{format(t.date, 'dd/MM/yyyy')} · {purchase?.type === PurchaseType.SOLE ? 'Solados' : 'Palmilhas'}</p>
                     </div>
-                    <p className="text-[11px] font-black text-rose-500 shrink-0">R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className={`text-[11px] font-black text-rose-500 shrink-0 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   </div>
                 );
               })}
@@ -884,11 +886,11 @@ export default function BusinessOverviewCard({
             <div className="flex gap-3 px-6 pt-4">
               <div className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
                 <p className="text-[8px] font-black text-slate-400 tracking-widest">Vinculadas a compras</p>
-                <p className="text-sm font-black mt-0.5 text-rose-500">R$ {periodExpenseBreakdown.linkedToPurchase.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className={`text-sm font-black mt-0.5 text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {periodExpenseBreakdown.linkedToPurchase.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
               <div className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
                 <p className="text-[8px] font-black text-slate-400 tracking-widest">Outros lançamentos</p>
-                <p className="text-sm font-black mt-0.5 text-rose-500">R$ {periodExpenseBreakdown.other.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className={`text-sm font-black mt-0.5 text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {periodExpenseBreakdown.other.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
             </div>
 
@@ -907,7 +909,7 @@ export default function BusinessOverviewCard({
                         {format(t.date, 'dd/MM/yyyy')}{categoryName ? ` · ${categoryName}` : ''}{t.relatedId ? ' · vinculada a compra' : ''}
                       </p>
                     </div>
-                    <p className="text-[11px] font-black text-rose-500 shrink-0">R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className={`text-[11px] font-black text-rose-500 shrink-0 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                     {linkedPurchase && (
                       <button
                         type="button"
@@ -957,11 +959,11 @@ export default function BusinessOverviewCard({
             <div className="flex gap-3 px-6 pt-4">
               <div className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
                 <p className="text-[8px] font-black text-slate-400 tracking-widest">Vinculadas a venda</p>
-                <p className="text-sm font-black mt-0.5 text-emerald-500">R$ {periodIncomeBreakdown.linkedToSale.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className={`text-sm font-black mt-0.5 text-emerald-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {periodIncomeBreakdown.linkedToSale.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
               <div className="flex-1 p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/50">
                 <p className="text-[8px] font-black text-slate-400 tracking-widest">Outros lançamentos</p>
-                <p className="text-sm font-black mt-0.5 text-emerald-500">R$ {periodIncomeBreakdown.other.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                <p className={`text-sm font-black mt-0.5 text-emerald-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {periodIncomeBreakdown.other.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
               </div>
             </div>
 
@@ -979,7 +981,7 @@ export default function BusinessOverviewCard({
                         {format(t.date, 'dd/MM/yyyy')}{categoryName ? ` · ${categoryName}` : ''}{t.contactName ? ` · ${t.contactName}` : ''}{t.relatedId ? ' · vinculada a venda' : ''}
                       </p>
                     </div>
-                    <p className="text-[11px] font-black text-emerald-500 shrink-0">R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className={`text-[11px] font-black text-emerald-500 shrink-0 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   </div>
                 );
               })}
@@ -1043,7 +1045,7 @@ export default function BusinessOverviewCard({
             </div>
             <div className="flex items-center justify-between gap-2 pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 shrink-0">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total</span>
-              <h3 className="font-black text-base tracking-tight text-rose-500 dark:text-rose-400">
+              <h3 className={`font-black text-base tracking-tight text-rose-500 dark:text-rose-400 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                 R$ {selectedPurchaseForCart.total.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </h3>
             </div>

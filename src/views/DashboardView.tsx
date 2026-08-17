@@ -6,6 +6,7 @@ import { format, differenceInDays, startOfMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { usePrivacyMode, PRIVACY_BLUR_CLASS } from '../contexts/PrivacyContext';
 import ScannerModal from '../components/ScannerModal';
 import { ProductionScreenType } from "../types";
 import { toast } from '../utils/toast';
@@ -97,6 +98,7 @@ export default function DashboardView({
   const [isRecentActivityExpanded, setIsRecentActivityExpanded] = useState(false);
   const [topProductsRankMode, setTopProductsRankMode] = useState<'model' | 'color'>('model');
   const [showBalanceInfo, setShowBalanceInfo] = useState(false);
+  const hidePrivacy = usePrivacyMode();
 
   // Scanner Rápido (Dashboard)
   const [isQuickScannerOpen, setIsQuickScannerOpen] = useState(false);
@@ -732,7 +734,7 @@ export default function DashboardView({
                     <Wallet size={18} strokeWidth={2.5} />
                   </div>
                 </div>
-                <p className={`text-3xl font-black tracking-tight leading-none ${isDarkMode ? "text-white" : "text-slate-900"}`}>
+                <p className={`text-3xl font-black tracking-tight leading-none transition-all ${isDarkMode ? "text-white" : "text-slate-900"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                   R$ {stats.consolidatedBalance.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>
@@ -804,7 +806,7 @@ export default function DashboardView({
                     </div>
                     <div>
                       <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 tracking-widest leading-none mb-1">Vendas (Mês)</p>
-                      <p className={`text-sm font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>R$ {stats.monthlyIncome.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                      <p className={`text-sm font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {stats.monthlyIncome.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                     </div>
                   </button>
 
@@ -819,7 +821,7 @@ export default function DashboardView({
                     </div>
                     <div>
                       <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 tracking-widest leading-none mb-1">Lucro (Mês)</p>
-                      <p className={`text-sm font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>R$ {(stats.monthlyIncome - stats.monthlyExpenses).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                      <p className={`text-sm font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {(stats.monthlyIncome - stats.monthlyExpenses).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                     </div>
                   </button>
 
@@ -929,7 +931,7 @@ export default function DashboardView({
                             <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black ${i === 0 ? 'bg-amber-500 text-white' : (isDarkMode ? 'bg-slate-800 text-slate-500' : 'bg-slate-100 text-slate-400')}`}>{i + 1}</span>
                             <span className={`text-[13px] font-black truncate max-w-[120px] ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{c.name}</span>
                           </div>
-                          <span className="text-[10px] font-black text-indigo-500">R$ {c.total.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                          <span className={`text-[10px] font-black text-indigo-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {c.total.toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
                         </div>
                       ))}
                       {topRankings.topCustomers.length === 0 && <p className="text-[10px] text-slate-400 italic">Sem dados de vendas.</p>}
@@ -990,7 +992,7 @@ export default function DashboardView({
                   <p className="text-xs font-bold text-slate-500 tracking-widest mb-1">
                     Balanço Mensal (Liquidados)
                   </p>
-                  <p className={`text-2xl font-black tracking-tight leading-none ${stats.monthlyIncome - stats.monthlyExpenses >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                  <p className={`text-2xl font-black tracking-tight leading-none ${stats.monthlyIncome - stats.monthlyExpenses >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                     R$ {(stats.monthlyIncome - stats.monthlyExpenses).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
@@ -1011,7 +1013,7 @@ export default function DashboardView({
                   <p className="text-xs font-bold text-slate-500 tracking-widest mb-1">
                     A Receber (Pendente)
                   </p>
-                  <p className={`text-2xl font-black tracking-tight leading-none ${isDarkMode ? "text-white" : "text-slate-900"}`}>
+                  <p className={`text-2xl font-black tracking-tight leading-none ${isDarkMode ? "text-white" : "text-slate-900"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                     R$ {stats.pendingReceivables.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
@@ -1034,7 +1036,7 @@ export default function DashboardView({
                     <Landmark size={18} strokeWidth={2.5} />
                   </div>
                 </div>
-                <p className={`text-3xl font-black tracking-tight leading-none ${isDarkMode ? "text-white" : "text-emerald-500"}`}>
+                <p className={`text-3xl font-black tracking-tight leading-none ${isDarkMode ? "text-white" : "text-emerald-500"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                   R$ {(stats as any).personalBalance.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>
@@ -1118,7 +1120,7 @@ export default function DashboardView({
                         <div key={`cust-debt-${item.person.id}-${idx}`} onClick={() => onNavigate(ViewType.SALES, null, item.person.name)} className={`p-3 rounded-xl border cursor-pointer transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
                           <div className="flex justify-between items-center">
                             <p className="text-[13px] font-black text-slate-800 dark:text-slate-200 tracking-tight">{item.person.name}</p>
-                            <p className="text-sm font-black text-rose-500">R$ {item.totalDebt.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            <p className={`text-sm font-black text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {item.totalDebt.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                           </div>
                           <p className="text-[10px] text-slate-600 dark:text-slate-400 mt-0.5 tracking-widest">{item.pendingCount} {item.pendingCount === 1 ? 'venda pendente' : 'vendas pendentes'}</p>
                         </div>
@@ -1131,7 +1133,7 @@ export default function DashboardView({
                         <div key={`cust-cred-${person.id}-${idx}`} className={`p-3 rounded-xl border transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
                           <div className="flex justify-between items-center">
                             <p className="text-[13px] font-black text-slate-800 dark:text-slate-200 tracking-tight">{person.name}</p>
-                            <p className="text-sm font-black text-emerald-500">R$ {(person.credit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            <p className={`text-sm font-black text-emerald-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {(person.credit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                           </div>
                         </div>
                       ))}
@@ -1143,8 +1145,8 @@ export default function DashboardView({
                 {/* Footer com Somas */}
                 <div className={`mt-2 pt-3 border-t flex justify-between items-center ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
                   <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 tracking-widest">Total do Período</p>
-                  <p className={`text-[13px] font-black ${customerDashboardTab === 'DEBITS' ? 'text-rose-500' : 'text-emerald-500'}`}>
-                    R$ {(customerDashboardTab === 'DEBITS' 
+                  <p className={`text-[13px] font-black ${customerDashboardTab === 'DEBITS' ? 'text-rose-500' : 'text-emerald-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+                    R$ {(customerDashboardTab === 'DEBITS'
                       ? customersWithDebts.filter(item => item.person.name.toLowerCase().includes(customerDebtsSearch.toLowerCase())).reduce((acc, item) => acc + item.totalDebt, 0)
                       : customersWithCredits.filter(p => p.name.toLowerCase().includes(customerDebtsSearch.toLowerCase())).reduce((acc, person) => acc + (person.credit || 0), 0)
                     ).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1306,7 +1308,7 @@ export default function DashboardView({
                         <div key={`sup-pending-${purchase.id}-${idx}`} onClick={() => onNavigate(ViewType.PURCHASE_FORM, purchase.id)} className={`p-3 rounded-xl border cursor-pointer transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 hover:bg-slate-700' : 'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>
                           <div className="flex justify-between items-center">
                             <p className="text-[13px] font-black text-slate-800 dark:text-slate-200 tracking-tight">{purchase.supplierName}</p>
-                            <p className="text-sm font-black text-rose-500">R$ {purchase.debt.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            <p className={`text-sm font-black text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {purchase.debt.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                           </div>
                           <div className="flex items-center justify-between mt-1">
                             <p className="text-[10px] text-slate-600 dark:text-slate-400 tracking-widest font-bold">{format(purchase.date, 'dd/MM/yyyy')}</p>
@@ -1322,7 +1324,7 @@ export default function DashboardView({
                         <div key={`sup-cred-${person.id}-${idx}`} className={`p-3 rounded-xl border transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
                           <div className="flex justify-between items-center">
                             <p className="text-[13px] font-black text-slate-800 dark:text-slate-200 tracking-tight">{person.name}</p>
-                            <p className="text-sm font-black text-emerald-500">R$ {(person.credit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                            <p className={`text-sm font-black text-emerald-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {(person.credit || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                           </div>
                         </div>
                       ))}
@@ -1334,8 +1336,8 @@ export default function DashboardView({
                 {/* Footer com Somas */}
                 <div className={`mt-2 pt-3 border-t flex justify-between items-center ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
                   <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 tracking-widest">Total do Período</p>
-                  <p className={`text-[13px] font-black ${supplierDashboardTab === 'DEBITS' ? 'text-rose-500' : 'text-emerald-500'}`}>
-                    R$ {(supplierDashboardTab === 'DEBITS' 
+                  <p className={`text-[13px] font-black ${supplierDashboardTab === 'DEBITS' ? 'text-rose-500' : 'text-emerald-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+                    R$ {(supplierDashboardTab === 'DEBITS'
                       ? pendingPurchases.reduce((acc, p) => acc + p.debt, 0)
                       : suppliersWithCredits.reduce((acc, p) => acc + (p.credit || 0), 0)
                     ).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1354,7 +1356,7 @@ export default function DashboardView({
                     </div>
                     <div>
                       <p className="text-[10px] font-black text-rose-500 tracking-[0.2em] mb-0.5">Controle de Dívidas</p>
-                      <h4 className={`text-2xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"}`}>R$ {filteredDebtData.totalDebt.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
+                      <h4 className={`text-2xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {filteredDebtData.totalDebt.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
                     </div>
                   </div>
                   <button 
@@ -1419,7 +1421,7 @@ export default function DashboardView({
                     <div className="flex items-center justify-between"><p className="text-[9px] font-black text-slate-400 tracking-[0.2em]">Top Devedores</p><div className="h-px flex-1 bg-slate-100 dark:bg-slate-800 ml-4"></div></div>
                     <div className="flex flex-col gap-3 max-h-[180px] overflow-y-auto pr-1 custom-scrollbar">
                       {filteredDebtData.bySupplier.map((item, idx) => (
-                        <div key={`debt-sup-${idx}`} className="flex items-center justify-between group"><div className="flex flex-col flex-1 mr-4"><span className="text-[10px] font-bold text-slate-700 dark:text-slate-200 truncate">{item.name}</span><div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full mt-1.5 overflow-hidden"><motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(100, (item.total / (filteredDebtData.totalDebt || 1)) * 100)}%` }} transition={{ duration: 1, ease: "easeOut" }} className="h-full bg-rose-500" /></div></div><div className="text-right shrink-0"><p className={`text-[11px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>R$ {item.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p><p className="text-[8px] font-bold text-slate-400 tracking-tighter">{item.count} títulos</p></div></div>
+                        <div key={`debt-sup-${idx}`} className="flex items-center justify-between group"><div className="flex flex-col flex-1 mr-4"><span className="text-[10px] font-bold text-slate-700 dark:text-slate-200 truncate">{item.name}</span><div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full mt-1.5 overflow-hidden"><motion.div initial={{ width: 0 }} animate={{ width: `${Math.min(100, (item.total / (filteredDebtData.totalDebt || 1)) * 100)}%` }} transition={{ duration: 1, ease: "easeOut" }} className="h-full bg-rose-500" /></div></div><div className="text-right shrink-0"><p className={`text-[11px] font-black ${isDarkMode ? 'text-white' : 'text-slate-900'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {item.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p><p className="text-[8px] font-bold text-slate-400 tracking-tighter">{item.count} títulos</p></div></div>
                       ))}
                       {filteredDebtData.bySupplier.length === 0 && <div className="flex flex-col items-center justify-center py-6"><CheckCircle2 size={24} className="text-emerald-500 mb-2 opacity-20" /><p className="text-[10px] text-slate-400 font-black">Nenhuma pendência</p></div>}
                     </div>
@@ -1428,7 +1430,7 @@ export default function DashboardView({
                     <div className="flex items-center justify-between"><p className="text-[9px] font-black text-slate-400 tracking-[0.2em]">Por Categoria</p><div className="h-px flex-1 bg-slate-100 dark:bg-slate-800 ml-4"></div></div>
                     <div className="grid grid-cols-2 gap-3">
                       {filteredDebtData.byCategory.slice(0, 4).map((item, idx) => (
-                        <div key={`debt-cat-${idx}`} className={`p-4 rounded-2xl border transition-all hover:scale-[1.02] ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50' : 'bg-slate-50/50 border-slate-100'}`}><p className="text-[8px] font-black text-slate-400 tracking-widest truncate mb-1.5">{item.name}</p><p className="text-sm font-black text-rose-500">R$ {item.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p><p className="text-[7px] font-bold text-slate-400 mt-1">{((item.total / (filteredDebtData.totalDebt || 1)) * 100).toFixed(0)}% do total</p></div>
+                        <div key={`debt-cat-${idx}`} className={`p-4 rounded-2xl border transition-all hover:scale-[1.02] ${isDarkMode ? 'bg-slate-800/40 border-slate-700/50' : 'bg-slate-50/50 border-slate-100'}`}><p className="text-[8px] font-black text-slate-400 tracking-widest truncate mb-1.5">{item.name}</p><p className={`text-sm font-black text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {item.total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p><p className="text-[7px] font-bold text-slate-400 mt-1">{((item.total / (filteredDebtData.totalDebt || 1)) * 100).toFixed(0)}% do total</p></div>
                       ))}
                       {filteredDebtData.byCategory.length === 0 && <div className="col-span-2 py-8 text-center border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-2xl"><p className="text-[9px] font-black text-slate-300">Sem dados</p></div>}
                     </div>
@@ -1439,7 +1441,7 @@ export default function DashboardView({
                     <p className="text-[9px] font-black text-slate-400 tracking-[0.2em] mb-3">Títulos Recentes</p>
                     <div className="space-y-2">
                       {filteredDebtData.list.slice(0, 3).map((p, i) => (
-                        <div key={`recent-debt-${i}`} onClick={() => onNavigate(ViewType.PURCHASE_FORM, p.id)} className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all hover:translate-x-1 ${isDarkMode ? 'bg-slate-950 border-slate-800 hover:border-rose-500/30' : 'bg-white border-slate-50 hover:border-rose-200'}`}><div className="flex items-center gap-3"><div className={`w-8 h-8 rounded-lg flex items-center justify-center ${p.debt > 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>{p.debt > 0 ? <Clock size={14} /> : <CheckCircle2 size={14} />}</div><div><p className="text-[10px] font-black text-current leading-none">{p.supplierName}</p><p className="text-[8px] font-bold text-slate-400 tracking-widest mt-1">{format(p.date, 'dd MMM yyyy', { locale: ptBR })} • {p.categoryName}</p></div></div><p className={`text-[10px] font-black ${p.debt > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>R$ {p.debt.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p></div>
+                        <div key={`recent-debt-${i}`} onClick={() => onNavigate(ViewType.PURCHASE_FORM, p.id)} className={`flex items-center justify-between p-3 rounded-xl border cursor-pointer transition-all hover:translate-x-1 ${isDarkMode ? 'bg-slate-950 border-slate-800 hover:border-rose-500/30' : 'bg-white border-slate-50 hover:border-rose-200'}`}><div className="flex items-center gap-3"><div className={`w-8 h-8 rounded-lg flex items-center justify-center ${p.debt > 0 ? 'bg-rose-50 text-rose-500' : 'bg-emerald-50 text-emerald-500'}`}>{p.debt > 0 ? <Clock size={14} /> : <CheckCircle2 size={14} />}</div><div><p className="text-[10px] font-black text-current leading-none">{p.supplierName}</p><p className="text-[8px] font-bold text-slate-400 tracking-widest mt-1">{format(p.date, 'dd MMM yyyy', { locale: ptBR })} • {p.categoryName}</p></div></div><p className={`text-[10px] font-black ${p.debt > 0 ? 'text-rose-500' : 'text-emerald-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {p.debt.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p></div>
                       ))}
                     </div>
                   </div>
@@ -1457,8 +1459,8 @@ export default function DashboardView({
                 <div className="flex justify-between items-center">
                   <div>
                     <p className="text-[10px] font-black text-slate-400 tracking-[0.2em] mb-2">Patrimônio em Estoque</p>
-                    <div className="flex items-baseline gap-2"><span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Custo:</span><p className={`text-2xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"}`}>R$ {stats.totalStockCostValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
-                    <div className="mt-2 flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><p className="text-[10px] font-black text-emerald-500 tracking-widest">Venda: R$ {stats.totalStockSaleValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
+                    <div className="flex items-baseline gap-2"><span className="text-[11px] font-bold text-slate-500 dark:text-slate-400">Custo:</span><p className={`text-2xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {stats.totalStockCostValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
+                    <div className="mt-2 flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500" /><p className={`text-[10px] font-black text-emerald-500 tracking-widest ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>Venda: R$ {stats.totalStockSaleValue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
                   </div>
                   <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg ${isDarkMode ? 'bg-amber-900/20 text-amber-500 shadow-amber-900/10' : 'bg-amber-50 text-amber-600 shadow-amber-100/50'}`}><Boxes size={32} strokeWidth={2.5} /></div>
                 </div>
@@ -1469,13 +1471,13 @@ export default function DashboardView({
             return (
               <div key="estimated_profit" className={`p-6 rounded-[2rem] border shadow-[0_8px_30px_-10px_rgba(79,70,229,0.15)] flex flex-col gap-5 ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}>
                 <div className="flex justify-between items-start">
-                  <div><p className="text-[10px] font-black text-indigo-500 tracking-[0.2em] mb-1">Lucro Total Estimado</p><h4 className={`text-3xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"}`}>R$ {(stats.estimatedStockProfit + stats.pendingReceivables + stats.consolidatedBalance).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4><p className="text-[9px] font-bold text-slate-400 tracking-widest mt-1 italic">* Estimativa baseada no estoque e pendências</p></div>
+                  <div><p className="text-[10px] font-black text-indigo-500 tracking-[0.2em] mb-1">Lucro Total Estimado</p><h4 className={`text-3xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {(stats.estimatedStockProfit + stats.pendingReceivables + stats.consolidatedBalance).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4><p className="text-[9px] font-bold text-slate-400 tracking-widest mt-1 italic">* Estimativa baseada no estoque e pendências</p></div>
                   <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30"><TrendingUp size={24} strokeWidth={3} /></div>
                 </div>
                 <div className="grid grid-cols-1 gap-3">
-                  <div className={`flex items-center justify-between p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center"><Package size={14} /></div><div><span className="text-[10px] font-black text-slate-500 tracking-widest block">Lucro em Estoque</span><p className="text-[8px] font-bold text-emerald-500/80 tracking-widest mt-0.5">Margem: {stats.totalStockCostValue > 0 ? ((stats.estimatedStockProfit / stats.totalStockCostValue) * 100).toFixed(1) : 0}%</p></div></div><span className="text-sm font-black text-emerald-500">+ R$ {stats.estimatedStockProfit.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-                  <div className={`flex items-center justify-between p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center"><DollarSign size={14} /></div><span className="text-[10px] font-black text-slate-500 tracking-widest">Vendas a Receber</span></div><span className="text-[11px] font-black text-amber-500">+ R$ {stats.pendingReceivables.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
-                  <div className={`flex items-center justify-between p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center"><Wallet size={14} /></div><span className="text-[10px] font-black text-slate-500 tracking-widest">Saldo em Contas</span></div><span className="text-[11px] font-black text-indigo-500">+ R$ {stats.consolidatedBalance.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                  <div className={`flex items-center justify-between p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center"><Package size={14} /></div><div><span className="text-[10px] font-black text-slate-500 tracking-widest block">Lucro em Estoque</span><p className="text-[8px] font-bold text-emerald-500/80 tracking-widest mt-0.5">Margem: {stats.totalStockCostValue > 0 ? ((stats.estimatedStockProfit / stats.totalStockCostValue) * 100).toFixed(1) : 0}%</p></div></div><span className={`text-sm font-black text-emerald-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>+ R$ {stats.estimatedStockProfit.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                  <div className={`flex items-center justify-between p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center"><DollarSign size={14} /></div><span className="text-[10px] font-black text-slate-500 tracking-widest">Vendas a Receber</span></div><span className={`text-[11px] font-black text-amber-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>+ R$ {stats.pendingReceivables.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
+                  <div className={`flex items-center justify-between p-3 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}><div className="flex items-center gap-3"><div className="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center"><Wallet size={14} /></div><span className="text-[10px] font-black text-slate-500 tracking-widest">Saldo em Contas</span></div><span className={`text-[11px] font-black text-indigo-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>+ R$ {stats.consolidatedBalance.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span></div>
                 </div>
               </div>
             );
@@ -1733,7 +1735,7 @@ export default function DashboardView({
                                  </div>
                                  <div className="text-right">
                                    <p className="text-[9px] font-black text-indigo-500 tracking-widest leading-none mb-1">Valor</p>
-                                   <p className="text-sm font-black tracking-tight text-indigo-600 dark:text-indigo-400">R$ {check.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                                   <p className={`text-sm font-black tracking-tight text-indigo-600 dark:text-indigo-400 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {check.value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                                  </div>
                                </div>
                                <div className="grid grid-cols-2 gap-y-4">
@@ -1825,7 +1827,7 @@ export default function DashboardView({
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDarkMode ? "bg-emerald-900/30 text-emerald-500" : "bg-emerald-50 text-emerald-600"}`}>
                     <TrendingUp size={20} strokeWidth={2.5} />
                   </div>
-                  <h4 className={`text-2xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"}`}>R$ {profitAnalysis.current.profit.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
+                  <h4 className={`text-2xl font-black tracking-tighter ${isDarkMode ? "text-white" : "text-slate-900"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {profitAnalysis.current.profit.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</h4>
                 </div>
 
                 <AnimatePresence>
@@ -1906,11 +1908,11 @@ export default function DashboardView({
                 <div className="grid grid-cols-3 gap-4">
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 flex flex-col gap-1">
                     <p className="text-[8px] font-black text-slate-400 tracking-widest">Receitas</p>
-                    <p className="text-sm font-black text-emerald-500">R$ {profitAnalysis.current.income.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                    <p className={`text-sm font-black text-emerald-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {profitAnalysis.current.income.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                   </div>
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 flex flex-col gap-1">
                     <p className="text-[8px] font-black text-slate-400 tracking-widest">Despesas</p>
-                    <p className="text-sm font-black text-rose-500">R$ {profitAnalysis.current.expenses.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                    <p className={`text-sm font-black text-rose-500 ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {profitAnalysis.current.expenses.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                   </div>
                   <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950/50 flex flex-col gap-1">
                     <p className="text-[8px] font-black text-slate-400 tracking-widest">Comparativo</p>
@@ -1934,13 +1936,13 @@ export default function DashboardView({
                           {format(new Date(profitAnalysis.previousStart), profitCompPeriodType === 'YEAR' ? 'yyyy' : 'MM/yy')} 
                           {profitCompPeriodType === 'QUARTER' ? ' (Trim)' : profitCompPeriodType === 'SEMESTER' ? ' (Sem)' : ''}
                         </p>
-                        <p className={`text-xs font-black ${isDarkMode ? "text-slate-400" : "text-slate-500"}`}>R$ {profitAnalysis.previous.profit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                        <p className={`text-xs font-black ${isDarkMode ? "text-slate-400" : "text-slate-500"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {profitAnalysis.previous.profit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                       </div>
                       <div className="flex flex-col gap-1 text-right">
                         <p className="text-[8px] font-bold text-emerald-500">
                           {format(new Date(profitAnalysis.currentStart), profitPeriodType === 'YEAR' ? 'yyyy' : 'MM/yy')}
                         </p>
-                        <p className={`text-xs font-black ${isDarkMode ? "text-white" : "text-slate-900"}`}>R$ {profitAnalysis.current.profit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
+                        <p className={`text-xs font-black ${isDarkMode ? "text-white" : "text-slate-900"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {profitAnalysis.current.profit.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</p>
                       </div>
                     </div>
                     <div className="h-1.5 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden flex">
@@ -1996,7 +1998,7 @@ export default function DashboardView({
                 {isRecentActivityExpanded && (
                   <div className="space-y-3 animate-in slide-in-from-top-2 duration-200">
                     {recentActivity.map((activity: any) => (
-                      <div key={activity.id} className={`flex items-center gap-4 p-3 border rounded-2xl shadow-sm dark:shadow-none hover:border-slate-200 dark:hover:border-slate-700 transition-colors ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}><div className={`flex items-center justify-center p-2 rounded-xl ${activity.activityType === "sale" ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30" : activity.activityType === "purchase" ? "bg-slate-50 text-slate-400 dark:bg-slate-800" : (activity.type === TransactionType.INCOME) ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30" : "bg-rose-50 text-rose-600 dark:bg-rose-900/30"}`}>{activity.activityType === "sale" ? (<ShoppingBag size={20} strokeWidth={2.5} />) : activity.activityType === "purchase" ? (<TrendingDown size={20} strokeWidth={2.5} />) : activity.type === TransactionType.INCOME ? (<TrendingUp size={20} strokeWidth={2.5} />) : (<TrendingDown size={20} strokeWidth={2.5} />)}</div><div className="flex-1 min-w-0"><p className={`text-[12px] font-black truncate tracking-tight leading-none ${isDarkMode ? "text-white" : "text-slate-800"}`}>{activity.activityType === "sale" ? "Venda" : activity.activityType === "purchase" ? "Compra" : (activity.description || "Lançamento")}</p><p className="text-[10px] text-slate-600 dark:text-slate-400 font-bold tracking-widest mt-1.5 ">{format(activity.date || Date.now(), "dd MMM, HH:mm", { locale: ptBR })}</p></div><div className="text-right"><p className={`text-[13px] font-black tracking-tight ${activity.activityType === "sale" || (activity.activityType === "transaction" && activity.type === TransactionType.INCOME) ? "text-emerald-500" : "text-rose-500"}`}>{(activity.activityType === "sale" || (activity.activityType === "transaction" && activity.type === TransactionType.INCOME)) ? "+" : "-"} R$ {Number(activity.total || activity.amount || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p><div className="flex items-center gap-1 justify-end mt-1"><span className={`text-[7px] px-1.5 py-0.5 rounded-lg font-black tracking-widest ${(activity.status === 'PENDING' || activity.activityStatus === 'PENDING') ? "bg-amber-100 text-amber-600" : "bg-slate-100 dark:bg-slate-800 text-slate-500"}`}>{(activity.status === 'PENDING' || activity.activityStatus === 'PENDING') ? "Pendente" : "OK"}</span></div></div></div>
+                      <div key={activity.id} className={`flex items-center gap-4 p-3 border rounded-2xl shadow-sm dark:shadow-none hover:border-slate-200 dark:hover:border-slate-700 transition-colors ${isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-100"}`}><div className={`flex items-center justify-center p-2 rounded-xl ${activity.activityType === "sale" ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30" : activity.activityType === "purchase" ? "bg-slate-50 text-slate-400 dark:bg-slate-800" : (activity.type === TransactionType.INCOME) ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30" : "bg-rose-50 text-rose-600 dark:bg-rose-900/30"}`}>{activity.activityType === "sale" ? (<ShoppingBag size={20} strokeWidth={2.5} />) : activity.activityType === "purchase" ? (<TrendingDown size={20} strokeWidth={2.5} />) : activity.type === TransactionType.INCOME ? (<TrendingUp size={20} strokeWidth={2.5} />) : (<TrendingDown size={20} strokeWidth={2.5} />)}</div><div className="flex-1 min-w-0"><p className={`text-[12px] font-black truncate tracking-tight leading-none ${isDarkMode ? "text-white" : "text-slate-800"}`}>{activity.activityType === "sale" ? "Venda" : activity.activityType === "purchase" ? "Compra" : (activity.description || "Lançamento")}</p><p className="text-[10px] text-slate-600 dark:text-slate-400 font-bold tracking-widest mt-1.5 ">{format(activity.date || Date.now(), "dd MMM, HH:mm", { locale: ptBR })}</p></div><div className="text-right"><p className={`text-[13px] font-black tracking-tight ${activity.activityType === "sale" || (activity.activityType === "transaction" && activity.type === TransactionType.INCOME) ? "text-emerald-500" : "text-rose-500"} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>{(activity.activityType === "sale" || (activity.activityType === "transaction" && activity.type === TransactionType.INCOME)) ? "+" : "-"} R$ {Number(activity.total || activity.amount || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p><div className="flex items-center gap-1 justify-end mt-1"><span className={`text-[7px] px-1.5 py-0.5 rounded-lg font-black tracking-widest ${(activity.status === 'PENDING' || activity.activityStatus === 'PENDING') ? "bg-amber-100 text-amber-600" : "bg-slate-100 dark:bg-slate-800 text-slate-500"}`}>{(activity.status === 'PENDING' || activity.activityStatus === 'PENDING') ? "Pendente" : "OK"}</span></div></div></div>
                     ))}
                     {recentActivity.length === 0 && (<div className="text-center py-20 bg-slate-50/50 dark:bg-slate-900/50 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-[2.5rem] flex flex-col items-center"><History size={40} className="text-slate-200 dark:text-slate-800 mb-2" strokeWidth={1} /><p className="text-[10px] font-black text-slate-300 dark:text-slate-700 tracking-[0.2em] italic">Vazio histórico</p></div>)}
                   </div>

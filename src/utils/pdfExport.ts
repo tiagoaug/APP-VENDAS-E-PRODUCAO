@@ -95,7 +95,7 @@ export const printLotSheet = ({ lot, product, variationName, sectorName, os, pro
       <!-- Header -->
       <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000;padding-bottom:12px;margin-bottom:22px;">
         <div>
-          <h1 style="margin:0;font-size:26px;font-weight:900;letter-spacing:-1px;text-transform:uppercase;">GESTÃO PRO</h1>
+          <h1 style="margin:0;font-size:26px;font-weight:900;letter-spacing:-1px;text-transform:uppercase;">LIM.O APP</h1>
           <p style="margin:3px 0 0 0;font-size:10px;font-weight:800;color:#4b5563;text-transform:uppercase;letter-spacing:2px;">Sistema de Produção &amp; PCP</p>
         </div>
         <div style="text-align:right;">
@@ -231,7 +231,7 @@ export const printOrderItemSheet = ({
       <!-- Header -->
       <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000;padding-bottom:12px;margin-bottom:22px;">
         <div>
-          <h1 style="margin:0;font-size:26px;font-weight:900;letter-spacing:-1px;text-transform:uppercase;">GESTÃO PRO</h1>
+          <h1 style="margin:0;font-size:26px;font-weight:900;letter-spacing:-1px;text-transform:uppercase;">LIM.O APP</h1>
           <p style="margin:3px 0 0 0;font-size:10px;font-weight:800;color:#4b5563;text-transform:uppercase;letter-spacing:2px;">Sistema de Produção &amp; PCP</p>
         </div>
         <div style="text-align:right;">
@@ -377,7 +377,7 @@ export const printPickingList = ({ rows, mostrarMiniaturas, incluirCheckbox, pag
     <div class="pp">
       <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #000;padding-bottom:12px;margin-bottom:22px;">
         <div>
-          <h1 style="margin:0;font-size:26px;font-weight:900;letter-spacing:-1px;text-transform:uppercase;">GESTÃO PRO</h1>
+          <h1 style="margin:0;font-size:26px;font-weight:900;letter-spacing:-1px;text-transform:uppercase;">LIM.O APP</h1>
           <p style="margin:3px 0 0 0;font-size:10px;font-weight:800;color:#4b5563;text-transform:uppercase;letter-spacing:2px;">Integração Bling</p>
         </div>
         <div style="text-align:right;">

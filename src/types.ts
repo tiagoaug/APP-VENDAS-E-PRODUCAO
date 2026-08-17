@@ -823,6 +823,7 @@ export enum ViewType {
   MANUAL = 'MANUAL',
   PRINT_CENTER = 'PRINT_CENTER',
   COLLABORATORS_CONFIG = 'COLLABORATORS_CONFIG',
+  COMPANY_PROFILE = 'COMPANY_PROFILE',
   // Sem view React própria — só um id estável pro item de menu que abre o módulo nativo
   // Android (ver src/lib/printStudio.ts); onClick nunca chama onNavigate com este valor.
   PRINT_STUDIO = 'PRINT_STUDIO',
@@ -931,6 +932,22 @@ export type AppModulesConfig = {
   ai: boolean;
   entregas: boolean;
   bling: boolean;
+};
+
+// Identidade visual da empresa — nome/logo/telefone/endereço, opcionalmente inseridos no
+// cabeçalho ou rodapé dos PDFs e JPGs compartilhados pelo programa (ver applyCompanyBranding em
+// utils/companyBranding.ts). Documento único no Firestore, mesmo padrão de AppModulesConfig.
+export type CompanyProfile = {
+  name?: string;
+  logoUrl?: string; // base64, mesmo padrão de Product.photoUrl
+  phone?: string;
+  address?: string;
+  document?: string; // CNPJ/CPF — opcional
+  exportPosition: 'none' | 'header' | 'footer';
+  showLogo: boolean;
+  showName: boolean;
+  showPhone: boolean;
+  showAddress: boolean;
 };
 
 export type BusinessType = 'REVENDA' | 'FABRICACAO' | 'HIBRIDO';

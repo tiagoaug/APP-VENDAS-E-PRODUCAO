@@ -141,7 +141,7 @@ async function generatePDF(data: PCPShareData, filename: string, previewOnly: bo
   // Fonts
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(22);
-  doc.text('GESTÃO PRO', 14, 20);
+  doc.text('LIM.O APP', 14, 20);
 
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
@@ -524,7 +524,7 @@ function generatePCPHeaderImage(lotNumber: string): string {
   let y = pad;
   ctx.fillStyle = '#0f172a';
   ctx.font = '900 36px Inter';
-  ctx.fillText('GESTÃO PRO', pad, y + 26);
+  ctx.fillText('LIM.O APP', pad, y + 26);
 
   ctx.fillStyle = '#64748b';
   ctx.font = '700 16px Inter';
@@ -680,7 +680,7 @@ async function generateJPG(data: PCPShareData, filename: string, previewOnly: bo
     if (showHeader) {
       ctx.fillStyle = '#0f172a';
       ctx.font = '900 36px Inter';
-      ctx.fillText('GESTÃO PRO', pad, y + 26);
+      ctx.fillText('LIM.O APP', pad, y + 26);
 
       ctx.fillStyle = '#64748b';
       ctx.font = '700 16px Inter';

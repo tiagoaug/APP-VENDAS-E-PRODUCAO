@@ -94,6 +94,7 @@ import {
   ProductionScreenType,
   WeighingRecord,
   AppModulesConfig,
+  CompanyProfile,
   SoleStockEntry,
   SolePurchaseItem,
   PalmilhaStockEntry,
@@ -155,6 +156,7 @@ const ProductionConfigView = lazy(() => import("./views/ProductionConfigView"));
 const PersonalFinancialView = lazy(() => import("./views/PersonalFinancialView"));
 const ModuleConfigView = lazy(() => import("./views/ModuleConfigView"));
 const CollaboratorsConfigView = lazy(() => import("./views/CollaboratorsConfigView"));
+const CompanyProfileView = lazy(() => import("./views/CompanyProfileView"));
 const CollaboratorGateView = lazy(() => import("./views/CollaboratorGateView"));
 const ManualView = lazy(() => import("./views/ManualView"));
 const WeighingView = lazy(() => import("./views/WeighingView"));
@@ -196,6 +198,7 @@ import ScannerModal from "./components/ScannerModal";
 import { scannerService } from "./services/scannerService";
 import { ToastContainer } from "./components/ToastContainer";
 import { toast } from "./utils/toast";
+import { PrivacyContext } from "./contexts/PrivacyContext";
 import { TYPE_LABELS as PURCHASE_TYPE_LABELS } from "./utils/purchaseExport";
 import { parseLocaleNumber } from './utils/numbers';
 import { generateId } from './utils/id';
@@ -351,6 +354,13 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('show_engineering_thumbnails', String(showEngineeringThumbnails));
   }, [showEngineeringThumbnails]);
+  // Modo Privacidade Financeira — borra valores no Financeiro/Dashboard (ver PrivacyContext).
+  const [hideFinancialValues, setHideFinancialValues] = useState<boolean>(() => {
+    return localStorage.getItem('hide_financial_values') === 'true';
+  });
+  useEffect(() => {
+    localStorage.setItem('hide_financial_values', String(hideFinancialValues));
+  }, [hideFinancialValues]);
   const [fontScale, setFontScale] = useState<number>(() => {
     const saved = localStorage.getItem('font_size_pref');
     const parsed = saved ? parseInt(saved, 10) : NaN;
@@ -833,6 +843,42 @@ export default function App() {
     setModulesConfig(newConfig);
     if (user) {
       await firebaseService.saveDocument("app_modules_config", { ...newConfig, id: 'main_modules_config' });
+    }
+  };
+
+  // Identidade da empresa (Personalizar Empresa) — mesmo padrão de app_modules_config acima.
+  const defaultCompanyProfile: CompanyProfile = {
+    exportPosition: 'none',
+    showLogo: true,
+    showName: true,
+    showPhone: true,
+    showAddress: true,
+  };
+  const [companyProfile, setCompanyProfile] = useState<CompanyProfile>(() => {
+    const saved = localStorage.getItem('company_profile');
+    return saved ? { ...defaultCompanyProfile, ...JSON.parse(saved) } : defaultCompanyProfile;
+  });
+  useEffect(() => {
+    localStorage.setItem('company_profile', JSON.stringify(companyProfile));
+  }, [companyProfile]);
+  useEffect(() => {
+    if (!user) return;
+    const unsubCompanyProfile = firebaseService.subscribeToCollection<CompanyProfile & { id: string }>(
+      "company_profile",
+      (data) => {
+        const config = data.find(c => c.id === 'main_company_profile');
+        if (config) {
+          const { id, ...rest } = config;
+          setCompanyProfile({ ...defaultCompanyProfile, ...rest });
+        }
+      }
+    );
+    return () => unsubCompanyProfile();
+  }, [user]);
+  const saveCompanyProfile = async (newProfile: CompanyProfile) => {
+    setCompanyProfile(newProfile);
+    if (user) {
+      await firebaseService.saveDocument("company_profile", { ...newProfile, id: 'main_company_profile' });
     }
   };
 
@@ -4201,6 +4247,8 @@ export default function App() {
             onLogout={handleLogout}
             showEngineeringThumbnails={showEngineeringThumbnails}
             setShowEngineeringThumbnails={setShowEngineeringThumbnails}
+            hideFinancialValues={hideFinancialValues}
+            setHideFinancialValues={setHideFinancialValues}
             onOpenOnboardingWizard={handleOpenOnboardingWizard}
             onOpenProductCreationChoice={handleOpenProductCreationChoice}
           />
@@ -4981,6 +5029,7 @@ export default function App() {
         return (
           <SalesView
             showThumbnails={showEngineeringThumbnails}
+            companyProfile={companyProfile}
             sales={sales}
             products={products}
             grids={grids}
@@ -6797,6 +6846,14 @@ export default function App() {
             dashboardCards={(dashboardConfig || defaultDashboardConfig).cards}
           />
         );
+      case ViewType.COMPANY_PROFILE:
+        return (
+          <CompanyProfileView
+            profile={companyProfile}
+            onSave={saveCompanyProfile}
+            isDarkMode={isDarkMode}
+          />
+        );
       case ViewType.MANUAL:
         return (
           <ManualView
@@ -6896,7 +6953,7 @@ export default function App() {
       case ViewType.ONBOARDING_WELCOME:
         return "Configuração Inicial";
       case ViewType.DASHBOARD:
-        return "GESTAO PRO";
+        return "LIM.O APP";
       case ViewType.PRODUCTS:
         return "Produção de Produtos";
       case ViewType.STOCK:
@@ -7005,6 +7062,8 @@ export default function App() {
         return "Lançamento de Compra";
       case ViewType.PERSON_DETAIL:
         return "Detalhes do Cadastro";
+      case ViewType.COMPANY_PROFILE:
+        return "Personalizar Empresa";
       default:
         return "Detalhes";
     }
@@ -7079,14 +7138,14 @@ export default function App() {
     if (MODAL_VIEWS.includes(currentView)) {
       switch (lastNonModalView) {
         case ViewType.ONBOARDING_WELCOME: return "Configuração Inicial";
-        case ViewType.DASHBOARD: return "GESTAO PRO";
+        case ViewType.DASHBOARD: return "LIM.O APP";
         case ViewType.PURCHASES: return "Compras";
         case ViewType.SALES: return "Vendas";
         case ViewType.PRODUCTION_MENU: return "Módulo de Produção";
         case ViewType.FINANCIAL: return "Financeiro";
         case ViewType.PERSONAL_FINANCIAL: return "Financeiro Pessoal";
         case ViewType.SETTINGS: return "Mais Opções";
-        default: return "GESTAO PRO";
+        default: return "LIM.O APP";
       }
     }
     return viewTitle;
@@ -7138,6 +7197,7 @@ export default function App() {
   const themeVisual = THEME_VISUALS[appTheme] || THEME_VISUALS.light;
 
   return (
+    <PrivacyContext.Provider value={hideFinancialValues}>
     <div
       className={`flex flex-col h-screen ${themeVisual.outerBg} font-sans ${themeVisual.baseText} overflow-hidden overflow-x-hidden`}
     >
@@ -7162,7 +7222,7 @@ export default function App() {
           <div className="flex items-center justify-center">
             {viewIcon}
           </div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
+          <h1 className={`text-xl font-bold tracking-tight ${headerTitle === 'LIM.O APP' ? 'text-indigo-800 dark:text-indigo-500' : 'text-slate-900 dark:text-white'}`}>
             {headerTitle}
           </h1>
         </div>
@@ -7661,6 +7721,7 @@ export default function App() {
         title="Scanner Rápido"
       />
     </div>
+    </PrivacyContext.Provider>
   );
 }
 

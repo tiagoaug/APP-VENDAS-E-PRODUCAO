@@ -2,9 +2,10 @@
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Sale, Product, Person, PaymentMethod } from '../types';
+import { Sale, Product, Person, PaymentMethod, CompanyProfile } from '../types';
 import { sharePDF, shareImage } from './pdfExport';
 import { toast } from './toast';
+import { getBrandBandHeight, drawCompanyBrandingOnCanvas, drawCompanyBrandingOnPdf } from './companyBranding';
 
 interface ExportData {
   sale: Sale;
@@ -16,6 +17,9 @@ interface ExportData {
   /** Inclui a foto de cada produto (variação, com fallback pro produto) na linha do item —
    * só vale pro JPG (a foto some do PDF, que continua só texto). */
   showThumbnails?: boolean;
+  /** Identidade da empresa (Mais > Personalizar Empresa) — nome/logo/telefone/endereço no
+   * cabeçalho ou rodapé, conforme configurado. Ausente/'none' = documento sai como sempre saiu. */
+  companyProfile?: CompanyProfile | null;
 }
 
 // Desenha o caminho de um retângulo com cantos arredondados — usado tanto pra recortar a foto
@@ -63,12 +67,20 @@ export const exportSale = async (data: ExportData, formatType: 'pdf' | 'jpg') =>
 };
 
 async function generatePDF(data: ExportData, filename: string) {
-  const { sale, products, people, paymentMethods, additionalNote } = data;
+  const { sale, products, people, paymentMethods, additionalNote, companyProfile } = data;
   const doc = new jsPDF({
     orientation: 'p',
     unit: 'mm',
     format: 'a4'
   });
+
+  // Identidade da empresa (Mais > Personalizar Empresa) — 'header' empurra o resto do
+  // documento pra baixo (banner escuro existente + tudo que deriva de `infoY`); 'footer' só
+  // precisa abrir espaço embaixo, sem mexer no topo (ver footerY mais abaixo).
+  const brandH = getBrandBandHeight(companyProfile, 'mm');
+  const isHeaderBrand = brandH > 0 && companyProfile?.exportPosition === 'header';
+  const isFooterBrand = brandH > 0 && companyProfile?.exportPosition === 'footer';
+  const topOffset = isHeaderBrand ? brandH : 0;
 
   const customer = people.find(p => p.id === sale.customerId);
   const seller = people.find(p => p.id === sale.sellerId);
@@ -81,27 +93,29 @@ async function generatePDF(data: ExportData, filename: string) {
 
   // Header Banner
   doc.setFillColor(headerBgColor[0], headerBgColor[1], headerBgColor[2]);
-  doc.rect(0, 0, 210, 40, 'F');
-  
+  doc.rect(0, topOffset, 210, 40, 'F');
+
   doc.setTextColor(255, 255, 255);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(22);
   const title = sale.status === 'QUOTE' ? 'Relatório de Orçamento' : 'Relatório de Pedido';
-  doc.text(title, 105, 18, { align: 'center' });
-  
+  doc.text(title, 105, topOffset + 18, { align: 'center' });
+
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
-  doc.text(sale.status === 'QUOTE' ? 'Proposta Comercial' : 'Venda Confirmada', 105, 26, { align: 'center' });
-  
+  doc.text(sale.status === 'QUOTE' ? 'Proposta Comercial' : 'Venda Confirmada', 105, topOffset + 26, { align: 'center' });
+
   doc.setFontSize(8);
   doc.setTextColor(200, 200, 200);
-  doc.text('Este documento não tem valor fiscal', 105, 33, { align: 'center' });
+  doc.text('Este documento não tem valor fiscal', 105, topOffset + 33, { align: 'center' });
+
+  if (isHeaderBrand && companyProfile) drawCompanyBrandingOnPdf(doc, companyProfile, 0, 210);
 
   // Info Section
   doc.setTextColor(40, 40, 40);
   doc.setFontSize(10);
-  
-  const infoY = 55;
+
+  const infoY = topOffset + 55;
   
   // Customer Info
   doc.setFont('helvetica', 'bold');
@@ -205,18 +219,24 @@ async function generatePDF(data: ExportData, filename: string) {
     doc.text(splitNote, 20, tableFinalY + 7);
   }
 
-  // Footer
+  // Footer — sobe pra abrir espaço pra faixa da empresa quando ela estiver no rodapé.
+  const footerTextY = isFooterBrand ? 297 - brandH - 6 : 285;
   doc.setFontSize(8);
   doc.setTextColor(180);
-  doc.text(`Gerado em ${format(new Date(), 'dd/MM/yyyy HH:mm')} - App Vendas e Produção`, 105, 285, { align: 'center' });
+  doc.text(`Gerado em ${format(new Date(), 'dd/MM/yyyy HH:mm')} - App Vendas e Produção`, 105, footerTextY, { align: 'center' });
+
+  if (isFooterBrand && companyProfile) drawCompanyBrandingOnPdf(doc, companyProfile, 297 - brandH, 210);
 
   await sharePDF(doc, filename);
 }
 
 async function generateJPG(data: ExportData, filename: string) {
-  const { sale, products, people, paymentMethods, additionalNote, showThumbnails } = data;
+  const { sale, products, people, paymentMethods, additionalNote, showThumbnails, companyProfile } = data;
   const customer = people.find(p => p.id === sale.customerId);
   const paymentMethod = paymentMethods.find(pm => pm.id === sale.paymentMethodId);
+  const brandH = getBrandBandHeight(companyProfile, 'px');
+  const isHeaderBrand = brandH > 0 && companyProfile?.exportPosition === 'header';
+  const isFooterBrand = brandH > 0 && companyProfile?.exportPosition === 'footer';
 
   const W = 600;
   const S = 2;
@@ -284,7 +304,7 @@ async function generateJPG(data: ExportData, filename: string) {
   const itemsH = itemData.reduce((a, i) => a + i.rowH, 0);
   const TOTALS_H = 20 + 28 + (sale.discount ? 26 : 0) + (paymentMethod ? 22 : 0) + 16 + 42;
   const NOTES_H = noteLines.length ? 20 + noteLines.length * 19 + 24 : 0;
-  const totalH = HEADER_H + INFO_H + TH_H + itemsH + TOTALS_H + NOTES_H + 28;
+  const totalH = HEADER_H + INFO_H + TH_H + itemsH + TOTALS_H + NOTES_H + 28 + brandH;
 
   const canvas = document.createElement('canvas');
   canvas.width = W * S; canvas.height = totalH * S;
@@ -296,6 +316,12 @@ async function generateJPG(data: ExportData, filename: string) {
   ctx.fillRect(0, 0, W, totalH);
 
   let y = 0;
+
+  // Identidade da empresa (Mais > Personalizar Empresa) no topo, antes do resto do conteúdo.
+  if (isHeaderBrand && companyProfile) {
+    await drawCompanyBrandingOnCanvas(ctx, companyProfile, y, W);
+    y += brandH;
+  }
 
   // ── Header ──────────────────────────────────────────────────
   ctx.fillStyle = '#0f172a';
@@ -417,6 +443,11 @@ async function generateJPG(data: ExportData, filename: string) {
     ctx.font = '500 13px Arial'; ctx.fillStyle = '#334155';
     noteLines.forEach((line, i) => ctx.fillText(line, pad + 14, y + 30 + i * 19));
     y += nbH;
+  }
+
+  if (isFooterBrand && companyProfile) {
+    await drawCompanyBrandingOnCanvas(ctx, companyProfile, y, W);
+    y += brandH;
   }
 
   await shareImage(canvas.toDataURL('image/jpeg', 0.95), filename);

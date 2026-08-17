@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
 import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, SaleStatus, Product, SaleType, ProductionLot, ProductionConfigItem, Collaborator } from '../types';
-import { Search, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash, ChevronDown, ChevronUp, Tag, FileText } from 'lucide-react';
+import { Search, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash, ChevronDown, ChevronUp, Tag, FileText, Repeat } from 'lucide-react';
 import { format, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import TransactionModal from '../components/TransactionModal';
@@ -11,6 +11,7 @@ import BusinessOverviewCard from '../components/BusinessOverviewCard';
 import { toast } from '../utils/toast';
 import { firebaseService } from '../services/firebaseService';
 import { getPeriodRange, computePeriodFinancials, computeSalesProfitInPeriod, computePendingReceivables, computePendingPayables, OverviewPeriodType } from '../utils/businessOverview';
+import { usePrivacyMode, PRIVACY_BLUR_CLASS } from '../contexts/PrivacyContext';
 
 const STATS_PERIOD_LABELS: Record<OverviewPeriodType, string> = { MONTH: 'Mês', QUARTER: 'Trim', SEMESTER: 'Sem', YEAR: 'Ano' };
 const STATS_PERIOD_PHRASE: Record<OverviewPeriodType, string> = { MONTH: 'no mês', QUARTER: 'no trimestre', SEMESTER: 'no semestre', YEAR: 'no ano' };
@@ -74,6 +75,7 @@ export default function FinancialView({
   isDarkMode,
   collaborators = [],
 }: FinancialViewProps) {
+  const hidePrivacy = usePrivacyMode();
   const [filterType, setFilterType] = useState<TransactionType | 'ALL' | 'PAYABLE'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -276,6 +278,66 @@ export default function FinancialView({
   }, [collaborators, sales]);
   const totalCommissionOwed = sellerCommissions.reduce((acc, s) => acc + s.totalCommission, 0);
   const [isCommissionExpanded, setIsCommissionExpanded] = useState(false);
+
+  // Despesas Recorrentes — agrupa as ocorrências de cada série de Compra Recorrente (ver
+  // Purchase.recurrenceGroupId, gerado em PurchaseFormView: uma Purchase por mês, cada uma com
+  // seu próprio paymentStatus). "Parcelas restantes" cai sozinho conforme cada ocorrência é
+  // quitada em Compras — não tem estado próprio aqui, é só COMPLETED/PAID contado de novo a
+  // cada render.
+  const recurringExpenseGroups = useMemo(() => {
+    const groups = new Map<string, Purchase[]>();
+    purchases.forEach(p => {
+      if (!p.isRecurring || !p.recurrenceGroupId) return;
+      const list = groups.get(p.recurrenceGroupId) || [];
+      list.push(p);
+      groups.set(p.recurrenceGroupId, list);
+    });
+    return Array.from(groups.entries())
+      .map(([groupId, occs]) => {
+        const sorted = [...occs].sort((a, b) => (a.installmentNumber || 0) - (b.installmentNumber || 0));
+        const first = sorted[0];
+        const supplier = people.find(p => p.id === first.supplierId);
+        const paidCount = sorted.filter(o => o.paymentStatus === PaymentStatus.PAID).length;
+        const totalInstallments = first.totalInstallments || sorted.length;
+        const nextDue = sorted.find(o => o.paymentStatus !== PaymentStatus.PAID) || null;
+        const description = first.generalItems?.[0]?.description || first.notes || 'Compra recorrente';
+        return {
+          groupId,
+          description,
+          supplierName: supplier?.name || 'Fornecedor não informado',
+          installmentValue: first.total,
+          totalInstallments,
+          paidCount,
+          remainingCount: Math.max(0, totalInstallments - paidCount),
+          nextDue,
+          occurrences: sorted,
+        };
+      })
+      .sort((a, b) => (a.nextDue?.dueDate || Infinity) - (b.nextDue?.dueDate || Infinity));
+  }, [purchases, people]);
+
+  const [isRecurringExpensesExpanded, setIsRecurringExpensesExpanded] = useState(false);
+  const [recurringLookupMonth, setRecurringLookupMonth] = useState(() => format(new Date(), 'yyyy-MM'));
+  const recurringMonthInputRef = useRef<HTMLInputElement>(null);
+  const openRecurringMonthPicker = () => {
+    const el = recurringMonthInputRef.current as (HTMLInputElement & { showPicker?: () => void }) | null;
+    if (!el) return;
+    try { el.showPicker ? el.showPicker() : el.focus(); } catch { el.focus(); }
+  };
+  // Quanto devo no mês escolhido — soma, em cada série, a ocorrência (se houver) cujo
+  // vencimento cai naquele mês/ano, pago ou não (pergunta é "quanto é o compromisso do mês",
+  // não "quanto falta pagar").
+  const recurringMonthlyTotal = useMemo(() => {
+    const [y, m] = recurringLookupMonth.split('-').map(Number);
+    if (!y || !m) return 0;
+    return recurringExpenseGroups.reduce((acc, g) => {
+      const occ = g.occurrences.find(o => {
+        const d = new Date(o.dueDate || o.date);
+        return d.getFullYear() === y && d.getMonth() === m - 1;
+      });
+      return acc + (occ ? occ.total : 0);
+    }, 0);
+  }, [recurringExpenseGroups, recurringLookupMonth]);
 
   // Total em aberto AGORA — vendas fechadas ainda não totalmente pagas e compras a prazo ainda
   // não totalmente pagas (ver `showPendingStats`).
@@ -501,7 +563,7 @@ export default function FinancialView({
                 </button>
              </div>
              <p className={`text-[10px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Lucro com Vendas {STATS_PERIOD_PHRASE[statsPeriodType]}</p>
-             <h2 className={`text-3xl font-black mt-2 tracking-tighter ${periodSalesProfit >= 0 ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') : (isDarkMode ? 'text-rose-400' : 'text-rose-500')}`}>
+             <h2 className={`text-3xl font-black mt-2 tracking-tighter transition-all ${periodSalesProfit >= 0 ? (isDarkMode ? 'text-emerald-400' : 'text-emerald-600') : (isDarkMode ? 'text-rose-400' : 'text-rose-500')} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                R$ {periodSalesProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
              </h2>
 
@@ -560,7 +622,7 @@ export default function FinancialView({
                 </button>
              </div>
 
-             <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-white/40 dark:border-slate-800">
+             <div className={`grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-white/40 dark:border-slate-800 transition-all ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                 <div>
                    <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Receitas</p>
                    <p className={`text-sm font-bold ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>R$ {totalReceitas.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
@@ -578,7 +640,7 @@ export default function FinancialView({
              </div>
 
              {showPendingStats && (
-               <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-white/40 dark:border-slate-800">
+               <div className={`grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-white/40 dark:border-slate-800 transition-all ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                   <div>
                      <p className={`text-[8px] font-black tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-sky-500'}`}>Vendas a Receber</p>
                      <p className={`text-sm font-bold ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>R$ {pendingReceivables.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
@@ -643,14 +705,14 @@ export default function FinancialView({
             >
               <div className="text-left min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Comissão a Vendedores</p>
-                <p className={`text-2xl font-black tracking-tighter mt-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                <p className={`text-2xl font-black tracking-tighter mt-1 transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                   R$ {totalCommissionOwed.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>
               <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${isCommissionExpanded ? 'rotate-180' : ''}`} />
             </button>
             {isCommissionExpanded && (
-              <div className={`flex flex-col gap-2 px-6 pb-6 border-t pt-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className={`flex flex-col gap-2 px-6 pb-6 border-t pt-4 transition-all ${isDarkMode ? 'border-slate-800' : 'border-slate-100'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                 {sellerCommissions.map(({ collaborator, salesCount, totalSales, totalCommission }) => (
                   <div key={collaborator.id} className={`flex items-center justify-between gap-3 p-3.5 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
                     <div className="flex items-center gap-3 min-w-0">
@@ -667,6 +729,77 @@ export default function FinancialView({
                     </p>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Despesas Recorrentes — séries de Compra Recorrente (ver Purchase.recurrenceGroupId,
+            gerada em PurchaseFormView). "Restantes" cai sozinho conforme cada parcela é quitada
+            em Compras — não é um contador próprio, é recalculado a cada render a partir do
+            paymentStatus de cada ocorrência. */}
+        {recurringExpenseGroups.length > 0 && (
+          <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <button
+              type="button"
+              onClick={() => setIsRecurringExpensesExpanded(v => !v)}
+              className="w-full flex items-center justify-between gap-3 p-6"
+            >
+              <div className="flex items-center gap-3 text-left min-w-0">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-cyan-900/20 text-cyan-400' : 'bg-cyan-50 text-cyan-600'}`}>
+                  <Repeat size={18} strokeWidth={2.5} />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Despesas Recorrentes</p>
+                  <p className={`text-lg font-black tracking-tight truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                    {recurringExpenseGroups.length} {recurringExpenseGroups.length === 1 ? 'série ativa' : 'séries ativas'}
+                  </p>
+                </div>
+              </div>
+              <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${isRecurringExpensesExpanded ? 'rotate-180' : ''}`} />
+            </button>
+            {isRecurringExpensesExpanded && (
+              <div className={`flex flex-col gap-4 px-6 pb-6 border-t pt-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                {/* Filtro de período — "quanto devo" num mês específico, inclusive futuro */}
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2 px-1">Quanto devo em...</p>
+                  <div
+                    onClick={openRecurringMonthPicker}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
+                  >
+                    <Calendar size={13} className="text-cyan-500 shrink-0" />
+                    <input
+                      ref={recurringMonthInputRef}
+                      type="month"
+                      value={recurringLookupMonth}
+                      onChange={(e) => setRecurringLookupMonth(e.target.value)}
+                      className={`flex-1 min-w-0 border-none bg-transparent px-0 py-0 text-[11px] font-black outline-none pointer-events-none ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}
+                    />
+                  </div>
+                  <p className={`text-xl font-black tracking-tighter mt-2 transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+                    R$ {recurringMonthlyTotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  {recurringExpenseGroups.map(g => (
+                    <div key={g.groupId} className={`flex items-center justify-between gap-3 p-3.5 rounded-2xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}>
+                      <div className="min-w-0">
+                        <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{g.description}</p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5 truncate">
+                          {g.supplierName} · <span className={`transition-all ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>R$ {g.installmentValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/mês</span>
+                          {g.nextDue && ` · próx. ${format(g.nextDue.dueDate || g.nextDue.date, 'dd/MM/yyyy')}`}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className={`text-sm font-black ${g.remainingCount > 0 ? (isDarkMode ? 'text-amber-400' : 'text-amber-600') : (isDarkMode ? 'text-emerald-400' : 'text-emerald-600')}`}>
+                          {g.remainingCount} restantes
+                        </p>
+                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">de {g.totalInstallments} · {g.paidCount} pagas</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -733,7 +866,7 @@ export default function FinancialView({
           {/* Soma da busca atual (ex.: nome de fornecedor/cliente) — some `filtered`, já
               restrito ao texto pesquisado e ao filtro de tipo (Tudo/Entradas/Saídas) acima. */}
           {searchTotals && (
-            <div className={`flex items-center gap-3 p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-indigo-50 border-indigo-100'}`}>
+            <div className={`flex items-center gap-3 p-3 rounded-2xl border transition-all ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-indigo-50 border-indigo-100'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
               <div className="flex-1 min-w-0">
                 <p className={`text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-400' : 'text-indigo-400'}`}>Receitas na busca</p>
                 <p className={`text-sm font-black ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>R$ {searchTotals.income.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
@@ -1033,7 +1166,7 @@ export default function FinancialView({
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className={`font-black text-base tracking-tight ${transaction.type === TransactionType.INCOME ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    <p className={`font-black text-base tracking-tight transition-all ${transaction.type === TransactionType.INCOME ? 'text-emerald-500' : 'text-rose-500'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
                       {transaction.type === TransactionType.INCOME ? '+' : '-'} R$ {transaction.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                     <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black tracking-widest mt-1 ${isPending ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500'}`}>

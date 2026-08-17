@@ -136,7 +136,7 @@ async function generatePDF(data: DeliveryPrintData, filename: string, previewOnl
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(titleSize);
-  doc.text('GESTÃO PRO', marginX, marginX + 6);
+  doc.text('LIM.O APP', marginX, marginX + 6);
 
   doc.setFontSize(isA4 ? 10 : 8);
   doc.setFont('helvetica', 'normal');
@@ -554,7 +554,7 @@ async function generateJPG(data: DeliveryPrintData, filename: string, previewOnl
     if (pageIdx === 0) {
       ctx.fillStyle = '#0f172a';
       ctx.font = '900 36px Inter';
-      ctx.fillText('GESTÃO PRO', pad, y + 26);
+      ctx.fillText('LIM.O APP', pad, y + 26);
 
       ctx.fillStyle = '#64748b';
       ctx.font = '700 16px Inter';

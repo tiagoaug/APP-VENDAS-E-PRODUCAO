@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.musgo.vendaseproducao',
-  appName: 'APP VENDAS E PRODUCAO',
+  appName: 'LIM.O APP',
   webDir: 'dist',
   plugins: {
     FirebaseAuthentication: {

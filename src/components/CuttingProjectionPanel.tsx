@@ -646,7 +646,7 @@ export default function CuttingAreaPanel({
       let y = pad;
 
       // ── Header ──────────────────────────────────────────────
-      txt('GESTÃO PRO', pad, y + 26, 'bold 26px Arial', '#000000');
+      txt('LIM.O APP', pad, y + 26, 'bold 26px Arial', '#000000');
       txt('Sistema de Produção & PCP', pad, y + 44, 'bold 9px Arial', '#4b5563');
       ctx.font = 'bold 10px Arial';
       const badge = 'Ficha Técnica – Materiais e Grade';
@@ -945,7 +945,7 @@ export default function CuttingAreaPanel({
         <div class="print-page">
           <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #000; padding-bottom: 12px; margin-bottom: 24px;">
             <div>
-              <h1 style="margin: 0; font-size: 26px; font-weight: 900; letter-spacing: -1px; text-transform: uppercase;">GESTÃO PRO</h1>
+              <h1 style="margin: 0; font-size: 26px; font-weight: 900; letter-spacing: -1px; text-transform: uppercase;">LIM.O APP</h1>
               <p style="margin: 3px 0 0 0; font-size: 10px; font-weight: 800; color: #4b5563; text-transform: uppercase; letter-spacing: 2px;">Sistema de Produção & PCP</p>
             </div>
             <div style="text-align: right;">
@@ -1065,7 +1065,7 @@ export default function CuttingAreaPanel({
         <div class="print-page" style="page-break-before: ${showOS ? 'always' : 'auto'};">
           <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #000; padding-bottom: 12px; margin-bottom: 24px;">
             <div>
-              <h1 style="margin: 0; font-size: 26px; font-weight: 900; letter-spacing: -1px; text-transform: uppercase;">GESTÃO PRO</h1>
+              <h1 style="margin: 0; font-size: 26px; font-weight: 900; letter-spacing: -1px; text-transform: uppercase;">LIM.O APP</h1>
               <p style="margin: 3px 0 0 0; font-size: 10px; font-weight: 800; color: #4b5563; text-transform: uppercase; letter-spacing: 2px;">Sistema de Produção & PCP</p>
             </div>
             <div style="text-align: right;">
@@ -1135,7 +1135,7 @@ export default function CuttingAreaPanel({
           <style>@page { size: A4 landscape; margin: 1.2cm 1.0cm; }</style>
           <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #000; padding-bottom: 10px; margin-bottom: 18px;">
             <div>
-              <h1 style="margin: 0; font-size: 22px; font-weight: 900; letter-spacing: -1px; text-transform: uppercase;">GESTÃO PRO</h1>
+              <h1 style="margin: 0; font-size: 22px; font-weight: 900; letter-spacing: -1px; text-transform: uppercase;">LIM.O APP</h1>
               <p style="margin: 2px 0 0 0; font-size: 9px; font-weight: 800; color: #4b5563; text-transform: uppercase; letter-spacing: 2px;">Sistema de Produção & PCP</p>
             </div>
             <div style="text-align: right;">
@@ -2857,7 +2857,7 @@ export default function CuttingAreaPanel({
                         {/* Title Bar */}
                         <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-6">
                           <div>
-                            <h1 className="margin-none text-2xl font-black uppercase tracking-tight">GESTÃO PRO</h1>
+                            <h1 className="margin-none text-2xl font-black uppercase tracking-tight">LIM.O APP</h1>
                             <p className="margin-none text-[8px] font-black tracking-widest text-slate-500 uppercase">Sistema de Produção & PCP</p>
                           </div>
                           <div className="text-right">
@@ -2981,7 +2981,7 @@ export default function CuttingAreaPanel({
                           {/* Title Bar */}
                           <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-6">
                             <div>
-                              <h1 className="margin-none text-2xl font-black uppercase tracking-tight">GESTÃO PRO</h1>
+                              <h1 className="margin-none text-2xl font-black uppercase tracking-tight">LIM.O APP</h1>
                               <p className="margin-none text-[8px] font-black tracking-widest text-slate-500 uppercase">Sistema de Produção & PCP</p>
                             </div>
                             <div className="text-right">
@@ -3077,7 +3077,7 @@ export default function CuttingAreaPanel({
                           {/* Title Bar */}
                           <div className="flex justify-between items-center border-b-2 border-black pb-4 mb-6">
                             <div>
-                              <h1 className="margin-none text-2xl font-black uppercase tracking-tight">GESTÃO PRO</h1>
+                              <h1 className="margin-none text-2xl font-black uppercase tracking-tight">LIM.O APP</h1>
                               <p className="margin-none text-[8px] font-black tracking-widest text-slate-500 uppercase">Sistema de Produção & PCP</p>
                             </div>
                             <div className="text-right">

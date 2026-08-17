@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, StockLotRevertPreview, ProductionConfigItem, Carrier } from '../types';
+import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, StockLotRevertPreview, ProductionConfigItem, Carrier, CompanyProfile } from '../types';
 import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin, ListChecks, Pencil, ArrowLeft } from 'lucide-react';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import ProductionOrderModal from '../components/ProductionOrderModal';
@@ -131,6 +131,9 @@ interface SalesViewProps {
    * TODO canto que mostraria uma (Resumo do Pedido, Exportar Venda em JPG etc), não só listas
    * de produto. */
   showThumbnails?: boolean;
+  /** Identidade da empresa (Mais > Personalizar Empresa) — vai junto do PDF/JPG exportado em
+   * "Exportar Venda" quando configurada com cabeçalho/rodapé (ver exportSale/saleExport.ts). */
+  companyProfile?: CompanyProfile | null;
 }
 
 export default function SalesView({
@@ -188,6 +191,7 @@ export default function SalesView({
   carriers = [],
   onSendToRouteBuilder,
   showThumbnails = true,
+  companyProfile = null,
 }: SalesViewProps) {
   const isIndustrial = appTheme === 'industrial';
   const hasProduction = modulesConfig.production;
@@ -466,6 +470,7 @@ export default function SalesView({
         // Só mostra foto se a preferência global "Miniaturas dos Modelos" (Acessibilidade)
         // também estiver ligada — desligada, ela vence mesmo com o toggle local marcado.
         showThumbnails: showThumbnails && exportShowThumbnails,
+        companyProfile,
       }, format);
       setExportModal(prev => ({ ...prev, isOpen: false }));
     } catch (error) {

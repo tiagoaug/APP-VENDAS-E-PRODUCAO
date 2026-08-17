@@ -445,7 +445,7 @@ export default function AIAssistantModal({ isOpen, onClose, isDarkMode, onOpenPe
               </div>
 
               <div className={`max-w-[85%] p-4 rounded-2xl text-xs font-semibold leading-relaxed ${isDarkMode ? "bg-slate-800 text-slate-200" : "bg-slate-100 text-slate-700"}`}>
-                Olá! Sou o assistente de IA do Gestão Pro. Posso consultar seus produtos, pedidos, financeiro e estoque de solados para responder perguntas e gerar análises. Use o ícone de raio acima para ver perguntas prontas.
+                Olá! Sou o assistente de IA do LIM.O APP. Posso consultar seus produtos, pedidos, financeiro e estoque de solados para responder perguntas e gerar análises. Use o ícone de raio acima para ver perguntas prontas.
               </div>
 
               {messages.map((m, i) => {

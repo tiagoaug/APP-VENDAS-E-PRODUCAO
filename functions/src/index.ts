@@ -47,7 +47,7 @@ const PROPOSAL_TOOL_NAMES = new Set([
 
 function buildSystemPrompt(): string {
   const today = new Date().toISOString().slice(0, 10);
-  return `Você é o assistente de IA do "Gestão Pro", um app de gestão de vendas e produção de calçados (cabedais e solados).
+  return `Você é o assistente de IA do "LIM.O APP", um app de gestão de vendas e produção de calçados (cabedais e solados).
 Data de hoje: ${today}.
 
 Você tem acesso a ferramentas de LEITURA dos dados do negócio do usuário (produtos, pedidos de compra/venda, financeiro, estoque de solados, clientes/fornecedores). Use-as sempre que precisar de dados reais antes de responder.
