@@ -263,6 +263,11 @@ export type Product = {
   productionRoute?: string[]; // Sector IDs in order
   sectorPrices?: Record<string, number>; // Price per pair per sector (sectorId → R$/par)
   photoUrl?: string; // Foto miniatura do produto (base64) usada em etiquetas, PCP e estoque
+  // Miniatura específica pra etiqueta térmica — diferente de `photoUrl` (foto real do
+  // produto): é um desenho/ícone de linhas do modelo, sem meio-tom/gradiente, porque uma foto
+  // normal sai borrada/escura numa impressora térmica monocromática de baixa resolução. Usada
+  // no lugar de `photoUrl` no elemento "Foto" do Editor de Etiquetas quando cadastrada.
+  labelThumbnailUrl?: string;
   createdAt: number;
   // Usados para diluir itens de categoria Custo Fixo (Ficha Técnica) em custo por par: valor
   // mensal do item ÷ diasTrabalhadosMes ÷ paresDia. Preenchidos uma vez por produto, em vez de
@@ -432,6 +437,12 @@ export type SaleItem = {
   // (item legado ou estoque sem StockLot, ex. reposição sem Pedido de Produção) cai no
   // fallback de contador/separatedPkgAllocations acima. Ver src/utils/stockLotPicker.ts.
   separatedStockLotIds?: string[];
+  // Divisão das caixas deste item (ATACADO, sem size) entre diferentes clientes finais
+  // ("cliente do cliente") — preenchido na tela "Dividir entre Clientes" do cadastro do
+  // pedido. Soma das quantidades pode ser menor que SaleItem.quantity (divisão parcial é
+  // permitida); caixas não cobertas saem sem destinatário nas etiquetas. Ver
+  // SalesView.handleOpenSaleLabels, que consome isso pra atribuir recipientName por caixa.
+  boxRecipients?: { name: string; quantity: number }[];
 };
 
 export type SaleExtraItem = {

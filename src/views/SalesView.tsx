@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, StockLotRevertPreview, ProductionConfigItem, Carrier, CompanyProfile } from '../types';
-import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin, ListChecks, Pencil, ArrowLeft } from 'lucide-react';
+import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, StockLotRevertPreview, ProductionConfigItem, Carrier, CompanyProfile, Variation } from '../types';
+import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin, ListChecks, Pencil, ArrowLeft, Printer } from 'lucide-react';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import ProductionOrderModal from '../components/ProductionOrderModal';
 import SeparacaoCaixasModal from '../components/SeparacaoCaixasModal';
@@ -11,6 +11,7 @@ import { exportSale } from '../utils/saleExport';
 import { usePrivacyMode, PRIVACY_BLUR_CLASS } from '../contexts/PrivacyContext';
 import { exportStockShortageReport, StockShortageItem } from '../utils/stockShortageExport';
 import ExportNoteModal from '../components/ExportNoteModal';
+import PrintLabelEditorModal from '../components/PrintLabelEditorModal';
 import PedidosClientesPanel from '../components/PedidosClientesPanel';
 import StockLotsPanel from '../components/StockLotsPanel';
 import StockEntryHistoryModal from '../components/StockEntryHistoryModal';
@@ -246,6 +247,19 @@ export default function SalesView({
   const [noteModal, setNoteModal] = useState<{ isOpen: boolean, note: string } | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [exportModal, setExportModal] = useState<{isOpen: boolean, sale?: Sale, format: 'pdf' | 'jpg'}>({ isOpen: false, format: 'pdf' });
+  // Popup de escolha ao tocar no ícone de impressora do card: "Exportar Venda" (abre o
+  // ExportNoteModal de sempre) ou "Imprimir Venda" (sub-escolha entre Etiquetas e Impressão
+  // Padrão) — `step` controla qual dos dois níveis do popup está visível.
+  const [printChoice, setPrintChoice] = useState<{ sale: Sale; step: 'main' | 'print-sub' } | null>(null);
+  // Etiquetas da Venda — abre o mesmo Editor de Etiquetas usado no resto do programa (PCP,
+  // Central de Impressão), em modo lote (batchItems): uma etiqueta por CAIXA no Atacado
+  // (item.quantity caixas => item.quantity etiquetas iguais, grade de UMA caixa cada), uma
+  // etiqueta por linha (tamanho) no Varejo. `labelModalProduct` é só um placeholder pro prop
+  // obrigatório `product` do editor — a impressão em lote usa `labelModalBatchItems` de verdade
+  // (mesmo padrão do handlePrintLabelsFromShare em PCPView.tsx).
+  const [labelModalProduct, setLabelModalProduct] = useState<Product | null>(null);
+  const [labelModalBatchItems, setLabelModalBatchItems] = useState<{ product: Product; variation: Variation; sizeGrid: string; packagingName?: string; customerName?: string; recipientName?: string; saleId?: string }[] | undefined>(undefined);
+  const [isQuickPrinting, setIsQuickPrinting] = useState(false);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [saleToDelete, setSaleToDelete] = useState<string | null>(null);
   const [cancelSaleTarget, setCancelSaleTarget] = useState<string | null>(null);
@@ -449,6 +463,157 @@ export default function SalesView({
   const handleOpenExport = (e: React.MouseEvent, sale: Sale, format: 'pdf' | 'jpg') => {
     e.stopPropagation();
     setExportModal({ isOpen: true, sale, format });
+  };
+
+  const handleOpenPrintChoice = (e: React.MouseEvent, sale: Sale) => {
+    e.stopPropagation();
+    setPrintChoice({ sale, step: 'main' });
+  };
+
+  // "Impressão Padrão" — gera o PDF da venda direto (sem passar pelo popup de observação/
+  // miniaturas do Exportar Venda) e entrega pro compartilhamento nativo, de onde o Android
+  // já oferece "Imprimir" junto dos outros apps — é assim que impressão "normal" funciona em
+  // todo o resto do programa (ver sharePDF em utils/pdfExport.ts), não existe uma API separada
+  // de "mandar pra impressora do sistema".
+  const handleStandardPrint = async (sale: Sale) => {
+    setIsQuickPrinting(true);
+    try {
+      await exportSale({
+        sale,
+        products,
+        people,
+        paymentMethods,
+        additionalNote: '',
+        isDarkMode,
+        showThumbnails: showThumbnails,
+        companyProfile,
+      }, 'pdf');
+      setPrintChoice(null);
+    } catch (error) {
+      console.error('Standard print error:', error);
+      toast.show('Erro ao gerar PDF para impressão.');
+    } finally {
+      setIsQuickPrinting(false);
+    }
+  };
+
+  const handleOpenSaleLabels = (sale: Sale) => {
+    const batch: { product: Product; variation: Variation; sizeGrid: string; packagingName?: string; recipientName?: string }[] = [];
+    sale.items.forEach((item) => {
+      const product = products.find(p => p.id === item.productId);
+      const variation = product?.variations.find(v => v.id === item.variationId);
+      if (!product || !variation) return;
+      if (item.saleType === SaleType.WHOLESALE && !item.size) {
+        // Fila de destinatários por caixa, montada a partir da divisão feita no cadastro do
+        // pedido (SaleItem.boxRecipients — ver "Dividir Caixas entre Clientes" no
+        // SaleFormView). Cada caixa empurrada abaixo consome o próximo nome da fila, na ordem
+        // em que as caixas são resolvidas; caixas sem nome na fila (divisão parcial ou
+        // ausente) caem no fallback do prompt "Destinatário Final" mais abaixo.
+        const recipientQueue: string[] = [];
+        (item.boxRecipients || []).forEach(r => {
+          const name = r.name.trim();
+          if (!name || r.quantity <= 0) return;
+          for (let i = 0; i < r.quantity; i++) recipientQueue.push(name);
+        });
+        let boxCounter = 0;
+        const pushBox = (sizeGrid: string, packagingName?: string) => {
+          const recipientName = recipientQueue[boxCounter];
+          batch.push({ product, variation, sizeGrid, packagingName, recipientName });
+          boxCounter++;
+        };
+        // Atacado (caixas) — uma etiqueta por caixa física do pedido, com a composição REAL
+        // de cada caixa (StockLot.gradeLabel — é onde a composição de verdade de cada lote
+        // fica, não na Grade padrão do produto nem na embalagem cadastrada da variante),
+        // em ordem de prioridade:
+        // 1) StockLot já resolvido pra ESTA venda (Separar Caixas/Expedir Venda já rodou) —
+        //    o mais preciso, é literalmente o que já saiu do estoque pra este pedido.
+        // 2) StockLot ainda EM_ESTOQUE do mesmo produto/variação — a venda ainda não foi
+        //    separada, mas a(s) caixa(s) que vão sair pra ela já existem no estoque com a
+        //    composição real; usa essas até cobrir a quantidade do item.
+        // 3) Embalagem cadastrada da variante (Variation.stockPkgAllocations) — só resta
+        //    quando não há nenhum StockLot disponível ainda.
+        // 4) Grade padrão do produto (Grid.configuration) — último recurso.
+        let remaining = item.quantity;
+        const separatedLots = (item.separatedStockLotIds || [])
+          .map(id => stockLots.find(l => l.id === id))
+          .filter((l): l is StockLot => !!l);
+        separatedLots.forEach(lot => {
+          if (remaining <= 0) return;
+          const copies = Math.min(lot.boxIds?.length || 1, remaining);
+          for (let i = 0; i < copies; i++) {
+            pushBox(lot.gradeLabel);
+          }
+          remaining -= copies;
+        });
+
+        if (remaining > 0) {
+          const stockLotsAvailable = stockLots.filter(l =>
+            l.productId === item.productId && l.variationId === item.variationId && l.status === 'EM_ESTOQUE'
+          );
+          for (const lot of stockLotsAvailable) {
+            if (remaining <= 0) break;
+            const copies = Math.min(lot.boxIds?.length || 1, remaining);
+            for (let i = 0; i < copies; i++) {
+              pushBox(lot.gradeLabel);
+            }
+            remaining -= copies;
+          }
+        }
+
+        if (remaining > 0) {
+          const allocations = (variation.stockPkgAllocations || []).filter(a => (a.qty || 0) > 0);
+          for (const alloc of allocations) {
+            if (remaining <= 0) break;
+            const pkg = productionConfigs.find(p => p.id === alloc.pkgId);
+            const breakdown = alloc.customBreakdown || (pkg?.metadata?.sizeQuantities as Record<string, number> | undefined) || {};
+            const sizeGrid = Object.entries(breakdown)
+              .filter(([, qty]) => qty > 0)
+              .sort(([a], [b]) => Number(a) - Number(b))
+              .map(([sz, qty]) => `${sz}x${qty}`)
+              .join('-');
+            const packagingName = pkg?.name || 'Embalagem avulsa';
+            const copies = Math.min(alloc.qty, remaining);
+            for (let i = 0; i < copies; i++) {
+              pushBox(sizeGrid, packagingName);
+            }
+            remaining -= copies;
+          }
+        }
+
+        if (remaining > 0) {
+          const grid = grids.find(g => g.id === product.defaultGridId);
+          const sizeGrid = grid
+            ? Object.entries(grid.configuration)
+                .filter(([, qty]) => qty > 0)
+                .sort(([a], [b]) => Number(a) - Number(b))
+                .map(([sz, qty]) => `${sz}x${qty}`)
+                .join('-')
+            : '';
+          for (let i = 0; i < remaining; i++) {
+            pushBox(sizeGrid);
+          }
+        }
+      } else {
+        // Varejo — cada tamanho já é uma linha própria na venda, vira uma etiqueta.
+        batch.push({ product, variation, sizeGrid: item.size ? `${item.size}x${item.quantity}` : '' });
+      }
+    });
+    if (batch.length === 0) {
+      toast.show('Nenhum item nessa venda pra gerar etiqueta.');
+      return;
+    }
+    // Cliente (revendedor) — mesmo valor repetido em toda caixa do pedido. Destinatário final
+    // (cliente do cliente): vem só do que foi dividido no cadastro do pedido (SaleItem.boxRecipients,
+    // via "Dividir Caixas entre Clientes" em SaleFormView — ver pushBox acima); caixa sem divisão
+    // sai sem destinatário, sem prompt na hora de imprimir.
+    const customerName = sale.customerName || people.find(p => p.id === sale.customerId)?.name;
+    // saleId embutido no QR de cada etiqueta (ver ElemKey/BatchLabelItem em
+    // PrintLabelEditorModal.tsx) — como uma etiqueta de venda não tem Mapa/pedido de
+    // produção pra rotear (lotId/orderId), o Scanner Rápido usa esse id pra abrir a venda
+    // direto em vez de cair no erro "não vinculada a um Mapa".
+    const withCustomer = batch.map(b => ({ ...b, customerName, saleId: sale.id }));
+    setLabelModalProduct(withCustomer[0].product);
+    setLabelModalBatchItems(withCustomer);
   };
 
   const handleConfirmExport = async (
@@ -2323,14 +2488,15 @@ export default function SalesView({
                       <FileText size={14} />
                     </button>
 
-                    {/* JPG/PDF Export Button */}
+                    {/* Export/Print Button — abre popup de escolha: Exportar Venda ou
+                        Imprimir Venda (Etiquetas / Impressão Padrão) */}
                     <button
                       type="button"
-                      onClick={(e) => handleOpenExport(e, sale, 'jpg')}
-                      className="w-8 h-8 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 rounded-full font-black text-[7px] tracking-tighter active:scale-90 transition-all"
-                      title="Exportar (JPG/PDF)"
+                      onClick={(e) => handleOpenPrintChoice(e, sale)}
+                      className="w-8 h-8 flex items-center justify-center bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 rounded-full active:scale-90 transition-all"
+                      title="Exportar ou Imprimir"
                     >
-                      JPG
+                      <Printer size={14} />
                     </button>
 
                     {/* Payment/Dollar Button */}
@@ -2550,6 +2716,115 @@ export default function SalesView({
         initialFormat={exportModal.format}
         title={exportModal.sale?.status === SaleStatus.QUOTE ? "Exportar Orçamento" : exportModal.sale?.status === SaleStatus.CONFIRMED ? "Exportar Pedido" : "Exportar Venda"}
       />
+
+      {/* Popup — Exportar Venda × Imprimir Venda (Etiquetas / Impressão Padrão) */}
+      {printChoice && (
+        <div
+          className="fixed inset-0 z-[65000] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
+          onClick={() => setPrintChoice(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-xs rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}
+          >
+            <div className={`flex items-center justify-between px-6 py-5 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                  <Printer size={18} />
+                </div>
+                <h3 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  {printChoice.step === 'main' ? 'Exportar ou Imprimir' : 'Imprimir Venda'}
+                </h3>
+              </div>
+              <button type="button" onClick={() => setPrintChoice(null)} className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`} aria-label="Fechar">
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-2 p-6">
+              {printChoice.step === 'main' ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => { const s = printChoice.sale; setPrintChoice(null); handleOpenExport(e, s, 'jpg'); }}
+                    className={`flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                      <Share2 size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Exportar Venda</p>
+                      <p className="text-[9px] font-bold text-slate-400 mt-0.5">Gerar PDF/JPG com observação e miniaturas</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPrintChoice(prev => prev ? { ...prev, step: 'print-sub' } : prev)}
+                    className={`flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
+                      <Printer size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Imprimir Venda</p>
+                      <p className="text-[9px] font-bold text-slate-400 mt-0.5">Etiquetas ou impressão padrão do pedido</p>
+                    </div>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => { const s = printChoice.sale; setPrintChoice(null); handleOpenSaleLabels(s); }}
+                    className={`flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-[0.98] ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-sky-100 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">
+                      <Tag size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Etiquetas</p>
+                      <p className="text-[9px] font-bold text-slate-400 mt-0.5">Uma etiqueta por caixa (Atacado) ou tamanho (Varejo) — Editor de Etiquetas completo</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isQuickPrinting}
+                    onClick={() => handleStandardPrint(printChoice.sale)}
+                    className={`flex items-center gap-3 p-4 rounded-2xl text-left transition-all active:scale-[0.98] disabled:opacity-60 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                      <FileText size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{isQuickPrinting ? 'Gerando…' : 'Impressão Padrão'}</p>
+                      <p className="text-[9px] font-bold text-slate-400 mt-0.5">PDF do pedido pronto pra imprimir</p>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPrintChoice(prev => prev ? { ...prev, step: 'main' } : prev)}
+                    className="text-[10px] font-black uppercase tracking-widest text-slate-400 text-center py-2"
+                  >
+                    ← Voltar
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {labelModalProduct && (
+        <PrintLabelEditorModal
+          isOpen={!!labelModalProduct}
+          onClose={() => { setLabelModalProduct(null); setLabelModalBatchItems(undefined); }}
+          product={labelModalProduct}
+          isDarkMode={isDarkMode}
+          grids={grids}
+          sectors={sectors}
+          batchItems={labelModalBatchItems}
+        />
+      )}
 
 
 

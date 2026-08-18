@@ -123,7 +123,7 @@ export const labelService = {
     }
   },
 
-  async printProductLabels(product: Product, variation?: Variation, sizes?: string[], quantities?: Record<string, number>, dimensions: [number, number] = [40, 30], layout?: LabelLayout, photoUrl?: string, sizeGrid?: string, lotId?: string, orderId?: string, itemIdx?: number) {
+  async printProductLabels(product: Product, variation?: Variation, sizes?: string[], quantities?: Record<string, number>, dimensions: [number, number] = [40, 30], layout?: LabelLayout, photoUrl?: string, sizeGrid?: string, lotId?: string, orderId?: string, itemIdx?: number, saleId?: string) {
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -146,7 +146,9 @@ export const labelService = {
 
           const qrData = (lotId && orderId)
             ? `PRD|${product.id}|${v.id}|${size}|${lotId}|${orderId}|${itemIdx ?? ''}`
-            : `PRD|${product.id}|${v.id}|${size}`;
+            : saleId
+              ? `PRD|${product.id}|${v.id}|${size}|SALE|${saleId}`
+              : `PRD|${product.id}|${v.id}|${size}`;
           const qrCode = await this.generateQRCode(qrData);
 
           // Reference
@@ -208,7 +210,7 @@ export const labelService = {
   },
 
   async printProductLabelsBatch(
-    items: { product: Product; variation: Variation; sizeGrid: string; sectorNotesText?: string; photoUrl?: string; lotId?: string; orderId?: string; itemIdx?: number }[],
+    items: { product: Product; variation: Variation; sizeGrid: string; sectorNotesText?: string; photoUrl?: string; lotId?: string; orderId?: string; itemIdx?: number; saleId?: string }[],
     dimensions: [number, number] = [40, 30],
     layout?: LabelLayout
   ) {
@@ -222,10 +224,10 @@ export const labelService = {
     const activeLayout = layout || this.getDefaultLayout(dimensions);
 
     for (let idx = 0; idx < items.length; idx++) {
-      const { product, variation, sizeGrid, sectorNotesText, photoUrl, lotId, orderId, itemIdx } = items[idx];
+      const { product, variation, sizeGrid, sectorNotesText, photoUrl, lotId, orderId, itemIdx, saleId } = items[idx];
       if (idx > 0) doc.addPage(dimensions);
 
-      const qrSuffix = (lotId && orderId) ? `|${lotId}|${orderId}|${itemIdx ?? ''}` : '';
+      const qrSuffix = (lotId && orderId) ? `|${lotId}|${orderId}|${itemIdx ?? ''}` : (saleId ? `|SALE|${saleId}` : '');
       const qrCode = await this.generateQRCode(`PRD|${product.id}|${variation.id}|GRADE${qrSuffix}`);
 
       // Reference
@@ -349,7 +351,7 @@ export const labelService = {
     await sharePDF(doc, `Etiquetas_Solado_${mold.metadata?.moldReference || mold.id}.pdf`);
   },
 
-  async printWholesaleLabel(product: Product, variation: Variation, quantity: number = 1, dimensions: [number, number] = [40, 30], layout?: LabelLayout, photoUrl?: string, sizeGrid?: string, lotId?: string, orderId?: string, itemIdx?: number) {
+  async printWholesaleLabel(product: Product, variation: Variation, quantity: number = 1, dimensions: [number, number] = [40, 30], layout?: LabelLayout, photoUrl?: string, sizeGrid?: string, lotId?: string, orderId?: string, itemIdx?: number, saleId?: string) {
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
@@ -365,7 +367,9 @@ export const labelService = {
 
       const qrData = (lotId && orderId)
         ? `PRD|${product.id}|${variation.id}|WHOLESALE|${lotId}|${orderId}|${itemIdx ?? ''}`
-        : `PRD|${product.id}|${variation.id}|WHOLESALE`;
+        : saleId
+          ? `PRD|${product.id}|${variation.id}|WHOLESALE|SALE|${saleId}`
+          : `PRD|${product.id}|${variation.id}|WHOLESALE`;
       const qrCode = await this.generateQRCode(qrData);
 
       doc.setFontSize(activeLayout.refSize);

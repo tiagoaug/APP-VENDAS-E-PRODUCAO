@@ -1477,7 +1477,7 @@ export default function App() {
   // Carrega o Mapa diretamente (local ou Firestore) ANTES de navegar, em vez de
   // navegar e esperar o PCP encontrar o Mapa por conta própria.
   const handleHeaderScan = async (parsed: any) => {
-    const resolved = await scannerService.resolveScanResult(parsed, products, productionLots);
+    const resolved = await scannerService.resolveScanResult(parsed, products, productionLots, sales);
     if (!resolved.ok) {
       toast.show(resolved.error);
       return;
@@ -1485,7 +1485,13 @@ export default function App() {
 
     scannerService.pushScanHistory(resolved.entry);
 
-    const { sectorId, lotId, orderId, itemIdx, scanNonce } = resolved.nav;
+    const { sectorId, lotId, orderId, itemIdx, saleId, scanNonce } = resolved.nav;
+    // Etiqueta gerada a partir de uma Venda (sem Mapa) -> abre a venda direto, em vez de
+    // ir pro PCP (não há Mapa/pedido de produção pra mostrar).
+    if (saleId) {
+      navigateTo(ViewType.SALE_FORM, saleId);
+      return;
+    }
     // openMode 'sector' -> mostra no Monitor PCP, no setor atual do pedido, em vez de abrir
     // o modal do Mapa (mesmo comportamento do botão "Escanear" dentro do PCP).
     navigateTo(ViewType.PRODUCTION_PCP, { initialSectorId: sectorId, initialLotId: lotId, initialOrderId: orderId, initialItemIdx: itemIdx, initialScanNonce: scanNonce, initialOpenMode: 'sector' });

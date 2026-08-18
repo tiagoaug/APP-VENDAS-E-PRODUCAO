@@ -357,12 +357,9 @@ export default function PCPView({
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
-  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Set<string>>(new Set());
-  const toggleGroupCollapse = (gk: string) => setCollapsedGroupKeys(prev => {
-    const next = new Set(prev);
-    next.has(gk) ? next.delete(gk) : next.add(gk);
-    return next;
-  });
+  // Cards de Necessidades (Materiais/Solados) agora abrem um popup com todos os detalhes do
+  // grupo em vez de expandir a lista inline — guarda só a chave do grupo aberto no momento.
+  const [openNeedsGroupKey, setOpenNeedsGroupKey] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'finished' | 'urgent'>('active');
   const [isFilterPopupOpen, setIsFilterPopupOpen] = useState(false);
   const [isQuickActionsOpen, setIsQuickActionsOpen] = useState(false);
@@ -1165,6 +1162,99 @@ export default function PCPView({
     () => buildPurchaseNeeds(needsSourceFilter, selectedNeedsOrderIds),
     [needsSourceFilter, selectedNeedsOrderIds, activeLots, productionConfigs, soleStock, products, colors, pendingItems]
   );
+
+  // Falta REAL de um item de necessidade, descontando tanto o estoque quanto compras de solado
+  // já em trânsito (pedidas mas não recebidas) — sem isso, o card de necessidade pede pra
+  // comprar de novo algo que já foi pedido e só está esperando chegar. Só se aplica a SOLE (é
+  // onde existe rastreio de compra em trânsito por grade); MATERIAL usa a falta bruta mesmo.
+  const computeSoleTransitAwareShortage = (item: typeof purchaseNeeds[0]) => {
+    if (item.type !== 'SOLE' || !item.sizeShortages) {
+      const gross = Math.max(0, item.required - item.stock);
+      return { totalNet: gross, totalInTransit: 0, totalGross: gross };
+    }
+    const realGradeStock: Record<string, number> = {};
+    soleStock
+      .filter(s => s.moldId === item.moldId && String(s.colorId || '').trim() === String(item.colorId || '').trim())
+      .forEach(e => {
+        Object.entries(e.stock).forEach(([k, v]) => {
+          const key = String(k).trim();
+          if (key === 'pesagem' || key === 'total') return;
+          realGradeStock[key] = (realGradeStock[key] || 0) + (Number(v) || 0);
+        });
+      });
+    const inTransitByGrade: Record<string, number> = {};
+    purchases
+      .filter(p => {
+        if (p.registerAsReceived === true) return false;
+        const si: any[] = (p as any).soleItems || (p as any).items || [];
+        return si.some((s: any) => s.moldId);
+      })
+      .forEach(p => {
+        const allItems: any[] = (p as any).soleItems || (p as any).items || [];
+        allItems
+          .filter((si: any) => si.moldId && String(si.moldId).trim() === String(item.moldId).trim() && String(si.colorId || '').trim() === String(item.colorId || '').trim())
+          .forEach((si: any) => {
+            Object.entries(si.quantities || {}).forEach(([size, qty]: [string, any]) => {
+              const q = Number(qty) || 0;
+              if (q > 0) inTransitByGrade[size] = (inTransitByGrade[size] || 0) + q;
+            });
+          });
+      });
+    let totalNet = 0, totalGross = 0, totalInTransit = 0;
+    Object.keys(item.sizeShortages).forEach(grade => {
+      const req = (item.sizeShortages as any)[grade].required;
+      const stock = realGradeStock[grade] || 0;
+      const gross = Math.max(0, req - stock);
+      const transit = Math.min(inTransitByGrade[grade] || 0, gross);
+      totalGross += gross;
+      totalInTransit += transit;
+      totalNet += gross - transit;
+    });
+    return { totalNet, totalInTransit, totalGross, realGradeStock, inTransitByGrade };
+  };
+
+  // Agrupamento de necessidades (por material/molde) — fonte única compartilhada pelos cards
+  // minimizados do PCP Central e pelo popup de detalhes do grupo, pra não duplicar a lógica.
+  type PurchaseNeedGroupItem = typeof purchaseNeeds[0] & {
+    _gk: string; _idx: number; _size: number;
+    _gTotal: number; _gShortage: number; _gNetShortage: number; _gInTransit: number; _gBaseName: string;
+    _itemNetShortage: number; _itemInTransit: number;
+  };
+  const needsGroupsFlat = useMemo<PurchaseNeedGroupItem[]>(() => {
+    const groupMap = new Map<string, typeof purchaseNeeds>();
+    purchaseNeeds.forEach(item => {
+      const gk = item.type === 'MATERIAL'
+        ? (item.materialId || item.id)
+        : `SOLE_${item.moldId || item.id}`;
+      if (!groupMap.has(gk)) groupMap.set(gk, []);
+      groupMap.get(gk)!.push(item);
+    });
+    const sortedGroups = Array.from(groupMap.entries()).sort(([, ai], [, bi]) => {
+      const as_ = ai.reduce((s, i) => s + computeSoleTransitAwareShortage(i).totalNet, 0);
+      const bs_ = bi.reduce((s, i) => s + computeSoleTransitAwareShortage(i).totalNet, 0);
+      return bs_ - as_;
+    });
+    const flat: PurchaseNeedGroupItem[] = [];
+    sortedGroups.forEach(([gk, items]) => {
+      const netByItem = items.map(i => computeSoleTransitAwareShortage(i));
+      const sorted = items
+        .map((item, i) => ({ item, net: netByItem[i] }))
+        .sort((a, b) => b.net.totalNet - a.net.totalNet);
+      const gTotal = sorted.reduce((s, { item }) => s + item.required, 0);
+      const gShortage = sorted.reduce((s, { net }) => s + net.totalGross, 0);
+      const gNetShortage = sorted.reduce((s, { net }) => s + net.totalNet, 0);
+      const gInTransit = sorted.reduce((s, { net }) => s + net.totalInTransit, 0);
+      const gBase = sorted[0].item.type === 'MATERIAL'
+        ? (sorted[0].item.name || '').replace(/ — .*$/, '')
+        : (sorted[0].item.name || '').split(' - ')[0];
+      sorted.forEach(({ item, net }, idx) => flat.push({
+        ...item, _gk: gk, _idx: idx, _size: sorted.length,
+        _gTotal: gTotal, _gShortage: gShortage, _gNetShortage: gNetShortage, _gInTransit: gInTransit, _gBaseName: gBase,
+        _itemNetShortage: net.totalNet, _itemInTransit: net.totalInTransit,
+      }));
+    });
+    return flat;
+  }, [purchaseNeeds, soleStock, purchases]);
 
   // Indica se existe ALGUMA necessidade de compra (mapas e/ou pedidos), independente do filtro
   // selecionado — usado para o indicador (bolinha) na aba "Necessidades", que deve avisar mesmo
@@ -4298,6 +4388,13 @@ export default function PCPView({
       setExpandedOSIds(prev => new Set(prev).add(os.id));
       setSelectedLot(lot);
       setIsDetailModalOpen(true);
+      return;
+    }
+
+    // Etiqueta gerada a partir de uma Venda (sem Mapa) -> não tem o que abrir aqui no PCP;
+    // essa rota só é resolvida pelo Scanner Rápido (cabeçalho/Dashboard, ver resolveScanResult).
+    if (parsed?.type === 'PRODUCT' && parsed.saleId) {
+      toast.show('Esta etiqueta é de uma venda (sem Mapa de produção). Use o Scanner Rápido no cabeçalho ou no Dashboard pra abrir a venda direto.');
       return;
     }
 
@@ -7759,619 +7856,44 @@ export default function PCPView({
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3">
-                  {(() => {
-                    // Group same materialId/moldId items together, sorted by group total shortage
-                    const groupMap = new Map<string, typeof purchaseNeeds>();
-                    purchaseNeeds.forEach(item => {
-                      const gk = item.type === 'MATERIAL'
-                        ? (item.materialId || item.id)
-                        : `SOLE_${item.moldId || item.id}`;
-                      if (!groupMap.has(gk)) groupMap.set(gk, []);
-                      groupMap.get(gk)!.push(item);
-                    });
-                    const sortedGroups = Array.from(groupMap.entries()).sort(([, ai], [, bi]) => {
-                      const as_ = ai.reduce((s, i) => s + Math.max(0, i.required - i.stock), 0);
-                      const bs_ = bi.reduce((s, i) => s + Math.max(0, i.required - i.stock), 0);
-                      return bs_ - as_;
-                    });
-                    // Build flat list enriched with group metadata
-                    type Enriched = typeof purchaseNeeds[0] & {
-                      _gk: string; _idx: number; _size: number;
-                      _gTotal: number; _gShortage: number; _gBaseName: string;
-                    };
-                    const flat: Enriched[] = [];
-                    sortedGroups.forEach(([gk, items]) => {
-                      const sorted = [...items].sort((a, b) => (b.required - b.stock) - (a.required - a.stock));
-                      const gTotal = sorted.reduce((s, i) => s + i.required, 0);
-                      const gShortage = sorted.reduce((s, i) => s + Math.max(0, i.required - i.stock), 0);
-                      const gBase = sorted[0].type === 'MATERIAL'
-                        ? (sorted[0].name || '').replace(/ — .*$/, '')
-                        : (sorted[0].name || '').split(' - ')[0];
-                      sorted.forEach((item, idx) => flat.push({ ...item, _gk: gk, _idx: idx, _size: sorted.length, _gTotal: gTotal, _gShortage: gShortage, _gBaseName: gBase }));
-                    });
-                    return flat;
-                  })().map((item) => {
-                    const isFirst = item._idx === 0;
+                  {needsGroupsFlat.filter(item => item._idx === 0).map(item => {
                     const unitNoun = item.type === 'MATERIAL' ? 'cor' : 'variação';
-                    const isGroupCollapsed = collapsedGroupKeys.has(item._gk);
-                    const groupHeader = isFirst ? (
+                    const fmtQty = (val: number) => /m[²2]/i.test(item.unit || '') ? val.toFixed(2) : String(Math.round(val));
+                    return (
                       <button
-                        key={`gh_${item._gk}`}
+                        key={item._gk}
                         type="button"
-                        onClick={() => toggleGroupCollapse(item._gk)}
-                        title={isGroupCollapsed ? `Expandir grupo ${item._gBaseName}` : `Recolher grupo ${item._gBaseName}`}
-                        aria-label={isGroupCollapsed ? `Expandir grupo ${item._gBaseName}` : `Recolher grupo ${item._gBaseName}`}
-                        className={`w-full flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 rounded-2xl border transition-all ${isDarkMode ? 'bg-slate-800 border-slate-600 hover:bg-slate-700' : 'bg-slate-200 border-slate-300 hover:bg-slate-300'}`}
+                        onClick={() => setOpenNeedsGroupKey(item._gk)}
+                        title={`Ver detalhes do grupo ${item._gBaseName}`}
+                        aria-label={`Ver detalhes do grupo ${item._gBaseName}`}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all active:scale-[0.98] text-left ${isDarkMode ? 'bg-slate-800 border-slate-600 hover:bg-slate-700' : 'bg-slate-200 border-slate-300 hover:bg-slate-300'} ${item._gNetShortage > 0 ? (isDarkMode ? 'ring-1 ring-rose-800/50' : 'ring-1 ring-rose-200') : ''}`}
                       >
-                        <div className="flex items-center gap-2 flex-wrap min-w-0">
-                          <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 transition-transform duration-300 ${isGroupCollapsed ? '' : 'rotate-180'} ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-300 text-slate-600'}`}>
-                            <ChevronDown size={14} strokeWidth={3} />
-                          </div>
-                          <span className={`text-[10px] font-black uppercase tracking-widest break-words ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item._gBaseName}</span>
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 ${isDarkMode ? 'bg-slate-600 text-slate-100' : 'bg-slate-700 text-white'}`}>{item._size} {item._size === 1 ? unitNoun : `${unitNoun}s`}</span>
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${item.type === 'SOLE' ? 'bg-indigo-100 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+                          {item.type === 'SOLE' ? <Layers size={16} /> : <Package size={16} />}
                         </div>
-                        <div className="flex items-center gap-3 shrink-0">
-                          <div className="text-right">
-                            <p className="text-[8px] font-black uppercase text-slate-400">Total necessário</p>
-                            <p className={`text-[11px] font-black ${item._gShortage > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{/m[²2]/i.test(item.unit || '') ? item._gTotal.toFixed(2) : Math.round(item._gTotal)} {item.unit}</p>
+                        <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                          {/* Linha 1 — nome do solado e variação */}
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {item._gNetShortage > 0 && <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse shrink-0" />}
+                            <span className={`text-[11px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item._gBaseName}</span>
                           </div>
-                          {isGroupCollapsed && (
-                            <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-slate-700 text-slate-400' : 'bg-slate-300 text-slate-500'}`}>Recolhido</span>
-                          )}
+                          {/* Linha 2 — total necessário */}
+                          <p className="text-[10px] font-bold text-slate-400 truncate">
+                            Total Necessário: <span className={`font-black ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>{fmtQty(item._gTotal)} {item.unit}</span>
+                          </p>
+                          {/* Linha 3 — quantidade a comprar, já descontando trânsito */}
+                          <p className="text-[10px] font-bold text-slate-400 truncate">
+                            Quantidade: <span className={`font-black ${item._gNetShortage > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                              {item._gNetShortage > 0 ? `${fmtQty(item._gNetShortage)} ${item.unit}` : '✓ Coberto'}
+                            </span>
+                            {item._gInTransit > 0 && <span className="text-amber-500"> · {Math.round(item._gInTransit)} em trânsito</span>}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap ${isDarkMode ? 'bg-slate-600 text-slate-100' : 'bg-slate-700 text-white'}`}>{item._size} {item._size === 1 ? unitNoun : `${unitNoun}s`}</span>
+                          <ChevronRight size={16} className={isDarkMode ? 'text-slate-500' : 'text-slate-400'} />
                         </div>
                       </button>
-                    ) : null;
-                    const fmtQty = (val: number) => /m[²2]/i.test(item.unit || '') ? Number(val).toFixed(2) : String(Math.round(val));
-                    const isExpanded = expandedNeedIds.has(item.id);
-
-                    // Existing purchase request
-                    const existingReqOuter = purchaseRequests.find(r => r.requestKey === item.id && r.status !== 'RECEIVED');
-
-                    // Quick shortage (real stock, no color fallback)
-                    const realGradeStockOuter: Record<string, number> = {};
-                    if (item.type === 'SOLE') {
-                      soleStock
-                        .filter(s => s.moldId === item.moldId && String(s.colorId || '').trim() === String(item.colorId || '').trim())
-                        .forEach(e => {
-                          Object.entries(e.stock).forEach(([k, v]) => {
-                            const key = String(k).trim();
-                            if (key === 'pesagem' || key === 'total') return;
-                            realGradeStockOuter[key] = (realGradeStockOuter[key] || 0) + (Number(v) || 0);
-                          });
-                        });
-                    }
-                    const quickShortage = item.type === 'SOLE' && item.sizeShortages
-                      ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
-                        const req = (item.sizeShortages as any)[grade].required;
-                        const stk = realGradeStockOuter[grade] || 0;
-                        return s + Math.max(0, req - stk);
-                      }, 0)
-                      : Math.max(0, item.required - item.stock);
-
-                    // In-transit quantities for this mold
-                    const inTransitOuter: Record<string, number> = {};
-                    if (item.type === 'SOLE') {
-                      purchases.filter(p => {
-                        if (p.registerAsReceived === true) return false;
-                        const si: any[] = (p as any).soleItems || (p as any).items || [];
-                        return si.some((s: any) => s.moldId);
-                      }).forEach(p => {
-                        const allItems: any[] = (p as any).soleItems || (p as any).items || [];
-                        allItems
-                          .filter((si: any) =>
-                            si.moldId &&
-                            String(si.moldId).trim() === String(item.moldId).trim() &&
-                            String(si.colorId || '').trim() === String(item.colorId || '').trim()
-                          )
-                          .forEach((si: any) => {
-                            Object.entries(si.quantities || {}).forEach(([size, qty]: [string, any]) => {
-                              const q = Number(qty) || 0;
-                              if (q > 0) inTransitOuter[size] = (inTransitOuter[size] || 0) + q;
-                            });
-                          });
-                      });
-                    }
-                    const totalInTransitOuter = Object.values(inTransitOuter).reduce((a, b) => a + b, 0);
-                    const realToComprarOuter = item.type === 'SOLE' && item.sizeShortages
-                      ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
-                        const req = (item.sizeShortages as any)[grade].required;
-                        const stk = realGradeStockOuter[grade] || 0;
-                        const transit = inTransitOuter[grade] || 0;
-                        return s + Math.max(0, req - stk - transit);
-                      }, 0)
-                      : Math.max(0, quickShortage - totalInTransitOuter);
-
-                    // If the group is collapsed, only render the header for the first item
-                    if (isGroupCollapsed && !isFirst) return null;
-
-                    return (
-                      <React.Fragment key={item.id}>
-                        {groupHeader}
-                        {isGroupCollapsed ? null : <>
-                          <div
-                            className={`rounded-[2rem] border-2 transition-all overflow-hidden ${isDarkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-white shadow-sm'} ${isExpanded ? 'border-indigo-300 dark:border-indigo-700' : ''}`}
-                          >
-                            {/* ── Acordeão Header (clicável) ── */}
-                            <button
-                              type="button"
-                              onClick={() => toggleNeedExpand(item.id)}
-                              title={isExpanded ? `Recolher detalhes de ${item.name}` : `Expandir detalhes de ${item.name}`}
-                              aria-label={isExpanded ? `Recolher detalhes de ${item.name}` : `Expandir detalhes de ${item.name}`}
-                              className={`w-full flex flex-col gap-3 px-5 py-4 text-left transition-colors ${isExpanded ? isDarkMode ? 'bg-indigo-950/30' : 'bg-indigo-50/60' : ''}`}
-                            >
-                              {/* ── Linha 1: checkbox + ícone + tipo + nome + chevron ── */}
-                              <div className="flex items-center gap-3">
-                                {item.type === 'SOLE' && quickShortage > 0 && !existingReqOuter && (
-                                  <span
-                                    role="checkbox"
-                                    aria-checked={selectedSoleNeedIds.has(item.id)}
-                                    tabIndex={0}
-                                    onClick={(e) => { e.stopPropagation(); toggleSoleNeedSelection(item.id); }}
-                                    onKeyDown={(e) => { if (e.key === ' ') { e.stopPropagation(); toggleSoleNeedSelection(item.id); } }}
-                                    title="Selecionar para compra agrupada"
-                                    className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition-colors ${selectedSoleNeedIds.has(item.id)
-                                      ? 'bg-indigo-600 border-indigo-600 text-white'
-                                      : isDarkMode ? 'border-slate-700 hover:border-indigo-500' : 'border-slate-300 hover:border-indigo-400'
-                                      }`}
-                                  >
-                                    {selectedSoleNeedIds.has(item.id) && <CheckCircle2 size={14} strokeWidth={3} />}
-                                  </span>
-                                )}
-                                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${item.type === 'SOLE' ? 'bg-indigo-100 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'}`}>
-                                  {item.type === 'SOLE' ? <Layers size={18} /> : <Package size={18} />}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className={`text-[10px] font-black uppercase tracking-widest leading-none mb-1 ${item.type === 'SOLE' ? 'text-indigo-500' : 'text-amber-600 dark:text-amber-400'}`}>
-                                    {item.type === 'SOLE' ? 'Solado' : 'Material'}
-                                  </p>
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    {quickShortage > 0 && (
-                                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse shrink-0" />
-                                    )}
-                                    <p className={`text-sm font-black uppercase leading-tight ${quickShortage > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-900 dark:text-white'}`}>
-                                      {item.type === 'SOLE' ? item.name.split(' - ')[0] : item.name}
-                                    </p>
-                                    {item.type === 'SOLE' && (() => {
-                                      const colorName = item.name.split(' - ').slice(1).join(' - ');
-                                      return colorName ? (
-                                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-indigo-950/40 border-indigo-800 text-indigo-300' : 'bg-indigo-50 border-indigo-200 text-indigo-700'}`}>
-                                          {colorName}
-                                        </span>
-                                      ) : null;
-                                    })()}
-                                  </div>
-                                </div>
-                                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 transition-transform duration-200 ${isExpanded ? 'rotate-180 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-500'}`}>
-                                  <ChevronDown size={16} strokeWidth={2.5} />
-                                </div>
-                              </div>
-
-                              {/* ── Linha 3: referência de mapas/pedidos + alerta falta ── */}
-                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                                <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">
-                                  {formatContributingSources(item.contributingLots, item.contributingOrders)}
-                                </span>
-                                {item.mappingWarning && (
-                                  <span
-                                    role="button"
-                                    tabIndex={0}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setMappingDiagnosticCopied(false);
-                                      setMappingWarningModal({ itemName: item.name, reason: item.mappingWarning!, diagnostic: item.mappingDiagnostic || '' });
-                                    }}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter' || e.key === ' ') {
-                                        e.stopPropagation();
-                                        setMappingDiagnosticCopied(false);
-                                        setMappingWarningModal({ itemName: item.name, reason: item.mappingWarning!, diagnostic: item.mappingDiagnostic || '' });
-                                      }
-                                    }}
-                                    title="Clique para ver o motivo"
-                                    className="text-[10px] font-black text-amber-500 uppercase tracking-widest underline decoration-dotted cursor-pointer hover:text-amber-600"
-                                  >
-                                    ⚠ Cruzamento desatualizado
-                                  </span>
-                                )}
-                              </div>
-                            </button>
-
-                            {/* ── Linha 4: quantidade + botão de ação (FORA do button para evitar button-in-button) ── */}
-                            <div
-                              className={`flex items-center justify-between px-5 pb-4 pt-1 border-t border-slate-100 dark:border-slate-800 cursor-pointer`}
-                              onClick={() => toggleNeedExpand(item.id)}
-                            >
-                              <div>
-                                <p className="text-[9px] font-black text-slate-500 dark:text-slate-400 uppercase tracking-widest leading-none mb-0.5">Falta</p>
-                                <p className="text-2xl font-black text-rose-600 dark:text-rose-400 leading-none">
-                                  {fmtQty(quickShortage)} <span className="text-xs font-bold text-slate-400">{item.unit}</span>
-                                </p>
-                              </div>
-                              {existingReqOuter ? (
-                                <span className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
-                                  <CheckCircle2 size={12} strokeWidth={3} /> Solicitado
-                                </span>
-                              ) : totalInTransitOuter > 0 && realToComprarOuter === 0 ? (
-                                <span className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-amber-950/30 border-amber-700/50 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
-                                  <ShoppingCart size={12} /> Em Trânsito
-                                </span>
-                              ) : quickShortage > 0 ? (
-                                <button
-                                  type="button"
-                                  disabled={requestingId === item.id}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (!onRequestPurchase || requestingId) return;
-                                    if (item.type === 'SOLE') {
-                                      setSelectedSoleNeed(item);
-                                      setExtraSoleQty({});
-                                      setIsSoleOrderModalOpen(true);
-                                    }
-                                  }}
-                                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${requestingId === item.id
-                                    ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-wait'
-                                    : 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30'
-                                    }`}
-                                >
-                                  {requestingId === item.id ? <Loader2 size={12} className="animate-spin" /> : <ArrowUpRight size={12} strokeWidth={3} />}
-                                  Solicitar
-                                </button>
-                              ) : null}
-                            </div>
-
-                            {/* ── Conteúdo expansível ── */}
-                            {isExpanded && (
-                              <div className={`px-6 pb-6 pt-2 flex flex-col gap-4 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                                {/* Badges */}
-                                <div className="flex flex-wrap items-center gap-2">
-                                  {item.type !== 'SOLE' && (
-                                    <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-slate-200 text-slate-600'}`}>
-                                      Estoque: {fmtQty(item.stock)} {item.unit}
-                                    </span>
-                                  )}
-                                  {item.type === 'SOLE' && (() => {
-                                    const hasSoleShortage = item.sizeShortages
-                                      ? Object.values(item.sizeShortages).some((s: any) => s.required > s.stock)
-                                      : item.required > item.stock;
-                                    return (
-                                      <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg border ${hasSoleShortage
-                                        ? 'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800'
-                                        : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800'
-                                        }`}>
-                                        {hasSoleShortage ? '⚠ Falta Solado' : '✓ Solado OK'}
-                                      </span>
-                                    );
-                                  })()}
-                                  <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1.5 rounded-lg border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
-                                    {formatContributingSources(item.contributingLots, item.contributingOrders)}
-                                  </span>
-                                </div>
-
-                                {/* Tabela de grades de solado */}
-                                {item.type === 'SOLE' && item.sizeShortages && (() => {
-                                  // Total necessário = soma de todos os tamanhos do mapa para este molde
-                                  const totReq = Object.values(item.sizeShortages as any)
-                                    .reduce((s: number, v: any) => s + v.required, 0) as number;
-
-                                  // Estoque EXCLUSIVO por moldId + colorId (sem fallback para outras cores)
-                                  const gradeStock: Record<string, number> = {};
-                                  soleStock
-                                    .filter(s => s.moldId === item.moldId && String(s.colorId || '').trim() === String(item.colorId || '').trim())
-                                    .forEach(e => {
-                                      Object.entries(e.stock).forEach(([k, v]) => {
-                                        const key = String(k).trim();
-                                        if (key === 'pesagem' || key === 'total') return;
-                                        gradeStock[key] = (gradeStock[key] || 0) + (Number(v) || 0);
-                                      });
-                                    });
-
-                                  const totEst = Object.values(gradeStock).reduce((s, v) => s + v, 0);
-                                  const totFalta = Math.max(0, totReq - totEst);
-
-                                  // Unir chaves do estoque com as chaves de necessidade do PCP
-                                  const allSizes = new Set([
-                                    ...Object.keys(gradeStock),
-                                    ...Object.keys(item.sizeShortages || {})
-                                  ]);
-                                  const gradeKeys = Array.from(allSizes).sort((a, b) => {
-                                    const numA = parseFloat(a);
-                                    const numB = parseFloat(b);
-                                    if (isNaN(numA) || isNaN(numB)) return a.localeCompare(b);
-                                    return numA - numB;
-                                  });
-
-                                  return (
-                                    <div className={`rounded-2xl overflow-hidden border ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
-                                      {/* Header - 4 Colunas para alinhar com totais */}
-                                      <div className={`grid grid-cols-4 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
-                                        <span>Grade Sola</span>
-                                        <span className="text-center">Estoque</span>
-                                        <span className="text-center">Necess.</span>
-                                        <span className="text-right">Falta</span>
-                                      </div>
-                                      {gradeKeys.length > 0 ? gradeKeys.map(grade => {
-                                        const stock = gradeStock[grade] || 0;
-                                        const req = item.sizeShortages?.[grade]?.required || 0;
-                                        const shortage = Math.max(0, req - stock);
-
-                                        return (
-                                          <div key={grade} className={`grid grid-cols-4 px-4 py-3 border-t text-[13px] font-black ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
-                                            <span className={isDarkMode ? 'text-white' : 'text-slate-800'}>{grade}</span>
-                                            <span className={`text-center ${stock > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{stock}</span>
-                                            <span className="text-center text-slate-400">{req}</span>
-                                            <span className={`text-right ${shortage > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
-                                              {shortage > 0 ? `-${shortage}` : '✓'}
-                                            </span>
-                                          </div>
-                                        );
-                                      }) : (
-                                        <div className={`px-4 py-3 border-t text-[11px] text-slate-400 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
-                                          Sem grade de sola cadastrada
-                                        </div>
-                                      )}
-                                      {/* Linha de totais */}
-                                      <div className={`grid grid-cols-4 px-4 py-3 border-t-2 text-[12px] font-black ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
-                                        <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Total</span>
-                                        <span className={`text-center font-black ${totEst > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{totEst}</span>
-                                        <span className="text-center text-slate-500">{totReq}</span>
-                                        <span className={`text-right font-black text-[14px] ${totFalta > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
-                                          {totFalta > 0 ? `-${totFalta}` : '✓'}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  );
-                                })()}
-
-                                {/* Tabela de detalhamento por mapa/pedido — só para MATERIAL */}
-                                {item.type === 'MATERIAL' && item.sourceBreakdown && Object.keys(item.sourceBreakdown).length > 0 && (() => {
-                                  const sources = Object.values(item.sourceBreakdown);
-                                  const totalPairs = sources.reduce((s, src) => s + src.pairs, 0);
-                                  return (
-                                    <div className={`rounded-2xl overflow-hidden border ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
-                                      <div className={`grid grid-cols-4 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'}`}>
-                                        <span>Origem</span>
-                                        <span className="text-center">Pares</span>
-                                        <span className="text-center">Consumo/Par</span>
-                                        <span className="text-right">Subtotal</span>
-                                      </div>
-                                      {sources.map(src => {
-                                        const perUnit = src.pairs > 0 ? src.increment / src.pairs : 0;
-                                        return (
-                                          <div key={`${src.sourceType}_${src.label}`} className={`grid grid-cols-4 px-4 py-3 border-t text-[12px] font-black ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
-                                            <span className={isDarkMode ? 'text-white' : 'text-slate-800'}>{src.sourceType === 'LOT' ? 'Mapa' : 'Pedido'} {src.label}</span>
-                                            <span className="text-center text-slate-400">{fmtQty(src.pairs)}</span>
-                                            <span className="text-center text-slate-400">{perUnit.toLocaleString('pt-BR', { minimumFractionDigits: 4 })}</span>
-                                            <span className={isDarkMode ? 'text-right text-white' : 'text-right text-slate-800'}>{fmtQty(src.increment)} {item.unit}</span>
-                                          </div>
-                                        );
-                                      })}
-                                      <div className={`grid grid-cols-4 px-4 py-3 border-t-2 text-[12px] font-black ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-200 bg-slate-50'}`}>
-                                        <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Total</span>
-                                        <span className="text-center text-slate-500">{fmtQty(totalPairs)}</span>
-                                        <span />
-                                        <span className={`text-right text-[14px] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{fmtQty(item.required)} {item.unit}</span>
-                                      </div>
-                                    </div>
-                                  );
-                                })()}
-
-                                {/* Rodapé: a comprar + botão solicitar */}
-                                {(() => {
-                                  const existingReq = purchaseRequests.find(r => r.requestKey === item.id && r.status !== 'RECEIVED');
-
-                                  // Estoque real EXCLUSIVO por moldId + colorId (sem fallback para outras cores)
-                                  let realGradeStock: Record<string, number> = {};
-                                  if (item.type === 'SOLE') {
-                                    soleStock
-                                      .filter(s => s.moldId === item.moldId && String(s.colorId || '').trim() === String(item.colorId || '').trim())
-                                      .forEach(e => {
-                                        Object.entries(e.stock).forEach(([k, v]) => {
-                                          const key = String(k).trim();
-                                          if (key === 'pesagem' || key === 'total') return;
-                                          realGradeStock[key] = (realGradeStock[key] || 0) + (Number(v) || 0);
-                                        });
-                                      });
-                                  }
-
-                                  // Falta real usando estoque do soleStock (corrige o bug dos 60 → 7)
-                                  const totalFaltaSole = item.type === 'SOLE' && item.sizeShortages
-                                    ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
-                                      const req = (item.sizeShortages as any)[grade].required;
-                                      const stock = realGradeStock[grade] || 0;
-                                      return s + Math.max(0, req - stock);
-                                    }, 0)
-                                    : Math.max(0, item.required - item.stock);
-
-                                  const displayQty = item.type === 'SOLE' ? totalFaltaSole : item.required;
-                                  const displayLabel = item.type === 'SOLE' ? 'A Comprar' : 'Necessário';
-
-                                  // Verifica compras de solado pendentes para este molde (qualquer cor ou cor específica)
-                                  const inTransitQtys: Record<string, number> = {};
-                                  const inTransitByColor: Record<string, { colorName: string; qtys: Record<string, number> }> = {};
-                                  if (item.type === 'SOLE') {
-                                    purchases
-                                      .filter(p => {
-                                        if (p.registerAsReceived === true) return false;
-                                        // Aceita qualquer tipo de compra que tenha itens de solado
-                                        const si: any[] = (p as any).soleItems || (p as any).items || [];
-                                        return si.some((s: any) => s.moldId);
-                                      })
-                                      .forEach(p => {
-                                        const allItems: any[] = (p as any).soleItems || (p as any).items || [];
-                                        allItems
-                                          .filter((si: any) => {
-                                            if (!si.moldId) return false;
-                                            if (String(si.moldId).trim() !== String(item.moldId).trim()) return false;
-                                            if (!item.colorId) return true;
-                                            if (si.colorId && String(si.colorId).trim() === String(item.colorId).trim()) return true;
-                                            const needColor = item.name?.split(' - ')[1]?.toUpperCase().trim() || '';
-                                            if (needColor && si.colorName?.toUpperCase().trim() === needColor) return true;
-                                            return false;
-                                          })
-                                          .forEach((si: any) => {
-                                            const colorKey = si.colorName || si.colorId || 'Padrão';
-                                            if (!inTransitByColor[colorKey]) {
-                                              inTransitByColor[colorKey] = { colorName: colorKey, qtys: {} };
-                                            }
-                                            Object.entries(si.quantities || {}).forEach(([size, qty]: [string, any]) => {
-                                              const qtyNum = Number(qty) || 0;
-                                              if (qtyNum > 0) {
-                                                inTransitQtys[size] = (inTransitQtys[size] || 0) + qtyNum;
-                                                inTransitByColor[colorKey].qtys[size] = (inTransitByColor[colorKey].qtys[size] || 0) + qtyNum;
-                                              }
-                                            });
-                                          });
-                                      });
-                                  }
-                                  const totalInTransit = Object.values(inTransitQtys).reduce((a, b) => a + b, 0);
-
-                                  const STATUS_LABEL: Record<string, string> = {
-                                    PENDING: 'Solicitado',
-                                    IN_PROGRESS: 'Em Andamento',
-                                    ORDERED: 'Pedido Feito',
-                                  };
-                                  const STATUS_COLOR: Record<string, string> = {
-                                    PENDING: 'bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-700',
-                                    IN_PROGRESS: 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-700',
-                                    ORDERED: 'bg-indigo-100 text-indigo-700 border-indigo-300 dark:bg-indigo-900/30 dark:text-indigo-400 dark:border-indigo-700',
-                                  };
-
-                                  // Cruzamento: saldo real a comprar descontando o que está em trânsito
-                                  const realToComprar = item.type === 'SOLE' && item.sizeShortages
-                                    ? Object.keys(item.sizeShortages).reduce((s: number, grade: string) => {
-                                      const req = (item.sizeShortages as any)[grade].required;
-                                      const stock = realGradeStock[grade] || 0;
-                                      const transit = inTransitQtys[grade] || 0;
-                                      return s + Math.max(0, req - stock - transit);
-                                    }, 0)
-                                    : Math.max(0, displayQty - totalInTransit);
-
-                                  return (
-                                    <div className={`pt-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-
-                                      {/* Tabela inline de cruzamento — só para SOLE com trânsito */}
-                                      {totalInTransit > 0 && item.type === 'SOLE' && item.sizeShortages && (
-                                        <div className={`mb-3 rounded-xl overflow-hidden border ${isDarkMode ? 'border-amber-800/50 bg-amber-950/20' : 'border-amber-200 bg-amber-50/60'}`}>
-                                          {/* Header aviso */}
-                                          <div className={`flex items-center gap-2 px-3 py-2 border-b ${isDarkMode ? 'border-amber-800/40' : 'border-amber-200'}`}>
-                                            <ShoppingCart size={12} className="text-amber-600 dark:text-amber-400 shrink-0" />
-                                            <span className="text-[9px] font-black uppercase tracking-widest text-amber-700 dark:text-amber-400">
-                                              {totalInTransit} par(es) em trânsito — aguardando recebimento
-                                            </span>
-                                            <button
-                                              type="button"
-                                              onClick={() => setInTransitPopupItem({ item, inTransitQtys, inTransitByColor, realGradeStock, totalFaltaSole, totalInTransit })}
-                                              className="ml-auto text-[9px] font-black text-amber-600 dark:text-amber-400 underline hover:no-underline"
-                                              title="Ver detalhes"
-                                            >
-                                              Detalhes
-                                            </button>
-                                          </div>
-                                          {/* Mini tabela cruzada */}
-                                          <div className={`grid grid-cols-4 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                                            <span>Grade</span>
-                                            <span className="text-center text-rose-500">Falta</span>
-                                            <span className="text-center text-amber-500">Trânsito</span>
-                                            <span className="text-right text-emerald-500">Saldo</span>
-                                          </div>
-                                          {Object.keys(item.sizeShortages).sort((a, b) => parseFloat(a) - parseFloat(b)).map(grade => {
-                                            const req = (item.sizeShortages as any)[grade].required;
-                                            const stock = realGradeStock[grade] || 0;
-                                            const falta = Math.max(0, req - stock);
-                                            const transit = inTransitQtys[grade] || 0;
-                                            const saldo = Math.max(0, falta - transit);
-                                            if (falta === 0 && transit === 0) return null;
-                                            return (
-                                              <div key={grade} className={`grid grid-cols-4 px-3 py-2 border-t text-xs font-black ${isDarkMode ? 'border-amber-900/40 bg-slate-900/40' : 'border-amber-100 bg-white/60'}`}>
-                                                <span className={isDarkMode ? 'text-white' : 'text-slate-700'}>{grade}</span>
-                                                <span className={`text-center ${falta > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{falta > 0 ? `-${falta}` : '✓'}</span>
-                                                <span className={`text-center ${transit > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>{transit > 0 ? `+${transit}` : '—'}</span>
-                                                <span className={`text-right ${saldo > 0 ? 'text-rose-600 font-black' : 'text-emerald-500'}`}>{saldo > 0 ? `-${saldo}` : '✓'}</span>
-                                              </div>
-                                            );
-                                          })}
-                                          {realToComprar === 0 && (
-                                            <div className={`px-3 py-2 border-t text-[9px] font-black text-emerald-600 dark:text-emerald-400 ${isDarkMode ? 'border-amber-900/40 bg-emerald-950/20' : 'border-amber-100 bg-emerald-50/60'}`}>
-                                              ✓ As compras em trânsito cobrem toda a necessidade. Aguarde o recebimento.
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-
-                                      <div className="flex items-center justify-between">
-                                        <div>
-                                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-0.5">
-                                            {totalInTransit > 0 ? 'Saldo Real a Comprar' : displayLabel}
-                                          </p>
-                                          <p className={`text-2xl font-black leading-none ${realToComprar > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
-                                            {fmtQty(totalInTransit > 0 ? realToComprar : displayQty)}
-                                            <span className="text-[11px] text-slate-400 ml-1">{item.unit}</span>
-                                          </p>
-                                        </div>
-                                        {existingReq ? (
-                                          <span className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest border ${STATUS_COLOR[existingReq.status] || ''}`}>
-                                            <CheckCircle2 size={13} strokeWidth={3} />
-                                            {STATUS_LABEL[existingReq.status] || existingReq.status}
-                                          </span>
-                                        ) : totalInTransit > 0 && realToComprar === 0 ? (
-                                          <div className="flex flex-col items-end gap-1">
-                                            <span className={`flex items-center gap-1.5 px-4 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-amber-950/30 border-amber-700/50 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
-                                              <ShoppingCart size={12} />
-                                              Em Trânsito
-                                            </span>
-                                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Aguarde o recebimento</span>
-                                          </div>
-                                        ) : (
-                                          <button
-                                            type="button"
-                                            disabled={requestingId === item.id}
-                                            onClick={async () => {
-                                              if (!onRequestPurchase || requestingId) return;
-                                              if (item.type === 'SOLE') {
-                                                setSelectedSoleNeed(item);
-                                                setExtraSoleQty({});
-                                                setIsSoleOrderModalOpen(true);
-                                                return;
-                                              }
-                                              setRequestingId(item.id);
-                                              try {
-                                                await onRequestPurchase({
-                                                  requestKey: item.id,
-                                                  type: 'MATERIAL',
-                                                  name: item.name,
-                                                  unit: item.unit,
-                                                  requiredQty: Math.max(0, item.required - item.stock),
-                                                  status: 'PENDING',
-                                                  requestedAt: Date.now(),
-                                                  requestedBy: userName,
-                                                  contributingLots: item.contributingLots,
-                                                  materialId: item.materialId,
-                                                });
-                                                toast.show(`Solicitação de ${item.name} enviada com sucesso!`);
-                                              } catch (err) {
-                                                toast.show('Erro ao enviar solicitação.');
-                                              } finally {
-                                                setRequestingId(null);
-                                              }
-                                            }}
-                                            className={`px-5 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg transition-all flex items-center gap-2 ${requestingId === item.id
-                                              ? 'bg-slate-200 text-slate-400 cursor-wait'
-                                              : 'bg-indigo-600 text-white shadow-indigo-500/20 hover:scale-105 active:scale-95'
-                                              }`}
-                                          >
-                                            {requestingId === item.id ? <Loader2 size={14} className="animate-spin" /> : <ArrowUpRight size={14} strokeWidth={3} />}
-                                            {requestingId === item.id ? 'Enviando...' : 'Solicitar'}
-                                          </button>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-                            )}
-                          </div>
-                        </>}
-                      </React.Fragment>
                     );
                   })}
                 </div>
@@ -11327,6 +10849,253 @@ export default function PCPView({
           </div>
         </div>
       )}
+
+      {openNeedsGroupKey && (() => {
+        const groupItems = needsGroupsFlat.filter(i => i._gk === openNeedsGroupKey);
+        if (groupItems.length === 0) return null;
+        const isSoleGroup = groupItems[0].type === 'SOLE';
+        const gBaseName = groupItems[0]._gBaseName;
+        const totalShortage = groupItems[0]._gNetShortage;
+        const totalInTransit = groupItems[0]._gInTransit;
+        const fmtQty = (unit: string, val: number) => /m[²2]/i.test(unit || '') ? Number(val).toFixed(2) : String(Math.round(val));
+
+        // Molde/fornecedor do grupo aberto — usado tanto pra rotular o botão de pedido único
+        // quanto pra descobrir outros grupos SOLE do mesmo fornecedor (ver groupSupplierId).
+        const groupMoldId = groupItems[0].moldId;
+        const groupSupplierId = isSoleGroup ? productionConfigs.find(c => c.id === groupMoldId)?.metadata?.supplierId : undefined;
+        const supplierName = groupSupplierId ? people.find(p => p.id === groupSupplierId)?.name : undefined;
+
+        // Outros grupos SOLE (moldes diferentes) do mesmo fornecedor, com falta real (já
+        // descontando trânsito) — permite formular um único pedido cobrindo vários moldes de
+        // uma vez quando eles vêm do mesmo fornecedor.
+        const sameSupplierGroups = groupSupplierId
+          ? Array.from(new Set(needsGroupsFlat.filter(i => i.type === 'SOLE' && i._gk !== openNeedsGroupKey).map(i => i._gk)))
+            .map(gk => needsGroupsFlat.filter(i => i._gk === gk))
+            .filter(g => g.length > 0 && g[0]._gNetShortage > 0 && productionConfigs.find(c => c.id === g[0].moldId)?.metadata?.supplierId === groupSupplierId)
+          : [];
+
+        const buildSolePurchaseItems = (needs: typeof groupItems) => needs.map(need => {
+          const net = computeSoleTransitAwareShortage(need);
+          const inTransitByGrade = net.inTransitByGrade || {};
+          const realGradeStock = net.realGradeStock || {};
+          const initialGrid: Record<string, number> = {};
+          Object.entries(need.sizeShortages || {}).forEach(([grade, s]: any) => {
+            const gross = Math.max(0, (s.required || 0) - (realGradeStock[grade] || 0));
+            const transit = Math.min(inTransitByGrade[grade] || 0, gross);
+            const falta = gross - transit;
+            if (falta > 0) initialGrid[grade] = falta;
+          });
+          return { moldId: need.moldId, colorId: need.colorId, initialGrid };
+        }).filter(it => Object.keys(it.initialGrid).length > 0);
+
+        const handleFormularPedidoGrupo = () => {
+          const items = buildSolePurchaseItems(groupItems);
+          if (items.length === 0) {
+            toast.show('Nenhuma falta encontrada neste grupo (considerando o que já está em trânsito).');
+            return;
+          }
+          if (onNavigate) {
+            onNavigate(ViewType.PRODUCTION_SOLE_PURCHASE, {
+              items,
+              description: `Compra direta via PCP — grupo ${gBaseName} (${items.length} variação${items.length > 1 ? 'ões' : ''})`
+            });
+          }
+          setOpenNeedsGroupKey(null);
+        };
+
+        const handleFormularPedidoMesmoFornecedor = () => {
+          const allNeeds = [...groupItems, ...sameSupplierGroups.flat()];
+          const items = buildSolePurchaseItems(allNeeds);
+          if (items.length === 0) {
+            toast.show('Nenhuma falta encontrada com este fornecedor (considerando o que já está em trânsito).');
+            return;
+          }
+          if (onNavigate) {
+            onNavigate(ViewType.PRODUCTION_SOLE_PURCHASE, {
+              items,
+              description: `Compra direta via PCP — ${supplierName || 'mesmo fornecedor'} (${items.length} variação${items.length > 1 ? 'ões' : ''} de ${1 + sameSupplierGroups.length} moldes)`
+            });
+          }
+          setOpenNeedsGroupKey(null);
+        };
+
+        return (
+          <div className="fixed inset-0 z-[190] flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setOpenNeedsGroupKey(null)} />
+            <div className={`relative w-full max-w-lg max-h-[85vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+              {/* Header */}
+              <div className={`px-5 py-4 border-b shrink-0 ${isDarkMode ? 'border-slate-800 bg-slate-800/60' : 'border-slate-100 bg-slate-50'}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${isSoleGroup ? 'bg-indigo-100 text-indigo-500 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'}`}>
+                      {isSoleGroup ? <Layers size={16} /> : <Package size={16} />}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className={`text-sm font-black uppercase tracking-wider truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{gBaseName}</h3>
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                        {groupItems.length} {groupItems.length === 1 ? (isSoleGroup ? 'variação' : 'cor') : (isSoleGroup ? 'variações' : 'cores')}
+                        {' · '}Falta real {totalShortage > 0 ? `${fmtQty(groupItems[0].unit, totalShortage)} ${groupItems[0].unit}` : 'zero'}
+                        {totalInTransit > 0 && <span className="text-amber-500"> ({Math.round(totalInTransit)} já em trânsito)</span>}
+                      </p>
+                    </div>
+                  </div>
+                  <button type="button" title="Fechar" aria-label="Fechar popup" onClick={() => setOpenNeedsGroupKey(null)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 transition-all shrink-0">
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 flex flex-col gap-3 overflow-y-auto">
+                {totalShortage > 0 && (
+                  <div className={`p-3 rounded-xl text-xs font-bold ${isDarkMode ? 'bg-rose-950/30 text-rose-400 border border-rose-800' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                    Este grupo tem falta em estoque. Formule um pedido cobrindo todas as faltas abaixo, ou solicite item a item.
+                  </div>
+                )}
+
+                {groupItems.map(item => {
+                  const existingReq = purchaseRequests.find(r => r.requestKey === item.id && r.status !== 'RECEIVED');
+                  const net = computeSoleTransitAwareShortage(item);
+                  const realGradeStock = net.realGradeStock || {};
+                  const inTransitByGrade = net.inTransitByGrade || {};
+                  const itemShortage = net.totalNet;
+                  const colorName = item.type === 'SOLE' ? item.name.split(' - ').slice(1).join(' - ') : '';
+
+                  return (
+                    <div key={item.id} className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-slate-50'}`}>
+                      <div className="flex items-center justify-between gap-2 px-4 py-3">
+                        <div className="min-w-0">
+                          {colorName && (
+                            <p className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-indigo-400' : 'text-indigo-600'}`}>{colorName}</p>
+                          )}
+                          <p className={`text-[11px] font-bold uppercase tracking-widest ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                            {formatContributingSources(item.contributingLots, item.contributingOrders)}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="text-[8px] font-black uppercase text-slate-400">Falta Real</p>
+                          <p className={`text-base font-black leading-none ${itemShortage > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>
+                            {fmtQty(item.unit, itemShortage)} <span className="text-[9px] text-slate-400">{item.unit}</span>
+                          </p>
+                          {net.totalInTransit > 0 && (
+                            <p className="text-[8px] font-bold text-amber-500 mt-0.5">{Math.round(net.totalInTransit)} em trânsito</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {item.type === 'SOLE' && item.sizeShortages && (
+                        <div className={`grid grid-cols-5 px-4 py-2 border-t text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'border-slate-800 bg-slate-900 text-slate-500' : 'border-slate-200 bg-white text-slate-400'}`}>
+                          <span>Grade</span>
+                          <span className="text-center">Estoque</span>
+                          <span className="text-center">Necess.</span>
+                          <span className="text-center">Trânsito</span>
+                          <span className="text-right">Falta</span>
+                        </div>
+                      )}
+                      {item.type === 'SOLE' && item.sizeShortages && Object.keys(item.sizeShortages).sort((a, b) => parseFloat(a) - parseFloat(b)).map(grade => {
+                        const stock = realGradeStock[grade] || 0;
+                        const req = (item.sizeShortages as any)[grade].required;
+                        const gross = Math.max(0, req - stock);
+                        const transit = Math.min(inTransitByGrade[grade] || 0, gross);
+                        const falta = gross - transit;
+                        return (
+                          <div key={grade} className={`grid grid-cols-5 px-4 py-1.5 border-t text-[11px] font-black ${isDarkMode ? 'border-slate-800/60' : 'border-slate-100'}`}>
+                            <span className={isDarkMode ? 'text-white' : 'text-slate-700'}>{grade}</span>
+                            <span className={`text-center ${stock > 0 ? 'text-emerald-500' : 'text-slate-300'}`}>{stock}</span>
+                            <span className="text-center text-slate-400">{req}</span>
+                            <span className={`text-center ${transit > 0 ? 'text-amber-500' : 'text-slate-300'}`}>{transit > 0 ? `+${transit}` : '—'}</span>
+                            <span className={`text-right ${falta > 0 ? 'text-rose-600' : 'text-emerald-500'}`}>{falta > 0 ? `-${falta}` : '✓'}</span>
+                          </div>
+                        );
+                      })}
+
+                      <div className={`flex items-center justify-between px-4 py-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                        {item.type !== 'SOLE' && (
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Estoque: {fmtQty(item.unit, item.stock)} {item.unit}</span>
+                        )}
+                        {existingReq ? (
+                          <span className={`ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
+                            <CheckCircle2 size={11} strokeWidth={3} /> Solicitado
+                          </span>
+                        ) : itemShortage > 0 ? (
+                          <button
+                            type="button"
+                            disabled={requestingId === item.id}
+                            onClick={async () => {
+                              if (!onRequestPurchase || requestingId) return;
+                              if (item.type === 'SOLE') {
+                                setSelectedSoleNeed(item);
+                                setExtraSoleQty({});
+                                setIsSoleOrderModalOpen(true);
+                                setOpenNeedsGroupKey(null);
+                                return;
+                              }
+                              setRequestingId(item.id);
+                              try {
+                                await onRequestPurchase({
+                                  requestKey: item.id,
+                                  type: 'MATERIAL',
+                                  name: item.name,
+                                  unit: item.unit,
+                                  requiredQty: Math.max(0, item.required - item.stock),
+                                  status: 'PENDING',
+                                  requestedAt: Date.now(),
+                                  requestedBy: userName,
+                                  contributingLots: item.contributingLots,
+                                  materialId: item.materialId,
+                                });
+                                toast.show(`Solicitação de ${item.name} enviada com sucesso!`);
+                              } catch (err) {
+                                toast.show('Erro ao enviar solicitação.');
+                              } finally {
+                                setRequestingId(null);
+                              }
+                            }}
+                            className={`ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${requestingId === item.id
+                              ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-wait'
+                              : 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30'
+                              }`}
+                          >
+                            {requestingId === item.id ? <Loader2 size={11} className="animate-spin" /> : <ArrowUpRight size={11} strokeWidth={3} />}
+                            Solicitar
+                          </button>
+                        ) : (
+                          <span className="ml-auto text-[9px] font-black text-emerald-500 uppercase tracking-widest">✓ Disponível</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Footer: Formular Pedido (grupo) — e, ao final, a opção de juntar outros
+                  moldes do mesmo fornecedor num único pedido. */}
+              {isSoleGroup && totalShortage > 0 && (
+                <div className={`px-5 py-4 border-t shrink-0 flex flex-col gap-2 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                  <button
+                    type="button"
+                    onClick={handleFormularPedidoGrupo}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest bg-emerald-600 text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 active:scale-[0.98] transition-all"
+                  >
+                    <ShoppingCart size={14} />
+                    Formular Pedido (todas as faltas do grupo)
+                  </button>
+                  {sameSupplierGroups.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleFormularPedidoMesmoFornecedor}
+                      className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest border-2 transition-all active:scale-[0.98] ${isDarkMode ? 'border-indigo-700 text-indigo-400 hover:bg-indigo-950/30' : 'border-indigo-200 text-indigo-600 hover:bg-indigo-50'}`}
+                    >
+                      <Factory size={14} />
+                      Formular com {supplierName || 'mesmo fornecedor'} ({1 + sameSupplierGroups.length} moldes)
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Modal para Pedido de Solas com Grade */}
       <Modal

@@ -139,8 +139,14 @@ export async function registerBlingDevolucao(db: firestore.Firestore, uid: strin
   const notesRef = counterRef(db, uid);
 
   await db.runTransaction(async (tx) => {
+    // Firestore exige TODAS as leituras da transação antes de qualquer escrita — por isso os
+    // dois tx.get() (produto e contador de notas) rodam aqui em cima, antes dos tx.set()
+    // abaixo. Tinha um tx.get(notesRef) depois dos sets do produto/devolução que disparava
+    // "Firestore transactions require all reads to be executed before all writes.".
     const productSnap = await tx.get(productRef);
     if (!productSnap.exists) throw new Error("Produto não encontrado.");
+    const notesSnap = await tx.get(notesRef);
+
     const product = productSnap.data() as any;
     const variIdx = (product.variations || []).findIndex((v: any) => v.id === input.variationId);
     if (variIdx < 0) throw new Error("Variação não encontrada.");
@@ -163,7 +169,6 @@ export async function registerBlingDevolucao(db: firestore.Firestore, uid: strin
       createdAt: Date.now(),
     });
 
-    const notesSnap = await tx.get(notesRef);
     if (notesSnap.exists) {
       const current = notesSnap.data() as BlingNotesCounterData;
       const newTotal = current.total + input.quantidade;

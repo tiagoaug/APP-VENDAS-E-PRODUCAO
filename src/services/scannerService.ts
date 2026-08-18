@@ -2,13 +2,13 @@
 import { Capacitor } from '@capacitor/core';
 import { toast } from '../utils/toast';
 import { firebaseService } from './firebaseService';
-import type { Product, ProductionLot } from '../types';
+import type { Product, ProductionLot, Sale } from '../types';
 
 export const SCAN_HISTORY_KEY = 'dashboard_scan_history';
 
 export type ScanHistoryEntry = {
   id: string;
-  kind: 'PRODUCT' | 'LOT' | 'SOLE' | 'OS';
+  kind: 'PRODUCT' | 'LOT' | 'SOLE' | 'OS' | 'SALE';
   label: string;
   sublabel?: string;
   sectorId?: string;
@@ -20,6 +20,9 @@ export type ScanNavigationTarget = {
   lotId?: string;
   orderId?: string;
   itemIdx?: string | number;
+  // Etiqueta gerada a partir de uma Venda (sem Mapa de produção) — ver
+  // handleOpenSaleLabels em SalesView.tsx e o marcador "SALE" no QR (parseScanResult).
+  saleId?: string;
   // Identificador único por leitura — usado para forçar o PCP a reprocessar o
   // foco no pedido escaneado mesmo quando o mesmo Mapa/pedido já está aberto.
   scanNonce?: number;
@@ -116,11 +119,15 @@ export const scannerService = {
   parseScanResult(data: string) {
     const parts = data.split('|');
     if (parts[0] === 'PRD' && parts.length >= 4) {
-      const result: { type: 'PRODUCT'; productId: string; variationId: string; size: string; lotId?: string; orderId?: string; itemIdx?: string } = {
+      const result: { type: 'PRODUCT'; productId: string; variationId: string; size: string; lotId?: string; orderId?: string; itemIdx?: string; saleId?: string } = {
         type: 'PRODUCT', productId: parts[1], variationId: parts[2], size: parts[3],
       };
       // Etiquetas de pedido vinculado embutem o mapa/pedido de origem para roteamento.
-      if (parts.length >= 6 && parts[4] && parts[5]) {
+      // Etiqueta gerada a partir de uma Venda (sem Mapa) usa o marcador "SALE" na posição 4
+      // em vez de um lotId de verdade (ver handleOpenSaleLabels em SalesView.tsx).
+      if (parts[4] === 'SALE' && parts[5]) {
+        result.saleId = parts[5];
+      } else if (parts.length >= 6 && parts[4] && parts[5]) {
         result.lotId = parts[4];
         result.orderId = parts[5];
         if (parts[6] !== undefined && parts[6] !== '') result.itemIdx = parts[6];
@@ -159,7 +166,21 @@ export const scannerService = {
   // scanner "navega" para o PCP mas não encontra nada para abrir. Também retorna
   // mensagens de erro específicas (`ok: false`) para cada motivo de falha, em vez
   // de simplesmente deixar o app cair na tela de Setores sem explicação.
-  async resolveScanResult(parsed: any, products: Product[], productionLots: ProductionLot[]): Promise<ScanResolution> {
+  async resolveScanResult(parsed: any, products: Product[], productionLots: ProductionLot[], sales: Sale[] = []): Promise<ScanResolution> {
+    if (parsed?.type === 'PRODUCT' && parsed.saleId) {
+      const sale = sales.find(s => s.id === parsed.saleId);
+      if (!sale) {
+        return { ok: false, error: `Venda #${parsed.saleId} não encontrada. Ela pode ter sido excluída.` };
+      }
+      const product = products.find(p => p.id === parsed.productId);
+      const variation = product?.variations?.find((v: any) => v.id === parsed.variationId);
+      const subParts = [variation?.colorName, sale.customerName].filter(Boolean);
+      return {
+        ok: true,
+        entry: { id: `${Date.now()}`, kind: 'SALE', label: `Venda #${sale.orderNumber}`, sublabel: subParts.join(' • '), timestamp: Date.now() },
+        nav: { saleId: sale.id, scanNonce: Date.now() },
+      };
+    }
     if (parsed?.type === 'PRODUCT') {
       if (!parsed.lotId || !parsed.orderId) {
         return { ok: false, error: SCAN_ERRORS.noRoute };

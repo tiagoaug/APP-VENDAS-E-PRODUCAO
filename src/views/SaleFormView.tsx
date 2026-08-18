@@ -1,11 +1,12 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Sale, Product, SaleType, SaleItem, SaleExtraItem, SalePayment, Grid, Person, PaymentMethod, SaleStatus, PaymentTerm, Account, ProductStatus, PaymentStatus, ProductionOrder, ProductionLot, Sector, AppModulesConfig, ProductionConfigItem, ReminderTonePattern, Collaborator } from '../types';
+import { Sale, Product, SaleType, SaleItem, SaleExtraItem, SalePayment, Grid, Person, PaymentMethod, SaleStatus, PaymentTerm, Account, ProductStatus, PaymentStatus, ProductionOrder, ProductionLot, Sector, AppModulesConfig, ProductionConfigItem, ReminderTonePattern, Collaborator, DeliveryAddress, AdditionalDeliveryAddress, DeliveryItemRef } from '../types';
 import { canEditTask } from '../utils/collaborators';
 import { firebaseService } from '../services/firebaseService';
 import { notificationService } from '../services/notificationService';
 import ComboBox from '../components/ComboBox';
 import ReminderPickerModal from '../components/ReminderPickerModal';
-import { Save, Plus, Trash2, Tag, User, CreditCard, Info, Box, MessageSquare, AlertCircle, Hash, Percent, DollarSign, Receipt, TrendingUp, Wallet, Package, ChevronDown, ChevronUp, Search, X, CheckCircle2, Minus, FileText, Copy, Share, Share2, Calendar, Clock, RotateCcw, Ban, ShoppingCart, Users, Factory, Layers, Warehouse, Calculator } from 'lucide-react';
+import DeliveryAddressForm from '../components/DeliveryAddressForm';
+import { Save, Plus, Trash2, Tag, User, CreditCard, Info, Box, MessageSquare, AlertCircle, Hash, Percent, DollarSign, Receipt, TrendingUp, Wallet, Package, ChevronDown, ChevronUp, Search, X, CheckCircle2, Minus, FileText, Copy, Share, Share2, Calendar, Clock, RotateCcw, Ban, ShoppingCart, Users, Factory, Layers, Warehouse, Calculator, MapPin } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -197,6 +198,31 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         });
         const blockList = Object.values(blocksMap);
         setBlocks(blockList);
+
+        const initialBoxRecipients: Record<string, { name: string; quantity: number }[]> = {};
+        sale.items.forEach(item => {
+          if (item.boxRecipients && item.boxRecipients.length > 0) {
+            initialBoxRecipients[`${item.productId}::${item.variationId}`] = item.boxRecipients;
+          }
+        });
+        setBoxRecipientsMap(initialBoxRecipients);
+
+        if (sale.deliveryAddress) setDeliveryAddress(sale.deliveryAddress);
+        if (sale.deliveryPriority) setDeliveryPriority(sale.deliveryPriority);
+        if (sale.additionalDeliveryAddresses) setAdditionalDeliveryAddresses(sale.additionalDeliveryAddresses);
+
+        const initialDeliverySplit: Record<string, { addressIndex: number; quantity: number }[]> = {};
+        const addDeliveryItems = (addressIndex: number, refs?: DeliveryItemRef[]) => {
+          (refs || []).forEach(ref => {
+            if (ref.saleType !== SaleType.WHOLESALE || ref.size || ref.quantity <= 0) return;
+            const dsKey = `${ref.productId}::${ref.variationId}`;
+            initialDeliverySplit[dsKey] = [...(initialDeliverySplit[dsKey] || []), { addressIndex, quantity: ref.quantity }];
+          });
+        };
+        addDeliveryItems(-1, sale.deliveryItems);
+        (sale.additionalDeliveryAddresses || []).forEach((entry, idx) => addDeliveryItems(idx, entry.deliveryItems));
+        setDeliverySplitMap(initialDeliverySplit);
+
         setIsInitialized(true);
       }
     } else if (!saleId && !isInitialized) {
@@ -253,6 +279,26 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     next.has(key) ? next.delete(key) : next.add(key);
     return next;
   });
+  // Divisão das caixas (ATACADO, sem size) entre clientes finais ("cliente do cliente") —
+  // uma tela única pra venda toda, chave `${productId}::${variationId}`. Consumido em
+  // getItems() (persiste em SaleItem.boxRecipients) e depois em
+  // SalesView.handleOpenSaleLabels pra atribuir recipientName por caixa na impressão.
+  const [boxRecipientsMap, setBoxRecipientsMap] = useState<Record<string, { name: string; quantity: number }[]>>({});
+  const [showBoxSplitModal, setShowBoxSplitModal] = useState(false);
+
+  // Endereço(s) de entrega do pedido — cadastrados aqui na hora da venda em vez de só depois
+  // de salva (SalesView já tinha esse fluxo pós-venda; isso só espelha os mesmos campos do
+  // Sale — deliveryAddress/additionalDeliveryAddresses/deliveryPriority — em estado local até
+  // o Salvar do formulário, igual ao resto da tela). `-1` = endereço principal nos mapas de
+  // divisão de caixa abaixo; índice >= 0 = posição em additionalDeliveryAddresses.
+  const [deliveryAddress, setDeliveryAddress] = useState<DeliveryAddress | undefined>(undefined);
+  const [deliveryPriority, setDeliveryPriority] = useState<'URGENT' | 'NORMAL' | undefined>(undefined);
+  const [additionalDeliveryAddresses, setAdditionalDeliveryAddresses] = useState<AdditionalDeliveryAddress[]>([]);
+  const [showDeliveryModal, setShowDeliveryModal] = useState(false);
+  // Divisão das caixas (ATACADO, sem size) entre os pontos de entrega cadastrados acima —
+  // chave `${productId}::${variationId}`, valor = lista de {addressIndex, quantity} (-1 =
+  // principal). Só aparece quando há mais de 1 ponto de entrega cadastrado.
+  const [deliverySplitMap, setDeliverySplitMap] = useState<Record<string, { addressIndex: number; quantity: number }[]>>({});
   const [showProductModal, setShowProductModal] = useState(false);
   const [notes, setNotes] = useState('');
   const [reminderAt, setReminderAt] = useState<number | undefined>(undefined);
@@ -403,6 +449,13 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
     });
     return items;
   }, [blocks, products, packagingPerVar, productionConfigs]);
+
+  // Itens ATACADO sem size (= "caixas de uma grade") elegíveis pra divisão entre clientes
+  // finais — mesmo filtro usado em SalesView.handleOpenSaleLabels pro batch de etiquetas.
+  const wholesaleBoxCartItems = useMemo(
+    () => cartItems.filter(i => i.saleType === SaleType.WHOLESALE && !i.size && i.quantity > 0),
+    [cartItems]
+  );
 
   const subtotal = useMemo(() => {
     const blocksTotal = blocks.reduce((acc, block) => {
@@ -851,6 +904,32 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
       saleToSave.isAccounting = false;
     }
 
+    // Endereços de entrega — divide as caixas marcadas em deliverySplitMap em DeliveryItemRef
+    // por ponto (principal entra em Sale.deliveryItems, demais em cada
+    // AdditionalDeliveryAddress.deliveryItems — mesmo modelo que SalesView já usa pós-venda).
+    if (deliveryAddress) saleToSave.deliveryAddress = deliveryAddress;
+    if (deliveryPriority) saleToSave.deliveryPriority = deliveryPriority;
+    if (additionalDeliveryAddresses.length > 0 || Object.keys(deliverySplitMap).length > 0) {
+      const mainItems: DeliveryItemRef[] = [];
+      const extraItemsByAddress: DeliveryItemRef[][] = additionalDeliveryAddresses.map(() => []);
+      Object.entries(deliverySplitMap).forEach(([key, rows]) => {
+        const [productId, variationId] = key.split('::');
+        rows.forEach(row => {
+          if (row.quantity <= 0) return;
+          const ref: DeliveryItemRef = { productId, variationId, saleType: SaleType.WHOLESALE, quantity: row.quantity };
+          if (row.addressIndex === -1) mainItems.push(ref);
+          else if (extraItemsByAddress[row.addressIndex]) extraItemsByAddress[row.addressIndex].push(ref);
+        });
+      });
+      if (mainItems.length > 0) saleToSave.deliveryItems = mainItems;
+      if (additionalDeliveryAddresses.length > 0) {
+        saleToSave.additionalDeliveryAddresses = additionalDeliveryAddresses.map((entry, idx) => ({
+          ...entry,
+          ...(extraItemsByAddress[idx].length > 0 ? { deliveryItems: extraItemsByAddress[idx] } : {}),
+        }));
+      }
+    }
+
     if (saleToSave.reminderAt) {
       notificationService.scheduleReminder({
         id: `sale-${saleToSave.id}`,
@@ -983,6 +1062,9 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
         const data = value as { quantity: number; price: number; size?: string };
         if (data.quantity > 0) {
           const variationId = key.split('-')[0];
+          const recipients = !data.size && block.saleType === SaleType.WHOLESALE
+            ? (boxRecipientsMap[`${block.productId}::${variationId}`] || []).filter(r => r.name.trim() && r.quantity > 0)
+            : [];
           items.push({
             productId: block.productId,
             variationId,
@@ -990,7 +1072,8 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
             saleType: block.saleType,
             quantity: data.quantity,
             price: data.price,
-            ...(block.unitPrice ? { unitPrice: block.unitPrice } : {})
+            ...(block.unitPrice ? { unitPrice: block.unitPrice } : {}),
+            ...(recipients.length > 0 ? { boxRecipients: recipients } : {})
           });
         }
       });
@@ -2493,7 +2576,7 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
            >
              <Ban size={16} className={!isAccounting ? 'text-amber-500 shrink-0' : 'text-slate-400 shrink-0'} />
              <div className="flex-1 min-w-0">
-               <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${!isAccounting ? 'text-amber-500' : (isDarkMode ? 'text-slate-400' : 'text-slate-500')}`}>
+               <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${!isAccounting ? 'text-amber-500' : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
                  Não Contábil
                </p>
                <p className={`text-[8px] font-bold mt-1 leading-tight ${!isAccounting ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
@@ -2506,8 +2589,423 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                <span className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all duration-200 ${!isAccounting ? 'left-6' : 'left-1'}`} />
              </div>
            </button>
+
+           {/* Dividir Caixas entre Clientes (cliente do cliente) — só faz sentido havendo
+               itens ATACADO sem size (caixas de uma grade) no carrinho. */}
+           {wholesaleBoxCartItems.length > 0 && (() => {
+             const assignedKeys = wholesaleBoxCartItems.filter(i => {
+               const rec = boxRecipientsMap[`${i.productId}::${i.variationId}`] || [];
+               return rec.some(r => r.name.trim() && r.quantity > 0);
+             });
+             const isActive = assignedKeys.length > 0;
+             return (
+               <button
+                 type="button"
+                 onClick={() => setShowBoxSplitModal(true)}
+                 className={`w-full mt-2 flex items-center gap-3 p-3 rounded-xl border transition-all active:scale-[0.98] text-left ${isActive
+                   ? (isDarkMode ? 'bg-pink-900/20 border-pink-700/40' : 'bg-pink-50 border-pink-200')
+                   : (isDarkMode ? 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100')
+                 }`}
+                 aria-label="Dividir caixas entre clientes finais"
+               >
+                 <Users size={16} className={isActive ? 'text-pink-500 shrink-0' : 'text-slate-400 shrink-0'} />
+                 <div className="flex-1 min-w-0">
+                   <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${isActive ? 'text-pink-500' : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
+                     Dividir Caixas entre Clientes
+                   </p>
+                   <p className={`text-[8px] font-bold mt-1 leading-tight ${isActive ? 'text-pink-600 dark:text-pink-400' : 'text-slate-400'}`}>
+                     {isActive
+                       ? `${assignedKeys.length} ${assignedKeys.length === 1 ? 'item dividido' : 'itens divididos'} entre clientes de cliente`
+                       : 'Destinar caixas de um mesmo item a diferentes clientes finais'}
+                   </p>
+                 </div>
+                 <ChevronDown size={16} className={`-rotate-90 shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+               </button>
+             );
+           })()}
+
+           {/* Endereços de Entrega — principal + pontos adicionais, com opção de dividir as
+               caixas de atacado entre eles quando há mais de um ponto cadastrado. */}
+           {(() => {
+             const totalPoints = 1 + additionalDeliveryAddresses.length;
+             const isActive = !!deliveryAddress || additionalDeliveryAddresses.length > 0;
+             return (
+               <button
+                 type="button"
+                 onClick={() => setShowDeliveryModal(true)}
+                 className={`w-full mt-2 flex items-center gap-3 p-3 rounded-xl border transition-all active:scale-[0.98] text-left ${isActive
+                   ? (isDarkMode ? 'bg-rose-900/20 border-rose-700/40' : 'bg-rose-50 border-rose-200')
+                   : (isDarkMode ? 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800' : 'bg-slate-50 border-slate-100 hover:bg-slate-100')
+                 }`}
+                 aria-label="Endereços de entrega do pedido"
+               >
+                 <MapPin size={16} className={isActive ? 'text-rose-500 shrink-0' : 'text-slate-400 shrink-0'} />
+                 <div className="flex-1 min-w-0">
+                   <p className={`text-[10px] font-black uppercase tracking-widest leading-none ${isActive ? 'text-rose-500' : (isDarkMode ? 'text-white' : 'text-slate-900')}`}>
+                     Endereços de Entrega
+                   </p>
+                   <p className={`text-[8px] font-bold mt-1 leading-tight ${isActive ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}`}>
+                     {isActive
+                       ? `${totalPoints} ${totalPoints === 1 ? 'ponto de entrega cadastrado' : 'pontos de entrega cadastrados'}`
+                       : 'Cadastrar onde entregar — mais de um lugar, com divisão de caixas'}
+                   </p>
+                 </div>
+                 <ChevronDown size={16} className={`-rotate-90 shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
+               </button>
+             );
+           })()}
         </div>
       </div>
+
+      {showBoxSplitModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowBoxSplitModal(false)} />
+          <div className={`relative w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+            <div className={`px-6 py-5 border-b flex items-center justify-between shrink-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-pink-50 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 flex items-center justify-center shrink-0">
+                  <Users size={18} />
+                </div>
+                <div>
+                  <p className={`text-sm font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Dividir Caixas entre Clientes</p>
+                  <p className="text-[10px] font-bold text-slate-400 mt-0.5">Destine as caixas de cada item a clientes de cliente</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setShowBoxSplitModal(false)} aria-label="Fechar" className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}>
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-6 flex flex-col gap-4">
+              {wholesaleBoxCartItems.length === 0 && (
+                <p className="text-center text-xs font-bold text-slate-400 py-8">Nenhum item de atacado (caixa fechada) no carrinho.</p>
+              )}
+              {wholesaleBoxCartItems.map(item => {
+                const key = `${item.productId}::${item.variationId}`;
+                const recipients = boxRecipientsMap[key] || [];
+                const assigned = recipients.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+                const remaining = Math.max(0, item.quantity - assigned);
+
+                const updateRecipient = (idx: number, patch: Partial<{ name: string; quantity: number }>) => {
+                  setBoxRecipientsMap(prev => {
+                    const list = [...(prev[key] || [])];
+                    list[idx] = { ...list[idx], ...patch };
+                    return { ...prev, [key]: list };
+                  });
+                };
+                const addRecipient = () => {
+                  setBoxRecipientsMap(prev => ({ ...prev, [key]: [...(prev[key] || []), { name: '', quantity: Math.max(0, item.quantity - assigned) }] }));
+                };
+                const removeRecipient = (idx: number) => {
+                  setBoxRecipientsMap(prev => ({ ...prev, [key]: (prev[key] || []).filter((_, i) => i !== idx) }));
+                };
+
+                return (
+                  <div key={key} className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-slate-50'}`}>
+                    <div className="flex items-center justify-between gap-2 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className={`text-[11px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                          {item.reference && `${item.reference} · `}{item.productName}
+                        </p>
+                        {item.variationName && (
+                          <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">{item.variationName}</p>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-[8px] font-black uppercase text-slate-400">Total</p>
+                        <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.quantity} cx</p>
+                      </div>
+                    </div>
+
+                    <div className="px-4 pb-3 flex flex-col gap-2">
+                      {recipients.map((r, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={r.name}
+                            onChange={e => updateRecipient(idx, { name: e.target.value })}
+                            placeholder="Nome do cliente final"
+                            className={`flex-1 min-w-0 px-3 py-2.5 rounded-xl border text-xs font-bold outline-none focus:border-indigo-500 transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder:text-slate-600' : 'bg-white border-slate-200 text-slate-900 placeholder:text-slate-400'}`}
+                          />
+                          <div className={`flex items-center rounded-xl border overflow-hidden shrink-0 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                            <button
+                              type="button"
+                              onClick={() => updateRecipient(idx, { quantity: Math.max(0, r.quantity - 1) })}
+                              disabled={r.quantity <= 0}
+                              title="Diminuir caixa"
+                              aria-label="Diminuir caixa"
+                              className={`w-8 h-9 flex items-center justify-center transition-colors disabled:opacity-30 ${isDarkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'}`}
+                            >
+                              <Minus size={13} />
+                            </button>
+                            <input
+                              type="number"
+                              min={0}
+                              max={item.quantity}
+                              value={r.quantity}
+                              onChange={e => updateRecipient(idx, { quantity: Math.max(0, Math.min(item.quantity, Number(e.target.value) || 0)) })}
+                              title="Quantidade de caixas"
+                              aria-label="Quantidade de caixas"
+                              className={`w-9 px-0 py-2.5 border-x text-xs font-black text-center outline-none bg-transparent ${isDarkMode ? 'border-slate-700 text-white' : 'border-slate-200 text-slate-900'}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => updateRecipient(idx, { quantity: Math.min(item.quantity, r.quantity + 1) })}
+                              disabled={r.quantity >= item.quantity}
+                              title="Aumentar caixa"
+                              aria-label="Aumentar caixa"
+                              className={`w-8 h-9 flex items-center justify-center transition-colors disabled:opacity-30 ${isDarkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'}`}
+                            >
+                              <Plus size={13} />
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeRecipient(idx)}
+                            title="Remover"
+                            aria-label="Remover cliente"
+                            className="p-2 rounded-xl text-slate-300 hover:text-rose-500 transition-all shrink-0"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+
+                      <button
+                        type="button"
+                        onClick={addRecipient}
+                        disabled={remaining <= 0}
+                        className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${remaining <= 0
+                          ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                          : (isDarkMode ? 'text-indigo-400 hover:bg-slate-800' : 'text-indigo-600 hover:bg-indigo-50')
+                        }`}
+                      >
+                        <Plus size={12} strokeWidth={3} /> Adicionar Cliente
+                      </button>
+
+                      <p className={`text-[9px] font-bold uppercase tracking-widest text-center ${remaining > 0 ? 'text-slate-400' : 'text-emerald-500'}`}>
+                        {remaining > 0 ? `Restante: ${remaining} cx sem destinatário` : 'Todas as caixas divididas'}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className={`px-6 py-4 border-t shrink-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <button
+                type="button"
+                onClick={() => setShowBoxSplitModal(false)}
+                className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-black text-[11px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all"
+              >
+                Concluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeliveryModal && (() => {
+        const totalPoints = 1 + additionalDeliveryAddresses.length;
+        return (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowDeliveryModal(false)} />
+          <div className={`relative w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh] ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+            <div className={`px-6 py-5 border-b flex items-center justify-between shrink-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                  <MapPin size={18} />
+                </div>
+                <div>
+                  <p className={`text-sm font-black leading-none ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Endereços de Entrega</p>
+                  <p className="text-[10px] font-bold text-slate-400 mt-0.5">Onde entregar — pode ser mais de um lugar</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setShowDeliveryModal(false)} aria-label="Fechar" className={`p-2 rounded-full ${isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-50 text-slate-400'}`}>
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 p-6 flex flex-col gap-5">
+              <div className="flex flex-col gap-2">
+                <span className={`text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Endereço Principal</span>
+                {(() => {
+                  const customer = people.find(p => p.id === customerId);
+                  if (!customer?.defaultDeliveryAddress) return null;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setDeliveryAddress(customer.defaultDeliveryAddress)}
+                      className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all bg-orange-500 text-white hover:bg-orange-600"
+                    >
+                      <MapPin size={12} /> Usar Endereço Cadastrado do Cliente
+                    </button>
+                  );
+                })()}
+                <DeliveryAddressForm
+                  isDarkMode={isDarkMode}
+                  address={deliveryAddress}
+                  priority={deliveryPriority}
+                  onChange={setDeliveryAddress}
+                  onPriorityChange={setDeliveryPriority}
+                />
+              </div>
+
+              {additionalDeliveryAddresses.map((entry, idx) => (
+                <div key={idx} className={`flex flex-col gap-2 p-4 rounded-2xl border ${isDarkMode ? 'bg-slate-900/40 border-slate-800' : 'bg-slate-50 border-slate-100'}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                      <MapPin size={13} className="text-rose-500 shrink-0" /> Endereço {idx + 2}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdditionalDeliveryAddresses(prev => prev.filter((_, i) => i !== idx));
+                        setDeliverySplitMap(prev => {
+                          const next: typeof prev = {};
+                          Object.entries(prev).forEach(([key, rows]) => {
+                            const remapped = rows
+                              .filter(r => r.addressIndex !== idx)
+                              .map(r => r.addressIndex > idx ? { ...r, addressIndex: r.addressIndex - 1 } : r);
+                            if (remapped.length > 0) next[key] = remapped;
+                          });
+                          return next;
+                        });
+                      }}
+                      title="Remover este endereço"
+                      className={`p-1.5 rounded-lg transition-all ${isDarkMode ? 'text-slate-500 hover:text-rose-400 hover:bg-rose-900/20' : 'text-slate-400 hover:text-rose-500 hover:bg-rose-50'}`}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <DeliveryAddressForm
+                    isDarkMode={isDarkMode}
+                    address={entry.address}
+                    fieldsExpanded
+                    onChange={(address) => setAdditionalDeliveryAddresses(prev => { const next = [...prev]; next[idx] = { ...entry, address }; return next; })}
+                  />
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={() => setAdditionalDeliveryAddresses(prev => [...prev, { address: {} }])}
+                className="flex items-center justify-center gap-1.5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700 transition-all active:scale-[0.98]"
+              >
+                <Plus size={13} /> Adicionar Outro Ponto de Entrega
+              </button>
+
+              {additionalDeliveryAddresses.length > 0 && wholesaleBoxCartItems.length > 0 && (
+                <div className="flex flex-col gap-3 pt-2 border-t border-dashed border-slate-200 dark:border-slate-800">
+                  <p className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>Dividir Caixas entre os Pontos de Entrega</p>
+                  {wholesaleBoxCartItems.map(item => {
+                    const key = `${item.productId}::${item.variationId}`;
+                    const rows = deliverySplitMap[key] || [];
+                    const assigned = rows.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+                    const remaining = Math.max(0, item.quantity - assigned);
+
+                    const updateRow = (rowIdx: number, patch: Partial<{ addressIndex: number; quantity: number }>) => {
+                      setDeliverySplitMap(prev => {
+                        const list = [...(prev[key] || [])];
+                        list[rowIdx] = { ...list[rowIdx], ...patch };
+                        return { ...prev, [key]: list };
+                      });
+                    };
+                    const addRow = () => {
+                      const usedIndexes = new Set(rows.map(r => r.addressIndex));
+                      const candidates = [-1, ...additionalDeliveryAddresses.map((_, i) => i)];
+                      const nextIndex = candidates.find(i => !usedIndexes.has(i));
+                      if (nextIndex === undefined) return;
+                      setDeliverySplitMap(prev => ({ ...prev, [key]: [...(prev[key] || []), { addressIndex: nextIndex, quantity: Math.max(0, item.quantity - assigned) }] }));
+                    };
+                    const removeRow = (rowIdx: number) => {
+                      setDeliverySplitMap(prev => ({ ...prev, [key]: (prev[key] || []).filter((_, i) => i !== rowIdx) }));
+                    };
+
+                    return (
+                      <div key={key} className={`rounded-2xl border overflow-hidden ${isDarkMode ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-slate-50'}`}>
+                        <div className="flex items-center justify-between gap-2 px-4 py-3">
+                          <div className="min-w-0">
+                            <p className={`text-[11px] font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                              {item.reference && `${item.reference} · `}{item.productName}
+                            </p>
+                            {item.variationName && (
+                              <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">{item.variationName}</p>
+                            )}
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-[8px] font-black uppercase text-slate-400">Total</p>
+                            <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.quantity} cx</p>
+                          </div>
+                        </div>
+
+                        <div className="px-4 pb-3 flex flex-col gap-2">
+                          {rows.map((r, rowIdx) => (
+                            <div key={rowIdx} className="flex items-center gap-2">
+                              <select
+                                value={r.addressIndex}
+                                onChange={e => updateRow(rowIdx, { addressIndex: Number(e.target.value) })}
+                                title="Ponto de entrega"
+                                aria-label="Ponto de entrega"
+                                className={`flex-1 min-w-0 px-3 py-2.5 rounded-xl border text-xs font-bold outline-none focus:border-indigo-500 transition-colors ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'}`}
+                              >
+                                <option value={-1}>Principal</option>
+                                {additionalDeliveryAddresses.map((_, i) => (
+                                  <option key={i} value={i}>Endereço {i + 2}</option>
+                                ))}
+                              </select>
+                              <div className={`flex items-center rounded-xl border overflow-hidden shrink-0 ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
+                                <button type="button" onClick={() => updateRow(rowIdx, { quantity: Math.max(0, r.quantity - 1) })} disabled={r.quantity <= 0} className={`w-8 h-9 flex items-center justify-center transition-colors disabled:opacity-30 ${isDarkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'}`}>
+                                  <Minus size={13} />
+                                </button>
+                                <input
+                                  type="number" min={0} max={item.quantity} value={r.quantity}
+                                  onChange={e => updateRow(rowIdx, { quantity: Math.max(0, Math.min(item.quantity, Number(e.target.value) || 0)) })}
+                                  title="Quantidade de caixas" aria-label="Quantidade de caixas"
+                                  className={`w-9 px-0 py-2.5 border-x text-xs font-black text-center outline-none bg-transparent ${isDarkMode ? 'border-slate-700 text-white' : 'border-slate-200 text-slate-900'}`}
+                                />
+                                <button type="button" onClick={() => updateRow(rowIdx, { quantity: Math.min(item.quantity, r.quantity + 1) })} disabled={r.quantity >= item.quantity} className={`w-8 h-9 flex items-center justify-center transition-colors disabled:opacity-30 ${isDarkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-100'}`}>
+                                  <Plus size={13} />
+                                </button>
+                              </div>
+                              <button type="button" onClick={() => removeRow(rowIdx)} title="Remover" aria-label="Remover divisão" className="p-2 rounded-xl text-slate-300 hover:text-rose-500 transition-all shrink-0">
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
+
+                          <button
+                            type="button"
+                            onClick={addRow}
+                            disabled={remaining <= 0 || rows.length >= totalPoints}
+                            className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${remaining <= 0 || rows.length >= totalPoints
+                              ? 'text-slate-300 dark:text-slate-700 cursor-not-allowed'
+                              : (isDarkMode ? 'text-indigo-400 hover:bg-slate-800' : 'text-indigo-600 hover:bg-indigo-50')
+                            }`}
+                          >
+                            <Plus size={12} strokeWidth={3} /> Adicionar Divisão
+                          </button>
+
+                          <p className={`text-[9px] font-bold uppercase tracking-widest text-center ${remaining > 0 ? 'text-slate-400' : 'text-emerald-500'}`}>
+                            {remaining > 0 ? `Restante: ${remaining} cx sem ponto definido` : 'Todas as caixas divididas'}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className={`px-6 py-4 border-t shrink-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+              <button type="button" onClick={() => setShowDeliveryModal(false)} className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-black text-[11px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
+                Concluir
+              </button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
       {showWhatsAppModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">

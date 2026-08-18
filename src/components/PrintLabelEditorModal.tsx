@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Printer, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
+  Printer, ChevronDown,
   RotateCcw, Eye, EyeOff, Plus, Minus, Settings2, FileText, Tag,
-  Image as ImageIcon, Layers, Check, X, Lock, BookmarkPlus, Pencil, Trash2, BookOpen, Bluetooth, Share2, RefreshCw,
+  Image as ImageIcon, Layers, Check, X, Lock, Unlock, BookmarkPlus, Pencil, Trash2, BookOpen, Bluetooth, Share2, RefreshCw,
+  HelpCircle, Hand, Maximize2, Sparkles, Square, Package,
 } from 'lucide-react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import Modal from './Modal';
@@ -19,15 +20,44 @@ import { applyPrintTransform, DIRECTION_TO_ROTATION } from '../utils/labelPrintT
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ElemKey    = 'reference' | 'name' | 'color' | 'size' | 'qr' | 'footer' | 'photo' | 'grade' | 'osdata' | 'sectornotes';
+type ElemKey    = 'reference' | 'name' | 'color' | 'size' | 'qr' | 'footer' | 'photo' | 'grade' | 'osdata' | 'sectornotes' | 'packaging' | 'customer' | 'recipient';
 type FontFamily = 'helvetica' | 'arial' | 'times' | 'courier' | 'avenir';
 type Elem = {
   x: number; y: number; w: number; h: number;
   label: string; color: string; visible: boolean;
   fontSize?: number; fontFamily?: FontFamily; bold?: boolean;
   noteFilter?: { sectorId: string; noteName: string };
+  // Efeito "chip": fundo preenchido (preto, ou a cor do elemento) com retângulo arredondado e
+  // texto branco por cima — mesmo visual já usado nas pílulas da Grade, só que disponível pra
+  // qualquer elemento de texto (ver botão "Inverter" na Tipografia).
+  invert?: boolean;
+  // Trava o elemento contra arraste/redimensionamento (Ajustar) — pra depois de posicionar do
+  // jeito certo, não mover por engano tocando na etiqueta sem querer.
+  locked?: boolean;
+  // Só usado no elemento 'reference' — junta Referência/Nome/Cor num campo só, na ordem fixa
+  // Ref → Nome → Cor, com qualquer combinação dos três (ex.: só Ref+Cor). Ausente/vazio =
+  // comportamento de sempre (cada um no seu próprio elemento/posição).
+  combineFields?: ('reference' | 'name' | 'color')[];
 };
-type Layout = { paper: [number, number]; elems: Record<ElemKey, Elem> };
+// Formas decorativas (retângulo de bordas arredondadas / linha) — ao contrário dos slots fixos
+// acima (um por ElemKey), dá pra ter várias, adicionadas/removidas livremente pelo usuário.
+type ShapeKind = 'rect' | 'line';
+type ShapeElem = {
+  id: string;
+  kind: ShapeKind;
+  x: number; y: number; w: number; h: number; // linha: ponto final é (x+w, y+h)
+  color: string;
+  strokeWidth: number;
+  radius?: number;   // só 'rect'
+  filled?: boolean;  // só 'rect' — preenchido vs. só contorno
+  dashed?: boolean;  // contorno/linha tracejada em vez de contínua
+  visible?: boolean; // ausente = true (compat com formas salvas antes desse campo existir)
+  // Rotação em graus (0-359), só 'rect' — gira em torno do próprio centro. 'line' não usa
+  // esse campo: o ângulo dela já está embutido no vetor (x,y)→(x+w,y+h); a ferramenta de
+  // girar recalcula w/h mantendo comprimento e centro em vez de guardar um ângulo à parte.
+  rotation?: number;
+};
+type Layout = { paper: [number, number]; elems: Record<ElemKey, Elem>; shapes?: ShapeElem[] };
 
 // ─── Size presets ─────────────────────────────────────────────────────────────
 
@@ -39,11 +69,16 @@ const THERMAL_SIZES: { label: string; dims: [number, number]; star?: boolean }[]
   { label: '80 × 40 mm',  dims: [80, 40]  },
   { label: '80 × 50 mm',  dims: [80, 50]  },
   { label: '100 × 50 mm', dims: [100, 50] },
+  { label: '100 × 40 mm', dims: [100, 40] },
   { label: '40 × 30 mm',  dims: [40, 30]  },
 ];
 
-const ELEM_KEYS: ElemKey[] = ['reference', 'name', 'color', 'size', 'qr', 'footer', 'photo', 'grade', 'osdata', 'sectornotes'];
-const STEPS = [0.5, 1, 2, 5];
+const ELEM_KEYS: ElemKey[] = ['reference', 'name', 'color', 'size', 'qr', 'footer', 'photo', 'grade', 'osdata', 'sectornotes', 'packaging', 'customer', 'recipient'];
+// Nome e Cor não aparecem mais como blocos independentes — viraram opções dentro do elemento
+// Referência (ver Elem.combineFields / "Combinar Campos Neste Elemento"), então somem tanto da
+// lista de Configurar Elementos quanto do arraste em Ajustar. Continuam existindo dentro de
+// `Layout.elems` (Record<ElemKey, Elem> exige todas as chaves) só como fonte de texto.
+const CONFIG_LIST_KEYS: ElemKey[] = ELEM_KEYS.filter(k => k !== 'name' && k !== 'color');
 const STORAGE_SIZE    = 'lbl_print_size';
 const STORAGE_MANUAL  = 'lbl_print_manual';
 const STORAGE_LAYOUTS = 'lbl_print_layouts_v1';
@@ -63,6 +98,17 @@ function saveCustomPresets(presets: CustomPreset[]) {
   localStorage.setItem(STORAGE_PRESETS, JSON.stringify(presets));
 }
 
+// Junta Referência/Nome/Cor no campo "Referência" quando combineFields estiver marcado
+// (ver Elem.combineFields) — ordem fixa Ref → Nome → Cor, só entram os marcados.
+function combineRefFields(combineFields: ('reference' | 'name' | 'color')[] | undefined, refText: string, nameText: string, colorText: string): string {
+  if (!combineFields || combineFields.length === 0) return refText;
+  const parts: string[] = [];
+  if (combineFields.includes('reference')) parts.push(refText);
+  if (combineFields.includes('name')) parts.push(nameText);
+  if (combineFields.includes('color')) parts.push(colorText);
+  return parts.filter(Boolean).join(' - ');
+}
+
 // ─── Default layouts ──────────────────────────────────────────────────────────
 
 function isThermal([W, H]: [number, number]) { return H <= 60 || W > H * 1.5; }
@@ -73,6 +119,7 @@ function defaultLayout([W, H]: [number, number]): Layout {
     const textW  = W - qrSize - 5;
     const qrX    = W - qrSize - 2;
     const qrY    = (H - qrSize) / 2;
+    const photoSize = Math.min(H - 4, W * 0.28);
     return {
       paper: [W, H],
       elems: {
@@ -82,10 +129,13 @@ function defaultLayout([W, H]: [number, number]): Layout {
         size:      { x: 0,   y: H * 0.68,   w: textW, h: H * 0.32, label: 'Tamanho',    color: '#000000', visible: true,  fontSize: 9,   fontFamily: 'helvetica', bold: true  },
         qr:        { x: qrX, y: qrY,        w: qrSize,h: qrSize,   label: 'QR Code',    color: '#000000', visible: true,  fontSize: 8,   fontFamily: 'helvetica', bold: false },
         footer:    { x: 0,   y: H - 2,      w: W,     h: 2,        label: 'Rodapé',     color: '#000000', visible: false, fontSize: 3,   fontFamily: 'helvetica', bold: false },
-        photo:     { x: 0,   y: 0,          w: 0,     h: 0,        label: 'Foto',       color: '#000000', visible: false, fontSize: 6,   fontFamily: 'helvetica', bold: false },
+        photo:     { x: 2,   y: H - photoSize - 2, w: photoSize, h: photoSize, label: 'Foto', color: '#000000', visible: false, fontSize: 6,   fontFamily: 'helvetica', bold: false },
         grade:     { x: 0,   y: H * 0.62,   w: textW, h: H * 0.38, label: 'Grade',      color: '#f59e0b', visible: false, fontSize: 5,   fontFamily: 'helvetica', bold: true  },
         osdata:      { x: 0,   y: H - 3,      w: textW, h: 3,        label: 'Dados OS',       color: '#6366f1', visible: false, fontSize: 3.5, fontFamily: 'helvetica', bold: false },
         sectornotes: { x: 0,   y: H - 4,      w: textW, h: 4,        label: 'Obs. Variante',  color: '#f97316', visible: false, fontSize: 3,   fontFamily: 'helvetica', bold: false },
+        packaging:   { x: 0,   y: H * 0.32,   w: textW, h: H * 0.26, label: 'Embalagem',      color: '#0d9488', visible: false, fontSize: 4.5, fontFamily: 'helvetica', bold: false },
+        customer:    { x: 0,   y: H * 0.42,   w: textW, h: H * 0.26, label: 'Cliente',        color: '#7c3aed', visible: false, fontSize: 4.5, fontFamily: 'helvetica', bold: false },
+        recipient:   { x: 0,   y: H * 0.68,   w: textW, h: H * 0.26, label: 'Cliente de Cliente', color: '#db2777', visible: false, fontSize: 4.5, fontFamily: 'helvetica', bold: false },
       },
     };
   }
@@ -104,6 +154,9 @@ function defaultLayout([W, H]: [number, number]): Layout {
       grade:       { x: 2*s,      y: H-10*s,  w: W-4*s, h: 7*s,     label: 'Grade',         color: '#f59e0b', visible: false, fontSize: 6*s,  fontFamily: 'helvetica', bold: true  },
       osdata:      { x: 2*s,      y: H-3.5*s, w: W-4*s, h: 3*s,     label: 'Dados OS',      color: '#6366f1', visible: false, fontSize: 4*s,  fontFamily: 'helvetica', bold: false },
       sectornotes: { x: 2*s,      y: H-7*s,   w: W-4*s, h: 4*s,     label: 'Obs. Variante', color: '#f97316', visible: false, fontSize: 3.5*s,fontFamily: 'helvetica', bold: false },
+      packaging:   { x: 2*s,      y: 12*s,    w: W-4*s, h: 5*s,     label: 'Embalagem',     color: '#0d9488', visible: false, fontSize: 5*s,  fontFamily: 'helvetica', bold: false },
+      customer:    { x: 2*s,      y: 17*s,    w: W-4*s, h: 5*s,     label: 'Cliente',       color: '#7c3aed', visible: false, fontSize: 5*s,  fontFamily: 'helvetica', bold: false },
+      recipient:   { x: 2*s,      y: 22*s,    w: W-4*s, h: 5*s,     label: 'Cliente de Cliente', color: '#db2777', visible: false, fontSize: 5*s,  fontFamily: 'helvetica', bold: false },
     },
   };
 }
@@ -154,6 +207,18 @@ interface BatchLabelItem {
   lotId?: string;
   orderId?: string;
   itemIdx?: number;
+  // Id da Venda que originou esta etiqueta (ver handleOpenSaleLabels em SalesView.tsx) —
+  // embutido no QR Code (marcador "SALE") quando não há lotId/orderId de Mapa, pra escanear
+  // a etiqueta e ir direto pra venda em vez de cair no erro "não vinculada a um Mapa".
+  saleId?: string;
+  // Nome do padrão de embalagem real dessa caixa (Variation.stockPkgAllocations ou
+  // StockLot já resolvido) — mostrado no slot "Embalagem" (ver ElemKey 'packaging'). Ausente
+  // = etiqueta não mostra esse campo mesmo se o usuário deixar visível.
+  packagingName?: string;
+  // Cliente da venda (revendedor) e destinatário final (cliente do cliente) — mesmo valor
+  // repetido em todas as caixas do mesmo pedido (ver handleOpenSaleLabels em SalesView.tsx).
+  customerName?: string;
+  recipientName?: string;
 }
 
 interface Props {
@@ -173,9 +238,28 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   const [sizeKey, setSizeKey]     = useState<string>(() => localStorage.getItem(STORAGE_SIZE) || '75x24');
   const [layouts, setLayouts]     = useState<Record<string, Layout>>(loadLayouts);
   const [selected, setSelected]   = useState<ElemKey | null>(null);
-  const [step, setStep]           = useState(1);
+  // Forma decorativa selecionada (retângulo/linha) — separado de `selected` (que só cobre os
+  // slots fixos) porque formas são uma lista dinâmica, não uma chave fixa.
+  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
   const [tab, setTab]             = useState<'view'|'edit'>('view');
+  // Tela cheia do canvas de ajuste — isola o arraste dos elementos da rolagem da página (o
+  // canvas fica sozinho num overlay fixo, sem nada por perto pra brigar com o gesto de
+  // arrastar); sai só pelo X, sem gesto de fechar por swipe.
+  const [fullscreenEdit, setFullscreenEdit] = useState(false);
+  // Dentro da tela cheia: alterna entre o canvas de ajuste (com réguas, arrastável) e a
+  // pré-visualização da etiqueta pronta (mesmo ContentPreview da aba Visualizar) — pra
+  // conferir o resultado sem precisar sair da tela cheia.
+  const [fullscreenPreviewMode, setFullscreenPreviewMode] = useState(false);
   const [elemConfigOpen, setElemConfigOpen] = useState(false);
+  // Popup de dicas — abre sozinho na primeira vez que alguém usa o editor neste aparelho
+  // (localStorage), sempre revisitável pelo botão de "?" ao lado das abas Visualizar/Ajustar.
+  const [tipsModalOpen, setTipsModalOpen] = useState(() => {
+    try { return !localStorage.getItem('lbl_print_tips_seen_v1'); } catch { return false; }
+  });
+  const dismissTips = () => {
+    setTipsModalOpen(false);
+    try { localStorage.setItem('lbl_print_tips_seen_v1', '1'); } catch {}
+  };
   const [notePickerOpen, setNotePickerOpen] = useState(false);
   const [sizeAccordionOpen, setSizeAccordionOpen] = useState(false);
   const [myPresetsPopupOpen, setMyPresetsPopupOpen] = useState(false);
@@ -230,23 +314,33 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
 
   const rawLayout = layouts[sizeKey === 'manual' ? `${manualW}x${manualH}` : sizeKey] ?? defaultLayout(paperDims);
   const def = defaultLayout(paperDims);
+  // "Foto" salva de uma versão antiga do editor podia ter w/h zerados (bug já corrigido no
+  // padrão de fábrica, ver `photoSize` acima) — sem esse saneamento, quem já tinha essa
+  // etiqueta salva continuaria vendo o bloco em tamanho zero mesmo depois da correção.
+  const savedPhoto = rawLayout.elems?.photo;
+  const sanitizedElems = savedPhoto && (savedPhoto.w <= 0 || savedPhoto.h <= 0)
+    ? { ...rawLayout.elems, photo: { ...def.elems.photo, visible: savedPhoto.visible } }
+    : rawLayout.elems;
   const layout: Layout = {
     ...rawLayout,
     elems: {
       ...def.elems,
-      ...(rawLayout.elems || {}),
-    }
+      ...(sanitizedElems || {}),
+    },
+    shapes: rawLayout.shapes || [],
   };
 
   const variation = (product.variations || []).find(v => v.id === selectedVariationId) || (product.variations || [])[0];
   const availSizes = variation ? Object.keys(variation.stock).filter(s => s !== 'WHOLESALE') : [];
 
   // Etiqueta de um único pedido vinculado a um mapa: embute o roteamento (mapa/pedido)
-  // no QR Code para que o "Escanear" do PCP abra direto o pedido correspondente.
+  // no QR Code para que o "Escanear" do PCP abra direto o pedido correspondente. Etiqueta
+  // gerada a partir de uma Venda (sem mapa) embute o id da venda com o marcador "SALE" em
+  // vez disso, pro Scanner Rápido abrir a venda direto (ver scannerService.ts).
   const routeItem = batchItems?.length === 1 ? batchItems[0] : undefined;
   const qrRouteSuffix = (routeItem?.lotId && routeItem?.orderId)
     ? `|${routeItem.lotId}|${routeItem.orderId}|${routeItem.itemIdx ?? ''}`
-    : '';
+    : (routeItem?.saleId ? `|SALE|${routeItem.saleId}` : '');
 
   const getSectorNotesText = (v?: Variation, filter?: { sectorId: string; noteName: string }): string => {
     if (!v?.sectorNotes) return '';
@@ -269,6 +363,11 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
       .join('\n');
   };
   const sectorNotesText: string = getSectorNotesText(variation, layout.elems.sectornotes.noteFilter);
+  // Prévia (aba Visualizar) só mostra um representante do lote — o valor de verdade, por
+  // etiqueta, só existe mesmo na hora de gerar (ver drawFrame/batchItems abaixo).
+  const previewPackagingName: string | undefined = batchItems?.[0]?.packagingName;
+  const previewCustomerName: string | undefined = batchItems?.[0]?.customerName;
+  const previewRecipientName: string | undefined = batchItems?.[0]?.recipientName;
 
   // Lista de descrições por setor disponíveis pra escolher em "Obs. Variante" (ver
   // Configurar Elementos). Em impressão em lote (batchItems, várias etiquetas de uma vez —
@@ -298,6 +397,10 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
 
   const activeGrid = grids.find(g => g.id === product.defaultGridId);
   const sizeGrid = (() => {
+    // Prévia (Visualizar) em modo lote — usa a grade REAL já calculada pra essa caixa
+    // específica (ver handleOpenSaleLabels em SalesView.tsx), em vez de recalcular a partir
+    // do produto/variação "representante" do lote (que ignora StockLot/embalagem real).
+    if (batchItems && batchItems.length > 0 && batchItems[0].sizeGrid) return batchItems[0].sizeGrid;
     if (sizeGridOverride) return sizeGridOverride;
     if (lot?.pairs && Object.keys(lot.pairs).length > 0) {
       return Object.entries(lot.pairs)
@@ -307,11 +410,15 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         .join('-');
     }
     const sizes = availSizes.slice().sort((a, b) => Number(a) - Number(b));
-    if (activeGrid && sizes.length > 0) {
-      return sizes.map(s => {
-        const qty = activeGrid.configuration[s];
-        return qty !== undefined ? `${s}x${qty}` : s;
-      }).join('-');
+    // Sempre que existe grade cadastrada, a lista de tamanhos vem da PRÓPRIA grade
+    // (Grid.configuration), não do estoque da variante — assim todo tamanho impresso já vem
+    // com a quantidade de pares junto ("38x2"), nunca um tamanho solto sem par nenhum (podia
+    // acontecer antes se a variante tivesse um tamanho no estoque que não constava na grade).
+    if (activeGrid) {
+      const gridSizes = Object.entries(activeGrid.configuration)
+        .filter(([, qty]) => qty > 0)
+        .sort(([a], [b]) => Number(a) - Number(b));
+      if (gridSizes.length > 0) return gridSizes.map(([s, qty]) => `${s}x${qty}`).join('-');
     }
     const nonZeroStock = variation ? sizes.filter(s => (variation.stock[s] ?? 0) > 0) : [];
     if (nonZeroStock.length > 0) return nonZeroStock.map(s => `${s}x${variation!.stock[s]}`).join('-');
@@ -329,22 +436,172 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
     labelService.generateQRCode(qd).then(setQrPreview);
   }, [product.id, variation?.id, previewSize, isBoxLabel, qrRouteSuffix]);
 
+  // `setLayouts` fica só em memória aqui — a persistência em disco (localStorage) roda
+  // separada, debounced, no efeito logo abaixo. Antes, `localStorage.setItem(JSON.stringify(...))`
+  // rodava SÍNCRONO dentro de cada chamada de saveLayout, ou seja, em CADA pointermove de um
+  // arraste (60+ vezes por segundo): cada frame do gesto ficava esperando uma escrita em disco
+  // terminar antes de repintar, e isso é o que fazia o arraste (principalmente de linha/forma)
+  // parecer travado/não-contínuo no Android. Update funcional (`prev => ...`) também tira a
+  // dependência de `layouts` do useCallback, então essa função não fica sendo recriada a cada
+  // arraste.
   const saveLayout = useCallback((l: Layout) => {
     const key = sizeKey === 'manual' ? `${manualW}x${manualH}` : sizeKey;
-    const next = { ...layouts, [key]: l };
-    setLayouts(next);
-    localStorage.setItem(STORAGE_LAYOUTS, JSON.stringify(next));
-  }, [layouts, sizeKey, manualW, manualH]);
+    setLayouts(prev => ({ ...prev, [key]: l }));
+  }, [sizeKey, manualW, manualH]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      localStorage.setItem(STORAGE_LAYOUTS, JSON.stringify(layouts));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [layouts]);
 
   const updateElem  = (key: ElemKey, patch: Partial<Elem>) =>
     saveLayout({ ...layout, elems: { ...layout.elems, [key]: { ...layout.elems[key], ...patch } } });
   const moveElem    = (key: ElemKey, dx: number, dy: number) => {
     const e = layout.elems[key];
+    if (e.locked) return;
     updateElem(key, { x: Math.max(0, Math.min(W - e.w, e.x + dx)), y: Math.max(0, Math.min(H - e.h, e.y + dy)) });
   };
   const resizeElem  = (key: ElemKey, dw: number, dh: number) => {
     const e = layout.elems[key];
+    if (e.locked) return;
     updateElem(key, { w: Math.max(5, Math.min(W - e.x, e.w + dw)), h: Math.max(2, Math.min(H - e.y, e.h + dh)) });
+  };
+
+  // ── Formas decorativas (retângulo/linha) ──────────────────────────────────────
+  const addShape = (kind: ShapeKind) => {
+    const id = `shape_${Date.now()}_${Math.round(Math.random() * 1000)}`;
+    const shape: ShapeElem = kind === 'rect'
+      ? { id, kind, x: W * 0.15, y: H * 0.15, w: W * 0.5, h: H * 0.3, color: '#000000', strokeWidth: 1, radius: 2, filled: false }
+      : { id, kind, x: W * 0.1, y: H * 0.5, w: W * 0.6, h: 0, color: '#000000', strokeWidth: 0.5 };
+    saveLayout({ ...layout, shapes: [...(layout.shapes || []), shape] });
+    setSelected(null);
+    setSelectedShapeId(id);
+  };
+  const updateShape = (id: string, patch: Partial<ShapeElem>) =>
+    saveLayout({ ...layout, shapes: (layout.shapes || []).map(s => s.id === id ? { ...s, ...patch } : s) });
+  const deleteShape = (id: string) => {
+    saveLayout({ ...layout, shapes: (layout.shapes || []).filter(s => s.id !== id) });
+    setSelectedShapeId(null);
+  };
+  const moveShape = (id: string, dx: number, dy: number) => {
+    const s = (layout.shapes || []).find(sh => sh.id === id);
+    if (!s) return;
+    updateShape(id, { x: Math.max(0, Math.min(W - Math.max(0, s.w), s.x + dx)), y: Math.max(0, Math.min(H - Math.max(0, s.h), s.y + dy)) });
+  };
+  const resizeShape = (id: string, dw: number, dh: number) => {
+    const s = (layout.shapes || []).find(sh => sh.id === id);
+    if (!s) return;
+    if (s.kind === 'line') {
+      updateShape(id, { w: s.w + dw, h: s.h + dh });
+    } else {
+      updateShape(id, { w: Math.max(5, Math.min(W - s.x, s.w + dw)), h: Math.max(5, Math.min(H - s.y, s.h + dh)) });
+    }
+  };
+
+  // Arrastar bloco direto na área da etiqueta (Ajustar) — alternativa aos steppers de X/Y em
+  // "Configurar Elementos". Guarda a posição ORIGINAL do elemento e do ponteiro no pointerdown
+  // (não a última posição) — cada pointermove recalcula x/y ABSOLUTO a partir dessas duas
+  // âncoras fixas, em vez de somar um delta incremental em cima do estado atual. Isso importa
+  // porque o React 18 pode enfileirar (batch) vários pointermove do Android numa render só; com
+  // delta incremental, os eventos "perdidos" no meio do lote simplesmente desapareciam e o
+  // arraste avançava só ~1mm por lote inteiro em vez do total arrastado. Com âncora fixa, o
+  // ÚLTIMO evento do lote já calcula a posição final correta sozinho, então nada se perde.
+  // `setPointerCapture` garante que o arraste continua liso mesmo se o dedo sair da área do
+  // bloco antes de soltar.
+  const dragRef = useRef<{ key: ElemKey; baseX: number; baseY: number; startX: number; startY: number } | null>(null);
+  const [draggingKey, setDraggingKey] = useState<ElemKey | null>(null);
+
+  const handleElemPointerDown = (e: React.PointerEvent<HTMLDivElement>, key: ElemKey) => {
+    e.stopPropagation();
+    setSelected(key);
+    setSelectedShapeId(null);
+    // Elemento travado: ainda seleciona (pra destravar/ajustar fonte etc), só não inicia
+    // arraste — evita mover sem querer depois de já ter posicionado do jeito certo.
+    if (layout.elems[key].locked) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const el = layout.elems[key];
+    dragRef.current = { key, baseX: el.x, baseY: el.y, startX: e.clientX, startY: e.clientY };
+    setDraggingKey(key);
+  };
+  const handleElemPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const dxMm = (e.clientX - drag.startX) / scale;
+    const dyMm = (e.clientY - drag.startY) / scale;
+    const el = layout.elems[drag.key];
+    updateElem(drag.key, {
+      x: Math.max(0, Math.min(W - el.w, drag.baseX + dxMm)),
+      y: Math.max(0, Math.min(H - el.h, drag.baseY + dyMm)),
+    });
+  };
+  const handleElemPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current) { try { e.currentTarget.releasePointerCapture(e.pointerId); } catch {} }
+    dragRef.current = null;
+    setDraggingKey(null);
+  };
+
+  // Mesmo mecanismo de arraste acima (âncora fixa no pointerdown), só que pra formas (lista
+  // dinâmica em vez de chave fixa).
+  const shapeDragRef = useRef<{ id: string; baseX: number; baseY: number; startX: number; startY: number } | null>(null);
+  const [draggingShapeId, setDraggingShapeId] = useState<string | null>(null);
+
+  const handleShapePointerDown = (e: React.PointerEvent<Element>, id: string) => {
+    e.stopPropagation();
+    setSelectedShapeId(id);
+    setSelected(null);
+    try { (e.currentTarget as Element & { setPointerCapture: (id: number) => void }).setPointerCapture(e.pointerId); } catch {}
+    const s = (layout.shapes || []).find(sh => sh.id === id);
+    if (!s) return;
+    shapeDragRef.current = { id, baseX: s.x, baseY: s.y, startX: e.clientX, startY: e.clientY };
+    setDraggingShapeId(id);
+  };
+  const handleShapePointerMove = (e: React.PointerEvent<Element>) => {
+    const drag = shapeDragRef.current;
+    if (!drag) return;
+    const dxMm = (e.clientX - drag.startX) / scale;
+    const dyMm = (e.clientY - drag.startY) / scale;
+    const s = (layout.shapes || []).find(sh => sh.id === drag.id);
+    if (!s) return;
+    updateShape(drag.id, {
+      x: Math.max(0, Math.min(W - Math.max(0, s.w), drag.baseX + dxMm)),
+      y: Math.max(0, Math.min(H - Math.max(0, s.h), drag.baseY + dyMm)),
+    });
+  };
+  const handleShapePointerUp = (e: React.PointerEvent<Element>) => {
+    if (shapeDragRef.current) { try { (e.currentTarget as Element & { releasePointerCapture: (id: number) => void }).releasePointerCapture(e.pointerId); } catch {} }
+    shapeDragRef.current = null;
+    setDraggingShapeId(null);
+  };
+
+  // Arrastar as pontas de uma linha (endpoint 0 = início, 1 = fim) — muda ângulo/comprimento
+  // sem mover a linha inteira. Endpoint 0 desloca x/y mantendo o fim fixo (compensa w/h);
+  // endpoint 1 só ajusta w/h, x/y fica parado. Mesma âncora fixa no pointerdown (ver comentário
+  // acima) — sem isso as alças praticamente não respondiam no Android (cada lote de eventos
+  // batched do WebView só aplicava a última sub-mexida, não a soma do arraste inteiro).
+  const endpointDragRef = useRef<{ shapeId: string; endpoint: 0 | 1; baseX: number; baseY: number; baseW: number; baseH: number; startX: number; startY: number } | null>(null);
+  const handleEndpointPointerDown = (e: React.PointerEvent<Element>, shapeId: string, endpoint: 0 | 1) => {
+    e.stopPropagation();
+    try { (e.currentTarget as Element & { setPointerCapture: (id: number) => void }).setPointerCapture(e.pointerId); } catch {}
+    const s = (layout.shapes || []).find(sh => sh.id === shapeId);
+    if (!s) return;
+    endpointDragRef.current = { shapeId, endpoint, baseX: s.x, baseY: s.y, baseW: s.w, baseH: s.h, startX: e.clientX, startY: e.clientY };
+  };
+  const handleEndpointPointerMove = (e: React.PointerEvent<Element>) => {
+    const drag = endpointDragRef.current;
+    if (!drag) return;
+    const dxMm = (e.clientX - drag.startX) / scale;
+    const dyMm = (e.clientY - drag.startY) / scale;
+    if (drag.endpoint === 0) {
+      updateShape(drag.shapeId, { x: drag.baseX + dxMm, y: drag.baseY + dyMm, w: drag.baseW - dxMm, h: drag.baseH - dyMm });
+    } else {
+      updateShape(drag.shapeId, { w: drag.baseW + dxMm, h: drag.baseH + dyMm });
+    }
+  };
+  const handleEndpointPointerUp = (e: React.PointerEvent<Element>) => {
+    if (endpointDragRef.current) { try { (e.currentTarget as Element & { releasePointerCapture: (id: number) => void }).releasePointerCapture(e.pointerId); } catch {} }
+    endpointDragRef.current = null;
   };
 
   const handleSizeSelect = (dims: [number, number] | 'manual') => {
@@ -459,7 +716,11 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         sectorNotesHasHeader: !layout.elems.sectornotes.noteFilter,
         sectorNotesFontFamily: layout.elems.sectornotes.fontFamily,
       };
-      const photoUrl = product.photoUrl;
+      // O elemento "Foto" da etiqueta usa SÓ a miniatura de linhas cadastrada em "Miniaturas
+      // de Etiquetas" (Product.labelThumbnailUrl) — nunca a foto normal do produto, que sai
+      // borrada/escura numa impressora térmica monocromática. Sem miniatura cadastrada, o
+      // espaço fica em branco aqui (a prévia mostra o aviso, ver ContentPreview).
+      const photoUrl = product.labelThumbnailUrl;
       if (batchItems && batchItems.length > 1) {
         await labelService.printProductLabelsBatch(
           batchItems.map(item => ({
@@ -467,17 +728,18 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
             variation: item.variation,
             sizeGrid: item.sizeGrid,
             sectorNotesText: getSectorNotesText(item.variation, layout.elems.sectornotes.noteFilter) || undefined,
-            photoUrl: item.product.photoUrl,
+            photoUrl: item.product.labelThumbnailUrl,
             lotId: item.lotId,
             orderId: item.orderId,
             itemIdx: item.itemIdx,
+            saleId: item.saleId,
           })),
           paperDims, ll
         );
       } else if (isBoxLabel) {
-        await labelService.printWholesaleLabel(product, variation!, customQty, paperDims, ll, photoUrl, sizeGrid, routeItem?.lotId, routeItem?.orderId, routeItem?.itemIdx);
+        await labelService.printWholesaleLabel(product, variation!, customQty, paperDims, ll, photoUrl, sizeGrid, routeItem?.lotId, routeItem?.orderId, routeItem?.itemIdx, routeItem?.saleId);
       } else {
-        await labelService.printProductLabels(product, variation, sizesToPrint, quantities, paperDims, ll, photoUrl, sizeGrid, routeItem?.lotId, routeItem?.orderId, routeItem?.itemIdx);
+        await labelService.printProductLabels(product, variation, sizesToPrint, quantities, paperDims, ll, photoUrl, sizeGrid, routeItem?.lotId, routeItem?.orderId, routeItem?.itemIdx, routeItem?.saleId);
       }
       onClose();
     } finally { setPrinting(false); }
@@ -505,6 +767,9 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         photoUrl?: string;
         gridEntries: { sz: string; qty: number | null }[];
         notesText: string;
+        packagingText?: string;
+        customerText?: string;
+        recipientText?: string;
       }): Promise<HTMLCanvasElement> => {
         const canvas = document.createElement('canvas');
         canvas.width  = cW;
@@ -512,6 +777,37 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         const ctx = canvas.getContext('2d')!;
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, cW, cH);
+
+        // Formas decorativas — desenhadas primeiro, ficam atrás do texto/QR/foto.
+        (layout.shapes || []).filter(s => s.visible !== false).forEach(s => {
+          ctx.strokeStyle = s.color;
+          ctx.fillStyle = s.color;
+          ctx.lineWidth = Math.max(1, mmToPx(s.strokeWidth));
+          ctx.setLineDash(s.dashed ? [mmToPx(s.strokeWidth) * 3, mmToPx(s.strokeWidth) * 2.2] : []);
+          if (s.kind === 'rect') {
+            ctx.save();
+            if (s.rotation) {
+              const cx = mmToPx(s.x + s.w / 2), cy = mmToPx(s.y + s.h / 2);
+              ctx.translate(cx, cy);
+              ctx.rotate((s.rotation * Math.PI) / 180);
+              ctx.translate(-cx, -cy);
+            }
+            ctx.beginPath();
+            if (typeof (ctx as any).roundRect === 'function') {
+              (ctx as any).roundRect(mmToPx(s.x), mmToPx(s.y), mmToPx(s.w), mmToPx(s.h), mmToPx(s.radius ?? 0));
+            } else {
+              ctx.rect(mmToPx(s.x), mmToPx(s.y), mmToPx(s.w), mmToPx(s.h));
+            }
+            if (s.filled) ctx.fill(); else ctx.stroke();
+            ctx.restore();
+          } else {
+            ctx.beginPath();
+            ctx.moveTo(mmToPx(s.x), mmToPx(s.y));
+            ctx.lineTo(mmToPx(s.x + s.w), mmToPx(s.y + s.h));
+            ctx.stroke();
+          }
+          ctx.setLineDash([]);
+        });
 
         const drawText = (el: Elem, text: string, fallbackPt: number) => {
           if (!el.visible || !text) return;
@@ -521,8 +817,24 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                    : el.fontFamily === 'avenir'  ? '"Century Gothic","Trebuchet MS","Gill Sans MT",sans-serif'
                    : el.fontFamily === 'arial'   ? 'Arial, sans-serif'
                    : 'Helvetica, Arial, sans-serif';
-          ctx.font         = `${el.bold ? '900' : '400'} ${fsPx}px ${ff}`;
-          ctx.fillStyle    = '#000000';
+          ctx.font = `${el.bold ? '900' : '400'} ${fsPx}px ${ff}`;
+          if (el.invert) {
+            // Efeito "chip" — fundo preto arredondado do tamanho do elemento, texto branco
+            // por cima (mesmo visual das pílulas de Grade, só que pra qualquer campo).
+            const bx = mmToPx(el.x), by = mmToPx(el.y), bw = mmToPx(el.w), bh = mmToPx(el.h);
+            const radius = Math.min(bh / 2, mmToPx(1.2));
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            if (typeof (ctx as any).roundRect === 'function') {
+              (ctx as any).roundRect(bx, by, bw, bh, radius);
+            } else {
+              ctx.rect(bx, by, bw, bh);
+            }
+            ctx.fill();
+            ctx.fillStyle = '#ffffff';
+          } else {
+            ctx.fillStyle = '#000000';
+          }
           ctx.textAlign    = 'center';
           ctx.textBaseline = 'middle';
           ctx.fillText(text, mmToPx(el.x + el.w / 2), mmToPx(el.y + el.h / 2));
@@ -547,11 +859,14 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           });
         }
 
+        // Nome e Cor não desenham mais como blocos próprios — só entram no texto de
+        // Referência via combineFields (ver combineRefFields, já aplicado em opts.refText).
         drawText(e.reference, opts.refText, 8);
-        if (opts.nameText !== undefined) drawText(e.name, opts.nameText, 6);
-        drawText(e.color, opts.colorText, 7);
         if (e.size.visible && opts.sizeText !== undefined) drawText(e.size, opts.sizeText, 11);
         drawText(e.footer, 'ANTIGRAVITY SYSTEM', 4);
+        if (opts.packagingText) drawText(e.packaging, opts.packagingText, 4.5);
+        if (opts.customerText) drawText(e.customer, opts.customerText, 4.5);
+        if (opts.recipientText) drawText(e.recipient, opts.recipientText, 4.5);
 
         // Grade pills
         const gridEntries = opts.gridEntries;
@@ -685,15 +1000,20 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
       if (batchItems && batchItems.length > 1) {
         fileNames = [];
         for (const item of batchItems) {
-          const itemQrSuffix = (item.lotId && item.orderId) ? `|${item.lotId}|${item.orderId}|${item.itemIdx ?? ''}` : '';
+          const itemQrSuffix = (item.lotId && item.orderId)
+            ? `|${item.lotId}|${item.orderId}|${item.itemIdx ?? ''}`
+            : (item.saleId ? `|SALE|${item.saleId}` : '');
           const qrDataUrl = await labelService.generateQRCode(`PRD|${item.product.id}|${item.variation.id}|GRADE${itemQrSuffix}`);
           const canvas = await drawFrame({
-            refText: item.product.reference || item.product.name,
+            refText: combineRefFields(e.reference.combineFields, item.product.reference || item.product.name, item.product.name, item.variation.colorName || '---'),
             colorText: item.variation.colorName || '---',
             qrDataUrl,
-            photoUrl: item.product.photoUrl,
+            photoUrl: item.product.labelThumbnailUrl,
             gridEntries: parseSizeGridEntries(item.sizeGrid),
             notesText: getSectorNotesText(item.variation, e.sectornotes.noteFilter),
+            packagingText: item.packagingName,
+            customerText: item.customerName,
+            recipientText: item.recipientName,
           });
           frames.push(canvas);
           const safeName = `Etiqueta_${item.product.reference || item.product.name}_${item.variation.colorName || 'cor'}`.replace(/[^\w\-]+/g, '_');
@@ -719,14 +1039,17 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
 
           for (let i = 0; i < qty; i++) {
             const canvas = await drawFrame({
-              refText: product.reference || product.name,
+              refText: combineRefFields(e.reference.combineFields, product.reference || product.name, product.name, variation?.colorName || '---'),
               nameText: product.name,
               colorText: variation?.colorName || '---',
               sizeText: isBoxLabel ? 'BOX' : size,
               qrDataUrl,
-              photoUrl: product.photoUrl,
+              photoUrl: product.labelThumbnailUrl,
               gridEntries: sizeGridEntries,
               notesText: sectorNotesText,
+              packagingText: previewPackagingName,
+              customerText: previewCustomerName,
+              recipientText: previewRecipientName,
             });
             frames.push(canvas);
           }
@@ -878,6 +1201,10 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
     width: el.w * scale, height: el.h * scale,
     overflow: 'hidden',
   });
+  // Efeito "chip" na prévia (Visualizar) — retângulo preto arredondado + texto branco, pra
+  // bater com o que sai de verdade na impressão/JPG (ver drawText em buildLabelFrames).
+  const chipWrapStyle = (el: Elem) => el.invert ? { backgroundColor: '#000000', borderRadius: Math.min((el.h * scale) / 2, 6) } : {};
+  const chipTextColor = (el: Elem) => el.invert ? '#ffffff' : '#000000';
 
   const sel = selected ? layout.elems[selected] : null;
   const dk  = isDarkMode;
@@ -887,29 +1214,29 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
     const e = layout.elems;
     return (
       <div style={{ position:'relative', width:previewW, height:previewH, backgroundColor:'#fff', flexShrink:0, overflow:'hidden' }}>
+        {/* Formas decorativas — desenhadas primeiro, ficam atrás do texto */}
+        <svg width={previewW} height={previewH} style={{ position:'absolute', left:0, top:0, pointerEvents:'none' }}>
+          {(layout.shapes || []).filter(s => s.visible !== false).map(s => s.kind === 'rect' ? (
+            <rect key={s.id} x={s.x*scale} y={s.y*scale} width={s.w*scale} height={s.h*scale} rx={(s.radius ?? 0)*scale}
+              fill={s.filled ? s.color : 'none'} stroke={s.color} strokeWidth={s.strokeWidth*scale} strokeDasharray={s.dashed ? '4 3' : undefined}
+              transform={s.rotation ? `rotate(${s.rotation} ${(s.x+s.w/2)*scale} ${(s.y+s.h/2)*scale})` : undefined} />
+          ) : (
+            <line key={s.id} x1={s.x*scale} y1={s.y*scale} x2={(s.x+s.w)*scale} y2={(s.y+s.h)*scale} stroke={s.color} strokeWidth={s.strokeWidth*scale} strokeDasharray={s.dashed ? '4 3' : undefined} />
+          ))}
+        </svg>
         {e.reference.visible && (
-          <div style={{ ...pos(e.reference), display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ ...cssFont(e.reference, 8), color:'#000000', textAlign:'center' }}>{product.reference || product.name}</span>
-          </div>
-        )}
-        {e.name.visible && (
-          <div style={{ ...pos(e.name), display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ ...cssFont(e.name, 6), color:'#000000', textAlign:'center' }}>{product.name}</span>
-          </div>
-        )}
-        {e.color.visible && (
-          <div style={{ ...pos(e.color), display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ ...cssFont(e.color, 7), color:'#000000', textAlign:'center' }}>{variation?.colorName || '---'}</span>
+          <div style={{ ...pos(e.reference), ...chipWrapStyle(e.reference), display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <span style={{ ...cssFont(e.reference, 8), color:chipTextColor(e.reference), textAlign:'center' }}>{combineRefFields(e.reference.combineFields, product.reference || product.name, product.name, variation?.colorName || '---')}</span>
           </div>
         )}
         {e.size.visible && !isBoxLabel && (
-          <div style={{ ...pos(e.size), display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ ...cssFont(e.size, 11), color:'#000000', textAlign:'center' }}>{previewSize}</span>
+          <div style={{ ...pos(e.size), ...chipWrapStyle(e.size), display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <span style={{ ...cssFont(e.size, 11), color:chipTextColor(e.size), textAlign:'center' }}>{previewSize}</span>
           </div>
         )}
         {e.size.visible && isBoxLabel && (
-          <div style={{ ...pos(e.size), display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ ...cssFont(e.size, 11), color:'#000000', textAlign:'center' }}>BOX</span>
+          <div style={{ ...pos(e.size), ...chipWrapStyle(e.size), display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <span style={{ ...cssFont(e.size, 11), color:chipTextColor(e.size), textAlign:'center' }}>BOX</span>
           </div>
         )}
         {e.qr.visible && (
@@ -918,15 +1245,15 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           </div>
         )}
         {e.photo.visible && (
-          <div style={{ ...pos(e.photo), borderRadius:2, overflow:'hidden', backgroundColor:'#fef3c7' }}>
-            {product.photoUrl
-              ? <img src={product.photoUrl} alt="Foto" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
-              : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', backgroundColor:'#fef3c7', border:'1px dashed #f59e0b' }}><span style={{ fontSize: Math.max(5, 6*scale), color:'#f59e0b' }}>FOTO</span></div>}
+          <div style={{ ...pos(e.photo), borderRadius:2, overflow:'hidden', backgroundColor: product.labelThumbnailUrl ? 'transparent' : '#fef3c7' }}>
+            {product.labelThumbnailUrl
+              ? <img src={product.labelThumbnailUrl} alt="Miniatura para etiqueta" style={{ width:'100%', height:'100%', objectFit:'contain' }}/>
+              : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', backgroundColor:'#fef3c7', border:'1px dashed #f59e0b', padding:2, overflow:'hidden' }}><span style={{ fontSize: Math.max(4, 4.5*scale), color:'#b45309', textAlign:'center', lineHeight:1.2, fontWeight:700 }}>Sem miniatura de etiquetas cadastrado</span></div>}
           </div>
         )}
         {e.footer.visible && (
-          <div style={{ ...pos(e.footer), display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <span style={{ ...cssFont(e.footer, 4), color:'#000000' }}>ANTIGRAVITY SYSTEM</span>
+          <div style={{ ...pos(e.footer), ...chipWrapStyle(e.footer), display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <span style={{ ...cssFont(e.footer, 4), color:chipTextColor(e.footer) }}>ANTIGRAVITY SYSTEM</span>
           </div>
         )}
         {e.osdata.visible && (
@@ -947,6 +1274,42 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
               lineHeight:1.35, whiteSpace:'pre-line', overflow:'hidden', width:'100%'
             }}>
               {sectorNotesText || 'Sem instruções de setor cadastradas para esta cor'}
+            </span>
+          </div>
+        )}
+        {e.packaging.visible && (
+          <div style={{ ...pos(e.packaging), ...(previewPackagingName ? chipWrapStyle(e.packaging) : {}), display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+            <span style={{
+              ...cssFont(e.packaging, 4.5),
+              color: previewPackagingName ? chipTextColor(e.packaging) : '#94a3b8',
+              fontStyle: previewPackagingName ? 'normal' : 'italic',
+              textAlign:'center',
+            }}>
+              {previewPackagingName || 'Sem embalagem vinculada'}
+            </span>
+          </div>
+        )}
+        {e.customer.visible && (
+          <div style={{ ...pos(e.customer), ...(previewCustomerName ? chipWrapStyle(e.customer) : {}), display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+            <span style={{
+              ...cssFont(e.customer, 4.5),
+              color: previewCustomerName ? chipTextColor(e.customer) : '#94a3b8',
+              fontStyle: previewCustomerName ? 'normal' : 'italic',
+              textAlign:'center',
+            }}>
+              {previewCustomerName || 'Sem cliente vinculado'}
+            </span>
+          </div>
+        )}
+        {e.recipient.visible && (
+          <div style={{ ...pos(e.recipient), ...(previewRecipientName ? chipWrapStyle(e.recipient) : {}), display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+            <span style={{
+              ...cssFont(e.recipient, 4.5),
+              color: previewRecipientName ? chipTextColor(e.recipient) : '#94a3b8',
+              fontStyle: previewRecipientName ? 'normal' : 'italic',
+              textAlign:'center',
+            }}>
+              {previewRecipientName || 'Sem destinatário definido'}
             </span>
           </div>
         )}
@@ -976,18 +1339,138 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
 
   // ── Edit preview (colored blocks) ────────────────────────────────────────────
   const EditPreview = () => (
-    <div style={{ position:'relative', width:previewW, height:previewH, backgroundColor:'#fff', flexShrink:0 }} onClick={()=>setSelected(null)}>
-      {ELEM_KEYS.map(key => {
+    <div style={{ position:'relative', width:previewW, height:previewH, backgroundColor:'#fff', flexShrink:0 }} onClick={()=>{setSelected(null);setSelectedShapeId(null);}}>
+      {/* Formas (retângulo/linha) — HTML/CSS (div), NÃO SVG. As primitivas de forma em SVG
+          (<rect>/<line>/<circle>) têm suporte inconsistente a `touch-action` em várias versões
+          do Chromium/WebView do Android — era isso que deixava o arraste de forma/linha preso/
+          não-contínuo mesmo já com a lógica de arraste corrigida (âncora fixa, sem localStorage
+          no meio do gesto etc). Os blocos de texto logo abaixo (CONFIG_LIST_KEYS) sempre foram
+          <div> normal e nunca tiveram esse problema — aqui é a mesma técnica, e é literalmente
+          o que já funciona de verdade no editor usado pra imprimir na Ablemark
+          (ver LabelEditorView.tsx: elemento absolutamente posicionado, linha vira uma div fina
+          rotacionada com `transform-origin` na ponta inicial, em vez de x1/y1/x2/y2 de SVG). */}
+      {(layout.shapes || []).filter(s => s.visible !== false).map(s => {
+        const isSel = selectedShapeId === s.id;
+        if (s.kind === 'rect') {
+          return (
+            <div
+              key={s.id}
+              onPointerDown={e => handleShapePointerDown(e, s.id)}
+              onPointerMove={handleShapePointerMove}
+              onPointerUp={handleShapePointerUp}
+              onPointerCancel={handleShapePointerUp}
+              style={{
+                position: 'absolute',
+                left: s.x * scale, top: s.y * scale,
+                width: Math.max(1, s.w * scale), height: Math.max(1, s.h * scale),
+                borderRadius: (s.radius ?? 0) * scale,
+                backgroundColor: s.filled ? s.color + '55' : (isSel ? s.color + '22' : 'transparent'),
+                border: `${Math.max(1, s.strokeWidth * scale)}px ${s.dashed ? 'dashed' : 'solid'} ${s.color}`,
+                boxSizing: 'border-box',
+                cursor: 'grab', touchAction: 'none',
+                transform: s.rotation ? `rotate(${s.rotation}deg)` : undefined,
+              }}
+            />
+          );
+        }
+        // Linha — div fina do comprimento certo, rotacionada em torno da ponta inicial
+        // (transformOrigin '0 50%'), igual à técnica do editor da Ablemark. A faixa de toque
+        // (height:20) é mais alta que o traço visual desenhado dentro dela, só pra facilitar
+        // acertar com o dedo — mesmo propósito da antiga faixa invisível de SVG.
+        const dxPx = s.w * scale, dyPx = s.h * scale;
+        const lengthPx = Math.max(1, Math.hypot(dxPx, dyPx));
+        const angleDeg = Math.atan2(dyPx, dxPx) * 180 / Math.PI;
+        const strokePx = Math.max(1, s.strokeWidth * scale);
+        return (
+          <div
+            key={s.id}
+            onPointerDown={e => handleShapePointerDown(e, s.id)}
+            onPointerMove={handleShapePointerMove}
+            onPointerUp={handleShapePointerUp}
+            onPointerCancel={handleShapePointerUp}
+            style={{
+              position: 'absolute',
+              left: s.x * scale, top: s.y * scale,
+              width: lengthPx, height: 20,
+              transform: `rotate(${angleDeg}deg)`,
+              transformOrigin: '0 50%',
+              display: 'flex', alignItems: 'center',
+              cursor: 'grab', touchAction: 'none',
+            }}
+          >
+            <div style={{
+              width: '100%', height: strokePx,
+              backgroundColor: s.dashed ? 'transparent' : s.color,
+              borderTop: s.dashed ? `${strokePx}px dashed ${s.color}` : 'none',
+            }} />
+          </div>
+        );
+      })}
+      {selectedShapeId && (layout.shapes || []).filter(s => s.id === selectedShapeId).map(s => (
+        <div key={`sel_${s.id}`}>
+          {/* Pin de centro (só linha) — arrasta a linha inteira; as duas pontas continuam só
+              mudando ângulo/comprimento (handleEndpointPointerDown), não a posição toda. */}
+          {s.kind === 'line' && (
+            <div
+              onPointerDown={e => handleShapePointerDown(e, s.id)}
+              onPointerMove={handleShapePointerMove}
+              onPointerUp={handleShapePointerUp}
+              onPointerCancel={handleShapePointerUp}
+              style={{
+                position: 'absolute',
+                left: (s.x + s.w / 2) * scale - 7, top: (s.y + s.h / 2) * scale - 7,
+                width: 14, height: 14, borderRadius: 9999,
+                backgroundColor: '#fff', border: `2.5px solid ${s.color}`,
+                boxSizing: 'border-box', cursor: 'grab', touchAction: 'none',
+              }}
+            />
+          )}
+          {([[s.x, s.y], [s.x + s.w, s.y + s.h]] as const).map(([px, py], i) => (
+            <div
+              key={i}
+              onPointerDown={e => handleEndpointPointerDown(e, s.id, i as 0 | 1)}
+              onPointerMove={handleEndpointPointerMove}
+              onPointerUp={handleEndpointPointerUp}
+              onPointerCancel={handleEndpointPointerUp}
+              style={{
+                position: 'absolute',
+                left: px * scale - 7, top: py * scale - 7,
+                width: 14, height: 14, borderRadius: 9999,
+                backgroundColor: s.color, border: '1.5px solid #fff',
+                boxSizing: 'border-box', cursor: 'grab', touchAction: 'none',
+              }}
+            />
+          ))}
+        </div>
+      ))}
+      {CONFIG_LIST_KEYS.map(key => {
         const el = layout.elems[key];
         if (!el.visible) return null;
         const isSel = selected === key;
+        const isDragging = draggingKey === key;
         return (
-          <div key={key} onClick={e=>{e.stopPropagation();setSelected(key);}}
+          <div key={key}
+            onClick={e=>{e.stopPropagation();setSelected(key);}}
+            onPointerDown={e=>handleElemPointerDown(e, key)}
+            onPointerMove={handleElemPointerMove}
+            onPointerUp={handleElemPointerUp}
+            onPointerCancel={handleElemPointerUp}
             style={{ position:'absolute', left:el.x*scale, top:el.y*scale, width:el.w*scale, height:el.h*scale,
-              backgroundColor:el.color+'2a', border:`${isSel?2:1}px ${isSel?'solid':'dashed'} ${el.color}`,
-              boxSizing:'border-box', cursor:'pointer', zIndex:isSel?10:1,
+              backgroundColor:el.color+(isDragging?'45':isSel?'38':'2a'), border:`${isSel?2.5:1}px ${isSel?'solid':'dashed'} ${el.color}`,
+              boxShadow:isSel?`0 0 0 3px ${el.color}33`:'none',
+              boxSizing:'border-box', cursor:el.locked?'not-allowed':isDragging?'grabbing':'grab', touchAction:'none', zIndex:isDragging?20:isSel?10:1,
               display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
-            <span style={{ fontSize:Math.max(5,7*scale), color:el.color, fontWeight:900, textAlign:'center', lineHeight:1 }}>{el.label}</span>
+            <span style={{ fontSize:Math.max(5,7*scale), color:el.color, fontWeight:900, textAlign:'center', lineHeight:1, pointerEvents:'none' }}>{el.label}</span>
+            {el.locked && (
+              <div style={{ position:'absolute', top:2, right:2, width:14, height:14, borderRadius:9999, backgroundColor:'#f59e0b', display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none', boxShadow:'0 1px 2px rgba(0,0,0,0.3)' }}>
+                <Lock size={8} color="#fff" strokeWidth={3} />
+              </div>
+            )}
+            {/* Cantos — só pra deixar óbvio qual bloco está selecionado (sem o D-pad de setas,
+                que servia como esse indicativo antes) */}
+            {isSel && !isDragging && ([['-4px','-4px'],['calc(100% - 4px)','-4px'],['-4px','calc(100% - 4px)'],['calc(100% - 4px)','calc(100% - 4px)']] as const).map(([left, top], i) => (
+              <div key={i} style={{ position:'absolute', left, top, width:8, height:8, borderRadius:9999, backgroundColor:el.color, border:'1.5px solid #fff', boxShadow:'0 1px 2px rgba(0,0,0,0.3)', pointerEvents:'none' }} />
+            ))}
           </div>
         );
       })}
@@ -1078,17 +1561,44 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         </div>
 
         {/* View / Edit tabs */}
-        <div className={`flex p-1 rounded-2xl gap-1 ${dk?'bg-slate-800':'bg-slate-100'}`}>
-          {([['view','Visualizar',<FileText size={12}/>],['edit','Ajustar',<Settings2 size={12}/>]] as const).map(([t,lbl,icon])=>(
-            <button key={t} type="button" onClick={()=>{setTab(t as any);setSelected(null);}}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${tab===t?'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm':'text-slate-400'}`}>
-              {icon} {lbl}
+        <div className="flex items-center gap-2">
+          <div className={`flex-1 flex p-1 rounded-2xl gap-1 ${dk?'bg-slate-800':'bg-slate-100'}`}>
+            {([['view','Visualizar',<FileText size={12}/>],['edit','Ajustar',<Settings2 size={12}/>]] as const).map(([t,lbl,icon])=>(
+              <button key={t} type="button" onClick={()=>{setTab(t as any);setSelected(null);}}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${tab===t?'bg-white dark:bg-slate-700 text-indigo-600 shadow-sm':'text-slate-400'}`}>
+                {icon} {lbl}
+              </button>
+            ))}
+          </div>
+          {tab === 'edit' && (
+            <button
+              type="button"
+              aria-label="Abrir etiqueta em tela cheia"
+              title="Tela cheia — mais fácil de arrastar"
+              onClick={() => setFullscreenEdit(true)}
+              className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 transition-all active:scale-90 ${dk ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+            >
+              <Maximize2 size={16} />
             </button>
-          ))}
+          )}
+          <button
+            type="button"
+            aria-label="Dicas de edição"
+            title="Como editar a etiqueta"
+            onClick={() => setTipsModalOpen(true)}
+            className={`relative w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 transition-all active:scale-90 ${dk ? 'bg-slate-800 text-indigo-400 hover:bg-slate-700 active:bg-indigo-900/50' : 'bg-slate-100 text-indigo-500 hover:bg-slate-200 active:bg-indigo-100'}`}
+          >
+            <span className="absolute inset-0 rounded-2xl animate-pulse-indigo-ring pointer-events-none" />
+            <HelpCircle size={16} />
+          </button>
         </div>
 
-        {/* Preview */}
-        <div className={`rounded-2xl border-2 overflow-x-auto overflow-y-hidden ${dk?'border-slate-700 bg-slate-900':'border-slate-200 bg-slate-100'}`}>
+        {/* Preview — overflow-hidden (não -auto): `scale` já é calculado (Math.min(scaleW,
+            scaleH)) pra previewW/previewH nunca passarem de MAX_W/MAX_H, então esse container
+            nunca precisa rolar de verdade; tê-lo como scrollável só dava ao Android WebView um
+            gesto de rolagem pra "roubar" o toque no meio do arraste de uma forma/linha (mesmo
+            bug corrigido na tela cheia — ver comentário lá). */}
+        <div className={`rounded-2xl border-2 overflow-hidden ${dk?'border-slate-700 bg-slate-900':'border-slate-200 bg-slate-100'}`}>
           <div style={{ minWidth:'max-content' }}>
             {tab === 'edit' ? (
               <>
@@ -1111,6 +1621,68 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           </div>
         </div>
 
+        {/* Tela cheia do canvas de ajuste — mesmo EditPreview/Ruler de cima, só que sozinhos
+            num overlay fixo. `overscrollBehavior:'contain'` + `touchAction:'none'` no fundo
+            impedem que um arraste que escape de um elemento vire rolagem/pull-to-refresh da
+            página por trás; sai só pelo X (sem swipe-to-close). */}
+        {fullscreenEdit && tab === 'edit' && (
+          <div
+            className={`fixed inset-0 z-[95000] flex flex-col ${dk ? 'bg-slate-950' : 'bg-slate-100'}`}
+            style={{ overscrollBehavior: 'contain' }}
+          >
+            <div className={`flex flex-col gap-2 px-4 py-3 border-b shrink-0 ${dk ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-white'}`}>
+              <span className={`text-[11px] font-black uppercase tracking-widest truncate ${dk ? 'text-white' : 'text-slate-900'}`}>Ajustar Etiqueta — Tela Cheia</span>
+              <div className="flex flex-col gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setElemConfigOpen(true)}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] ${dk ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                >
+                  <Layers size={15} className="shrink-0" /> Camadas e Elementos — Liga/Desliga e Seleciona
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFullscreenPreviewMode(v => !v)}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] ${fullscreenPreviewMode ? 'bg-indigo-600 text-white' : (dk ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600')}`}
+                >
+                  {fullscreenPreviewMode ? <Settings2 size={15} className="shrink-0" /> : <FileText size={15} className="shrink-0" />}
+                  {fullscreenPreviewMode ? 'Voltar pra Edição' : 'Pré-visualizar Etiqueta Pronta'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setFullscreenEdit(false); setFullscreenPreviewMode(false); }}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-[0.98] ${dk ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+                >
+                  <X size={15} className="shrink-0" /> Sair da Tela Cheia
+                </button>
+              </div>
+            </div>
+            {/* overflow-hidden (não -auto) de propósito: sem container que role, não tem
+                gesto de rolagem competindo pelo toque — mesmo mecanismo de arraste já
+                validado na prévia normal (touchAction:'none' por elemento), sem precisar de
+                touch-action bloqueando tudo num container grande por cima (isso é o que
+                estava fazendo o WebView do Android cancelar o arraste no meio do gesto). */}
+            <div className="flex-1 overflow-hidden flex items-center justify-center p-4">
+              {fullscreenPreviewMode ? (
+                <div style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.12)', borderRadius: 2, overflow: 'hidden', flexShrink: 0 }}>
+                  <ContentPreview />
+                </div>
+              ) : (
+                <div style={{ minWidth: 'max-content' }}>
+                  <div style={{ display: 'flex' }}>
+                    <div style={{ width: RULER, height: RULER, flexShrink: 0, backgroundColor: dk ? '#1e293b' : '#f1f5f9', borderBottom: `1px solid ${dk ? '#334155' : '#cbd5e1'}`, borderRight: `1px solid ${dk ? '#334155' : '#cbd5e1'}` }} />
+                    <Ruler axis="h" totalMm={W} scale={scale} isDark={dk} />
+                  </div>
+                  <div style={{ display: 'flex' }}>
+                    <Ruler axis="v" totalMm={H} scale={scale} isDark={dk} />
+                    <EditPreview />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Configurar Elementos button */}
         {tab === 'edit' && (
           <button
@@ -1123,16 +1695,181 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
             }`}
           >
             <Layers size={15} />
-            Configurar Elementos
+            Elementos e Camadas
             <span className={`ml-1 text-[9px] font-black px-2 py-0.5 rounded-full ${dk ? 'bg-indigo-900/40 text-indigo-400' : 'bg-indigo-50 text-indigo-500'}`}>
-              {ELEM_KEYS.filter(k => layout.elems[k].visible).length}/{ELEM_KEYS.length} visíveis
+              {CONFIG_LIST_KEYS.filter(k => layout.elems[k].visible).length + (layout.shapes || []).filter(s => s.visible !== false).length}
+              /{CONFIG_LIST_KEYS.length + (layout.shapes || []).length} visíveis
             </span>
           </button>
         )}
 
+        {/* Adicionar Forma — retângulo de bordas arredondadas ou linha, decorativos */}
+        {tab === 'edit' && (
+          <div className="flex gap-2">
+            <button type="button" onClick={() => addShape('rect')}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 ${dk ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-indigo-500' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-400'}`}>
+              <Square size={14} strokeWidth={2.5} /> + Retângulo
+            </button>
+            <button type="button" onClick={() => addShape('line')}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 ${dk ? 'bg-slate-800 border-slate-700 text-slate-300 hover:border-indigo-500' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-400'}`}>
+              <Minus size={14} strokeWidth={2.5} /> + Linha
+            </button>
+          </div>
+        )}
+
+        {/* Painel de ajuste da forma selecionada */}
+        {tab === 'edit' && selectedShapeId && (() => {
+          const shape = (layout.shapes || []).find(s => s.id === selectedShapeId);
+          if (!shape) return null;
+          return (
+            <div className={`rounded-3xl border-2 overflow-hidden ${dk ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+              <div className={`flex items-center justify-between px-4 py-3 border-b ${dk ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'}`}>
+                <div className="flex items-center gap-2">
+                  {shape.kind === 'rect' ? <Square size={14} style={{ color: shape.color }} /> : <Minus size={14} style={{ color: shape.color }} />}
+                  <span className="text-[11px] font-black uppercase tracking-widest" style={{ color: shape.color }}>{shape.kind === 'rect' ? 'Retângulo' : 'Linha'}</span>
+                  {shape.visible === false && (
+                    <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full ${dk ? 'bg-slate-800 text-slate-500' : 'bg-slate-100 text-slate-400'}`}>Oculta</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button type="button" aria-label={shape.visible === false ? 'Mostrar forma' : 'Ocultar forma'} onClick={() => updateShape(shape.id, { visible: shape.visible === false })}
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 ${dk ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}>
+                    {shape.visible === false ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                  <button type="button" aria-label="Remover forma" onClick={() => deleteShape(shape.id)}
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 ${dk ? 'bg-rose-900/30 text-rose-400 hover:bg-rose-900/50' : 'bg-rose-50 text-rose-500 hover:bg-rose-100'}`}>
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+              <div className="p-4 flex flex-col gap-3">
+                {/* Cor */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {['#000000', '#ef4444', '#6366f1', '#f59e0b', '#10b981', '#0ea5e9', '#94a3b8'].map(c => (
+                    <button key={c} type="button" aria-label={`Cor ${c}`} onClick={() => updateShape(shape.id, { color: c })}
+                      className="w-7 h-7 rounded-full shrink-0 transition-all"
+                      style={{ backgroundColor: c, boxShadow: shape.color === c ? `0 0 0 2px ${dk ? '#0f172a' : '#fff'}, 0 0 0 4px ${c}` : 'none' }} />
+                  ))}
+                </div>
+                {/* Estilo da linha — sólida ou tracejada (vale pro contorno do retângulo também) */}
+                <div className="flex gap-2">
+                  {([[false, 'Sólida'], [true, 'Tracejada']] as const).map(([d, lbl]) => (
+                    <button key={lbl} type="button" onClick={() => updateShape(shape.id, { dashed: d })}
+                      className={`flex-1 py-2.5 rounded-xl border-2 text-[9px] font-black uppercase tracking-widest transition-all ${(!!shape.dashed) === d ? 'border-indigo-500 bg-indigo-600 text-white' : dk ? 'border-slate-700 bg-slate-800 text-slate-300' : 'border-slate-200 bg-slate-50 text-slate-600'}`}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+                {/* Espessura */}
+                <div className="flex flex-col gap-1.5">
+                  <div className={`flex items-center rounded-2xl border overflow-hidden ${dk ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
+                    <span className={`text-[9px] font-black uppercase px-3 py-2.5 border-r shrink-0 w-20 text-center ${dk ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>Espessura</span>
+                    <button type="button" aria-label="Diminuir espessura" onClick={() => updateShape(shape.id, { strokeWidth: Math.max(0.1, +(shape.strokeWidth - 0.1).toFixed(2)) })}
+                      className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Minus size={13}/></button>
+                    <span className={`flex-1 text-center text-[11px] font-black ${dk ? 'text-white' : 'text-slate-900'}`}>{shape.strokeWidth.toFixed(2)} mm</span>
+                    <button type="button" aria-label="Aumentar espessura" onClick={() => updateShape(shape.id, { strokeWidth: +(shape.strokeWidth + 0.1).toFixed(2) })}
+                      className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Plus size={13}/></button>
+                  </div>
+                  <input type="range" min={0.1} max={5} step={0.1} value={shape.strokeWidth}
+                    onChange={e => updateShape(shape.id, { strokeWidth: parseFloat(e.target.value) })}
+                    className="w-full" aria-label="Espessura (arrastar)" />
+                </div>
+                {/* Girar — retângulo gira em torno do próprio centro (campo shape.rotation);
+                    linha "gira" recalculando w/h mantendo comprimento e centro fixos, já que o
+                    ângulo dela já é o próprio vetor da linha, não um campo separado. */}
+                {(() => {
+                  const length = shape.kind === 'line' ? Math.hypot(shape.w, shape.h) : 0;
+                  const currentAngle = shape.kind === 'rect'
+                    ? Math.round((((shape.rotation ?? 0) % 360) + 360) % 360)
+                    : Math.round((((Math.atan2(shape.h, shape.w) * 180 / Math.PI) % 360) + 360) % 360);
+                  const setAngle = (deg: number) => {
+                    const norm = ((deg % 360) + 360) % 360;
+                    if (shape.kind === 'rect') {
+                      updateShape(shape.id, { rotation: norm });
+                    } else {
+                      const rad = (norm * Math.PI) / 180;
+                      const cx = shape.x + shape.w / 2, cy = shape.y + shape.h / 2;
+                      const newW = length * Math.cos(rad), newH = length * Math.sin(rad);
+                      updateShape(shape.id, { x: cx - newW / 2, y: cy - newH / 2, w: newW, h: newH });
+                    }
+                  };
+                  return (
+                    <div className="flex flex-col gap-1.5">
+                      <div className={`flex items-center rounded-2xl border overflow-hidden ${dk ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
+                        <span className={`text-[9px] font-black uppercase px-3 py-2.5 border-r shrink-0 w-20 text-center ${dk ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>Girar</span>
+                        <button type="button" aria-label="Girar -1 grau" onClick={() => setAngle(currentAngle - 1)}
+                          className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Minus size={13}/></button>
+                        <input
+                          type="number" min={0} max={359} value={currentAngle}
+                          onChange={e => setAngle(Number(e.target.value) || 0)}
+                          aria-label="Ângulo em graus"
+                          className={`flex-1 text-center text-[11px] font-black bg-transparent outline-none ${dk ? 'text-white' : 'text-slate-900'}`}
+                        />
+                        <span className={`text-[10px] font-bold pr-2 ${dk ? 'text-slate-500' : 'text-slate-400'}`}>°</span>
+                        <button type="button" aria-label="Girar +1 grau" onClick={() => setAngle(currentAngle + 1)}
+                          className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Plus size={13}/></button>
+                      </div>
+                      <input type="range" min={0} max={359} step={1} value={currentAngle}
+                        onChange={e => setAngle(parseInt(e.target.value, 10))}
+                        className="w-full" aria-label="Ângulo (arrastar)" />
+                    </div>
+                  );
+                })()}
+                {shape.kind === 'rect' && (
+                  <>
+                    <div className={`flex items-center rounded-2xl border overflow-hidden ${dk ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
+                      <span className={`text-[9px] font-black uppercase px-3 py-2.5 border-r shrink-0 w-20 text-center ${dk ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>Bordas</span>
+                      <button type="button" aria-label="Diminuir raio da borda" onClick={() => updateShape(shape.id, { radius: Math.max(0, (shape.radius ?? 0) - 0.5) })}
+                        className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Minus size={13}/></button>
+                      <span className={`flex-1 text-center text-[11px] font-black ${dk ? 'text-white' : 'text-slate-900'}`}>{(shape.radius ?? 0).toFixed(1)} mm</span>
+                      <button type="button" aria-label="Aumentar raio da borda" onClick={() => updateShape(shape.id, { radius: (shape.radius ?? 0) + 0.5 })}
+                        className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Plus size={13}/></button>
+                    </div>
+                    <button type="button" onClick={() => updateShape(shape.id, { filled: !shape.filled })}
+                      className={`flex items-center justify-between px-4 py-3 rounded-2xl border-2 transition-all ${shape.filled ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : dk ? 'border-slate-700' : 'border-slate-200'}`}>
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${dk ? 'text-slate-200' : 'text-slate-700'}`}>Preenchido</span>
+                      <div className={`w-11 h-6 rounded-full relative transition-colors duration-300 shrink-0 ${shape.filled ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-slate-700'}`}>
+                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all duration-300 ${shape.filled ? 'left-6' : 'left-1'}`} />
+                      </div>
+                    </button>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['Largura', 'Altura'] as const).map((lbl) => {
+                        const val = lbl === 'Largura' ? shape.w : shape.h;
+                        const fn = (d: number) => resizeShape(shape.id, lbl === 'Largura' ? d : 0, lbl === 'Largura' ? 0 : d);
+                        const setAbs = (v: number) => updateShape(shape.id, lbl === 'Largura' ? { w: Math.max(5, Math.min(W - shape.x, v)) } : { h: Math.max(5, Math.min(H - shape.y, v)) });
+                        const max = lbl === 'Largura' ? W : H;
+                        return (
+                          <div key={lbl} className="flex flex-col gap-1">
+                            <div className={`flex items-center rounded-2xl border overflow-hidden ${dk ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
+                              <span className={`text-[9px] font-black uppercase px-2 py-2.5 border-r shrink-0 ${dk ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>{lbl}</span>
+                              <button type="button" aria-label={`Diminuir ${lbl}`} onClick={() => fn(-1)}
+                                className={`w-8 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Minus size={12}/></button>
+                              <span className={`flex-1 text-center text-[10px] font-black ${dk ? 'text-white' : 'text-slate-900'}`}>{val.toFixed(1)}</span>
+                              <button type="button" aria-label={`Aumentar ${lbl}`} onClick={() => fn(1)}
+                                className={`w-8 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Plus size={12}/></button>
+                            </div>
+                            <input type="range" min={5} max={max} step={0.5} value={val}
+                              onChange={e => setAbs(parseFloat(e.target.value))}
+                              className="w-full" aria-label={`${lbl} (arrastar)`} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+                {shape.kind === 'line' && (
+                  <p className={`text-[9px] font-bold leading-relaxed ${dk ? 'text-slate-500' : 'text-slate-400'}`}>
+                    Arraste a linha na etiqueta acima pra reposicionar. Toque e arraste as bolinhas nas pontas pra mudar o comprimento/ângulo.
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Element config panel — centered modal */}
         {elemConfigOpen && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4" onClick={() => setElemConfigOpen(false)}>
+          <div className="fixed inset-0 z-[96000] flex items-center justify-center p-4" onClick={() => setElemConfigOpen(false)}>
             <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
             <div
               className={`relative w-full max-w-sm max-h-[80vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden ${dk ? 'bg-slate-900' : 'bg-white'}`}
@@ -1145,8 +1882,8 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                     <Layers size={16} />
                   </div>
                   <div>
-                    <p className={`text-sm font-black leading-none ${dk ? 'text-white' : 'text-slate-900'}`}>Configurar Elementos</p>
-                    <p className="text-[10px] font-bold text-slate-400 mt-0.5">Visibilidade e seleção para ajuste</p>
+                    <p className={`text-sm font-black leading-none ${dk ? 'text-white' : 'text-slate-900'}`}>Elementos e Camadas</p>
+                    <p className="text-[10px] font-bold text-slate-400 mt-0.5">Ligue/desligue e selecione cada bloco pra ajustar</p>
                   </div>
                 </div>
                 <button
@@ -1160,7 +1897,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
               </div>
               {/* Element list */}
               <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2">
-                {ELEM_KEYS.map(key => {
+                {CONFIG_LIST_KEYS.map(key => {
                   const el = layout.elems[key];
                   const isSel = selected === key;
                   const isLocked = false;
@@ -1236,13 +1973,71 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                     </div>
                   );
                 })}
+
+                {/* Formas decorativas (retângulo/linha) — mesma mecânica de liga/desliga e
+                    seleção dos elementos de texto acima. Ficam listadas aqui pra resolver
+                    justamente o caso de formas sobrepostas atrapalhando o arraste no canvas:
+                    dá pra ocultar a que está atrapalhando, ou selecionar direto pela lista
+                    sem depender de acertar o toque nela na etiqueta. */}
+                {(layout.shapes || []).length > 0 && (
+                  <>
+                    <p className={`text-[9px] font-black uppercase tracking-widest mt-2 mb-1 px-1 ${dk ? 'text-slate-500' : 'text-slate-400'}`}>Formas</p>
+                    {(layout.shapes || []).map((shape, idx) => {
+                      const isSelShape = selectedShapeId === shape.id;
+                      const isVisible = shape.visible !== false;
+                      const shapeLabel = `${shape.kind === 'rect' ? 'Retângulo' : 'Linha'} ${idx + 1}`;
+                      return (
+                        <div
+                          key={shape.id}
+                          className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all ${
+                            isSelShape ? 'border-indigo-500 shadow-lg shadow-indigo-500/10' : dk ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'
+                          }`}
+                          style={isSelShape ? { borderColor: shape.color, backgroundColor: shape.color + '15' } : {}}
+                        >
+                          {shape.kind === 'rect' ? <Square size={14} style={{ color: shape.color }} className="shrink-0" /> : <Minus size={14} style={{ color: shape.color }} className="shrink-0" />}
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-black leading-none ${dk ? 'text-white' : 'text-slate-900'}`}>{shapeLabel}</p>
+                            <p className="text-[10px] font-bold text-slate-400 mt-0.5">X:{shape.x.toFixed(1)} Y:{shape.y.toFixed(1)} • {shape.w.toFixed(1)}×{shape.h.toFixed(1)} mm</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => { setSelected(null); setSelectedShapeId(isSelShape ? null : shape.id); setTab('edit'); setElemConfigOpen(false); }}
+                            className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all border ${
+                              isSelShape
+                                ? 'bg-indigo-600 border-indigo-500 text-white shadow-md shadow-indigo-500/20'
+                                : dk
+                                  ? 'bg-slate-700 border-slate-600 text-slate-300 hover:border-indigo-400 hover:text-indigo-300'
+                                  : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-400 hover:text-indigo-600'
+                            }`}
+                          >
+                            {isSelShape ? <Check size={12} /> : 'Ajustar'}
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={isVisible ? `Ocultar ${shapeLabel}` : `Mostrar ${shapeLabel}`}
+                            onClick={() => {
+                              updateShape(shape.id, { visible: !isVisible });
+                              if (isVisible && isSelShape) setSelectedShapeId(null);
+                            }}
+                            className={`w-12 h-7 rounded-full transition-all relative flex-shrink-0 ${isVisible ? 'shadow-inner' : dk ? 'bg-slate-700' : 'bg-slate-200'}`}
+                            style={isVisible ? { backgroundColor: shape.color } : {}}
+                          >
+                            <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-sm transition-all duration-200 flex items-center justify-center ${isVisible ? 'left-5' : 'left-0.5'}`}>
+                              {isVisible ? <Eye size={10} style={{ color: shape.color }} /> : <EyeOff size={10} className="text-slate-400" />}
+                            </span>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
               </div>
               {/* Footer */}
               <div className={`px-4 py-4 border-t ${dk ? 'border-slate-800' : 'border-slate-100'}`}>
                 <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => { ELEM_KEYS.forEach(k => updateElem(k, { visible: true })); }}
+                    onClick={() => { CONFIG_LIST_KEYS.forEach(k => updateElem(k, { visible: true })); (layout.shapes || []).forEach(s => updateShape(s.id, { visible: true })); }}
                     className={`flex-1 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border-2 flex items-center justify-center gap-1.5 active:scale-95 ${
                       dk ? 'border-slate-700 bg-slate-800 text-slate-300 hover:border-emerald-500 hover:text-emerald-400' : 'border-slate-200 bg-slate-50 text-slate-500 hover:border-emerald-400 hover:text-emerald-600'
                     }`}
@@ -1333,6 +2128,147 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
           </div>
         )}
 
+        {/* Dicas de edição — abre sozinha na primeira vez (localStorage) e fica sempre
+            acessível pelo "?" ao lado das abas Visualizar/Ajustar. */}
+        {tipsModalOpen && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" onClick={dismissTips}>
+            <div className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm" />
+            <div
+              className={`relative w-full max-w-sm max-h-[80vh] flex flex-col rounded-3xl shadow-2xl overflow-hidden ${dk ? 'bg-slate-900' : 'bg-white'}`}
+              onClick={e => e.stopPropagation()}
+            >
+              <div className={`flex items-center justify-between px-6 py-5 border-b ${dk ? 'border-slate-800' : 'border-slate-100'}`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shrink-0">
+                    <Sparkles size={18} />
+                  </div>
+                  <div>
+                    <p className={`text-sm font-black leading-none ${dk ? 'text-white' : 'text-slate-900'}`}>Manual do Editor de Etiquetas</p>
+                    <p className="text-[10px] font-bold text-slate-400 mt-0.5">Toque numa seção pra abrir</p>
+                  </div>
+                </div>
+                <button type="button" onClick={dismissTips} aria-label="Fechar"
+                  className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-all ${dk ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-100 text-slate-500 hover:text-slate-800'}`}>
+                  <X size={16} />
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto px-4 py-4 flex flex-col gap-2.5">
+                {([
+                  {
+                    icon: Tag, title: 'Tamanho da Etiqueta',
+                    items: [
+                      'Escolha um dos tamanhos prontos ou toque em "Manual" pra digitar largura/altura na régua.',
+                      '"Salvar Padrão" grava a etiqueta atual (tamanho + posições) com um nome — reaproveite depois em "Meus Padrões".',
+                      '"Resetar" volta esse tamanho pro layout de fábrica, desfazendo seus ajustes.',
+                    ],
+                  },
+                  {
+                    icon: FileText, title: 'Visualizar × Ajustar',
+                    items: [
+                      '"Visualizar" mostra a etiqueta como ela sai de verdade, com os dados reais do produto/venda.',
+                      '"Ajustar" troca pra blocos coloridos com o nome de cada campo — é onde você move, redimensiona e configura.',
+                    ],
+                  },
+                  {
+                    icon: Hand, title: 'Mover e Redimensionar',
+                    items: [
+                      'Na aba Ajustar, toque e arraste qualquer bloco direto na etiqueta pra reposicionar.',
+                      'Com o bloco selecionado, os botões +/- e as barras deslizantes de Largura/Altura mudam o tamanho.',
+                      'Os 4 pontinhos nos cantos do bloco mostram qual elemento está selecionado no momento.',
+                    ],
+                  },
+                  {
+                    icon: Layers, title: 'Configurar Elementos',
+                    items: [
+                      'Lista todos os campos disponíveis (Referência, Grade, QR Code, Embalagem, Foto, Rodapé, Dados OS, Obs. Variante...).',
+                      'Toque no interruptor pra ligar/desligar cada um, ou em "Ajustar" pra selecioná-lo direto na etiqueta.',
+                      '"Mostrar Todos" liga tudo de uma vez.',
+                    ],
+                  },
+                  {
+                    icon: Lock, title: 'Cadeado, Ocultar e Remover',
+                    items: [
+                      'Com um bloco selecionado, 3 botões aparecem no topo do painel: Cadeado, Olho e Lixeira.',
+                      'Cadeado trava o bloco contra arraste/redimensionamento sem querer, depois de já estar no lugar certo.',
+                      'Olho oculta o bloco temporariamente — útil pra selecionar um elemento menor escondido embaixo de um maior.',
+                      'Lixeira remove o bloco da etiqueta (ele some, mas volta a aparecer pra religar em "Configurar Elementos").',
+                    ],
+                  },
+                  {
+                    icon: Check, title: 'Combinar Campos (Referência/Nome/Cor)',
+                    items: [
+                      'Selecione o bloco "Referência" — um painel "Combinar Campos" aparece com 3 opções: Ref, Nome, Cor.',
+                      'Toque pra ligar/desligar qualquer combinação (ex.: só Ref+Cor) — o texto final junta os marcados nessa ordem.',
+                      'Nome e Cor não têm mais bloco próprio — só existem como opções aqui dentro.',
+                    ],
+                  },
+                  {
+                    icon: Sparkles, title: 'Tipografia e Inverter',
+                    items: [
+                      'Fonte, tamanho e negrito ficam no painel "Tipografia" do elemento selecionado.',
+                      'O botão "Aa" (Inverter) desenha um retângulo preto arredondado com o texto em branco por cima — sai assim na etiqueta impressa também.',
+                    ],
+                  },
+                  {
+                    icon: Package, title: 'Grade e Embalagem',
+                    items: [
+                      'Grade mostra o tamanho e a quantidade real de pares de cada numeração daquela caixa específica.',
+                      'Nas Vendas, a origem dos números segue uma ordem: caixa já separada → lote em estoque → embalagem cadastrada → grade padrão do produto (só como último recurso).',
+                      'Embalagem mostra o nome do padrão de embalagem daquela caixa (opcional, desligado por padrão).',
+                    ],
+                  },
+                  {
+                    icon: Square, title: 'Formas — Retângulo e Linha',
+                    items: [
+                      '"+ Retângulo" e "+ Linha" adicionam formas decorativas — bordas, molduras, divisórias.',
+                      'Arraste pra mover; nas linhas, arraste as bolinhas das pontas pra mudar ângulo/comprimento.',
+                      'No painel da forma: cor, espessura, e (só retângulo) raio da borda e se é preenchido.',
+                    ],
+                  },
+                  {
+                    icon: ImageIcon, title: 'Foto e Miniatura para Etiqueta',
+                    items: [
+                      'O elemento "Foto" usa a Miniatura para Etiqueta do produto quando cadastrada — senão usa a foto normal.',
+                      'Miniatura para Etiqueta é um desenho de linhas do modelo (não uma foto), cadastrado no Cadastro de Produto — fica mais nítido numa impressora térmica de baixa resolução do que uma foto normal.',
+                    ],
+                  },
+                  {
+                    icon: Share2, title: 'Compartilhar e Imprimir',
+                    items: [
+                      '"Compartilhar" gera a etiqueta em JPG ou PDF, no tamanho exato configurado — pronta pra enviar ou abrir noutro app de impressão.',
+                      '"Imprimir na Impressora" manda direto pra Ablemark BR-L100 via Bluetooth (só Android) — escolha direção, deslocamento, densidade e cópias antes de enviar.',
+                      'Em lote (várias etiquetas de uma vez), dá pra exportar tudo numa imagem só combinada ou em arquivos separados.',
+                    ],
+                  },
+                ] as { icon: typeof Hand; title: string; items: string[] }[]).map(({ icon: Icon, title, items }, i, arr) => (
+                  <div key={i} className={i < arr.length - 1 ? `pb-3.5 border-b ${dk ? 'border-slate-800' : 'border-slate-100'}` : ''}>
+                    <div className="flex items-center gap-2.5 mb-2">
+                      <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${dk ? 'bg-indigo-900/30 text-indigo-400' : 'bg-indigo-50 text-indigo-600'}`}>
+                        <Icon size={13} />
+                      </div>
+                      <span className={`text-[11px] font-black ${dk ? 'text-white' : 'text-slate-900'}`}>{title}</span>
+                    </div>
+                    <ul className="flex flex-col gap-1.5 pl-1">
+                      {items.map((it, j) => (
+                        <li key={j} className="flex items-start gap-2">
+                          <span className={`w-1 h-1 rounded-full mt-1.5 shrink-0 ${dk ? 'bg-slate-600' : 'bg-slate-300'}`} />
+                          <span className={`text-[10px] font-bold leading-relaxed ${dk ? 'text-slate-400' : 'text-slate-500'}`}>{it}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+              <div className={`px-6 py-4 border-t ${dk ? 'border-slate-800' : 'border-slate-100'}`}>
+                <button type="button" onClick={dismissTips}
+                  className="w-full py-3.5 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all">
+                  Entendi
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Meus Padrões — popup centralizado com os tamanhos salvos pelo usuário */}
         {myPresetsPopupOpen && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" onClick={() => setMyPresetsPopupOpen(false)}>
@@ -1412,20 +2348,40 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
         {tab === 'edit' && selected && sel && (
           <div className={`rounded-3xl border-2 overflow-hidden ${dk ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
 
-            {/* ── Header: element name + step selector ── */}
+            {/* ── Header: element name + remover ── */}
             <div className={`flex items-center justify-between px-4 py-3 border-b ${dk ? 'border-slate-800 bg-slate-800/50' : 'border-slate-100 bg-slate-50'}`}>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: sel.color }} />
-                <span className="text-[11px] font-black uppercase tracking-widest" style={{ color: sel.color }}>{sel.label}</span>
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-3 h-3 rounded-full shadow-sm shrink-0" style={{ backgroundColor: sel.color }} />
+                <span className="text-[11px] font-black uppercase tracking-widest truncate" style={{ color: sel.color }}>{sel.label}</span>
               </div>
-              <div className={`flex items-center gap-1 p-1 rounded-xl ${dk ? 'bg-slate-900' : 'bg-white'}`}>
-                {STEPS.map(s => (
-                  <button key={s} type="button" onClick={() => setStep(s)}
-                    className={`px-2.5 py-1 rounded-lg text-[9px] font-black transition-all ${step === s ? 'bg-indigo-600 text-white shadow-sm' : `${dk ? 'text-slate-400' : 'text-slate-500'}`}`}>
-                    {s}
-                  </button>
-                ))}
-                <span className={`text-[9px] font-bold pl-0.5 ${dk ? 'text-slate-500' : 'text-slate-400'}`}>mm</span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  aria-label={sel.locked ? `Destravar ${sel.label}` : `Travar ${sel.label}`}
+                  title={sel.locked ? 'Destravado — toque pra travar contra arraste/redimensionamento' : 'Travar — impede mover ou redimensionar por engano'}
+                  onClick={() => updateElem(selected, { locked: !sel.locked })}
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 ${sel.locked ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' : dk ? 'bg-slate-900 text-slate-400 hover:bg-slate-700' : 'bg-white text-slate-500 hover:bg-slate-100'}`}
+                >
+                  {sel.locked ? <Lock size={14} /> : <Unlock size={14} />}
+                </button>
+                <button
+                  type="button"
+                  aria-label={sel.visible ? `Ocultar ${sel.label}` : `Mostrar ${sel.label}`}
+                  title={sel.visible ? 'Ocultar temporariamente — útil pra selecionar um elemento embaixo de um maior' : 'Mostrar de novo'}
+                  onClick={() => updateElem(selected, { visible: !sel.visible })}
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 ${!sel.visible ? 'bg-slate-200 dark:bg-slate-700 text-slate-500' : dk ? 'bg-slate-900 text-slate-400 hover:bg-slate-700' : 'bg-white text-slate-500 hover:bg-slate-100'}`}
+                >
+                  {sel.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Remover ${sel.label} da etiqueta`}
+                  title="Remover — pode ser trazido de volta em Configurar Elementos"
+                  onClick={() => { updateElem(selected, { visible: false }); setSelected(null); }}
+                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all active:scale-90 ${dk ? 'bg-rose-900/30 text-rose-400 hover:bg-rose-900/50' : 'bg-rose-50 text-rose-500 hover:bg-rose-100'}`}
+                >
+                  <Trash2 size={14} />
+                </button>
               </div>
             </div>
 
@@ -1441,42 +2397,68 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                 ))}
               </div>
 
-              {/* ── D-pad + resize capsules ── */}
-              <div className="flex items-center gap-4">
-
-                {/* D-pad */}
-                <div className="grid grid-cols-3 gap-1.5 shrink-0">
-                  <div/>
-                  <button type="button" aria-label="Mover para cima" onClick={() => moveElem(selected, 0, -step)}
-                    className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md active:scale-90 transition-transform"><ChevronUp size={20}/></button>
-                  <div/>
-                  <button type="button" aria-label="Mover para esquerda" onClick={() => moveElem(selected, -step, 0)}
-                    className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md active:scale-90 transition-transform"><ChevronLeft size={20}/></button>
-                  <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${dk ? 'bg-slate-800' : 'bg-slate-100'}`}>
-                    <div className="w-2 h-2 rounded-full bg-indigo-400"/>
-                  </div>
-                  <button type="button" aria-label="Mover para direita" onClick={() => moveElem(selected, step, 0)}
-                    className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md active:scale-90 transition-transform"><ChevronRight size={20}/></button>
-                  <div/>
-                  <button type="button" aria-label="Mover para baixo" onClick={() => moveElem(selected, 0, step)}
-                    className="w-11 h-11 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-md active:scale-90 transition-transform"><ChevronDown size={20}/></button>
-                  <div/>
-                </div>
-
-                {/* Resize capsules */}
-                <div className="flex flex-col gap-2 flex-1">
-                  {([['Largura', sel.w, (d: number) => resizeElem(selected, d, 0)], ['Altura', sel.h, (d: number) => resizeElem(selected, 0, d)]] as const).map(([lbl, val, fn]) => (
-                    <div key={lbl} className={`flex items-center rounded-2xl border overflow-hidden ${dk ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
-                      <span className={`text-[9px] font-black uppercase px-3 py-2.5 border-r shrink-0 w-16 text-center ${dk ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>{lbl}</span>
-                      <button type="button" aria-label={`Diminuir ${lbl}`} onClick={() => fn(-step)}
-                        className={`w-9 h-9 flex items-center justify-center shrink-0 transition-colors active:scale-90 ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Minus size={13}/></button>
-                      <span className={`flex-1 text-center text-[11px] font-black ${dk ? 'text-white' : 'text-slate-900'}`}>{val.toFixed(1)}</span>
-                      <button type="button" aria-label={`Aumentar ${lbl}`} onClick={() => fn(step)}
-                        className={`w-9 h-9 flex items-center justify-center shrink-0 transition-colors active:scale-90 ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Plus size={13}/></button>
+              {/* ── Resize capsules — arraste o bloco na etiqueta acima pra mover; aqui só
+                  redimensiona (o D-pad de setas foi removido, o arraste substitui) ── */}
+              <div className={`grid grid-cols-2 gap-3 transition-opacity ${sel.locked ? 'opacity-40 pointer-events-none' : ''}`}>
+                {([
+                    ['Largura', sel.w, (d: number) => resizeElem(selected, d, 0), 5, W, (v: number) => updateElem(selected, { w: Math.max(5, Math.min(W - sel.x, v)) })],
+                    ['Altura', sel.h, (d: number) => resizeElem(selected, 0, d), 2, H, (v: number) => updateElem(selected, { h: Math.max(2, Math.min(H - sel.y, v)) })],
+                  ] as [string, number, (d: number) => void, number, number, (v: number) => void][]).map(([lbl, val, fn, min, max, setAbs]) => (
+                    <div key={lbl} className="flex flex-col gap-1.5">
+                      <div className={`flex flex-col items-center rounded-2xl border overflow-hidden ${dk ? 'border-slate-700 bg-slate-800/60' : 'border-slate-200 bg-slate-50'}`}>
+                        <span className={`text-[9px] font-black uppercase w-full text-center py-2 border-b ${dk ? 'text-slate-400 border-slate-700' : 'text-slate-500 border-slate-200'}`}>{lbl}</span>
+                        <div className="flex items-center w-full">
+                          <button type="button" disabled={sel.locked} aria-label={`Diminuir ${lbl}`} onClick={() => fn(-0.5)}
+                            className={`w-9 h-9 flex items-center justify-center shrink-0 transition-colors active:scale-90 ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Minus size={13}/></button>
+                          <span className={`flex-1 text-center text-[11px] font-black ${dk ? 'text-white' : 'text-slate-900'}`}>{val.toFixed(1)}</span>
+                          <button type="button" disabled={sel.locked} aria-label={`Aumentar ${lbl}`} onClick={() => fn(0.5)}
+                            className={`w-9 h-9 flex items-center justify-center shrink-0 transition-colors active:scale-90 ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Plus size={13}/></button>
+                        </div>
+                      </div>
+                      <input
+                        type="range" min={min} max={max} step={0.5}
+                        value={val}
+                        disabled={sel.locked}
+                        onChange={e => setAbs(parseFloat(e.target.value))}
+                        className="w-full"
+                        aria-label={`${lbl} (arrastar)`}
+                      />
                     </div>
                   ))}
-                </div>
               </div>
+
+              {/* ── Combinar Campos — só no elemento Referência: junta Ref/Nome/Cor num único
+                  campo, em qualquer combinação (ex.: só Ref+Cor) ── */}
+              {selected === 'reference' && (
+                <div className={`rounded-2xl border overflow-hidden ${dk ? 'border-slate-700' : 'border-slate-200'}`}>
+                  <div className={`px-4 py-2 border-b ${dk ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
+                    <span className={`text-[9px] font-black uppercase tracking-widest ${dk ? 'text-slate-400' : 'text-slate-500'}`}>Combinar Campos Neste Elemento</span>
+                  </div>
+                  <div className={`p-3 grid grid-cols-3 gap-1.5 ${dk ? 'bg-slate-800/30' : 'bg-white'}`}>
+                    {([['reference', 'Ref'], ['name', 'Nome'], ['color', 'Cor']] as const).map(([field, label]) => {
+                      const active = (sel.combineFields || ['reference']).includes(field);
+                      return (
+                        <button
+                          key={field}
+                          type="button"
+                          onClick={() => {
+                            const current = sel.combineFields || ['reference'];
+                            const next = active ? current.filter(f => f !== field) : [...current, field];
+                            // Nunca deixa vazio — sem nada marcado, volta a mostrar só a Referência.
+                            updateElem(selected, { combineFields: next.length > 0 ? next : ['reference'] });
+                          }}
+                          className={`py-2.5 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${active ? 'border-indigo-500 bg-indigo-600 text-white shadow-sm' : `border-transparent ${dk ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'}`}`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className={`px-4 pb-3 text-[9px] font-bold leading-relaxed ${dk ? 'text-slate-500' : 'text-slate-400'}`}>
+                    {combineRefFields(sel.combineFields, product.reference || product.name, product.name, variation?.colorName || '---')}
+                  </p>
+                </div>
+              )}
 
               {/* ── Typography capsule ── */}
               <div className={`rounded-2xl border overflow-hidden ${dk ? 'border-slate-700' : 'border-slate-200'}`}>
@@ -1510,6 +2492,11 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
                       className={`w-9 h-9 flex items-center justify-center shrink-0 active:scale-90 transition-colors ${dk ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'}`}><Plus size={13}/></button>
                     <button type="button" aria-label="Negrito" onClick={() => updateElem(selected, { bold: !sel.bold })}
                       className={`w-10 h-9 border-l flex items-center justify-center text-[13px] font-black transition-all ${sel.bold ? `bg-indigo-600 text-white ${dk ? 'border-slate-700' : 'border-indigo-500'}` : `${dk ? 'border-slate-700 text-slate-400 hover:bg-slate-700' : 'border-slate-200 text-slate-500 hover:bg-slate-100'}`}`}>B</button>
+                    <button type="button" aria-label="Inverter cor (texto branco em fundo preto)" title="Inverter — texto branco em retângulo preto, igual na impressão"
+                      onClick={() => updateElem(selected, { invert: !sel.invert })}
+                      className={`w-10 h-9 border-l flex items-center justify-center shrink-0 transition-all ${sel.invert ? `bg-indigo-600 ${dk ? 'border-slate-700' : 'border-indigo-500'}` : `${dk ? 'border-slate-700 hover:bg-slate-700' : 'border-slate-200 hover:bg-slate-100'}`}`}>
+                      <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-black leading-none ${sel.invert ? 'bg-white text-indigo-600' : 'bg-slate-900 text-white'}`}>Aa</span>
+                    </button>
                   </div>
                   <input
                     type="range" min={3} max={30} step={0.5}

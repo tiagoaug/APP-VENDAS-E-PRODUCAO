@@ -170,7 +170,13 @@ export default function BlingPickingListView({ isDarkMode, products }: BlingPick
       <ConfirmDialog
         isOpen={confirmOpen}
         title="Abater Estoque?"
-        message={`Vai descontar do estoque a quantidade de ${checkedCount} referência(s) selecionada(s) e marcar os itens correspondentes como separados. Confirma?`}
+        message={
+          <>
+            {`Vai descontar do estoque a quantidade de ${checkedCount} referência(s) selecionada(s) e marcar os itens correspondentes como separados. Confirma?`}
+            {' '}
+            <span className="text-rose-500">(Após abater o estoque, faça a emissão de notas imediatamente, para evitar separar o produto mais de uma vez)</span>
+          </>
+        }
         confirmLabel="Sim, Abater"
         cancelLabel="Cancelar"
         onConfirm={handleAbaterEstoque}

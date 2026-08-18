@@ -6,7 +6,7 @@ import {
   ToggleLeft as Toggle, Calendar, DollarSign, Tag, Calculator, Info,
   Layers, ArrowUpDown,
   Footprints, Scissors, Box, Droplets, Sparkles, Settings, CheckCircle2,
-  ChevronDown, X, Copy, Factory, Check, Percent, Truck, Users, Handshake
+  ChevronDown, X, Copy, Factory, Check, Percent, Truck, Users, Handshake, PenTool
 } from 'lucide-react';
 import CalculatorModal from '../components/CalculatorModal';
 import EngineeringEditor from '../components/EngineeringEditor';
@@ -247,6 +247,10 @@ export default function ProductFormView({ productId, products, grids, suppliers,
   const [workDaysPerMonth, setWorkDaysPerMonth] = useState<number | string>(existingProduct?.workDaysPerMonth || 26);
   const [sectorPrices, setSectorPrices] = useState<Record<string, number>>(existingProduct?.sectorPrices || {});
   const [photoUrl, setPhotoUrl] = useState<string>(existingProduct?.photoUrl || '');
+  // Miniatura pra etiqueta térmica — desenho de linhas do modelo, não a foto (foto real sai
+  // borrada/escura numa impressora térmica monocromática de baixa resolução). Usada no lugar
+  // de `photoUrl` no elemento "Foto" do Editor de Etiquetas quando cadastrada.
+  const [labelThumbnailUrl, setLabelThumbnailUrl] = useState<string>(existingProduct?.labelThumbnailUrl || '');
 
   // Cadastro Guiado — só faz sentido criando um modelo do zero (nunca editando um já
   // existente); "Encerrar assistente" na barra só sai do modo guiado, não do formulário.
@@ -468,6 +472,7 @@ export default function ProductFormView({ productId, products, grids, suppliers,
       estimatedPairsPerDay: modulesConfig.production ? (parseFloat(estimatedPairsPerDay as string) || undefined) : undefined,
       workDaysPerMonth: modulesConfig.production ? (parseFloat(workDaysPerMonth as string) || 26) : undefined,
       photoUrl: photoUrl || undefined,
+      labelThumbnailUrl: labelThumbnailUrl || undefined,
       createdAt: existingProduct?.createdAt || Date.now()
     };
   };
@@ -2042,6 +2047,66 @@ export default function ProductFormView({ productId, products, grids, suppliers,
                 }}
               />
             </label>
+          </div>
+          )}
+
+          {/* Miniatura para Etiqueta — desenho de linhas do modelo, mais legível que a foto
+              numa impressora térmica monocromática de baixa resolução. */}
+          {showSection('foto') && (
+          <div className="flex flex-col items-center gap-2">
+            <label className="relative cursor-pointer group" title="Toque para adicionar miniatura de linhas para etiqueta">
+              <div className={`w-20 h-20 rounded-3xl overflow-hidden border-2 flex items-center justify-center transition-all ${labelThumbnailUrl ? 'border-teal-300 dark:border-teal-600' : 'border-dashed border-slate-200 dark:border-slate-700'} ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                {labelThumbnailUrl
+                  ? <img src={labelThumbnailUrl} alt="Miniatura para etiqueta" className="w-full h-full object-contain p-1" />
+                  : <div className="flex flex-col items-center gap-1">
+                      <PenTool size={22} className="text-slate-300 dark:text-slate-600" />
+                      <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest text-center leading-tight px-1">Miniatura<br/>Etiqueta</span>
+                    </div>
+                }
+              </div>
+              {labelThumbnailUrl && (
+                <button
+                  type="button"
+                  onClick={e => { e.preventDefault(); setLabelThumbnailUrl(''); }}
+                  className="absolute -top-1.5 -right-1.5 w-6 h-6 bg-rose-500 text-white rounded-full flex items-center justify-center shadow-md hover:bg-rose-600 transition-all"
+                  title="Remover miniatura"
+                >
+                  <X size={12} strokeWidth={3} />
+                </button>
+              )}
+              <div className="absolute inset-0 rounded-3xl bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <PenTool size={18} className="text-white" />
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = ev => {
+                    const result = ev.target?.result as string;
+                    const img = new Image();
+                    img.onload = () => {
+                      const maxSide = 300;
+                      const ratio = Math.min(maxSide / img.width, maxSide / img.height, 1);
+                      const canvas = document.createElement('canvas');
+                      canvas.width  = img.width  * ratio;
+                      canvas.height = img.height * ratio;
+                      canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
+                      setLabelThumbnailUrl(canvas.toDataURL('image/png'));
+                    };
+                    img.src = result;
+                  };
+                  reader.readAsDataURL(file);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+            <p className={`text-[9px] font-bold text-center max-w-[220px] leading-relaxed ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+              Opcional — um desenho de linhas do modelo (não a foto) pra usar no elemento "Foto" da etiqueta térmica, mais nítido que uma foto normal na impressora.
+            </p>
           </div>
           )}
 

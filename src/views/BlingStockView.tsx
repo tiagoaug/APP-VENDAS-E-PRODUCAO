@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { X, ArrowUpCircle, ArrowDownCircle, Loader2, Lightbulb, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
+import { X, ArrowUpCircle, ArrowDownCircle, Loader2, Lightbulb, ChevronDown, ChevronUp, Pencil, ClipboardCheck, Save } from 'lucide-react';
 import { Product, Variation, BlingOrder, BlingProductMapping, SaleType } from '../types';
 import { subscribeToBlingOrders, subscribeToBlingMappings } from '../services/blingService';
 import { productHasSaleType } from '../utils/stockPools';
@@ -17,6 +17,17 @@ interface MovementTarget {
   sizeKey: string;
   sizeLabel: string;
   currentQty: number;
+}
+
+// Alteração pendente no modo Balanço — uma edição de célula ainda não enviada pro
+// `onReconcileStockBalance`. Mantida em memória (não salva a cada toque, diferente do modo
+// normal de movimentação) até o usuário confirmar em "Salvar Balanço".
+interface PendingChange {
+  product: Product;
+  variation: Variation;
+  sizeKey: string;
+  oldValue: number;
+  newValue: number;
 }
 
 /** Movimentação manual pontual (uma referência/cor/tamanho por vez) — usa exatamente o mesmo
@@ -131,6 +142,54 @@ export default function BlingStockView({ isDarkMode, products, onReconcileStockB
   // todas começam abertas (mesmo comportamento de sempre), só quem for fechado no toque entra.
   const [collapsedProducts, setCollapsedProducts] = useState<Set<string>>(new Set());
 
+  // Modo Balanço — em vez de abrir um modal por célula (movimentação pontual), toda numeração
+  // vira um campo editável direto; as edições ficam acumuladas em `pendingChanges` (chave
+  // `productId::variationId::sizeKey`) e só são gravadas de uma vez, todas juntas, ao tocar em
+  // "Salvar Balanço" — um clique cobre o balanço inteiro em vez de um modal por item.
+  const [balancoMode, setBalancoMode] = useState(false);
+  const [pendingChanges, setPendingChanges] = useState<Record<string, PendingChange>>({});
+  const [savingBalanco, setSavingBalanco] = useState(false);
+  const pendingCount = Object.keys(pendingChanges).length;
+
+  const setPendingValue = (product: Product, variation: Variation, sizeKey: string, oldValue: number, newValue: number) => {
+    const balKey = `${product.id}::${variation.id}::${sizeKey}`;
+    setPendingChanges((prev) => {
+      const next = { ...prev };
+      if (newValue === oldValue) delete next[balKey];
+      else next[balKey] = { product, variation, sizeKey, oldValue, newValue };
+      return next;
+    });
+  };
+
+  const cancelBalanco = () => {
+    if (pendingCount > 0) toast.show(`${pendingCount} alteração${pendingCount > 1 ? 'ões' : ''} do balanço descartada${pendingCount > 1 ? 's' : ''}.`);
+    setBalancoMode(false);
+    setPendingChanges({});
+  };
+
+  const handleSaveBalanco = async () => {
+    if (!onReconcileStockBalance || pendingCount === 0) return;
+    setSavingBalanco(true);
+    try {
+      const byProduct = new Map<string, { productId: string; deltas: { variationId: string; key: string; oldValue: number; newValue: number }[] }>();
+      Object.values(pendingChanges).forEach((ch) => {
+        const entry = byProduct.get(ch.product.id) || { productId: ch.product.id, deltas: [] };
+        entry.deltas.push({ variationId: ch.variation.id, key: ch.sizeKey, oldValue: ch.oldValue, newValue: ch.newValue });
+        byProduct.set(ch.product.id, entry);
+      });
+      for (const { productId, deltas } of byProduct.values()) {
+        await onReconcileStockBalance(productId, deltas);
+      }
+      toast.show(`Balanço salvo — ${pendingCount} alteração${pendingCount > 1 ? 'ões' : ''}.`);
+      setPendingChanges({});
+      setBalancoMode(false);
+    } catch (e: any) {
+      toast.show('Erro ao salvar balanço: ' + (e.message || e));
+    } finally {
+      setSavingBalanco(false);
+    }
+  };
+
   const toggleProductCollapsed = (productId: string) => {
     setCollapsedProducts((prev) => {
       const next = new Set(prev);
@@ -186,9 +245,33 @@ export default function BlingStockView({ isDarkMode, products, onReconcileStockB
         />
       )}
 
-      <div className="flex items-center gap-2 px-1">
-        <div className="w-3 h-3 rounded-full bg-sky-500 shrink-0" />
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Azul = tem quantidade pendente de separação de pedidos</p>
+      <div className="flex flex-col gap-3 px-1">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-3 h-3 rounded-full bg-sky-500 shrink-0" />
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Azul = tem quantidade pendente de separação de pedidos</p>
+        </div>
+        {onReconcileStockBalance && (
+          <div className={`flex items-center gap-1 p-1 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
+            <button
+              type="button"
+              onClick={cancelBalanco}
+              className={`flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                !balancoMode ? (isDarkMode ? 'bg-slate-700 text-white' : 'bg-white text-slate-900 shadow-sm') : 'text-slate-400'
+              }`}
+            >
+              <Pencil size={12} /> Pontual
+            </button>
+            <button
+              type="button"
+              onClick={() => setBalancoMode(true)}
+              className={`flex-1 flex items-center justify-center gap-1.5 h-9 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                balancoMode ? 'bg-amber-500 text-white shadow-sm' : 'text-slate-400'
+              }`}
+            >
+              <ClipboardCheck size={12} /> Balanço (Global)
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col gap-3">
@@ -215,9 +298,11 @@ export default function BlingStockView({ isDarkMode, products, onReconcileStockB
             {!isCollapsed && (
             <>
             {onReconcileStockBalance && (
-              <div className="flex items-center gap-3 p-3 rounded-2xl bg-orange-500 text-white shadow-lg shadow-orange-500/20 mb-3">
-                <Lightbulb size={16} className="shrink-0" />
-                <p className="text-[11px] font-bold leading-snug">Clique em qualquer numeração para alterar.</p>
+              <div className={`flex items-center gap-3 p-3 rounded-2xl text-white shadow-lg mb-3 ${balancoMode ? 'bg-amber-500 shadow-amber-500/20' : 'bg-orange-500 shadow-orange-500/20'}`}>
+                {balancoMode ? <ClipboardCheck size={16} className="shrink-0" /> : <Lightbulb size={16} className="shrink-0" />}
+                <p className="text-[11px] font-bold leading-snug">
+                  {balancoMode ? 'Modo Balanço: edite as quantidades direto e toque em "Salvar Balanço" ao final.' : 'Clique em qualquer numeração para alterar.'}
+                </p>
               </div>
             )}
 
@@ -238,6 +323,32 @@ export default function BlingStockView({ isDarkMode, products, onReconcileStockB
                       {sizeEntries.map(([size, qty]) => {
                         const pending = pendingByKey.get(`${product.id}|${variation.id}|${size}`) || 0;
                         const isPending = pending > 0;
+
+                        if (balancoMode) {
+                          const balKey = `${product.id}::${variation.id}::${size}`;
+                          const change = pendingChanges[balKey];
+                          return (
+                            <div
+                              key={size}
+                              className={`flex flex-col items-center justify-center min-w-[42px] px-1 py-1.5 rounded-lg border ${
+                                change
+                                  ? isDarkMode ? 'bg-amber-900/30 border-amber-500' : 'bg-amber-100 border-amber-400'
+                                  : isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-100'
+                              }`}
+                            >
+                              <span className={`text-[8px] font-black uppercase ${change ? 'text-amber-600 dark:text-amber-300' : 'text-slate-400'}`}>{size}</span>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                value={change ? change.newValue : qty}
+                                onChange={(e) => setPendingValue(product, variation, size, qty, Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+                                className={`w-8 text-center text-[12px] font-black bg-transparent outline-none ${change ? 'text-amber-700 dark:text-amber-200' : isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                              />
+                            </div>
+                          );
+                        }
+
                         return (
                           <button
                             key={size}
@@ -259,6 +370,31 @@ export default function BlingStockView({ isDarkMode, products, onReconcileStockB
                       {wholesaleQty !== undefined && (() => {
                         const pending = pendingByKey.get(`${product.id}|${variation.id}|ATACADO`) || 0;
                         const isPending = pending > 0;
+
+                        if (balancoMode) {
+                          const balKey = `${product.id}::${variation.id}::WHOLESALE`;
+                          const change = pendingChanges[balKey];
+                          return (
+                            <div
+                              className={`flex flex-col items-center justify-center min-w-[52px] px-1 py-1.5 rounded-lg border ${
+                                change
+                                  ? isDarkMode ? 'bg-amber-900/30 border-amber-500' : 'bg-amber-100 border-amber-400'
+                                  : isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-100'
+                              }`}
+                            >
+                              <span className={`text-[8px] font-black uppercase ${change ? 'text-amber-600 dark:text-amber-300' : 'text-slate-400'}`}>Atacado</span>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                value={change ? change.newValue : wholesaleQty}
+                                onChange={(e) => setPendingValue(product, variation, 'WHOLESALE', wholesaleQty, Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+                                className={`w-9 text-center text-[12px] font-black bg-transparent outline-none ${change ? 'text-amber-700 dark:text-amber-200' : isDarkMode ? 'text-white' : 'text-slate-900'}`}
+                              />
+                            </div>
+                          );
+                        }
+
                         return (
                           <button
                             onClick={() => onReconcileStockBalance && setMovementTarget({ product, variation, sizeKey: 'WHOLESALE', sizeLabel: 'Atacado', currentQty: wholesaleQty })}
@@ -286,6 +422,20 @@ export default function BlingStockView({ isDarkMode, products, onReconcileStockB
           );
         })}
       </div>
+
+      {balancoMode && pendingCount > 0 && (
+        <div className="fixed bottom-24 left-4 right-4 z-50">
+          <button
+            type="button"
+            onClick={handleSaveBalanco}
+            disabled={savingBalanco}
+            className="w-full flex items-center justify-center gap-2 h-14 rounded-2xl bg-amber-500 text-white shadow-2xl shadow-amber-500/30 font-black text-xs uppercase tracking-widest disabled:opacity-60 active:scale-[0.98] transition-all"
+          >
+            {savingBalanco ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            {savingBalanco ? 'Salvando Balanço...' : `Salvar Balanço (${pendingCount})`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

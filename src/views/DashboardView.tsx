@@ -119,7 +119,7 @@ export default function DashboardView({
   // Carrega o Mapa diretamente (local ou Firestore) ANTES de navegar, em vez de
   // navegar e esperar o PCP encontrar o Mapa por conta própria.
   const handleQuickScanResult = async (parsed: any) => {
-    const resolved = await scannerService.resolveScanResult(parsed, products, productionLots);
+    const resolved = await scannerService.resolveScanResult(parsed, products, productionLots, sales);
     if (!resolved.ok) {
       toast.show(resolved.error);
       return;
@@ -127,7 +127,12 @@ export default function DashboardView({
 
     persistScanHistory([resolved.entry, ...scanHistory].slice(0, 10));
 
-    const { sectorId, lotId, orderId, itemIdx, scanNonce } = resolved.nav;
+    const { sectorId, lotId, orderId, itemIdx, saleId, scanNonce } = resolved.nav;
+    // Etiqueta gerada a partir de uma Venda (sem Mapa) -> abre a venda direto.
+    if (saleId) {
+      onNavigate(ViewType.SALE_FORM, saleId);
+      return;
+    }
     // openMode 'sector' -> mostra no Monitor PCP, no setor atual do pedido, em vez de abrir
     // o modal do Mapa.
     onNavigateProduction('PCP', sectorId, lotId, orderId, itemIdx, scanNonce, undefined, 'sector');
@@ -2221,6 +2226,7 @@ export default function DashboardView({
               LOT: { icon: <Factory size={16} strokeWidth={2.5} />, color: 'text-violet-600 dark:text-violet-400', bg: isDarkMode ? 'bg-violet-900/30' : 'bg-violet-50' },
               SOLE: { icon: <Footprints size={16} strokeWidth={2.5} />, color: 'text-orange-600 dark:text-orange-400', bg: isDarkMode ? 'bg-orange-900/30' : 'bg-orange-50' },
               OS: { icon: <ClipboardList size={16} strokeWidth={2.5} />, color: 'text-rose-600 dark:text-rose-400', bg: isDarkMode ? 'bg-rose-900/30' : 'bg-rose-50' },
+              SALE: { icon: <ShoppingBag size={16} strokeWidth={2.5} />, color: 'text-emerald-600 dark:text-emerald-400', bg: isDarkMode ? 'bg-emerald-900/30' : 'bg-emerald-50' },
             };
 
             return (
