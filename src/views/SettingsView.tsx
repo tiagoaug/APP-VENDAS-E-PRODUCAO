@@ -39,7 +39,6 @@ import {
 import { ViewType, ProductionScreenType, AppModulesConfig, Collaborator } from '../types';
 import { ThemeId, THEME_VISUALS, FONT_OPTIONS, FONT_SCALE_OPTIONS, NavIconMode, NAV_MONO_PALETTE } from '../utils/themes';
 import { isViewAllowed, isSectorAllowed, isViewTaskAllowed } from '../utils/collaborators';
-import { openPrintStudio } from '../lib/printStudio';
 import { isAblemarkPlatform } from '../lib/ablemarkPrinter';
 import AIAssistantSettings from '../components/AIAssistantSettings';
 import AblemarkPrinterTestModal from '../components/AblemarkPrinterTestModal';
@@ -175,7 +174,6 @@ export default function SettingsView({
         { id: ViewType.COMPANY_PROFILE, label: "Personalizar Empresa", icon: <Building2 size={22} />, color: "text-teal-600 dark:text-teal-400", bg: "bg-teal-50 dark:bg-teal-900/20", module: 'any' },
         { id: 'ONBOARDING_WIZARD', label: "Assistente de Configuração", icon: <Rocket size={22} />, color: "text-rose-600 dark:text-rose-400", bg: "bg-rose-50 dark:bg-rose-900/20", module: 'any' },
         { id: 'AI_SETTINGS', label: "Assistente de IA", icon: <Sparkles size={22} />, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-900/20", module: 'ai' },
-        { id: ViewType.PRINT_STUDIO, label: "Print Studio", icon: <Printer size={22} />, color: "text-cyan-600 dark:text-cyan-400", bg: "bg-cyan-50 dark:bg-cyan-900/20", module: 'any' },
         { id: ViewType.BACKUP, label: "Ajustes Técnicos", icon: <Database size={22} />, color: "text-gray-600 dark:text-gray-400", bg: "bg-slate-100 dark:bg-slate-800", module: 'any' },
         { id: ViewType.MANUAL, label: "Manual do Sistema", icon: <BookOpen size={22} />, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-900/20", module: 'any' },
       ].filter(item => (item.module === 'any' || modulesConfig[item.module as keyof AppModulesConfig]) && isItemAllowed(item.id))
@@ -205,8 +203,6 @@ export default function SettingsView({
                       onOpenOnboardingWizard();
                     } else if (item.id === ViewType.PRODUCT_FORM) {
                       onOpenProductCreationChoice();
-                    } else if (item.id === ViewType.PRINT_STUDIO) {
-                      openPrintStudio();
                     } else {
                       onNavigate(item.id as ViewType);
                     }

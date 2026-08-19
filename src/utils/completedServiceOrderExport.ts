@@ -4,7 +4,6 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import { sharePDF, shareImage } from './pdfExport';
 import { toast } from './toast';
 import { formatCurrency } from './numbers';
-import { openPrintStudio } from '../lib/printStudio';
 
 // Mesmo padrão visual/de cálculo já usado em serviceOrderReportExport.ts (relatório de OS
 // por prestador, gerado pela IA) — generalizado aqui pra aceitar qualquer lista já
@@ -421,36 +420,3 @@ async function generateJPG(data: CompletedOSExportData, filename: string, previe
   return true;
 }
 
-// Gera a mesma imagem JPG do relatório e abre o Print Studio já com ela carregada —
-// mesmo padrão de sendPCPItemsToPrintStudio (pcpShareExport.ts): grava em arquivo via
-// Filesystem antes de abrir, pra ponte JS↔nativo do Capacitor não receber o base64 bruto.
-export async function sendCompletedOSToPrintStudio(data: CompletedOSExportData, filename: string): Promise<void> {
-  if (data.items.length === 0) {
-    toast.show('Nada para enviar ao Print Studio.');
-    return;
-  }
-  try {
-    const result = await generateJPG(data, filename, true);
-    if (!Array.isArray(result) || result.length === 0) {
-      toast.show('Não foi possível gerar a imagem.');
-      return;
-    }
-
-    const uris: string[] = [];
-    for (let i = 0; i < result.length; i++) {
-      const dataUri = result[i];
-      const base64 = dataUri.includes('base64,') ? dataUri.split('base64,')[1] : dataUri;
-      const written = await Filesystem.writeFile({
-        path: `printstudio_os_${Date.now()}_${i}.jpg`,
-        data: base64,
-        directory: Directory.Cache,
-      });
-      uris.push(written.uri);
-    }
-
-    await openPrintStudio(uris);
-  } catch (error) {
-    console.error('Error sending completed OS to Print Studio:', error);
-    toast.show('Erro ao enviar para o Print Studio.');
-  }
-}

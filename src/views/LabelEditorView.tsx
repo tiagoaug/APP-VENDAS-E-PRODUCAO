@@ -5,10 +5,11 @@ import { toDottedQRDataURL } from '../utils/dottedQRCode';
 import {
   Type, ImagePlus, QrCode, Calendar, Minus, Square, Trash2, Copy, Save, Printer,
   Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, Plus, Check, X, ZoomIn, ZoomOut,
-  RotateCwSquare, Contrast, Crop as CropIcon,
+  RotateCwSquare, Contrast, Crop as CropIcon, Download,
 } from 'lucide-react';
 import { LabelElement } from '../types';
 import { printAbleMarkLabel } from '../lib/ablemarkPrinter';
+import { saveImageToGallery, isGallerySaverPlatform } from '../lib/gallerySaver';
 import { toast } from '../utils/toast';
 import LabelPrintPreviewModal, { PrintOptions } from '../components/LabelPrintPreviewModal';
 import ImageSourcePickerModal from '../components/ImageSourcePickerModal';
@@ -108,6 +109,7 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
   const [addingQr, setAddingQr] = useState(false);
   const [qrValue, setQrValue] = useState('');
   const [saving, setSaving] = useState(false);
+  const [savingGallery, setSavingGallery] = useState(false);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showImageSourcePicker, setShowImageSourcePicker] = useState(false);
   // Recorte de uma imagem já adicionada ao editor — corta e "assa" a região recortada de vez
@@ -430,6 +432,10 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
       const dataUrl = canvas.toDataURL('image/png');
       const base64 = dataUrl.split('base64,')[1];
       for (let i = 0; i < options.copies; i++) {
+        // Dá tempo da impressora terminar de alimentar/cortar a cópia anterior antes de mandar
+        // a próxima — sem essa pausa o job seguinte chega enquanto o mecanismo ainda está
+        // processando o de antes, e a impressão sai corrompida mesmo com bytes corretos.
+        if (i > 0) await new Promise(resolve => setTimeout(resolve, 2000));
         const written = await Filesystem.writeFile({ path: `label_${Date.now()}_${i}.png`, data: base64, directory: Directory.Cache });
         const { sent, error } = await printAbleMarkLabel(written.uri, options.paperType, options.density);
         if (!sent) {
@@ -837,6 +843,29 @@ export default function LabelEditorView({ isDarkMode, session, onSave }: LabelEd
         <button type="button" onClick={handleSave} disabled={saving} className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}>
           <Save size={14} /> {saving ? 'Salvando...' : 'Salvar'}
         </button>
+        {isGallerySaverPlatform() && (
+        <button
+          type="button"
+          disabled={savingGallery}
+          onClick={async () => {
+            setSavingGallery(true);
+            try {
+              const canvas = await renderToCanvas({ offsetXmm: 0, offsetYmm: 0, rotationDeg: 0 });
+              const base64 = canvas.toDataURL('image/png').split('base64,')[1];
+              const written = await Filesystem.writeFile({ path: `gallery_${Date.now()}.png`, data: base64, directory: Directory.Cache });
+              const { saved, error } = await saveImageToGallery(written.uri);
+              toast.show(saved ? 'Etiqueta salva na galeria!' : `Falha ao salvar: ${error || '(sem detalhe)'}`);
+            } catch (err: any) {
+              toast.show('Erro ao salvar na galeria: ' + (err?.message || err));
+            } finally {
+              setSavingGallery(false);
+            }
+          }}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+        >
+          <Download size={14} /> {savingGallery ? 'Salvando...' : 'Galeria'}
+        </button>
+        )}
         <button
           type="button"
           onClick={async () => {

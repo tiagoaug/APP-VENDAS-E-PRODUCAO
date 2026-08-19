@@ -474,8 +474,8 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
   };
 
   // Gera o MESMO PDF do "PDF" acima, mas em vez de compartilhar, rasteriza as páginas e abre
-  // a mesma tela de Selecionar Páginas/Recortar Etiqueta usada em "Importar PDF" no Print
-  // Studio — reaproveita o pipeline já validado em vez de reinventar o recorte aqui.
+  // a mesma tela de Selecionar Páginas/Recortar Etiqueta usada em "Importar PDF" no editor
+  // de etiquetas — reaproveita o pipeline já validado em vez de reinventar o recorte aqui.
   const handleOpenPrintStudio = async () => {
     setPrintChoiceOpen(false);
     setBusy(true);
@@ -492,8 +492,8 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
     }
   };
 
-  // Cada página recortada vira uma etiqueta do lote — sem branch pra "1 página só" (que no
-  // Print Studio abriria o Editor de Etiqueta livre): aqui vai sempre direto pro lote, mesmo
+  // Cada página recortada vira uma etiqueta do lote — sem branch pra "1 página só" (que em
+  // outros fluxos abriria o Editor de Etiqueta livre): aqui vai sempre direto pro lote, mesmo
   // com 1 página.
   const handleConfirmStudioPages = async (items: CroppedPage[]) => {
     setShowStudioPageSelect(false);
@@ -510,6 +510,7 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
     const rotationDeg = DIRECTION_TO_ROTATION[options.direction];
     let sent = 0;
     let failed = 0;
+    let isFirst = true;
     for (let i = 0; i < studioBatchFrames.length; i++) {
       const transformed = applyPrintTransform(
         studioBatchFrames[i], STUDIO_WIDTH_MM, STUDIO_HEIGHT_MM,
@@ -518,6 +519,11 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
       );
       const base64 = transformed.toDataURL('image/png').split('base64,')[1];
       for (let c = 0; c < options.copies; c++) {
+        // Dá tempo da impressora terminar de alimentar/cortar a etiqueta anterior antes de
+        // mandar a próxima — sem essa pausa o job seguinte chega enquanto o mecanismo ainda
+        // está processando o de antes, e a impressão sai corrompida mesmo com bytes corretos.
+        if (!isFirst) await new Promise(resolve => setTimeout(resolve, 2000));
+        isFirst = false;
         try {
           const written = await Filesystem.writeFile({ path: `picking_studio_${Date.now()}_${i}_${c}.png`, data: base64, directory: Directory.Cache });
           const { sent: ok } = await printAbleMarkLabel(written.uri, options.paperType, options.density);
@@ -560,7 +566,13 @@ export default function BlingPickingExportModal({ isOpen, onClose, isDarkMode, g
     }
     setBusy(true);
     try {
+      let isFirst = true;
       for (const g of selected) {
+        // Dá tempo da impressora terminar de alimentar/cortar a etiqueta anterior antes de
+        // mandar a próxima — sem essa pausa o job seguinte chega enquanto o mecanismo ainda
+        // está processando o de antes, e a impressão sai corrompida mesmo com bytes corretos.
+        if (!isFirst) await new Promise(resolve => setTimeout(resolve, 2000));
+        isFirst = false;
         const row: DisplayRow = {
           reference: g.reference,
           productName: g.productName,

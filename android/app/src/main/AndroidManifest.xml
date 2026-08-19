@@ -45,6 +45,10 @@
 
     <!-- Permissions -->
 
+    <!-- Só necessária em Android 9 (API 28) e abaixo — a partir do 10 (API 29), inserir em
+         MediaStore.Images não exige permissão nenhuma pro próprio app. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Camera — required for QR Code / Barcode scanning -->

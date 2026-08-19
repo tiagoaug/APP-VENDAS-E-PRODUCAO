@@ -74,6 +74,10 @@ export default function AblemarkPrinterTestModal({ isOpen, onClose, isDarkMode }
   // Foto/imagem real selecionada pelo usuário (dataURL original, antes do ajuste ao tamanho
   // da etiqueta) — quando presente, substitui a etiqueta de texto "teste" gerada por canvas.
   const [pickedImage, setPickedImage] = useState<string | null>(null);
+  // Densidade de teste — só density=2 foi confirmado por captura real até agora; expõe 1 e 3
+  // aqui pra testar rápido, sem precisar recompilar, caso a impressora tenha uma calibração
+  // interna diferente da esperada.
+  const [testDensity, setTestDensity] = useState<1 | 2 | 3>(2);
   // Guarda síncrona contra clique duplo/"ghost click" — o estado `printing` só reflete no botão
   // depois de um re-render do React, então dois eventos de clique quase simultâneos podem
   // passar pelo `disabled` antes disso. useRef muda na hora, sem esperar re-render.
@@ -145,8 +149,8 @@ export default function AblemarkPrinterTestModal({ isOpen, onClose, isDarkMode }
         directory: Directory.Cache,
       });
       pushLog(`Imagem salva em ${written.uri}`);
-      pushLog('Enviando para a impressora...');
-      const { sent, error } = await printAbleMarkLabel(written.uri, 2, 2);
+      pushLog(`Enviando para a impressora (densidade ${testDensity})...`);
+      const { sent, error } = await printAbleMarkLabel(written.uri, 2, testDensity);
       pushLog(sent ? 'Enviado! Confira a impressora.' : `Falha ao enviar: ${error || '(sem detalhe)'}`);
     } catch (err: any) {
       pushLog('Erro: ' + (err?.message || err));
@@ -225,6 +229,24 @@ export default function AblemarkPrinterTestModal({ isOpen, onClose, isDarkMode }
               <ImagePlus size={14} /> Escolher imagem real (câmera/galeria)
             </button>
           )}
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Densidade de teste</span>
+          <div className="flex gap-2">
+            {([1, 2, 3] as const).map(d => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setTestDensity(d)}
+                className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  testDensity === d ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {d}{d === 2 ? ' (padrão)' : ''}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="flex gap-2">

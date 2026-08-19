@@ -87,7 +87,6 @@ interface SalesViewProps {
   sectors: Sector[];
   onAdd: () => void;
   onEdit: (sale: Sale) => void;
-  onDelete: (id: string) => void;
   onCancelOnly: (id: string) => void;
   onCancelAndRevert: (id: string) => void;
   onAddStockBalance: (adjustments: { productId: string; variationId: string; key: string; amount: number }[]) => Promise<void> | void;
@@ -106,7 +105,6 @@ interface SalesViewProps {
   onRevertExpedition: (saleId: string) => Promise<void>;
   onSepararCaixas: (saleId: string, separations: { itemIdx: number; quantity: number }[]) => Promise<void>;
   onPartialRevertSeparacao: (saleId: string, reverts: { itemIdx: number; quantity: number }[]) => Promise<void>;
-  onTransferToStock: (saleId: string) => Promise<void>;
   onNavigateStock: () => void;
   onNavigateStockGlance: () => void;
   onNavigatePCP: () => void;
@@ -150,7 +148,6 @@ export default function SalesView({
   sectors,
   onAdd,
   onEdit,
-  onDelete,
   onCancelOnly,
   onCancelAndRevert,
   onAddStockBalance,
@@ -169,7 +166,6 @@ export default function SalesView({
   onRevertExpedition,
   onSepararCaixas,
   onPartialRevertSeparacao,
-  onTransferToStock,
   onNavigateStock,
   onNavigateStockGlance,
   onNavigatePCP,
@@ -261,8 +257,10 @@ export default function SalesView({
   const [labelModalBatchItems, setLabelModalBatchItems] = useState<{ product: Product; variation: Variation; sizeGrid: string; packagingName?: string; customerName?: string; recipientName?: string; saleId?: string }[] | undefined>(undefined);
   const [isQuickPrinting, setIsQuickPrinting] = useState(false);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
+  // Alvo do único popup de "Cancelar Pedido" — estorna estoque/financeiro e apaga o
+  // registro num passo só (ver handleCancelSaleWithRevert em App.tsx). Substituiu os
+  // antigos 3 passos manuais (Transferir para Estoque → Cancelar → Excluir).
   const [saleToDelete, setSaleToDelete] = useState<string | null>(null);
-  const [cancelSaleTarget, setCancelSaleTarget] = useState<string | null>(null);
   // Detalhes de Entrega abrem num popup dedicado (por venda) em vez de expandir o card
   // inline — carrega Transportadora/Endereço/Itens junto, sem precisar caçar um botão de
   // "expandir" genérico no card.
@@ -439,8 +437,6 @@ export default function SalesView({
   // endereço principal (Sale.deliveryItems), presente = de um endereço adicional.
   const [itemsPickerTarget, setItemsPickerTarget] = useState<{ saleId: string; addressIndex?: number } | null>(null);
   const [simplePreviewSale, setSimplePreviewSale] = useState<Sale | null>(null);
-  const [transferSale, setTransferSale] = useState<Sale | null>(null);
-  const [processingTransfer, setProcessingTransfer] = useState(false);
   // Quantidades de separação por índice de item dentro do popup de itens
   const [popupSepQtys, setPopupSepQtys] = useState<Record<number, number>>({});
   // Quantidades de reversão parcial (itens já separados que o usuário quer "des-separar")
@@ -986,48 +982,21 @@ export default function SalesView({
   return (
     <div className="flex flex-col gap-6 h-full pb-44 px-1 overflow-y-auto overflow-x-hidden force-scrollbar">
       {(() => {
-        const saleBeingDeleted = saleToDelete ? sales.find(s => s.id === saleToDelete) : null;
-        const mustCancelAndRevert = saleBeingDeleted ? saleProductionHasProgressed(saleBeingDeleted, productionOrders, lots) : false;
-        const alreadyCancelled = saleBeingDeleted?.status === SaleStatus.CANCELLED;
+        const saleBeingCancelled = saleToDelete ? sales.find(s => s.id === saleToDelete) : null;
         return (
           <ConfirmDialog
             isOpen={!!saleToDelete}
-            title={mustCancelAndRevert ? "Cancelar e Estornar Pedido?" : "Excluir Pedido?"}
-            message={mustCancelAndRevert
-              ? "Este pedido já está em produção (houve baixa em algum setor) e não pode mais ser excluído. Ele será cancelado e os lançamentos financeiros/estoque serão estornados — a produção em andamento seguirá normalmente e as caixas produzidas entrarão no estoque geral."
-              : alreadyCancelled
-                ? "Este pedido já está cancelado (estoque e financeiro já foram estornados). O registro será apagado definitivamente do histórico. Esta ação não pode ser desfeita."
-                : "Os produtos deste pedido voltarão ao estoque e os lançamentos financeiros serão estornados. Em seguida o pedido será apagado definitivamente. Esta ação não pode ser desfeita."}
-            confirmLabel={mustCancelAndRevert ? "Sim, Cancelar e Estornar" : "Sim, Excluir Pedido"}
+            title="Cancelar Pedido?"
+            message={`O pedido${saleBeingCancelled ? ` #${saleBeingCancelled.orderNumber}` : ''} será cancelado num passo só: os produtos reservados/separados voltam ao estoque geral, os lançamentos financeiros (contas a receber/receitas) e o crédito de cliente são estornados, e o registro é apagado definitivamente. A produção em andamento (se houver) segue normalmente. Esta ação não pode ser desfeita.`}
+            confirmLabel="Sim, Cancelar Pedido"
             cancelLabel="Agora não"
             onConfirm={() => {
               if (saleToDelete) {
-                if (mustCancelAndRevert) onCancelAndRevert(saleToDelete);
-                else onDelete(saleToDelete);
+                onCancelAndRevert(saleToDelete);
                 setSaleToDelete(null);
               }
             }}
             onCancel={() => setSaleToDelete(null)}
-            isDanger={true}
-          />
-        );
-      })()}
-      {(() => {
-        const saleBeingCancelled = cancelSaleTarget ? sales.find(s => s.id === cancelSaleTarget) : null;
-        return (
-          <ConfirmDialog
-            isOpen={!!cancelSaleTarget}
-            title="Cancelar Pedido?"
-            message={`O pedido${saleBeingCancelled ? ` #${saleBeingCancelled.orderNumber}` : ''} será cancelado: os produtos reservados voltarão ao estoque geral e os lançamentos financeiros (contas a receber/receitas) serão estornados. O registro é mantido no histórico marcado como Cancelado — não é apagado. Esta ação não pode ser desfeita.`}
-            confirmLabel="Sim, Cancelar Pedido"
-            cancelLabel="Agora não"
-            onConfirm={() => {
-              if (cancelSaleTarget) {
-                onCancelAndRevert(cancelSaleTarget);
-                setCancelSaleTarget(null);
-              }
-            }}
-            onCancel={() => setCancelSaleTarget(null)}
             isDanger={true}
           />
         );
@@ -2596,7 +2565,7 @@ export default function SalesView({
                                   onClick={(e) => { e.stopPropagation(); handleReleaseClick(sale); setActiveMenuId(null); }}
                                   className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
                                 >
-                                  <PackageCheck size={16} className="text-emerald-500" /> Liberar Pedido
+                                  <Truck size={16} className="text-emerald-600" /> Expedir / Baixar
                                 </button>
                               )}
                               {sale.status === SaleStatus.SALE && getUnfulfilledStockStatus(sale)?.ready ? (
@@ -2615,33 +2584,16 @@ export default function SalesView({
                                   <RotateCcw size={16} className="text-amber-500" /> Reverter Expedição
                                 </button>
                               )}
-                              {sale.status === SaleStatus.SALE && (reservedLotsBySale.get(sale.id) || []).length > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => { e.stopPropagation(); setTransferSale(sale); setActiveMenuId(null); }}
-                                  className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
-                                >
-                                  <Boxes size={16} className="text-violet-500" /> Transferir para Estoque
-                                </button>
-                              )}
-                              {sale.status !== SaleStatus.CANCELLED && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => { e.stopPropagation(); setCancelSaleTarget(sale.id); setActiveMenuId(null); }}
-                                  className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
-                                >
-                                  <Ban size={16} className="text-orange-500" /> Cancelar Pedido
-                                </button>
-                              )}
-                              {(sale.status === SaleStatus.CANCELLED || !saleProductionHasProgressed(sale, productionOrders, lots)) && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => { e.stopPropagation(); setSaleToDelete(sale.id); setActiveMenuId(null); }}
-                                  className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
-                                >
-                                  <Trash2 size={16} className="text-rose-500" /> Excluir Pedido
-                                </button>
-                              )}
+                              {/* Ação única: cancela, devolve os produtos ao estoque, estorna o
+                                  financeiro e apaga o pedido — tudo num passo, com uma confirmação
+                                  só (ver handleCancelSaleWithRevert em App.tsx). */}
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setSaleToDelete(sale.id); setActiveMenuId(null); }}
+                                className={`w-full px-4 py-3.5 rounded-2xl text-[11px] font-black tracking-widest flex items-center gap-3 transition-all active:scale-[0.98] border active:translate-y-[2px] ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white shadow-[0_3px_0_0_rgba(0,0,0,0.5)] active:shadow-[0_1px_0_0_rgba(0,0,0,0.5)]' : 'bg-slate-50 border-slate-200 text-slate-900 shadow-[0_3px_0_0_rgba(148,163,184,0.55)] active:shadow-[0_1px_0_0_rgba(148,163,184,0.55)]'}`}
+                              >
+                                <Ban size={16} className="text-orange-500" /> Cancelar Pedido
+                              </button>
                             </div>
                           </div>
                         </div>,
@@ -3569,100 +3521,6 @@ export default function SalesView({
         />
       )}
 
-      {/* Modal — Transferir Pedido Cancelado para Estoque */}
-      {transferSale && (() => {
-        const lots = reservedLotsBySale.get(transferSale.id) || [];
-        const totalBoxes = lots.reduce((s, l) => s + (l.boxQty ?? 1), 0);
-        const totalPairs = lots.reduce((s, l) => s + l.totalPairs, 0);
-        return (
-          <div
-            className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
-            onClick={() => !processingTransfer && setTransferSale(null)}
-          >
-            <div
-              onClick={e => e.stopPropagation()}
-              className={`w-full max-w-md max-h-[85vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}
-            >
-              {/* Header */}
-              <div className={`flex items-center gap-3 px-6 py-4 border-b ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
-                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? 'bg-violet-500/20 text-violet-400' : 'bg-violet-50 text-violet-600'}`}>
-                  <Boxes size={20} strokeWidth={2.5} />
-                </div>
-                <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Cancelar Pedido</p>
-                  <p className={`text-base font-black leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                    Transferir para Estoque
-                  </p>
-                </div>
-              </div>
-
-              {/* Body */}
-              <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-3 custom-scrollbar">
-                <p className={`text-[11px] font-bold leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                  O pedido <span className="font-black text-violet-500">#{transferSale.orderNumber}</span> de{' '}
-                  <span className="font-black">{getCustomerName(transferSale)}</span> será cancelado e os produtos produzidos
-                  serão transferidos para o <span className="font-black">estoque geral</span>.
-                </p>
-
-                {/* Lots summary */}
-                <div className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-violet-900/15 border-violet-800/40' : 'bg-violet-50 border-violet-100'}`}>
-                  <p className="text-[9px] font-black uppercase tracking-widest text-violet-500 mb-2">
-                    {lots.length} lote(s) · {totalBoxes} cx · {totalPairs} pares
-                  </p>
-                  <div className="flex flex-col gap-1.5">
-                    {lots.map(lot => (
-                      <div key={lot.id} className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className={`text-[11px] font-black uppercase truncate ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                            {lot.productReference ? `${lot.productReference} · ` : ''}{lot.productName}
-                          </p>
-                          <p className="text-[9px] font-bold text-slate-400">{lot.variationName} · {lot.gradeLabel}</p>
-                        </div>
-                        <span className="text-[10px] font-black text-violet-600 dark:text-violet-400 shrink-0">
-                          {lot.boxQty ?? 1} cx
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <p className={`text-[10px] font-bold ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
-                  As transações financeiras deste pedido não serão estornadas. Use "Cancelar e Estornar" para reverter também o financeiro.
-                </p>
-              </div>
-
-              {/* Footer */}
-              <div className={`p-5 border-t shrink-0 flex gap-3 ${isDarkMode ? 'border-slate-800 bg-slate-900/80' : 'border-slate-100 bg-slate-50'}`}>
-                <button
-                  type="button"
-                  onClick={() => setTransferSale(null)}
-                  disabled={processingTransfer}
-                  className={`flex-1 py-4 rounded-2xl text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-white text-slate-700 border border-slate-100'}`}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  disabled={processingTransfer}
-                  onClick={async () => {
-                    setProcessingTransfer(true);
-                    try {
-                      await onTransferToStock(transferSale.id);
-                      setTransferSale(null);
-                    } finally {
-                      setProcessingTransfer(false);
-                    }
-                  }}
-                  className="flex-[1.5] py-4 rounded-2xl bg-violet-600 text-white text-[11px] font-black uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg shadow-violet-600/20 active:scale-95 transition-all"
-                >
-                  <Boxes size={16} strokeWidth={2.5} />
-                  {processingTransfer ? 'Transferindo...' : 'Confirmar'}
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Modal — Separação de Caixas */}
       <Modal

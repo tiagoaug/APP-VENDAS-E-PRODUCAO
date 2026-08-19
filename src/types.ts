@@ -835,11 +835,8 @@ export enum ViewType {
   PRINT_CENTER = 'PRINT_CENTER',
   COLLABORATORS_CONFIG = 'COLLABORATORS_CONFIG',
   COMPANY_PROFILE = 'COMPANY_PROFILE',
-  // Sem view React própria — só um id estável pro item de menu que abre o módulo nativo
-  // Android (ver src/lib/printStudio.ts); onClick nunca chama onNavigate com este valor.
-  PRINT_STUDIO = 'PRINT_STUDIO',
-  // Hub da impressora térmica Ablemark BR-L100 (conexão, tamanhos, arquivos) — não confundir
-  // com PRINT_STUDIO acima (módulo nativo antigo HP/Epson, sem relação).
+  // Hub da impressora térmica Ablemark BR-L100 (conexão, tamanhos, arquivos) — editor de
+  // etiqueta livre, sem relação com o antigo módulo nativo HP/Epson (removido).
   LABEL_PRINT_STUDIO = 'LABEL_PRINT_STUDIO',
   LABEL_EDITOR = 'LABEL_EDITOR',
   BLING_CONNECTION = 'BLING_CONNECTION',

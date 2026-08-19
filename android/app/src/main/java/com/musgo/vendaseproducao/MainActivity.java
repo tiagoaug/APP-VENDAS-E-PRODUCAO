@@ -14,6 +14,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(PrintStudioPlugin.class);
         registerPlugin(AbleMarkPrinterPlugin.class);
         registerPlugin(EpsonPrinterPlugin.class);
+        registerPlugin(GallerySaverPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

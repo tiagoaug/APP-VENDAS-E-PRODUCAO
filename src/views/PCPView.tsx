@@ -18,8 +18,9 @@ import {
   FlowTag, Variation, ColorValue, ProductionOrder,
   ProductionConfigItem, SoleStockEntry, PalmilhaStockEntry, ViewType, PurchaseRequest, Grid,
   ServiceOrder, Person, Account, Category, Transaction, Purchase, PurchaseType, SectorNote,
-  ProductionScreenType, StockLot, SaleType, SaleStatus, ReminderTonePattern
+  ProductionScreenType, StockLot, SaleType, SaleStatus, ReminderTonePattern, Collaborator
 } from '../types';
+import { isViewAllowed, isViewTaskAllowed, isSectorAllowed } from '../utils/collaborators';
 import { computePalmilhaMapaReservations, computePalmilhaPendingOrders } from '../utils/palmilhaNeeds';
 import { resolveSoleConsumption } from '../utils/soleNeeds';
 import Modal from '../components/Modal';
@@ -48,7 +49,7 @@ import { toast } from '../utils/toast';
 import { generateId } from '../utils/id';
 import { getMaterialStockForColor } from '../utils/materialStock';
 import ExportNoteModal from '../components/ExportNoteModal';
-import { generatePCPShareExport, PCPShareItem, sendPCPItemsToPrintStudio } from '../utils/pcpShareExport';
+import { generatePCPShareExport, PCPShareItem } from '../utils/pcpShareExport';
 import { useStockLotDuplicates, DuplicateStockByRefColor } from '../hooks/useStockLotDuplicates';
 import { buildStockDuplicateFixPlan } from '../utils/stockDuplicateFix';
 import StockDuplicateBanner from '../components/StockDuplicateBanner';
@@ -153,6 +154,7 @@ interface PCPViewProps {
   stockLots?: StockLot[];
   transactions?: Transaction[];
   appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite' | 'hcWhite' | 'hcBlack' | 'hcIndustrial';
+  activeCollaborator?: Collaborator | null;
 }
 
 export default function PCPView({
@@ -194,7 +196,14 @@ export default function PCPView({
   stockLots = [],
   transactions = [],
   appTheme = 'light',
+  activeCollaborator = null,
 }: PCPViewProps) {
+  // Mesma lógica de App.tsx `canShowMenuItem` — esconde atalhos pra sub-funções que o
+  // colaborador não tem acesso, em vez de deixar o ícone visível sem levar a lugar nenhum.
+  const canShowMenuItem = (id: ViewType | string): boolean => {
+    if (id === 'matrizes' || id === 'SOLE_MATRIX_DIRECT') return isSectorAllowed(activeCollaborator, 'cadastro_insumos');
+    return isViewAllowed(activeCollaborator, id as ViewType) && isViewTaskAllowed(activeCollaborator, id as ViewType);
+  };
   // Temas de chrome neutro: Industrial e os de Alto Contraste removem o
   // degradê/borda coloridos dos cards de setor, deixando só os ícones coloridos.
   const isIndustrial = appTheme === 'industrial' || appTheme === 'hcWhite' || appTheme === 'hcBlack' || appTheme === 'hcIndustrial';
@@ -757,6 +766,9 @@ export default function PCPView({
   const [fichaSelection, setFichaSelection] = useState<Set<string>>(new Set());
   const [fichaListOpen, setFichaListOpen] = useState<Set<string>>(new Set()); // expanded lot keys
   const [fichaItemExpanded, setFichaItemExpanded] = useState<Set<string>>(new Set()); // expanded grade keys
+  // "Grade / Detalhes" do card de Pedidos no Setor virou popup centralizado em vez de
+  // acordeão inline — guarda só a chave (gradeKey) do card aberto no momento.
+  const [openPedidoDetailKey, setOpenPedidoDetailKey] = useState<string | null>(null);
   const [fichaFilters, setFichaFilters] = useState<Record<string, { model: string; color: string; search?: string; customerName?: string; providerName?: string }>>({});
 
   // Itens de pedidos pendentes decupados — granularidade por item, não por pedido.
@@ -5954,7 +5966,7 @@ export default function PCPView({
                                   const hasOS = !!f.coveringOS && f.coveringOS.status === 'PENDING';
                                   const isChecked = fichaSelection.has(itemKey);
                                   const gradeKey = `grade-${itemKey}`;
-                                  const gradeOpen = fichaItemExpanded.has(gradeKey);
+                                  const gradeOpen = openPedidoDetailKey === gradeKey;
                                   // Fallback pro snapshot salvo no lote (f.si.sizes) — sem isso,
                                   // a grade some se o Pedido de Produção original for editado/excluído.
                                   // Fichas FRACIONADAS sempre priorizam f.si.sizes (a fatia da fração) —
@@ -6042,7 +6054,7 @@ export default function PCPView({
                                           />
                                         )}
 
-                                        <div className="min-w-0 flex-1 cursor-pointer" onClick={() => { const n = new Set(fichaItemExpanded); gradeOpen ? n.delete(gradeKey) : n.add(gradeKey); setFichaItemExpanded(n); }}>
+                                        <div className="min-w-0 flex-1 cursor-pointer" onClick={() => setOpenPedidoDetailKey(gradeKey)}>
                                           <div className="flex items-center justify-between gap-2 mb-1.5">
                                             <div className="flex flex-wrap items-center gap-1.5">
                                               <span className="text-[9px] px-2 py-0.5 rounded-full uppercase tracking-wider leading-none shrink-0" style={{ backgroundColor: productBadgeBg, color: productBadgeText, fontWeight: productBadgeBold ? 900 : 400, fontStyle: productBadgeItalic ? 'italic' : 'normal' }}>
@@ -6109,21 +6121,39 @@ export default function PCPView({
                                       <div className="px-3 pb-3 pt-1.5 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between gap-3">
                                         <button
                                           type="button"
-                                          onClick={() => {
-                                            const n = new Set(fichaItemExpanded);
-                                            gradeOpen ? n.delete(gradeKey) : n.add(gradeKey);
-                                            setFichaItemExpanded(n);
-                                          }}
-                                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all text-[9px] font-black uppercase tracking-wider ${gradeOpen ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-400 dark:hover:bg-amber-900/50' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}
+                                          onClick={() => setOpenPedidoDetailKey(gradeKey)}
+                                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl transition-all text-[9px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                                         >
-                                          <ChevronDown size={12} className={`transition-transform duration-200 ${gradeOpen ? 'rotate-180' : ''}`} />
-                                          {gradeOpen ? 'Recolher' : 'Grade / Detalhes'}
+                                          <ChevronDown size={12} className="-rotate-90" />
+                                          Grade / Detalhes
                                         </button>
                                       </div>
 
-                                      {/* Corpo (expandido) */}
+                                      {/* Detalhes — popup centralizado em vez de acordeão inline (era
+                                          {gradeOpen && <div className="p-4 border-t ...">}), pra não
+                                          empurrar os outros cards da lista pra baixo. */}
                                       {gradeOpen && (
-                                        <div className={`p-4 border-t flex flex-col gap-4 ${isDarkMode ? 'border-slate-800 bg-slate-900/50' : 'border-slate-100 bg-slate-50/50'}`}>
+                                        <div className="fixed inset-0 z-[190] flex items-center justify-center p-4" onClick={() => setOpenPedidoDetailKey(null)}>
+                                          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+                                          <div onClick={e => e.stopPropagation()} className={`relative w-full max-w-lg max-h-[85vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-slate-900 border border-slate-800' : 'bg-white'}`}>
+                                            {/* Header */}
+                                            <div className={`px-5 py-4 border-b shrink-0 flex items-center justify-between gap-2 ${isDarkMode ? 'border-slate-800 bg-slate-800/60' : 'border-slate-100 bg-slate-50'}`}>
+                                              <div className="min-w-0">
+                                                <h3 className={`text-sm font-black uppercase tracking-wider truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                                                  {`${productRef || productName}${colorName ? ` ${colorName}` : ''}`.trim()}
+                                                </h3>
+                                                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
+                                                  PED. {f.lot.orderNumber} · MAPA{f.lot.orderNumber}
+                                                </p>
+                                              </div>
+                                              <button type="button" title="Fechar" aria-label="Fechar popup" onClick={() => setOpenPedidoDetailKey(null)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 transition-all shrink-0">
+                                                <X size={18} />
+                                              </button>
+                                            </div>
+                                            {/* Body — rolável, com barra de rolagem lateral se o conteúdo passar
+                                                da altura disponível (flex-1 min-h-0 é o que trava a altura pra
+                                                overflow-y-auto rolar de verdade em vez de estourar o popup). */}
+                                            <div className="p-4 flex-1 min-h-0 overflow-y-auto flex flex-col gap-4">
                                           {/* Grade */}
                                           {szEntries.length > 0 && (
                                             <div className="flex flex-col gap-2">
@@ -6249,9 +6279,9 @@ export default function PCPView({
 
                                           <hr className={`border-dashed ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`} />
 
-                                          {/* Ações — dois subcards divididos em 2 botões cada (em vez da lista
-                                            label+botão que apertava/sobrepunha "Imprimir/Compartilhar" e
-                                            "Print Studio" lado a lado em telas estreitas). */}
+                                          {/* Ações — dois subcards divididos em botões (em vez da lista
+                                            label+botão que apertava/sobrepunha os botões lado a lado em
+                                            telas estreitas). */}
                                           <div className="flex flex-col gap-2">
                                             <div className="flex items-center justify-center gap-1.5">
                                               <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
@@ -6285,13 +6315,6 @@ export default function PCPView({
                                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>
                                                 Imprimir / Compartilhar
                                               </button>
-                                              <button type="button"
-                                                title="Print Studio"
-                                                onClick={() => sendPCPItemsToPrintStudio([buildPCPShareItem(f)], { isDarkMode })}
-                                                className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-cyan-900/30 text-cyan-300 hover:bg-cyan-900/50' : 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100'}`}
-                                              >
-                                                <Printer size={13} /> Print Studio
-                                              </button>
                                             </div>
 
                                             <div className="flex items-center justify-center gap-1.5 mt-1">
@@ -6322,6 +6345,18 @@ export default function PCPView({
                                                 <Scissors size={14} /> Fracionar Pedido
                                               </button>
                                             )}
+                                          </div>
+                                            </div>
+                                            {/* Footer */}
+                                            <div className={`px-5 py-4 border-t shrink-0 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                                              <button
+                                                type="button"
+                                                onClick={() => setOpenPedidoDetailKey(null)}
+                                                className={`w-full py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                              >
+                                                Voltar
+                                              </button>
+                                            </div>
                                           </div>
                                         </div>
                                       )}
@@ -6905,11 +6940,6 @@ export default function PCPView({
                                               className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
                                               <Printer size={16} className="text-emerald-500 dark:text-emerald-400" />
                                               <span className="text-[8px] font-black uppercase tracking-widest text-center leading-tight text-slate-600 dark:text-slate-400">Etiqueta / OS</span>
-                                            </button>
-                                            <button type="button" title="Print Studio" onClick={() => sendPCPItemsToPrintStudio(getFichasForOS(os).map(buildPCPShareItem), { isDarkMode })}
-                                              className={`flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
-                                              <Printer size={16} className="text-cyan-500 dark:text-cyan-400" />
-                                              <span className="text-[8px] font-black uppercase tracking-widest text-center leading-tight text-slate-600 dark:text-slate-400">Print Studio</span>
                                             </button>
                                             <button type="button" title="Lembretes" onClick={() => setOsNotesPopup(os)}
                                               className={`relative flex flex-col items-center justify-center gap-1.5 p-2.5 rounded-2xl border shadow-sm transition-all active:scale-95 ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:bg-slate-800' : 'bg-white border-slate-200/60 hover:bg-slate-50'}`}>
@@ -8297,7 +8327,7 @@ export default function PCPView({
               { id: ViewType.PRODUCTION_WEIGHING, label: 'Pesagem e Contagem de Solados', description: 'Bipagem, pesagem e contagem de pares', icon: <Scale size={24} />, color: 'text-violet-600' },
               { id: ViewType.PRODUCTION_SOLE_RECEIPT, label: 'Conferência de Compras (Solas)', description: 'Receber e conferir solados comprados', icon: <ShoppingCart size={24} />, color: 'text-cyan-600' },
               { id: ViewType.PRODUCTION_SOLE_STOCK, label: 'Estoque de Solados', description: 'Gerenciamento por modelo, cor e tamanho', icon: <Package size={24} />, color: 'text-emerald-600' },
-            ].map((item, index, array) => (
+            ].filter(item => canShowMenuItem(item.id)).map((item, index, array) => (
               <button
                 key={item.id}
                 type="button"
@@ -8316,22 +8346,24 @@ export default function PCPView({
                 <ChevronRight size={24} className={isDarkMode ? "text-slate-700" : "text-slate-300"} />
               </button>
             ))}
-            <button
-              type="button"
-              onClick={() => onNavigateProduction?.('MATRIZES')}
-              className="w-full flex items-center justify-between p-8 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all active:scale-[0.98]"
-            >
-              <div className="flex items-center gap-6">
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? "bg-slate-800" : "bg-slate-50"} text-indigo-500`}>
-                  <Database size={24} />
+            {canShowMenuItem('matrizes') && (
+              <button
+                type="button"
+                onClick={() => onNavigateProduction?.('MATRIZES')}
+                className="w-full flex items-center justify-between p-8 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all active:scale-[0.98]"
+              >
+                <div className="flex items-center gap-6">
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${isDarkMode ? "bg-slate-800" : "bg-slate-50"} text-indigo-500`}>
+                    <Database size={24} />
+                  </div>
+                  <div className="text-left">
+                    <p className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Matrizes</p>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Cadastro de moldes e matrizes de solados</p>
+                  </div>
                 </div>
-                <div className="text-left">
-                  <p className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Matrizes</p>
-                  <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Cadastro de moldes e matrizes de solados</p>
-                </div>
-              </div>
-              <ChevronRight size={24} className={isDarkMode ? "text-slate-700" : "text-slate-300"} />
-            </button>
+                <ChevronRight size={24} className={isDarkMode ? "text-slate-700" : "text-slate-300"} />
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -9744,18 +9776,6 @@ export default function PCPView({
                                         <Printer size={11} />
                                         Imprimir / Compartilhar
                                       </button>
-                                      <button
-                                        type="button"
-                                        title="Print Studio"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          sendPCPItemsToPrintStudio([buildPCPShareItem({ product, variation, si })], { isDarkMode });
-                                        }}
-                                        className={`flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full transition-all active:scale-95 ${isDarkMode ? 'bg-cyan-900/30 text-cyan-300 hover:bg-cyan-900/50' : 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100'}`}
-                                      >
-                                        <Printer size={11} />
-                                        Print Studio
-                                      </button>
                                     </div>
                                   </div>
                                 )}
@@ -10945,8 +10965,12 @@ export default function PCPView({
                 </div>
               </div>
 
-              {/* Body */}
-              <div className="p-5 flex flex-col gap-3 overflow-y-auto">
+              {/* Body — flex-1 min-h-0 é o que faz esse bloco virar a região rolável dentro do
+                  layout flex (header/footer fixos em shrink-0); sem isso, `overflow-y-auto`
+                  não tem uma altura travada pra rolar dentro, e o conteúdo mais longo (2+
+                  variações) ficava só sendo cortado/espremido pelo overflow-hidden do modal em
+                  vez de rolar. */}
+              <div className="p-5 flex flex-col gap-3 overflow-y-auto flex-1 min-h-0">
                 {totalShortage > 0 && (
                   <div className={`p-3 rounded-xl text-xs font-bold ${isDarkMode ? 'bg-rose-950/30 text-rose-400 border border-rose-800' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
                     Este grupo tem falta em estoque. Formule um pedido cobrindo todas as faltas abaixo, ou solicite item a item.
@@ -11692,7 +11716,6 @@ export default function PCPView({
         onDeleteOS={handleDeleteOS}
         onShareOS={(os) => setShareModal({ isOpen: true, format: 'jpg', selectedItems: getFichasForOS(os) })}
         onPrintOS={(os) => { setPrintOSData({ os, nextSectorName: 'CONCLUÍDO' }); setIsPrintOSModalOpen(true); }}
-        onPrintStudio={(os) => sendPCPItemsToPrintStudio(getFichasForOS(os).map(buildPCPShareItem), { isDarkMode })}
         onOpenReminders={(os) => setOsNotesPopup(os)}
         osBadgeBg={osBadgeBg}
         osBadgeText={osBadgeText}

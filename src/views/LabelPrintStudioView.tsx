@@ -297,6 +297,7 @@ export default function LabelPrintStudioView({
     const rotationDeg = DIRECTION_TO_ROTATION[options.direction];
     let sent = 0;
     let failed = 0;
+    let isFirst = true;
     for (let i = 0; i < batchFrames.length; i++) {
       const transformed = applyPrintTransform(
         batchFrames[i], selectedSize!.widthMm, selectedSize!.heightMm,
@@ -305,6 +306,11 @@ export default function LabelPrintStudioView({
       );
       const base64 = transformed.toDataURL('image/png').split('base64,')[1];
       for (let c = 0; c < options.copies; c++) {
+        // Dá tempo da impressora terminar de alimentar/cortar a etiqueta anterior antes de
+        // mandar a próxima — sem essa pausa o job seguinte chega enquanto o mecanismo ainda
+        // está processando o de antes, e a impressão sai corrompida mesmo com bytes corretos.
+        if (!isFirst) await new Promise(resolve => setTimeout(resolve, 2000));
+        isFirst = false;
         try {
           const written = await Filesystem.writeFile({ path: `label_${Date.now()}_${i}_${c}.png`, data: base64, directory: Directory.Cache });
           const { sent: ok } = await printAbleMarkLabel(written.uri, options.paperType, options.density);

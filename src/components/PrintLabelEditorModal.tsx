@@ -3,7 +3,7 @@ import {
   Printer, ChevronDown,
   RotateCcw, Eye, EyeOff, Plus, Minus, Settings2, FileText, Tag,
   Image as ImageIcon, Layers, Check, X, Lock, Unlock, BookmarkPlus, Pencil, Trash2, BookOpen, Bluetooth, Share2, RefreshCw,
-  HelpCircle, Hand, Maximize2, Sparkles, Square, Package,
+  HelpCircle, Hand, Maximize2, Sparkles, Square, Package, Download,
 } from 'lucide-react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import Modal from './Modal';
@@ -16,6 +16,7 @@ import {
   isAbleMarkPrinterConnected, printAbleMarkLabel, listAbleMarkPairedDevices, connectAbleMarkPrinter,
   isAblemarkPlatform, AbleMarkPairedDevice,
 } from '../lib/ablemarkPrinter';
+import { saveImageToGallery, isGallerySaverPlatform } from '../lib/gallerySaver';
 import { applyPrintTransform, DIRECTION_TO_ROTATION } from '../utils/labelPrintTransform';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -265,6 +266,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
   const [myPresetsPopupOpen, setMyPresetsPopupOpen] = useState(false);
   const [printing, setPrinting]     = useState(false);
   const [exportingJpg, setExportingJpg] = useState(false);
+  const [savingGallery, setSavingGallery] = useState(false);
   const [preparingBt, setPreparingBt] = useState(false);
   const [showBtPreview, setShowBtPreview] = useState(false);
   const [btFramesCache, setBtFramesCache] = useState<HTMLCanvasElement[]>([]);
@@ -1103,10 +1105,42 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
     }
   };
 
+  // Salva cada etiqueta como um PNG separado na galeria — pensado como alternativa manual à
+  // impressão Bluetooth direta: com a etiqueta na galeria, dá pra abrir o app oficial da
+  // impressora (ou qualquer outro) e imprimir por lá.
+  const handleSaveToGallery = async () => {
+    setSavingGallery(true);
+    try {
+      const { frames } = await buildLabelFrames(300);
+      if (frames.length === 0) {
+        toast.show('Nenhuma etiqueta para gerar. Selecione ao menos um tamanho ou variação.');
+        return;
+      }
+      let saved = 0;
+      let failed = 0;
+      for (let i = 0; i < frames.length; i++) {
+        const base64 = frames[i].toDataURL('image/png').split('base64,')[1];
+        try {
+          const written = await Filesystem.writeFile({ path: `gallery_${Date.now()}_${i}.png`, data: base64, directory: Directory.Cache });
+          const { saved: ok } = await saveImageToGallery(written.uri);
+          if (ok) saved++; else failed++;
+        } catch {
+          failed++;
+        }
+      }
+      toast.show(failed === 0 ? `${saved} etiqueta(s) salva(s) na galeria!` : `${saved} salva(s), ${failed} falharam.`);
+    } catch (err) {
+      console.error('Erro ao salvar na galeria:', err);
+      toast.show('Erro ao salvar na galeria: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setSavingGallery(false);
+    }
+  };
+
   // Impressão via Bluetooth (Ablemark BR-L100) — reaproveita buildLabelFrames (uma etiqueta
   // por unidade física, já respeitando a grade de tamanhos/quantidades) só que a 8 pontos/mm
   // em vez de 300 DPI. Abre o mesmo LabelPrintPreviewModal usado pelo editor de etiqueta geral
-  // (Print Studio) pra escolher direção/deslocamento/densidade/papel antes de mandar.
+  // pra escolher direção/deslocamento/densidade/papel antes de mandar.
   // Gera os quadros e abre a pré-visualização — só chamado quando já se sabe que a
   // impressora está conectada (direto, ou depois de conectar pelo popup abaixo).
   const proceedToBtPreview = async () => {
@@ -1164,6 +1198,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
     const rotationDeg = DIRECTION_TO_ROTATION[options.direction];
     let sent = 0;
     let failed = 0;
+    let isFirst = true;
     for (let i = 0; i < btFramesCache.length; i++) {
       const transformed = applyPrintTransform(
         btFramesCache[i], W, H,
@@ -1172,6 +1207,12 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
       );
       const base64 = transformed.toDataURL('image/png').split('base64,')[1];
       for (let c = 0; c < options.copies; c++) {
+        // Dá tempo da impressora terminar de alimentar/cortar a etiqueta anterior antes de
+        // mandar a próxima — sem essa pausa, o job seguinte chega enquanto o mecanismo ainda
+        // está processando o de antes, e a impressão sai corrompida (caracteres bagunçados)
+        // mesmo com os bytes enviados corretos.
+        if (!isFirst) await new Promise(resolve => setTimeout(resolve, 2000));
+        isFirst = false;
         try {
           const written = await Filesystem.writeFile({ path: `label_${Date.now()}_${i}_${c}.png`, data: base64, directory: Directory.Cache });
           const { sent: ok } = await printAbleMarkLabel(written.uri, options.paperType, options.density);
@@ -2542,10 +2583,16 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
             className="w-full py-4 rounded-2xl bg-indigo-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
             <Share2 size={16}/> {(printing || exportingJpg) ? 'Gerando…' : 'Compartilhar'}
           </button>
+          {isGallerySaverPlatform() && (
+          <button type="button" onClick={handleSaveToGallery} disabled={printing || savingGallery}
+            className="w-full py-4 rounded-2xl bg-emerald-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
+            <Download size={16}/> {savingGallery ? 'Salvando…' : 'Salvar na Galeria'}
+          </button>
+          )}
           {isAblemarkPlatform() && (
           <button type="button" onClick={handleOpenBluetoothPrint} disabled={printing || exportingJpg || preparingBt}
             className="w-full py-4 rounded-2xl bg-sky-600 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-sky-500/20 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-60">
-            <Bluetooth size={16}/> {preparingBt ? 'Preparando…' : 'Imprimir na Impressora (Print Studio)'}
+            <Bluetooth size={16}/> {preparingBt ? 'Preparando…' : 'Imprimir na Impressora'}
           </button>
           )}
           <button type="button" onClick={onClose} className={`w-full py-3 rounded-2xl font-black text-[10px] uppercase tracking-widest ${dk?'bg-slate-800 text-slate-400':'bg-slate-100 text-slate-500'}`}>

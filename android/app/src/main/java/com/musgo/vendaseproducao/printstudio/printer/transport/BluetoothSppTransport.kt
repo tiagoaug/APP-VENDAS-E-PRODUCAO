@@ -62,17 +62,33 @@ class BluetoothSppTransport(private val context: Context) : PrinterTransport {
         // 12+), e a gente nunca inicia discovery próprio aqui (listPairedDevices só lê
         // bondedDevices, não faz scan ativo) — nada realmente pra cancelar.
 
-        // 1ª tentativa: caminho padrão (SDP por UUID).
+        // 1ª tentativa: SDP por UUID, socket INSEGURO (sem autenticação/criptografia). Chips
+        // Bluetooth SPP baratos/embarcados (como o da BR-L100) são conhecidos por terem bugs de
+        // compatibilidade com o modo seguro do Android — a conexão "funciona" (conecta, aceita
+        // os bytes, sem erro nenhum visível), mas a impressão física sai corrompida. É a mesma
+        // causa por trás de vários SDKs de impressora térmica recomendarem socket inseguro por
+        // padrão.
         try {
-            val sock = device.createRfcommSocketToServiceRecord(SPP_UUID)
+            val sock = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID)
             sock.connect()
             attach(sock)
             return true
         } catch (e: Exception) {
-            lastError = "SDP: ${e.javaClass.simpleName} ${e.message}"
+            lastError = "SDP inseguro: ${e.javaClass.simpleName} ${e.message}"
         }
 
-        // 2ª tentativa: fallback por reflection (canal 1 fixo).
+        // 2ª tentativa: SDP por UUID, socket seguro (comportamento original).
+        try {
+            val sock = device.createRfcommSocketToServiceRecord(SPP_UUID)
+            sock.connect()
+            attach(sock)
+            lastError = null
+            return true
+        } catch (e: Exception) {
+            lastError = "${lastError}; SDP seguro: ${e.javaClass.simpleName} ${e.message}"
+        }
+
+        // 3ª tentativa: fallback por reflection (canal 1 fixo).
         try {
             val sock = createFallbackSocket(device)
             sock.connect()

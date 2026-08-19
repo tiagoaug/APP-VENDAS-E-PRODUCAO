@@ -205,7 +205,7 @@ import { parseLocaleNumber } from './utils/numbers';
 import { generateId } from './utils/id';
 import { seedProductionOrderSequence } from './utils/sequenceSeeds';
 import { ThemeId, THEME_VISUALS, ALL_THEME_CLASSES, FONT_OPTIONS, NavIconMode, NAV_TAB_COLORS } from './utils/themes';
-import { isViewAllowed, collaboratorCanUseAI, getEffectiveDashboardCards, isAccountOwnerSession, isViewTaskAllowed } from './utils/collaborators';
+import { isViewAllowed, collaboratorCanUseAI, getEffectiveDashboardCards, isAccountOwnerSession, isViewTaskAllowed, isSectorAllowed } from './utils/collaborators';
 import { subscribeToAIGeneralSettings } from './services/aiSettingsService';
 
 const MODAL_VIEWS = [
@@ -1696,84 +1696,6 @@ export default function App() {
     }
   };
 
-  // "Transferir para Estoque" — cancela a venda e converte os lotes RESERVADO dessa
-  // venda em EM_ESTOQUE, incrementando o estoque de produtos. Não estorna transações
-  // financeiras (use handleCancelSaleWithRevert para reverter tudo).
-  const handleTransferSaleToStock = async (saleId: string) => {
-    const sale = sales.find(s => s.id === saleId);
-    if (!sale) return;
-
-    const reservedLots = stockLots.filter(l => l.saleId === saleId && l.status === 'RESERVADO');
-    if (reservedLots.length === 0) {
-      toast.show('Nenhum lote produzido reservado para transferir.');
-      return;
-    }
-
-    try {
-      const productUpdates = new Map<string, any>();
-      const getProd = (id: string) => {
-        if (productUpdates.has(id)) return productUpdates.get(id);
-        const p = products.find(pr => pr.id === id);
-        if (!p) return null;
-        const cloned = JSON.parse(JSON.stringify(p));
-        productUpdates.set(id, cloned);
-        return cloned;
-      };
-
-      // Incrementa estoque do produto para cada lote RESERVADO
-      for (const lot of reservedLots) {
-        const prod = getProd(lot.productId);
-        if (!prod) continue;
-        const variation = prod.variations.find((v: any) => v.id === lot.variationId);
-        if (!variation) continue;
-
-        if (lot.boxQty !== undefined) {
-          const boxQty = lot.boxQty || 0;
-          variation.stock['WHOLESALE'] = (variation.stock['WHOLESALE'] || 0) + boxQty;
-          if (lot.pkgId && boxQty > 0) {
-            const allocations = [...(variation.stockPkgAllocations || [])];
-            const idx = allocations.findIndex((a: any) => a.pkgId === lot.pkgId);
-            if (idx >= 0) {
-              allocations[idx] = { ...allocations[idx], qty: allocations[idx].qty + boxQty };
-            } else {
-              allocations.push({ pkgId: lot.pkgId, qty: boxQty });
-            }
-            variation.stockPkgAllocations = allocations;
-          }
-        } else {
-          Object.entries(lot.sizeBreakdown).forEach(([size, qty]) => {
-            variation.stock[size] = (variation.stock[size] || 0) + (qty as number);
-          });
-        }
-      }
-
-      // Salva os produtos atualizados
-      for (const [, prod] of productUpdates) {
-        await firebaseService.saveDocument('products', prod);
-      }
-
-      // Converte lotes RESERVADO → EM_ESTOQUE removendo vínculo com a venda
-      const now = Date.now();
-      for (const lot of reservedLots) {
-        await firebaseService.updateDocument('stockLots', lot.id, {
-          status: 'EM_ESTOQUE',
-          saleId: null,
-          saleOrderNumber: null,
-          customerName: null,
-          updatedAt: now,
-        });
-      }
-
-      // Cancela a venda
-      await firebaseService.updateDocument('sales', saleId, { status: SaleStatus.CANCELLED });
-
-      toast.show(`Pedido cancelado. ${reservedLots.length} lote(s) transferidos para o estoque.`);
-    } catch (e: any) {
-      console.error(e);
-      toast.show('Erro ao transferir para estoque: ' + (e.message || e));
-    }
-  };
-
   const handleCancelOnlySale = async (id: string) => {
     const sale = sales.find(s => s.id === id);
     if (!sale) return;
@@ -3248,14 +3170,18 @@ export default function App() {
   // (EM_ESTOQUE) qualquer caixa já produzida e reservada (RESERVADO) para essa venda —
   // a produção pendente segue normalmente e, ao concluir, entra no estoque geral em vez
   // de ser reservada para esta venda (ver classifyExpedicaoOrders em PCPView).
+  // Ação única de "Cancelar Pedido": estorna estoque (itens + caixas RESERVADO) + financeiro
+  // + crédito de cliente e APAGA o registro — não deixa mais um registro "Cancelado" no
+  // histórico (antes eram 2-3 passos manuais: Transferir para Estoque, depois Cancelar,
+  // depois Excluir). Roda mesmo se a venda já estiver com status CANCELLED (ex.: veio de
+  // handleCancelOnlySale, que cancela sem estornar o financeiro) — de propósito, pra pegar
+  // transações financeiras que aquele caminho mais antigo deixou pra trás; os passos de
+  // estoque simplesmente não encontram mais nada pra reverter nesse caso (item.fulfilled/
+  // reservedLots já resolvidos), então rodar de novo é seguro.
   const handleCancelSaleWithRevert = async (id: string) => {
     const sale = sales.find(s => s.id === id);
     if (!sale) {
       toast.show("Erro: Venda não encontrada no sistema.");
-      return;
-    }
-    if (sale.status === SaleStatus.CANCELLED) {
-      toast.show("Esta venda já está cancelada.");
       return;
     }
 
@@ -3324,7 +3250,20 @@ export default function App() {
               const variation = productData.variations.find(v => v.id === item.variationId);
               if (!variation) return;
               const stockKey = item.saleType === SaleType.WHOLESALE ? 'WHOLESALE' : (item.size || 'WHOLESALE');
-              variation.stock[stockKey] = (variation.stock[stockKey] || 0) + item.quantity;
+              // Quantidade deste item já coberta por StockLot(s) RESERVADO (ver
+              // item.separatedStockLotIds) — essa parte é estornada separadamente no loop de
+              // `reservedLots` logo abaixo, que devolve o boxQty/sizeBreakdown exato de cada
+              // lote. Somar o item.quantity INTEIRO aqui também duplicava o estorno dessa
+              // parte (1 caixa "fantasma" a mais no estoque por pedido cancelado) — só o
+              // restante, sem StockLot rastreável (fallback de contador/separatedPkgAllocations),
+              // deve entrar por aqui.
+              const itemLots = reservedLots.filter(l => item.separatedStockLotIds?.includes(l.id));
+              const lotsCoveredQty = itemLots.reduce((sum, lot) => {
+                if (lot.boxQty !== undefined) return sum + (lot.boxQty || 0);
+                return sum + (item.size ? (lot.sizeBreakdown?.[item.size] || 0) : Object.values(lot.sizeBreakdown || {}).reduce((a, b) => a + b, 0));
+              }, 0);
+              const fallbackQty = Math.max(0, item.quantity - lotsCoveredQty);
+              variation.stock[stockKey] = (variation.stock[stockKey] || 0) + fallbackQty;
             });
           }
 
@@ -3388,12 +3327,25 @@ export default function App() {
           }
         }
 
-        // E. Marca como cancelada (mantém o registro — o Mapa em produção continua
-        // vinculado ao Pedido de Produção e não é alterado aqui).
-        transaction.update(salesRef, { status: SaleStatus.CANCELLED });
+        // E. Se a produção deste pedido AINDA NÃO teve nenhuma baixa, o Pedido de Produção e
+        // os Mapas vinculados também não têm nada de real acontecendo neles — apaga os dois
+        // junto (mesma limpeza que handleDeleteSale já fazia). Se já progrediu, não mexe: o
+        // Mapa segue em produção normalmente, só o pedido de venda em si é removido.
+        if (sale.productionOrderId && !saleProductionHasProgressed(sale, productionOrders, productionLots)) {
+          const po = productionOrders.find(p => p.id === sale.productionOrderId);
+          if (po) {
+            po.lotIds.forEach(lotId => {
+              transaction.delete(doc(db, `users/${uid}/productionLots`, lotId));
+            });
+            transaction.delete(doc(db, `users/${uid}/productionOrders`, po.id));
+          }
+        }
+
+        // F. Apaga o registro.
+        transaction.delete(salesRef);
       });
 
-      toast.show('Pedido cancelado e estornado. A produção em andamento segue normalmente e as caixas produzidas entrarão no estoque geral.');
+      toast.show('Pedido cancelado, estornado e excluído. A produção em andamento segue normalmente e as caixas produzidas entrarão no estoque geral.');
     } catch (err: any) {
       console.error("Erro ao cancelar pedido com estorno:", err);
       toast.show('Erro ao cancelar: ' + (err.message || err));
@@ -4131,6 +4083,18 @@ export default function App() {
     (dashboardConfig || defaultDashboardConfig).cards,
     activeCollaborator
   );
+
+  // Mesma lógica de `isItemAllowed` do SettingsView.tsx, só que compartilhada aqui pros
+  // outros menus-hub (PRODUCTION_MENU, DELIVERY_MENU etc.) que também listam atalhos pra
+  // sub-funções — sem isso, um colaborador com o setor liberado mas uma função específica
+  // em 'none' (ex.: acesso a Produção mas sem Cadastro de Produtos) via o ícone normalmente
+  // e, ao tocar, não ia a lugar nenhum (o gate de `renderView` abaixo barra e volta pro
+  // Dashboard, mas parece um bug pra quem tocou). Ícones de função bloqueada devem só não
+  // aparecer, em vez de aparecer e "não fazer nada".
+  const canShowMenuItem = (id: ViewType | string): boolean => {
+    if (id === 'matrizes' || id === 'SOLE_MATRIX_DIRECT') return isSectorAllowed(activeCollaborator, 'cadastro_insumos');
+    return isViewAllowed(activeCollaborator, id as ViewType) && isViewTaskAllowed(activeCollaborator, id as ViewType);
+  };
 
   const renderView = (view: ViewType) => {
     // Route Guard: Check if the view is allowed by the current module configuration
@@ -5045,7 +5009,6 @@ export default function App() {
             accounts={accounts}
             onAdd={() => navigateTo(ViewType.SALE_FORM)}
             onEdit={(sale) => navigateTo(ViewType.SALE_FORM, sale.id)}
-            onDelete={handleDeleteSale}
             onCancelOnly={handleCancelOnlySale}
             onCancelAndRevert={handleCancelSaleWithRevert}
             onAddStockBalance={async (adjustments) => {
@@ -5527,7 +5490,6 @@ export default function App() {
             onRevertExpedition={handleRevertExpedition}
             onSepararCaixas={handleSepararCaixas}
             onPartialRevertSeparacao={handlePartialRevertSeparacao}
-            onTransferToStock={handleTransferSaleToStock}
             onNavigateStock={() => navigateTo(ViewType.STOCK)}
             onNavigateStockGlance={() => navigateTo(ViewType.STOCK_GLANCE)}
             onNavigatePCP={() => navigateTo(ViewType.PRODUCTION_PCP, { initialTab: 'monitor' })}
@@ -6010,7 +5972,7 @@ export default function App() {
                     { id: ViewType.PRODUCTION_PCP, label: 'PCP Central', icon: <GanttChartSquare size={22} />, color: 'text-indigo-600' },
                     { id: ViewType.PRODUCTION_ESTOQUES_MENU, label: 'Estoques', icon: <Boxes size={22} />, color: 'text-emerald-600' },
                     { id: ViewType.PRODUCTION_PURCHASE_NEEDS, label: 'Necessidade de Compras', icon: <ClipboardList size={22} />, color: 'text-amber-600' },
-                  ].map((item, index, array) => (
+                  ].filter(item => canShowMenuItem(item.id)).map((item, index, array) => (
                     <button
                       key={item.id}
                       onClick={() => navigateTo(item.id)}
@@ -6039,7 +6001,7 @@ export default function App() {
                     { id: ViewType.PRODUCTION_SOLE_RECEIPT, label: 'Conferência de Compras (Solas)', icon: <ShoppingCart size={22} />, color: 'text-cyan-600' },
                     { id: ViewType.PRODUCTION_SOLE_STOCK, label: 'Estoques de Solados', icon: <Package size={22} />, color: 'text-emerald-500' },
                     { id: 'matrizes', label: 'Matrizes', icon: <Database size={22} />, color: 'text-indigo-500' },
-                  ].map((item, index, array) => (
+                  ].filter(item => canShowMenuItem(item.id)).map((item, index, array) => (
                     <button
                       key={item.id}
                       onClick={() => {
@@ -6066,48 +6028,52 @@ export default function App() {
               </div>
 
               {/* Novo Grupo de Engenharia */}
-              <div className="flex flex-col gap-3">
-                <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Engenharia e Desenvolvimento</h3>
-                <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                  <button
-                    onClick={() => navigateTo(ViewType.PRODUCTION_ENGINEERING)}
-                    className="w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 flex items-center justify-center shrink-0 text-indigo-600">
-                        <Database size={22} />
+              {canShowMenuItem(ViewType.PRODUCTION_ENGINEERING) && (
+                <div className="flex flex-col gap-3">
+                  <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Engenharia e Desenvolvimento</h3>
+                  <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                    <button
+                      onClick={() => navigateTo(ViewType.PRODUCTION_ENGINEERING)}
+                      className="w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 flex items-center justify-center shrink-0 text-indigo-600">
+                          <Database size={22} />
+                        </div>
+                        <div className="text-left">
+                          <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Engenharia de Produto</p>
+                          <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Produtos, Grades e Solados</p>
+                        </div>
                       </div>
-                      <div className="text-left">
-                        <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Engenharia de Produto</p>
-                        <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Produtos, Grades e Solados</p>
-                      </div>
-                    </div>
-                    <ChevronRight size={20} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
-                  </button>
+                      <ChevronRight size={20} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Novo Grupo de Configurações */}
-              <div className="flex flex-col gap-3">
-                <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Configurações</h3>
-                <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                  <button
-                    onClick={() => navigateTo(ViewType.PRODUCTION_CONFIG)}
-                    className="w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 flex items-center justify-center shrink-0 text-slate-500">
-                        <Hammer size={22} />
+              {canShowMenuItem(ViewType.PRODUCTION_CONFIG) && (
+                <div className="flex flex-col gap-3">
+                  <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Configurações</h3>
+                  <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                    <button
+                      onClick={() => navigateTo(ViewType.PRODUCTION_CONFIG)}
+                      className="w-full flex items-center justify-between p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className="w-10 h-10 flex items-center justify-center shrink-0 text-slate-500">
+                          <Hammer size={22} />
+                        </div>
+                        <div className="text-left">
+                          <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Configurações de Produção</p>
+                          <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Setores, Materiais, Grades e Matrizes</p>
+                        </div>
                       </div>
-                      <div className="text-left">
-                        <p className={`text-sm font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Configurações de Produção</p>
-                        <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Setores, Materiais, Grades e Matrizes</p>
-                      </div>
-                    </div>
-                    <ChevronRight size={20} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
-                  </button>
+                      <ChevronRight size={20} className={isDarkMode ? 'text-slate-700' : 'text-slate-300'} />
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             <motion.div
@@ -6227,6 +6193,7 @@ export default function App() {
             colors={colors}
             isDarkMode={isDarkMode}
             appTheme={appTheme}
+            activeCollaborator={activeCollaborator}
             onSaveLot={handleSaveProductionLot}
             onDeleteLot={handleDeleteProductionLot}
             onDeleteProductionOrder={handleDeleteProductionOrder}
@@ -6342,7 +6309,7 @@ export default function App() {
                 {[
                   { id: ViewType.DELIVERY_ROUTE_BUILDER, label: 'Montar Rota', icon: <Route size={22} />, color: 'text-cyan-600' },
                   { id: ViewType.DELIVERY_CONFIG, label: 'Configurações de Entrega', icon: <Settings size={22} />, color: 'text-slate-500' },
-                ].map((item, index, array) => (
+                ].filter(item => canShowMenuItem(item.id)).map((item, index, array) => (
                   <button
                     key={item.id}
                     onClick={() => navigateTo(item.id)}
@@ -6360,7 +6327,7 @@ export default function App() {
               </div>
             </div>
 
-            {deliveryRoutes.length > 0 && (
+            {deliveryRoutes.length > 0 && canShowMenuItem(ViewType.DELIVERY_ROUTE_DETAIL) && (
               <div className="flex flex-col gap-3">
                 <h3 className="px-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Rotas Recentes</h3>
                 <div className={`rounded-3xl border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
@@ -6790,7 +6757,7 @@ export default function App() {
                 { id: ViewType.PRODUCTION_PALMILHA_STOCK, label: 'Estoque de Palmilhas', description: 'Montagem e Acabamento, por faca e cor', icon: <Footprints size={24} />, color: 'text-rose-600' },
                 { id: ViewType.STOCK, label: 'Expedição e Estoque', description: 'Produtos prontos — pedidos de clientes e estoque', icon: <Boxes size={24} />, color: 'text-amber-700' },
                 { id: ViewType.PRODUCTION_GENERAL_RECEIPT, label: 'Recebimento de Compras', description: 'Dar entrada de materiais comprados no estoque', icon: <ClipboardList size={24} />, color: 'text-amber-600' },
-              ].map((item, index, array) => (
+              ].filter(item => canShowMenuItem(item.id)).map((item, index, array) => (
                 <button
                   key={item.id}
                   onClick={() => navigateTo(item.id)}

@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { ServiceOrder, ProductionLot, Sector, Transaction, Product, ProductionOrder } from '../types';
 import DatePicker from './DatePicker';
-import { exportCompletedServiceOrders, sendCompletedOSToPrintStudio, CompletedOSExportItem } from '../utils/completedServiceOrderExport';
+import { exportCompletedServiceOrders, CompletedOSExportItem } from '../utils/completedServiceOrderExport';
 import { formatCurrency } from '../utils/numbers';
 
 interface Filters {
@@ -54,7 +54,6 @@ interface CompletedServiceOrdersModalProps {
   onDeleteOS: (os: ServiceOrder) => void;
   onShareOS: (os: ServiceOrder) => void;
   onPrintOS: (os: ServiceOrder) => void;
-  onPrintStudio: (os: ServiceOrder) => void;
   onOpenReminders: (os: ServiceOrder) => void;
   osBadgeBg: string;
   osBadgeText: string;
@@ -66,7 +65,7 @@ interface CompletedServiceOrdersModalProps {
 
 export default function CompletedServiceOrdersModal({
   isOpen, onClose, serviceOrders, lots, sectors, transactions, isDarkMode,
-  onViewOS, onDeleteOS, onShareOS, onPrintOS, onPrintStudio, onOpenReminders,
+  onViewOS, onDeleteOS, onShareOS, onPrintOS, onOpenReminders,
   osBadgeBg, osBadgeText, osBadgeBold, osBadgeItalic,
   products, productionOrders,
 }: CompletedServiceOrdersModalProps) {
@@ -79,7 +78,6 @@ export default function CompletedServiceOrdersModal({
   const [customRangeTo, setCustomRangeTo] = useState('');
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
-  const [isOpeningPrintStudio, setIsOpeningPrintStudio] = useState(false);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
@@ -264,15 +262,6 @@ export default function CompletedServiceOrdersModal({
     }
   };
 
-  const handleOpenInPrintStudio = async () => {
-    setIsOpeningPrintStudio(true);
-    try {
-      await sendCompletedOSToPrintStudio(buildExportData(), `OS_Concluidas_${Date.now()}`);
-    } finally {
-      setIsOpeningPrintStudio(false);
-    }
-  };
-
   return (
     <>
       {/* z-40000 — abaixo dos popups que ela mesma abre (Visualizar/Compartilhar/Imprimir/
@@ -415,16 +404,10 @@ export default function CompletedServiceOrdersModal({
                         <Trash2 size={12} className="text-rose-500" /> Excluir
                       </button>
                     </div>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <button type="button" title="Compartilhar" onClick={() => onShareOS(os)}
-                        className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                        <Share2 size={12} className="text-orange-500" /> Compartilhar
-                      </button>
-                      <button type="button" title="Print Studio" onClick={() => onPrintStudio(os)}
-                        className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-                        <Printer size={12} className="text-cyan-500" /> Print Studio
-                      </button>
-                    </div>
+                    <button type="button" title="Compartilhar" onClick={() => onShareOS(os)}
+                      className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+                      <Share2 size={12} className="text-orange-500" /> Compartilhar
+                    </button>
                     <button type="button" title="Imprimir Etiqueta / OS" onClick={() => onPrintOS(os)}
                       className={`flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
                       <Printer size={12} className="text-emerald-500" /> Imprimir Etiqueta / OS
@@ -627,16 +610,10 @@ export default function CompletedServiceOrdersModal({
                 <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-700 dark:text-slate-300">Opções de Compartilhamento</span>
               </div>
               <div className={`p-3 flex flex-col gap-2.5 ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
-                <div className="flex gap-1.5">
-                  <button type="button" onClick={handlePreview} disabled={exportableOS.length === 0 || isPreviewLoading}
-                    className="flex-1 py-3 text-white rounded-xl text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">
-                    {isPreviewLoading ? 'Carregando...' : 'Visualizar Arquivo'}
-                  </button>
-                  <button type="button" onClick={handleOpenInPrintStudio} disabled={exportableOS.length === 0 || isOpeningPrintStudio}
-                    className="flex-1 py-3 text-white rounded-xl text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 bg-cyan-600 disabled:opacity-40 disabled:cursor-not-allowed">
-                    {isOpeningPrintStudio ? 'Abrindo...' : 'Print Studio'}
-                  </button>
-                </div>
+                <button type="button" onClick={handlePreview} disabled={exportableOS.length === 0 || isPreviewLoading}
+                  className="w-full py-3 text-white rounded-xl text-[11px] font-black uppercase tracking-widest active:scale-95 transition-all flex items-center justify-center gap-2 bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">
+                  {isPreviewLoading ? 'Carregando...' : 'Visualizar Arquivo'}
+                </button>
                 <button type="button" onClick={handleExport} disabled={exportableOS.length === 0}
                   className={`w-full py-3 rounded-2xl font-black text-[11px] uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed ${exportFormat === 'pdf' ? 'bg-rose-500 shadow-rose-500/20' : 'bg-emerald-600 shadow-emerald-500/20'} text-white`}>
                   <Download size={14} /> Gerar {exportFormat.toUpperCase()} ({exportableOS.length} OS)

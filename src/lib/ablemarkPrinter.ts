@@ -36,7 +36,7 @@ export function isAblemarkPlatform(): boolean {
 }
 
 // `imagePath` precisa ser uma URI de arquivo já salva (ex.: retorno de Filesystem.writeFile),
-// nunca base64 bruto — mesma convenção do Print Studio (ver printStudio.ts).
+// nunca base64 bruto.
 // Checagem/pedido de Bluetooth ligado — usado antes de abrir a área de impressão, pra pedir
 // pro usuário ligar o Bluetooth em vez de só falhar depois na conexão com a impressora.
 export async function isBluetoothEnabled(): Promise<boolean> {
