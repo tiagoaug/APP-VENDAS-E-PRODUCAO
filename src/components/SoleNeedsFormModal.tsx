@@ -89,7 +89,7 @@ export default function SoleNeedsFormModal({ isOpen, onClose, isDarkMode, soleSt
       const gradeEntries = Object.entries(row.grades).filter(([, v]) => Number(v) > 0);
       if (gradeEntries.length === 0) return;
       hasAny = true;
-      lines.push(`- Molde: ${entry.moldName} | Cor: ${entry.colorName || "sem cor específica"}`);
+      lines.push(`- Solado: ${entry.moldName} | Cor: ${entry.colorName || "sem cor específica"}`);
       gradeEntries.forEach(([grade, qty]) => {
         lines.push(`  ${grade}: ${Number(qty)} pares`);
       });

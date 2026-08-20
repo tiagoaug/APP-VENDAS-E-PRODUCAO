@@ -92,13 +92,13 @@ export const financeService = {
   /**
    * Cria uma nova transação e atualiza saldo se for à vista (COMPLETED).
    */
-  createTransaction: async (data: any) => {
+  createTransaction: async (data: any): Promise<string> => {
     if (!auth.currentUser) throw new Error('Not authenticated');
     const userId = auth.currentUser.uid;
+    const txId = data.id || doc(collection(db, `users/${userId}/transactions`)).id;
 
     await firebaseService.runAtomic(async (tx: FirestoreTransaction) => {
       // 1. References
-      const txId = data.id || doc(collection(db, `users/${userId}/transactions`)).id;
       const txRef = doc(db, `users/${userId}/transactions`, txId);
       
       const payload = cleanPayload({ 
@@ -129,6 +129,7 @@ export const financeService = {
 
       tx.set(txRef, payload);
     });
+    return txId;
   },
 
   /**

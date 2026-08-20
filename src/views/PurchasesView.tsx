@@ -75,7 +75,11 @@ interface PurchasesViewProps {
   // (cria Transaction de despesa) e atualiza paymentHistory/paymentStatus da compra, igual ao
   // fluxo já existente em "Financeiro > Contas a Pagar" (ver FinancialView/PartialPaymentModal).
   accounts: Account[];
-  onSaveTransaction: (transaction: Omit<Transaction, 'id'>) => Promise<void>;
+  // Devolve o id da transação criada — usado em onPartialPay pra gravar de volta em
+  // ServiceOrder.transactionId quando a Compra tem itens vindos de Ordens de Serviço (ver
+  // GeneralPurchaseItem.serviceOrderId), fechando o saldo "em aberto" daquele fornecedor
+  // sozinho assim que a Compra é totalmente paga.
+  onSaveTransaction: (transaction: Omit<Transaction, 'id'>) => Promise<string>;
   onUpdatePurchase: (id: string, updates: Partial<Purchase>) => Promise<void>;
   onUpdatePerson?: (id: string, updates: Partial<Person>) => Promise<void>;
   activeCollaborator?: Collaborator | null;
@@ -155,7 +159,7 @@ export default function PurchasesView({
     if (!paymentPurchase) return;
     const supplier = people.find(s => s.id === paymentPurchase.supplierId);
 
-    await onSaveTransaction({
+    const newTransactionId = await onSaveTransaction({
       type: TransactionType.EXPENSE,
       categoryId: paymentPurchase.categoryId || '',
       accountId,
@@ -184,6 +188,20 @@ export default function PurchasesView({
       paymentHistory: updatedHistory,
       paymentStatus: isPaid ? PaymentStatus.PAID : PaymentStatus.PENDING,
     });
+
+    // Compra vinda de "Ordens de Serviço a Fornecedores" (Financeiro) — cada item carrega o id
+    // da OS de origem (ver GeneralPurchaseItem.serviceOrderId). Só grava de volta quando a
+    // Compra fica TOTALMENTE paga (isPaid): pagamento parcial não deve marcar a OS como quitada.
+    if (isPaid && newTransactionId) {
+      const linkedItems = (paymentPurchase.generalItems || []).filter(item => item.serviceOrderId);
+      for (const item of linkedItems) {
+        try {
+          await firebaseService.updateDocument('serviceOrders', item.serviceOrderId!, { transactionId: newTransactionId, updatedAt: Date.now() });
+        } catch (err: any) {
+          console.error('Erro ao vincular transação à Ordem de Serviço:', item.serviceOrderId, err);
+        }
+      }
+    }
 
     if (totalPaid > paymentPurchase.total && onUpdatePerson && supplier) {
       const overpaid = totalPaid - paymentPurchase.total;

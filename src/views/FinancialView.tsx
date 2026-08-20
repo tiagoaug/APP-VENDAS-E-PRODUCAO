@@ -1,7 +1,8 @@
 import { useState, useMemo, useRef } from 'react';
-import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, SaleStatus, Product, SaleType, ProductionLot, ProductionConfigItem, Collaborator, CompanyProfile } from '../types';
-import { Search, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash, ChevronDown, ChevronUp, Tag, FileText, Repeat, Send, FileDown, Image as ImageIcon } from 'lucide-react';
+import { Transaction, TransactionType, Category, Account, AccountType, Person, Purchase, PaymentStatus, PurchaseType, PaymentTerm, PaymentHistory, Sale, SaleStatus, Product, SaleType, ProductionLot, ProductionConfigItem, Collaborator, CompanyProfile, ServiceOrder, GeneralPurchaseItem } from '../types';
+import { Search, TrendingUp, TrendingDown, DollarSign, Calendar, Wallet, User, Trash2, Edit, CheckCircle2, AlertCircle, Clock, RefreshCcw, ClipboardCheck, Package, History, Clipboard, Hash, ChevronDown, ChevronUp, Tag, FileText, Repeat, Send, FileDown, Image as ImageIcon, Hammer, Factory, X } from 'lucide-react';
 import { exportCommission } from '../utils/commissionExport';
+import { exportProviderOS } from '../utils/serviceOrderProviderExport';
 import { format, differenceInDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import TransactionModal from '../components/TransactionModal';
@@ -61,6 +62,15 @@ interface FinancialViewProps {
   /** Identidade da empresa (Mais > Personalizar Empresa) — vai junto do PDF/JPG de comissão
    * exportado em "Comissão a Vendedores" quando configurada com cabeçalho/rodapé. */
   companyProfile?: CompanyProfile | null;
+  /** Todas as Ordens de Serviço (terceirizadas) — alimenta o card "Ordens de Serviço a
+   * Fornecedores" abaixo, agrupando por ServiceOrder.providerName. */
+  serviceOrders?: ServiceOrder[];
+  /** Mesmo mecanismo de onPayCommission: abre o Lançamento de Compra (Compras Gerais)
+   * pré-preenchido, mas com UM ITEM POR OS (não consolidado) — cada item carrega
+   * `serviceOrderId`, então quando essa Compra for totalmente paga, o transactionId volta
+   * sozinho pra cada Ordem de Serviço (ver onPartialPay em PurchasesView.tsx e o pagamento à
+   * vista em App.tsx), fechando o saldo "em aberto" sem risco de pagar a mesma OS duas vezes. */
+  onPayProviderServiceOrders?: (params: { supplierId?: string; initialGeneralItems: GeneralPurchaseItem[]; initialDescription: string }) => void;
 }
 
 export default function FinancialView({
@@ -84,6 +94,8 @@ export default function FinancialView({
   isDarkMode,
   collaborators = [],
   companyProfile = null,
+  serviceOrders = [],
+  onPayProviderServiceOrders,
 }: FinancialViewProps) {
   const hidePrivacy = usePrivacyMode();
   const [filterType, setFilterType] = useState<TransactionType | 'ALL' | 'PAYABLE'>('ALL');
@@ -374,6 +386,144 @@ export default function FinancialView({
       receivedCommission: sc.receivedCommission,
       pendingCommission: sc.pendingCommission,
       includeUnpaid: includeUnpaidCommission,
+      companyProfile,
+    }, type);
+  };
+
+  // Ordens de Serviço a Fornecedores — agrupa TODA ServiceOrder por providerName (mesmo estilo
+  // do card de Comissão a Vendedores acima), mas com uma diferença importante: o Total em
+  // Aberto de cada fornecedor é SEMPRE o acumulado de toda OS concluída ainda sem pagamento
+  // (usa o vínculo real ServiceOrder.transactionId → Transaction.status, ver isOsPaid), não
+  // fica preso ao período selecionado — o período aqui só filtra a lista "concluídas no
+  // período" pra conferência, igual o resto da tela já faz com outras métricas. Ao contrário da
+  // Comissão (sem trava contra pagar a mesma venda duas vezes), aqui cada item enviado pra
+  // Compras carrega o id da OS de origem (ver handlePayProvider/GeneralPurchaseItem.serviceOrderId
+  // abaixo) — assim que a Compra é totalmente paga, o saldo fecha sozinho.
+  const isOsPaid = (os: ServiceOrder) => !!os.transactionId && transactions.find(t => t.id === os.transactionId)?.status === 'COMPLETED';
+
+  const [isProviderOSExpanded, setIsProviderOSExpanded] = useState(false);
+  const [providerOSPeriodType, setProviderOSPeriodType] = useState<OverviewPeriodType>('MONTH');
+  const [providerOSPeriodDate, setProviderOSPeriodDate] = useState(() => format(new Date(), 'yyyy-MM'));
+  const providerOSDateInputRef = useRef<HTMLInputElement>(null);
+  const openProviderOSMonthPicker = () => {
+    const el = providerOSDateInputRef.current as (HTMLInputElement & { showPicker?: () => void }) | null;
+    if (!el) return;
+    try { el.showPicker ? el.showPicker() : el.focus(); } catch { el.focus(); }
+  };
+  const [expandedProviderKey, setExpandedProviderKey] = useState<string | null>(null);
+  const [providerOSSearch, setProviderOSSearch] = useState('');
+  const [providerDetailTab, setProviderDetailTab] = useState<Record<string, 'open' | 'period'>>({});
+
+  type ProviderOSGroup = {
+    key: string;
+    providerName: string;
+    providerId?: string;
+    openBalance: number;
+    openOrders: ServiceOrder[];
+    completedInPeriod: ServiceOrder[];
+    completedInPeriodTotal: number;
+    pendingCount: number;
+  };
+
+  const providerOSGroups = useMemo<ProviderOSGroup[]>(() => {
+    if (serviceOrders.length === 0) return [];
+    const { start, end } = getPeriodRange(providerOSPeriodType, providerOSPeriodDate);
+    const map = new Map<string, ProviderOSGroup>();
+    for (const os of serviceOrders) {
+      const key = (os.providerName || '').trim().toLowerCase();
+      if (!key) continue;
+      if (!map.has(key)) {
+        const matchedPerson = os.providerId
+          ? people.find(p => p.id === os.providerId)
+          : people.find(p => (p.isServiceProvider || p.isSupplier) && p.name.trim().toLowerCase() === key);
+        map.set(key, {
+          key, providerName: os.providerName, providerId: os.providerId || matchedPerson?.id,
+          openBalance: 0, openOrders: [], completedInPeriod: [], completedInPeriodTotal: 0, pendingCount: 0,
+        });
+      }
+      const group = map.get(key)!;
+      if (os.status === 'COMPLETED') {
+        if (!isOsPaid(os)) {
+          group.openBalance += Number(os.totalValue) || 0;
+          group.openOrders.push(os);
+        }
+        if (os.finishedAt && os.finishedAt >= start && os.finishedAt <= end) {
+          group.completedInPeriod.push(os);
+          group.completedInPeriodTotal += Number(os.totalValue) || 0;
+        }
+      } else {
+        group.pendingCount++;
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.openBalance - a.openBalance);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serviceOrders, transactions, people, providerOSPeriodType, providerOSPeriodDate]);
+
+  const totalProviderOSOpenBalance = providerOSGroups.reduce((s, g) => s + g.openBalance, 0);
+  const providerOSPeriodLabel = useMemo(
+    () => format(new Date(providerOSPeriodDate + '-01T12:00:00'), 'MMMM/yyyy', { locale: ptBR }),
+    [providerOSPeriodDate],
+  );
+
+  // Monta a descrição de uma OS pro item da Compra — sempre com o que foi feito (referência,
+  // produto, cor, quantidade, setor, observações), mesmo pras "não contábeis" (valor zerado): o
+  // fornecedor precisa ver o trabalho listado, não só um valor sem explicação.
+  const describeServiceOrderItem = (os: ServiceOrder): string => {
+    const reference = products.find(p => p.id === os.productId)?.reference;
+    const productLabel = `${reference ? `${reference} ` : ''}${os.productName}${os.variationName ? ` (${os.variationName})` : ''}`;
+    const parts = [os.osNumber, productLabel, `${os.quantity} par${os.quantity === 1 ? '' : 'es'}`, os.sectorName];
+    const desc = parts.filter(Boolean).join(' — ');
+    return os.notes ? `${desc}: ${os.notes}` : desc;
+  };
+
+  const handlePayProvider = (group: ProviderOSGroup) => {
+    if (group.openOrders.length === 0) { toast.show('Nenhuma OS em aberto pra esse fornecedor.'); return; }
+    if (!onPayProviderServiceOrders) return;
+    // Todas as OS em aberto viram item — inclusive as de valor zerado ("não contábeis"), que
+    // aparecem como R$ 0,00 mas sempre com a descrição do que foi feito (ver
+    // describeServiceOrderItem acima).
+    const initialGeneralItems: GeneralPurchaseItem[] = group.openOrders.map(os => ({
+      id: generateId(),
+      description: describeServiceOrderItem(os),
+      quantity: 1,
+      value: Number(os.totalValue) || 0,
+      kind: 'general',
+      serviceOrderId: os.id,
+    }));
+    const initialDescription = `Pagamento a Fornecedor — ${group.providerName} (${group.openOrders.length} OS)`;
+    const matchedSupplier = group.providerId
+      ? people.find(p => p.id === group.providerId)
+      : people.find(p => (p.isServiceProvider || p.isSupplier) && p.name.trim().toLowerCase() === group.providerName.trim().toLowerCase());
+    onPayProviderServiceOrders({ supplierId: matchedSupplier?.id, initialGeneralItems, initialDescription });
+    if (!matchedSupplier) {
+      toast.show('Não achei um fornecedor cadastrado com esse nome — escolha ou cadastre um na tela de Compra que abriu.');
+    }
+  };
+
+  const handleCopyProviderOS = (group: ProviderOSGroup) => {
+    const lines = [
+      `Ordens de Serviço — ${group.providerName} (${providerOSPeriodLabel})`,
+      ...group.openOrders.map(os => `${describeServiceOrderItem(os)} — R$ ${(Number(os.totalValue) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`),
+      `Total em Aberto: R$ ${group.openBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+    ];
+    navigator.clipboard.writeText(lines.join('\n'));
+    toast.show('Lista copiada!');
+  };
+
+  const handleExportProviderOS = (group: ProviderOSGroup, type: 'pdf' | 'jpg') => {
+    exportProviderOS({
+      providerName: group.providerName,
+      periodLabel: providerOSPeriodLabel,
+      orders: group.openOrders.map(os => ({
+        osNumber: os.osNumber,
+        reference: products.find(p => p.id === os.productId)?.reference,
+        productName: os.productName,
+        variationName: os.variationName,
+        quantity: os.quantity,
+        total: Number(os.totalValue) || 0,
+        paid: false,
+      })),
+      openBalance: group.openBalance,
       companyProfile,
     }, type);
   };
@@ -952,6 +1102,212 @@ export default function FinancialView({
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Ordens de Serviço a Fornecedores — mesmo estilo do card de Comissão a Vendedores
+            acima, mas o Total em Aberto é sempre o saldo acumulado (não fica preso ao período
+            selecionado, ver providerOSGroups). Só aparece se existir alguma OS lançada. */}
+        {providerOSGroups.length > 0 && (
+          <div className={`rounded-[2.5rem] border shadow-sm overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+            <button
+              type="button"
+              onClick={() => setIsProviderOSExpanded(v => !v)}
+              className="w-full flex items-center justify-between gap-3 p-6"
+            >
+              <div className="text-left min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Ordens de Serviço a Fornecedores</p>
+                <p className={`text-2xl font-black tracking-tighter mt-1 transition-all ${isDarkMode ? 'text-white' : 'text-slate-900'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+                  R$ {totalProviderOSOpenBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+              <ChevronDown size={18} className={`text-slate-400 shrink-0 transition-transform ${isProviderOSExpanded ? 'rotate-180' : ''}`} />
+            </button>
+            {isProviderOSExpanded && (
+              <div className={`flex flex-col gap-4 px-6 pb-6 border-t pt-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                {/* Busca por fornecedor/prestador — filtra só a lista de fornecedores abaixo,
+                    não muda nenhum total. */}
+                <div className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                  <Search size={14} className="text-slate-400 shrink-0" />
+                  <input
+                    type="text"
+                    value={providerOSSearch}
+                    onChange={(e) => setProviderOSSearch(e.target.value)}
+                    placeholder="Buscar fornecedor/prestador..."
+                    className={`flex-1 min-w-0 border-none bg-transparent outline-none text-xs font-bold ${isDarkMode ? 'text-white placeholder:text-slate-500' : 'text-slate-800 placeholder:text-slate-400'}`}
+                  />
+                  {providerOSSearch && (
+                    <button type="button" onClick={() => setProviderOSSearch('')} className="text-slate-400 hover:text-slate-600 shrink-0">
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Período — só filtra a lista "concluídas no período" abaixo, não mexe no
+                    Total em Aberto (esse é sempre acumulado, ver providerOSGroups). */}
+                <div className="flex items-center gap-1.5">
+                  <div className={`flex gap-0.5 p-0.5 rounded-xl shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+                    {(Object.keys(STATS_PERIOD_LABELS) as OverviewPeriodType[]).map((pt) => (
+                      <button
+                        key={pt}
+                        type="button"
+                        onClick={() => setProviderOSPeriodType(pt)}
+                        className={`px-2 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${
+                          providerOSPeriodType === pt ? 'bg-indigo-600 text-white' : 'text-slate-400'
+                        }`}
+                      >
+                        {STATS_PERIOD_LABELS[pt]}
+                      </button>
+                    ))}
+                  </div>
+                  <div
+                    onClick={openProviderOSMonthPicker}
+                    className={`flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
+                  >
+                    <Calendar size={12} className="text-indigo-500 shrink-0" />
+                    <input
+                      ref={providerOSDateInputRef}
+                      type="month"
+                      value={providerOSPeriodDate}
+                      onChange={(e) => setProviderOSPeriodDate(e.target.value)}
+                      className={`flex-1 min-w-0 border-none bg-transparent px-0 py-0 text-[10px] font-black outline-none pointer-events-none ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}
+                    />
+                  </div>
+                </div>
+
+                {(() => {
+                  const filteredProviderOSGroups = providerOSGroups.filter(g => g.providerName.toLowerCase().includes(providerOSSearch.trim().toLowerCase()));
+                  if (filteredProviderOSGroups.length === 0) {
+                    return <p className="text-[10px] font-bold text-slate-400 text-center py-4">Nenhum fornecedor encontrado.</p>;
+                  }
+                  // Espaçamento maior entre cards de fornecedor (gap-6, separado do gap-4 dos
+                  // controles acima) + efeito "3D" (sombra elevada + borda inferior grossa,
+                  // mesmo recurso de miniCardCls em LabelPrintStudioView.tsx) pra cada card se
+                  // destacar como um bloco próprio, em vez de se misturar com o de baixo.
+                  return (
+                    <div className="flex flex-col gap-6">
+                    {filteredProviderOSGroups.map((group) => {
+                  const isProviderExpanded = expandedProviderKey === group.key;
+                  const detailTab = providerDetailTab[group.key] || 'open';
+                  const detailList = detailTab === 'open' ? group.openOrders : group.completedInPeriod;
+                  return (
+                    <div key={group.key} className={`rounded-2xl overflow-hidden border-b-[3px] transition-shadow ${isDarkMode ? 'bg-gradient-to-b from-slate-800 to-slate-800/80 border-slate-950 shadow-[0_6px_16px_-4px_rgba(0,0,0,0.5)]' : 'bg-gradient-to-b from-white to-slate-50 border-slate-200 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]'}`}>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedProviderKey(v => v === group.key ? null : group.key)}
+                        className="w-full flex items-center justify-between gap-3 p-3.5 text-left"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center ${isDarkMode ? 'bg-slate-700 text-indigo-400' : 'bg-white text-indigo-500'}`}>
+                            <Factory size={16} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{group.providerName}</p>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                              {group.completedInPeriod.length} conc. no período · {group.pendingCount} a concluir
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <p className={`text-sm font-black transition-all ${isDarkMode ? 'text-amber-400' : 'text-amber-600'} ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''}`}>
+                            R$ {group.openBalance.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                          <ChevronDown size={14} className={`text-slate-400 transition-transform ${isProviderExpanded ? 'rotate-180' : ''}`} />
+                        </div>
+                      </button>
+                      {isProviderExpanded && (
+                        <div className="flex flex-col gap-2 px-3.5 pb-3.5">
+                          <div className={`flex gap-0.5 p-0.5 rounded-xl w-fit ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                            <button
+                              type="button"
+                              onClick={() => setProviderDetailTab(prev => ({ ...prev, [group.key]: 'open' }))}
+                              className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${detailTab === 'open' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
+                            >
+                              Em aberto ({group.openOrders.length})
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setProviderDetailTab(prev => ({ ...prev, [group.key]: 'period' }))}
+                              className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all ${detailTab === 'period' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}
+                            >
+                              No período ({group.completedInPeriod.length})
+                            </button>
+                          </div>
+                          <div className="flex flex-col gap-1.5 max-h-[220px] overflow-y-auto pr-0.5 custom-scrollbar">
+                            {detailList.length === 0 && (
+                              <p className="text-[9px] font-bold text-slate-400 text-center py-3">Nenhuma OS aqui.</p>
+                            )}
+                            {detailList.map((os) => {
+                              const paid = isOsPaid(os);
+                              const reference = products.find(p => p.id === os.productId)?.reference;
+                              return (
+                                <div key={os.id} className={`flex items-center justify-between gap-2 p-2.5 rounded-xl text-left ${isDarkMode ? 'bg-slate-900' : 'bg-white'}`}>
+                                  <div className="min-w-0">
+                                    <p className={`text-[10px] font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                                      {os.osNumber} · {reference ? `${reference} ` : ''}{os.productName}
+                                    </p>
+                                    <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                                      {os.sectorName} · Cor: {os.variationName || '—'} · Qtd: {os.quantity} · {os.finishedAt ? format(os.finishedAt, 'dd/MM/yyyy') : 'em produção'}
+                                    </p>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <p className="text-[7px] font-black uppercase tracking-widest text-slate-400">Total</p>
+                                    <p className={`text-[11px] font-black ${hidePrivacy ? PRIVACY_BLUR_CLASS : ''} ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+                                      R$ {(Number(os.totalValue) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                    <p className={`text-[7px] font-black uppercase tracking-widest ${os.status !== 'COMPLETED' ? 'text-amber-500' : paid ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                      {os.status !== 'COMPLETED' ? 'A concluir' : paid ? 'Pago' : 'Em aberto'}
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => handleCopyProviderOS(group)}
+                              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-600 border border-slate-200'}`}
+                            >
+                              <Clipboard size={12} /> Copiar
+                            </button>
+                            {onPayProviderServiceOrders && (
+                              <button
+                                type="button"
+                                onClick={() => handlePayProvider(group)}
+                                disabled={group.openOrders.length === 0}
+                                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
+                              >
+                                <Hammer size={12} /> Pagar Fornecedor
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleExportProviderOS(group, 'pdf')}
+                              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-600 border border-slate-200'}`}
+                            >
+                              <FileDown size={12} /> Exportar PDF
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleExportProviderOS(group, 'jpg')}
+                              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-600 border border-slate-200'}`}
+                            >
+                              <ImageIcon size={12} /> Exportar JPG
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                    })}
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>

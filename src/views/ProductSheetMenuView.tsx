@@ -99,7 +99,7 @@ export default function ProductSheetMenuView({
         { 
           id: 'SOLES',
           label: "Solados",
-          desc: "Moldes e mapeamentos",
+          desc: "Solados e mapeamentos",
           icon: <Footprints size={24} />, 
           color: "text-orange-600",
           bg: "bg-orange-50",

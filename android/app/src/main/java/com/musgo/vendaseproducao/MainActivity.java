@@ -5,6 +5,7 @@ import com.getcapacitor.BridgeActivity;
 import com.musgo.vendaseproducao.printstudio.PrintStudioPlugin;
 import com.musgo.vendaseproducao.printstudio.printer.AbleMarkPrinterPlugin;
 import com.musgo.vendaseproducao.printstudio.printer.EpsonPrinterPlugin;
+import com.musgo.vendaseproducao.printstudio.printer2.AbleMarkPrinterPlugin2;
 
 public class MainActivity extends BridgeActivity {
     @Override
@@ -15,6 +16,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AbleMarkPrinterPlugin.class);
         registerPlugin(EpsonPrinterPlugin.class);
         registerPlugin(GallerySaverPlugin.class);
+        registerPlugin(AbleMarkPrinterPlugin2.class);
         super.onCreate(savedInstanceState);
     }
 }

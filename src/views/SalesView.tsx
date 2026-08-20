@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, StockLotRevertPreview, ProductionConfigItem, Carrier, CompanyProfile, Variation } from '../types';
+import { Sale, SaleType, PaymentStatus, Product, Grid, SaleStatus, Person, PaymentMethod, Account, PaymentTerm, ProductionOrder, ProductionLot, Sector, AppModulesConfig, StockLot, StockLotRevertPreview, ProductionConfigItem, Carrier, CompanyProfile, Variation, BatchLabelItem, LabelFile } from '../types';
+import LabelProfilePickerModal from '../components/LabelProfilePickerModal';
 import { ShoppingBag, TrendingUp, User, Calendar, Tag, Filter, Plus, Minus, Hash, Clock, CheckCircle2, AlertCircle, MoreVertical, Edit2, Trash2, X, Info, Box, Ban, RotateCcw, Search, MessageSquare, Copy, Share, Share2, DollarSign, History, FileText, Lightbulb, Eye, EyeOff, Maximize2, Minimize2, Check, ChevronDown, ChevronUp, Factory, Truck, PackageCheck, Boxes, PackagePlus, Package, Wrench, ChevronRight, MapPin, ListChecks, Pencil, ArrowLeft, Printer } from 'lucide-react';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import ProductionOrderModal from '../components/ProductionOrderModal';
@@ -11,7 +12,6 @@ import { exportSale } from '../utils/saleExport';
 import { usePrivacyMode, PRIVACY_BLUR_CLASS } from '../contexts/PrivacyContext';
 import { exportStockShortageReport, StockShortageItem } from '../utils/stockShortageExport';
 import ExportNoteModal from '../components/ExportNoteModal';
-import PrintLabelEditorModal from '../components/PrintLabelEditorModal';
 import PedidosClientesPanel from '../components/PedidosClientesPanel';
 import StockLotsPanel from '../components/StockLotsPanel';
 import StockEntryHistoryModal from '../components/StockEntryHistoryModal';
@@ -122,6 +122,13 @@ interface SalesViewProps {
   onReleaseOrphanedLot?: (entry: OrphanedReservedLot) => Promise<void>;
   onNavigateProducts?: () => void;
   onAddProduct?: () => void;
+  // Abre o editor de etiquetas livre (locks/camadas/campos vinculados) — padrão de impressão de
+  // etiqueta de Vendas, ver "Etiquetas" no popup de impressão da venda e handleOpenSaleLabels
+  // abaixo. Vai direto pro LABEL_EDITOR (não passa pela tela genérica LabelPrintStudioView) —
+  // LabelProfilePickerModal já filtra/escolhe o perfil aqui dentro de SalesView antes de chamar isso.
+  onOpenLabelEditor?: (params: { widthMm: number; heightMm: number; paperSizeId?: string; existingFile?: LabelFile; batchContext: { items: BatchLabelItem[] } }) => void;
+  // Modelos de etiqueta salvos (Print Studio Ablemark) — usado pro seletor de perfis do fluxo acima.
+  labelFiles?: LabelFile[];
   productionConfigs: ProductionConfigItem[];
   appTheme?: 'light' | 'dark' | 'industrial' | 'ocean' | 'forest' | 'sunset' | 'midnight' | 'graphite' | 'hcWhite' | 'hcBlack' | 'hcIndustrial';
   onUpdateDeliveryInfo?: (saleId: string, data: { deliveryAddress?: Sale['deliveryAddress']; additionalDeliveryAddresses?: Sale['additionalDeliveryAddresses']; deliveryPriority?: Sale['deliveryPriority']; carrierId?: string | null; deliveryItems?: Sale['deliveryItems']; deliveryItemsNote?: Sale['deliveryItemsNote'] }) => Promise<void>;
@@ -183,6 +190,8 @@ export default function SalesView({
   onReleaseOrphanedLot,
   onNavigateProducts,
   onAddProduct,
+  onOpenLabelEditor,
+  labelFiles = [],
   productionConfigs,
   appTheme = 'light',
   onUpdateDeliveryInfo,
@@ -247,14 +256,13 @@ export default function SalesView({
   // ExportNoteModal de sempre) ou "Imprimir Venda" (sub-escolha entre Etiquetas e Impressão
   // Padrão) — `step` controla qual dos dois níveis do popup está visível.
   const [printChoice, setPrintChoice] = useState<{ sale: Sale; step: 'main' | 'print-sub' } | null>(null);
-  // Etiquetas da Venda — abre o mesmo Editor de Etiquetas usado no resto do programa (PCP,
-  // Central de Impressão), em modo lote (batchItems): uma etiqueta por CAIXA no Atacado
-  // (item.quantity caixas => item.quantity etiquetas iguais, grade de UMA caixa cada), uma
-  // etiqueta por linha (tamanho) no Varejo. `labelModalProduct` é só um placeholder pro prop
-  // obrigatório `product` do editor — a impressão em lote usa `labelModalBatchItems` de verdade
-  // (mesmo padrão do handlePrintLabelsFromShare em PCPView.tsx).
-  const [labelModalProduct, setLabelModalProduct] = useState<Product | null>(null);
-  const [labelModalBatchItems, setLabelModalBatchItems] = useState<{ product: Product; variation: Variation; sizeGrid: string; packagingName?: string; customerName?: string; recipientName?: string; saleId?: string }[] | undefined>(undefined);
+  // Etiquetas da Venda — abre o Editor de Etiquetas livre (LabelEditorView), em modo lote
+  // (batchItems): uma etiqueta por CAIXA no Atacado (item.quantity caixas => item.quantity
+  // etiquetas iguais, grade de UMA caixa cada), uma etiqueta por linha (tamanho) no Varejo.
+  // Tela 1 (LabelProfilePickerModal) abre com o lote já montado; a tela 2 (o editor de verdade)
+  // só abre depois de escolher um perfil ou "Criar Novo Perfil" (ver
+  // handlePickLabelProfile/handleCreateNewLabelProfile).
+  const [labelProfilePicker, setLabelProfilePicker] = useState<{ open: boolean; items: BatchLabelItem[] }>({ open: false, items: [] });
   const [isQuickPrinting, setIsQuickPrinting] = useState(false);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   // Alvo do único popup de "Cancelar Pedido" — estorna estoque/financeiro e apaga o
@@ -493,7 +501,10 @@ export default function SalesView({
     }
   };
 
-  const handleOpenSaleLabels = (sale: Sale) => {
+  // Monta o lote de etiquetas de uma venda (uma etiqueta por caixa física no atacado, uma por
+  // linha de tamanho no varejo) — usado por handleOpenSaleLabels, sem duplicar essa resolução de
+  // estoque/grade/embalagem.
+  const buildSaleLabelBatch = (sale: Sale): BatchLabelItem[] => {
     const batch: { product: Product; variation: Variation; sizeGrid: string; packagingName?: string; recipientName?: string }[] = [];
     sale.items.forEach((item) => {
       const product = products.find(p => p.id === item.productId);
@@ -594,10 +605,7 @@ export default function SalesView({
         batch.push({ product, variation, sizeGrid: item.size ? `${item.size}x${item.quantity}` : '' });
       }
     });
-    if (batch.length === 0) {
-      toast.show('Nenhum item nessa venda pra gerar etiqueta.');
-      return;
-    }
+    if (batch.length === 0) return [];
     // Cliente (revendedor) — mesmo valor repetido em toda caixa do pedido. Destinatário final
     // (cliente do cliente): vem só do que foi dividido no cadastro do pedido (SaleItem.boxRecipients,
     // via "Dividir Caixas entre Clientes" em SaleFormView — ver pushBox acima); caixa sem divisão
@@ -607,9 +615,36 @@ export default function SalesView({
     // PrintLabelEditorModal.tsx) — como uma etiqueta de venda não tem Mapa/pedido de
     // produção pra rotear (lotId/orderId), o Scanner Rápido usa esse id pra abrir a venda
     // direto em vez de cair no erro "não vinculada a um Mapa".
-    const withCustomer = batch.map(b => ({ ...b, customerName, saleId: sale.id }));
-    setLabelModalProduct(withCustomer[0].product);
-    setLabelModalBatchItems(withCustomer);
+    return batch.map(b => ({ ...b, customerName, saleId: sale.id }));
+  };
+
+  // Abre o editor livre (locks/camadas/campos vinculados) — padrão de impressão de etiqueta de
+  // Vendas. Primeiro mostra o seletor de perfis (LabelProfilePickerModal); só depois de escolher
+  // um modelo (ou "Criar Novo Perfil") é que navega pro editor de verdade, via onOpenLabelEditor.
+  const handleOpenSaleLabels = (sale: Sale) => {
+    const items = buildSaleLabelBatch(sale);
+    if (items.length === 0) {
+      toast.show('Nenhum item nessa venda pra gerar etiqueta.');
+      return;
+    }
+    setLabelProfilePicker({ open: true, items });
+  };
+
+  // 75×24mm — mesmo tamanho "★" (mais usado) dos presets de PrintLabelEditorModal.tsx
+  // (THERMAL_SIZES) — usado só quando "Criar Novo Perfil" parte de etiqueta em branco, já que
+  // esse fluxo simplificado não tem uma etapa própria de escolher tamanho.
+  const DEFAULT_LABEL_PROFILE_SIZE = { widthMm: 75, heightMm: 24 };
+
+  const handlePickLabelProfile = (file: LabelFile) => {
+    const items = labelProfilePicker.items;
+    setLabelProfilePicker({ open: false, items: [] });
+    onOpenLabelEditor?.({ widthMm: file.widthMm, heightMm: file.heightMm, paperSizeId: file.paperSizeId, existingFile: file, batchContext: { items } });
+  };
+
+  const handleCreateNewLabelProfile = () => {
+    const items = labelProfilePicker.items;
+    setLabelProfilePicker({ open: false, items: [] });
+    onOpenLabelEditor?.({ ...DEFAULT_LABEL_PROFILE_SIZE, batchContext: { items } });
   };
 
   const handleConfirmExport = async (
@@ -2735,7 +2770,7 @@ export default function SalesView({
                     </div>
                     <div className="min-w-0">
                       <p className={`text-xs font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Etiquetas</p>
-                      <p className="text-[9px] font-bold text-slate-400 mt-0.5">Uma etiqueta por caixa (Atacado) ou tamanho (Varejo) — Editor de Etiquetas completo</p>
+                      <p className="text-[9px] font-bold text-slate-400 mt-0.5">Uma etiqueta por caixa (Atacado) ou tamanho (Varejo)</p>
                     </div>
                   </button>
                   <button
@@ -2766,17 +2801,15 @@ export default function SalesView({
         </div>
       )}
 
-      {labelModalProduct && (
-        <PrintLabelEditorModal
-          isOpen={!!labelModalProduct}
-          onClose={() => { setLabelModalProduct(null); setLabelModalBatchItems(undefined); }}
-          product={labelModalProduct}
-          isDarkMode={isDarkMode}
-          grids={grids}
-          sectors={sectors}
-          batchItems={labelModalBatchItems}
-        />
-      )}
+      <LabelProfilePickerModal
+        isOpen={labelProfilePicker.open}
+        onClose={() => setLabelProfilePicker({ open: false, items: [] })}
+        isDarkMode={isDarkMode}
+        labelFiles={labelFiles}
+        sectors={sectors}
+        onSelectProfile={handlePickLabelProfile}
+        onCreateNew={handleCreateNewLabelProfile}
+      />
 
 
 

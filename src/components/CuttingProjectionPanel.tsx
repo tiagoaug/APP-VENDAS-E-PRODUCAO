@@ -9,12 +9,12 @@ import {
   Sparkles, List, Printer, Eye, Settings2, X, Tag,
   Edit2, Trash2, Share2, Filter
 } from 'lucide-react';
-import PrintLabelEditorModal from './PrintLabelEditorModal';
+import LabelProfilePickerModal from './LabelProfilePickerModal';
 import ConfirmDialog from './ConfirmDialog';
 import {
   ProductionLot, Product, Sector, FlowTag, ColorValue,
   ProductionConfigItem, ServiceOrder, Person, Account, Category, ProductionOrder,
-  ComponentConsumption
+  ComponentConsumption, ViewType, BatchLabelItem, LabelFile
 } from '../types';
 import { firebaseService } from '../services/firebaseService';
 import { financeService } from '../services/financeService';
@@ -38,6 +38,10 @@ interface CuttingAreaPanelProps {
   onBack: () => void;
   onSaveLot: (lot: ProductionLot) => Promise<void>;
   userName?: string;
+  // Modelos de etiqueta salvos e navegação — usados pro fluxo de impressão de etiqueta
+  // (LabelProfilePickerModal → LabelEditorView), mesmo padrão do PCPView.
+  labelFiles: LabelFile[];
+  onNavigate: (view: ViewType, idOrParams?: any, maybeParams?: any) => void;
 }
 
 export default function CuttingAreaPanel({
@@ -55,7 +59,9 @@ export default function CuttingAreaPanel({
   isDarkMode,
   onBack,
   onSaveLot,
-  userName = 'Operador de Corte'
+  userName = 'Operador de Corte',
+  labelFiles,
+  onNavigate,
 }: CuttingAreaPanelProps) {
   // Flow Tag designada como gatilho da Área de Corte
   const cuttingFlowTagId = useMemo(() => flowTags.find(t => t.isCuttingFlowTag)?.id, [flowTags]);
@@ -101,8 +107,10 @@ export default function CuttingAreaPanel({
   const [editingOsId, setEditingOsId] = useState<string | null>(null);
   const [editingOsOriginal, setEditingOsOriginal] = useState<ServiceOrder | null>(null);
 
-  // Label modal state
-  const [labelModalOpen, setLabelModalOpen] = useState(false);
+  // Tela 1 (LabelProfilePickerModal) do fluxo de impressão de etiqueta — abre com o item do
+  // lote já montado; a tela 2 (editor de verdade) só abre depois de escolher um perfil ou
+  // "Criar Novo Perfil" (ver handlePickLabelProfile/handleCreateNewLabelProfile abaixo).
+  const [labelPicker, setLabelPicker] = useState<{ open: boolean; items: BatchLabelItem[] }>({ open: false, items: [] });
   const [labelSizeGridOverride, setLabelSizeGridOverride] = useState<string | undefined>(undefined);
   const [labelOsOverride, setLabelOsOverride] = useState<ServiceOrder | null | undefined>(undefined);
 
@@ -514,6 +522,58 @@ export default function CuttingAreaPanel({
     if (Object.keys(result).length > 0) return result;
     return selectedLot?.pairs || {};
   }, [selectedLot, lotSourceItems, productionOrders]);
+
+  // Abre a tela 1 (seletor de perfil) do fluxo de etiqueta — monta um único BatchLabelItem a
+  // partir do produto/variação/grade do lote (ou de uma OS específica, quando osOverride/
+  // sizeGridOverride vêm preenchidos pelo botão "Etiqueta" de um card de OS).
+  const openLabelPicker = (osOverride: ServiceOrder | null | undefined, sizeGridOverride: string | undefined) => {
+    const product = lotProductDetails?.product;
+    const variation = lotProductDetails?.variation;
+    if (!product || !variation) return;
+    const sizeGrid = sizeGridOverride !== undefined
+      ? sizeGridOverride
+      : (Object.keys(effectivePairs).length > 0
+          ? Object.entries(effectivePairs)
+              .filter(([, q]) => q > 0)
+              .sort(([a], [b]) => Number(a) - Number(b))
+              .map(([sz, q]) => `${sz}x${q}`)
+              .join('-') || undefined
+          : undefined);
+    if (!sizeGrid) { toast.show('Nenhuma etiqueta válida pra este lote.'); return; }
+    setLabelSizeGridOverride(sizeGridOverride);
+    setLabelOsOverride(osOverride);
+    setLabelPicker({ open: true, items: [{ product, variation, sizeGrid, lotId: selectedLot?.id }] });
+  };
+
+  const closeLabelPicker = () => {
+    setLabelPicker({ open: false, items: [] });
+    setLabelSizeGridOverride(undefined);
+    setLabelOsOverride(undefined);
+  };
+
+  const handlePickLabelProfile = (file: LabelFile) => {
+    const items = labelPicker.items;
+    const os = labelOsOverride !== undefined ? labelOsOverride : (activeOSForSelectedLot ?? null);
+    const lot = selectedLot;
+    closeLabelPicker();
+    onNavigate(ViewType.LABEL_EDITOR, {
+      widthMm: file.widthMm, heightMm: file.heightMm, paperSizeId: file.paperSizeId, existingFile: file,
+      batchContext: { items },
+      productionContext: { lot: lot ?? undefined, os, sectors, sectorId: os?.sectorId ?? (lot ? lot.route?.[lot.currentSectorIndex] : undefined) },
+    });
+  };
+
+  const handleCreateNewLabelProfile = () => {
+    const items = labelPicker.items;
+    const os = labelOsOverride !== undefined ? labelOsOverride : (activeOSForSelectedLot ?? null);
+    const lot = selectedLot;
+    closeLabelPicker();
+    onNavigate(ViewType.LABEL_EDITOR, {
+      widthMm: 75, heightMm: 24, // mesmo tamanho "★" default de SalesView/PCPView
+      batchContext: { items },
+      productionContext: { lot: lot ?? undefined, os, sectors, sectorId: os?.sectorId ?? (lot ? lot.route?.[lot.currentSectorIndex] : undefined) },
+    });
+  };
 
   // Reset order selection when the selected lot changes
   useEffect(() => {
@@ -1826,7 +1886,7 @@ export default function CuttingAreaPanel({
                     {lotProductDetails?.product && (
                       <button
                         type="button"
-                        onClick={() => setLabelModalOpen(true)}
+                        onClick={() => openLabelPicker(undefined, undefined)}
                         className={`flex-1 px-3 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center justify-center gap-1.5 border ${
                           isDarkMode
                             ? 'bg-amber-950/30 border-amber-700/40 text-amber-400 hover:bg-amber-900/40 hover:text-amber-300'
@@ -1904,7 +1964,7 @@ export default function CuttingAreaPanel({
                                           <Share2 size={14} /> Ficha + OS (PDF)
                                         </button>
                                         {lotProductDetails?.product && (
-                                          <button type="button" onClick={() => { setLabelSizeGridOverride(computeOSSizeGrid(os) || undefined); setLabelOsOverride(os); setLabelModalOpen(true); setOsSharePopupId(null); }}
+                                          <button type="button" onClick={() => { openLabelPicker(os, computeOSSizeGrid(os) || undefined); setOsSharePopupId(null); }}
                                             className={`w-full flex items-center gap-2 px-3 py-3 rounded-2xl text-[10px] font-black uppercase tracking-wide transition-all active:scale-95 text-left mt-1 ${isDarkMode ? 'text-amber-400 bg-amber-950/40 hover:bg-amber-900/60' : 'text-amber-700 bg-amber-50 hover:bg-amber-100'}`}>
                                             <Tag size={14} /> Etiqueta desta OS
                                           </button>
@@ -3212,29 +3272,16 @@ export default function CuttingAreaPanel({
         })()}
       </AnimatePresence>
 
-      {/* Etiqueta Térmica — editor completo de etiquetas para o produto do lote */}
-      {labelModalOpen && lotProductDetails?.product && (
-        <PrintLabelEditorModal
-          isOpen={labelModalOpen}
-          onClose={() => { setLabelModalOpen(false); setLabelSizeGridOverride(undefined); setLabelOsOverride(undefined); }}
-          product={lotProductDetails.product}
-          isDarkMode={isDarkMode}
-          lot={selectedLot ?? undefined}
-          os={labelOsOverride !== undefined ? labelOsOverride : (activeOSForSelectedLot ?? null)}
-          sizeGridOverride={
-            labelSizeGridOverride !== undefined
-              ? labelSizeGridOverride
-              : (Object.keys(effectivePairs).length > 0
-                  ? Object.entries(effectivePairs)
-                      .filter(([, q]) => q > 0)
-                      .sort(([a], [b]) => Number(a) - Number(b))
-                      .map(([sz, q]) => `${sz}x${q}`)
-                      .join('-') || undefined
-                  : undefined)
-          }
-          sectors={sectors}
-        />
-      )}
+      {/* Etiqueta Térmica — editor de etiquetas do produto do lote (ou de uma OS específica) */}
+      <LabelProfilePickerModal
+        isOpen={labelPicker.open}
+        onClose={closeLabelPicker}
+        isDarkMode={isDarkMode}
+        sectors={sectors}
+        labelFiles={labelFiles}
+        onSelectProfile={handlePickLabelProfile}
+        onCreateNew={handleCreateNewLabelProfile}
+      />
 
       {/* ── OS Creation / Edit Modal ─────────────────────────────────── */}
       {isOSPanelOpen && selectedLot && createPortal(

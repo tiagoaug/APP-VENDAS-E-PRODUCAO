@@ -1,8 +1,16 @@
 import { useEffect, useState } from 'react';
 import {
   Printer, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Minus, Plus, ChevronLeft, ChevronRight, Pencil,
+  Download, Share2,
 } from 'lucide-react';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 import Modal from './Modal';
+import PrinterConnectionCard from './PrinterConnectionCard';
+import { isAblemarkPlatform } from '../lib/ablemarkPrinter';
+import { isAbleMarkPrinterConnected2 } from '../lib/ablemarkPrinter2';
+import { saveImageToGallery, isGallerySaverPlatform } from '../lib/gallerySaver';
+import { shareImages } from '../utils/pdfExport';
+import { toast } from '../utils/toast';
 
 export type PrintDirection = 'down' | 'up' | 'left' | 'right';
 export type PrintPaperType = 2 | 1 | 4; // 2 = Espaço (confirmado), 1 = Contínuo, 4 = Marca preta (ambos não testados em hardware)
@@ -46,6 +54,13 @@ export default function LabelPrintPreviewModal({
   const [options, setOptions] = useState<PrintOptions>(DEFAULT_OPTIONS);
   const [printing, setPrinting] = useState(false);
   const [previewIndex, setPreviewIndex] = useState(0);
+  const [savingGallery, setSavingGallery] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  // Impressora Bluetooth (Ablemark) desconectada na hora de imprimir — em vez de deixar o
+  // usuário tentar, tomar um erro genérico e ter que sair pra outra tela só pra conectar, o
+  // card de conexão (PrinterConnectionCard) aparece aqui mesmo, dentro do preview. Ausente em
+  // plataformas sem Ablemark (iOS) — lá não tem o que conectar.
+  const [printerConnected, setPrinterConnected] = useState(true);
 
   // Volta pra primeira etiqueta só quando a modal ABRE — dependia antes também de
   // `previewDataUrls`, mas esse array é recriado (nova referência) a cada render do pai
@@ -53,6 +68,9 @@ export default function LabelPrintPreviewModal({
   // (ex.: um snapshot do Firestore chegando em outro lugar da árvore) resetava a navegação
   // de volta pra página 1 no meio da conferência do usuário.
   useEffect(() => { if (isOpen) setPreviewIndex(0); }, [isOpen]);
+  useEffect(() => {
+    if (isOpen && isAblemarkPlatform()) isAbleMarkPrinterConnected2().then(setPrinterConnected);
+  }, [isOpen]);
   // Se o lote encolher (ou o índice ficar inválido por qualquer motivo), não deixa a imagem
   // sumir silenciosamente — trava no último item válido.
   const safePreviewIndex = Math.min(previewIndex, Math.max(0, previewDataUrls.length - 1));
@@ -69,6 +87,39 @@ export default function LabelPrintPreviewModal({
       onClose();
     } finally {
       setPrinting(false);
+    }
+  };
+
+  // Salva TODAS as etiquetas do lote na galeria (não só a que está sendo visualizada agora) —
+  // mesma lógica do lote inteiro que "Imprimir agora" já manda pra impressora de uma vez.
+  const handleSaveGallery = async () => {
+    setSavingGallery(true);
+    try {
+      let savedCount = 0;
+      for (let i = 0; i < previewDataUrls.length; i++) {
+        const base64 = previewDataUrls[i].split('base64,')[1] || previewDataUrls[i];
+        const written = await Filesystem.writeFile({ path: `label_gallery_${Date.now()}_${i}.png`, data: base64, directory: Directory.Cache });
+        const { saved } = await saveImageToGallery(written.uri);
+        if (saved) savedCount++;
+      }
+      toast.show(savedCount > 0 ? `${savedCount} etiqueta${savedCount > 1 ? 's' : ''} salva${savedCount > 1 ? 's' : ''} na galeria!` : 'Falha ao salvar na galeria.');
+    } catch (err: any) {
+      toast.show('Erro ao salvar na galeria: ' + (err?.message || err));
+    } finally {
+      setSavingGallery(false);
+    }
+  };
+
+  // Compartilha o lote inteiro numa única ação nativa (ver shareImages) — com 1 etiqueta só,
+  // vira um compartilhamento normal de imagem única.
+  const handleShare = async () => {
+    setSharing(true);
+    try {
+      await shareImages(previewDataUrls, 'etiqueta');
+    } catch (err: any) {
+      toast.show('Erro ao compartilhar: ' + (err?.message || err));
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -212,6 +263,16 @@ export default function LabelPrintPreviewModal({
           <p className="text-center text-[10px] font-bold text-slate-400">{totalLabelsNote}</p>
         )}
 
+        {/* Impressora desconectada — conecta aqui mesmo, sem sair do preview. */}
+        {isAblemarkPlatform() && !printerConnected && (
+          <div className="flex flex-col gap-1.5">
+            <p className="text-center text-[10px] font-black uppercase tracking-widest text-rose-500">
+              Conecte a impressora pra imprimir
+            </p>
+            <PrinterConnectionCard isDarkMode={isDarkMode} onConnectedChange={setPrinterConnected} />
+          </div>
+        )}
+
         {onBackToEdit && (
           <button
             type="button"
@@ -223,10 +284,31 @@ export default function LabelPrintPreviewModal({
           </button>
         )}
 
+        <div className="flex gap-2">
+          {isGallerySaverPlatform() && (
+            <button
+              type="button"
+              onClick={handleSaveGallery}
+              disabled={savingGallery}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+            >
+              <Download size={14} /> {savingGallery ? 'Salvando...' : 'Galeria'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleShare}
+            disabled={sharing}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest disabled:opacity-40 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'}`}
+          >
+            <Share2 size={14} /> {sharing ? 'Compartilhando...' : 'Compartilhar'}
+          </button>
+        </div>
+
         <button
           type="button"
           onClick={handlePrint}
-          disabled={printing}
+          disabled={printing || (isAblemarkPlatform() && !printerConnected)}
           className="flex items-center justify-center gap-2 py-3.5 rounded-2xl text-xs font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40"
         >
           <Printer size={16} /> {printing ? 'Imprimindo...' : 'Imprimir agora'}

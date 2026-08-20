@@ -57,6 +57,11 @@ export function summarizeStockRepairIssues(
       if (!ordItem && !(si.productId && si.variationId)) { unresolved++; continue; }
       const prod = products.find(p => p.id === (si.productId || ordItem?.productId));
       if (!prod) { unresolved++; continue; }
+      // StockLot é conceito de caixa/grade de ATACADO — item de varejo (quantidades soltas de
+      // pares, sem grade padrão) nunca vai ter um StockLot correspondente por design, então
+      // sinalizar "falta StockLot" pra ele é falso positivo (mesma checagem já feita acima,
+      // em missingBoxQty, pro Tipo A).
+      if ((prod.type ?? SaleType.WHOLESALE) !== SaleType.WHOLESALE) continue;
       const vari = prod.variations.find(v => v.id === (si.variationId || ordItem?.variationId));
       if (!vari) { unresolved++; continue; }
 

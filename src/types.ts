@@ -94,7 +94,18 @@ export type LabelPaperSize = {
 };
 
 // Elemento de um arquivo de etiqueta no editor de propósito geral (Print Studio Ablemark).
-export type LabelElementType = 'text' | 'image' | 'qr' | 'line' | 'shape';
+export type LabelElementType = 'text' | 'image' | 'qr' | 'line' | 'shape' | 'grade';
+
+// Campo de venda/produção que um elemento pode "puxar" automaticamente em vez de conteúdo
+// estático — mesmos dados que PrintLabelEditorModal.tsx (sistema de blocos fixos) já resolve pra
+// Vendas e PCP (ver LabelBindingContext/resolveLabelBinding em src/utils/labelFieldResolvers.ts).
+// 'osdata'/'sectornotes' só resolvem de verdade quando o editor foi aberto a partir do PCP
+// (LabelEditorSession.productionContext presente) — fora daí ficam em branco/placeholder.
+export type LabelDataBinding =
+  | 'reference' | 'name' | 'color' | 'size'
+  | 'qr' | 'photo' | 'grade'
+  | 'customer' | 'recipient' | 'packaging'
+  | 'osdata' | 'sectornotes';
 
 export type LabelElement = {
   id: string;
@@ -104,6 +115,18 @@ export type LabelElement = {
   w: number;
   h: number;
   rotation: number; // graus
+  hidden?: boolean; // oculta na tela E na impressão/exportação (camada desligada) — global, não por propriedade
+  // Travas por propriedade (independentes — ex.: travar largura sem travar altura).
+  lockWidth?: boolean;
+  lockHeight?: boolean;
+  lockRotation?: boolean;
+  lockFontSize?: boolean; // só relevante pro type 'text'
+  lockPosition?: boolean; // trava arrastar (mover x/y) — vale pra todos os tipos, inclusive linha
+  // Quando presente, o conteúdo do elemento (texto/imagem/qr/grade) vem de
+  // `resolveLabelBinding` em vez do conteúdo estático abaixo — usado pelo modo de teste de
+  // impressão em Vendas (ver LabelEditorView.tsx). Ausente = comportamento de sempre (elemento
+  // estático, como no editor livre "Nova Etiqueta").
+  dataBinding?: LabelDataBinding;
   // type 'text'
   text?: string;
   fontSize?: number;
@@ -114,12 +137,30 @@ export type LabelElement = {
   align?: 'left' | 'center' | 'right';
   letterSpacing?: number; // px, na mesma escala usada pelo canvas de impressão
   lineHeight?: number; // multiplicador (1 = normal)
+  // Efeito "chip": fundo preto arredondado com o texto em branco por cima — mesmo recurso já
+  // existente em PrintLabelEditorModal.tsx (Elem.invert).
+  invert?: boolean;
+  // Só quando dataBinding === 'reference': junta Referência/Nome/Cor num único texto, em
+  // qualquer combinação (ex.: só Ref+Cor) — mesma ideia de PrintLabelEditorModal.tsx
+  // (Elem.combineFields / "Combinar Campos Neste Elemento"). Ausente/['reference'] = só a
+  // referência, comportamento de sempre.
+  combineFields?: ('reference' | 'name' | 'color')[];
+  // Só quando dataBinding === 'sectornotes': restringe a um setor+nota específicos em vez de
+  // concatenar todas as notas da variação (mesma ideia do noteFilter de PrintLabelEditorModal.tsx).
+  // Ausente = todas as notas, com cabeçalho por setor (comportamento padrão de getSectorNotesText).
+  sectorNoteFilter?: { sectorId: string; noteName: string };
   // type 'image'
   imageDataUrl?: string;
   grayscale?: boolean; // converte a imagem original pra tons de cinza (só na exibição/impressão, não altera o arquivo original)
   // type 'qr'
   qrValue?: string;
   // type 'line' | 'shape': usa x/y/w/h/rotation acima; 'shape' desenha um retângulo
+  // type 'grade': tabela tamanho×quantidade (só faz sentido com dataBinding: 'grade'); usa
+  // `fontSize` pro texto das células, igual 'text'.
+  // Raio dos cantos, em mm — 'shape' (retângulo, contorno) e o chip do 'text' com invert=true.
+  // Ausente: 'shape' fica com cantos retos (comportamento de sempre); o chip do invert usa um
+  // raio automático (metade da altura, até 1.2mm) até o usuário mexer explicitamente.
+  borderRadius?: number;
 };
 
 // Arquivo de etiqueta salvo (Print Studio Ablemark) — design reutilizável, reabrível/reeditável.
@@ -131,6 +172,41 @@ export type LabelFile = {
   heightMm: number;
   elements: LabelElement[];
   updatedAt: number;
+  // Marca este modelo como feito pra impressão em lote de Vendas (elementos com dataBinding) —
+  // usado pra filtrar a lista de modelos ao abrir o editor a partir do popup de impressão da
+  // venda (ver LabelPrintStudioView.tsx). Ausente = modelo genérico do editor livre.
+  isSalesTemplate?: boolean;
+  // Marca este modelo como feito pro PCP (setores de produção) — aparece agrupado por setor na
+  // seção "Setores" do seletor de perfil (ver LabelProfilePickerModal.tsx). Independente de
+  // isSalesTemplate (um arquivo não costuma ter os dois, mas nada impede).
+  isProductionTemplate?: boolean;
+  // Setor (Sector.id) que este modelo foi criado pra atender — usado só pra agrupar na lista do
+  // seletor de perfil. Ausente = cai no grupo "Sem Setor".
+  sectorId?: string;
+};
+
+// Um item físico do lote de impressão de etiquetas de uma Venda (uma caixa/tamanho) — mesma
+// forma que PrintLabelEditorModal.tsx já usa e resolve (handleOpenSaleLabels em
+// src/views/SalesView.tsx). Compartilhado pelos dois editores de etiqueta pra não duplicar essa
+// montagem de dados.
+export type BatchLabelItem = {
+  product: Product;
+  variation: Variation;
+  sizeGrid: string; // ex. "38x2-39x3"
+  lotId?: string;
+  orderId?: string;
+  itemIdx?: number;
+  // Id da Venda que originou esta etiqueta (ver handleOpenSaleLabels em SalesView.tsx) —
+  // embutido no QR Code (marcador "SALE") quando não há lotId/orderId de Mapa, pra escanear
+  // a etiqueta e ir direto pra venda em vez de cair no erro "não vinculada a um Mapa".
+  saleId?: string;
+  // Nome do padrão de embalagem real dessa caixa (Variation.stockPkgAllocations ou StockLot já
+  // resolvido). Ausente = etiqueta não mostra esse campo mesmo se deixado visível.
+  packagingName?: string;
+  // Cliente da venda (revendedor) e destinatário final (cliente do cliente) — mesmo valor
+  // repetido em todas as caixas do mesmo pedido (ver handleOpenSaleLabels em SalesView.tsx).
+  customerName?: string;
+  recipientName?: string;
 };
 
 export type TechSheetItem = {
@@ -314,6 +390,11 @@ export type GeneralPurchaseItem = {
   value: number;        // Unit price
   kind?: 'material' | 'person' | 'general'; // ausente = 'material' (padrão); 'person' = pagamento a fornecedor/terceirizado cadastrado; 'general' = despesa genérica com descrição livre
   personId?: string;    // Link to Person (fornecedor/terceirizado), usado quando kind === 'person'
+  // Origem em uma Ordem de Serviço (ver card "Ordens de Serviço a Fornecedores" em
+  // FinancialView.tsx) — quando presente, ao esta Compra ser marcada como paga (ver
+  // PurchasesView.tsx onPartialPay), o transactionId gerado é gravado de volta nessa OS
+  // (serviceOrders/{serviceOrderId}), fechando o saldo "em aberto" dela sozinho.
+  serviceOrderId?: string;
 };
 
 export type CompanyCheck = {

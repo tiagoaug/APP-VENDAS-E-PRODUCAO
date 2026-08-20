@@ -8,14 +8,18 @@ import {
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import Modal from './Modal';
 import LabelPrintPreviewModal, { PrintOptions } from './LabelPrintPreviewModal';
-import { Product, Variation, SaleType, LabelLayout, Grid, ProductionLot, ServiceOrder, Sector, SectorNote } from '../types';
+import { Product, Variation, SaleType, LabelLayout, Grid, ProductionLot, ServiceOrder, Sector, SectorNote, BatchLabelItem } from '../types';
 import { labelService } from '../services/labelService';
 import { shareImage, shareImages } from '../utils/pdfExport';
 import { toast } from '../utils/toast';
+import { combineRefFields, parseSizeGridEntries, getSectorNotesText } from '../utils/labelFieldResolvers';
+import { isAblemarkPlatform, AbleMarkPairedDevice } from '../lib/ablemarkPrinter';
 import {
-  isAbleMarkPrinterConnected, printAbleMarkLabel, listAbleMarkPairedDevices, connectAbleMarkPrinter,
-  isAblemarkPlatform, AbleMarkPairedDevice,
-} from '../lib/ablemarkPrinter';
+  isAbleMarkPrinterConnected2 as isAbleMarkPrinterConnected,
+  printAbleMarkLabel2 as printAbleMarkLabel,
+  listAbleMarkPairedDevices2 as listAbleMarkPairedDevices,
+  connectAbleMarkPrinter2 as connectAbleMarkPrinter,
+} from '../lib/ablemarkPrinter2';
 import { saveImageToGallery, isGallerySaverPlatform } from '../lib/gallerySaver';
 import { applyPrintTransform, DIRECTION_TO_ROTATION } from '../utils/labelPrintTransform';
 
@@ -97,17 +101,6 @@ function loadCustomPresets(): CustomPreset[] {
 }
 function saveCustomPresets(presets: CustomPreset[]) {
   localStorage.setItem(STORAGE_PRESETS, JSON.stringify(presets));
-}
-
-// Junta Referência/Nome/Cor no campo "Referência" quando combineFields estiver marcado
-// (ver Elem.combineFields) — ordem fixa Ref → Nome → Cor, só entram os marcados.
-function combineRefFields(combineFields: ('reference' | 'name' | 'color')[] | undefined, refText: string, nameText: string, colorText: string): string {
-  if (!combineFields || combineFields.length === 0) return refText;
-  const parts: string[] = [];
-  if (combineFields.includes('reference')) parts.push(refText);
-  if (combineFields.includes('name')) parts.push(nameText);
-  if (combineFields.includes('color')) parts.push(colorText);
-  return parts.filter(Boolean).join(' - ');
 }
 
 // ─── Default layouts ──────────────────────────────────────────────────────────
@@ -200,27 +193,6 @@ function Ruler({ axis, totalMm, scale, isDark }: { axis: 'h'|'v'; totalMm: numbe
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
-
-interface BatchLabelItem {
-  product: Product;
-  variation: Variation;
-  sizeGrid: string;
-  lotId?: string;
-  orderId?: string;
-  itemIdx?: number;
-  // Id da Venda que originou esta etiqueta (ver handleOpenSaleLabels em SalesView.tsx) —
-  // embutido no QR Code (marcador "SALE") quando não há lotId/orderId de Mapa, pra escanear
-  // a etiqueta e ir direto pra venda em vez de cair no erro "não vinculada a um Mapa".
-  saleId?: string;
-  // Nome do padrão de embalagem real dessa caixa (Variation.stockPkgAllocations ou
-  // StockLot já resolvido) — mostrado no slot "Embalagem" (ver ElemKey 'packaging'). Ausente
-  // = etiqueta não mostra esse campo mesmo se o usuário deixar visível.
-  packagingName?: string;
-  // Cliente da venda (revendedor) e destinatário final (cliente do cliente) — mesmo valor
-  // repetido em todas as caixas do mesmo pedido (ver handleOpenSaleLabels em SalesView.tsx).
-  customerName?: string;
-  recipientName?: string;
-}
 
 interface Props {
   isOpen: boolean; onClose: () => void;
@@ -344,27 +316,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
     ? `|${routeItem.lotId}|${routeItem.orderId}|${routeItem.itemIdx ?? ''}`
     : (routeItem?.saleId ? `|SALE|${routeItem.saleId}` : '');
 
-  const getSectorNotesText = (v?: Variation, filter?: { sectorId: string; noteName: string }): string => {
-    if (!v?.sectorNotes) return '';
-    if (filter) {
-      const notes = (v.sectorNotes[filter.sectorId] || []) as SectorNote[];
-      const match = notes.find(n => (n.name || '').toUpperCase() === filter.noteName.toUpperCase()) || notes.find(n => n.text);
-      return match?.text || '';
-    }
-    return Object.entries(v.sectorNotes)
-      .flatMap(([sid, notes]) => {
-        const sector = sectors.find(s => s.id === sid);
-        const sectorName = (sector?.name || sid).toUpperCase();
-        return (notes as SectorNote[])
-          .filter(n => n.text)
-          .map(n => {
-            const header = n.name ? `${sectorName} — ${n.name.toUpperCase()}` : sectorName;
-            return `${header}\n${n.text}`;
-          });
-      })
-      .join('\n');
-  };
-  const sectorNotesText: string = getSectorNotesText(variation, layout.elems.sectornotes.noteFilter);
+  const sectorNotesText: string = getSectorNotesText(variation, sectors, layout.elems.sectornotes.noteFilter);
   // Prévia (aba Visualizar) só mostra um representante do lote — o valor de verdade, por
   // etiqueta, só existe mesmo na hora de gerar (ver drawFrame/batchItems abaixo).
   const previewPackagingName: string | undefined = batchItems?.[0]?.packagingName;
@@ -426,9 +378,6 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
     if (nonZeroStock.length > 0) return nonZeroStock.map(s => `${s}x${variation!.stock[s]}`).join('-');
     return sizes.join('-');
   })();
-  const parseSizeGridEntries = (sg: string): { sz: string; qty: number | null }[] => sg
-    ? sg.split('-').map(tok => { const [sz, q] = tok.split('x'); return { sz, qty: q ? parseInt(q) : null }; })
-    : [];
   const sizeGridEntries = parseSizeGridEntries(sizeGrid);
 
   useEffect(() => {
@@ -729,7 +678,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
             product: item.product,
             variation: item.variation,
             sizeGrid: item.sizeGrid,
-            sectorNotesText: getSectorNotesText(item.variation, layout.elems.sectornotes.noteFilter) || undefined,
+            sectorNotesText: getSectorNotesText(item.variation, sectors, layout.elems.sectornotes.noteFilter) || undefined,
             photoUrl: item.product.labelThumbnailUrl,
             lotId: item.lotId,
             orderId: item.orderId,
@@ -1012,7 +961,7 @@ export default function PrintLabelEditorModal({ isOpen, onClose, product, isDark
             qrDataUrl,
             photoUrl: item.product.labelThumbnailUrl,
             gridEntries: parseSizeGridEntries(item.sizeGrid),
-            notesText: getSectorNotesText(item.variation, e.sectornotes.noteFilter),
+            notesText: getSectorNotesText(item.variation, sectors, e.sectornotes.noteFilter),
             packagingText: item.packagingName,
             customerText: item.customerName,
             recipientText: item.recipientName,

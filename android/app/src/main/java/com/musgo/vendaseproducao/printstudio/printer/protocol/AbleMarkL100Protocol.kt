@@ -6,6 +6,19 @@ import com.musgo.vendaseproducao.printstudio.printer.codec.JbigEncoder
 import java.io.ByteArrayOutputStream
 
 /**
+ * ██ MÓDULO ANTIGO, DESATUALIZADO — USE `printstudio.printer2.protocol.AbleMarkL100Protocol2`. ██
+ *
+ * Este arquivo tem um bug confirmado (2026-08-19): o campo de altura no cabeçalho abaixo manda
+ * SEMPRE 2 bytes little-endian (desde a "correção" de 2026-08-15), o que desalinha o início dos
+ * dados JBIG por 1 byte em qualquer etiqueta que precise dos 2 bytes — a impressora recebe o
+ * bipe mas não imprime nada, ou imprime caracteres corrompidos. O módulo 2 corrige isso
+ * (altura sempre em 1 byte, mesmo truncando) e foi confirmado imprimindo certo em hardware real
+ * (75x24mm e 100x40mm). Ver o cabeçalho de AbleMarkL100Protocol2.kt pro histórico completo e o
+ * motivo — NÃO copie o campo de altura deste arquivo pra lá.
+ *
+ * Este módulo original só continua existindo pra comparação lado a lado na tela de teste
+ * (AblemarkPrinterTestModal, opção "Módulo 1") — não use como base pra novo código.
+ *
  * Monta os bytes de impressão da Ablemark BR-L100, protocolo "X4" (a L100 é um alias do X4
  * no SDK oficial — confirmado no código decompilado do app AbleMark, classe
  * GlobalConstant.L110_BY_X4). Toda a estrutura de bytes abaixo foi reconstruída comparando,
@@ -14,8 +27,8 @@ import java.io.ByteArrayOutputStream
  * bytes que resultam do protocolo (que não são protegidos por direito autoral, são dados de
  * interoperabilidade).
  *
- * IMPORTANTE: os 3 bytes finais (trailer) não bateram 100% na comparação inicial — validar
- * com uma impressão real antes de confiar em produção (ver JbigEncoder, mesmo aviso).
+ * O trailer de 3 bytes (ver `trailer()`) foi confirmado correto por captura real em 2026-08-18
+ * (a dúvida antiga registrada aqui não procede mais — não é a causa de nenhum bug conhecido).
  */
 object AbleMarkL100Protocol {
 

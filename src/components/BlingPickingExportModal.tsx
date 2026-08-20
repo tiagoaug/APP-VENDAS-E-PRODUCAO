@@ -10,9 +10,13 @@ import {
 import Modal from './Modal';
 import { PickingGroup, PickingFlatRow } from '../views/BlingPickingListView';
 import { sharePDF, shareImage, printPickingList, PrintPickingListRow } from '../utils/pdfExport';
+import { isAblemarkPlatform, AbleMarkPairedDevice } from '../lib/ablemarkPrinter';
 import {
-  listAbleMarkPairedDevices, connectAbleMarkPrinter, isAbleMarkPrinterConnected, printAbleMarkLabel, isAblemarkPlatform, AbleMarkPairedDevice,
-} from '../lib/ablemarkPrinter';
+  listAbleMarkPairedDevices2 as listAbleMarkPairedDevices,
+  connectAbleMarkPrinter2 as connectAbleMarkPrinter,
+  isAbleMarkPrinterConnected2 as isAbleMarkPrinterConnected,
+  printAbleMarkLabel2 as printAbleMarkLabel,
+} from '../lib/ablemarkPrinter2';
 import { toast } from '../utils/toast';
 import { renderAllPdfPages } from '../utils/labelFileImport';
 import PdfPageSelectModal, { CropRect, CroppedPage, FitMode } from './PdfPageSelectModal';

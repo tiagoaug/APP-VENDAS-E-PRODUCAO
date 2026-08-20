@@ -11,14 +11,15 @@ import {
   Save, X, Info, Layers, Tag, Package, MinusCircle, CalendarClock, ShoppingCart,
   DollarSign, Hammer, FileText, CheckSquare, Scissors, Printer, Share2, Truck,
   QrCode, ScanLine, Hash, Lock, ChevronDown, List, ArrowLeftRight, MessageSquare, Eye, EyeOff,
-  Footprints, Scale, Database, TrendingDown, Zap, Palette, Bell, Wrench, LayoutGrid
+  Footprints, Scale, Database, TrendingDown, Zap, Palette, Bell, Wrench, LayoutGrid, ListChecks
 } from 'lucide-react';
 import {
   ProductionLot, Product, Sector,
   FlowTag, Variation, ColorValue, ProductionOrder,
   ProductionConfigItem, SoleStockEntry, PalmilhaStockEntry, ViewType, PurchaseRequest, Grid,
   ServiceOrder, Person, Account, Category, Transaction, Purchase, PurchaseType, SectorNote,
-  ProductionScreenType, StockLot, SaleType, SaleStatus, ReminderTonePattern, Collaborator
+  ProductionScreenType, StockLot, SaleType, SaleStatus, ReminderTonePattern, Collaborator,
+  LabelFile, BatchLabelItem
 } from '../types';
 import { isViewAllowed, isViewTaskAllowed, isSectorAllowed } from '../utils/collaborators';
 import { computePalmilhaMapaReservations, computePalmilhaPendingOrders } from '../utils/palmilhaNeeds';
@@ -28,7 +29,7 @@ import ComboBox from '../components/ComboBox';
 import ReminderPickerModal from '../components/ReminderPickerModal';
 import ScannerModal from '../components/ScannerModal';
 import PrintOSModal from '../components/PrintOSModal';
-import PrintLabelEditorModal from '../components/PrintLabelEditorModal';
+import LabelProfilePickerModal from '../components/LabelProfilePickerModal';
 import CompletedServiceOrdersModal from '../components/CompletedServiceOrdersModal';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { Camera } from 'lucide-react';
@@ -133,6 +134,9 @@ interface PCPViewProps {
   onDeleteProductionOrder?: (orderId: string) => Promise<void>;
   onNavigate: (view: ViewType, idOrParams?: any, maybeParams?: any) => void;
   onNavigateProduction?: (subScreen: ProductionScreenType) => void;
+  // Modelos de etiqueta salvos (Print Studio Ablemark) — usado pro seletor de perfis
+  // (LabelProfilePickerModal) do fluxo de impressão de etiqueta do PCP.
+  labelFiles: LabelFile[];
   onRequestPurchase?: (req: Omit<PurchaseRequest, 'id'>) => Promise<void>;
   onBack: () => void;
   userName?: string;
@@ -175,6 +179,7 @@ export default function PCPView({
   onDeleteProductionOrder,
   onNavigate,
   onNavigateProduction,
+  labelFiles,
   onRequestPurchase,
   onBack,
   userName,
@@ -350,6 +355,16 @@ export default function PCPView({
     setStatsBarHidden(next);
     localStorage.setItem('pcp_stats_bar_hidden', String(next));
   };
+  // Menu de ações (Compartilhar/Transferir/Emitir OS) ao selecionar pedidos — por padrão vira um
+  // botão flutuante que expande ao tocar, em vez do card sempre visível no meio da lista;
+  // desmarcável (preferência local por dispositivo) pra quem preferir o card fixo de sempre.
+  const [floatingActionMenuEnabled, setFloatingActionMenuEnabled] = useState(() => localStorage.getItem('pcp_floating_action_menu') !== 'false');
+  const [floatingActionMenuOpen, setFloatingActionMenuOpen] = useState(false);
+  const toggleFloatingActionMenu = () => {
+    const next = !floatingActionMenuEnabled;
+    setFloatingActionMenuEnabled(next);
+    localStorage.setItem('pcp_floating_action_menu', String(next));
+  };
   const toggleStatsBarTile = (tile: StatsBarTile) => {
     setStatsBarTiles(prev => {
       const next = { ...prev, [tile]: !prev[tile] };
@@ -515,10 +530,39 @@ export default function PCPView({
   const [isSavingOS, setIsSavingOS] = useState(false);
   const [isPrintOSModalOpen, setIsPrintOSModalOpen] = useState(false);
   const [printOSData, setPrintOSData] = useState<{ os: ServiceOrder; nextSectorName: string } | null>(null);
-  const [labelModalProduct, setLabelModalProduct] = useState<import('../types').Product | null>(null);
-  const [labelModalLot, setLabelModalLot] = useState<import('../types').ProductionLot | null>(null);
-  const [labelModalSizeGrid, setLabelModalSizeGrid] = useState<string>('');
-  const [labelModalBatchItems, setLabelModalBatchItems] = useState<{ product: import('../types').Product; variation: import('../types').Variation; sizeGrid: string; lotId?: string; orderId?: string; itemIdx?: number }[] | undefined>(undefined);
+  // Tela 1 (LabelProfilePickerModal) do fluxo de impressão de etiqueta do PCP — abre com o lote
+  // já montado e o lote/OS de contexto (pros campos "Dados da OS"/"Obs. Setor" do editor); a
+  // tela 2 (o editor de verdade) só abre depois de escolher um perfil ou "Criar Novo Perfil"
+  // (ver handlePickLabelProfile/handleCreateNewLabelProfile abaixo).
+  const [labelProfilePicker, setLabelProfilePicker] = useState<{ open: boolean; items: BatchLabelItem[]; lot: ProductionLot | null; os: ServiceOrder | null }>({ open: false, items: [], lot: null, os: null });
+
+  const openLabelPicker = (items: BatchLabelItem[], lot: ProductionLot | null, os: ServiceOrder | null) => {
+    if (items.length === 0) { toast.show('Nenhuma etiqueta válida entre os itens selecionados.'); return; }
+    setLabelProfilePicker({ open: true, items, lot, os });
+  };
+  // Mesmo padrão já usado em vários pontos do PCP: setor atual de um lote vem de
+  // route[currentSectorIndex], nunca do campo legado currentSectorId.
+  const resolveSectorIdFor = (lot: ProductionLot | null, os: ServiceOrder | null): string | undefined =>
+    os?.sectorId ?? (lot ? lot.route?.[lot.currentSectorIndex] : undefined);
+  const handlePickLabelProfile = (file: LabelFile) => {
+    const { items, lot, os } = labelProfilePicker;
+    setLabelProfilePicker({ open: false, items: [], lot: null, os: null });
+    onNavigate(ViewType.LABEL_EDITOR, {
+      widthMm: file.widthMm, heightMm: file.heightMm, paperSizeId: file.paperSizeId, existingFile: file,
+      batchContext: { items },
+      productionContext: { lot: lot ?? undefined, os, sectors, sectorId: resolveSectorIdFor(lot, os) },
+    });
+  };
+  const handleCreateNewLabelProfile = () => {
+    const { items, lot, os } = labelProfilePicker;
+    setLabelProfilePicker({ open: false, items: [], lot: null, os: null });
+    onNavigate(ViewType.LABEL_EDITOR, {
+      widthMm: 75, heightMm: 24, // mesmo tamanho "★" default de SalesView
+      batchContext: { items },
+      productionContext: { lot: lot ?? undefined, os, sectors, sectorId: resolveSectorIdFor(lot, os) },
+    });
+  };
+
   const [selectedSourceItemKeys, setSelectedSourceItemKeys] = useState<Set<string>>(new Set());
   const [expandedSourceItems, setExpandedSourceItems] = useState<Set<string>>(new Set());
   const [scanFocusKey, setScanFocusKey] = useState<string | null>(null);
@@ -3642,6 +3686,11 @@ export default function PCPView({
         if (!ordItem && !(si.productId && si.variationId)) { pushUnresolved(si.itemIdx !== undefined ? `Item de índice ${si.itemIdx} não existe mais no pedido, e o item do Mapa não tem produto/cor própria salva.` : 'Produto/variação do item não encontrado no pedido.'); continue; }
         const prod = products.find(p => p.id === (si.productId || ordItem?.productId));
         if (!prod) { pushUnresolved('Produto não encontrado (pode ter sido excluído).'); continue; }
+        // StockLot é conceito de caixa/grade de ATACADO — item de varejo (quantidades soltas de
+        // pares, sem grade padrão) nunca vai ter um StockLot correspondente por design, então
+        // sinalizar "falta StockLot" pra ele é falso positivo (mesma checagem já feita acima, no
+        // Tipo A/fix_boxqty, pra produto de varejo).
+        if ((prod.type ?? SaleType.WHOLESALE) !== SaleType.WHOLESALE) continue;
         const vari = prod.variations.find(v => v.id === (si.variationId || ordItem?.variationId));
         if (!vari) { pushUnresolved(`Cor/variação não encontrada no produto "${prod.name}".`); continue; }
         result.push({
@@ -4195,10 +4244,7 @@ export default function PCPView({
       toast.show('Nenhuma etiqueta válida entre os itens selecionados.');
       return;
     }
-    setLabelModalProduct(batch[0].product);
-    setLabelModalLot(null);
-    setLabelModalSizeGrid('');
-    setLabelModalBatchItems(batch);
+    openLabelPicker(batch, null, null);
     setShareModal(prev => ({ ...prev, isOpen: false }));
   };
   const handleBatchCreateLots = async () => {
@@ -5123,6 +5169,8 @@ export default function PCPView({
         onSaveLot={onSaveLot}
         userName={userName}
         productionOrders={productionOrders}
+        labelFiles={labelFiles}
+        onNavigate={onNavigate}
       />
     );
   }
@@ -5237,6 +5285,23 @@ export default function PCPView({
                       </div>
                     </div>
                   )}
+                </div>
+
+                <div className="flex items-center justify-between px-1">
+                  <div className="flex flex-col">
+                    <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Menu de Ações Flutuante</h4>
+                    <p className="text-[9px] font-bold text-slate-400 mt-0.5">Ao selecionar pedidos, abre num botão flutuante em vez de ficar sempre visível</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={toggleFloatingActionMenu}
+                    aria-label={floatingActionMenuEnabled ? 'Desativar menu de ações flutuante' : 'Ativar menu de ações flutuante'}
+                    className={`w-12 h-7 rounded-full transition-all relative shrink-0 ${floatingActionMenuEnabled ? 'bg-indigo-600' : isDarkMode ? 'bg-slate-700' : 'bg-slate-200'}`}
+                  >
+                    <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-sm transition-all duration-200 flex items-center justify-center ${floatingActionMenuEnabled ? 'left-5' : 'left-0.5'}`}>
+                      {floatingActionMenuEnabled ? <ListChecks size={10} className="text-indigo-600" /> : <EyeOff size={10} className="text-slate-400" />}
+                    </span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -6303,10 +6368,7 @@ export default function PCPView({
                                                       .join('-');
 
                                                     if (szStr) {
-                                                      setLabelModalProduct(itemProduct);
-                                                      setLabelModalLot(f.lot);
-                                                      setLabelModalSizeGrid(szStr);
-                                                      setLabelModalBatchItems([{ product: itemProduct, variation: itemVariation, sizeGrid: szStr, lotId: f.lot.id, orderId: f.si.orderId, itemIdx: f.siIdx }]);
+                                                      openLabelPicker([{ product: itemProduct, variation: itemVariation, sizeGrid: szStr, lotId: f.lot.id, orderId: f.si.orderId, itemIdx: f.siIdx }], f.lot, null);
                                                     }
                                                   }
                                                 }}
@@ -6365,9 +6427,36 @@ export default function PCPView({
                                 })}
                               </div>
 
-                              {/* Emitir OS — grouped by lot */}
+                              {/* Emitir OS — grouped by lot. Com "Menu de ações flutuante" ligado
+                                  (padrão — desmarcável no card de exibição do setor), estes
+                                  mesmos botões só aparecem dentro do painel que abre ao tocar no
+                                  botão flutuante; desligado, ficam sempre visíveis aqui no meio
+                                  da lista, como sempre foi. */}
                               {selected.length > 0 && (
-                                <div className={`flex flex-col gap-2 p-2 rounded-2xl border ${isDarkMode ? 'border-slate-700 bg-slate-800/40' : 'border-slate-200 bg-slate-50/60'}`}>
+                                <>
+                                  {floatingActionMenuEnabled && floatingActionMenuOpen && (
+                                    <div
+                                      className="fixed inset-0 z-[8999] bg-slate-900/60 backdrop-blur-sm"
+                                      onClick={() => setFloatingActionMenuOpen(false)}
+                                    />
+                                  )}
+                                  {floatingActionMenuEnabled && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setFloatingActionMenuOpen(v => !v)}
+                                      className="fixed bottom-24 right-4 z-[9000] w-14 h-14 rounded-full bg-indigo-600 text-white shadow-2xl shadow-indigo-500/40 flex items-center justify-center active:scale-90 transition-all"
+                                    >
+                                      {floatingActionMenuOpen ? <X size={22} /> : <ListChecks size={22} />}
+                                      <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 rounded-full bg-rose-500 text-white text-[10px] font-black flex items-center justify-center">
+                                        {selected.length}
+                                      </span>
+                                    </button>
+                                  )}
+                                  {(!floatingActionMenuEnabled || floatingActionMenuOpen) && (
+                                <div className={floatingActionMenuEnabled
+                                  ? `fixed bottom-40 right-4 left-4 z-[9000] flex flex-col gap-2 p-3 rounded-2xl border shadow-2xl max-h-[55vh] overflow-y-auto ${isDarkMode ? 'border-slate-700 bg-slate-900' : 'border-slate-200 bg-white'}`
+                                  : `flex flex-col gap-2 p-2 rounded-2xl border ${isDarkMode ? 'border-slate-700 bg-slate-800/40' : 'border-slate-200 bg-slate-50/60'}`
+                                }>
                                   <button type="button"
                                     onClick={() => {
                                       const selectedFichasData = filteredFichas.filter(f => fichaSelection.has(`${f.lot.id}::${f.si.orderId}::${f.siIdx}`));
@@ -6624,6 +6713,8 @@ export default function PCPView({
                                     );
                                   })()}
                                 </div>
+                                  )}
+                                </>
                               )}
 
                               {/* Fim do corpo de Pedidos no Setor */}
@@ -8358,7 +8449,7 @@ export default function PCPView({
                   </div>
                   <div className="text-left">
                     <p className={`text-lg font-black tracking-tight ${isDarkMode ? "text-white" : "text-slate-900"}`}>Matrizes</p>
-                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Cadastro de moldes e matrizes de solados</p>
+                    <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Cadastro de matrizes e solados</p>
                   </div>
                 </div>
                 <ChevronRight size={24} className={isDarkMode ? "text-slate-700" : "text-slate-300"} />
@@ -9239,33 +9330,6 @@ export default function PCPView({
                   return selectedSourceItemKeys.has(`${si.orderId}-${idx}`);
                 });
 
-                const computeSizeGrid = () => {
-                  const hasItemIdx = sourceItems[0]?.itemIdx !== undefined;
-                  if (!hasItemIdx || selectedItemsList[0]?.itemIdx === undefined) {
-                    if (!selectedLot.pairs) return '';
-                    return Object.entries(selectedLot.pairs)
-                      .filter(([, q]) => (q as number) > 0)
-                      .sort(([a], [b]) => Number(a) - Number(b))
-                      .map(([sz, q]) => `${sz}x${q}`)
-                      .join('-');
-                  }
-                  const sizeTotals: Record<string, number> = {};
-                  selectedItemsList.forEach((si: any) => {
-                    const order = productionOrders.find(o => o.id === si.orderId);
-                    if (!order) return;
-                    const item = order.items[si.itemIdx];
-                    if (!item?.sizes) return;
-                    Object.entries(item.sizes).forEach(([size, data]: [string, any]) => {
-                      sizeTotals[size] = (sizeTotals[size] || 0) + (data.toProduction || 0);
-                    });
-                  });
-                  return Object.entries(sizeTotals)
-                    .filter(([, q]) => q > 0)
-                    .sort(([a], [b]) => Number(a) - Number(b))
-                    .map(([sz, q]) => `${sz}x${q}`)
-                    .join('-');
-                };
-
                 // Cada pedido selecionado vira UMA etiqueta própria, com sua grade e
                 // instruções por setor (não agrega tudo num único mapa).
                 const computeBatchItems = (): { product: import('../types').Product; variation: import('../types').Variation; sizeGrid: string; lotId?: string; orderId?: string; itemIdx?: number }[] => {
@@ -9766,10 +9830,7 @@ export default function PCPView({
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           const itemSizeGrid = sizeEntries.map(([sz, s]) => `${sz}x${s.toProduction}`).join('-');
-                                          setLabelModalProduct(product);
-                                          setLabelModalLot(selectedLot);
-                                          setLabelModalSizeGrid(itemSizeGrid);
-                                          setLabelModalBatchItems([{ product, variation, sizeGrid: itemSizeGrid, lotId: selectedLot.id, orderId: si.orderId, itemIdx: si.itemIdx }]);
+                                          openLabelPicker([{ product, variation, sizeGrid: itemSizeGrid, lotId: selectedLot.id, orderId: si.orderId, itemIdx: si.itemIdx }], selectedLot, null);
                                         }}
                                         className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 transition-all active:scale-95"
                                       >
@@ -10063,18 +10124,7 @@ export default function PCPView({
                               type="button"
                               onClick={() => {
                                 const items = computeBatchItems();
-                                if (items.length > 0) {
-                                  setLabelModalProduct(items[0].product);
-                                  setLabelModalLot(null);
-                                  setLabelModalSizeGrid(items[0].sizeGrid);
-                                  setLabelModalBatchItems(items.length > 1 ? items : [items[0]]);
-                                } else {
-                                  if (!product) return;
-                                  setLabelModalProduct(product);
-                                  setLabelModalLot(null);
-                                  setLabelModalSizeGrid(computeSizeGrid());
-                                  setLabelModalBatchItems(undefined);
-                                }
+                                openLabelPicker(items, null, null);
                               }}
                               className="w-full px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-all active:scale-95"
                             >
@@ -10933,7 +10983,7 @@ export default function PCPView({
           if (onNavigate) {
             onNavigate(ViewType.PRODUCTION_SOLE_PURCHASE, {
               items,
-              description: `Compra direta via PCP — ${supplierName || 'mesmo fornecedor'} (${items.length} variação${items.length > 1 ? 'ões' : ''} de ${1 + sameSupplierGroups.length} moldes)`
+              description: `Compra direta via PCP — ${supplierName || 'mesmo fornecedor'} (${items.length} variação${items.length > 1 ? 'ões' : ''} de ${1 + sameSupplierGroups.length} solados)`
             });
           }
           setOpenNeedsGroupKey(null);
@@ -10970,7 +11020,7 @@ export default function PCPView({
                   não tem uma altura travada pra rolar dentro, e o conteúdo mais longo (2+
                   variações) ficava só sendo cortado/espremido pelo overflow-hidden do modal em
                   vez de rolar. */}
-              <div className="p-5 flex flex-col gap-3 overflow-y-auto flex-1 min-h-0">
+              <div className="p-5 flex flex-col gap-4 overflow-y-auto flex-1 min-h-0">
                 {totalShortage > 0 && (
                   <div className={`p-3 rounded-xl text-xs font-bold ${isDarkMode ? 'bg-rose-950/30 text-rose-400 border border-rose-800' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
                     Este grupo tem falta em estoque. Formule um pedido cobrindo todas as faltas abaixo, ou solicite item a item.
@@ -11033,12 +11083,15 @@ export default function PCPView({
                         );
                       })}
 
-                      <div className={`flex items-center justify-between px-4 py-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
+                      {/* Solicitar numa linha própria, abaixo da tabela — junto com "Estoque:"
+                          na mesma linha (layout antigo) o botão ficava espremido/escondido no
+                          fim do card em telas estreitas. */}
+                      <div className={`flex flex-col gap-2 px-4 py-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-200'}`}>
                         {item.type !== 'SOLE' && (
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Estoque: {fmtQty(item.unit, item.stock)} {item.unit}</span>
                         )}
                         {existingReq ? (
-                          <span className={`ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
+                          <span className={`w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border ${isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-500'}`}>
                             <CheckCircle2 size={11} strokeWidth={3} /> Solicitado
                           </span>
                         ) : itemShortage > 0 ? (
@@ -11075,7 +11128,7 @@ export default function PCPView({
                                 setRequestingId(null);
                               }
                             }}
-                            className={`ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${requestingId === item.id
+                            className={`w-full flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95 ${requestingId === item.id
                               ? 'bg-slate-200 dark:bg-slate-700 text-slate-400 cursor-wait'
                               : 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30'
                               }`}
@@ -11084,7 +11137,7 @@ export default function PCPView({
                             Solicitar
                           </button>
                         ) : (
-                          <span className="ml-auto text-[9px] font-black text-emerald-500 uppercase tracking-widest">✓ Disponível</span>
+                          <span className="w-full text-center text-[9px] font-black text-emerald-500 uppercase tracking-widest">✓ Disponível</span>
                         )}
                       </div>
                     </div>
@@ -11111,7 +11164,7 @@ export default function PCPView({
                       className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest border-2 transition-all active:scale-[0.98] ${isDarkMode ? 'border-indigo-700 text-indigo-400 hover:bg-indigo-950/30' : 'border-indigo-200 text-indigo-600 hover:bg-indigo-50'}`}
                     >
                       <Factory size={14} />
-                      Formular com {supplierName || 'mesmo fornecedor'} ({1 + sameSupplierGroups.length} moldes)
+                      Formular com {supplierName || 'mesmo fornecedor'} ({1 + sameSupplierGroups.length} solados)
                     </button>
                   )}
                 </div>
@@ -11392,19 +11445,15 @@ export default function PCPView({
         />
       )}
 
-      {labelModalProduct && (
-        <PrintLabelEditorModal
-          isOpen={!!labelModalProduct}
-          onClose={() => { setLabelModalProduct(null); setLabelModalLot(null); setLabelModalSizeGrid(''); setLabelModalBatchItems(undefined); }}
-          product={labelModalProduct}
-          isDarkMode={isDarkMode}
-          grids={grids || []}
-          lot={labelModalLot ?? undefined}
-          sizeGridOverride={labelModalSizeGrid || undefined}
-          sectors={sectors}
-          batchItems={labelModalBatchItems}
-        />
-      )}
+      <LabelProfilePickerModal
+        isOpen={labelProfilePicker.open}
+        onClose={() => setLabelProfilePicker({ open: false, items: [], lot: null, os: null })}
+        isDarkMode={isDarkMode}
+        sectors={sectors}
+        labelFiles={labelFiles}
+        onSelectProfile={handlePickLabelProfile}
+        onCreateNew={handleCreateNewLabelProfile}
+      />
 
       {/* ── QR Baixa Modal ──────────────────────────────────────────── */}
       {qrBaixaModal && createPortal(

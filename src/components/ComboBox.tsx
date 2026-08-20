@@ -10,6 +10,13 @@ interface ComboBoxProps {
   isDarkMode?: boolean;
   icon?: React.ReactNode;
   compact?: boolean;
+  /** 'filled' (padrão) = fundo cinza claro de sempre. 'outline' = fundo vazio (branco/transparente),
+   * só com borda — usado quando o campo já fica dentro de um card carregado e o preenchimento
+   * cinza fica pesado demais visualmente. */
+  variant?: 'filled' | 'outline';
+  /** Cor da seta (ChevronDown) — 'indigo' (padrão) ou 'red' pra chamar atenção num campo
+   * obrigatório ainda vazio. */
+  arrowColor?: 'indigo' | 'red';
   /** Abre um popup centralizado (com busca) em vez do dropdown ancorado embaixo do campo —
    * usado quando o campo fica dentro de um card/modal pequeno onde o dropdown inline
    * empurrava/sobrepunha o resto do conteúdo abaixo dele. */
@@ -19,7 +26,7 @@ interface ComboBoxProps {
   popupZIndex?: number;
 }
 
-export default function ComboBox({ options, value, onChange, placeholder = "SELECIONE...", isDarkMode = false, icon, compact = false, usePopupModal = false, popupZIndex = 65000 }: ComboBoxProps) {
+export default function ComboBox({ options, value, onChange, placeholder = "SELECIONE...", isDarkMode = false, icon, compact = false, variant = 'filled', arrowColor = 'indigo', usePopupModal = false, popupZIndex = 65000 }: ComboBoxProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -47,7 +54,7 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
   return (
     <div className="relative" ref={dropdownRef}>
       <div
-        className={`w-full flex items-center bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800 rounded-2xl ${icon ? (compact ? 'pl-9' : 'pl-12') : (compact ? 'pl-4' : 'pl-5')} pr-0 ${compact ? 'py-2.5' : 'py-4'} cursor-pointer focus-within:ring-4 focus-within:ring-slate-900/5 dark:focus-within:ring-indigo-500/10 transition-all ${isDarkMode ? "text-slate-100" : "text-slate-900"}`}
+        className={`w-full flex items-center ${variant === 'outline' ? 'bg-white dark:bg-transparent border border-slate-200 dark:border-slate-700' : 'bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-800'} rounded-2xl ${icon ? (compact ? 'pl-9' : 'pl-12') : (compact ? 'pl-4' : 'pl-5')} pr-0 ${compact ? 'py-2.5' : 'py-4'} cursor-pointer focus-within:ring-4 focus-within:ring-slate-900/5 dark:focus-within:ring-indigo-500/10 transition-all ${isDarkMode ? "text-slate-100" : "text-slate-900"}`}
         onClick={() => setIsOpen(!isOpen)}
       >
         {icon && (
@@ -69,7 +76,7 @@ export default function ComboBox({ options, value, onChange, placeholder = "SELE
           onClick={(e) => e.stopPropagation()}
         />
         {/* Área clicável generosa ao redor da seta */}
-        <div className={`flex items-center justify-center ${compact ? 'w-9' : 'w-12'} h-full self-stretch shrink-0 text-indigo-400`}>
+        <div className={`flex items-center justify-center ${compact ? 'w-9' : 'w-12'} h-full self-stretch shrink-0 ${arrowColor === 'red' ? 'text-red-500' : 'text-indigo-400'}`}>
           <ChevronDown size={compact ? 16 : 22} strokeWidth={2.5} className={`transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
         </div>
       </div>

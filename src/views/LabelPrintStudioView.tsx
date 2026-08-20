@@ -1,26 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import {
-  Bluetooth, CheckCircle2, XCircle, RefreshCw, Ruler, Plus, Trash2,
-  FilePlus, Upload, FolderOpen, X, ChevronDown, ChevronUp, RotateCcw, Pencil, Star, Wifi,
+  Ruler, Plus, Trash2,
+  FilePlus, Upload, FolderOpen, X, ChevronDown, ChevronUp, Pencil, Star,
   RectangleVertical, RectangleHorizontal,
 } from 'lucide-react';
-import { LabelPaperSize, LabelFile } from '../types';
-import {
-  AbleMarkPairedDevice,
-  listAbleMarkPairedDevices,
-  connectAbleMarkPrinter,
-  disconnectAbleMarkPrinter,
-  isAbleMarkPrinterConnected,
-  resetAbleMarkPrinter,
-  printAbleMarkLabel,
-  isAblemarkPlatform,
-} from '../lib/ablemarkPrinter';
-import { EpsonDiscoveredPrinter, discoverEpsonPrinters } from '../lib/epsonPrinter';
+import { LabelPaperSize, LabelFile, BatchLabelItem, ProductionLot, ServiceOrder, Sector } from '../types';
+import { printAbleMarkLabel2 as printAbleMarkLabel } from '../lib/ablemarkPrinter2';
 import { toast } from '../utils/toast';
 import { pickLabelImportFile } from '../utils/labelFileImport';
 import PdfPageSelectModal, { CropRect, CroppedPage, FitMode } from '../components/PdfPageSelectModal';
 import LabelPrintPreviewModal, { PrintOptions } from '../components/LabelPrintPreviewModal';
+import PrinterConnectionCard from '../components/PrinterConnectionCard';
 import { applyPrintTransform, DIRECTION_TO_ROTATION } from '../utils/labelPrintTransform';
 
 const DOTS_PER_MM = 8; // mesma densidade validada em hardware real (ver LabelEditorView)
@@ -136,6 +127,12 @@ export interface OpenEditorParams {
   paperSizeId?: string;
   existingFile?: LabelFile;
   importedImageDataUrl?: string;
+  // Repassado ao editor sem uso aqui (ver LabelEditorSession.batch) — só transporta o lote de
+  // impressão de uma Venda através da escolha de modelo (ver `batchContext` da prop abaixo).
+  batchContext?: { items: BatchLabelItem[] };
+  // Repassado ao editor sem uso aqui (ver LabelEditorSession.productionContext) — transporta
+  // Lote/OS/Setores de uma sessão aberta a partir do PCP através da escolha de modelo.
+  productionContext?: { lot?: ProductionLot; os?: ServiceOrder | null; sectors?: Sector[]; sectorId?: string };
 }
 
 interface LabelPrintStudioViewProps {
@@ -147,6 +144,12 @@ interface LabelPrintStudioViewProps {
   onDeletePaperSize: (id: string) => Promise<void>;
   onDeleteFile: (id: string) => Promise<void>;
   onOpenEditor: (params: OpenEditorParams) => void;
+  // Presente quando esta tela abriu a partir do popup de impressão de uma Venda (modo de
+  // teste) — filtra a lista pra só mostrar modelos marcados "Modelo para Vendas"
+  // (LabelFile.isSalesTemplate) e repassa o lote pro editor em qualquer caminho (novo, importar
+  // ou abrir um já salvo).
+  filterSalesTemplates?: boolean;
+  batchContext?: { items: BatchLabelItem[] };
 }
 
 type SelectedSize = { name: string; widthMm: number; heightMm: number; paperSizeId?: string };
@@ -154,32 +157,10 @@ type SelectedSize = { name: string; widthMm: number; heightMm: number; paperSize
 export default function LabelPrintStudioView({
   isDarkMode, labelPaperSizes, labelFiles,
   onAddPaperSize, onEditPaperSize, onDeletePaperSize, onDeleteFile, onOpenEditor,
+  filterSalesTemplates, batchContext,
 }: LabelPrintStudioViewProps) {
-  const [devices, setDevices] = useState<AbleMarkPairedDevice[]>([]);
-  const [loadingDevices, setLoadingDevices] = useState(false);
-  const [selectedAddress, setSelectedAddress] = useState<string | null>(null);
-  const [connected, setConnected] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  // Marca da impressora — Ablemark já funciona de ponta a ponta (só Android — Bluetooth
-  // Classic/SPP não roda no iOS sem certificação MFi do fabricante, fora do nosso controle);
-  // Epson (linha TM-m, Wi-Fi Direct) ainda é só a estrutura (ver src/lib/epsonPrinter.ts),
-  // esperando o SDK oficial, mas por ser rede em vez de Bluetooth deve funcionar nas duas
-  // plataformas quando integrado. Fora do Android já começa em EPSON, já que Ablemark nem
-  // aparece como opção lá.
-  const [printerBrand, setPrinterBrand] = useState<'ABLEMARK' | 'EPSON'>(isAblemarkPlatform() ? 'ABLEMARK' : 'EPSON');
-  const [epsonPrinters, setEpsonPrinters] = useState<EpsonDiscoveredPrinter[]>([]);
-  const [epsonLoading, setEpsonLoading] = useState(false);
-
-  const handleDiscoverEpson = async () => {
-    setEpsonLoading(true);
-    try {
-      const list = await discoverEpsonPrinters();
-      setEpsonPrinters(list);
-    } finally {
-      setEpsonLoading(false);
-    }
-  };
+  const visibleLabelFiles = filterSalesTemplates ? labelFiles.filter(f => f.isSalesTemplate) : labelFiles;
+  const openEditorWithContext = (params: OpenEditorParams) => onOpenEditor(batchContext ? { ...params, batchContext } : params);
 
   const [preferredSize, setPreferredSizeState] = useState<PreferredSizeRef | null>(() => readPreferredSize());
   // Se o preferido é um preset, já resolve de cara (PRESET_SIZES é uma constante). Se for um
@@ -240,10 +221,6 @@ export default function LabelPrintStudioView({
   const [showBatchPreview, setShowBatchPreview] = useState(false);
   const importingRef = useRef(false);
 
-  useEffect(() => {
-    isAbleMarkPrinterConnected().then(setConnected);
-  }, []);
-
   const handleImportFile = async () => {
     if (!selectedSize || importingRef.current) return;
     importingRef.current = true;
@@ -251,12 +228,12 @@ export default function LabelPrintStudioView({
       const result = await pickLabelImportFile();
       if (!result) return;
       if (result.kind === 'image') {
-        onOpenEditor({ widthMm: selectedSize.widthMm, heightMm: selectedSize.heightMm, paperSizeId: selectedSize.paperSizeId, importedImageDataUrl: result.dataUrl });
+        openEditorWithContext({ widthMm: selectedSize.widthMm, heightMm: selectedSize.heightMm, paperSizeId: selectedSize.paperSizeId, importedImageDataUrl: result.dataUrl });
         return;
       }
       // PDF de 1 página só — abre direto no editor, igual a uma imagem.
       if (result.pages.length === 1) {
-        onOpenEditor({ widthMm: selectedSize.widthMm, heightMm: selectedSize.heightMm, paperSizeId: selectedSize.paperSizeId, importedImageDataUrl: result.pages[0] });
+        openEditorWithContext({ widthMm: selectedSize.widthMm, heightMm: selectedSize.heightMm, paperSizeId: selectedSize.paperSizeId, importedImageDataUrl: result.pages[0] });
         return;
       }
       setPdfPagesToSelect(result.pages);
@@ -278,7 +255,7 @@ export default function LabelPrintStudioView({
     if (items.length === 1) {
       try {
         const croppedDataUrl = await cropImageToDataUrl(items[0].dataUrl, items[0].crop);
-        onOpenEditor({ widthMm: selectedSize.widthMm, heightMm: selectedSize.heightMm, paperSizeId: selectedSize.paperSizeId, importedImageDataUrl: croppedDataUrl });
+        openEditorWithContext({ widthMm: selectedSize.widthMm, heightMm: selectedSize.heightMm, paperSizeId: selectedSize.paperSizeId, importedImageDataUrl: croppedDataUrl });
       } catch (err: any) {
         toast.show('Erro ao recortar página: ' + (err?.message || err));
       }
@@ -321,44 +298,6 @@ export default function LabelPrintStudioView({
       }
     }
     toast.show(failed === 0 ? `${sent} etiqueta(s) enviada(s) para a impressora!` : `${sent} enviada(s), ${failed} falharam.`);
-  };
-
-  const handleListDevices = async () => {
-    setLoadingDevices(true);
-    try {
-      const list = await listAbleMarkPairedDevices();
-      setDevices(list);
-    } finally {
-      setLoadingDevices(false);
-    }
-  };
-
-  const handleConnect = async (address: string) => {
-    setSelectedAddress(address);
-    setConnecting(true);
-    try {
-      const { connected: ok } = await connectAbleMarkPrinter(address);
-      setConnected(ok);
-    } finally {
-      setConnecting(false);
-    }
-  };
-
-  const handleDisconnect = async () => {
-    await disconnectAbleMarkPrinter();
-    setConnected(false);
-  };
-
-  const handleResetConnection = async () => {
-    setResetting(true);
-    try {
-      await resetAbleMarkPrinter();
-      setConnected(false);
-      setDevices([]);
-      toast.show('Conexão e cache resetados — conecte novamente.');
-    } finally {
-      setResetting(false);
-    }
   };
 
   const handleAddSize = async () => {
@@ -427,11 +366,6 @@ export default function LabelPrintStudioView({
       ? 'bg-gradient-to-b from-slate-800 to-slate-800/80 border-slate-950 shadow-[0_6px_16px_-4px_rgba(0,0,0,0.5)]'
       : 'bg-gradient-to-b from-white to-slate-50 border-slate-200 shadow-[0_6px_16px_-6px_rgba(15,23,42,0.18)]'
   }`;
-  const miniCardConnectedCls = `relative rounded-2xl p-4 border-b-[3px] transition-shadow ${
-    isDarkMode
-      ? 'bg-gradient-to-b from-emerald-900/40 to-emerald-900/20 border-emerald-600/60 shadow-[0_6px_16px_-4px_rgba(16,185,129,0.35)]'
-      : 'bg-gradient-to-b from-emerald-50 to-white border-emerald-300 shadow-[0_6px_16px_-6px_rgba(16,185,129,0.3)]'
-  }`;
   const pressBtnCls = 'active:translate-y-0.5 transition-transform';
   const sectionTitleCls = 'text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3';
   const outerCardCls = `p-3 sm:p-4 rounded-3xl border ${
@@ -442,132 +376,10 @@ export default function LabelPrintStudioView({
     <>
     <div className={outerCardCls}>
     <div className="flex flex-col gap-4">
-      {/* Conexão */}
-      <div className={printerBrand === 'ABLEMARK' && connected ? miniCardConnectedCls : miniCardCls}>
-        {/* Marca da impressora — Epson ainda é só estrutura (ver epsonPrinter.ts), pra não
-            atrapalhar quem já usa a Ablemark hoje enquanto o SDK oficial não chega. Fora do
-            Android nem faz sentido mostrar esse seletor: Ablemark não existe lá (Bluetooth
-            Classic bloqueado pelo iOS sem MFi), então só sobraria uma opção pra "escolher". */}
-        {isAblemarkPlatform() && (
-        <div className="flex gap-1.5 mb-3">
-          <button
-            type="button"
-            onClick={() => setPrinterBrand('ABLEMARK')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
-              printerBrand === 'ABLEMARK' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            <Bluetooth size={12} /> Ablemark BR-L100
-          </button>
-          <button
-            type="button"
-            onClick={() => setPrinterBrand('EPSON')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all ${
-              printerBrand === 'EPSON' ? 'bg-indigo-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            <Wifi size={12} /> Epson (Wi-Fi Direct)
-          </button>
-        </div>
-        )}
-
-        <div className="flex items-center justify-between mb-3">
-          <span className={printerBrand === 'ABLEMARK' && connected ? 'text-[10px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 mb-3' : sectionTitleCls}>
-            {printerBrand === 'ABLEMARK' ? 'Impressora (Ablemark BR-L100)' : 'Impressora (Epson TM-m)'}
-          </span>
-          {printerBrand === 'ABLEMARK' ? (
-            connected ? (
-              <span className="flex items-center gap-1.5 text-[10px] font-black text-emerald-600 dark:text-emerald-400">
-                <CheckCircle2 size={14} /> Conectada
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5 text-[10px] font-black text-rose-500">
-                <XCircle size={13} /> Desconectada
-              </span>
-            )
-          ) : (
-            <span className="flex items-center gap-1.5 text-[10px] font-black text-amber-500">
-              <XCircle size={13} /> Em desenvolvimento
-            </span>
-          )}
-        </div>
-
-        {printerBrand === 'EPSON' ? (
-          <div className="flex flex-col gap-2">
-            <p className="text-[10px] font-bold text-slate-400 leading-relaxed">
-              Suporte a impressoras Epson (linha TM-m, Wi-Fi Direct) já tem a estrutura pronta —
-              falta integrar o SDK oficial da Epson (aguardando conta de desenvolvedor + impressora pra validar).
-            </p>
-            <button
-              type="button"
-              onClick={handleDiscoverEpson}
-              disabled={epsonLoading}
-              className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-            >
-              <RefreshCw size={13} className={epsonLoading ? 'animate-spin' : ''} /> Procurar impressoras
-            </button>
-            {epsonPrinters.map(p => (
-              <div key={p.target} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'}`}>
-                <Wifi size={13} className="text-indigo-500 shrink-0" />
-                <span className="text-xs font-black truncate">{p.name}</span>
-              </div>
-            ))}
-          </div>
-        ) : connected ? (
-          <button
-            type="button"
-            onClick={handleDisconnect}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
-          >
-            <CheckCircle2 size={13} /> Desconectar
-          </button>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={handleListDevices}
-              disabled={loadingDevices}
-              className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isDarkMode ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
-            >
-              <RefreshCw size={13} className={loadingDevices ? 'animate-spin' : ''} /> Listar dispositivos pareados
-            </button>
-            {devices.map(d => (
-              <button
-                key={d.address}
-                type="button"
-                onClick={() => handleConnect(d.address)}
-                disabled={connecting}
-                className={`flex items-center justify-between gap-2 px-4 py-2.5 rounded-xl border-2 transition-all ${
-                  selectedAddress === d.address
-                    ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
-                    : isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-100 bg-white'
-                }`}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <Bluetooth size={13} className="text-indigo-500 shrink-0" />
-                  <span className="text-xs font-black truncate">{d.name}</span>
-                </div>
-                {connecting && selectedAddress === d.address && <RefreshCw size={13} className="animate-spin text-indigo-400" />}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Resetar conexão/cache — só faz sentido pra Ablemark hoje (Epson ainda não tem
-            conexão real nenhuma pra resetar). Dentro do card da impressora (ação relacionada),
-            laranja claro chapado (sem o relevo 3D dos outros minicards) pra não competir
-            visualmente com o status de conexão acima, mas ainda se destacar como recuperação. */}
-        {printerBrand === 'ABLEMARK' && (
-          <button
-            type="button"
-            onClick={handleResetConnection}
-            disabled={resetting}
-            className="w-full flex items-center justify-center gap-1.5 mt-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest text-white bg-amber-400 hover:bg-amber-500 disabled:opacity-60 transition-colors"
-          >
-            <RotateCcw size={13} className={resetting ? 'animate-spin' : ''} /> {resetting ? 'Resetando...' : 'Resetar conexão e cache (se a impressão falhar)'}
-          </button>
-        )}
-      </div>
+      {/* Conexão — extraído pra PrinterConnectionCard.tsx, reaproveitado também dentro do
+          preview de impressão (LabelPrintPreviewModal) quando a impressora ainda não está
+          conectada na hora de imprimir. */}
+      <PrinterConnectionCard isDarkMode={isDarkMode} />
 
       {/* Tamanhos de etiqueta */}
       <div className={miniCardCls}>
@@ -732,12 +544,12 @@ export default function LabelPrintStudioView({
 
       {/* Arquivos */}
       <div className={miniCardCls}>
-        <span className={sectionTitleCls}>Arquivo de etiqueta</span>
+        <span className={sectionTitleCls}>{filterSalesTemplates ? 'Modelo de etiqueta (Vendas)' : 'Arquivo de etiqueta'}</span>
         <div className="flex gap-2 mb-3">
           <button
             type="button"
             disabled={!selectedSize}
-            onClick={() => selectedSize && onOpenEditor({ widthMm: selectedSize.widthMm, heightMm: selectedSize.heightMm, paperSizeId: selectedSize.paperSizeId })}
+            onClick={() => selectedSize && openEditorWithContext({ widthMm: selectedSize.widthMm, heightMm: selectedSize.heightMm, paperSizeId: selectedSize.paperSizeId })}
             className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest bg-indigo-600 text-white disabled:opacity-40 ${pressBtnCls}`}
           >
             <FilePlus size={14} /> Novo arquivo
@@ -752,16 +564,22 @@ export default function LabelPrintStudioView({
           </button>
         </div>
 
-        {labelFiles.length > 0 && (
+        {filterSalesTemplates && visibleLabelFiles.length === 0 && (
+          <p className="text-[10px] font-bold text-slate-400 text-center py-2">
+            Nenhum modelo de Vendas ainda — crie um novo e marque "Modelo para Vendas" ao salvar.
+          </p>
+        )}
+
+        {visibleLabelFiles.length > 0 && (
           <div className="flex flex-col gap-1.5">
-            {labelFiles.map(f => (
+            {visibleLabelFiles.map(f => (
               <div
                 key={f.id}
                 className={`flex items-center gap-2 px-3 py-2 rounded-xl ${isDarkMode ? 'bg-slate-800/50' : 'bg-slate-50'}`}
               >
                 <button
                   type="button"
-                  onClick={() => onOpenEditor({ widthMm: f.widthMm, heightMm: f.heightMm, paperSizeId: f.paperSizeId, existingFile: f })}
+                  onClick={() => openEditorWithContext({ widthMm: f.widthMm, heightMm: f.heightMm, paperSizeId: f.paperSizeId, existingFile: f })}
                   className="flex-1 flex items-center gap-2 text-left min-w-0"
                 >
                   <FolderOpen size={13} className="text-indigo-400 shrink-0" />

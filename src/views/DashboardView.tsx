@@ -1201,7 +1201,7 @@ export default function DashboardView({
                   <ConfigMenuItem
                     icon={<Footprints size={20} />}
                     label="Solados"
-                    desc="Moldes e mapeamentos"
+                    desc="Solados e mapeamentos"
                     color="text-orange-600"
                     bg="bg-orange-50"
                     isDarkMode={isDarkMode}

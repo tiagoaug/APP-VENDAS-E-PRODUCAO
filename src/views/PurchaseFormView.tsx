@@ -507,18 +507,18 @@ export default function PurchaseFormView({
   const [productSearchQuery, setProductSearchQuery] = useState("");
   const [showAllProductsInModal, setShowAllProductsInModal] = useState(false);
 
+  const availableThirdParties = useMemo(
+    () => people.filter(p => p.isSupplier || p.isServiceProvider),
+    [people]
+  );
+
   const supplierName = useMemo(() => {
-    return suppliers.find((s) => s.id === supplierId)?.name || "";
-  }, [suppliers, supplierId]);
+    return availableThirdParties.find((s) => s.id === supplierId)?.name || "";
+  }, [availableThirdParties, supplierId]);
 
   const availableMaterials = useMemo(
     () => productionConfigs.filter(c => c.type === 'MATERIAL' || c.type === 'PACKAGING'),
     [productionConfigs]
-  );
-
-  const availableThirdParties = useMemo(
-    () => people.filter(p => p.isSupplier || p.isServiceProvider),
-    [people]
   );
 
   const unitConfigs = useMemo(
@@ -1349,14 +1349,17 @@ export default function PurchaseFormView({
         <div className="grid grid-cols-2 gap-4">
           <div className="relative col-span-2">
             <label className="text-[9px] uppercase font-black text-slate-700 dark:text-slate-400 px-3 mb-2 block tracking-widest leading-none">
-              Fornecedor Selecionado
+              Fornecedor ou Prestador de Serviços
             </label>
-            <ComboBox 
-              options={suppliers.map(s => ({ id: s.id, name: s.name }))}
+            <ComboBox
+              options={availableThirdParties.map(s => ({ id: s.id, name: s.name }))}
               value={supplierId}
               onChange={setSupplierId}
-              placeholder="SELECIONE O FORNECEDOR"
+              placeholder=""
               isDarkMode={isDarkMode}
+              compact
+              variant="outline"
+              arrowColor="red"
             />
           </div>
 
@@ -1365,20 +1368,23 @@ export default function PurchaseFormView({
             <ComboBox 
               options={[
                 ...people.filter(p => p.isSeller || p.isBuyer).map(p => ({ id: p.id, name: p.name })),
-                ...(suppliers.find(s => s.id === supplierId)?.internalContacts?.map(c => ({ id: c.name, name: c.name })) || [])
+                ...(availableThirdParties.find(s => s.id === supplierId)?.internalContacts?.map(c => ({ id: c.name, name: c.name })) || [])
               ]}
               value={sellerId}
               onChange={setSellerId}
-              placeholder="SELECIONE O RESPONSÁVEL"
+              placeholder=""
               isDarkMode={isDarkMode}
               icon={<Users size={18} />}
+              compact
+              variant="outline"
+              arrowColor="red"
             />
 
             {/* Badges de Sugestão do Fornecedor */}
             {supplierId && (
               <div className="mt-3 flex flex-wrap gap-2 px-1">
                 {(() => {
-                  const s = suppliers.find(sup => sup.id === supplierId);
+                  const s = availableThirdParties.find(sup => sup.id === supplierId);
                   if (!s) return null;
                   
                   const linkedReps = people.filter(p => 

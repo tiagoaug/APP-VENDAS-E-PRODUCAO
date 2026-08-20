@@ -10,6 +10,12 @@ import {
   isAbleMarkPrinterConnected,
   printAbleMarkLabel,
 } from '../lib/ablemarkPrinter';
+import {
+  listAbleMarkPairedDevices2,
+  connectAbleMarkPrinter2,
+  isAbleMarkPrinterConnected2,
+  printAbleMarkLabel2,
+} from '../lib/ablemarkPrinter2';
 
 interface AblemarkPrinterTestModalProps {
   isOpen: boolean;
@@ -78,6 +84,10 @@ export default function AblemarkPrinterTestModal({ isOpen, onClose, isDarkMode }
   // aqui pra testar rápido, sem precisar recompilar, caso a impressora tenha uma calibração
   // interna diferente da esperada.
   const [testDensity, setTestDensity] = useState<1 | 2 | 3>(2);
+  // Qual implementação nativa usar — módulo 1 (original) ou módulo 2 (reconstrução com altura
+  // condicional no cabeçalho, ver AbleMarkL100Protocol2.kt). Trocar de módulo exige reconectar,
+  // já que cada um mantém seu próprio BluetoothSocket nativo (client separado por plugin).
+  const [module, setModule] = useState<1 | 2>(1);
   // Guarda síncrona contra clique duplo/"ghost click" — o estado `printing` só reflete no botão
   // depois de um re-render do React, então dois eventos de clique quase simultâneos podem
   // passar pelo `disabled` antes disso. useRef muda na hora, sem esperar re-render.
@@ -88,7 +98,7 @@ export default function AblemarkPrinterTestModal({ isOpen, onClose, isDarkMode }
   const handleListDevices = async () => {
     setLoadingDevices(true);
     try {
-      const list = await listAbleMarkPairedDevices();
+      const list = module === 1 ? await listAbleMarkPairedDevices() : await listAbleMarkPairedDevices2();
       setDevices(list);
       pushLog(`${list.length} dispositivo(s) pareado(s) encontrado(s)`);
     } finally {
@@ -99,9 +109,11 @@ export default function AblemarkPrinterTestModal({ isOpen, onClose, isDarkMode }
   const handleConnect = async (address: string) => {
     setSelectedAddress(address);
     setConnecting(true);
-    pushLog(`Conectando em ${address}...`);
+    pushLog(`Conectando em ${address} (módulo ${module})...`);
     try {
-      const { connected: ok, error } = await connectAbleMarkPrinter(address);
+      const { connected: ok, error } = module === 1
+        ? await connectAbleMarkPrinter(address)
+        : await connectAbleMarkPrinter2(address);
       setConnected(ok);
       pushLog(ok ? 'Conectado!' : `Falha ao conectar: ${error || '(sem detalhe)'}`);
     } finally {
@@ -110,9 +122,9 @@ export default function AblemarkPrinterTestModal({ isOpen, onClose, isDarkMode }
   };
 
   const handleCheckConnection = async () => {
-    const ok = await isAbleMarkPrinterConnected();
+    const ok = module === 1 ? await isAbleMarkPrinterConnected() : await isAbleMarkPrinterConnected2();
     setConnected(ok);
-    pushLog(`Status atual: ${ok ? 'conectado' : 'desconectado'}`);
+    pushLog(`Status atual (módulo ${module}): ${ok ? 'conectado' : 'desconectado'}`);
   };
 
   const handlePickImage = async () => {
@@ -149,8 +161,10 @@ export default function AblemarkPrinterTestModal({ isOpen, onClose, isDarkMode }
         directory: Directory.Cache,
       });
       pushLog(`Imagem salva em ${written.uri}`);
-      pushLog(`Enviando para a impressora (densidade ${testDensity})...`);
-      const { sent, error } = await printAbleMarkLabel(written.uri, 2, testDensity);
+      pushLog(`Enviando para a impressora (módulo ${module}, densidade ${testDensity})...`);
+      const { sent, error } = module === 1
+        ? await printAbleMarkLabel(written.uri, 2, testDensity)
+        : await printAbleMarkLabel2(written.uri, 2, testDensity);
       pushLog(sent ? 'Enviado! Confira a impressora.' : `Falha ao enviar: ${error || '(sem detalhe)'}`);
     } catch (err: any) {
       pushLog('Erro: ' + (err?.message || err));
@@ -167,6 +181,31 @@ export default function AblemarkPrinterTestModal({ isOpen, onClose, isDarkMode }
           <p className="text-[10px] font-bold text-amber-700 dark:text-amber-300 uppercase tracking-widest leading-relaxed">
             Ferramenta de teste — usada pra validar o protocolo da BR-L100 contra hardware real. Não é uma tela final de impressão.
           </p>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Módulo nativo</span>
+          <div className="flex gap-2">
+            {([1, 2] as const).map(m => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => {
+                  if (module === m) return;
+                  setModule(m);
+                  setConnected(false);
+                  setSelectedAddress(null);
+                  setDevices([]);
+                  pushLog(`Trocado para módulo ${m} — reconecte antes de imprimir.`);
+                }}
+                className={`flex-1 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                  module === m ? 'bg-emerald-600 text-white' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
+                }`}
+              >
+                {m}{m === 1 ? ' (original)' : ' (altura condicional)'}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="flex flex-col gap-2">

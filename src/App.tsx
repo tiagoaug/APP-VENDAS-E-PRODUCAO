@@ -114,6 +114,7 @@ import {
   Carrier,
   LabelPaperSize,
   LabelFile,
+  BatchLabelItem,
   OnboardingStatus,
   BusinessType,
 } from "./types";
@@ -4555,12 +4556,17 @@ export default function App() {
             }}
           />
         );
-      case ViewType.LABEL_PRINT_STUDIO:
+      case ViewType.LABEL_PRINT_STUDIO: {
+        // Presente quando esta tela abriu a partir do popup de impressão de uma Venda — ver
+        // handleOpenSaleLabels em SalesView.tsx e OpenEditorParams.batchContext.
+        const studioParams = currentParams as { filterSalesTemplates?: boolean; batchContext?: { items: BatchLabelItem[] } } | null;
         return (
           <LabelPrintStudioView
             isDarkMode={isDarkMode}
             labelPaperSizes={labelPaperSizes}
             labelFiles={labelFiles}
+            filterSalesTemplates={studioParams?.filterSalesTemplates}
+            batchContext={studioParams?.batchContext}
             onAddPaperSize={async (size) => {
               try {
                 await firebaseService.saveDocument("labelPaperSizes", { ...size, isCustom: true });
@@ -4594,6 +4600,7 @@ export default function App() {
             onOpenEditor={(params) => navigateTo(ViewType.LABEL_EDITOR, params)}
           />
         );
+      }
       case ViewType.LABEL_EDITOR: {
         const session = currentParams as OpenEditorParams | null;
         if (!session) return null;
@@ -4608,6 +4615,10 @@ export default function App() {
               name: session.existingFile?.name,
               elements: session.existingFile?.elements,
               importedImageDataUrl: session.importedImageDataUrl,
+              isSalesTemplate: session.existingFile?.isSalesTemplate,
+              isProductionTemplate: session.existingFile?.isProductionTemplate,
+              batch: session.batchContext,
+              productionContext: session.productionContext,
             }}
             onSave={async (data, fileId) => {
               if (fileId) {
@@ -4736,11 +4747,13 @@ export default function App() {
             accounts={accounts}
             onSaveTransaction={async (newTx) => {
               try {
-                await financeService.createTransaction(newTx);
+                const txId = await financeService.createTransaction(newTx);
                 toast.show('Pagamento registrado com sucesso!');
+                return txId;
               } catch (err: any) {
                 console.error('onSaveTransaction error:', err);
                 toast.show('Erro ao registrar pagamento: ' + (err.message || err));
+                return '';
               }
             }}
             onUpdatePurchase={async (id, updates) => {
@@ -4950,11 +4963,20 @@ export default function App() {
                     status: "COMPLETED",
                     relatedId: purchase.id,
                   };
-                  await firebaseService.saveDocument("transactions", newTransaction);
+                  const savedTx = await firebaseService.saveDocument("transactions", newTransaction);
 
                   const acc = getAccountForUpdate(purchase.accountId);
                   if (acc) {
                     acc.balance -= purchase.total;
+                  }
+
+                  // Compra vinda de "Ordens de Serviço a Fornecedores" (Financeiro) paga à
+                  // vista — grava o transactionId de volta em cada OS de origem (ver
+                  // GeneralPurchaseItem.serviceOrderId), fechando o saldo "em aberto" sozinho,
+                  // igual ao caminho de pagamento parcial (ver onPartialPay em PurchasesView.tsx).
+                  const linkedServiceOrderItems = (purchase.generalItems || []).filter(item => item.serviceOrderId);
+                  for (const item of linkedServiceOrderItems) {
+                    await firebaseService.updateDocument("serviceOrders", item.serviceOrderId!, { transactionId: savedTx.id, updatedAt: Date.now() });
                   }
                 }
 
@@ -5507,6 +5529,12 @@ export default function App() {
             onReleaseOrphanedLot={handleReleaseOrphanedLot}
             onNavigateProducts={() => navigateTo(ViewType.PRODUCTS)}
             onAddProduct={handleOpenProductCreationChoice}
+            // Editor de etiquetas livre (com campos vinculados à venda), padrão de impressão de
+            // etiqueta de Vendas — ver handleOpenSaleLabels em SalesView.tsx. Vai direto pro
+            // editor (LabelProfilePickerModal, dentro do próprio SalesView, é quem lista/filtra
+            // os perfis agora — não passa mais pela tela genérica LabelPrintStudioView pra esse fluxo).
+            onOpenLabelEditor={(params) => navigateTo(ViewType.LABEL_EDITOR, params)}
+            labelFiles={labelFiles}
             productionConfigs={productionConfigs}
             carriers={carriers}
             onSendToRouteBuilder={(saleId) => navigateTo(ViewType.DELIVERY_ROUTE_BUILDER, { preselectSaleId: saleId })}
@@ -5582,6 +5610,8 @@ export default function App() {
             onOpenPurchase={(id) => navigateTo(ViewType.PURCHASE_FORM, id)}
             onOpenSale={(id) => navigateTo(ViewType.SALE_FORM, id)}
             onPayCommission={(params) => navigateTo(ViewType.PURCHASE_FORM, { type: PurchaseType.GENERAL, ...params })}
+            serviceOrders={serviceOrders}
+            onPayProviderServiceOrders={(params) => navigateTo(ViewType.PURCHASE_FORM, { type: PurchaseType.GENERAL, ...params })}
             isDarkMode={isDarkMode}
           />
         );
@@ -6204,6 +6234,7 @@ export default function App() {
             palmilhaStock={palmilhaStockEntries}
             onNavigate={navigateTo}
             onNavigateProduction={navigateToProduction}
+            labelFiles={labelFiles}
             purchaseRequests={purchaseRequests}
             onRequestPurchase={handleCreatePurchaseRequest}
             initialTab={currentParams?.initialTab}
@@ -7035,7 +7066,7 @@ export default function App() {
       case ViewType.SALE_FORM:
         return "Lançamento de Venda";
       case ViewType.PURCHASE_FORM:
-        return "Lançamento de Compra";
+        return "Compras e Despesas";
       case ViewType.PERSON_DETAIL:
         return "Detalhes do Cadastro";
       case ViewType.COMPANY_PROFILE:

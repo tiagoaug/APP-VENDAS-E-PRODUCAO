@@ -61,7 +61,7 @@ export default function BackupView({
     { id: 'CORES',     label: 'Cores',                sub: 'Catálogo de cores',            count: colorsCount },
     { id: 'SETORES',   label: 'Setores de Produção',  sub: 'Corte, costura, etc.',         count: sectorsCount },
     { id: 'ETAPAS',    label: 'Etapas / Flow Tags',   sub: 'Fluxo de produção',            count: flowTagsCount },
-    { id: 'SOLADOS',   label: 'Solados / Matrizes',   sub: 'Moldes e estoque de solados',  count: productionConfigs.filter(c => c.type === 'MOLD').length + soleStockEntries.length },
+    { id: 'SOLADOS',   label: 'Solados / Matrizes',   sub: 'Matrizes e estoque de solados',  count: productionConfigs.filter(c => c.type === 'MOLD').length + soleStockEntries.length },
     { id: 'PRAZOS',    label: 'Prazos',               sub: 'Configurações de prazo',       count: productionConfigs.filter(c => c.type === 'DEADLINE').length },
     { id: 'INFESTO',   label: 'Infesto',              sub: 'Configurações de infesto',     count: productionConfigs.filter(c => c.type === 'INFESTO').length },
     { id: 'EMBALAGENS',label: 'Padrão de Embalagens', sub: 'Modelos de embalagem',         count: productionConfigs.filter(c => c.type === 'PACKAGING').length },
