@@ -852,31 +852,90 @@ export default function PCPView({
     return productionOrders.filter(order => orderIds.has(order.id));
   }, [productionOrders, pendingItems]);
 
+  // Shape de um item de necessidade — extraído como tipo nomeado (em vez de inline em
+  // buildPurchaseNeeds) porque computeSoleTransitAwareShortage precisa dele e é chamada de
+  // DENTRO de buildPurchaseNeeds (necessidade de material gerada por composição de solado,
+  // ver abaixo) — usar `typeof purchaseNeeds[0]` não funcionaria aqui por depender de uma
+  // const declarada mais abaixo no componente.
+  type PurchaseNeedItem = {
+    id: string;
+    name: string;
+    required: number;
+    stock: number;
+    minStock: number;
+    unit: string;
+    type: 'MATERIAL' | 'SOLE';
+    materialId?: string;
+    moldId?: string;
+    colorId?: string;
+    size?: string;
+    sizeShortages?: Record<string, { required: number, stock: number }>;
+    contributingLots: string[];
+    contributingOrders: string[];
+    mappingWarning?: string;
+    mappingDiagnostic?: string;
+    // Detalhamento por mapa/pedido/solado: pares contribuídos e subtotal gerado para este
+    // material — permite auditar visualmente a soma sem precisar abrir cada mapa manualmente.
+    sourceBreakdown?: Record<string, { label: string; sourceType: 'LOT' | 'ORDER' | 'SOLE'; pairs: number; increment: number }>;
+  };
+
+  // Falta REAL de um item de necessidade, descontando tanto o estoque quanto compras de solado
+  // já em trânsito (pedidas mas não recebidas) — sem isso, o card de necessidade pede pra
+  // comprar de novo algo que já foi pedido e só está esperando chegar. Só se aplica a SOLE (é
+  // onde existe rastreio de compra em trânsito por grade); MATERIAL usa a falta bruta mesmo.
+  // Precisa estar declarada ANTES de buildPurchaseNeeds porque agora é chamada de dentro dela
+  // (expansão da composição de solado em necessidade de material, ver mais abaixo).
+  const computeSoleTransitAwareShortage = (item: PurchaseNeedItem) => {
+    if (item.type !== 'SOLE' || !item.sizeShortages) {
+      const gross = Math.max(0, item.required - item.stock);
+      return { totalNet: gross, totalInTransit: 0, totalGross: gross };
+    }
+    const realGradeStock: Record<string, number> = {};
+    soleStock
+      .filter(s => s.moldId === item.moldId && String(s.colorId || '').trim() === String(item.colorId || '').trim())
+      .forEach(e => {
+        Object.entries(e.stock).forEach(([k, v]) => {
+          const key = String(k).trim();
+          if (key === 'pesagem' || key === 'total') return;
+          realGradeStock[key] = (realGradeStock[key] || 0) + (Number(v) || 0);
+        });
+      });
+    const inTransitByGrade: Record<string, number> = {};
+    purchases
+      .filter(p => {
+        if (p.registerAsReceived === true) return false;
+        const si: any[] = (p as any).soleItems || (p as any).items || [];
+        return si.some((s: any) => s.moldId);
+      })
+      .forEach(p => {
+        const allItems: any[] = (p as any).soleItems || (p as any).items || [];
+        allItems
+          .filter((si: any) => si.moldId && String(si.moldId).trim() === String(item.moldId).trim() && String(si.colorId || '').trim() === String(item.colorId || '').trim())
+          .forEach((si: any) => {
+            Object.entries(si.quantities || {}).forEach(([size, qty]: [string, any]) => {
+              const q = Number(qty) || 0;
+              if (q > 0) inTransitByGrade[size] = (inTransitByGrade[size] || 0) + q;
+            });
+          });
+      });
+    let totalNet = 0, totalGross = 0, totalInTransit = 0;
+    Object.keys(item.sizeShortages).forEach(grade => {
+      const req = (item.sizeShortages as any)[grade].required;
+      const stock = realGradeStock[grade] || 0;
+      const gross = Math.max(0, req - stock);
+      const transit = Math.min(inTransitByGrade[grade] || 0, gross);
+      totalGross += gross;
+      totalInTransit += transit;
+      totalNet += gross - transit;
+    });
+    return { totalNet, totalInTransit, totalGross, realGradeStock, inTransitByGrade };
+  };
+
   // Núcleo do cálculo de necessidades — extraído em função para poder ser reaproveitado tanto
   // para a lista filtrada exibida (conforme needsSourceFilter) quanto para a checagem "existe
   // alguma necessidade em qualquer origem" usada no indicador da aba (independe do filtro ativo).
   const buildPurchaseNeeds = (sourceFilter: 'LOTS' | 'ORDERS' | 'BOTH' | 'SELECTED_ORDERS', selectedOrderIds?: Set<string>) => {
-    const materialReqs: Record<string, {
-      id: string;
-      name: string;
-      required: number;
-      stock: number;
-      minStock: number;
-      unit: string;
-      type: 'MATERIAL' | 'SOLE';
-      materialId?: string;
-      moldId?: string;
-      colorId?: string;
-      size?: string;
-      sizeShortages?: Record<string, { required: number, stock: number }>;
-      contributingLots: string[];
-      contributingOrders: string[];
-      mappingWarning?: string;
-      mappingDiagnostic?: string;
-      // Detalhamento por mapa/pedido: pares contribuídos e subtotal gerado para este material —
-      // permite auditar visualmente a soma sem precisar abrir cada mapa manualmente.
-      sourceBreakdown?: Record<string, { label: string; sourceType: 'LOT' | 'ORDER'; pairs: number; increment: number }>;
-    }> = {};
+    const materialReqs: Record<string, PurchaseNeedItem> = {};
 
     const sizeToGradeCache: Record<string, Record<string, string>> = {};
     const moldHasStockEntries: Record<string, boolean> = {};
@@ -1207,6 +1266,68 @@ export default function PCPView({
       }
     });
 
+    // Expande a demanda de cada Solado (SOLE) em necessidade de MATERIAL, usando a composição
+    // de insumos cadastrada na Matriz (metadata.composition) — só para matrizes que realmente
+    // compram/consomem material pra fabricar a própria sola (Pergunta 1 do cadastro de Solado).
+    // A quantidade usada é o "totalNet" (pares que ainda faltam ser PRODUZIDOS, já descontando
+    // estoque de sola E compras de sola em trânsito) — solado comprado pronto de terceiro, ou já
+    // coberto por uma compra de sola em trânsito, não deve gerar necessidade de matéria-prima.
+    Object.values(materialReqs).forEach(item => {
+      if (item.type !== 'SOLE' || !item.moldId) return;
+      const mold = productionConfigs.find(c => c.id === item.moldId);
+      const composition = mold?.metadata?.composition || [];
+      if (composition.length === 0) return;
+      const buysMaterials = mold?.metadata?.buysMaterials
+        ?? ((mold?.metadata?.composition?.length ?? 0) > 0 || !!mold?.metadata?.baseMaterialId);
+      if (!buysMaterials) return;
+
+      const { totalNet } = computeSoleTransitAwareShortage(item);
+      if (totalNet <= 0) return;
+
+      const sizeWeightValues = Object.values(mold?.metadata?.sizeWeights || {}).filter((w: any) => w > 0) as number[];
+      const avgPairWeight = mold?.metadata?.averageWeight
+        || (sizeWeightValues.length > 0 ? sizeWeightValues.reduce((a, b) => a + b, 0) / sizeWeightValues.length : 0);
+
+      composition.forEach(comp => {
+        if (!comp.materialId) return;
+        const gramsPerPair = comp.type === 'percentage' ? (avgPairWeight * (comp.quantity / 100)) : comp.quantity;
+        if (!(gramsPerPair > 0)) return;
+        // Composição sempre em gramas por par; estoque/preço do insumo são tratados em KG —
+        // mesma convenção já assumida (sem checar unitId) pelo campo "Material Base" do solado.
+        const incrementKg = (totalNet * gramsPerPair) / 1000;
+
+        const matConfig = productionConfigs.find(c => c.id === comp.materialId);
+        // Sem dimensão de cor — composição de solado não distingue cor. Chave própria (só o
+        // materialId, sem sufixo de cor) pra não colidir com uma necessidade por cor já
+        // existente do mesmo insumo vinda do consumo de cabedal.
+        const key = String(comp.materialId).trim();
+        if (!materialReqs[key]) {
+          materialReqs[key] = {
+            id: key,
+            materialId: comp.materialId,
+            name: `${matConfig?.name || 'Material'} (uso em solado)`,
+            required: 0,
+            stock: getMaterialStockForColor(matConfig, undefined),
+            minStock: matConfig?.metadata?.minStock || 0,
+            unit: productionConfigs.find(c => c.id === matConfig?.metadata?.unitId)?.name || 'KG',
+            type: 'MATERIAL',
+            contributingLots: [],
+            contributingOrders: [],
+            sourceBreakdown: {}
+          };
+        }
+        materialReqs[key].required += incrementKg;
+
+        const sbKey = `SOLE_${item.moldId}_${item.colorId || 'default'}`;
+        if (!materialReqs[key].sourceBreakdown) materialReqs[key].sourceBreakdown = {};
+        if (!materialReqs[key].sourceBreakdown![sbKey]) {
+          materialReqs[key].sourceBreakdown![sbKey] = { label: item.name, sourceType: 'SOLE', pairs: 0, increment: 0 };
+        }
+        materialReqs[key].sourceBreakdown![sbKey].pairs += totalNet;
+        materialReqs[key].sourceBreakdown![sbKey].increment += incrementKg;
+      });
+    });
+
     return Object.values(materialReqs).filter(item => {
       if (item.type === 'SOLE' && item.sizeShortages) {
         // Só aparece se houver falta real em pelo menos uma grade
@@ -1220,56 +1341,6 @@ export default function PCPView({
     () => buildPurchaseNeeds(needsSourceFilter, selectedNeedsOrderIds),
     [needsSourceFilter, selectedNeedsOrderIds, activeLots, productionConfigs, soleStock, products, colors, pendingItems]
   );
-
-  // Falta REAL de um item de necessidade, descontando tanto o estoque quanto compras de solado
-  // já em trânsito (pedidas mas não recebidas) — sem isso, o card de necessidade pede pra
-  // comprar de novo algo que já foi pedido e só está esperando chegar. Só se aplica a SOLE (é
-  // onde existe rastreio de compra em trânsito por grade); MATERIAL usa a falta bruta mesmo.
-  const computeSoleTransitAwareShortage = (item: typeof purchaseNeeds[0]) => {
-    if (item.type !== 'SOLE' || !item.sizeShortages) {
-      const gross = Math.max(0, item.required - item.stock);
-      return { totalNet: gross, totalInTransit: 0, totalGross: gross };
-    }
-    const realGradeStock: Record<string, number> = {};
-    soleStock
-      .filter(s => s.moldId === item.moldId && String(s.colorId || '').trim() === String(item.colorId || '').trim())
-      .forEach(e => {
-        Object.entries(e.stock).forEach(([k, v]) => {
-          const key = String(k).trim();
-          if (key === 'pesagem' || key === 'total') return;
-          realGradeStock[key] = (realGradeStock[key] || 0) + (Number(v) || 0);
-        });
-      });
-    const inTransitByGrade: Record<string, number> = {};
-    purchases
-      .filter(p => {
-        if (p.registerAsReceived === true) return false;
-        const si: any[] = (p as any).soleItems || (p as any).items || [];
-        return si.some((s: any) => s.moldId);
-      })
-      .forEach(p => {
-        const allItems: any[] = (p as any).soleItems || (p as any).items || [];
-        allItems
-          .filter((si: any) => si.moldId && String(si.moldId).trim() === String(item.moldId).trim() && String(si.colorId || '').trim() === String(item.colorId || '').trim())
-          .forEach((si: any) => {
-            Object.entries(si.quantities || {}).forEach(([size, qty]: [string, any]) => {
-              const q = Number(qty) || 0;
-              if (q > 0) inTransitByGrade[size] = (inTransitByGrade[size] || 0) + q;
-            });
-          });
-      });
-    let totalNet = 0, totalGross = 0, totalInTransit = 0;
-    Object.keys(item.sizeShortages).forEach(grade => {
-      const req = (item.sizeShortages as any)[grade].required;
-      const stock = realGradeStock[grade] || 0;
-      const gross = Math.max(0, req - stock);
-      const transit = Math.min(inTransitByGrade[grade] || 0, gross);
-      totalGross += gross;
-      totalInTransit += transit;
-      totalNet += gross - transit;
-    });
-    return { totalNet, totalInTransit, totalGross, realGradeStock, inTransitByGrade };
-  };
 
   // Agrupamento de necessidades (por material/molde) — fonte única compartilhada pelos cards
   // minimizados do PCP Central e pelo popup de detalhes do grupo, pra não duplicar a lógica.

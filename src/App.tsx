@@ -695,6 +695,32 @@ export default function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [grids, setGrids] = useState<Grid[]>([]);
+  // Reaproveitados pelo popup "Buscar Grade" do cadastro de Solados (ProductionConfigView),
+  // mesmo corpo do onAdd/onEdit/onDelete já usados em GradesView.
+  const handleCreateGrid = async (newGrid: Omit<Grid, 'id'>) => {
+    try {
+      await firebaseService.saveDocument("grids", newGrid);
+      toast.show('Grade salva!');
+    } catch (err: any) {
+      toast.show('Erro ao salvar grade: ' + (err.message || err));
+    }
+  };
+  const handleUpdateGrid = async (id: string, updatedGrid: Omit<Grid, 'id'>) => {
+    try {
+      await firebaseService.updateDocument("grids", id, updatedGrid);
+      toast.show('Grade atualizada!');
+    } catch (err: any) {
+      toast.show('Erro ao atualizar grade: ' + (err.message || err));
+    }
+  };
+  const handleDeleteGrid = async (id: string) => {
+    try {
+      await firebaseService.deleteDocument("grids", id);
+      toast.show('Grade excluída!');
+    } catch (err: any) {
+      toast.show('Erro ao excluir grade: ' + (err.message || err));
+    }
+  };
   const [labelPaperSizes, setLabelPaperSizes] = useState<LabelPaperSize[]>([]);
   const [labelFiles, setLabelFiles] = useState<LabelFile[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
@@ -6497,6 +6523,21 @@ export default function App() {
             sectors={sectors}
             productionConfigs={productionConfigs}
             onSaveFlowTag={(tag: any) => firebaseService.saveDocument("flowTags", tag)}
+            onQuickAddFlowTag={async (tag: any) => {
+              const result = await firebaseService.saveDocument("flowTags", tag);
+              toast.show('Fluxo cadastrado!');
+              return result as FlowTag;
+            }}
+            onQuickAddCategory={async (cat: any) => {
+              const result = await firebaseService.saveDocument("categories", cat);
+              toast.show('Categoria cadastrada!');
+              return result as Category;
+            }}
+            onQuickAddPerson={async (person: any) => {
+              const result = await firebaseService.saveDocument("people", person);
+              toast.show('Fornecedor cadastrado!');
+              return result as Person;
+            }}
             onDeleteFlowTag={(id: string) => firebaseService.deleteDocument("flowTags", id)}
             onSaveSector={(sector: any) => firebaseService.saveDocument("sectors", sector)}
             onDeleteSector={(id: string) => firebaseService.deleteDocument("sectors", id)}
@@ -6519,6 +6560,9 @@ export default function App() {
             people={people}
             colors={colors}
             grids={grids}
+            onCreateGrid={handleCreateGrid}
+            onUpdateGrid={handleUpdateGrid}
+            onDeleteGrid={handleDeleteGrid}
             categories={categories}
             initialScreen={productionSubScreen}
             onNavigate={navigateTo}
@@ -7032,6 +7076,21 @@ export default function App() {
             sectors={sectors}
             productionConfigs={productionConfigs}
             onSaveFlowTag={(tag: any) => firebaseService.saveDocument("flowTags", tag)}
+            onQuickAddFlowTag={async (tag: any) => {
+              const result = await firebaseService.saveDocument("flowTags", tag);
+              toast.show('Fluxo cadastrado!');
+              return result as FlowTag;
+            }}
+            onQuickAddCategory={async (cat: any) => {
+              const result = await firebaseService.saveDocument("categories", cat);
+              toast.show('Categoria cadastrada!');
+              return result as Category;
+            }}
+            onQuickAddPerson={async (person: any) => {
+              const result = await firebaseService.saveDocument("people", person);
+              toast.show('Fornecedor cadastrado!');
+              return result as Person;
+            }}
             onDeleteFlowTag={(id: string) => firebaseService.deleteDocument("flowTags", id)}
             onSaveSector={(sector: any) => firebaseService.saveDocument("sectors", sector)}
             onDeleteSector={(id: string) => firebaseService.deleteDocument("sectors", id)}
@@ -7054,6 +7113,9 @@ export default function App() {
             people={people}
             colors={colors}
             grids={grids}
+            onCreateGrid={handleCreateGrid}
+            onUpdateGrid={handleUpdateGrid}
+            onDeleteGrid={handleDeleteGrid}
             categories={categories}
             initialScreen="INSUMOS"
             onNavigate={navigateTo}

@@ -3167,13 +3167,28 @@ export default function SalesView({
                     const willRelease = Math.min(removeQty, row.separated);
                     return (
                       <div key={row.idx} className={`p-3 rounded-2xl border ${isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-100'}`}>
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <div className="min-w-0">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[10px] font-black uppercase tracking-wider">
-                              {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
-                              {row.variation?.colorName && ` · ${row.variation.colorName}`}
-                            </span>
-                            {row.item.size && <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1">Nº {row.item.size}</p>}
+                        <div className="flex items-start justify-between gap-2 mb-2">
+                          <div className="flex items-start gap-2 min-w-0">
+                            {showSeparationThumbnails && (() => {
+                              const photo = row.variation?.photoUrl || row.product?.photoUrl;
+                              return (
+                                <div
+                                  onClick={photo ? (e) => { e.stopPropagation(); setZoomedThumbnail(photo); } : undefined}
+                                  className={`w-10 h-10 rounded-xl overflow-hidden shrink-0 flex items-center justify-center border ${photo ? 'cursor-zoom-in' : ''} ${isDarkMode ? 'bg-slate-900 border-slate-700' : 'bg-white border-slate-200'}`}
+                                >
+                                  {photo
+                                    ? <img src={photo} alt={row.product?.name} className="w-full h-full object-cover" />
+                                    : <Package size={16} className="text-slate-300" />}
+                                </div>
+                              );
+                            })()}
+                            <div className="min-w-0">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-slate-900 dark:bg-slate-700 text-white text-[10px] font-black uppercase tracking-wider">
+                                {row.product?.reference && `${row.product.reference} · `}{row.product?.name}
+                                {row.variation?.colorName && ` · ${row.variation.colorName}`}
+                              </span>
+                              {row.item.size && <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mt-1">Nº {row.item.size}</p>}
+                            </div>
                           </div>
                           <span className="text-[11px] font-black text-slate-400 shrink-0">{row.item.quantity} {row.unit}</span>
                         </div>

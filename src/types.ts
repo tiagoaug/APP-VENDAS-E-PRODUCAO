@@ -803,6 +803,7 @@ export enum CategoryType {
   GENERAL = 'GENERAL',
   SUPPLY = 'SUPPLY',
   CUTTING_TOOL = 'CUTTING_TOOL',
+  MOLD = 'MOLD',
   OTHER = 'OTHER',
 }
 
@@ -1322,6 +1323,9 @@ export type ProductionConfigItem = {
     category?: string;
     moldReference?: string;
     hasTransfer?: boolean;
+    buysMaterials?: boolean;
+    hasSoleServices?: boolean;
+    tracksWeight?: boolean;
     colorVariations?: { colorId: string; colorName?: string; subRef: string }[];
     sizeWeights?: Record<string, number>;
     averageWeight?: number;

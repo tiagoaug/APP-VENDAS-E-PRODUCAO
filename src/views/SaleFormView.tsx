@@ -1724,23 +1724,24 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
           </div>
         )}
 
-        <div className="flex items-center justify-between mb-4 px-2">
-            <div>
-               <h3 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400 leading-none">Cesta de Itens</h3>
-               <p className="text-[8px] text-slate-300 font-bold uppercase tracking-widest mt-1">Selecione os produtos e variações</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowProductModal(true)}
-                data-guide-anchor="saleForm.adicionarModelo"
-                className={`flex items-center gap-2 font-black text-[10px] uppercase tracking-widest bg-slate-900 dark:bg-indigo-600 text-white px-5 py-3 rounded-2xl shadow-xl active:scale-95 transition-all`}
-                aria-label="Adicionar modelo à cesta"
-                title="Adicionar Modelo"
-              >
-                <Plus size={14} strokeWidth={3} /> Modelo
-              </button>
-            </div>
+        <div className="mb-4 px-2">
+            <h3 className="text-[11px] font-black uppercase tracking-[0.15em] text-slate-400 leading-none">Cesta de Itens</h3>
+            <p className="text-[8px] text-slate-300 font-bold uppercase tracking-widest mt-1">Selecione os produtos e variações</p>
         </div>
+
+        <button
+          onClick={() => setShowProductModal(true)}
+          data-guide-anchor="saleForm.adicionarModelo"
+          className="w-full flex items-center justify-center gap-5 font-black text-[11px] uppercase tracking-widest bg-slate-900 dark:bg-indigo-600 text-white py-4 rounded-2xl shadow-xl active:scale-95 transition-all mb-4"
+          aria-label="Adicionar modelo à cesta"
+          title="Adicionar Modelo"
+        >
+          Adicionar Produtos
+          <span className="relative w-7 h-7 rounded-full bg-white/15 flex items-center justify-center">
+            <span className="absolute inset-0.5 rounded-full bg-white animate-ping opacity-50" />
+            <Plus size={16} strokeWidth={3} className="relative text-white" />
+          </span>
+        </button>
 
         <div className="flex flex-col gap-4">
           {blocks.map((block, index) => {
@@ -1754,8 +1755,12 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
               <div key={block.id} className={`rounded-[2.5rem] border shadow-sm flex flex-col relative overflow-hidden ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                 <div className="p-5 flex justify-between items-start gap-4">
                    <div className="flex gap-4 flex-1">
-                      <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700 shrink-0">
-                        <Package size={24} className="text-slate-400 dark:text-slate-600" />
+                      <div className="w-14 h-14 rounded-2xl bg-slate-50 dark:bg-slate-800 flex items-center justify-center border border-slate-100 dark:border-slate-700 shrink-0 overflow-hidden">
+                        {product.photoUrl ? (
+                          <img src={product.photoUrl} alt={product.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <Package size={24} className="text-slate-400 dark:text-slate-600" />
+                        )}
                       </div>
                       <div className="flex flex-col justify-center relative flex-1 min-w-0">
                         <h4 className="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-slate-100 truncate pr-4">
@@ -3193,8 +3198,12 @@ export default function SaleFormView({ saleId, sales, products, grids, people, p
                         }`}
                       >
                         <div className="flex items-center gap-4">
-                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isBlocked ? 'bg-slate-100 dark:bg-slate-800' : 'bg-indigo-50 dark:bg-indigo-900/20'}`}>
-                            <Package size={20} className={isBlocked ? 'text-slate-400' : 'text-indigo-500'} />
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center overflow-hidden ${isBlocked ? 'bg-slate-100 dark:bg-slate-800' : 'bg-indigo-50 dark:bg-indigo-900/20'}`}>
+                            {p.photoUrl ? (
+                              <img src={p.photoUrl} alt={p.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <Package size={20} className={isBlocked ? 'text-slate-400' : 'text-indigo-500'} />
+                            )}
                           </div>
                           <div>
                             <h4 className="text-[13px] font-black uppercase tracking-tight text-slate-800 dark:text-white line-clamp-1">{p.name}</h4>

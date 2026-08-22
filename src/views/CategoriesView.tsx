@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Category, CategoryType, AppModulesConfig, ViewType, CategoryTemplate } from '../types';
-import { Search, Plus, Tags, Trash2, Edit, ShoppingBag, TrendingDown, TrendingUp, Factory, LayoutGrid, User, Package, PlusCircle, Settings, ChevronRight, ChevronDown, Scissors, Bookmark, BookmarkCheck, Sparkles } from 'lucide-react';
+import { Search, Plus, Tags, Trash2, Edit, ShoppingBag, TrendingDown, TrendingUp, Factory, LayoutGrid, User, Package, PlusCircle, Settings, ChevronRight, ChevronDown, Scissors, Bookmark, BookmarkCheck, Sparkles, Footprints } from 'lucide-react';
 
 import CategoryModal from '../components/CategoryModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -38,6 +38,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
     { id: CategoryType.PRODUCTION, label: 'Produção', icon: <Factory size={14} />, color: 'bg-orange-500', text: 'text-orange-600', module: 'production' },
     { id: CategoryType.SUPPLY, label: 'Insumos', icon: <Package size={14} />, color: 'bg-emerald-500', text: 'text-emerald-600', module: 'production' },
     { id: CategoryType.CUTTING_TOOL, label: 'Facas', icon: <Scissors size={14} />, color: 'bg-orange-500', text: 'text-orange-600', module: 'production' },
+    { id: CategoryType.MOLD, label: 'Solados', icon: <Footprints size={14} />, color: 'bg-cyan-500', text: 'text-cyan-600', module: 'production' },
     { id: CategoryType.GENERAL, label: 'Gerais', icon: <LayoutGrid size={14} />, color: 'bg-blue-500', text: 'text-blue-600', module: 'sales' },
     { id: CategoryType.OTHER, label: 'Pessoais', icon: <User size={14} />, color: 'bg-indigo-500', text: 'text-indigo-600', module: 'personal' },
   ];
@@ -62,7 +63,7 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
     const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase());
     const categoryModule = getCategoryModules(c.module).length > 0
       ? c.module
-      : (c.type === CategoryType.PRODUCTION || c.type === CategoryType.SUPPLY || c.type === CategoryType.CUTTING_TOOL ? 'production' : c.isPersonal ? 'personal' : 'sales');
+      : (c.type === CategoryType.PRODUCTION || c.type === CategoryType.SUPPLY || c.type === CategoryType.CUTTING_TOOL || c.type === CategoryType.MOLD ? 'production' : c.isPersonal ? 'personal' : 'sales');
     if (!categoryModulesInclude(categoryModule, modulesConfig)) return false;
 
     if (activeTab === CategoryType.OTHER) {
@@ -103,6 +104,13 @@ export default function CategoriesView({ categories, onAdd, onEdit, onDelete, is
       wrap: 'bg-orange-50/30 dark:bg-orange-950/20 border-orange-100/50 dark:border-orange-900/30',
       header: 'text-orange-600 dark:text-orange-400',
       activeBtn: 'text-orange-600 border-orange-100 hover:border-orange-500 dark:text-orange-400 dark:border-orange-900',
+    },
+    [CategoryType.MOLD]: {
+      names: ['SOLADO', 'SALTO', 'PALMILHA'],
+      color: 'bg-cyan-500',
+      wrap: 'bg-cyan-50/30 dark:bg-cyan-950/20 border-cyan-100/50 dark:border-cyan-900/30',
+      header: 'text-cyan-600 dark:text-cyan-400',
+      activeBtn: 'text-cyan-600 border-cyan-100 hover:border-cyan-500 dark:text-cyan-400 dark:border-cyan-900',
     },
     [CategoryType.OTHER]: {
       names: ['ALIMENTAÇÃO', 'TRANSPORTE', 'SAÚDE', 'LAZER', 'MORADIA', 'EDUCAÇÃO', 'VESTUÁRIO'],

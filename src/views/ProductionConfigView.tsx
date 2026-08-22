@@ -82,8 +82,9 @@ import {
   EyeOff,
   Info
 } from 'lucide-react';
-import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, ProductionScreenType, ViewType, Product, SoleStockEntry, ProductionLot } from '../types';
+import { FlowTag, Sector, ProductionConfigItem, Person, ColorValue, Grid, GridType, CategoryType, Category, ProductionScreenType, ViewType, Product, SoleStockEntry, ProductionLot } from '../types';
 import Modal from '../components/Modal';
+import PersonModal from '../components/PersonModal';
 import ComboBox from '../components/ComboBox';
 import ConfigMenuItem from '../components/ConfigMenuItem';
 import CalculatorModal from '../components/CalculatorModal';
@@ -406,6 +407,17 @@ interface ProductionConfigViewProps {
   productionConfigs?: ProductionConfigItem[];
   onSaveFlowTag: (tag: FlowTag) => Promise<void>;
   onDeleteFlowTag: (id: string) => Promise<void>;
+  // Cadastro rápido de Fluxo/Setor sem sair da tela de origem (ex: Solados) — diferente de
+  // onSaveFlowTag (usado pela própria tela de gestão de Flow Tags), este retorna o registro
+  // criado (com id) pra já poder ser selecionado no formulário que chamou.
+  onQuickAddFlowTag?: (tag: Omit<FlowTag, 'id'>) => Promise<FlowTag>;
+  // Cadastro rápido de Categoria (ex: categoria de Solado) sem sair da tela de origem —
+  // retorna o registro criado (com id) mesmo a Categoria em si guardando só o nome (string)
+  // nos metadados do item, igual já acontece com Categoria Mestre de Insumos.
+  onQuickAddCategory?: (category: Omit<Category, 'id'>) => Promise<Category>;
+  // Cadastro rápido de Fornecedor sem sair do cadastro de Solados — mesmo padrão já usado em
+  // PurchaseFormView/SaleFormView (PersonModal + onQuickAddPerson).
+  onQuickAddPerson?: (person: Omit<Person, 'id'>) => Promise<Person>;
   onSaveSector: (sector: Sector) => Promise<void>;
   onDeleteSector: (id: string) => Promise<void>;
   onSaveConfigItem: (item: ProductionConfigItem) => Promise<void>;
@@ -417,6 +429,9 @@ interface ProductionConfigViewProps {
   people?: Person[];
   colors?: ColorValue[];
   grids?: Grid[];
+  onCreateGrid?: (grid: Omit<Grid, 'id'>) => Promise<void>;
+  onUpdateGrid?: (id: string, grid: Omit<Grid, 'id'>) => Promise<void>;
+  onDeleteGrid?: (id: string) => Promise<void>;
   categories?: any[];
   initialScreen?: ProductionScreenType;
   onNavigate?: (view: ViewType) => void;
@@ -449,6 +464,9 @@ export default function ProductionConfigView({
   productionConfigs = [],
   onSaveFlowTag,
   onDeleteFlowTag,
+  onQuickAddFlowTag,
+  onQuickAddCategory,
+  onQuickAddPerson,
   onSaveSector,
   onDeleteSector,
   onSaveConfigItem,
@@ -459,6 +477,9 @@ export default function ProductionConfigView({
   people = [],
   colors = [],
   grids = [],
+  onCreateGrid,
+  onUpdateGrid,
+  onDeleteGrid,
   categories = [],
   initialScreen = 'MENU',
   onNavigate,
@@ -504,6 +525,15 @@ export default function ProductionConfigView({
 
     if (fromSystem.length > 0) return fromSystem;
     return ['LATERAL', 'FRENTE', 'TRASEIRA', 'BIQUEIRA', 'CONTRAFORTE', 'PALMILHA', 'VIRA', 'OUTROS'];
+  }, [categories]);
+
+  const moldCategoryNames = useMemo(() => {
+    const fromSystem = categories
+      .filter(c => c.type === CategoryType.MOLD)
+      .map(c => c.name.toUpperCase());
+
+    if (fromSystem.length > 0) return fromSystem;
+    return ['GERAL', 'SOLADO', 'SALTO', 'PALMILHA'];
   }, [categories]);
 
   const purchaseNeeds = useMemo(() => {
@@ -1106,7 +1136,14 @@ export default function ProductionConfigView({
             people={people}
             colors={colors}
             grids={grids}
+            onCreateGrid={onCreateGrid}
+            onUpdateGrid={onUpdateGrid}
+            onDeleteGrid={onDeleteGrid}
             flowTags={flowTags}
+            onQuickAddFlowTag={onQuickAddFlowTag}
+            moldCategoryNames={moldCategoryNames}
+            onQuickAddCategory={onQuickAddCategory}
+            onQuickAddPerson={onQuickAddPerson}
             productionConfigs={productionConfigs}
             onNavigateToScreen={handleNavigateShortcut}
             soleStock={soleStock}
@@ -1328,6 +1365,13 @@ function GenericConfigList({
   flowTags = [],
   productionConfigs = [],
   grids = [],
+  onCreateGrid,
+  onUpdateGrid,
+  onDeleteGrid,
+  onQuickAddFlowTag,
+  moldCategoryNames = [],
+  onQuickAddCategory,
+  onQuickAddPerson,
   supplyCategoryNames = [],
   toolCategoryNames = [],
   products = [],
@@ -1353,6 +1397,13 @@ function GenericConfigList({
   flowTags?: FlowTag[];
   productionConfigs?: ProductionConfigItem[];
   grids?: Grid[];
+  onCreateGrid?: (grid: Omit<Grid, 'id'>) => Promise<void>;
+  onUpdateGrid?: (id: string, grid: Omit<Grid, 'id'>) => Promise<void>;
+  onDeleteGrid?: (id: string) => Promise<void>;
+  onQuickAddFlowTag?: (tag: Omit<FlowTag, 'id'>) => Promise<FlowTag>;
+  moldCategoryNames?: string[];
+  onQuickAddCategory?: (category: Omit<Category, 'id'>) => Promise<Category>;
+  onQuickAddPerson?: (person: Omit<Person, 'id'>) => Promise<Person>;
   supplyCategoryNames?: string[];
   toolCategoryNames?: string[];
   products?: Product[];
@@ -1386,6 +1437,28 @@ function GenericConfigList({
   const [isWeightsModalOpen, setIsWeightsModalOpen] = useState(false);
   const [isColorWeightsModalOpen, setIsColorWeightsModalOpen] = useState(false);
   const [gridSuccess, setGridSuccess] = useState(false);
+  const [isGridSearchOpen, setIsGridSearchOpen] = useState(false);
+  const [gridSearchTerm, setGridSearchTerm] = useState('');
+  const [isCreatingGridInline, setIsCreatingGridInline] = useState(false);
+  const [editingGridId, setEditingGridId] = useState<string | null>(null);
+  const [newGridName, setNewGridName] = useState('');
+  const [newGridSizes, setNewGridSizes] = useState<string[]>([]);
+  const [newGridSizeInput, setNewGridSizeInput] = useState('');
+  const [isFlowTagPickerOpen, setIsFlowTagPickerOpen] = useState(false);
+  const [flowTagSearch, setFlowTagSearch] = useState('');
+  const [isCreatingFlowTagInline, setIsCreatingFlowTagInline] = useState(false);
+  const [newFlowTagName, setNewFlowTagName] = useState('');
+  const [isMaterialPickerOpen, setIsMaterialPickerOpen] = useState(false);
+  const [materialPickerTarget, setMaterialPickerTarget] = useState<'base' | number | null>(null);
+  const [materialPickerSearch, setMaterialPickerSearch] = useState('');
+  const [isCategoryPickerOpen, setIsCategoryPickerOpen] = useState(false);
+  const [categorySearch, setCategorySearch] = useState('');
+  const [isCreatingCategoryInline, setIsCreatingCategoryInline] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryType, setNewCategoryType] = useState<CategoryType>(CategoryType.MOLD);
+  const [isSupplierPickerOpen, setIsSupplierPickerOpen] = useState(false);
+  const [supplierSearch, setSupplierSearch] = useState('');
+  const [isQuickPersonModalOpen, setIsQuickPersonModalOpen] = useState(false);
   const [activeCalc, setActiveCalc] = useState<{
     initialValue: number;
     onResult: (val: number) => void;
@@ -1504,6 +1577,17 @@ function GenericConfigList({
     const yld = avg > 0 ? 1000 / avg : 0;
     return { totalWeightLive: total, averageWeightLive: avg, yieldLive: yld };
   }, [editingItem?.metadata?.sizeWeights]);
+
+  // As 3 perguntas de Solado (materiais/serviços/peso) inferem o valor inicial do togle a
+  // partir de dado já cadastrado — nunca escondem, por padrão, composição/serviços/pesos que
+  // uma matriz já tinha antes dessas perguntas existirem.
+  const moldBuysMaterials = editingItem?.metadata?.buysMaterials
+    ?? ((editingItem?.metadata?.composition?.length ?? 0) > 0 || !!editingItem?.metadata?.baseMaterialId);
+  const moldHasSoleServices = editingItem?.metadata?.hasSoleServices
+    ?? ((editingItem?.metadata?.extraServices?.length ?? 0) > 0);
+  const moldTracksWeight = editingItem?.metadata?.tracksWeight
+    ?? (Object.values(editingItem?.metadata?.sizeWeights ?? {}).some(w => (w as number) > 0)
+      || Object.keys(editingItem?.metadata?.colorWeights ?? {}).length > 0);
 
   const units = useMemo(() => productionConfigs.filter(c => c.type === 'UNIT'), [productionConfigs]);
   const suppliers = useMemo(() => people.filter(p => p.isSupplier), [people]);
@@ -1714,6 +1798,170 @@ function GenericConfigList({
       metadata: { ...currentMetadata, sizes: newSizes, sizeAreas: newAreas, sizeWeights: newWeights, sizeQuantities: newQtys }
     });
   };
+
+  const applyGridToMold = (grid: Grid, sizesOverride?: string[]) => {
+    const gridSizes = sizesOverride || (grid as any).sizes || (grid as any).items?.map((i: any) => i.size) || [];
+    setEditingItem(prev => {
+      if (!prev) return null;
+      const newSizeWeights = { ...(prev.metadata?.sizeWeights || {}) };
+      gridSizes.forEach((s: string) => {
+        if (newSizeWeights[s] === undefined) newSizeWeights[s] = 0;
+      });
+      return {
+        ...prev,
+        metadata: {
+          ...prev.metadata,
+          sizes: gridSizes,
+          sizeWeights: newSizeWeights
+        }
+      };
+    });
+    setGridSuccess(true);
+    setTimeout(() => setGridSuccess(false), 2500);
+    setIsGridSearchOpen(false);
+    setIsCreatingGridInline(false);
+    setEditingGridId(null);
+    setGridSearchTerm('');
+    setNewGridName('');
+    setNewGridSizes([]);
+    setNewGridSizeInput('');
+  };
+
+  const addNewGridSize = () => {
+    const trimmed = newGridSizeInput.trim();
+    if (trimmed !== '' && !newGridSizes.includes(trimmed)) {
+      setNewGridSizes(prev => [...prev, trimmed]);
+      setNewGridSizeInput('');
+    }
+  };
+
+  const removeNewGridSize = (size: string) => {
+    setNewGridSizes(prev => prev.filter(s => s !== size));
+  };
+
+  const startCreateGrid = () => {
+    setEditingGridId(null);
+    setNewGridName('');
+    setNewGridSizes([]);
+    setIsCreatingGridInline(true);
+  };
+
+  const startEditGrid = (grid: Grid) => {
+    setEditingGridId(grid.id);
+    setNewGridName(grid.name);
+    setNewGridSizes(grid.sizes || []);
+    setIsCreatingGridInline(true);
+  };
+
+  const handleDeleteGrid = async (grid: Grid) => {
+    if (!onDeleteGrid) return;
+    if (confirm(`Deseja excluir a grade "${grid.name}"? Essa ação não pode ser desfeita.`)) {
+      await onDeleteGrid(grid.id);
+    }
+  };
+
+  const handleQuickCreateFlowTag = async () => {
+    if (!newFlowTagName.trim() || !onQuickAddFlowTag) return;
+    const created = await onQuickAddFlowTag({ name: newFlowTagName.trim().toUpperCase(), subcategories: [], isCuttingFlowTag: false });
+    setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: created.id } } : null);
+    setIsFlowTagPickerOpen(false);
+    setIsCreatingFlowTagInline(false);
+    setNewFlowTagName('');
+  };
+
+  // Mesmas cores já usadas pelas abas correspondentes em CategoriesView.tsx — mantém a nova
+  // categoria visualmente consistente onde quer que ela apareça depois.
+  const CATEGORY_TYPE_OPTIONS: { type: CategoryType; label: string; color: string }[] = [
+    { type: CategoryType.MOLD, label: 'Solados', color: 'bg-cyan-500' },
+    { type: CategoryType.SUPPLY, label: 'Insumos', color: 'bg-emerald-500' },
+    { type: CategoryType.CUTTING_TOOL, label: 'Facas', color: 'bg-orange-500' },
+    { type: CategoryType.PRODUCTION, label: 'Produção', color: 'bg-orange-500' },
+    { type: CategoryType.GENERAL, label: 'Geral', color: 'bg-blue-500' },
+  ];
+
+  const handleQuickCreateCategory = async () => {
+    if (!newCategoryName.trim() || !onQuickAddCategory) return;
+    const color = CATEGORY_TYPE_OPTIONS.find(o => o.type === newCategoryType)?.color || 'bg-cyan-500';
+    const created = await onQuickAddCategory({ name: newCategoryName.trim().toUpperCase(), type: newCategoryType, color });
+    setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, category: created.name } } : null);
+    setIsCategoryPickerOpen(false);
+    setIsCreatingCategoryInline(false);
+    setNewCategoryName('');
+    setNewCategoryType(CategoryType.MOLD);
+  };
+
+  const openMaterialPicker = (target: 'base' | number) => {
+    setMaterialPickerTarget(target);
+    setMaterialPickerSearch('');
+    setIsMaterialPickerOpen(true);
+  };
+
+  const selectMaterialForTarget = (materialId: string) => {
+    if (materialPickerTarget === 'base') {
+      const material = productionConfigs.find(m => m.id === materialId);
+      if (material) {
+        const pricePerKg = material.metadata?.baseCost || 0;
+        const avgW = averageWeightLive || 0;
+        const calcUnitCost = avgW > 0 ? parseFloat(((avgW / 1000) * pricePerKg).toFixed(4)) : 0;
+        setEditingItem(prev => prev ? {
+          ...prev,
+          metadata: { ...prev.metadata, price: pricePerKg, baseMaterialId: materialId, unitCost: calcUnitCost }
+        } : null);
+      }
+    } else if (typeof materialPickerTarget === 'number') {
+      const index = materialPickerTarget;
+      const newComp = [...(editingItem?.metadata?.composition || [])];
+      newComp[index] = { ...newComp[index], materialId };
+      setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null);
+    }
+    setIsMaterialPickerOpen(false);
+    setMaterialPickerTarget(null);
+  };
+
+  const handleSaveInlineGrid = async () => {
+    if (!newGridName.trim() || newGridSizes.length === 0) return;
+    if (editingGridId) {
+      if (!onUpdateGrid) return;
+      const existing = grids.find(g => g.id === editingGridId);
+      const updated = { name: newGridName.trim(), type: GridType.SOLADO, sizes: newGridSizes, configuration: existing?.configuration || {} };
+      await onUpdateGrid(editingGridId, updated);
+      applyGridToMold({ id: editingGridId, ...updated });
+    } else {
+      if (!onCreateGrid) return;
+      await onCreateGrid({ name: newGridName.trim(), type: GridType.SOLADO, sizes: newGridSizes, configuration: {} });
+      applyGridToMold({ id: '', name: newGridName.trim(), type: GridType.SOLADO, sizes: newGridSizes, configuration: {} });
+    }
+  };
+
+  const renderYesNoToggle = (value: boolean, onChange: (val: boolean) => void, question: string, icon: ReactNode, hint?: string, anchor?: string) => (
+    <div className={`p-5 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`} data-guide-anchor={anchor}>
+      <div className="flex items-center gap-2 mb-3">
+        {icon}
+        <span className={`text-xs font-black uppercase tracking-widest flex-1 ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{question}</span>
+      </div>
+      <div className={`p-1.5 rounded-2xl border flex items-center gap-2 transition-all ${value ? 'bg-emerald-50 border-emerald-100 dark:bg-emerald-950/30 dark:border-emerald-900/50' : 'bg-slate-100 border-slate-200 dark:bg-slate-800 dark:border-slate-700'}`}>
+        <button
+          type="button"
+          onClick={() => onChange(true)}
+          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${value ? "bg-emerald-500 shadow-lg shadow-emerald-500/20 text-white" : "text-slate-400 dark:text-slate-500"}`}
+          aria-label={`Sim, ${question}`}
+        >
+          <div className={`w-2 h-2 rounded-full ${value ? 'bg-white animate-pulse' : 'bg-slate-300'}`} />
+          Sim
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange(false)}
+          className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${!value ? "bg-rose-500 shadow-lg shadow-rose-500/20 text-white" : "text-slate-400 dark:text-slate-500"}`}
+          aria-label={`Não, ${question}`}
+        >
+          <div className={`w-2 h-2 rounded-full ${!value ? 'bg-white' : 'bg-slate-300'}`} />
+          Não
+        </button>
+      </div>
+      {hint && <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-2 px-1">{hint}</p>}
+    </div>
+  );
 
   const updateArea = (size: string, area: number | string) => {
     if (!editingItem) return;
@@ -2033,7 +2281,7 @@ function GenericConfigList({
           {type === 'MOLD' ? (
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-6">
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2" data-guide-anchor="mold.referencia">
                   <label htmlFor="mold-reference" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Referência *</label>
                   <div className="relative group">
                     <input id="mold-reference" type="text" value={editingItem?.metadata?.reference || editingItem?.metadata?.moldReference || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, reference: e.target.value.toUpperCase(), moldReference: e.target.value.toUpperCase() } } : null)} required title="Referência da Matriz" placeholder="EX: REF-01" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 pr-12 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
@@ -2047,67 +2295,213 @@ function GenericConfigList({
                     </button>
                   </div>
                 </div>
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2" data-guide-anchor="mold.nome">
                   <label htmlFor="mold-name" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Nome da Matriz *</label>
                   <input id="mold-name" type="text" value={editingItem?.name || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, name: e.target.value.toUpperCase() } : null)} required title="Nome da Matriz" placeholder="NOME DA MATRIZ" className={`w-full px-6 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`} />
                 </div>
               </div>
               <div className="flex flex-col gap-6">
-                <div className="flex flex-col gap-2">
-                  {renderLabelWithShortcut('mold-category', 'Categoria', ViewType.CATEGORIES)}
-                  <select id="mold-category" value={editingItem?.metadata?.category || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, category: e.target.value } } : null)} title="Selecionar Categoria" className={`w-full px-4 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}><option value="">GERAL</option><option value="SOLADO">SOLADO</option><option value="SALTO">SALTO</option><option value="PALMILHA">PALMILHA</option></select>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label htmlFor="mold-supplier" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Fornecedor</label>
-                  <select 
-                    id="mold-supplier" 
-                    value={editingItem?.metadata?.supplierId || ''} 
-                    onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, supplierId: e.target.value } } : null)} 
-                    title="Selecionar Fornecedor" 
-                    className={`w-full px-4 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                <div className="flex flex-col gap-2" data-guide-anchor="mold.categoria">
+                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Categoria</label>
+                  <button
+                    type="button"
+                    onClick={() => { setIsCategoryPickerOpen(true); setIsCreatingCategoryInline(false); setCategorySearch(''); }}
+                    className={`w-full flex items-center justify-between px-4 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
                   >
-                    <option value="">Selecione...</option>
-                    {suppliers.map(s => (
-                      <option key={s.id} value={s.id}>{s.name}</option>
-                    ))}
-                  </select>
+                    <span className={!editingItem?.metadata?.category ? 'opacity-40 normal-case' : ''}>
+                      {editingItem?.metadata?.category || 'Selecionar categoria...'}
+                    </span>
+                    <ChevronRight size={18} className="text-slate-400 shrink-0" />
+                  </button>
+                </div>
+
+                <Modal isOpen={isCategoryPickerOpen} onClose={() => { setIsCategoryPickerOpen(false); setIsCreatingCategoryInline(false); }} title="Categoria do Solado" maxWidth="max-w-sm" zIndex={80000}>
+                  {!isCreatingCategoryInline ? (
+                    <div className="flex flex-col gap-4" data-guide-anchor="mold.categoriaLista">
+                      <div className="relative">
+                        <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                        <input
+                          type="text"
+                          value={categorySearch}
+                          onChange={(e) => setCategorySearch(e.target.value)}
+                          placeholder="Buscar categoria..."
+                          className={`w-full pl-10 pr-4 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                        />
+                      </div>
+                      <div className="flex flex-col gap-2 max-h-[45vh] overflow-y-auto custom-scrollbar pr-1">
+                        {moldCategoryNames.filter(name => name.toLowerCase().includes(categorySearch.toLowerCase())).map(name => (
+                          <button
+                            key={name}
+                            type="button"
+                            onClick={() => { setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, category: name } } : null); setIsCategoryPickerOpen(false); }}
+                            className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
+                          >
+                            <span className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{name}</span>
+                            <ChevronRight size={16} className="text-indigo-400" />
+                          </button>
+                        ))}
+                        {moldCategoryNames.filter(name => name.toLowerCase().includes(categorySearch.toLowerCase())).length === 0 && (
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhuma categoria encontrada.</p>
+                        )}
+                      </div>
+                      {onQuickAddCategory && (
+                        <button
+                          type="button"
+                          onClick={() => { setIsCreatingCategoryInline(true); setNewCategoryType(CategoryType.MOLD); }}
+                          data-guide-anchor="mold.cadastrarCategoria"
+                          className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors"
+                        >
+                          <Plus size={14} strokeWidth={3} /> Não encontrou? Cadastre uma categoria aqui
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-4">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                        Salvo direto em Categorias — fica disponível pra qualquer outro cadastro do sistema, sem sair de Solados.
+                      </p>
+                      <div>
+                        <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Em qual aba de Categorias salvar?</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {CATEGORY_TYPE_OPTIONS.map(opt => (
+                            <button
+                              key={opt.type}
+                              type="button"
+                              onClick={() => setNewCategoryType(opt.type)}
+                              className={`flex items-center justify-center py-2.5 px-2 rounded-xl text-[9px] font-black uppercase tracking-widest border-2 transition-all ${newCategoryType === opt.type ? `${opt.color} border-transparent text-white shadow-lg` : (isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-50 border-slate-100 text-slate-400')}`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Nome da Categoria</label>
+                        <input
+                          type="text"
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleQuickCreateCategory())}
+                          placeholder="Ex: Injetado"
+                          className={`w-full px-4 py-3 rounded-xl font-bold text-sm outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-500'}`}
+                        />
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <button type="button" onClick={() => setIsCreatingCategoryInline(false)} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
+                          Voltar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleQuickCreateCategory}
+                          disabled={!newCategoryName.trim()}
+                          className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
+                        >
+                          Salvar e Usar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </Modal>
+                <div className="flex flex-col gap-2" data-guide-anchor="mold.fornecedor">
+                  <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Fornecedor</label>
+                  <button
+                    type="button"
+                    onClick={() => { setIsSupplierPickerOpen(true); setSupplierSearch(''); }}
+                    className={`w-full flex items-center justify-between px-4 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+                  >
+                    <span className={!editingItem?.metadata?.supplierId ? 'opacity-40 normal-case' : ''}>
+                      {suppliers.find(s => s.id === editingItem?.metadata?.supplierId)?.name || 'Selecione...'}
+                    </span>
+                    <ChevronRight size={18} className="text-slate-400 shrink-0" />
+                  </button>
                 </div>
               </div>
-              <div className="flex flex-col gap-2">
-                <label htmlFor="mold-base-material" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Material Base (Insumos)</label>
-                <select
-                  id="mold-base-material"
-                  value={editingItem?.metadata?.baseMaterialId || ''}
-                  onChange={(e) => {
-                    const materialId = e.target.value;
-                    const material = productionConfigs.find(m => m.id === materialId);
-                    if (material) {
-                      const pricePerKg = material.metadata?.baseCost || 0;
-                      const avgW = averageWeightLive || 0;
-                      const calcUnitCost = avgW > 0 ? parseFloat(((avgW / 1000) * pricePerKg).toFixed(4)) : 0;
-                      setEditingItem(prev => prev ? { 
-                        ...prev, 
-                        metadata: { 
-                          ...prev.metadata, 
-                          price: pricePerKg,
-                          baseMaterialId: materialId,
-                          unitCost: calcUnitCost
-                        } 
-                      } : null);
-                    } else {
-                      setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, baseMaterialId: '', unitCost: 0 } } : null);
-                    }
+
+              <Modal isOpen={isSupplierPickerOpen} onClose={() => setIsSupplierPickerOpen(false)} title="Selecionar Fornecedor" maxWidth="max-w-sm" zIndex={80000}>
+                <div className="flex flex-col gap-4">
+                  <div className="relative">
+                    <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                    <input
+                      type="text"
+                      value={supplierSearch}
+                      onChange={(e) => setSupplierSearch(e.target.value)}
+                      placeholder="Buscar fornecedor..."
+                      className={`w-full pl-10 pr-4 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2 max-h-[45vh] overflow-y-auto custom-scrollbar pr-1">
+                    {suppliers.filter(s => s.name.toLowerCase().includes(supplierSearch.toLowerCase())).map(s => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => { setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, supplierId: s.id } } : null); setIsSupplierPickerOpen(false); }}
+                        className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
+                      >
+                        <span className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{s.name}</span>
+                        <ChevronRight size={16} className="text-indigo-400" />
+                      </button>
+                    ))}
+                    {suppliers.filter(s => s.name.toLowerCase().includes(supplierSearch.toLowerCase())).length === 0 && (
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhum fornecedor encontrado.</p>
+                    )}
+                  </div>
+                  {onQuickAddPerson && (
+                    <button
+                      type="button"
+                      onClick={() => { setIsSupplierPickerOpen(false); setIsQuickPersonModalOpen(true); }}
+                      data-guide-anchor="mold.cadastrarFornecedor"
+                      className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <Plus size={14} strokeWidth={3} /> Não encontrou? Cadastre um fornecedor aqui
+                    </button>
+                  )}
+                </div>
+              </Modal>
+
+              {onQuickAddPerson && (
+                <PersonModal
+                  isOpen={isQuickPersonModalOpen}
+                  onClose={() => setIsQuickPersonModalOpen(false)}
+                  onSave={async (p) => {
+                    const created = await onQuickAddPerson(p);
+                    setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, supplierId: created.id } } : null);
+                    setIsQuickPersonModalOpen(false);
                   }}
-                  className={`w-full px-4 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                  sellers={people.filter(p => p.isSeller)}
+                  allPeople={people}
+                  initialData={{ isSupplier: true }}
+                  isDarkMode={isDarkMode}
+                />
+              )}
+              {renderYesNoToggle(
+                moldBuysMaterials,
+                (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, buysMaterials: val } } : null),
+                'Você compra materiais para o solado?',
+                <Layers size={18} className="text-indigo-500" />,
+                'Se sim: cadastre o material base (pra puxar preço) e a composição de materiais abaixo.',
+                'mold.buysMaterials'
+              )}
+              {moldBuysMaterials && (<>
+              <div className="flex flex-col gap-2" data-guide-anchor="mold.materialBase">
+                <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Material Base (Insumos)</label>
+                <button
+                  type="button"
+                  onClick={() => openMaterialPicker('base')}
+                  className={`w-full flex items-center justify-between px-4 py-4 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
                 >
-                  <option value="">SELECIONAR INSUMO PARA PUXAR PREÇO...</option>
-                  {productionConfigs.filter(m => m.type === 'MATERIAL').map(m => (
-                    <option key={m.id} value={m.id}>{m.name} ({m.metadata?.reference}) - R$ {m.metadata?.baseCost || 0}</option>
-                  ))}
-                </select>
+                  {(() => {
+                    const selected = productionConfigs.find(m => m.id === editingItem?.metadata?.baseMaterialId);
+                    return (
+                      <span className={!selected ? 'opacity-40 normal-case' : ''}>
+                        {selected ? `${selected.name} (${selected.metadata?.reference}) - R$ ${selected.metadata?.baseCost || 0}` : 'Selecionar insumo para puxar preço...'}
+                      </span>
+                    );
+                  })()}
+                  <ChevronRight size={18} className="text-slate-400 shrink-0" />
+                </button>
               </div>
               <div className="flex flex-col gap-6">
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2" data-guide-anchor="mold.precoKg">
                   <label htmlFor="mold-price" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Preço do Material / KG (R$)</label>
                   <div className="relative group">
                     <input id="mold-price" type="number" step="0.01" value={editingItem?.metadata?.price || ''} onChange={(e) => {
@@ -2130,7 +2524,7 @@ function GenericConfigList({
                     </button>
                   </div>
                 </div>
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2" data-guide-anchor="mold.custoPorPar">
                   <div className="flex items-center justify-between">
                     <label htmlFor="mold-unit-cost" className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Custo por Par (R$)</label>
                     {averageWeightLive > 0 && editingItem?.metadata?.price && editingItem.metadata.price > 0 && (
@@ -2170,77 +2564,163 @@ function GenericConfigList({
                   )}
                 </div>
               </div>
-              <div className="flex flex-col gap-2">
-                {renderLabelWithShortcut('mold-flowtag', 'Estágio do Fluxo / Setor', 'FLOW_TAGS')}
-                <div className="relative">
-                  <select id="mold-flowtag" value={editingItem?.metadata?.flowTagId || ''} onChange={(e) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: e.target.value } } : null)} title="Selecionar Estágio" className={`w-full px-5 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] outline-none border-2 transition-all appearance-none cursor-pointer ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-600'}`}><option value="">SELECIONE O ESTÁGIO...</option>{flowTags.map(tag => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select>
-                  <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
-                </div>
+              </>)}
+              <div className="flex flex-col gap-2" data-guide-anchor="mold.estagioFluxo">
+                <label className="text-xs font-black uppercase tracking-widest text-slate-400 ml-2">Estágio do Fluxo / Setor</label>
+                <button
+                  type="button"
+                  onClick={() => { setIsFlowTagPickerOpen(true); setIsCreatingFlowTagInline(false); setFlowTagSearch(''); }}
+                  className={`w-full flex items-center justify-between px-5 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-100 text-slate-900'}`}
+                >
+                  <span className={!editingItem?.metadata?.flowTagId ? 'opacity-40' : ''}>
+                    {flowTags.find(t => t.id === editingItem?.metadata?.flowTagId)?.name || 'SELECIONE O ESTÁGIO...'}
+                  </span>
+                  <ChevronRight size={18} className="text-slate-400 shrink-0" />
+                </button>
               </div>
-              <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2"><Scale size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Pesos por Tamanho (GR)</span></div>
-                </div>
 
-                <div className="flex flex-col gap-4 mb-6">
-                  <div className="flex items-center justify-between px-2">
-                    <label htmlFor="mold-new-size" className="text-[10px] font-black uppercase tracking-widest text-slate-400">Configurar Numerações</label>
-                    <div className="flex items-center gap-3">
-                      <AnimatePresence>
-                        {gridSuccess && (
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.8, x: 10 }}
-                            animate={{ opacity: 1, scale: 1, x: 0 }}
-                            exit={{ opacity: 0, scale: 0.8, x: 10 }}
-                            className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
-                          >
-                            <CheckCircle2 size={10} strokeWidth={3} />
-                            <span className="text-[8px] font-black uppercase tracking-widest">Grade Carregada!</span>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                      <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl border-2 transition-all relative group ${isDarkMode ? 'bg-indigo-950/30 border-indigo-500/20 hover:border-indigo-500/40 text-indigo-400' : 'bg-indigo-50/50 border-indigo-100 hover:border-indigo-200 text-indigo-600'}`}>
-                        <Grid3X3 size={14} strokeWidth={2.5} className="group-hover:scale-110 transition-transform" />
-                        <select
-                          onChange={(e) => {
-                            const gridId = e.target.value;
-                            if (!gridId) return;
-                            const grid = grids.find(g => g.id === gridId);
-                            if (grid) {
-                              const gridSizes = (grid as any).sizes || (grid as any).items?.map((i: any) => i.size) || [];
-                              setEditingItem(prev => {
-                                if (!prev) return null;
-                                const newSizeWeights = { ...(prev.metadata?.sizeWeights || {}) };
-                                gridSizes.forEach((s: string) => {
-                                  if (newSizeWeights[s] === undefined) newSizeWeights[s] = 0;
-                                });
-                                return {
-                                  ...prev,
-                                  metadata: {
-                                    ...prev.metadata,
-                                    sizes: gridSizes,
-                                    sizeWeights: newSizeWeights
-                                  }
-                                };
-                              });
-                              setGridSuccess(true);
-                              setTimeout(() => setGridSuccess(false), 2500);
-                            }
-                            e.target.value = "";
-                          }}
-                          className="bg-transparent border-none outline-none text-[10px] font-black uppercase cursor-pointer pr-4 appearance-none"
+              <Modal isOpen={isFlowTagPickerOpen} onClose={() => { setIsFlowTagPickerOpen(false); setIsCreatingFlowTagInline(false); }} title="Estágio do Fluxo / Setor" maxWidth="max-w-sm" zIndex={80000}>
+                {!isCreatingFlowTagInline ? (
+                  <div className="flex flex-col gap-4" data-guide-anchor="mold.estagioFluxoLista">
+                    <div className="relative">
+                      <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                      <input
+                        type="text"
+                        value={flowTagSearch}
+                        onChange={(e) => setFlowTagSearch(e.target.value)}
+                        placeholder="Buscar fluxo/setor..."
+                        className={`w-full pl-10 pr-4 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2 max-h-[45vh] overflow-y-auto custom-scrollbar pr-1">
+                      {flowTags.filter(t => t.name.toLowerCase().includes(flowTagSearch.toLowerCase())).map(tag => (
+                        <button
+                          key={tag.id}
+                          type="button"
+                          onClick={() => { setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, flowTagId: tag.id } } : null); setIsFlowTagPickerOpen(false); }}
+                          className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
                         >
-                          <option value="">PUXAR GRADE...</option>
-                          {grids.filter(g => g.type === GridType.SOLADO).map(g => (
-                            <option key={g.id} value={g.id}>{g.name}</option>
-                          ))}
-                        </select>
-                        <ChevronDown size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-50" />
-                      </div>
+                          <span className={`text-xs font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{tag.name}</span>
+                          <ChevronRight size={16} className="text-indigo-400" />
+                        </button>
+                      ))}
+                      {flowTags.filter(t => t.name.toLowerCase().includes(flowTagSearch.toLowerCase())).length === 0 && (
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhum fluxo/setor encontrado.</p>
+                      )}
+                    </div>
+                    {onQuickAddFlowTag && (
+                      <button
+                        type="button"
+                        onClick={() => setIsCreatingFlowTagInline(true)}
+                        data-guide-anchor="mold.cadastrarFluxo"
+                        className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <Plus size={14} strokeWidth={3} /> Não encontrou? Cadastre um fluxo aqui
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                      Salvo direto em Fluxos de Setor — fica disponível pra qualquer outro cadastro do sistema, sem sair de Solados.
+                    </p>
+                    <div>
+                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Nome do Fluxo / Setor</label>
+                      <input
+                        type="text"
+                        value={newFlowTagName}
+                        onChange={(e) => setNewFlowTagName(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleQuickCreateFlowTag())}
+                        placeholder="Ex: Injeção"
+                        className={`w-full px-4 py-3 rounded-xl font-bold text-sm outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-500'}`}
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button type="button" onClick={() => setIsCreatingFlowTagInline(false)} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
+                        Voltar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleQuickCreateFlowTag}
+                        disabled={!newFlowTagName.trim()}
+                        className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
+                      >
+                        Salvar e Usar
+                      </button>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <input id="mold-new-size" type="text" value={newSize} onChange={(e) => setNewSize(e.target.value)} title="Nova Numeração" placeholder="Ex: 37" className={`flex-1 px-6 py-4 rounded-2xl font-bold outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addSize())} />
+                )}
+              </Modal>
+
+              <Modal isOpen={isMaterialPickerOpen} onClose={() => setIsMaterialPickerOpen(false)} title="Selecionar Insumo" icon={<Layers size={20} />} maxWidth="max-w-md" zIndex={80000}>
+                <div className="flex flex-col gap-4">
+                  <div className="relative">
+                    <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                    <input
+                      type="text"
+                      value={materialPickerSearch}
+                      onChange={(e) => setMaterialPickerSearch(e.target.value)}
+                      placeholder="Buscar insumo..."
+                      className={`w-full pl-10 pr-4 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-2 max-h-[50vh] overflow-y-auto custom-scrollbar pr-1">
+                    {productionConfigs.filter(m => m.type === 'MATERIAL' && m.name.toLowerCase().includes(materialPickerSearch.toLowerCase())).map(m => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => selectMaterialForTarget(m.id)}
+                        className={`w-full flex items-center justify-between p-4 rounded-2xl border-2 text-left transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800 hover:border-indigo-500/50' : 'bg-white border-slate-100 hover:border-indigo-200'}`}
+                      >
+                        <div className="flex flex-col min-w-0">
+                          <span className={`text-xs font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{m.name}</span>
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{m.metadata?.reference} • R$ {m.metadata?.baseCost || 0}/kg</span>
+                        </div>
+                        <ChevronRight size={16} className="text-indigo-400 shrink-0" />
+                      </button>
+                    ))}
+                    {productionConfigs.filter(m => m.type === 'MATERIAL' && m.name.toLowerCase().includes(materialPickerSearch.toLowerCase())).length === 0 && (
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhum insumo encontrado.</p>
+                    )}
+                  </div>
+                </div>
+              </Modal>
+              <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2"><Grid3X3 size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Numeração / Grade do Solado</span></div>
+                  <AnimatePresence>
+                    {gridSuccess && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.8, x: 10 }}
+                        animate={{ opacity: 1, scale: 1, x: 0 }}
+                        exit={{ opacity: 0, scale: 0.8, x: 10 }}
+                        className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
+                      >
+                        <CheckCircle2 size={10} strokeWidth={3} />
+                        <span className="text-[8px] font-black uppercase tracking-widest">Grade Carregada!</span>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+
+                <div className="flex flex-col gap-4">
+                  <button
+                    type="button"
+                    onClick={() => { setIsGridSearchOpen(true); setIsCreatingGridInline(false); setEditingGridId(null); setGridSearchTerm(''); }}
+                    data-guide-anchor="mold.buscarGrade"
+                    className={`w-full py-4 px-6 rounded-2xl flex items-center justify-between transition-all active:scale-[0.98] border-2 ${isDarkMode ? 'bg-indigo-900/20 text-indigo-400 border-indigo-500/30 hover:bg-indigo-900/40' : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100/50'}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <Search size={20} />
+                      <div className="text-left">
+                        <span className="text-xs font-black uppercase tracking-widest block">Buscar Grade</span>
+                        <span className="text-xs font-bold uppercase tracking-widest opacity-70">Usar uma grade já cadastrada ou criar uma nova</span>
+                      </div>
+                    </div>
+                    <ChevronRight size={18} />
+                  </button>
+                  <div className="flex gap-2" data-guide-anchor="mold.numeracaoManual">
+                    <input id="mold-new-size" type="text" value={newSize} onChange={(e) => setNewSize(e.target.value)} title="Nova Numeração" placeholder="Ou adicione uma numeração avulsa, ex: 37" className={`flex-1 px-6 py-4 rounded-2xl font-bold outline-none transition-all border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-white border-slate-200 text-slate-900 focus:border-indigo-600'}`} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addSize())} />
                     <button type="button" title="Adicionar Numeração" aria-label="Adicionar este tamanho" onClick={addSize} className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-200 flex items-center justify-center border border-slate-200 dark:border-slate-700">
                       <Plus size={24} />
                     </button>
@@ -2256,10 +2736,130 @@ function GenericConfigList({
                     ))}
                   </div>
                 </div>
+              </div>
+
+              <Modal isOpen={isGridSearchOpen} onClose={() => { setIsGridSearchOpen(false); setIsCreatingGridInline(false); setEditingGridId(null); }} title="Buscar Grade de Solado" icon={<Grid3X3 size={20} />} maxWidth="max-w-md" zIndex={80000}>
+                {!isCreatingGridInline ? (
+                  <div className="flex flex-col gap-4" data-guide-anchor="mold.buscarGrade.lista">
+                    <div className="relative">
+                      <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" />
+                      <input
+                        type="text"
+                        value={gridSearchTerm}
+                        onChange={(e) => setGridSearchTerm(e.target.value)}
+                        placeholder="Buscar grade de solado..."
+                        className={`w-full pl-10 pr-4 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-indigo-100'}`}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2 max-h-[45vh] overflow-y-auto custom-scrollbar pr-1">
+                      {grids.filter(g => g.type === GridType.SOLADO && g.name.toLowerCase().includes(gridSearchTerm.toLowerCase())).map(g => (
+                        <div
+                          key={g.id}
+                          className={`w-full flex items-center gap-2 p-4 rounded-2xl border-2 transition-all ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}
+                        >
+                          <div className="flex flex-col flex-1 min-w-0">
+                            <span className={`text-xs font-black uppercase tracking-widest truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{g.name}</span>
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest truncate">
+                              {(g.sizes || []).length > 0 ? sortSizeKeys(g.sizes || []).join(', ') : 'Sem numerações cadastradas'}
+                            </span>
+                          </div>
+                          <button type="button" title="Usar esta Grade" aria-label={`Usar a grade ${g.name}`} onClick={() => applyGridToMold(g)} className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors shrink-0">
+                            <Check size={14} strokeWidth={3} />
+                          </button>
+                          <button type="button" title="Editar Grade" aria-label={`Editar a grade ${g.name}`} onClick={() => startEditGrid(g)} className={`p-2.5 rounded-xl transition-colors shrink-0 ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-50 text-slate-400 hover:text-slate-700'}`}>
+                            <Edit3 size={14} />
+                          </button>
+                          <button type="button" title="Excluir Grade" aria-label={`Excluir a grade ${g.name}`} onClick={() => handleDeleteGrid(g)} className="p-2.5 rounded-xl text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors shrink-0">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ))}
+                      {grids.filter(g => g.type === GridType.SOLADO && g.name.toLowerCase().includes(gridSearchTerm.toLowerCase())).length === 0 && (
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-center py-6">Nenhuma grade de solado encontrada.</p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={startCreateGrid}
+                      data-guide-anchor="mold.buscarGrade.criar"
+                      className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <Plus size={14} strokeWidth={3} /> Não encontrou? Criar Nova Grade
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">{editingGridId ? 'Editando Grade' : 'Nova Grade'}</p>
+                    <div>
+                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Nome da Grade</label>
+                      <input
+                        type="text"
+                        value={newGridName}
+                        onChange={(e) => setNewGridName(e.target.value)}
+                        placeholder="Ex: Feminino 34-40"
+                        className={`w-full px-4 py-3 rounded-xl font-bold text-sm outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-500'}`}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[9px] uppercase font-black text-slate-400 mb-1.5 block tracking-widest">Adicionar Numeração</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={newGridSizeInput}
+                          onChange={(e) => setNewGridSizeInput(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addNewGridSize())}
+                          placeholder="Ex: 38"
+                          className={`flex-1 px-4 py-3 rounded-xl font-bold text-sm outline-none border-2 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-100 text-slate-900 focus:border-emerald-500'}`}
+                        />
+                        <button type="button" onClick={addNewGridSize} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-xl font-black transition-colors">
+                          <Plus size={16} />
+                        </button>
+                      </div>
+                    </div>
+                    <div className="min-h-[50px] flex flex-wrap gap-2 p-3 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-xl">
+                      {newGridSizes.map(size => (
+                        <span key={size} className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-2 border shadow-sm ${isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-100 text-slate-900'}`}>
+                          {size}
+                          <button type="button" onClick={() => removeNewGridSize(size)} className="text-rose-400 hover:text-rose-600">×</button>
+                        </span>
+                      ))}
+                      {newGridSizes.length === 0 && <span className="text-[10px] text-slate-300 dark:text-slate-700 font-bold italic self-center">Adicione numerações acima</span>}
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <button type="button" onClick={() => { setIsCreatingGridInline(false); setEditingGridId(null); }} className="flex-1 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-slate-600 dark:text-slate-300 text-sm">
+                        Voltar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSaveInlineGrid}
+                        disabled={!newGridName.trim() || newGridSizes.length === 0}
+                        className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-white text-sm shadow-lg transition-all"
+                      >
+                        {editingGridId ? 'Salvar Alterações e Usar' : 'Salvar e Usar'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </Modal>
+
+              {renderYesNoToggle(
+                moldTracksWeight,
+                (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, tracksWeight: val } } : null),
+                'Você pesa sua sola para fazer conferência (peso por par)?',
+                <Scale size={18} className="text-indigo-500" />,
+                'Se sim: cadastre o peso por tamanho e, se quiser, o peso por cor abaixo.',
+                'mold.tracksWeight'
+              )}
+              {moldTracksWeight && (
+              <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2"><Scale size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Pesos por Tamanho (GR)</span></div>
+                </div>
 
                 <button
                   type="button"
                   onClick={() => setIsWeightsModalOpen(true)}
+                  data-guide-anchor="mold.pesosPorTamanho"
                   className={`w-full py-4 px-6 rounded-2xl flex items-center justify-between transition-all active:scale-[0.98] mb-2 border-2 ${isDarkMode ? 'bg-indigo-900/20 text-indigo-400 border-indigo-500/30 hover:bg-indigo-900/40' : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100/50'}`}
                 >
                   <div className="flex items-center gap-3">
@@ -2331,6 +2931,7 @@ function GenericConfigList({
                   <button
                     type="button"
                     onClick={() => setIsWeightsModalOpen(true)}
+                    data-guide-anchor="mold.pesosPorTamanho"
                     className="flex-1 py-3 px-4 rounded-2xl bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 transition-colors"
                   >
                     <Scale size={16} /> Pesos por Tamanho
@@ -2339,6 +2940,7 @@ function GenericConfigList({
                     <button
                       type="button"
                       onClick={() => setIsColorWeightsModalOpen(true)}
+                      data-guide-anchor="mold.pesosPorCor"
                       className="flex-1 py-3 px-4 rounded-2xl bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400 text-xs font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-violet-200 dark:hover:bg-violet-900/50 transition-colors"
                     >
                       <Palette size={16} /> Pesos por Cor
@@ -2464,7 +3066,7 @@ function GenericConfigList({
                   </div>
                 </Modal>
 
-                <div className="flex items-center justify-between mt-4 pt-6 border-t-2 border-dashed border-slate-100 dark:border-slate-800">
+                <div className="flex items-center justify-between mt-4 pt-6 border-t-2 border-dashed border-slate-100 dark:border-slate-800" data-guide-anchor="mold.pesoGradeTotal">
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Peso da Grade (Soma GR)</label>
                     <div className="relative group">
@@ -2517,6 +3119,8 @@ function GenericConfigList({
                   </div>
                 </div>
               </div>
+              )}
+              {moldBuysMaterials && (
               <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex flex-col gap-1"><div className="flex items-center gap-2"><Layers size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Composição de Materiais</span></div><span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Defina o consumo de insumos</span></div>
@@ -2525,6 +3129,7 @@ function GenericConfigList({
                     onClick={() => { const currentComposition = editingItem?.metadata?.composition || []; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: [...currentComposition, { materialId: '', quantity: 0, type: 'weight' }] } } : null); }}
                     title="Adicionar Material"
                     aria-label="Adicionar novo material à composição"
+                    data-guide-anchor="mold.composicaoAdicionar"
                     className="p-2 rounded-xl bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
                   >
                     <Plus size={16} />
@@ -2532,8 +3137,20 @@ function GenericConfigList({
                 </div>
                 <div className="flex flex-col gap-3">
                   {(editingItem?.metadata?.composition || []).map((item: any, index: number) => (
-                    <div key={index} className={`grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                      <div className="col-span-6 flex flex-col gap-1"><label htmlFor={`material-${index}`} className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Insumo / Material</label><select id={`material-${index}`} value={item.materialId} title="Selecionar Insumo" onChange={(e) => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], materialId: e.target.value }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className={`w-full px-3 py-3 rounded-xl font-bold text-xs uppercase outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-indigo-100'}`}><option value="">SELECIONE...</option>{productionConfigs.filter(c => c.type === 'MATERIAL').map(mat => <option key={mat.id} value={mat.id}>{mat.name}</option>)}</select></div>
+                    <div key={index} data-guide-anchor="mold.composicaoItem" className={`grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                      <div className="col-span-6 flex flex-col gap-1">
+                        <label className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Insumo / Material</label>
+                        <button
+                          type="button"
+                          onClick={() => openMaterialPicker(index)}
+                          className={`w-full flex items-center justify-between px-3 py-3 rounded-xl font-bold text-xs uppercase outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white' : 'bg-slate-50 border-slate-50 text-slate-900'}`}
+                        >
+                          <span className={`truncate ${!item.materialId ? 'opacity-40 normal-case' : ''}`}>
+                            {productionConfigs.find(c => c.id === item.materialId)?.name || 'Selecione...'}
+                          </span>
+                          <ChevronRight size={14} className="text-slate-400 shrink-0" />
+                        </button>
+                      </div>
                       <div className="col-span-3 flex flex-col gap-1"><label htmlFor={`qty-${index}`} className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Quant / %</label><div className="relative group"><input id={`qty-${index}`} type="number" step="0.001" value={item.quantity || ''} title="Quantidade" placeholder="0,000" onChange={(e) => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], materialId: e.target.value, quantity: parseFloat(e.target.value) }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className={`w-full px-3 py-3 rounded-xl font-black text-[10px] text-center outline-none border-2 pr-10 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-indigo-600'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir quantidade" onClick={() => setActiveCalc({ initialValue: item.quantity || 0, onResult: (val) => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], quantity: val }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); } })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-800 text-slate-500 hover:text-white transition-all"><Calculator size={12} /></button></div></div>
                       <div className="col-span-2 flex flex-col gap-1"><label className="text-xs font-black uppercase tracking-widest text-slate-600 dark:text-slate-400 ml-1">Tipo</label><button type="button" title="Alternar Tipo" aria-label="Alternar entre peso e porcentagem" onClick={() => { const newComp = [...(editingItem?.metadata?.composition || [])]; newComp[index] = { ...newComp[index], type: item.type === 'weight' ? 'percentage' : 'weight' }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className={`w-full py-3 rounded-xl font-black text-xs uppercase tracking-widest border-2 transition-all ${item.type === 'percentage' ? 'bg-amber-500 border-amber-600 text-white' : 'bg-indigo-500 border-indigo-600 text-white'}`}>{item.type === 'percentage' ? '%' : 'GR'}</button></div>
                       <div className="col-span-1 flex items-end pb-1"><button type="button" title="Remover Insumo" aria-label="Remover este insumo da composição" onClick={() => { const newComp = (editingItem?.metadata?.composition || []).filter((_: any, i: number) => i !== index); setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, composition: newComp } } : null); }} className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition-colors"><Trash2 size={16} /></button></div>
@@ -2541,6 +3158,16 @@ function GenericConfigList({
                   ))}
                 </div>
               </div>
+              )}
+              {renderYesNoToggle(
+                moldHasSoleServices,
+                (val) => setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, hasSoleServices: val } } : null),
+                'Você tem algum serviço na sola?',
+                <Hammer size={18} className="text-emerald-500" />,
+                'Ex: pintura, injeção de sola, colar etiquetas. Se sim: cadastre os serviços agregados abaixo.',
+                'mold.hasSoleServices'
+              )}
+              {moldHasSoleServices && (
               <div className={`p-6 rounded-[2rem] border-2 ${isDarkMode ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/50 border-slate-100'}`}>
                 <div className="flex items-center justify-between mb-6">
                   <div className="flex flex-col gap-1"><div className="flex items-center gap-2"><Hammer size={18} className="text-emerald-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Serviços Agregados</span></div><span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Mão de obra ou processos terceirizados</span></div>
@@ -2549,6 +3176,7 @@ function GenericConfigList({
                     onClick={() => { const currentServices = editingItem?.metadata?.extraServices || []; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: [...currentServices, { name: '', cost: 0 }] } } : null); }}
                     title="Adicionar Serviço"
                     aria-label="Adicionar novo serviço agregado"
+                    data-guide-anchor="mold.servicoAdicionar"
                     className="p-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
                   >
                     <Plus size={16} />
@@ -2556,7 +3184,7 @@ function GenericConfigList({
                 </div>
                 <div className="flex flex-col gap-3">
                   {(editingItem?.metadata?.extraServices || []).map((service: any, index: number) => (
-                    <div key={index} className={`grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
+                    <div key={index} data-guide-anchor="mold.servicoItem" className={`grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-12 gap-3 p-4 rounded-2xl border-2 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
                       <div className="col-span-7 flex flex-col gap-1"><label htmlFor={`service-name-${index}`} className="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">Nome do Serviço</label><input id={`service-name-${index}`} type="text" value={service.name} title="Nome do Serviço" onChange={(e) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], name: e.target.value.toUpperCase() }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); }} placeholder="EX: PINTURA" className={`w-full px-4 py-3 rounded-xl font-bold text-xs uppercase outline-none border-2 transition-all ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-emerald-600'}`} /></div>
                       <div className="col-span-4 flex flex-col gap-1"><label htmlFor={`service-cost-${index}`} className="text-xs font-black uppercase tracking-widest text-slate-400 ml-1">Valor (R$)</label><div className="relative group"><input id={`service-cost-${index}`} type="number" step="0.01" value={service.cost || ''} title="Custo do Serviço" onChange={(e) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], cost: parseFloat(e.target.value) }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); }} placeholder="0,00" className={`w-full px-4 py-3 rounded-xl font-bold text-xs text-center outline-none border-2 pr-10 ${isDarkMode ? 'bg-slate-950 border-slate-800 text-white focus:border-emerald-500' : 'bg-slate-50 border-slate-50 text-slate-900 focus:border-emerald-600'}`} /><button type="button" title="Abrir Calculadora" aria-label="Abrir calculadora para definir valor do serviço" onClick={() => setActiveCalc({ initialValue: service.cost || 0, onResult: (val) => { const newServices = [...(editingItem?.metadata?.extraServices || [])]; newServices[index] = { ...newServices[index], cost: val }; setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); } })} className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-lg bg-slate-800 text-slate-500 hover:text-white transition-all"><Calculator size={12} /></button></div></div>
                       <div className="col-span-1 flex items-end pb-1"><button type="button" title="Remover Serviço" aria-label="Remover este serviço" onClick={() => { const newServices = (editingItem?.metadata?.extraServices || []).filter((_: any, i: number) => i !== index); setEditingItem(prev => prev ? { ...prev, metadata: { ...prev.metadata, extraServices: newServices } } : null); }} className="p-2 rounded-xl text-rose-500 hover:bg-rose-50 transition-colors"><Trash2 size={16} /></button></div>
@@ -2564,12 +3192,14 @@ function GenericConfigList({
                   ))}
                 </div>
               </div>
+              )}
               <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2"><Palette size={18} className="text-indigo-500" /><span className="text-xs font-black uppercase tracking-widest text-slate-500">Cores Selecionadas e Sub-Ref</span></div>
                   <button
                     type="button"
                     onClick={() => setShowColorPicker(true)}
+                    data-guide-anchor="mold.coresAdicionar"
                     className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-[10px] font-black uppercase tracking-widest transition-all"
                   >
                     <Plus size={13} strokeWidth={3} /> Adicionar Cor
@@ -2583,7 +3213,7 @@ function GenericConfigList({
                       const color = (colors || []).find(c => c.id === variation.colorId);
                       const removeColor = () => { setEditingItem(prev => { if (!prev) return null; const variations = (prev.metadata?.colorVariations || []).filter((cv: any) => cv.colorId !== variation.colorId); return { ...prev, metadata: { ...prev.metadata, colorVariations: variations } }; }); };
                       return (
-                        <div key={variation.colorId} className={`p-3 rounded-2xl border-2 flex flex-col gap-2 transition-all border-indigo-500/30 bg-indigo-500/5`}>
+                        <div key={variation.colorId} data-guide-anchor="mold.corSubRef" className={`p-3 rounded-2xl border-2 flex flex-col gap-2 transition-all border-indigo-500/30 bg-indigo-500/5`}>
                           <div className="flex items-center gap-2 min-w-0">
                             <span className={`flex-1 min-w-0 truncate text-[11px] font-black uppercase tracking-widest ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{color?.name || variation.colorName}</span>
                             <button type="button" onClick={removeColor} aria-label={`Remover ${color?.name || variation.colorName}`} title="Remover" className="text-rose-400 hover:text-rose-500 shrink-0">
@@ -2618,8 +3248,8 @@ function GenericConfigList({
                 </div>
               </Modal>
 
-              {/* CALCULATION CARD */}
-              {(() => {
+              {/* CALCULATION CARD — só faz sentido se a matriz compra/consome material (Pergunta 1) */}
+              {moldBuysMaterials && (() => {
                 const activeSizesCount = Object.values(editingItem?.metadata?.sizeWeights || {}).filter(w => (w as number) > 0).length;
                 const effectiveTotalWeight = editingItem?.metadata?.totalWeight || totalWeightLive;
                 const avgWeight = activeSizesCount > 0 ? effectiveTotalWeight / activeSizesCount : 0;
@@ -2630,7 +3260,7 @@ function GenericConfigList({
                 const isUnitCostSynced = (editingItem?.metadata?.unitCost || 0) > 0 && Math.abs((editingItem?.metadata?.unitCost || 0) - suggestedPrice) < 0.0001;
 
                 return (
-                  <div className={`mt-4 p-6 rounded-[2rem] border-2 flex flex-col gap-4 ${isDarkMode ? 'bg-indigo-950/20 border-indigo-900/40' : 'bg-indigo-50 border-indigo-100'}`}>
+                  <div data-guide-anchor="mold.analiseCusto" className={`mt-4 p-6 rounded-[2rem] border-2 flex flex-col gap-4 ${isDarkMode ? 'bg-indigo-950/20 border-indigo-900/40' : 'bg-indigo-50 border-indigo-100'}`}>
                     <div className="flex items-center gap-2 mb-2">
                       <Target size={18} className="text-indigo-500" />
                       <span className="text-xs font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400">Análise de Custo Sugerido</span>
