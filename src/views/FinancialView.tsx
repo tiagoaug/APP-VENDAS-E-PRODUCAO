@@ -535,7 +535,10 @@ export default function FinancialView({
         transactions={transactions}
         purchases={purchases}
         sales={sales}
+        accounts={businessAccounts}
         onSettle={handleSettle}
+        onEdit={handleEdit}
+        onDeleteClick={handleDeleteClick}
         isDarkMode={isDarkMode}
       />
 

@@ -14,6 +14,16 @@ export interface SeparationRow {
   maxSeparable: number;
 }
 
+// Quantidade efetivamente separada para fins de exibição/soma — trata um item já `fulfilled`
+// (abatido direto do estoque, ex.: Varejo auto-baixado no onSave da venda, ver App.tsx) como
+// totalmente separado mesmo que `boxesSeparated` nunca tenha sido setado (esse campo só é
+// escrito pelo fluxo manual de "Separar Caixas", que os itens Varejo auto-abatidos nunca
+// passam). Sem isso, esses itens "reaparecem" como pendentes nos resumos de separação
+// (Status de Separação, badge "pronta(s)", etc.) mesmo já estando de fato prontos/abatidos.
+export function getEffectiveSeparated(item: SaleItem): number {
+  return item.fulfilled === true ? item.quantity : (item.boxesSeparated || 0);
+}
+
 /**
  * Monta, por item da venda, quanto ainda falta separar e o teto do que pode ser separado
  * agora (a partir de lotes reservados de produção OU do estoque geral, conforme a venda
@@ -29,7 +39,7 @@ export function buildSeparationRows(sale: Sale, products: Product[], stockLots: 
     const product = products.find(p => p.id === item.productId);
     const variation = product?.variations.find(v => v.id === item.variationId);
     const unit = item.saleType === SaleType.WHOLESALE ? 'cx' : 'pares';
-    const separated = item.boxesSeparated || 0;
+    const separated = getEffectiveSeparated(item);
     const remaining = Math.max(0, item.quantity - separated);
 
     const itemLots = reservedLots.filter(l => l.productId === item.productId && l.variationId === item.variationId);

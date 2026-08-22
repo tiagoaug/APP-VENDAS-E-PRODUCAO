@@ -1,4 +1,5 @@
 import { Product, Sale, SaleStatus, SaleType, StockLot } from '../types';
+import { getEffectiveSeparated } from './separationRows';
 
 // Fonte única de "pedido pronto pra expedir" — antes vivia só dentro de StockView.tsx
 // (PedidosClientesPanel). Extraído aqui pra o módulo Entregas (builder de rota) usar
@@ -39,7 +40,7 @@ export function getStockReadyQty(sale: Sale, products: Product[]): number {
 // produção, no caso de pedidos com OP, ou reposição de estoque, no caso de vendas de
 // estoque comum.
 export function isReadyToShip(sale: Sale, reservedBySale: Map<string, StockLot[]>, products: Product[]): boolean {
-  const allSeparated = sale.items.length > 0 && sale.items.every(it => (it.boxesSeparated || 0) >= it.quantity);
+  const allSeparated = sale.items.length > 0 && sale.items.every(it => getEffectiveSeparated(it) >= it.quantity);
   if (allSeparated) return true;
   return (reservedBySale.get(sale.id) || []).length > 0 || getStockReadyQty(sale, products) > 0;
 }

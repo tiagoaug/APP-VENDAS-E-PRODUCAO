@@ -1893,19 +1893,12 @@ export default function DashboardView({
                              {isExpanded && (
                                <div className="mt-6 pt-6 border-t border-dashed border-slate-200 dark:border-slate-800 animate-in fade-in slide-in-from-top-4 duration-500">
                                  <div className="mb-4 bg-white dark:bg-slate-950/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-                                   <div className="flex items-center justify-between mb-3">
+                                   <div className="flex items-center justify-between">
                                      <div className="flex items-center gap-2">
                                        <User size={12} className="text-slate-400" />
                                        <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 tracking-widest">Fornecedor</p>
                                      </div>
                                      <p className="text-[11px] font-black text-slate-700 dark:text-slate-200 tracking-tight">{check.supplierName}</p>
-                                   </div>
-                                   <div className="flex items-center justify-between">
-                                     <div className="flex items-center gap-2">
-                                       <Landmark size={12} className="text-slate-400" />
-                                       <p className="text-[10px] font-black text-slate-600 dark:text-slate-400 tracking-widest">Empresa</p>
-                                     </div>
-                                     <p className="text-[11px] font-black text-slate-400 dark:text-slate-500 tracking-tight leading-none">Vendas Pro</p>
                                    </div>
                                  </div>
                                  <div className="flex gap-2">

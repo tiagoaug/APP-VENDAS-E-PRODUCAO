@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import { Person, Transaction, TransactionType, Sale, Purchase } from '../types';
-import { Search, X, User, DollarSign, TrendingUp, TrendingDown, Clock, CheckCircle2, Calendar, ChevronDown, ChevronUp, Filter } from 'lucide-react';
+import { Person, Transaction, TransactionType, Sale, Purchase, Account } from '../types';
+import { Search, X, User, DollarSign, TrendingUp, TrendingDown, Clock, CheckCircle2, Calendar, ChevronDown, ChevronUp, Filter, Wallet, Edit, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import DatePicker from './DatePicker';
 
@@ -11,7 +11,13 @@ interface FinancialQueryModalProps {
   transactions: Transaction[];
   purchases: Purchase[];
   sales: Sale[];
+  accounts: Account[];
   onSettle: (transaction: Transaction) => Promise<void>;
+  // Mesmos handlers já usados na lista principal do Financeiro (ver FinancialView.tsx
+  // handleEdit/handleDeleteClick) — abrem o TransactionModal/ConfirmDialog que já ficam
+  // montados lá (z-index maior que este popup, aparecem por cima normalmente).
+  onEdit: (transaction: Transaction) => void;
+  onDeleteClick: (id: string) => void;
   isDarkMode: boolean;
 }
 
@@ -22,7 +28,10 @@ export default function FinancialQueryModal({
   transactions,
   purchases,
   sales,
+  accounts,
   onSettle,
+  onEdit,
+  onDeleteClick,
   isDarkMode
 }: FinancialQueryModalProps) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -337,11 +346,14 @@ export default function FinancialQueryModal({
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-3">
-                  {filteredTransactions.map(tx => (
-                    <div 
-                      key={tx.id} 
-                      className={`p-4 rounded-[2rem] border flex items-center justify-between gap-3 hover:scale-[1.01] transition-transform ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}
+                  {filteredTransactions.map(tx => {
+                    const account = accounts.find(a => a.id === tx.accountId);
+                    return (
+                    <div
+                      key={tx.id}
+                      className={`p-4 rounded-[2rem] border flex flex-col gap-3 ${isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}
                     >
+                      <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0 flex-1">
                         <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${tx.type === TransactionType.INCOME ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-rose-50 text-rose-600 dark:bg-rose-900/20 dark:text-rose-400'}`}>
                           {tx.type === TransactionType.INCOME ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
@@ -377,28 +389,54 @@ export default function FinancialQueryModal({
                         </div>
                       </div>
 
-                      <div className="text-right flex items-center gap-3 shrink-0 ml-auto">
-                        <div className="flex flex-col items-end">
-                          <p className={`text-[11px] font-black whitespace-nowrap ${tx.type === TransactionType.INCOME ? 'text-emerald-500' : 'text-rose-500'}`}>
-                            {tx.type === TransactionType.INCOME ? '+' : '-'} R$ {tx.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                          </p>
-                          <p className="text-[7px] font-black uppercase tracking-widest text-slate-400 mt-1">
-                             REF: {tx.id.slice(-6).toUpperCase()}
-                          </p>
-                        </div>
+                      <div className="text-right flex flex-col items-end shrink-0 ml-auto">
+                        <p className={`text-[11px] font-black whitespace-nowrap ${tx.type === TransactionType.INCOME ? 'text-emerald-500' : 'text-rose-500'}`}>
+                          {tx.type === TransactionType.INCOME ? '+' : '-'} R$ {tx.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </p>
+                        <p className="text-[7px] font-black uppercase tracking-widest text-slate-400 mt-1">
+                           REF: {tx.id.slice(-6).toUpperCase()}
+                        </p>
+                      </div>
+                      </div>
 
-                        {tx.status === 'PENDING' && (
-                          <button 
-                            onClick={() => onSettle(tx)}
-                            className="w-9 h-9 rounded-xl bg-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 active:scale-90 transition-all shrink-0"
-                            title="Dar Baixa"
+                      <div className={`flex items-center justify-between pt-3 border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-50'}`}>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="text-[9px] text-indigo-400 dark:text-indigo-500 font-black uppercase tracking-widest flex items-center gap-1">
+                            <Wallet size={10} />
+                            {account?.name || 'Conta'}
+                          </span>
+                        </div>
+                        <div className="flex gap-2">
+                          {tx.status === 'PENDING' && (
+                            <button
+                              onClick={() => onSettle(tx)}
+                              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-indigo-500 text-white text-[9px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/20 active:scale-95 transition-all shrink-0"
+                              title="Dar Baixa"
+                            >
+                              <CheckCircle2 size={14} strokeWidth={3} /> Dar Baixa
+                            </button>
+                          )}
+                          <button
+                            onClick={() => onEdit(tx)}
+                            className={`p-2.5 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-indigo-400' : 'bg-slate-50 text-slate-400 hover:text-indigo-500'}`}
+                            title="Editar Lançamento"
+                            aria-label="Editar Lançamento"
                           >
-                            <CheckCircle2 size={16} strokeWidth={3} />
+                            <Edit size={16} strokeWidth={2.5} />
                           </button>
-                        )}
+                          <button
+                            onClick={() => onDeleteClick(tx.id)}
+                            className={`p-2.5 rounded-xl transition-all ${isDarkMode ? 'bg-slate-800 text-slate-400 hover:text-rose-400' : 'bg-slate-50 text-slate-400 hover:text-rose-500'}`}
+                            title="Excluir Lançamento"
+                            aria-label="Excluir Lançamento"
+                          >
+                            <Trash2 size={16} strokeWidth={2.5} />
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
            </div>

@@ -6283,7 +6283,11 @@ export default function App() {
                   const available = variation.stock[key] || 0;
                   if (available >= item.quantity) {
                     variation.stock[key] = Math.max(0, available - item.quantity);
-                    newItems[i] = { ...item, fulfilled: true };
+                    // boxesSeparated também setado pra bater com fulfilled — sem isso o item
+                    // fica com o estoque já abatido mas boxesSeparated em 0/undefined, e
+                    // reaparece como "pendente" nos resumos de separação (ver getEffectiveSeparated
+                    // em separationRows.ts, que cobre esse mesmo caso pra itens já existentes).
+                    newItems[i] = { ...item, fulfilled: true, boxesSeparated: item.quantity };
                   } else {
                     newItems[i] = { ...item, fulfilled: false };
                   }

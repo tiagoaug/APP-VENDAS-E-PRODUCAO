@@ -160,8 +160,8 @@ export default function CommissionToSellersCard({
       {isCommissionExpanded && (
         <div className={`flex flex-col gap-4 px-6 pb-6 border-t pt-4 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
           {/* Período — controla quais vendas entram na comissão abaixo */}
-          <div className="flex items-center gap-1.5">
-            <div className={`flex gap-0.5 p-0.5 rounded-xl shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+          <div className="flex flex-col gap-1.5">
+            <div className={`flex gap-0.5 p-0.5 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
               {(Object.keys(STATS_PERIOD_LABELS) as OverviewPeriodType[]).map((pt) => (
                 <button
                   key={pt}
@@ -177,7 +177,7 @@ export default function CommissionToSellersCard({
             </div>
             <div
               onClick={openCommissionMonthPicker}
-              className={`flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
+              className={`w-full flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
             >
               <Calendar size={12} className="text-indigo-500 shrink-0" />
               <input

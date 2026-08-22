@@ -102,32 +102,32 @@ export default function LabelProfilePickerModal({
   const renderFileRow = (file: LabelFile) => {
     const aspect = file.widthMm / file.heightMm;
     return (
-      <button key={file.id} type="button" onClick={() => onSelectProfile(file)} className={rowCls}>
+      <div key={file.id} className={rowCls.replace('active:scale-[0.98]', '')}>
         <div
-          className={`relative shrink-0 rounded-lg overflow-hidden border flex items-center justify-center ${isDarkMode ? 'border-slate-700 bg-white' : 'border-slate-200 bg-white'}`}
+          role="button"
+          tabIndex={thumbnails[file.id] ? 0 : -1}
+          onClick={(e) => { e.stopPropagation(); if (thumbnails[file.id]) setExpandedFile(file); }}
+          onKeyDown={(e) => { if ((e.key === 'Enter' || e.key === ' ') && thumbnails[file.id]) { e.preventDefault(); setExpandedFile(file); } }}
+          aria-label={thumbnails[file.id] ? 'Ver etiqueta ampliada' : undefined}
+          className={`relative shrink-0 rounded-lg overflow-hidden border flex items-center justify-center transition-all ${thumbnails[file.id] ? 'cursor-zoom-in hover:ring-2 hover:ring-indigo-400 active:scale-95' : ''} ${isDarkMode ? 'border-slate-700 bg-white' : 'border-slate-200 bg-white'}`}
           style={{ width: 64, height: Math.min(64, 64 / aspect) }}
         >
           {thumbnails[file.id] ? (
             <>
               <img src={thumbnails[file.id]} alt="" className="w-full h-full object-contain" draggable={false} />
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setExpandedFile(file); }}
-                className="absolute bottom-0.5 right-0.5 p-1 rounded-md bg-slate-900/70 text-white active:scale-90 transition-transform"
-                aria-label="Ver etiqueta ampliada"
-              >
+              <div className="absolute bottom-0.5 right-0.5 p-1 rounded-md bg-slate-900/70 text-white pointer-events-none">
                 <Maximize2 size={10} />
-              </button>
+              </div>
             </>
           ) : (
             <div className="w-full h-full animate-pulse bg-slate-100" />
           )}
         </div>
-        <div className="min-w-0 flex-1">
+        <button type="button" onClick={() => onSelectProfile(file)} className="min-w-0 flex-1 text-left active:scale-[0.98] transition-transform">
           <p className={`text-xs font-black truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{file.name}</p>
           <p className="text-[9px] font-bold text-slate-400 mt-0.5">{file.widthMm} × {file.heightMm} mm</p>
-        </div>
-      </button>
+        </button>
+      </div>
     );
   };
 

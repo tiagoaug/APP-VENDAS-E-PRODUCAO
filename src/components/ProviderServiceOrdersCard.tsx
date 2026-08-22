@@ -349,8 +349,8 @@ export default function ProviderServiceOrdersCard({
 
             {/* Período — só filtra a lista "concluídas no período" abaixo, não mexe no
                 Total em Aberto (esse é sempre acumulado, ver providerOSGroups). */}
-            <div className="flex items-center gap-1.5">
-              <div className={`flex gap-0.5 p-0.5 rounded-xl shrink-0 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
+            <div className="flex flex-col gap-1.5">
+              <div className={`flex gap-0.5 p-0.5 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-50'}`}>
                 {(Object.keys(STATS_PERIOD_LABELS) as OverviewPeriodType[]).map((pt) => (
                   <button
                     key={pt}
@@ -366,7 +366,7 @@ export default function ProviderServiceOrdersCard({
               </div>
               <div
                 onClick={openProviderOSMonthPicker}
-                className={`flex-1 flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
+                className={`w-full flex items-center gap-1.5 px-3 py-1.5 rounded-xl cursor-pointer border ${isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
               >
                 <Calendar size={12} className="text-indigo-500 shrink-0" />
                 <input

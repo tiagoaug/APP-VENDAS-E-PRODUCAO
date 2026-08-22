@@ -23,7 +23,7 @@ import { saleProductionHasProgressed, getLotPendingSectorGroups } from '../utils
 import { firebaseService } from '../services/firebaseService';
 import { getWholesaleBoxes, getRetailPairs } from '../utils/stockPools';
 import { summarizeStockRepairIssues } from '../utils/stockRepair';
-import { buildSeparationRows } from '../utils/separationRows';
+import { buildSeparationRows, getEffectiveSeparated } from '../utils/separationRows';
 import { buildSeparationReconcileGroups, SeparationReconcileGroup } from '../utils/separationReconcile';
 import { useStockLotDuplicates } from '../hooks/useStockLotDuplicates';
 import { StockDuplicateFixPlan } from '../utils/stockDuplicateFix';
@@ -2046,7 +2046,7 @@ export default function SalesView({
                       Agora usa a mesma soma de `boxesSeparated` que já alimenta "Status de
                       Separação" logo abaixo, garantindo que os dois nunca divirjam. */}
                   {sale.status === SaleStatus.SALE && sale.deliveryStatus !== 'DELIVERED' && (() => {
-                    const readyQty = sale.items.reduce((s, it) => s + (it.boxesSeparated || 0), 0);
+                    const readyQty = sale.items.reduce((s, it) => s + getEffectiveSeparated(it), 0);
                     if (readyQty === 0) return null;
                     return (
                       <span className="text-[8px] font-black px-2 py-1 rounded-lg leading-none tracking-widest bg-sky-100 text-sky-600 dark:bg-sky-900/30 dark:text-sky-400 flex items-center gap-1">
@@ -2329,7 +2329,7 @@ export default function SalesView({
 
               {showSeparationInfo && sale.status === SaleStatus.SALE && (() => {
                 const totalOrdered = sale.items.reduce((s, it) => s + it.quantity, 0);
-                const totalSeparated = sale.items.reduce((s, it) => s + (it.boxesSeparated || 0), 0);
+                const totalSeparated = sale.items.reduce((s, it) => s + getEffectiveSeparated(it), 0);
                 const allSeparated = totalSeparated >= totalOrdered;
 
                 // Se o pedido estiver totalmente separado, exibe o aviso de sucesso (visível mesmo colapsado)
